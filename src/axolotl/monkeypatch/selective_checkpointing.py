@@ -95,6 +95,9 @@ def _is_sliding_window_call(op: Any, args: tuple, kwargs: dict) -> bool:
     return False
 
 
+_RECOMPUTE_LAYER_TYPES = {"sliding_attention", "chunked_attention"}
+
+
 class SacPolicyState:
     """Bookkeeping shared across checkpoint regions for logging/diagnostics."""
 
@@ -103,6 +106,62 @@ class SacPolicyState:
         self.sliding_op_names: set[str] = set()
         self.regions_seen: int = 0
         self.warned_no_match: bool = False
+        # published by decoder-layer hooks; read by the policy. Hooks fire again
+        # during checkpoint recompute (on the autograd thread), so forward and
+        # replay see the same value.
+        self.current_layer_type: str | None = None
+
+
+def _layer_attention_type(module) -> str | None:
+    for obj in (
+        module,
+        getattr(module, "self_attn", None),
+        getattr(module, "attention", None),
+    ):
+        if obj is None:
+            continue
+        layer_type = getattr(obj, "layer_type", None)
+        if isinstance(layer_type, str):
+            return layer_type
+        if getattr(obj, "is_sliding", None) is True:
+            return "sliding_attention"
+    return None
+
+
+def install_layer_type_hooks(model, state: SacPolicyState) -> int:
+    """Publish each checkpointed decoder layer's attention type while it runs.
+
+    Lets the policy skip saving sliding/chunked-window attention in hybrid
+    models even under SDPA, where the window lives in the mask and cannot be
+    read off the op's arguments.
+    """
+    from transformers import GradientCheckpointingLayer
+
+    hooked = 0
+    if not hasattr(model, "modules"):
+        return hooked
+    for module in model.modules():
+        if not isinstance(module, GradientCheckpointingLayer):
+            continue
+        layer_type = _layer_attention_type(module)
+        if layer_type is None:
+            continue
+
+        def _set(mod, args, kwargs=None, _lt=layer_type):
+            state.current_layer_type = _lt
+
+        def _clear(mod, args, output):
+            state.current_layer_type = None
+
+        module.register_forward_pre_hook(_set)
+        module.register_forward_hook(_clear, always_call=True)
+        hooked += 1
+    if hooked:
+        LOG.info(
+            f"selective_checkpointing: layer-type hooks on {hooked} decoder layers "
+            "(sliding/chunked-window attention will be recomputed)"
+        )
+    return hooked
 
 
 def build_sac_policy(
@@ -142,6 +201,17 @@ def build_sac_policy(
     def policy_fn(ctx, op, *args, **kwargs):  # pylint: disable=unused-argument
         if _matches(op):
             name = _op_name(op)
+            if (
+                not save_sliding_window
+                and state.current_layer_type in _RECOMPUTE_LAYER_TYPES
+            ):
+                if name not in state.sliding_op_names:
+                    state.sliding_op_names.add(name)
+                    LOG.info(
+                        f"selective_checkpointing: recomputing `{name}` in "
+                        f"{state.current_layer_type} layers"
+                    )
+                return CheckpointPolicy.PREFER_RECOMPUTE
             if not save_sliding_window and _is_sliding_window_call(op, args, kwargs):
                 if name not in state.sliding_op_names:
                     state.sliding_op_names.add(name)
@@ -163,10 +233,12 @@ def build_sac_policy(
 
 
 def build_sac_context_fn(
-    save: list[str] | None = None, save_sliding_window: bool = False
+    save: list[str] | None = None,
+    save_sliding_window: bool = False,
+    state: SacPolicyState | None = None,
 ) -> Callable:
     """Return a ``context_fn`` for ``torch.utils.checkpoint.checkpoint``."""
-    state = SacPolicyState()
+    state = state or SacPolicyState()
     policy_fn = build_sac_policy(save, state, save_sliding_window)
 
     def context_fn():
@@ -201,7 +273,10 @@ def apply_selective_checkpointing(
     if getattr(model.gradient_checkpointing_enable, "_axolotl_sac", False):
         return
 
-    context_fn = build_sac_context_fn(save, save_sliding_window)
+    state = SacPolicyState()
+    if not save_sliding_window:
+        install_layer_type_hooks(model, state)
+    context_fn = build_sac_context_fn(save, save_sliding_window, state)
     orig_enable = model.gradient_checkpointing_enable
 
     def enable_with_sac(gradient_checkpointing_kwargs=None, **kwargs):

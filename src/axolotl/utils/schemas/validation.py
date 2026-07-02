@@ -1468,6 +1468,23 @@ class ModelCompatibilityValidationMixin:
                 "activation_offloading: hidden_states (or false); the TRL offloader "
                 "paths bypass HF gradient checkpointing"
             )
+        if self.adapter:
+            # PEFT adds the adapter delta into the base linear output in-place,
+            # mutating cached mm outputs; SAC's cache-mutation guard errors at runtime
+            matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
+            bad = [
+                spec
+                for spec in self.selective_checkpointing.save
+                if spec != "attention" and any(spec in op for op in matmul_ops)
+            ]
+            if bad:
+                raise ValueError(
+                    f"selective_checkpointing.save entries {bad} match matmul ops, "
+                    "which cannot be saved when training with a LoRA/QLoRA adapter: "
+                    "PEFT mutates the base linear output in-place to add the adapter "
+                    "delta, which invalidates the cached tensor. Use save: [attention] "
+                    "or train without an adapter."
+                )
         if self.torch_compile:
             LOG.warning(
                 "selective_checkpointing with torch_compile is untested in axolotl; "

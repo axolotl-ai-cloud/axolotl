@@ -98,3 +98,31 @@ class TestSelectiveCheckpointing:
         cfg = validate_config(cfg)
         assert cfg.selective_checkpointing["save"] == ["attention"]
         assert cfg.activation_offloading == "hidden_states"
+
+    def test_rejects_matmul_save_with_adapter(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=True,
+                adapter="lora",
+                lora_r=16,
+                lora_alpha=32,
+                lora_target_linear=True,
+                selective_checkpointing={"save": ["attention", "aten::mm"]},
+            )
+            | min_base_cfg
+        )
+
+        with pytest.raises(ValueError, match="in-place"):
+            validate_config(cfg)
+
+    def test_allows_matmul_save_without_adapter(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=True,
+                selective_checkpointing={"save": ["attention", "aten::mm"]},
+            )
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert cfg.selective_checkpointing["save"] == ["attention", "aten::mm"]

@@ -223,3 +223,65 @@ class TestSacFunctional:
         c1 = context_fn()
         c2 = context_fn()
         assert c1 is not c2
+
+
+class TestLayerTypeDiscrimination:
+    SDPA_OP = torch.ops.aten._scaled_dot_product_flash_attention.default
+
+    def test_sliding_layer_type_recomputed(self):
+        state = SacPolicyState()
+        policy = build_sac_policy(["attention"], state)
+        state.current_layer_type = "sliding_attention"
+        assert policy(None, self.SDPA_OP) == CheckpointPolicy.PREFER_RECOMPUTE
+        state.current_layer_type = "chunked_attention"
+        assert policy(None, self.SDPA_OP) == CheckpointPolicy.PREFER_RECOMPUTE
+
+    def test_full_or_unknown_layer_type_saved(self):
+        state = SacPolicyState()
+        policy = build_sac_policy(["attention"], state)
+        state.current_layer_type = "full_attention"
+        assert policy(None, self.SDPA_OP) == CheckpointPolicy.MUST_SAVE
+        state.current_layer_type = None
+        assert policy(None, self.SDPA_OP) == CheckpointPolicy.MUST_SAVE
+
+    def test_save_sliding_window_overrides_layer_type(self):
+        state = SacPolicyState()
+        policy = build_sac_policy(["attention"], state, save_sliding_window=True)
+        state.current_layer_type = "sliding_attention"
+        assert policy(None, self.SDPA_OP) == CheckpointPolicy.MUST_SAVE
+
+    def test_hooks_publish_layer_type(self):
+        from transformers import GradientCheckpointingLayer
+
+        from axolotl.monkeypatch.selective_checkpointing import (
+            install_layer_type_hooks,
+        )
+
+        state = SacPolicyState()
+        seen = []
+
+        class _Layer(GradientCheckpointingLayer):
+            def __init__(self, layer_type):
+                super().__init__()
+                self.layer_type = layer_type
+
+            def forward(self):
+                seen.append(state.current_layer_type)
+
+        class _Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.layers = torch.nn.ModuleList(
+                    [_Layer("full_attention"), _Layer("sliding_attention")]
+                )
+
+            def forward(self):
+                for layer in self.layers:
+                    layer()
+
+        model = _Model()
+        hooked = install_layer_type_hooks(model, state)
+        assert hooked == 2
+        model()
+        assert seen == ["full_attention", "sliding_attention"]
+        assert state.current_layer_type is None
