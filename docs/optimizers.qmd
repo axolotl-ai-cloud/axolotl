@@ -195,6 +195,24 @@ iteration over the `dp_shard` group — the same shape and group as SR-Sinkhorn'
 norm-vector reduce, and the matrix itself is never gathered. The persisted power-iteration
 vector round-trips through FSDP2 checkpoints.
 
+#### Fused Triton kernels (`sinkgd_fused_kernel`)
+
+`sinkgd_fused_kernel: true` replaces the compiled update with fused Triton kernels (one
+kernel per SR-Sinkhorn iteration; the column scale, power iteration, and weight update fold
+into the same passes). Works for all SinkGD variants (plain, spectral norm, MD sphere) on
+single-device and FSDP2 rows-sharded weights — same all-reduce count as the compiled path,
+with an automatic tall/wide grid layout so both full matrices and heavily-sharded wide-short
+local shards stay fully occupied. Measured on B200: 1.4–1.75x on the optimizer step
+single-GPU, 1.0–1.8x on 2-rank FSDP2, all regimes ≥1x with the wide layout. Numerics are
+equivalent at bf16 rounding scale but not byte-identical to the compiled path, so the flag
+is off by default. Falls back to the compiled path for cols-sharded (TP) weights,
+`bf16_stochastic_round`, or when Triton is unavailable.
+
+```yaml
+optim_args:
+  sinkgd_fused_kernel: true
+```
+
 #### Weight-sphere variant (`sinkgd_md_sphere`, experimental)
 
 `sinkgd_md_sphere: true` switches to an experimental magnitude–direction variant: each
