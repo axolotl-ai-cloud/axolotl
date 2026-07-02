@@ -65,7 +65,7 @@ def test_a4_nvfp4_lora_grouped_unavailable_raises(monkeypatch):
 
     monkeypatch.setattr(ex, "is_nvfp4_param", lambda p: True)
     monkeypatch.setattr(gt, "grouped_fp4_available", lambda mode: False)
-    monkeypatch.setattr(ex.RUNTIME, "fp4_grouped_mode", "nvfp4")
+    monkeypatch.setattr(ex.RUNTIME, "grouped_mode", "nvfp4")
 
     E, H, topk, N = 4, 8, 2, 6
     self_ = _mock_experts(E)
@@ -83,7 +83,7 @@ def test_b2_nvfp4_lora_without_grouped_mode_raises_on_blackwell(monkeypatch):
     from axolotl.integrations.kernels.libs.scattermoe_lora import experts as ex
 
     monkeypatch.setattr(ex, "is_nvfp4_param", lambda p: True)
-    monkeypatch.setattr(ex.RUNTIME, "fp4_grouped_mode", None)
+    monkeypatch.setattr(ex.RUNTIME, "grouped_mode", None)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (10, 0))
 
@@ -103,7 +103,7 @@ def test_b2_nvfp4_lora_without_grouped_mode_ok_off_blackwell(monkeypatch):
     from axolotl.integrations.kernels.libs.scattermoe_lora import experts as ex
 
     monkeypatch.setattr(ex, "is_nvfp4_param", lambda p: True)
-    monkeypatch.setattr(ex.RUNTIME, "fp4_grouped_mode", None)
+    monkeypatch.setattr(ex.RUNTIME, "grouped_mode", None)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (8, 9))
 

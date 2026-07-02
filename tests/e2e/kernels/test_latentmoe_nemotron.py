@@ -322,7 +322,7 @@ def test_nvfp4_lora_parity(impl, monkeypatch):
                 "up_proj": _convert_smoe_lora(A1, B1, E, R, SC),
                 "down_proj": _convert_smoe_lora(A2, B2, E, R, SC),
             }
-            monkeypatch.setattr(sm_ex.RUNTIME, "fp4_grouped_mode", fp4_mode)
+            monkeypatch.setattr(sm_ex.RUNTIME, "grouped_mode", fp4_mode)
         else:
             experts._sonicmoe_lora = {
                 "up_proj": (A1, B1, SC),
