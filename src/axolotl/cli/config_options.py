@@ -2019,6 +2019,20 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Additional kwargs to pass to the trainer for gradient checkpointing",
     ),
     (
+        ("--selective-checkpointing.save",),
+        "selective_checkpointing__save",
+        None,
+        "Ops to save during forward instead of recomputing in backward. 'attention' matches SDPA and flash-attention forward ops; other entries are substring-matched against qualified torch op names (e.g. 'aten::mm').",
+    ),
+    (
+        (
+            "--selective-checkpointing.save-sliding-window/--no-selective-checkpointing.save-sliding-window",
+        ),
+        "selective_checkpointing__save_sliding_window",
+        None,
+        "In hybrid full/sliding-window attention models, also save sliding-window attention calls. Default false: SWA is cheap to recompute, so only full-attention calls are saved. Only discriminable with flash-attention (SDPA hides the window in the mask).",
+    ),
+    (
         ("--activation-offloading",),
         None,
         None,
