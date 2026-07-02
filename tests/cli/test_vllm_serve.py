@@ -1,19 +1,24 @@
-"""pytest tests for axolotl CLI vllm_serve argument precedence."""
+"""Tests for axolotl vllm_serve CLI/config boolean precedence."""
 
 import sys
 import types
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from axolotl.cli.vllm_serve import do_vllm_serve
 
 
-def _make_cfg(serve_module):
-    """Build a minimal cfg whose vLLM booleans are enabled in the config."""
-    return SimpleNamespace(
+def _run_serve(module_name, cli_bools):
+    """Run do_vllm_serve against a stub serve module with config booleans on."""
+    stub = types.ModuleType(module_name)
+    stub.main = MagicMock()
+    sys.modules[module_name] = stub
+    cfg = SimpleNamespace(
         base_model="dummy-model",
         vllm=SimpleNamespace(
-            serve_module=serve_module,
+            serve_module=None,
             tensor_parallel_size=1,
             data_parallel_size=1,
             host="0.0.0.0",
@@ -30,62 +35,25 @@ def _make_cfg(serve_module):
         trl=SimpleNamespace(vllm_lora_sync=False),
         lora_r=None,
     )
+    try:
+        with patch("axolotl.cli.vllm_serve.load_cfg", return_value=cfg):
+            do_vllm_serve("config.yml", {"serve_module": module_name, **cli_bools})
+    finally:
+        del sys.modules[module_name]
+    stub.main.assert_called_once()
+    return stub.main.call_args.args[0]
 
 
-def test_cli_false_overrides_config_true_booleans():
-    """Explicit CLI ``False`` must override config-enabled boolean options.
+@pytest.mark.parametrize("cli_value, expected", [(False, False), (None, True)])
+def test_vllm_serve_bool_precedence(cli_value, expected):
+    """CLI False overrides config True; omitted CLI (None) keeps the config value.
 
-    Regression test for the ``cli or cfg`` precedence bug where a config that
-    enabled ``enable_prefix_caching`` / ``enable_reasoning`` could not be
-    disabled from the CLI (``False or True`` -> ``True``).
+    Regression test for the ``cli or cfg`` bug where ``False or True`` -> ``True``
+    made a config-enabled option impossible to disable from the CLI.
     """
-    # Use a stub serve module so we hit the AxolotlScriptArguments path, which
-    # carries both enable_prefix_caching (via base kwargs) and enable_reasoning.
-    serve_module_name = "axolotl_test_stub_serve"
-    stub = types.ModuleType(serve_module_name)
-    stub.main = MagicMock()
-    sys.modules[serve_module_name] = stub
-
-    cfg = _make_cfg(serve_module=None)
-    cli_args = {
-        "serve_module": serve_module_name,
-        "enable_prefix_caching": False,
-        "enable_reasoning": False,
-    }
-
-    try:
-        with patch("axolotl.cli.vllm_serve.load_cfg", return_value=cfg):
-            do_vllm_serve("config.yml", cli_args)
-    finally:
-        del sys.modules[serve_module_name]
-
-    stub.main.assert_called_once()
-    script_args = stub.main.call_args.args[0]
-    assert script_args.enable_prefix_caching is False
-    assert script_args.enable_reasoning is False
-
-
-def test_cli_none_falls_back_to_config_booleans():
-    """When the CLI value is omitted, the config value is preserved."""
-    serve_module_name = "axolotl_test_stub_serve_2"
-    stub = types.ModuleType(serve_module_name)
-    stub.main = MagicMock()
-    sys.modules[serve_module_name] = stub
-
-    cfg = _make_cfg(serve_module=None)
-    cli_args = {
-        "serve_module": serve_module_name,
-        "enable_prefix_caching": None,
-        "enable_reasoning": None,
-    }
-
-    try:
-        with patch("axolotl.cli.vllm_serve.load_cfg", return_value=cfg):
-            do_vllm_serve("config.yml", cli_args)
-    finally:
-        del sys.modules[serve_module_name]
-
-    stub.main.assert_called_once()
-    script_args = stub.main.call_args.args[0]
-    assert script_args.enable_prefix_caching is True
-    assert script_args.enable_reasoning is True
+    args = _run_serve(
+        f"axolotl_stub_serve_{expected}",
+        {"enable_prefix_caching": cli_value, "enable_reasoning": cli_value},
+    )
+    assert args.enable_prefix_caching is expected
+    assert args.enable_reasoning is expected
