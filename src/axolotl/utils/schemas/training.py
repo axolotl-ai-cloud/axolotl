@@ -18,6 +18,34 @@ class LrGroup(BaseModel):
     lr: float
 
 
+class SelectiveCheckpointingConfig(BaseModel):
+    """Selective activation checkpointing (SAC) configuration"""
+
+    save: list[str] = Field(
+        default_factory=lambda: ["attention"],
+        json_schema_extra={
+            "description": (
+                "Ops to save during forward instead of recomputing in backward. "
+                "'attention' matches SDPA and flash-attention forward ops; other "
+                "entries are substring-matched against qualified torch op names "
+                "(e.g. 'aten::mm')."
+            )
+        },
+    )
+    save_sliding_window: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "In hybrid full/sliding-window attention models, also save "
+                "sliding-window attention calls. Default false: SWA is cheap to "
+                "recompute, so only full-attention calls are saved. Only "
+                "discriminable with flash-attention (SDPA hides the window in the "
+                "mask)."
+            )
+        },
+    )
+
+
 class HyperparametersConfig(BaseModel):
     """Training hyperparams configuration subset"""
 

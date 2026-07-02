@@ -51,6 +51,43 @@ parallelism.
 `activation_offloading: true` can still be faster because adapter activations are smaller and pure offload
 avoids the recompute cost.
 
+### Selective Activation Checkpointing (SAC)
+
+```yaml
+gradient_checkpointing: true
+selective_checkpointing: true
+```
+
+Plain gradient checkpointing recomputes every op in a decoder layer during backward. Selective
+checkpointing keeps the recompute for cheap ops but *saves* the outputs of expensive ones — by
+default the attention op — so backward skips re-running them. At long context, attention dominates
+the recompute cost, so this recovers most of the checkpointing slowdown for one extra
+hidden-state-sized tensor per layer.
+
+This runs eagerly (no `torch.compile`) via torch's selective-checkpoint policy API. Ops are matched
+at the dispatcher level: SDPA and flash-attention are matched out of the box, and custom kernels
+that are not registered as torch ops are simply recomputed as usual — nothing breaks.
+
+The explicit form lets you save additional ops, matched as substrings of the qualified op name:
+
+```yaml
+selective_checkpointing:
+  save:
+    - attention
+    - aten::mm        # example: also save all matmuls
+```
+
+For hybrid models mixing full attention and sliding-window attention (SWA), only full-attention
+calls are saved by default — SWA is cheap to recompute and not worth the memory. This is
+discriminated via the flash-attention window arguments; under SDPA the window lives inside the
+attention mask, so hybrid layers cannot be told apart there. Set
+`selective_checkpointing.save_sliding_window: true` to save SWA calls too.
+
+Requires non-reentrant checkpointing (the default). Composes with
+`activation_offloading: hidden_states`: layer inputs go to CPU while attention outputs stay on GPU.
+It is incompatible with the TRL-offloader modes (`true`/`legacy`/`disk`), which replace gradient
+checkpointing instead of running inside it.
+
 ### Enabling Layer Offloading
 
 ```yaml

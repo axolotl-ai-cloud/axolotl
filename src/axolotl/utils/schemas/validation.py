@@ -1447,6 +1447,35 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_selective_checkpointing(self):
+        if not self.selective_checkpointing:
+            self.selective_checkpointing = None
+            return self
+        if self.selective_checkpointing is True:
+            from axolotl.utils.schemas.training import SelectiveCheckpointingConfig
+
+            self.selective_checkpointing = SelectiveCheckpointingConfig()
+        if not self.gradient_checkpointing:
+            raise ValueError("selective_checkpointing requires gradient_checkpointing")
+        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
+            raise ValueError(
+                "selective_checkpointing requires non-reentrant checkpointing "
+                "(gradient_checkpointing_kwargs.use_reentrant: false)"
+            )
+        if self.activation_offloading and self.activation_offloading != "hidden_states":
+            raise ValueError(
+                "selective_checkpointing is only compatible with "
+                "activation_offloading: hidden_states (or false); the TRL offloader "
+                "paths bypass HF gradient checkpointing"
+            )
+        if self.torch_compile:
+            LOG.warning(
+                "selective_checkpointing with torch_compile is untested in axolotl; "
+                "the SAC context_fn targets the eager checkpointing path"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_hidden_states_offloading(self):
         if self.activation_offloading != "hidden_states":
             return self
