@@ -1,7 +1,8 @@
 """LoRA-aware sonicmoe experts forward for the transformers ExpertsInterface.
 
-Wraps upstream ``_sonicmoe_wrapper`` and materializes expert LoRA via
-``MoELoRAMaterialize`` before the CUTLASS call.
+Dense experts wrap upstream ``_sonicmoe_wrapper``, materializing expert LoRA via
+``MoELoRAMaterialize`` before the CUTLASS call. NVFP4 experts (which that kernel
+cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
 """
 
 from __future__ import annotations
@@ -74,23 +75,52 @@ def sonicmoe_experts_forward_with_lora(
     top_k_index: torch.Tensor,
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
-    """Sonicmoe experts forward with PEFT LoRA materialization.
+    """Sonicmoe experts forward with PEFT LoRA support.
 
-    On devices where the sonic-moe kernel can't run (sm_120), standard-layout
-    experts transparently use the vendored scattermoe Triton path instead.
+    Dense bf16 experts use the fast sonic-moe CUTLASS kernel (LoRA materialized
+    into W_eff first). NVFP4 experts, which the opaque CUTLASS kernel cannot
+    read, take the grouped reference path (dequant base + fused low-rank LoRA).
+    On sm_120, where the sonic-moe kernel can't compile, standard-layout dense
+    experts fall back to the vendored scattermoe Triton path.
     """
     from ..scattermoe_lora.experts import (
         scattermoe_experts_forward,
         scattermoe_supports_layout,
     )
+    from .nvfp4 import is_nvfp4_param
 
-    # Validate the expert layout / device BEFORE the sm120 fallback dispatch: a non-CUDA input or
-    # ungated experts are invalid for both paths, and the fallback (entered on sm120 where the
-    # sonic kernel can't run) would otherwise hit a CPU tensor and raise an opaque AttributeError.
     if not getattr(self, "has_gate", True):
         raise ValueError("sonicmoe requires gated experts (has_gate=True)")
     if hidden_states.device.type != "cuda":
         raise ValueError("sonicmoe requires CUDA device")
+
+    w1, b1, w2, b2, lora_w1, lora_w2 = _resolve_weights_and_lora(self)
+    if not getattr(self, "has_bias", False):
+        b1 = b2 = None
+
+    # Unwrap FSDP2/EP DTensors to local shards. to_local() is autograd-aware:
+    # backward rewraps the gradient as a DTensor.
+    if isinstance(w1, torch.distributed.tensor.DTensor):
+        w1 = w1.to_local()
+        w2 = w2.to_local()
+        b1 = b1.to_local() if b1 is not None else None
+        b2 = b2.to_local() if b2 is not None else None
+
+    # The opaque CUTLASS kernel cannot read packed FP4, so NVFP4 experts take the
+    # grouped dequant path instead.
+    if is_nvfp4_param(w1) or is_nvfp4_param(w2):
+        return _sonicmoe_nvfp4_forward(
+            self,
+            hidden_states,
+            top_k_index,
+            top_k_weights,
+            w1,
+            b1,
+            w2,
+            b2,
+            lora_w1,
+            lora_w2,
+        )
 
     if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(self):
         return scattermoe_experts_forward(
@@ -113,18 +143,6 @@ def sonicmoe_experts_forward_with_lora(
     )
     router_scores = top_k_weights.reshape(-1).to(hidden_states.dtype)
     expert_ids = top_k_index.reshape(-1).int()
-
-    w1, b1, w2, b2, lora_w1, lora_w2 = _resolve_weights_and_lora(self)
-    if not getattr(self, "has_bias", False):
-        b1 = b2 = None
-
-    # sonic-moe takes raw CUTLASS pointers, so unwrap FSDP2/EP DTensors to local shards first.
-    # to_local() is autograd-aware: backward rewraps the gradient as a DTensor.
-    if isinstance(w1, torch.distributed.tensor.DTensor):
-        w1 = w1.to_local()
-        w2 = w2.to_local()
-        b1 = b1.to_local() if b1 is not None else None
-        b2 = b2.to_local() if b2 is not None else None
 
     # Materialize W_eff = W + scaling * (B @ A) per expert. No-op when no LoRA.
     if lora_w1 is not None:
@@ -154,6 +172,67 @@ def sonicmoe_experts_forward_with_lora(
         num_experts=self.num_experts,
         concat_layout=getattr(self, "is_concatenated", True),
         is_inference_mode_enabled=not torch.is_grad_enabled(),
+    )
+
+
+def _sonicmoe_nvfp4_forward(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    w1: torch.Tensor,
+    b1,
+    w2: torch.Tensor,
+    b2,
+    lora_w1,
+    lora_w2,
+) -> torch.Tensor:
+    """NVFP4 experts forward via the grouped dequant path (base frozen).
+
+    The frozen NVFP4 base is dequantized to dense; LoRA is applied as a fused
+    low-rank delta at the grouped-token level (no base-weight gradient). The
+    in-kernel block-scaled FP4 GEMM plugs in later via ``backend="fp4_cute"``.
+    """
+    from .nvfp4 import resolve_gated_activation
+    from .nvfp4_lora import grouped_moe_reference_forward
+
+    if getattr(self, "is_transposed", False):
+        raise NotImplementedError(
+            "sonicmoe NVFP4 path supports the [E, 2*I, H] / [E, H, I] layout only "
+            "(is_transposed=False)"
+        )
+
+    # Expert parallelism is not finished for this path: the base is EP-sharded to
+    # local experts while routing/LoRA still use global expert ids, and the local
+    # token dispatch is not implemented. Fail loudly instead of computing garbage.
+    if getattr(self, "num_experts_global", self.num_experts) != self.num_experts:
+        raise NotImplementedError(
+            "sonicmoe NVFP4 path does not support expert parallelism yet "
+            "(EP-sharded base with global-id routing/LoRA is unfinished and untested)"
+        )
+
+    lora1 = (lora_w1[0], lora_w1[1]) if lora_w1 is not None else None
+    lora2 = (lora_w2[0], lora_w2[1]) if lora_w2 is not None else None
+    scaling1 = lora_w1[2] if lora_w1 is not None else 1.0
+    scaling2 = lora_w2[2] if lora_w2 is not None else 1.0
+
+    return grouped_moe_reference_forward(
+        hidden_states,
+        top_k_index,
+        top_k_weights,
+        w1,
+        b1,
+        w2,
+        b2,
+        lora1,
+        lora2,
+        self.num_experts,
+        act=resolve_gated_activation(self.config),
+        backend="dequant",
+        limit=getattr(self, "limit", None),
+        concat=getattr(self, "is_concatenated", True),
+        scaling1=scaling1,
+        scaling2=scaling2,
     )
 
 
