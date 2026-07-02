@@ -185,3 +185,108 @@ def test_fp4_cute_unavailable_without_sm100():
     if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] in (10, 11):
         pytest.skip("running on SM100/SM110")
     assert fp4_cute_available() is False
+
+
+def _make_nvfp4_weight(E, N, K, pts=None, seed=0):
+    """Random dense [E, N, K] quantized per expert into a torchao NVFP4Tensor."""
+    nvfp4_mod = pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
+    torch.manual_seed(seed)
+    pts_t = torch.ones(E) if pts is None else torch.as_tensor(pts, dtype=torch.float32)
+    qs, ss = [], []
+    for e in range(E):
+        q, s, _ = quantize_nvfp4_ref(torch.randn(N, K) * K**-0.5, pts_t[e])
+        qs.append(q)
+        ss.append(s)
+    return nvfp4_mod.NVFP4Tensor(
+        torch.stack(qs),
+        torch.stack(ss),
+        16,
+        torch.float32,
+        per_tensor_scale=pts_t.view(-1, 1, 1),
+    )
+
+
+def test_torchao_dequant_matches_ref():
+    # The kernel path assumes torchao's scheme (low nibble first, value =
+    # code * e4m3_scale * pts) is identical to our reference.
+    w = _make_nvfp4_weight(3, 8, 32, pts=[0.5, 1.3, 2.0])
+    ref = dequantize_nvfp4_ref(w.qdata, w.scale, w.per_tensor_scale)
+    assert torch.equal(w.dequantize(torch.float32), ref)
+
+
+def test_dequantize_expert_slice():
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4 import (
+        dequantize_expert_slice,
+    )
+
+    w = _make_nvfp4_weight(3, 8, 32, pts=[0.5, 1.0, 2.0])
+    full = w.dequantize(torch.float32)
+    for e in range(3):
+        assert torch.equal(dequantize_expert_slice(w, e), full[e])
+
+    dense = torch.randn(3, 8, 32)
+    assert dequantize_expert_slice(dense, 1) is not None
+    assert torch.equal(dequantize_expert_slice(dense, 1), dense[1])
+
+
+def test_unpack_nvfp4_components():
+    from axolotl.integrations.kernels.libs.sonicmoe.fp4_cute_ops import (
+        unpack_nvfp4_components,
+    )
+
+    w = _make_nvfp4_weight(2, 8, 32, pts=[1.0, 0.5])
+    qdata, scale, pts = unpack_nvfp4_components(w)
+    assert qdata.dtype == torch.uint8 and qdata.shape == (2, 8, 16)
+    assert scale.dtype == torch.float8_e4m3fn and scale.shape == (2, 8, 2)
+    assert pts.shape == (2, 1, 1)
+    with pytest.raises(TypeError):
+        unpack_nvfp4_components(torch.randn(2, 8, 32))
+
+
+def test_fp4_cute_dims_ok():
+    from axolotl.integrations.kernels.libs.sonicmoe.fp4_cute_ops import (
+        fp4_cute_dims_ok,
+    )
+
+    w1 = torch.empty(2, 16, 64)  # [E, 2I, H]
+    w2 = torch.empty(2, 64, 32)  # [E, H, I]
+    assert fp4_cute_dims_ok(w1, w2) is True
+    assert fp4_cute_dims_ok(torch.empty(2, 16, 48), w2) is False  # K % 32
+    assert fp4_cute_dims_ok(torch.empty(2, 12, 64), w2) is False  # N % 8
+    assert fp4_cute_dims_ok(w1, torch.empty(2, 64, 24)) is False
+
+
+def test_lora_backward_nvfp4_base_matches_dense():
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+        _lora_backward_per_group,
+    )
+
+    torch.manual_seed(4)
+    E, d1, d2, r = 3, 8, 32, 2
+    w = _make_nvfp4_weight(E, d1, d2, pts=[0.5, 1.0, 2.0])
+    counts = [4, 0, 3]
+    offsets = torch.tensor([0] + list(torch.tensor(counts).cumsum(0).tolist()))
+    T = sum(counts)
+    x = torch.randn(T, d2)
+    grad_h = torch.randn(T, d1)
+    lora_A = torch.randn(r * E, d2)
+    lora_B = torch.randn(d1, r * E)
+
+    got = _lora_backward_per_group(grad_h, x, offsets, lora_A, lora_B, w, 0.5)
+    ref = _lora_backward_per_group(
+        grad_h, x, offsets, lora_A, lora_B, w.dequantize(torch.float32), 0.5
+    )
+    for g, rf in zip(got, ref, strict=True):
+        torch.testing.assert_close(g, rf)
+
+
+def test_select_nvfp4_backend(monkeypatch):
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+        _select_nvfp4_backend,
+    )
+
+    dense1, dense2 = torch.empty(2, 16, 64), torch.empty(2, 64, 32)
+    monkeypatch.delenv("AXOLOTL_SONICMOE_NVFP4_BACKEND", raising=False)
+    assert _select_nvfp4_backend(dense1, dense2) == "dequant"
+    monkeypatch.setenv("AXOLOTL_SONICMOE_NVFP4_BACKEND", "fp4_cute")
+    assert _select_nvfp4_backend(dense1, dense2) == "fp4_cute"

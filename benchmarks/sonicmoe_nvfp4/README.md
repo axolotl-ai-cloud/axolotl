@@ -2,7 +2,8 @@
 
 Correctness gates for the SM100 grouped gated NVFP4 GEMM described in
 `SONICMOE_NVFP4_LORA.md` (Appendix B). Run them in order on a B200/GB200 pod
-(SM100/SM110); each is standalone and needs no axolotl install.
+(SM100/SM110); smokes 1-3 are standalone (no axolotl install), smoke 4 imports
+the repo's `axolotl` package by path (torchao required, part of axolotl deps).
 
 ## Pod setup
 
@@ -22,6 +23,7 @@ The driver composes against quack internals verified at commit `f4f54db0`
 python smoke_01_upstream_dense.py   # env + upstream ground truth + host-prep parity
 python smoke_02_dense_gated.py      # THE composition: GemmGatedSm100(sf_vec_size=16), dense
 python smoke_03_varlen_gated.py     # grouped varlen_m + per-expert weights + folded pts
+python smoke_04_end_to_end_lora.py  # seam: MoE-LoRA fwd+bwd on a real torchao NVFP4Tensor
 ```
 
 - smoke_01 runs only upstream quack code paths. A failure here is environment,
@@ -33,6 +35,10 @@ python smoke_03_varlen_gated.py     # grouped varlen_m + per-expert weights + fo
   (incl. an empty and a 1-token expert), dQaccum-padded SFA, per-expert
   per_tensor_scale folded into SFB, a second forward with a different total_m
   (must not recompile), and the non-gated (down-proj) engine.
+- smoke_04 is the integration seam (`backend="fp4_cute"`): route -> quantized
+  grouped up GEMM + LoRA delta -> gated activation -> quantized grouped down
+  GEMM + LoRA delta -> combine, forward AND backward (LoRA A/B + hidden
+  grads), against a pure-torch STE oracle plus a dequant-backend info diff.
 
 All comparisons are against fp32 oracles that dequantize the exact operands the
 kernel consumes, so tolerances only cover fp32 accumulation order + bf16 output

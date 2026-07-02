@@ -4,9 +4,9 @@
 
 """Frozen-base grouped LoRA forward/backward for the sonicmoe NVFP4 backend.
 
-The base expert weights are frozen (NVFP4 in production, dequantized by the
-sibling ``nvfp4`` module before the grouped GEMM). Only the LoRA A/B tensors are
-trainable. Where the whole-weight path (``lora.MoELoRAMaterialize``) builds
+The base expert weights are frozen (NVFP4 in production; the sibling ``nvfp4``
+module either dequantizes them or keeps them packed for the fp4_cute kernel).
+Only the LoRA A/B tensors are trainable. Where the whole-weight path (``lora.MoELoRAMaterialize``) builds
 ``W_eff = W + scaling * (B @ A)`` per expert and hands it to an opaque CUTLASS
 call, this module keeps the low-rank factors separate and fuses them at the
 grouped-token level so it composes with a real grouped GEMM and never forms a
@@ -31,10 +31,12 @@ from typing import Optional
 import torch
 
 from .nvfp4 import (
+    dequantize_expert_slice,
     dequantize_expert_weight,
     gated_activation,
     grouped_down_gemm,
     grouped_up_gemm,
+    is_nvfp4_param,
 )
 
 
@@ -80,8 +82,9 @@ def _lora_backward_per_group(
 ) -> tuple:
     """Grads for a frozen-base grouped-LoRA linear ``h_e = x_e @ W_eff_e^T``.
 
-    ``base_weight`` is ``[E, dim1, dim2]`` (frozen, dense/dequantized), used only
-    for the ``dx`` term. Returns ``(dx, d_lora_A, d_lora_B)``.
+    ``base_weight`` is ``[E, dim1, dim2]`` (frozen; dense or packed NVFP4,
+    dequantized one expert slice at a time), used only for the ``dx`` term.
+    Returns ``(dx, d_lora_A, d_lora_B)``.
     """
     E, dim1, dim2 = base_weight.shape
     r = lora_A.shape[0] // E
@@ -100,11 +103,11 @@ def _lora_backward_per_group(
         x_e = x_grouped[start:end]  # [T_e, dim2]
         g_e = grad_h[start:end]  # [T_e, dim1]
 
-        # W_eff_e = W_e + scaling * (B_e @ A_e); h_e = x_e @ W_eff_e^T.
-        W_eff_e = base_weight[e] + scaling * (B_3d[e] @ A_3d[e])  # [dim1, dim2]
-
-        # dx_e = grad_h_e @ W_eff_e
-        dx[start:end] = g_e @ W_eff_e
+        # dx_e = g_e @ W_eff_e with W_eff_e = W_e + scaling * (B_e @ A_e),
+        # split so W_eff is never materialized and the NVFP4 base dequantizes
+        # one expert slice at a time.
+        w_e = dequantize_expert_slice(base_weight, e)  # [dim1, dim2]
+        dx[start:end] = g_e @ w_e.to(g_e.dtype) + scaling * ((g_e @ B_3d[e]) @ A_3d[e])
 
         # dW_eff_e = grad_h_e^T @ x_e  ([dim1, dim2], the [E, dim1, dim2] convention)
         dW_e = g_e.transpose(0, 1) @ x_e  # [dim1, dim2]
@@ -363,21 +366,30 @@ def grouped_moe_reference_forward(
     """End-to-end NVFP4 MoE forward: route -> grouped gated MLP -> combine.
 
     The frozen base ``w1`` / ``w2`` may be packed NVFP4. ``backend="dequant"``
-    dequantizes the whole base to dense once up front (the Phase-1 memory cost)
-    so both the forward and the hand-written backward operate on dense tensors;
-    ``backend="fp4_cute"`` is the future in-kernel path that keeps weights packed
-    and is not implemented here. ``limit`` is the clamped-SwiGLU bound (e.g.
-    DeepSeek-V4). Runs on CPU (dense base) so the path is validated without a GPU.
+    dequantizes the whole base to dense once up front so both the forward and
+    the hand-written backward operate on dense tensors; ``backend="fp4_cute"``
+    keeps the weights packed and runs the in-kernel SM100 W4A4 grouped GEMM
+    (quantized activations, chunked-dequant dX in backward). ``limit`` is the
+    clamped-SwiGLU bound (e.g. DeepSeek-V4). Runs on CPU (dense base) so the
+    path is validated without a GPU.
     """
     if backend == "dequant":
         w1 = dequantize_expert_weight(w1)
         w2 = dequantize_expert_weight(w2)
         backend = "torch"
     elif backend == "fp4_cute":
-        raise NotImplementedError(
-            "backend='fp4_cute' (in-kernel block-scaled FP4 gated+grouped GEMM) "
-            "is the Phase-2 seam and is not implemented"
-        )
+        from .fp4_cute import fp4_cute_available
+
+        if not fp4_cute_available():
+            raise RuntimeError(
+                "backend='fp4_cute' requires an SM100/SM110 GPU with quack and "
+                "the cutlass DSL installed"
+            )
+        if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
+            raise ValueError(
+                "backend='fp4_cute' requires packed NVFP4 base weights; use "
+                "backend='torch' for a dense base"
+            )
 
     x_grouped, expert_offsets, gather_token_idx, weights_grouped = route_and_group(
         hidden_states, top_k_index, top_k_weights, num_experts

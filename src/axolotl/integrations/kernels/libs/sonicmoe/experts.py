@@ -8,6 +8,7 @@ cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
 from __future__ import annotations
 
 import functools
+import os
 
 import torch
 
@@ -175,6 +176,27 @@ def sonicmoe_experts_forward_with_lora(
     )
 
 
+def _select_nvfp4_backend(w1, w2) -> str:
+    """``fp4_cute`` (SM100 in-kernel W4A4) when available and dims align, else
+    ``dequant``. ``AXOLOTL_SONICMOE_NVFP4_BACKEND`` forces a backend."""
+    override = os.environ.get("AXOLOTL_SONICMOE_NVFP4_BACKEND")
+    if override:
+        return override
+
+    from .fp4_cute import fp4_cute_available
+    from .fp4_cute_ops import fp4_cute_dims_ok
+    from .nvfp4 import is_nvfp4_param
+
+    if (
+        is_nvfp4_param(w1)
+        and is_nvfp4_param(w2)
+        and fp4_cute_available()
+        and fp4_cute_dims_ok(w1, w2)
+    ):
+        return "fp4_cute"
+    return "dequant"
+
+
 def _sonicmoe_nvfp4_forward(
     self,
     hidden_states: torch.Tensor,
@@ -187,11 +209,12 @@ def _sonicmoe_nvfp4_forward(
     lora_w1,
     lora_w2,
 ) -> torch.Tensor:
-    """NVFP4 experts forward via the grouped dequant path (base frozen).
+    """NVFP4 experts forward via the grouped path (base frozen).
 
-    The frozen NVFP4 base is dequantized to dense; LoRA is applied as a fused
-    low-rank delta at the grouped-token level (no base-weight gradient). The
-    in-kernel block-scaled FP4 GEMM plugs in later via ``backend="fp4_cute"``.
+    LoRA is applied as a fused low-rank delta at the grouped-token level (no
+    base-weight gradient). On SM100/SM110 the base stays packed and runs the
+    in-kernel W4A4 grouped GEMM (``fp4_cute``); elsewhere it is dequantized to
+    dense per matmul (``dequant``).
     """
     from .nvfp4 import resolve_gated_activation
     from .nvfp4_lora import grouped_moe_reference_forward
@@ -228,7 +251,7 @@ def _sonicmoe_nvfp4_forward(
         lora2,
         self.num_experts,
         act=resolve_gated_activation(self.config),
-        backend="dequant",
+        backend=_select_nvfp4_backend(w1, w2),
         limit=getattr(self, "limit", None),
         concat=getattr(self, "is_concatenated", True),
         scaling1=scaling1,

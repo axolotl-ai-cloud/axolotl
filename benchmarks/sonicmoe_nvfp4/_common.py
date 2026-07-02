@@ -12,6 +12,10 @@ LIB_DIR = (
     / "src/axolotl/integrations/kernels/libs/sonicmoe"
 )
 sys.path.insert(0, str(LIB_DIR))
+# The repo's src comes first so `axolotl.*` package imports (needed by smoke 4,
+# whose targets use relative imports) resolve to this checkout, not the
+# installed wheel.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
 
 _FAILURES = []
 

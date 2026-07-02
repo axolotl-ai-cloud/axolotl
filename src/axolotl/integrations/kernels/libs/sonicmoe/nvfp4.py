@@ -13,12 +13,11 @@ Backends:
   - ``"torch"``: dense base, per-expert ``F.linear`` loop. Differentiable and
     CPU-correct (float64 for gradcheck); the reference path.
   - ``"dequant"``: dequantizes the NVFP4 base to dense per matmul, then runs the
-    same math. The GPU path when the base is packed NVFP4.
-
-Phase-2 seam (NOT implemented): ``backend="fp4_cute"`` will route to an in-kernel
-block-scaled FP4 gated + grouped GEMM (CuTe DSL) that keeps weights packed and
-fuses gate/up, activation, and down on Blackwell (sm_100+). It requires a GPU and
-plugs in by threading the same backend string through the signatures below.
+    same math. The GPU fallback when the base is packed NVFP4.
+  - ``"fp4_cute"``: in-kernel block-scaled W4A4 grouped GEMM on Blackwell
+    (SM100/SM110) via ``fp4_cute_ops``. Weights stay packed; activations are
+    NVFP4-quantized after grouping; backward dX runs per-expert chunked
+    dequant matmuls (never through the packed fp4 operand).
 
 Imports of ``sonicmoe``, ``torchao``, ``quack``, ``triton``, and CUDA-only ops
 are lazy (inside functions) so this module imports and tests cleanly on CPU with
@@ -61,6 +60,29 @@ def dequantize_expert_weight(w: torch.Tensor) -> torch.Tensor:
     if not is_nvfp4_param(w):
         return w
     return w.dequantize()
+
+
+def dequantize_expert_slice(w: torch.Tensor, e: int) -> torch.Tensor:
+    """Dense weight of expert ``e`` from an ``[E, dim1, dim2]`` stack.
+
+    Keeps backward memory at one dense expert instead of E. torchao's
+    NVFP4Tensor only implements rank-2 slicing, so the expert slice is rebuilt
+    from components; dense tensors just index.
+    """
+    if not is_nvfp4_param(w):
+        return w[e]
+    assert not getattr(w, "is_swizzled_scales", False), (
+        "swizzled NVFP4 scales unsupported (our loaders emit row-major)"
+    )
+    pts = w.per_tensor_scale
+    sliced = type(w)(
+        w.qdata[e : e + 1],
+        w.scale[e : e + 1],
+        w.block_size,
+        w.orig_dtype,
+        per_tensor_scale=pts[e : e + 1] if pts is not None else None,
+    )
+    return sliced.dequantize().squeeze(0)
 
 
 def resolve_gated_activation(config) -> str:
@@ -143,6 +165,10 @@ def _grouped_gemm(
     ``weight`` is ``[E, out, in]``; token rows in
     ``x_grouped[offsets[e - 1]:offsets[e]]`` (offsets[-1] == 0) go to expert e.
     """
+    if backend == "fp4_cute":
+        from .fp4_cute_ops import grouped_nvfp4_linear
+
+        return grouped_nvfp4_linear(x_grouped, weight, expert_offsets)
     if backend == "dequant":
         weight = dequantize_expert_weight(weight)
     elif backend != "torch":
