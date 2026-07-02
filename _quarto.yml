@@ -441,6 +441,7 @@ website:
           contents:
             - docs/getting-started.qmd
             - docs/choosing_method.qmd
+            - docs/support-matrix.qmd
             - docs/installation.qmd
             - docs/inference.qmd
             - section: "Model Guides"
