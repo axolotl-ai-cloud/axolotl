@@ -730,12 +730,166 @@ def test_swiglu_clamped_kernel_vs_torch(limit, I, seed):
     _check_rel_err("swiglu_bwd_du", got_dgu[:, I:].float(), ref_dgu[:, I:].float())
 
 
+# ===========================================================================
+# Transposed-Marlin backward dX (W4A16 grouped GEMM on requantized W^T)
+# ===========================================================================
+
+
 def _marlin_available():
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
         _train_backend,
     )
 
     return _train_backend("nvfp4") == "marlin"
+
+
+def test_marlin_dx_quantizer_roundtrip():
+    """quantize_nvfp4_blockwise -> nvfp4_dequant_bf16 reproduces the source within fp4 error."""
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
+        quantize_nvfp4_blockwise,
+    )
+
+    torch.manual_seed(0)
+    W = torch.randn(4, 128, 256, device=DEV, dtype=torch.bfloat16) * 0.1
+    pt = (W.float().abs().amax(dim=(1, 2)) / (6.0 * 448.0)).clamp_min(1e-12)
+    qd, sc = quantize_nvfp4_blockwise(W, pt)
+    Wd = nvfp4_dequant_bf16(qd, sc, pt)
+    rel = (Wd.float() - W.float()).norm() / W.float().norm()
+    assert rel < 0.12, f"roundtrip rel {rel:.4f}"
+    # negative values and zero blocks encode without NaN/garbage
+    W2 = torch.zeros_like(W)
+    qd2, sc2 = quantize_nvfp4_blockwise(W2, pt)
+    assert nvfp4_dequant_bf16(qd2, sc2, pt).abs().max() == 0
+
+
+def test_marlin_dx_gemm_matches_exact_reference():
+    """Transposed-pack marlin GEMM computes g @ W within the axis-requant tolerance."""
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
+        marlin_route,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
+        marlin_make_workspace_new,
+        marlin_moe_gemm,
+        prepare_transposed_dx_weight,
+        quantize_nvfp4_blockwise,
+    )
+
+    torch.manual_seed(1)
+    E, N, K, rows = 8, 256, 128, 64  # N = reduction (fwd out), K = dX out (fwd in)
+    W = torch.randn(E, N, K, device=DEV, dtype=torch.bfloat16) * 0.05
+    pt = (W.float().abs().amax(dim=(1, 2)) / (6.0 * 448.0)).clamp_min(1e-12)
+    qd, sc = quantize_nvfp4_blockwise(W, pt)
+    Wd = nvfp4_dequant_bf16(qd, sc, pt)  # exact forward weight
+
+    ext = load_ext()
+    dxT = prepare_transposed_dx_weight(qd, sc, pt, K, N, ext.gptq_marlin_repack)
+    ws = marlin_make_workspace_new(torch.device(DEV, torch.cuda.current_device()), 4)
+
+    Mt = E * rows
+    g = torch.randn(Mt, N, device=DEV, dtype=torch.bfloat16) * 0.1
+    m_indices = torch.arange(E, device=DEV, dtype=torch.int32).repeat_interleave(
+        rows // 64
+    )
+    si, ei, ntpp, tw = marlin_route(m_indices, Mt, g.device)
+    out = marlin_moe_gemm(
+        ext, g, dxT[0], dxT[1], dxT[2], ws, si, ei, ntpp, tw, 64, 1, False, Mt, K, N
+    )
+    ref = torch.cat([g[e * rows : (e + 1) * rows] @ Wd[e] for e in range(E)])
+    rel = (out.float() - ref.float()).norm() / ref.float().norm()
+    cos = _cos(out, ref)
+    assert cos > 0.99, f"dxT GEMM cos {cos:.4f}"
+    assert rel < 0.15, f"dxT GEMM rel {rel:.4f}"
+
+
+@pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
+def test_marlin_dx_grad_quality_and_fallback(cfg, monkeypatch):
+    """dxT ON: packs built + d_hidden cosine >= 0.99 vs the bf16 oracle.
+    dxT OFF (env kill-switch): no packs, dequant fallback still correct."""
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_moe_train,
+    )
+
+    def run(dx_mode):
+        monkeypatch.setenv("AXOLOTL_MARLIN_DX", dx_mode)
+        E, H, I = cfg["E"], cfg["H"], cfg["I"]
+        hidden, idx, wts, _, _, _, _, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
+        torch.manual_seed(0)
+        Wgu = torch.randn(E, 2 * I, H, device=DEV, dtype=torch.bfloat16) * 0.04
+        Wdn = torch.randn(E, H, I, device=DEV, dtype=torch.bfloat16) * 0.04
+        gu_k, dn_k = _fresh_nv(Wgu, Wdn)
+        pt = torch.ones(E, device=DEV)
+        Wgu_b = nvfp4_dequant_bf16(gu_k.qdata, gu_k.scale, pt)
+        Wdn_b = nvfp4_dequant_bf16(dn_k.qdata, dn_k.scale, pt)
+        Ag = Agu.detach().clone().requires_grad_(True)
+        Bg = Bgu.detach().clone().requires_grad_(True)
+        Ad = Adn.detach().clone().requires_grad_(True)
+        Bd = Bdn.detach().clone().requires_grad_(True)
+        hk = hidden.clone().requires_grad_(True)
+        cache = {}
+        out = grouped_fp4_moe_train(
+            hk,
+            idx,
+            wts,
+            gu_k,
+            dn_k,
+            (Ag, Bg, cfg["scaling"]),
+            (Ad, Bd, cfg["scaling"]),
+            cfg["limit"],
+            "nvfp4",
+            act_type=cfg["act_type"],
+            mxfp4_cache=cache,
+        )
+        out.float().pow(2).mean().backward()
+        Agr = Ag.detach().clone().requires_grad_(True)
+        Bgr = Bg.detach().clone().requires_grad_(True)
+        Adr = Ad.detach().clone().requires_grad_(True)
+        Bdr = Bd.detach().clone().requires_grad_(True)
+        hr = hidden.detach().clone().requires_grad_(True)
+        ref = _bf16_oracle(
+            hr,
+            idx,
+            wts,
+            Wgu_b,
+            Wdn_b,
+            Agr,
+            Bgr,
+            Adr,
+            Bdr,
+            cfg["act_type"],
+            cfg["limit"],
+            cfg["scaling"],
+        )
+        ref.pow(2).mean().backward()
+        built = "marlin_gate_up_dxT" in cache and "marlin_down_dxT" in cache
+        return built, _cos(hk.grad, hr.grad), _cos(Ag.grad, Agr.grad)
+
+    built_on, dh_on, dag_on = run("1")
+    assert built_on, "dxT packs not built with AXOLOTL_MARLIN_DX=1"
+    assert dh_on > 0.99, f"{cfg['name']}: dxT d_hidden cosine {dh_on:.4f}"
+    assert dag_on > 0.995, f"{cfg['name']}: dxT d_Agu cosine {dag_on:.4f}"
+
+    built_ofl, dh_ofl, dag_ofl = run("offload")
+    assert built_ofl, "dxT packs not built with AXOLOTL_MARLIN_DX=offload"
+    assert dh_ofl > 0.99, f"{cfg['name']}: offload d_hidden cosine {dh_ofl:.4f}"
+    assert dag_ofl > 0.995, f"{cfg['name']}: offload d_Agu cosine {dag_ofl:.4f}"
+
+    built_off, dh_off, _ = run("0")
+    assert not built_off, "dxT packs built despite AXOLOTL_MARLIN_DX=0"
+    assert dh_off > 0.99, f"{cfg['name']}: fallback d_hidden cosine {dh_off:.4f}"
 
 
 def test_batched_repack4_bit_exact_vs_loop():

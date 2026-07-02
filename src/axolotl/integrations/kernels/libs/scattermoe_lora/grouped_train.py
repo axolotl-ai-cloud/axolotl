@@ -351,10 +351,14 @@ class _GroupedExperts(torch.autograd.Function):
         # pt) in the cache (single-GPU only); stash them so backward skips weight_recipe() (which
         # would return the emptied NVFP4 tensor).
         ctx.bwd_marlin = None
+        ctx.marlin_dx = None
+        ctx.marlin_base = base if base[0] == "marlin" else None
         if base[0] == "marlin":
-            from .marlin_w4a16.backend import marlin_bwd_data
+            from .marlin_w4a16.backend import marlin_bwd_data, marlin_dx_data
 
             ctx.bwd_marlin = marlin_bwd_data(base)
+            # Transposed-Marlin dX packs (W4A16 grouped GEMM, no dequant) — preferred when built.
+            ctx.marlin_dx = marlin_dx_data(base)
         return dn
 
     @staticmethod
@@ -368,7 +372,12 @@ class _GroupedExperts(torch.autograd.Function):
 
         d_dn = d_dn.contiguous().to(x.dtype)
 
-        if ctx.bwd_marlin is not None:
+        if ctx.marlin_dx is not None:
+            # Transposed-Marlin dX: one W4A16 grouped GEMM per contraction, no dequant.
+            from .marlin_w4a16.backend import marlin_base_dx
+
+            dh = marlin_base_dx(ctx.marlin_base, ctx.marlin_dx, 1, d_dn, m_indices)
+        elif ctx.bwd_marlin is not None:
             # Marlin memory-free path: nv.qdata was freed after repack; backward reads from the
             # marlin qweight cache via fused Triton dequant (marlin int32 + original scales).
             # bwd_marlin = ((gu_qw, (gu_scale, gu_pt, E, N, K)), (dn_qw, (dn_scale, ...)))
@@ -400,7 +409,11 @@ class _GroupedExperts(torch.autograd.Function):
         dgu = _swiglu_bwd(dh, gu, lim, act_type).to(x.dtype)
         del dh
 
-        if ctx.bwd_marlin is not None:
+        if ctx.marlin_dx is not None:
+            from .marlin_w4a16.backend import marlin_base_dx
+
+            dx = marlin_base_dx(ctx.marlin_base, ctx.marlin_dx, 0, dgu, m_indices)
+        elif ctx.bwd_marlin is not None:
             gu_scale, gu_pt_e, _, _, _ = ctx.bwd_marlin[0][1]
             gu_marlin_raw = (gu_qw, gu_scale, gu_pt_e)
             dx = _base_dx(

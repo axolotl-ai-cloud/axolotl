@@ -361,3 +361,50 @@ def test_nvfp4_merge_aware_accepts_multilora_plugin():
         {"adapter": "multilora", "use_sonicmoe": True, "nvfp4_merge_aware": True}
     )
     assert args.nvfp4_merge_aware
+
+
+def test_moe_marlin_dx_and_fp8_dx_knobs():
+    assert KernelsArgs.model_validate({"moe_fp8_dx": True}).moe_fp8_dx is True
+    assert KernelsArgs.model_validate({"moe_fp8_dx": False}).moe_fp8_dx is False
+    assert KernelsArgs.model_validate({}).moe_fp8_dx is None
+    assert KernelsArgs.model_validate({"moe_marlin_dx": True}).moe_marlin_dx is True
+    assert KernelsArgs.model_validate({"moe_marlin_dx": False}).moe_marlin_dx is False
+    assert (
+        KernelsArgs.model_validate({"moe_marlin_dx": "offload"}).moe_marlin_dx
+        == "offload"
+    )
+    assert KernelsArgs.model_validate({}).moe_marlin_dx is None
+    with pytest.raises(pydantic.ValidationError, match="moe_marlin_dx"):
+        KernelsArgs.model_validate({"moe_marlin_dx": "stream"})
+
+
+def test_marlin_dx_runtime_wiring(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import (
+        RUNTIME,
+        configure_scattermoe_runtime,
+    )
+
+    class _C(dict):
+        get = dict.get
+
+    monkeypatch.delenv("AXOLOTL_MARLIN_DX", raising=False)
+    monkeypatch.delenv("AXOLOTL_FP8_DX", raising=False)
+    configure_scattermoe_runtime(_C({"moe_marlin_dx": True, "moe_fp8_dx": False}))
+    assert RUNTIME.marlin_dx == "resident" and RUNTIME.fp4_dx_prefer_fp8 is False
+    configure_scattermoe_runtime(_C({"moe_marlin_dx": "offload"}))
+    assert RUNTIME.marlin_dx == "offload"
+    # opt-in: unset -> off
+    configure_scattermoe_runtime(_C({}))
+    assert RUNTIME.marlin_dx is False and RUNTIME.fp4_dx_prefer_fp8 is True
+    # env fallback when the config key is unset
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
+    configure_scattermoe_runtime(_C({}))
+    assert RUNTIME.marlin_dx == "resident"
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "offload")
+    configure_scattermoe_runtime(_C({}))
+    assert RUNTIME.marlin_dx == "offload"
+    # config wins over env
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "0")
+    configure_scattermoe_runtime(_C({"moe_marlin_dx": True}))
+    assert RUNTIME.marlin_dx == "resident"
+    RUNTIME.reset()
