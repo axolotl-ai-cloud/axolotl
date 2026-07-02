@@ -355,8 +355,28 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 and "eos_token" not in self.prompter.chat_template
             ):
                 LOG.warning(
-                    f"EOS token '{self.tokenizer.eos_token}' not found in chat_template. Please check if your template/EOS token is correct."
+                    f"EOS token '{self.tokenizer.eos_token}' not found in "
+                    "chat_template; the turn terminator won't be trained with the "
+                    "default eot_tokens. Attempting to auto-detect the actual EOT "
+                    "token from the rendered template. Set `eot_tokens` explicitly "
+                    "to suppress this detection and control the behaviour."
                 )
+                detected = self._detect_eot_from_template()
+                if detected:
+                    LOG.info(
+                        f"Auto-detected EOT tokens from template rendering: {detected}. "
+                        "These will be used instead of eos_token. Set `eot_tokens` "
+                        "explicitly if you want different behaviour."
+                    )
+                    self.eot_tokens = detected
+                else:
+                    LOG.warning(
+                        "Could not auto-detect EOT token from template. "
+                        "The turn terminator will not be trained. "
+                        "Set `eot_tokens` to the template's turn-ending token "
+                        "(e.g. '<end_of_turn>' for Gemma)."
+                    )
+                    self.eot_tokens = []
             return
 
         # Create a new list to store tokens that should be kept
@@ -397,6 +417,57 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 f"eot_tokens: {self.eot_tokens}"
                 f"eos_token: {self.tokenizer.eos_token}"
             )
+
+    def _detect_eot_from_template(self) -> list[str]:
+        """
+        Render the chat template with a sentinel assistant turn and find tokens
+        that appear immediately after the assistant content but are not the EOS
+        token. These are candidates for the real end-of-turn (EOT) token.
+
+        Returns a list of detected EOT token strings (may be empty if detection
+        fails or no suitable token is found).
+        """
+        _SENTINEL = "SENTINEL_XYZ_DO_NOT_USE"
+        dummy_conv = [
+            {"role": "user", "content": "x"},
+            {"role": "assistant", "content": _SENTINEL},
+        ]
+        try:
+            full_ids = list(
+                self.tokenizer.apply_chat_template(
+                    dummy_conv,
+                    tokenize=True,
+                    add_generation_prompt=False,
+                    chat_template=self.prompter.chat_template,
+                )
+            )
+            sentinel_ids = list(
+                self.tokenizer.encode(_SENTINEL, add_special_tokens=False)
+            )
+            if not sentinel_ids:
+                return []
+
+            sentinel_len = len(sentinel_ids)
+            for start_pos in range(len(full_ids) - sentinel_len + 1):
+                if full_ids[start_pos : start_pos + sentinel_len] == sentinel_ids:
+                    eot_tokens = []
+                    for token_id in full_ids[start_pos + sentinel_len :]:
+                        if token_id == self.tokenizer.eos_token_id:
+                            break
+                        token_str = self.tokenizer.decode(
+                            [token_id], skip_special_tokens=False
+                        )
+                        # Stop at pure-whitespace tokens (e.g. '\n' after <end_of_turn>)
+                        if not token_str.strip():
+                            break
+                        eot_tokens.append(token_str)
+                    return eot_tokens
+        except Exception:  # pylint: disable=broad-except
+            LOG.debug(
+                "Failed to auto-detect EOT token from template rendering",
+                exc_info=True,
+            )
+        return []
 
     @property
     def supports_batched(self) -> bool:
