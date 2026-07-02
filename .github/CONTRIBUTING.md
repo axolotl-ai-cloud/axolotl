@@ -44,18 +44,15 @@ pytest tests/
 
 Common tasks are wrapped in the [`Makefile`](../Makefile): `make lint` (pinned ruff/mypy/bandit via pre-commit), `make format`, `make test`, `make test-e2e`. Run `make help` to list them.
 
-CI matrix: Python 3.12 / 3.14, PyTorch 2.9.1–2.12.0 ([tests.yml](workflows/tests.yml)). Tests default to `-m 'not slow'`. Mirror CI's CPU suite locally (GPU e2e runs in a separate job — see below):
-```bash
-pytest -n4 --dist loadfile --ignore=tests/e2e tests/
-```
+CI tests across a matrix of Python and PyTorch versions — see [tests.yml](workflows/tests.yml) for the current one. Tests default to `-m 'not slow'`; `make test` runs the CPU suite locally (GPU e2e runs in separate jobs — see below).
 
 ### Running e2e (GPU) tests locally
 
-Recommended for larger changes before opening a PR. Needs an NVIDIA GPU. Run in the public Docker image with your checkout mounted ([docs/docker.qmd](../docs/docker.qmd)); Blackwell GPUs (sm_120, e.g. RTX 50xx) need a cu130 tag:
+Recommended for larger changes before opening a PR. Needs an NVIDIA GPU. Run in the public Docker image with your checkout mounted ([docs/docker.qmd](../docs/docker.qmd) lists the available tags):
 
 ```bash
 docker run --gpus all --rm -it --ipc=host -v "$PWD:/workspace/axolotl" -w /workspace/axolotl \
-  axolotlai/axolotl-uv:main-latest             # Blackwell: axolotlai/axolotl-uv:main-py3.11-cu130-2.9.1
+  axolotlai/axolotl-uv:main-latest
 ```
 
 The runtime image omits test deps, so install them, then run a test:
@@ -106,7 +103,7 @@ pre-commit install        # one-time
 pre-commit run --all-files
 ```
 
-The exact ruff/mypy/bandit versions are pinned in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) — the same file CI's pre-commit job runs from, so local and CI never drift (the lint job runs on Python 3.11). `make lint` wraps the command above.
+The exact ruff/mypy/bandit versions are pinned in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) — the same file CI's pre-commit job runs from, so local and CI never drift. `make lint` wraps the command above.
 
 To run ruff outside pre-commit, pin it to the `ruff-pre-commit` rev in that file so output matches CI, e.g. `uvx ruff@<rev> check` / `uvx ruff@<rev> format`.
 

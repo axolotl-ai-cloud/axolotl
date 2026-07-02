@@ -77,29 +77,15 @@ deepspeed_configs/               # DeepSpeed JSON configs (zero2, zero3)
 docs/                            # Quarto documentation site
 ```
 
-## Linting & Tests (match CI)
+## Linting & Tests
 
-CI pins exact tool versions. **Do not run system `ruff`/`mypy`** — they drift and produce diffs CI rejects. Run pre-commit, which installs and uses the pinned versions automatically:
+The repo pins CI tool versions in `.pre-commit-config.yaml` — never run system `ruff`/`mypy`.
 
-```bash
-pre-commit install            # one-time, after setup
-pre-commit run --all-files     # ruff, ruff-format, mypy, bandit — same versions as CI
-```
+- `make lint` / `pre-commit run --all-files` — ruff, ruff-format, mypy, bandit at the CI-pinned versions
+- `make format` — auto-fix with the pinned ruff (standalone ruff: `uvx ruff@<rev>` at the `ruff-pre-commit` rev)
+- `make test` — CPU suite (pytest defaults to `-m 'not slow'`)
 
-Shortcuts: `make lint`, `make format`, `make test` wrap these pinned commands.
-
-The exact ruff/mypy/bandit versions are pinned in `.pre-commit-config.yaml` (the same file CI's pre-commit job runs from, so they can't drift; lint runs on Python **3.11**). Don't copy version numbers elsewhere — read them there.
-
-Need ruff standalone? Pin it to the `ruff-pre-commit` rev in that file: `uvx ruff@<rev> check` / `uvx ruff@<rev> format`. Ruff config (line-length 88, `select = E,F,W,C90,B,I`) lives in `pyproject.toml`.
-
-Run tests the way CI does (defaults to `-m 'not slow'`):
-
-```bash
-pytest tests/                  # quick local run
-pytest -n4 --dist loadfile tests/   # parallel, as in CI
-```
-
-Full setup, CI test matrix, running e2e (GPU) tests locally, and skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
+Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
 ## Code Conventions
 
