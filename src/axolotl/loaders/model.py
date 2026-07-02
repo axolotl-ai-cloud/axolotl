@@ -321,10 +321,13 @@ class ModelLoader:
 
     def _apply_activation_checkpointing(self):
         ao = self.cfg.activation_offloading
-        # "hidden_states" (ALST-style): HF reentrant gradient checkpointing already
-        # wraps the layers; a checkpoint monkeypatch offloads only the per-layer
-        # input (hidden_states). No manual recompute wrap needed.
         if ao == "hidden_states":
+            use_reentrant = (self.cfg.gradient_checkpointing_kwargs or {}).get(
+                "use_reentrant", False
+            )
+            if not use_reentrant:
+                return
+
             from axolotl.monkeypatch.activation_offload_checkpoint import (
                 patch_hidden_states_offload,
             )
