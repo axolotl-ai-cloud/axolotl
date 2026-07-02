@@ -41,6 +41,21 @@ def report(name, out, ref, rtol=2e-2, atol=2e-2):
     return ok
 
 
+def report_norm(name, out, ref, tol=2e-2):
+    """Relative-Frobenius comparison, for quantities where impl and oracle
+    legitimately contract in different orders (bf16 gradient accumulations):
+    elementwise bounds turn associativity noise into false failures."""
+    out_f = out.float()
+    ref_f = ref.float()
+    rel = float((out_f - ref_f).norm() / ref_f.norm().clamp(min=1e-12))
+    ok = rel <= tol
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {name}: rel_fro={rel:.4e} (tol={tol}, shape={tuple(out.shape)})")
+    if not ok:
+        _FAILURES.append(name)
+    return ok
+
+
 def check(name, ok):
     """Record a boolean check with the same PASS/FAIL bookkeeping as report()."""
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")

@@ -12,6 +12,13 @@ expert-sorted rows) to ``fp4_cute.GroupedNvfp4Gemm``:
   frozen, so weights are packed into the engine exactly once);
 - quantizes activations to NVFP4 on the expert-sorted rows (per-16 block
   scales, per-tensor scale 1.0) and builds the dQaccum-padded SFA;
+- applies the per-expert weight ``per_tensor_scale`` to the output rows after
+  the GEMM, in fp32. Folding it into the e4m3 block scales instead truncates:
+  the folded scale is ~``amax_block / 6``, which sits in e4m3's subnormal
+  range (< 2^-6) at real LLM weight magnitudes and keeps only the 3 subnormal
+  mantissa bits (up to tens of percent block error). Post-scaling keeps SFB
+  at the stored full-range scales and makes the forward weights identical to
+  the exact dequant the backward uses;
 - wraps the grouped GEMM in an autograd.Function whose backward computes dX by
   per-expert chunked dequant matmuls, never through the packed fp4 operand.
 """
@@ -56,13 +63,15 @@ _ENGINE_CACHE: dict = {}
 
 
 def _get_engine(weight) -> GroupedNvfp4Gemm:
-    qdata, scale, pts = unpack_nvfp4_components(weight)
+    qdata, scale, _ = unpack_nvfp4_components(weight)
     key = (qdata.data_ptr(), tuple(qdata.shape), qdata.device.index)
     engine = _ENGINE_CACHE.get(key)
     if engine is None:
         e, n, k2 = qdata.shape
         engine = GroupedNvfp4Gemm(n, k2 * 2, e, gated=False)
-        engine.set_weights(qdata, scale, per_tensor_scale=pts)
+        # per_tensor_scale is applied to the output rows in forward(), not
+        # folded into SFB (folding truncates in e4m3's subnormal range).
+        engine.set_weights(qdata, scale)
         _ENGINE_CACHE[key] = engine
     return engine
 
@@ -100,6 +109,11 @@ class _GroupedNvfp4Linear(torch.autograd.Function):
         engine = _get_engine(weight)
         a_q, sfa = quantize_grouped_rows(x_grouped, cu_seqlens)
         out = engine.forward(a_q, sfa, cu_seqlens)
+        pts = weight.per_tensor_scale
+        if pts is not None:
+            counts = (cu_seqlens[1:] - cu_seqlens[:-1]).long()
+            row_pts = torch.repeat_interleave(pts.view(-1), counts)
+            out = (out.float() * row_pts.unsqueeze(1)).to(x_grouped.dtype)
         ctx.save_for_backward(weight, cu_seqlens)
         return out.to(x_grouped.dtype)
 

@@ -5,17 +5,17 @@ builds them), bf16 LoRA A/B and router, ``backend="fp4_cute"`` through
 ``grouped_moe_reference_forward``. The tight oracle replicates the
 implementation in pure torch: the same activation quantization at both GEMMs
 (straight-through in backward, matching the chunked-dequant dX), fp32
-matmuls rounded to bf16 like the kernel's D store, and it reuses the
-implementation's own LoRA-delta / activation / route / combine functions so
-only the base GEMM differs. Per-tensor scales are powers of two so folding
-into the e4m3 block scales is exact and the backward's exact-scale dequant
-sees the same weights as the kernel's folded-scale forward.
+matmuls rounded to bf16 like the kernel's D store, the same post-GEMM
+per-expert ``per_tensor_scale`` row scaling (fp4_cute_ops never folds pts
+into the e4m3 block scales, so non-power-of-2 values are exact), and it
+reuses the implementation's own LoRA-delta / activation / route / combine
+functions so only the base GEMM differs.
 
 The dequant-backend diff is printed as info: it quantifies the W4A4
 activation-quant error, not a kernel bug.
 """
 
-from _common import finish, report, require_sm100
+from _common import finish, report, report_norm, require_sm100
 
 
 def main():
@@ -60,12 +60,8 @@ def main():
             per_tensor_scale=pts.view(-1, 1, 1),
         )
 
-    # powers of two: pts folding into e4m3 is exact, and every dequantized
-    # weight value (E2M1 code x e4m3 scale x pow2 pts) is exact in bf16
-    w1 = make_weight(2 * I, H, [0.5, 1.0, 2.0, 0.25, 1.0, 4.0], seed=10)
-    w2 = make_weight(H, I, [1.0, 0.5, 1.0, 2.0, 0.5, 1.0], seed=11)
-    w1_dq = w1.dequantize(torch.float32)
-    w2_dq = w2.dequantize(torch.float32)
+    w1 = make_weight(2 * I, H, [0.5, 1.3, 2.0, 0.25, 0.7, 4.0], seed=10)
+    w2 = make_weight(H, I, [1.0, 0.6, 1.1, 2.0, 0.5, 1.7], seed=11)
 
     torch.manual_seed(12)
     A1 = torch.randn(r * E, H, device=dev, dtype=dtype) * H**-0.5
@@ -109,32 +105,40 @@ def main():
         dq = dequantize_nvfp4_ref(q, s).to(x.dtype)
         return x + (dq - x).detach()
 
-    def base_gemm(x, w_dq, offsets):
+    def base_gemm(x, w, offsets):
+        # kernel view of the weights: stored scales, NO pts; then the same
+        # post-GEMM per-expert row scaling in fp32 that fp4_cute_ops applies
+        w_np = dequantize_nvfp4_ref(w.qdata, w.scale)
+        pts = w.per_tensor_scale.view(-1)
         xq = ste_quant(x)
         outs = []
         for e in range(E):
             s0, e0 = int(offsets[e]), int(offsets[e + 1])
-            outs.append((xq[s0:e0].float() @ w_dq[e].t()).to(dtype))
+            o = (xq[s0:e0].float() @ w_np[e].t()).to(dtype)
+            outs.append((o.float() * pts[e]).to(dtype))
         return torch.cat(outs, dim=0)
 
     h_o, A1_o, B1_o, A2_o, B2_o = leaves()
     xg, offsets, gidx, wg = route_and_group(h_o, top_k_index, top_k_weights, E)
-    h = base_gemm(xg, w1_dq, offsets) + _lora_delta_per_group(
+    h = base_gemm(xg, w1, offsets) + _lora_delta_per_group(
         xg, offsets, A1_o, B1_o, scaling1, E, 2 * I, H
     )
     a = gated_activation(h, "silu", concat=True)
-    y = base_gemm(a, w2_dq, offsets) + _lora_delta_per_group(
+    y = base_gemm(a, w2, offsets) + _lora_delta_per_group(
         a, offsets, A2_o, B2_o, scaling2, E, H, I
     )
     out_ref = combine_expert_outputs(y, gidx, wg, T)
     (out_ref.float() * g_out.float()).sum().backward()
 
     report("e2e lora fp4_cute: forward", out, out_ref)
-    report("e2e lora fp4_cute: d hidden", h_i.grad, h_o.grad)
-    report("e2e lora fp4_cute: d lora_A1", A1_i.grad, A1_o.grad)
-    report("e2e lora fp4_cute: d lora_B1", B1_i.grad, B1_o.grad)
-    report("e2e lora fp4_cute: d lora_A2", A2_i.grad, A2_o.grad)
-    report("e2e lora fp4_cute: d lora_B2", B2_i.grad, B2_o.grad)
+    # gradients: impl contracts dW = g^T x then maps to dA/dB; the oracle's
+    # autograd contracts g^T (x A^T). Same math, different bf16 rounding, so
+    # compare by norm (verified: both orders sit ~equally far from fp64 truth).
+    report_norm("e2e lora fp4_cute: d hidden", h_i.grad, h_o.grad)
+    report_norm("e2e lora fp4_cute: d lora_A1", A1_i.grad, A1_o.grad)
+    report_norm("e2e lora fp4_cute: d lora_B1", B1_i.grad, B1_o.grad)
+    report_norm("e2e lora fp4_cute: d lora_A2", A2_i.grad, A2_o.grad)
+    report_norm("e2e lora fp4_cute: d lora_B2", B2_i.grad, B2_o.grad)
 
     # --- dequant backend, info only: the W4A4 activation-quant error ---
     h_d, A1_d, B1_d, A2_d, B2_d = leaves()
