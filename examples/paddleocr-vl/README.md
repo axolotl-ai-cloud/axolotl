@@ -18,11 +18,6 @@ This guide shows how to fine-tune PaddleOCR-VL with Axolotl's multimodal SFT pat
     axolotl train examples/paddleocr-vl/paddleocr-vl-1_6-full-finetune.yaml
     ```
 
-    To use a local checkout of the model, replace `base_model` with your local path:
-
-    ```yaml
-    base_model: /path/to/local/PaddleOCR-VL-1.6
-    ```
 
 ## Tips
 
