@@ -799,13 +799,31 @@ class AxolotlTrainer(
             self._stored_metrics[train_eval][key]["values"].append(value)
             self._stored_metrics[train_eval][key]["reduction"] = _reduction
 
+    def _is_fsdp2_checkpoint_save_enabled(self) -> bool:
+        cfg = getattr(self, "axolotl_cfg", None)
+        cfg_fsdp2 = bool(
+            cfg
+            and str(getattr(cfg, "fsdp_version", "")) == "2"
+            and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
+        )
+        return bool(getattr(self, "is_fsdp_enabled", False) or cfg_fsdp2)
+
+    @staticmethod
+    def _is_fsdp2_quantized_param(param) -> bool:
+        quant_names = {"NVFP4Tensor", "Float8Tensor", "MXTensor"}
+        tensor = getattr(param, "_local_tensor", param)
+        return (
+            type(tensor).__name__ in quant_names
+            or type(getattr(tensor, "data", None)).__name__ in quant_names
+        )
+
     def _save_fsdp2_quantized_lora_adapter(self, model, output_dir) -> bool:
         """Save just the LoRA adapter (gathered via DTensor.full_tensor) when the run is FSDP2 + a
         quantized (NVFP4/Float8) frozen base — the case where the DCP sharded save raises
         "Failed to validate global plan". Returns True if it handled the save, else False (caller
         falls back to the normal checkpoint path). No-op for non-PEFT / non-FSDP2 / non-quantized runs.
         """
-        if not getattr(self, "is_fsdp_enabled", False):
+        if not self._is_fsdp2_checkpoint_save_enabled():
             return False
         try:
             from peft import PeftModel
@@ -815,10 +833,8 @@ class AxolotlTrainer(
                 return False
             # quantized base? (torchao tensor-subclass DTensors — what breaks DCP). Handle DTensor
             # by inspecting the local tensor.
-            quant_names = {"NVFP4Tensor", "Float8Tensor", "MXTensor"}
             has_quant = any(
-                type(getattr(p, "_local_tensor", p)).__name__ in quant_names
-                for p in unwrapped.parameters()
+                self._is_fsdp2_quantized_param(p) for p in unwrapped.parameters()
             )
             if not has_quant:
                 return False
