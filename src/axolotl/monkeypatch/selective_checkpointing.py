@@ -95,7 +95,7 @@ def _is_sliding_window_call(op: Any, args: tuple, kwargs: dict) -> bool:
     return False
 
 
-_RECOMPUTE_LAYER_TYPES = {"sliding_attention", "chunked_attention"}
+DEFAULT_RECOMPUTE_LAYER_TYPES = ("sliding_attention", "chunked_attention")
 
 
 class SacPolicyState:
@@ -168,6 +168,7 @@ def build_sac_policy(
     save: list[str] | None = None,
     state: SacPolicyState | None = None,
     save_sliding_window: bool = False,
+    recompute_layer_types: list[str] | None = None,
 ) -> Callable:
     """Build an eager SAC policy_fn: MUST_SAVE for matching ops, PREFER_RECOMPUTE otherwise.
 
@@ -179,6 +180,15 @@ def build_sac_policy(
     """
     save = save or [ATTENTION_GROUP]
     state = state or SacPolicyState()
+    skip_layer_types = (
+        set()
+        if save_sliding_window
+        else set(
+            DEFAULT_RECOMPUTE_LAYER_TYPES
+            if recompute_layer_types is None
+            else recompute_layer_types
+        )
+    )
 
     exact_ops: set = set()
     substrings: list[str] = []
@@ -201,10 +211,7 @@ def build_sac_policy(
     def policy_fn(ctx, op, *args, **kwargs):  # pylint: disable=unused-argument
         if _matches(op):
             name = _op_name(op)
-            if (
-                not save_sliding_window
-                and state.current_layer_type in _RECOMPUTE_LAYER_TYPES
-            ):
+            if state.current_layer_type in skip_layer_types:
                 if name not in state.sliding_op_names:
                     state.sliding_op_names.add(name)
                     LOG.info(
@@ -236,10 +243,13 @@ def build_sac_context_fn(
     save: list[str] | None = None,
     save_sliding_window: bool = False,
     state: SacPolicyState | None = None,
+    recompute_layer_types: list[str] | None = None,
 ) -> Callable:
     """Return a ``context_fn`` for ``torch.utils.checkpoint.checkpoint``."""
     state = state or SacPolicyState()
-    policy_fn = build_sac_policy(save, state, save_sliding_window)
+    policy_fn = build_sac_policy(
+        save, state, save_sliding_window, recompute_layer_types
+    )
 
     def context_fn():
         state.regions_seen += 1
@@ -262,7 +272,11 @@ def build_sac_context_fn(
 
 
 def apply_selective_checkpointing(
-    model, save: list[str] | None = None, save_sliding_window: bool = False
+    model,
+    save: list[str] | None = None,
+    save_sliding_window: bool = False,
+    recompute_layer_types: list[str] | None = None,
+    offload: bool = False,
 ) -> None:
     """Wrap ``model.gradient_checkpointing_enable`` to inject the SAC ``context_fn``.
 
@@ -274,9 +288,32 @@ def apply_selective_checkpointing(
         return
 
     state = SacPolicyState()
-    if not save_sliding_window:
+    skip_layer_types = (
+        set()
+        if save_sliding_window
+        else set(
+            DEFAULT_RECOMPUTE_LAYER_TYPES
+            if recompute_layer_types is None
+            else recompute_layer_types
+        )
+    )
+    if skip_layer_types:
         install_layer_type_hooks(model, state)
-    context_fn = build_sac_context_fn(save, save_sliding_window, state)
+    if offload:
+        from axolotl.monkeypatch.selective_checkpointing_offload import (
+            build_sac_offload_context_fn,
+        )
+
+        context_fn = build_sac_offload_context_fn(
+            save,
+            save_sliding_window,
+            state,
+            recompute_layer_types=recompute_layer_types,
+        )
+    else:
+        context_fn = build_sac_context_fn(
+            save, save_sliding_window, state, recompute_layer_types
+        )
     orig_enable = model.gradient_checkpointing_enable
 
     def enable_with_sac(gradient_checkpointing_kwargs=None, **kwargs):

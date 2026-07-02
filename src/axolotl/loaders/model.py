@@ -329,12 +329,13 @@ class ModelLoader:
             apply_selective_checkpointing,
         )
 
-        save = sac.get("save") if isinstance(sac, dict) else None
-        save_sliding_window = (
-            bool(sac.get("save_sliding_window")) if isinstance(sac, dict) else False
-        )
+        sac_kwargs = sac if isinstance(sac, dict) else {}
         apply_selective_checkpointing(
-            self.model, save=save, save_sliding_window=save_sliding_window
+            self.model,
+            save=sac_kwargs.get("save"),
+            save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
+            recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
+            offload=bool(sac_kwargs.get("offload")),
         )
 
     def _apply_activation_checkpointing(self):

@@ -2030,7 +2030,19 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ),
         "selective_checkpointing__save_sliding_window",
         None,
-        "In hybrid full/sliding-window attention models, also save sliding-window attention calls. Default false: SWA is cheap to recompute, so only full-attention calls are saved. Only discriminable with flash-attention (SDPA hides the window in the mask).",
+        "In hybrid full/sliding-window attention models, also save sliding-window attention calls. Default false: SWA is cheap to recompute, so only full-attention calls are saved.",
+    ),
+    (
+        ("--selective-checkpointing.recompute-layer-types",),
+        "selective_checkpointing__recompute_layer_types",
+        None,
+        "Layer types (config.layer_types values) whose attention is recomputed instead of saved. Defaults to ['sliding_attention', 'chunked_attention']. Ignored when save_sliding_window is true. Linear-attention layers never dispatch a matchable attention op, so they need no entry.",
+    ),
+    (
+        ("--selective-checkpointing.offload/--no-selective-checkpointing.offload",),
+        "selective_checkpointing__offload",
+        None,
+        "Offload saved tensors to pinned CPU memory (side-stream copies with backward prefetch) instead of keeping them on GPU.",
     ),
     (
         ("--activation-offloading",),
