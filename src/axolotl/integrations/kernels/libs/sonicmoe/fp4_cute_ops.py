@@ -127,8 +127,13 @@ class _GroupedNvfp4Linear(torch.autograd.Function):
         pts = weight.per_tensor_scale
         if pts is not None:
             counts = (cu_seqlens[1:] - cu_seqlens[:-1]).long()
-            row_pts = torch.repeat_interleave(pts.view(-1), counts)
-            out = (out.float() * row_pts.unsqueeze(1)).to(x_grouped.dtype)
+            row_pts = torch.repeat_interleave(pts.view(-1).float(), counts)
+            from .triton_nvfp4 import rowscale_inplace_triton, triton_available
+
+            if out.is_cuda and triton_available() and out.dtype == x_grouped.dtype:
+                out = rowscale_inplace_triton(out.contiguous(), row_pts)
+            else:
+                out = (out.float() * row_pts.unsqueeze(1)).to(x_grouped.dtype)
         ctx.save_for_backward(weight, cu_seqlens)
         return out.to(x_grouped.dtype)
 

@@ -204,7 +204,24 @@ def _kernels():
         offs_p = offs_sf[:, None] * 8 + tl.arange(0, 8)[None, :]
         tl.store(q_ptr + row * (K // 2) + offs_p, packed, mask=mask_sf[:, None])
 
-    return _dequant_kernel, _quant_kernel, _quant_sfa_kernel
+    @triton.jit
+    def _rowscale_kernel(
+        x_ptr,
+        pts_ptr,  # fp32 [rows]
+        N: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+    ):
+        # in-place x[r, :] = bf16(f32(x[r, :]) * pts[r]); one pass instead of
+        # float() -> mul -> to(bf16)
+        row = tl.program_id(0)
+        blk = tl.program_id(1)
+        offs = blk * BLOCK_N + tl.arange(0, BLOCK_N)
+        mask = offs < N
+        x = tl.load(x_ptr + row * N + offs, mask=mask, other=0.0).to(tl.float32)
+        p = tl.load(pts_ptr + row)
+        tl.store(x_ptr + row * N + offs, (x * p).to(x_ptr.dtype.element_ty), mask=mask)
+
+    return _dequant_kernel, _quant_kernel, _quant_sfa_kernel, _rowscale_kernel
 
 
 @functools.lru_cache(maxsize=1)
@@ -223,7 +240,7 @@ def dequant_nvfp4_triton(
     ``per_tensor_scale``, if given, has one entry per leading-dim slice (the
     ``[E, N, K]`` expert convention: entry ``e`` scales rows of slice ``e``).
     """
-    dequant_kernel, _, _ = _get_kernels()
+    dequant_kernel, _, _, _ = _get_kernels()
     if qdata.dtype != torch.uint8:
         qdata = qdata.view(torch.uint8)
     k2 = qdata.shape[-1]
@@ -255,9 +272,21 @@ def dequant_nvfp4_triton(
     return out.view(*qdata.shape[:-1], 2 * k2)
 
 
+def rowscale_inplace_triton(x: torch.Tensor, row_scale: torch.Tensor) -> torch.Tensor:
+    """In-place ``x[r] = x.dtype(f32(x[r]) * row_scale[r])``; bit-identical to
+    ``(x.float() * row_scale[:, None]).to(x.dtype)`` in one pass."""
+    _, _, _, rowscale_kernel = _get_kernels()
+    assert x.dim() == 2 and x.is_contiguous()
+    rows, n = x.shape
+    BLOCK_N = 1024
+    grid = (rows, (n + BLOCK_N - 1) // BLOCK_N)
+    rowscale_kernel[grid](x, row_scale.contiguous(), N=n, BLOCK_N=BLOCK_N)
+    return x
+
+
 def quantize_nvfp4_triton(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """``x [T, K]`` (K % 16 == 0) -> ``(packed u8 [T, K/2], scale e4m3 [T, K/16])``."""
-    _, quant_kernel, _ = _get_kernels()
+    _, quant_kernel, _, _ = _get_kernels()
     assert x.dim() == 2 and x.shape[-1] % 16 == 0
     t, k = x.shape
     sf_k = k // 16
@@ -281,7 +310,7 @@ def quantize_rows_fused_sfa_triton(
     """
     from .sf_layout import SF_TILE_ROWS, varlen_padded_num_row_tiles
 
-    _, _, quant_sfa_kernel = _get_kernels()
+    _, _, quant_sfa_kernel, _ = _get_kernels()
     assert x.dim() == 2 and x.shape[-1] % 16 == 0
     t, k = x.shape
     sf_k = k // 16
