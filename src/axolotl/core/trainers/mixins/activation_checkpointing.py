@@ -74,7 +74,17 @@ class ActivationOffloadingMixin(Trainer):
             use_streams = self.args.activation_offloading != "legacy"
             if use_streams:
                 _patch_trl_offload_current_stream()
-            if isinstance(self.model, PeftModel):
+            if self.args.activation_offloading == "hidden_states":
+                from axolotl.monkeypatch.checkpoint_activation_offload import (
+                    get_checkpoint_hidden_states_offloading_ctx_manager,
+                )
+
+                self.activation_offload_context = (
+                    get_checkpoint_hidden_states_offloading_ctx_manager(
+                        use_streams=use_streams
+                    )
+                )
+            elif isinstance(self.model, PeftModel):
                 self.activation_offload_context = get_lora_act_offloading_ctx_manager(
                     self.model, use_streams=use_streams
                 )
