@@ -82,7 +82,9 @@ fused_attn_kernel: true
 ```
 
 - **Compile-safe:** the kernel is wrapped as a `torch.library.triton_op` and traces under `torch.compile(fullgraph=True)`.
-- **Hardware note:** on sm_120 (Blackwell) combining with `torch_compile: true` is a net win; on sm_86 (Ampere consumer) `torch_compile: true` currently regresses the surrounding Inductor-generated kernels — keep compile off there.
+- **Baseline perf:** stacking `torch_compile: true` is a steady-state win that scales with arch — ~−14% to −16.5% on sm_86 (vanilla RTX 3090 / 3090 Ti), ~−19% on sm_120 (Blackwell/RTX 5090), measured on Qwen3-8B + LoRA r=16 + torch 2.11. Also trims peak memory ~2%.
+- **Compile cold-start:** adds 5–15 min on the first step.
+- **Tuning (`torch_compile_options`):** optionally sets allowlisted `torch._inductor.config` flags (disallowed keys are rejected at validation; see the config reference for the list). Payoff is arch-specific: the only measured win is `max_autotune_gemm: true` on sm_120 with ≥32 GB (~−2.6% over plain compile) — the same flag *regresses* ~+13% on sm_86, and every other flag tested was within noise. `triton.cudagraphs` needs static shapes and is incompatible with `sample_packing`.
 
 ### Expert Kernels
 
