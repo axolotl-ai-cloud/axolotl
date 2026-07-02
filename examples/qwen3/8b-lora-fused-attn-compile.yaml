@@ -25,14 +25,10 @@ fused_attn_kernel: true
 
 torch_compile: true
 torch_compile_mode: max-autotune
-# torch_compile_options exposes opt-in torch._inductor.config flags; payoff is arch-specific
-# (see docs/optimizations.qmd). Plain torch_compile above is the portable win — on sm_86 no flag
-# beats it. On sm_120 (Blackwell) + >=32 GB, max_autotune_gemm is the one measured gain; uncomment there:
+# Optional inductor tuning; payoff is arch-specific (see docs/optimizations.qmd).
+# Uncomment on sm_120 (Blackwell) + >=32 GB only — regresses on sm_86:
 # torch_compile_options:
-#   max_autotune_gemm: true              # ~-2.6% over plain compile on sm_120 + >=32 GB; REGRESSES ~+13% on sm_86
-#   # coordinate_descent_tuning: true    # within seed noise on every card tested (also coordinate_descent_check_all_directions)
-#   # triton.cudagraphs: true            # needs static shapes; INCOMPATIBLE with sample_packing above
-#   # shape_padding / epilogue_fusion    # torch 2.11 defaults (no-op); fx_graph_cache / assume_aligned_inputs / comprehensive_padding / decompose_mem_bound_mm all wash
+#   max_autotune_gemm: true
 
 gradient_accumulation_steps: 4
 micro_batch_size: 1
