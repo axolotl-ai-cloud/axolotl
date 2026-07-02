@@ -10,6 +10,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 
 @triton.jit
 def _swiglu_fwd_kernel(
@@ -99,6 +101,7 @@ def _swiglu_bwd_kernel(
     tl.store(up_ptr + offsets, grad_up, mask=mask)  # grad wrt up
 
 
+@register_kernel_op("swiglu_fwd")
 def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """
     SwiGLU forward pass. Computes SwiGLU activation: `x * sigmoid(x) * up`, where
@@ -127,6 +130,32 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     return out
 
 
+@swiglu_forward.register_fake
+def _(gate, up):
+    return torch.empty_like(gate)
+
+
+@register_kernel_op("swiglu_bwd", mutates_args=("grad_output", "gate", "up"))
+def _swiglu_bwd_op(
+    grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
+) -> None:
+    n_elements = grad_output.numel()
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta["block_size"]),)  # noqa: E731
+    _swiglu_bwd_kernel[grid](
+        grad_out_ptr=grad_output,
+        gate_ptr=gate,
+        up_ptr=up,
+        n_elements=n_elements,
+        block_size=1024,
+    )
+
+
+@_swiglu_bwd_op.register_fake
+def _(grad_output, gate, up):
+    return None
+
+
 def swiglu_backward(
     grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -144,19 +173,8 @@ def swiglu_backward(
             - Gradient with respect to gate (`df`)
             - Gradient with respect to up-projection (`de`)
     """
-    n_elements = grad_output.numel()
-
-    grid = lambda meta: (triton.cdiv(n_elements, meta["block_size"]),)  # noqa: E731
-    _swiglu_bwd_kernel[grid](
-        grad_out_ptr=grad_output,
-        gate_ptr=gate,
-        up_ptr=up,
-        n_elements=n_elements,
-        block_size=1024,
-    )
-
-    # After kernel execution, tensors contain:
-    # grad_output: h (forward output)
-    # gate: grad_gate (grad wrt gate)
-    # up: grad_up (grad wrt up)
+    # the op mutates in place: grad_output <- h, gate <- grad_gate, up <- grad_up.
+    # Returning the mutated inputs must happen here — a custom op's outputs may
+    # not alias its inputs.
+    _swiglu_bwd_op(grad_output, gate, up)
     return grad_output, gate, up
