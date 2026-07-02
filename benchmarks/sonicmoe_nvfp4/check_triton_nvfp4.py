@@ -71,6 +71,29 @@ def main():
         and int((s_ref2.view(torch.uint8) != s_tri2.view(torch.uint8)).sum()) == 0,
     )
 
+    # fused quant+SFA vs quant -> build_varlen_sfa, ragged offsets incl. empties
+    from axolotl.integrations.kernels.libs.sonicmoe.sf_layout import build_varlen_sfa
+    from axolotl.integrations.kernels.libs.sonicmoe.triton_nvfp4 import (
+        quantize_rows_fused_sfa_triton,
+    )
+
+    for t, kk in ((4096, 2048), (1000, 768)):
+        xr = torch.randn(t, kk, device=dev, dtype=dtype)
+        n_seg = 128
+        cuts = torch.sort(torch.randint(0, t + 1, (n_seg - 1,), device=dev)).values
+        cu = torch.cat([cuts.new_zeros(1), cuts, cuts.new_full((1,), t)]).to(
+            torch.int32
+        )
+        qf, sfaf = quantize_rows_fused_sfa_triton(xr, cu)
+        qs, ss = quantize_nvfp4_triton(xr)
+        sfar = build_varlen_sfa(ss, cu)
+        check(
+            f"fused quant+sfa byte-exact (T={t}, K={kk})",
+            int((qf != qs).sum()) == 0
+            and sfaf.shape == sfar.shape
+            and int((sfaf.view(torch.uint8) != sfar.view(torch.uint8)).sum()) == 0,
+        )
+
     def timed(fn, iters=20):
         for _ in range(3):
             fn()

@@ -143,7 +143,68 @@ def _kernels():
         offs_p = offs_sf[:, None] * 8 + tl.arange(0, 8)[None, :]
         tl.store(q_ptr + row * (K // 2) + offs_p, packed, mask=mask_sf[:, None])
 
-    return _dequant_kernel, _quant_kernel
+    @triton.jit
+    def _quant_sfa_kernel(
+        x_ptr,
+        q_ptr,
+        sfa_ptr,
+        dest_ptr,  # [T] padded destination row per source row
+        K: tl.constexpr,
+        SF_K: tl.constexpr,
+        RK: tl.constexpr,  # ceil(SF_K / 4), 512-byte tiles per row-tile
+        BLOCK_SF: tl.constexpr,
+    ):
+        # identical quantization math to _quant_kernel, but the e4m3 scales are
+        # stored straight into the dQaccum-padded swizzled SFA layout: padded
+        # row p, sf col c -> tile (p//128, c//4), byte (p%32)*16 + ((p//32)%4)*4 + c%4
+        row = tl.program_id(0)
+        blk = tl.program_id(1)
+        offs_sf = blk * BLOCK_SF + tl.arange(0, BLOCK_SF)
+        mask_sf = offs_sf < SF_K
+        offs_v = (
+            offs_sf[:, None, None] * 16
+            + tl.arange(0, 8)[None, :, None] * 2
+            + tl.arange(0, 2)[None, None, :]
+        )
+        x = tl.load(
+            x_ptr + row * K + offs_v, mask=mask_sf[:, None, None], other=0.0
+        ).to(tl.float32)
+
+        amax = tl.max(tl.max(tl.abs(x), axis=2), axis=1)
+        scale = tl.minimum(amax / 6.0, 448.0)
+        scale_e4m3 = scale.to(tl.float8e4nv)
+
+        p = tl.load(dest_ptr + row)
+        addr = (
+            (p // 128) * (RK * 512)
+            + (offs_sf // 4) * 512
+            + (p % 32) * 16
+            + ((p // 32) % 4) * 4
+            + (offs_sf % 4)
+        )
+        tl.store(sfa_ptr + addr, scale_e4m3.to(tl.uint8, bitcast=True), mask=mask_sf)
+
+        sdec = scale_e4m3.to(tl.float32)
+        sdec = tl.where(sdec == 0, 1.0, sdec)
+        q = tl.math.div_rn(x, tl.broadcast_to(sdec[:, None, None], x.shape))
+
+        a = tl.abs(q)
+        idx = (
+            (a > 0.25).to(tl.int32)
+            + (a > 0.75).to(tl.int32)
+            + (a > 1.25).to(tl.int32)
+            + (a > 1.75).to(tl.int32)
+            + (a > 2.5).to(tl.int32)
+            + (a > 3.5).to(tl.int32)
+            + (a > 5.0).to(tl.int32)
+        )
+        code = tl.where(q < 0, idx + 8, idx)
+        weight = tl.where(tl.arange(0, 2)[None, None, :] == 0, 1, 16)
+        packed = tl.sum(code * weight, axis=2).to(tl.uint8)
+        offs_p = offs_sf[:, None] * 8 + tl.arange(0, 8)[None, :]
+        tl.store(q_ptr + row * (K // 2) + offs_p, packed, mask=mask_sf[:, None])
+
+    return _dequant_kernel, _quant_kernel, _quant_sfa_kernel
 
 
 @functools.lru_cache(maxsize=1)
@@ -196,7 +257,7 @@ def dequant_nvfp4_triton(
 
 def quantize_nvfp4_triton(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """``x [T, K]`` (K % 16 == 0) -> ``(packed u8 [T, K/2], scale e4m3 [T, K/16])``."""
-    _, quant_kernel = _get_kernels()
+    _, quant_kernel, _ = _get_kernels()
     assert x.dim() == 2 and x.shape[-1] % 16 == 0
     t, k = x.shape
     sf_k = k // 16
@@ -207,3 +268,44 @@ def quantize_nvfp4_triton(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     grid = (t, (sf_k + BLOCK_SF - 1) // BLOCK_SF)
     quant_kernel[grid](x, packed, scale_u8, K=k, SF_K=sf_k, BLOCK_SF=BLOCK_SF)
     return packed, scale_u8.view(torch.float8_e4m3fn)
+
+
+def quantize_rows_fused_sfa_triton(
+    x: torch.Tensor, cu_seqlens: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize expert-sorted rows AND write the dQaccum-padded swizzled SFA in
+    one kernel: ``(packed u8 [T, K/2], sfa e4m3 (1, rm, rk, 512))``.
+
+    Byte-identical to ``quantize_nvfp4_triton`` + ``sf_layout.build_varlen_sfa``,
+    minus the scatter and the pack/permute chain. Requires ``(K/16) % 4 == 0``.
+    """
+    from .sf_layout import SF_TILE_ROWS, varlen_padded_num_row_tiles
+
+    _, _, quant_sfa_kernel = _get_kernels()
+    assert x.dim() == 2 and x.shape[-1] % 16 == 0
+    t, k = x.shape
+    sf_k = k // 16
+    assert sf_k % 4 == 0
+    rk = sf_k // 4
+    num_experts = cu_seqlens.numel() - 1
+
+    cu = cu_seqlens.to(device=x.device, dtype=torch.long)
+    starts = cu[:-1]
+    counts = cu[1:] - starts
+    seg = torch.repeat_interleave(torch.arange(num_experts, device=x.device), counts)
+    dest = (
+        (starts[seg] // SF_TILE_ROWS + seg) * SF_TILE_ROWS
+        + torch.arange(t, device=x.device)
+        - starts[seg]
+    ).to(torch.int32)
+
+    total_rm = varlen_padded_num_row_tiles(t, num_experts)
+    x = x.contiguous()
+    packed = torch.empty(t, k // 2, dtype=torch.uint8, device=x.device)
+    sfa = torch.zeros(1, total_rm, rk, 512, dtype=torch.uint8, device=x.device)
+    BLOCK_SF = 64
+    grid = (t, (sf_k + BLOCK_SF - 1) // BLOCK_SF)
+    quant_sfa_kernel[grid](
+        x, packed, sfa, dest, K=k, SF_K=sf_k, RK=rk, BLOCK_SF=BLOCK_SF
+    )
+    return packed, sfa.view(torch.float8_e4m3fn)
