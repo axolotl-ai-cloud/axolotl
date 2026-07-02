@@ -370,7 +370,12 @@ def route_and_group(
     order = torch.sort(flat_expert, stable=True).indices
     gather_token_idx = token_ids[order]
     weights_grouped = flat_weight[order]
-    x_grouped = hidden_states.index_select(0, gather_token_idx)
+    if hidden_states.is_cuda:
+        # autograd's backward for index_select is an atomic index_add; this
+        # gathers in both directions instead (see _CombineByGather).
+        x_grouped = _GatherRows.apply(hidden_states, gather_token_idx)
+    else:
+        x_grouped = hidden_states.index_select(0, gather_token_idx)
 
     counts = torch.bincount(flat_expert, minlength=num_experts)
     expert_offsets = torch.zeros(num_experts + 1, dtype=torch.long, device=device)
@@ -379,13 +384,79 @@ def route_and_group(
     return x_grouped, expert_offsets, gather_token_idx, weights_grouped
 
 
+class _GatherRows(torch.autograd.Function):
+    """``hidden[idx]`` whose backward gathers instead of scatter-adding.
+
+    Every token id appears exactly K times in ``idx``, so ``dh[t]`` is the sum
+    of the K grad rows a stable sort of ``idx`` places contiguously.
+    """
+
+    @staticmethod
+    def forward(ctx, hidden, gather_token_idx):
+        ctx.save_for_backward(gather_token_idx)
+        ctx.num_tokens = hidden.shape[0]
+        return hidden.index_select(0, gather_token_idx)
+
+    @staticmethod
+    def backward(ctx, grad):
+        (gidx,) = ctx.saved_tensors
+        t = ctx.num_tokens
+        k = gidx.shape[0] // t
+        by_token = torch.sort(gidx, stable=True).indices
+        dh = (
+            grad.index_select(0, by_token)
+            .view(t, k, grad.shape[-1])
+            .sum(1, dtype=torch.float32)
+            .to(grad.dtype)
+        )
+        return dh, None
+
+
+class _CombineByGather(torch.autograd.Function):
+    """Router-weighted combine with gathers in BOTH directions (no atomics).
+
+    Each token receives exactly ``K = rows / num_tokens`` contributions, so a
+    stable sort of the token ids groups each token's rows contiguously and the
+    combine is a gather + fixed-order sum; the backward w.r.t. the grouped rows
+    is a plain gather of ``dout`` by token id. ``index_add`` (the scatter the
+    naive version needs, and what autograd emits for ``index_select``) is
+    atomic-bound and dominated the layer profile.
+    """
+
+    @staticmethod
+    def forward(ctx, y_grouped, gather_token_idx, weights_grouped, num_tokens):
+        k = y_grouped.shape[0] // num_tokens
+        by_token = torch.sort(gather_token_idx, stable=True).indices
+        scaled = y_grouped * weights_grouped.unsqueeze(-1)
+        out = (
+            scaled.index_select(0, by_token)
+            .view(num_tokens, k, y_grouped.shape[-1])
+            .sum(1, dtype=torch.float32)
+            .to(y_grouped.dtype)
+        )
+        ctx.save_for_backward(y_grouped, gather_token_idx, weights_grouped)
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        y_grouped, gather_token_idx, weights_grouped = ctx.saved_tensors
+        g = grad_out.index_select(0, gather_token_idx)
+        dy = g * weights_grouped.unsqueeze(-1)
+        dw = (g.float() * y_grouped.float()).sum(-1).to(weights_grouped.dtype)
+        return dy, None, dw, None
+
+
 def combine_expert_outputs(
     y_grouped: torch.Tensor,
     gather_token_idx: torch.Tensor,
     weights_grouped: torch.Tensor,
     num_tokens: int,
 ) -> torch.Tensor:
-    """Scale expert-sorted rows by router weights and scatter-add to ``[T, H]``."""
+    """Scale expert-sorted rows by router weights and combine to ``[T, H]``."""
+    if y_grouped.is_cuda and y_grouped.shape[0] % max(num_tokens, 1) == 0:
+        return _CombineByGather.apply(
+            y_grouped, gather_token_idx, weights_grouped, num_tokens
+        )
     out = y_grouped.new_zeros((num_tokens, y_grouped.shape[-1]))
     scaled = y_grouped * weights_grouped.unsqueeze(-1)
     return out.index_add(0, gather_token_idx, scaled)
