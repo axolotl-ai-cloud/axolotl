@@ -78,7 +78,12 @@ def _get_engine(weight) -> GroupedNvfp4Gemm:
 
 def quantize_grouped_rows(x_grouped: torch.Tensor, cu_seqlens: torch.Tensor) -> tuple:
     """NVFP4-quantize expert-sorted rows: ``(a_packed [T, K/2] u8, sfa blocked)``."""
-    a_q, a_s, _ = quantize_nvfp4_ref(x_grouped)
+    from .triton_nvfp4 import quantize_nvfp4_triton, triton_available
+
+    if x_grouped.is_cuda and triton_available():
+        a_q, a_s = quantize_nvfp4_triton(x_grouped)
+    else:
+        a_q, a_s, _ = quantize_nvfp4_ref(x_grouped)
     return a_q, build_varlen_sfa(a_s, cu_seqlens)
 
 

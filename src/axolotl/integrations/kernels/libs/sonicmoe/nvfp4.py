@@ -59,6 +59,15 @@ def dequantize_expert_weight(w: torch.Tensor) -> torch.Tensor:
     """
     if not is_nvfp4_param(w):
         return w
+    if w.qdata.is_cuda:
+        from .triton_nvfp4 import dequant_nvfp4_triton, triton_available
+
+        if triton_available():
+            # torchao's dequantize() gathers a value table per element (slow
+            # enough to dominate the fp4_cute backward); this is one kernel.
+            return dequant_nvfp4_triton(
+                w.qdata, w.scale, w.per_tensor_scale, w.orig_dtype
+            )
     return w.dequantize()
 
 
