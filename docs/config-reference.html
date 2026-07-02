@@ -1727,8 +1727,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-907"><a href="#cb1-907" aria-hidden="true" tabindex="-1"></a><span class="co"># Additional kwargs to pass to the trainer for gradient checkpointing</span></span>
 <span id="cb1-908"><a href="#cb1-908" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
 <span id="cb1-909"><a href="#cb1-909" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to offload activations. Options: true/false, 'legacy', 'disk' (TRL offloader),</span></span>
-<span id="cb1-910"><a href="#cb1-910" aria-hidden="true" tabindex="-1"></a><span class="co"># or 'hidden_states' (ALST-style: gradient checkpointing that offloads only the per-</span></span>
-<span id="cb1-911"><a href="#cb1-911" aria-hidden="true" tabindex="-1"></a><span class="co"># layer input to CPU, overlapped with compute; best for long-context full finetuning).</span></span>
+<span id="cb1-910"><a href="#cb1-910" aria-hidden="true" tabindex="-1"></a><span class="co"># or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style</span></span>
+<span id="cb1-911"><a href="#cb1-911" aria-hidden="true" tabindex="-1"></a><span class="co"># when gradient_checkpointing_kwargs.use_reentrant is true).</span></span>
 <span id="cb1-912"><a href="#cb1-912" aria-hidden="true" tabindex="-1"></a><span class="fu">activation_offloading</span><span class="kw">:</span><span class="at"> Literal['legacy', 'disk', 'hidden_states'] | bool | None = False</span></span>
 <span id="cb1-913"><a href="#cb1-913" aria-hidden="true" tabindex="-1"></a><span class="co"># Offload model layer parameters to CPU during forward, prefetch back during backward.</span></span>
 <span id="cb1-914"><a href="#cb1-914" aria-hidden="true" tabindex="-1"></a><span class="fu">layer_offloading</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>

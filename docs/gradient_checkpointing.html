@@ -837,11 +837,14 @@ to overlap the communications and computations when offloading.</p>
 <p>The <code>activation_offloading: legacy</code> naively offloads activations to CPU and without additional optimizations.</p>
 <p>For resource constrained environments with limited CPU memory, <code>activation_offloading: disk</code> offloads
 activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.</p>
-<p>The <code>activation_offloading: hidden_states</code> mode (ALST-style) is gradient checkpointing that offloads only
-the per-layer input (the checkpoint’s <code>hidden_states</code>) to CPU — one tensor per layer rather than every
-activation — overlapped with compute on a side CUDA stream. It replaces torch’s reentrant checkpoint
-(so <code>gradient_checkpointing_kwargs.use_reentrant</code> is forced to <code>true</code>) and is framework-agnostic
-(works under FSDP2, DTensor-aware for sequence/context parallelism).</p>
+<p>The <code>activation_offloading: hidden_states</code> mode keeps gradient checkpointing enabled and moves only
+the decoder-layer checkpoint input (<code>hidden_states</code>) to CPU. With the default
+<code>gradient_checkpointing_kwargs.use_reentrant: false</code>, Axolotl uses Transformers’ non-reentrant
+checkpointing plus a saved-tensor hook that only offloads marked hidden-state tensors. Other saved
+tensors stay on GPU, which avoids the CPU memory and bandwidth cost of full activation offload.</p>
+<p>Set <code>gradient_checkpointing_kwargs.use_reentrant: true</code> to use the older ALST-style implementation.
+That path patches torch’s reentrant <code>CheckpointFunction</code> and is DTensor-aware for sequence/context
+parallelism.</p>
 </section>
 <section id="choosing-a-mode" class="level3">
 <h3 class="anchored" data-anchor-id="choosing-a-mode">Choosing a mode</h3>
@@ -876,13 +879,14 @@ activation — overlapped with compute on a side CUDA stream. It replaces torch�
 </tr>
 <tr class="even">
 <td><code>hidden_states</code></td>
-<td>Per-layer input only → CPU, stream-overlapped</td>
-<td>Long-context <strong>full-parameter</strong> finetuning; reaches contexts where plain gradient checkpointing OOMs</td>
+<td>Per-layer checkpoint input only → CPU, stream-overlapped</td>
+<td>Long-context training where full activation offload is CPU-memory or bandwidth-bound</td>
 </tr>
 </tbody>
 </table>
-<p><code>hidden_states</code> is designed for full-parameter training. With LoRA/QLoRA the frozen base can break reentrant
-checkpointing, so prefer <code>activation_offloading: true</code> for adapters.</p>
+<p><code>hidden_states</code> uses gradient checkpointing and recomputes each layer during backward. With LoRA/QLoRA,
+<code>activation_offloading: true</code> can still be faster because adapter activations are smaller and pure offload
+avoids the recompute cost.</p>
 </section>
 <section id="enabling-layer-offloading" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-layer-offloading">Enabling Layer Offloading</h3>

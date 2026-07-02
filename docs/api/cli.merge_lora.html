@@ -835,7 +835,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.cli.merge_lora.do_cli" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.merge_lora.do_cli">do_cli</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.merge_lora.do_cli(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.merge_lora.do_cli(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), dequant<span class="op">=</span><span class="va">False</span>, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Parses <code>axolotl</code> config, CLI args, and calls <code>do_merge_lora</code>. Note that various
 config values will be overwritten to allow the LoRA merge logic to work as expected
 (<code>load_in_8bit=False</code>, <code>load_in4bit=False</code>, <code>flash_attention=False</code>, etc.).</p>
@@ -843,10 +843,10 @@ config values will be overwritten to allow the LoRA merge logic to work as expec
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 7%">
-<col style="width: 18%">
-<col style="width: 55%">
-<col style="width: 18%">
+<col style="width: 4%">
+<col style="width: 10%">
+<col style="width: 74%">
+<col style="width: 10%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -864,6 +864,12 @@ config values will be overwritten to allow the LoRA merge logic to work as expec
 <td><code>Path('examples/')</code></td>
 </tr>
 <tr class="even">
+<td>dequant</td>
+<td>bool</td>
+<td>If set (<code>--dequant</code>), dequantize a quantized base to bf16 in the merged checkpoint. Default keeps the base’s quantized dtypes (fp8/nvfp4) intact.</td>
+<td><code>False</code></td>
+</tr>
+<tr class="odd">
 <td>kwargs</td>
 <td></td>
 <td>Additional keyword arguments to override config file values.</td>

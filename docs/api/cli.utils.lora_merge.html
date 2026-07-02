@@ -912,9 +912,16 @@ runtime model key names used by the LoRA adapter.</p>
 <span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    nf4_blocksize<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    nf4_double_quant<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    trust_remote_code<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    dequant<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Memory-efficient LoRA merging that processes shards individually
 without loading the full model into memory.</p>
+<section id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips" class="level4 doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">
+<h4 class="doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips anchored" data-anchor-id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">if True, dequantize every quantized weight and write a bf16 checkpoint (strips</h4>
+<p>quantization_config). Default False = FORMAT-PRESERVING: LoRA-targeted quantized weights are
+dequantized, the delta folded, then re-quantized back to the SAME format (fp8 stays fp8,
+nvfp4 stays nvfp4), so a large quantized base does not double in size.</p>
+</section>
 <section id="parameters-1" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
 <table class="caption-top table">
