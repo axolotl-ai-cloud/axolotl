@@ -128,6 +128,28 @@ dion_momentum: 0.95
 lr: 0.00001  # learning rate for embeddings and parameters that fallback to AdamW
 ```
 
+### sinkgd
+
+SinkGD (Gradient Multi-Normalization) is a **stateless** optimizer: 2D linear weight
+matrices are updated via the SR-Sinkhorn procedure (alternating row/column L2
+normalization of the raw gradient, no momentum or variance state), while embeddings,
+the LM head, and 1D params (norms/biases) fall back to AdamW. The AdamW fallback uses
+torchao's 8-bit optimizer base, so optimizer-state memory is very small (~87% less than
+8-bit AdamW on an 8B full finetune, since the ~87% of params that are 2D linear carry
+zero optimizer state).
+
+Requires PyTorch >= 2.5.1 (relies on torchao's low-bit optimizer base and `torch.compile`).
+
+Paper: [https://arxiv.org/abs/2502.06742](https://arxiv.org/abs/2502.06742)
+
+```yaml
+optimizer: sinkgd
+learning_rate: 0.001
+optim_args:
+  sinkhorn_iters: 5      # number of SR-Sinkhorn row/column normalization iterations
+  sinkgd_lr_scale: 0.05  # α scale applied to linear-layer updates
+```
+
 ### q_galore_adamw8bit
 
 Q-GaLore extends [GaLore](https://arxiv.org/abs/2403.03507) with two extra ideas:

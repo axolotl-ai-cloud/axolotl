@@ -64,8 +64,9 @@ def _find_lora_ops_module() -> ModuleType | None:
     return None
 
 
-# Substrings identifying the kernel-bearing modules to scan in sys.modules. Covers both
-# the HF-`kernels` hash-suffixed scattermoe copies and the normally-imported dsv4 kernels.
+# Substrings identifying the kernel-bearing modules to scan in sys.modules. Covers the HF-`kernels`
+# hash-suffixed scattermoe copies, the normally-imported dsv4 kernels, and the glm_dsa (GLM-5.2
+# sparse-MLA) kernels.
 _KERNEL_MODULE_HINTS: tuple[str, ...] = (
     "lora_ops",
     "scattermoe_lora.kernels",
@@ -77,6 +78,10 @@ _KERNEL_MODULE_HINTS: tuple[str, ...] = (
     "libs.dsv4.gated_pool",
     "libs.dsv4.indexer",
     ".dsv4.",
+    "libs.glm_dsa.attention_topk",
+    "libs.glm_dsa.attention_mla_absorb",
+    "libs.glm_dsa.indexer",
+    ".glm_dsa.",
 )
 
 
@@ -153,7 +158,10 @@ def collect_autotune_configs() -> list[dict[str, Any]]:
                     {
                         "kernel": kname,
                         "module": modname.rsplit(".", 1)[-1],
-                        "module_path": modname,
+                        # Fully-qualified dotted module name (NOT a filesystem path). Named
+                        # `module_fqn` rather than `module_path` so the telemetry PII redactor
+                        # (which scrubs any key containing "path") doesn't blank this safe value.
+                        "module_fqn": modname,
                         "key": _label_key(obj, key_tuple),
                         "config": _config_to_dict(config),
                     }
