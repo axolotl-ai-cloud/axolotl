@@ -325,12 +325,14 @@ class ModelLoader:
             use_reentrant = (self.cfg.gradient_checkpointing_kwargs or {}).get(
                 "use_reentrant", False
             )
-            if use_reentrant:
-                from axolotl.monkeypatch.activation_offload_checkpoint import (
-                    patch_hidden_states_offload,
-                )
+            if not use_reentrant:
+                return
 
-                patch_hidden_states_offload()
+            from axolotl.monkeypatch.activation_offload_checkpoint import (
+                patch_hidden_states_offload,
+            )
+
+            patch_hidden_states_offload()
             return
         # TRL offloader is adapter-aware:
         #   - LoRA/QLoRA: offload *replaces* recompute (pure offload is leaner/faster;

@@ -235,7 +235,6 @@ class AxolotlTrainingMixins:
         },
     )
 
-    # Non-reentrant hidden_states reaches the trainer; reentrant uses the loader patch.
     activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
         field(
             default=None,

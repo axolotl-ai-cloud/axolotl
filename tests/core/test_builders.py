@@ -18,13 +18,13 @@ def _gradient_checkpointing_kwargs(cfg):
 
 
 class TestGradientCheckpointingConfig:
-    def test_hidden_states_offload_defaults_to_non_reentrant_trainer_path(self):
+    def test_hidden_states_offload_uses_non_reentrant_trainer_path(self):
         training_args_kwargs = _gradient_checkpointing_kwargs(
             SimpleNamespace(
                 layer_offloading=False,
                 activation_offloading="hidden_states",
                 gradient_checkpointing=True,
-                gradient_checkpointing_kwargs=None,
+                gradient_checkpointing_kwargs={"use_reentrant": False},
             )
         )
 

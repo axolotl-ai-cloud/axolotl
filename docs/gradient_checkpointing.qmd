@@ -28,16 +28,15 @@ The `activation_offloading: legacy` naively offloads activations to CPU and with
 For resource constrained environments with limited CPU memory, `activation_offloading: disk` offloads
 activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.
 
-The `activation_offloading: hidden_states` mode is gradient checkpointing that offloads only
-the per-layer input (the checkpoint's `hidden_states`) to CPU — one tensor per layer rather than every
-activation — overlapped with compute on a side CUDA stream. By default it keeps Transformers'
-normal non-reentrant checkpointing path (`use_reentrant: false`) and filters the saved-tensor hook
-to tensors marked at decoder-layer checkpoint entry, so non-checkpointed intermediates, masks,
-and output-head tensors stay on GPU.
+The `activation_offloading: hidden_states` mode keeps gradient checkpointing enabled and moves only
+the decoder-layer checkpoint input (`hidden_states`) to CPU. With the default
+`gradient_checkpointing_kwargs.use_reentrant: false`, Axolotl uses Transformers' non-reentrant
+checkpointing plus a saved-tensor hook that only offloads marked hidden-state tensors. Other saved
+tensors stay on GPU, which avoids the CPU memory and bandwidth cost of full activation offload.
 
-Set `gradient_checkpointing_kwargs.use_reentrant: true` to use the ALST-style reentrant
-implementation instead. That path replaces torch's reentrant `CheckpointFunction` and is
-DTensor-aware for sequence/context parallelism.
+Set `gradient_checkpointing_kwargs.use_reentrant: true` to use the older ALST-style implementation.
+That path patches torch's reentrant `CheckpointFunction` and is DTensor-aware for sequence/context
+parallelism.
 
 ### Choosing a mode
 

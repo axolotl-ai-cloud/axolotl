@@ -573,9 +573,8 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.activation_offloading == "hidden_states":
             training_args_kwargs["gradient_checkpointing"] = True
             gc_kwargs = dict(self.cfg.gradient_checkpointing_kwargs or {})
-            gc_kwargs.setdefault("use_reentrant", False)
             training_args_kwargs["gradient_checkpointing_kwargs"] = gc_kwargs
-            if not gc_kwargs["use_reentrant"]:
+            if gc_kwargs["use_reentrant"] is False:
                 training_args_kwargs["activation_offloading"] = (
                     self.cfg.activation_offloading
                 )

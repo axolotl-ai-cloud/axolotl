@@ -1451,8 +1451,7 @@ class ModelCompatibilityValidationMixin:
         if self.activation_offloading != "hidden_states":
             return self
         gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
-        use_reentrant = gc_kwargs.get("use_reentrant", False)
-        gc_kwargs["use_reentrant"] = use_reentrant
+        use_reentrant = gc_kwargs.setdefault("use_reentrant", False)
         self.gradient_checkpointing_kwargs = gc_kwargs
         if use_reentrant and self.unfrozen_parameters:
             raise ValueError(
