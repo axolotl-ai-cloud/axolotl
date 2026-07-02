@@ -325,7 +325,7 @@ def test_fused_spectral_matches_compiled(target):
         opt = SinkGD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
                      lr=1e-2, sinkgd_lr_scale=0.5, sinkgd_spectral_norm=True,
                      sinkgd_spectral_norm_iters=2, sinkgd_spectral_target=target,
-                     sinkgd_fused_kernel=fused)
+                     sinkgd_fused_kernel=fused, sinkgd_fused_min_numel=0)
         torch.manual_seed(7)  # same u init both paths
         for _ in range(3):
             w.grad = g.clone()
@@ -345,7 +345,8 @@ def test_fused_md_matches_compiled_and_stays_on_sphere():
     for fused in (False, True):
         w = torch.nn.Parameter(w0.clone())
         opt = SinkGDMD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
-                       lr=1e-2, sinkgd_lr_scale=0.5, sinkgd_fused_kernel=fused)
+                       lr=1e-2, sinkgd_lr_scale=0.5, sinkgd_fused_kernel=fused,
+                       sinkgd_fused_min_numel=0)
         torch.manual_seed(7)
         for _ in range(3):
             w.grad = g.clone()
@@ -370,5 +371,22 @@ def test_fused_falls_back_for_stochastic_round():
 
 
 def test_pop_kwargs_casts_fused_flag():
-    out = _pop_sinkgd_extra_kwargs({"sinkgd_fused_kernel": "true"})
+    out = _pop_sinkgd_extra_kwargs(
+        {"sinkgd_fused_kernel": "true", "sinkgd_fused_min_numel": "1024"}
+    )
     assert out["sinkgd_fused_kernel"] is True
+    assert out["sinkgd_fused_min_numel"] == 1024
+
+
+@requires_cuda
+def test_fused_epilogue_size_gate():
+    """Single-device spec/md fused routing is size-gated (small matrices lose to the eager
+    epilogue overhead); base mode is not."""
+    w = torch.nn.Parameter(torch.randn(32, 16, device="cuda", dtype=torch.bfloat16))
+    opt = SinkGD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}], lr=1e-2,
+                 sinkgd_fused_kernel=True, sinkgd_spectral_norm=True)
+    assert opt._fused_ok(w) and not opt._fused_ok(w, epilogue=True)
+    opt0 = SinkGD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}], lr=1e-2,
+                  sinkgd_fused_kernel=True, sinkgd_spectral_norm=True,
+                  sinkgd_fused_min_numel=0)
+    assert opt0._fused_ok(w, epilogue=True)
