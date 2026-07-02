@@ -71,17 +71,31 @@ def build_varlen_sfa(
     """
     assert scale_rows.dim() == 2
     total_m, sf_k = scale_rows.shape
-    cu = cu_seqlens.tolist()
-    num_experts = len(cu) - 1
-    assert cu[0] == 0 and cu[-1] == total_m, (
-        f"bad cu_seqlens {cu} for total_m={total_m}"
-    )
+    num_experts = cu_seqlens.numel() - 1
     total_padded_rm = varlen_padded_num_row_tiles(total_m, num_experts)
     padded = torch.zeros(
         total_padded_rm * SF_TILE_ROWS,
         sf_k,
         dtype=scale_rows.dtype,
         device=scale_rows.device,
+    )
+
+    if scale_rows.is_cuda:
+        # One scatter instead of a host-synced per-expert copy loop.
+        cu = cu_seqlens.to(device=scale_rows.device, dtype=torch.long)
+        starts = cu[:-1]
+        counts = cu[1:] - starts
+        seg = torch.repeat_interleave(
+            torch.arange(num_experts, device=scale_rows.device), counts
+        )
+        row_in_seg = torch.arange(total_m, device=scale_rows.device) - starts[seg]
+        dest = (starts[seg] // SF_TILE_ROWS + seg) * SF_TILE_ROWS + row_in_seg
+        padded[dest] = scale_rows
+        return pack_scales_blocked(padded.unsqueeze(0))
+
+    cu = cu_seqlens.tolist()
+    assert cu[0] == 0 and cu[-1] == total_m, (
+        f"bad cu_seqlens {cu} for total_m={total_m}"
     )
     for i in range(num_experts):
         start, end = cu[i], cu[i + 1]

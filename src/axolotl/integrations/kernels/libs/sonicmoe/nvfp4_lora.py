@@ -40,6 +40,26 @@ from .nvfp4 import (
 )
 
 
+def _use_grouped_mm(x: torch.Tensor) -> bool:
+    """``torch._grouped_mm`` replaces the per-expert Python loops on sm90+.
+
+    The loops cost one host sync per expert plus E small kernel launches; the
+    grouped GEMM is a single launch with ragged (unaligned, possibly empty)
+    segments, which matches expert token counts exactly.
+    """
+    return (
+        x.is_cuda
+        and x.dtype == torch.bfloat16
+        and hasattr(torch, "_grouped_mm")
+        and torch.cuda.get_device_capability(x.device)[0] >= 9
+    )
+
+
+def _grouped_offs(expert_offsets: torch.Tensor, device) -> torch.Tensor:
+    """``[E]`` int32 cumulative segment ends from ``[E+1]`` offsets."""
+    return expert_offsets[1:].to(device=device, dtype=torch.int32)
+
+
 def _lora_delta_per_group(
     x_grouped: torch.Tensor,
     expert_offsets: torch.Tensor,
@@ -58,6 +78,13 @@ def _lora_delta_per_group(
     r = lora_A.shape[0] // E
     A_3d = lora_A.reshape(E, r, dim2)  # [E, r, dim2]
     B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1)  # [E, dim1, r]
+
+    if _use_grouped_mm(x_grouped) and lora_A.dtype == x_grouped.dtype:
+        offs = _grouped_offs(expert_offsets, x_grouped.device)
+        z = torch._grouped_mm(x_grouped, A_3d.transpose(-2, -1), offs=offs)
+        # B_3d's permute leaves no unit-stride dim; grouped GEMM needs one.
+        B_c = B_3d.contiguous()
+        return scaling * torch._grouped_mm(z, B_c.transpose(-2, -1), offs=offs)
 
     out = x_grouped.new_zeros((x_grouped.shape[0], dim1))
     for e in range(E):
@@ -90,6 +117,26 @@ def _lora_backward_per_group(
     r = lora_A.shape[0] // E
     A_3d = lora_A.reshape(E, r, dim2)  # [E, r, dim2]
     B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1)  # [E, dim1, r]
+
+    if _use_grouped_mm(grad_h) and lora_A.dtype == grad_h.dtype:
+        offs = _grouped_offs(expert_offsets, grad_h.device)
+        # B_3d's permute leaves no unit-stride dim; grouped GEMM needs one.
+        B_3d = B_3d.contiguous()
+        # dz_e = g_e @ B_e; z_e = x_e @ A_e^T (forward intermediate, recomputed —
+        # cheaper than saving a [T, r] per GEMM through gradient checkpointing).
+        dz = torch._grouped_mm(grad_h, B_3d, offs=offs)  # [T, r]
+        z = torch._grouped_mm(x_grouped, A_3d.transpose(-2, -1), offs=offs)
+        # dx_e = g_e @ W_e + scaling * dz_e @ A_e (base dequantized whole: one
+        # kernel + one grouped GEMM instead of E slice-dequant matmul pairs).
+        w_dense = dequantize_expert_weight(base_weight).to(grad_h.dtype)
+        dx = torch._grouped_mm(grad_h, w_dense, offs=offs)
+        dx += scaling * torch._grouped_mm(dz, A_3d, offs=offs)
+        # dA_e = scaling * dz_e^T @ x_e; dB_e = scaling * g_e^T @ z_e
+        d_A_3d = scaling * torch._grouped_mm(dz.transpose(0, 1), x_grouped, offs=offs)
+        d_B_3d = scaling * torch._grouped_mm(grad_h.transpose(0, 1), z, offs=offs)
+        d_lora_A = d_A_3d.reshape(E * r, dim2)
+        d_lora_B = d_B_3d.permute(1, 2, 0).reshape(dim1, E * r)
+        return dx, d_lora_A, d_lora_B
 
     dx = torch.zeros_like(x_grouped)
     d_A_3d = grad_h.new_zeros((E, r, dim2))

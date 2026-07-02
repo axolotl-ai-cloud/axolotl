@@ -174,6 +174,15 @@ def _grouped_gemm(
     elif backend != "torch":
         raise ValueError(f"unknown backend: {backend!r}")
 
+    from .nvfp4_lora import _use_grouped_mm
+
+    if _use_grouped_mm(x_grouped) and weight.dtype == x_grouped.dtype:
+        return torch._grouped_mm(
+            x_grouped,
+            weight.transpose(-2, -1),
+            offs=expert_offsets.to(torch.int32),
+        )
+
     E = weight.shape[0]
     outs = []
     start = 0

@@ -85,7 +85,14 @@ def quantize_grouped_rows(x_grouped: torch.Tensor, cu_seqlens: torch.Tensor) -> 
 def grouped_dx_dequant(
     grad_h: torch.Tensor, weight, cu_seqlens: torch.Tensor
 ) -> torch.Tensor:
-    """``dx[start:end] = g_e @ W_e`` dequantizing one expert slice at a time."""
+    """``dx[start:end] = g_e @ W_e``, never through the packed fp4 operand."""
+    from .nvfp4 import dequantize_expert_weight
+    from .nvfp4_lora import _use_grouped_mm
+
+    if _use_grouped_mm(grad_h):
+        w_dense = dequantize_expert_weight(weight).to(grad_h.dtype)
+        return torch._grouped_mm(grad_h, w_dense, offs=cu_seqlens[1:].to(torch.int32))
+
     cu = cu_seqlens.tolist()
     dx = grad_h.new_empty((grad_h.shape[0], weight.shape[-1]))
     for e in range(len(cu) - 1):
