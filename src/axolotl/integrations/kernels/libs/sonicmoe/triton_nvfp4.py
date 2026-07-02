@@ -223,7 +223,7 @@ def dequant_nvfp4_triton(
     ``per_tensor_scale``, if given, has one entry per leading-dim slice (the
     ``[E, N, K]`` expert convention: entry ``e`` scales rows of slice ``e``).
     """
-    dequant_kernel, _ = _get_kernels()
+    dequant_kernel, _, _ = _get_kernels()
     if qdata.dtype != torch.uint8:
         qdata = qdata.view(torch.uint8)
     k2 = qdata.shape[-1]
