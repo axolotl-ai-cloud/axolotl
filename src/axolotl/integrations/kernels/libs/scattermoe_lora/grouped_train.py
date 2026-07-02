@@ -26,6 +26,7 @@ LOG = get_logger(__name__)
 
 _BACKEND_LOGGED = False  # one-time log of the resolved base-GEMM backend
 
+
 # thin compat wrapper over the centralized runtime module. grouped_backend (cfg.moe_grouped_backend):
 # None/"auto" = capability auto-select; marlin|cutlass|deepgemm = force if available (else warn +
 # auto); "dequant" = force the chunked-dequant fallback.
@@ -358,6 +359,7 @@ class _GroupedExperts(torch.autograd.Function):
         tile = (
             x.size(0) // m_indices.numel()
         )  # routing pad granularity (128 cutlass, 64 marlin)
+
         d_dn = d_dn.contiguous().to(x.dtype)
 
         if ctx.bwd_marlin is not None:
@@ -519,9 +521,19 @@ def grouped_fp4_moe_train(
     else:
         tile = TILE
     flat = idx.reshape(-1)
+    # The DeepEP local path tags remote-routed slots with -1; drop them (bincount/grouping require
+    # expert ids >= 0, and a dropped slot must contribute nothing to its token — correct, since that
+    # (token, slot) is handled on the rank that owns the expert). No-op for the non-EP path (no -1).
+    _tok = torch.arange(N, device=dev).repeat_interleave(idx.size(1))
+    _wf = wts.reshape(-1)
+    if (flat < 0).any():
+        keep = flat >= 0
+        flat = flat[keep]
+        _tok = _tok[keep]
+        _wf = _wf[keep]
     order = flat.argsort()
-    rep = torch.arange(N, device=dev).repeat_interleave(idx.size(1))[order]
-    wflat = wts.reshape(-1)[order]
+    rep = _tok[order]
+    wflat = _wf[order]
     exp_sorted = flat[order]
     counts = torch.bincount(flat, minlength=E)
     ptiles = (counts + tile - 1) // tile

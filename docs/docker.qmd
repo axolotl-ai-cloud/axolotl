@@ -10,13 +10,23 @@ This section describes the different Docker images that are released by AxolotlA
 [Docker Hub](https://hub.docker.com/u/axolotlai).
 
 ::: {.callout-important}
-### Images are now uv-based
+### uv is now the default
 
 All images now use [uv](https://docs.astral.sh/uv/) with a relocatable venv (`/workspace/axolotl-venv`)
-instead of Miniconda + pip. The plain names (e.g. `axolotlai/axolotl`) and the `-uv` names
-(e.g. `axolotlai/axolotl-uv`) now serve the **same uv image**. The `-uv` names are kept as aliases, so
-existing references to either keep working. Tags follow the same format for both.
+instead of Miniconda + pip. The plain image names are the defaults, and the `-uv` names are kept as
+aliases where they exist. Tags follow the same format for both names.
 :::
+
+## Supported variants
+
+Current Axolotl runtime images target Python 3.12 on CUDA 13.0 with PyTorch
+2.11.0 and 2.12.0. The floating `main-latest` tags point at the Python 3.12 /
+CUDA 13.0 / PyTorch 2.12.0 build. Bare release tags, such as `0.16.1`, point
+at the same latest matrix entry for that release.
+
+Base images may include additional uv-based tags for build compatibility, and
+older tags may remain available on Docker Hub for reproducibility. New runtime
+builds are centered on the CUDA 13.0 matrix.
 
 ## Base
 
@@ -25,11 +35,12 @@ It includes python, torch, git, git-lfs, awscli, pydantic, and more.
 
 #### Image
 
-```
-axolotlai/axolotl-base
-```
+| Image | Notes |
+|-------|-------|
+| `axolotlai/axolotl-base` | Default |
+| `axolotlai/axolotl-base-uv` | Alias |
 
-Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-base)
+Links: [base](https://hub.docker.com/r/axolotlai/axolotl-base), [base-uv](https://hub.docker.com/r/axolotlai/axolotl-base-uv)
 
 #### Tags format
 
@@ -39,10 +50,8 @@ main-base-py{python_version}-cu{cuda_version}-{pytorch_version}
 
 Tags examples:
 
-- `main-base-py3.11-cu128-2.9.1`
-- `main-base-py3.12-cu128-2.10.0`
-- `main-base-py3.12-cu130-2.9.1`
-- `main-base-py3.12-cu130-2.10.0`
+- `main-base-py3.12-cu130-2.11.0`
+- `main-base-py3.12-cu130-2.12.0`
 
 ## Main
 
@@ -50,11 +59,12 @@ The main image is the image that is used to run Axolotl. It is based on the `axo
 
 #### Image
 
-```
-axolotlai/axolotl
-```
+| Image | Notes |
+|-------|-------|
+| `axolotlai/axolotl` | Default |
+| `axolotlai/axolotl-uv` | Alias |
 
-Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl)
+Links: [axolotl](https://hub.docker.com/r/axolotlai/axolotl), [axolotl-uv](https://hub.docker.com/r/axolotlai/axolotl-uv)
 
 #### Tags format {#sec-main-tags}
 
@@ -70,6 +80,8 @@ main-latest
 
 # tagged release
 {version}
+{version}-py{python_version}-cu{cuda_version}-{pytorch_version}
+{version}-latest
 ```
 
 :::{.callout-tip}
@@ -80,13 +92,13 @@ There may be some extra tags appended to the image, like `-vllm` which installs 
 
 Tags examples:
 
-- `main-py3.11-cu128-2.9.1`
-- `main-py3.12-cu128-2.10.0`
-- `main-py3.12-cu130-2.9.1`
-- `main-py3.12-cu130-2.10.0`
+- `main-py3.12-cu130-2.11.0`
+- `main-py3.12-cu130-2.12.0`
 - `main-latest`
-- `main-20260315-py3.11-cu128-2.9.1`
+- `main-20260315-py3.12-cu130-2.12.0`
 - `0.16.1`
+- `0.16.1-py3.12-cu130-2.12.0`
+- `0.16.1-latest`
 
 ## Cloud
 
@@ -100,13 +112,14 @@ Jupyter lab is run by default. Set `JUPYTER_DISABLE=1` in the environment variab
 
 #### Image
 
-```
-axolotlai/axolotl-cloud
-```
+| Image | Notes |
+|-------|-------|
+| `axolotlai/axolotl-cloud` | Default |
+| `axolotlai/axolotl-cloud-uv` | Alias |
 
-Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-cloud)
+Links: [cloud](https://hub.docker.com/r/axolotlai/axolotl-cloud), [cloud-uv](https://hub.docker.com/r/axolotlai/axolotl-cloud-uv)
 
-#### Tags format
+#### Tags format {#sec-cloud-tags}
 
 This uses the same tags as the [`main` image](#sec-main-tags).
 
@@ -120,7 +133,10 @@ This uses the same tags as the [`main` image](#sec-main-tags).
 
 :::{.callout-tip}
 
-We recommend mounting volumes to `/workspace/data` for data persistence. `/workspace/axolotl` contains the source code and is ephemeral.
+We recommend mounting volumes to `/workspace/data` for data persistence. The
+cloud images set `HF_HOME` to `/workspace/data/huggingface-cache` so HuggingFace
+Hub and dataset caches are kept under the same persistent mount. `/workspace/axolotl`
+contains the source code and is ephemeral.
 
 :::
 
@@ -141,7 +157,8 @@ Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-cloud-term)
 
 :::{.callout-note}
 
-The naming may be a bit confusing as it has `-term` appended to the end.
+The naming may be a bit confusing as it has `-term` appended to the end. This
+image is uv-based and does not have a separate `-uv` alias.
 
 :::
 

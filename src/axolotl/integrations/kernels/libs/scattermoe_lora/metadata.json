@@ -1,0 +1,13 @@
+{
+  "id": "scattermoe-lora",
+  "name": "scattermoe-lora",
+  "version": 1,
+  "license": "Apache-2.0",
+  "upstream": null,
+  "source": null,
+  "python-depends": [],
+  "backend": {
+    "type": "cuda",
+    "archs": []
+  }
+}

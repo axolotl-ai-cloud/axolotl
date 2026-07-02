@@ -40,6 +40,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "glm",
     "glm4",
     "glm4_moe",
+    "glm_moe_dsa",
     "smollm3",
     "granite",
     "granitemoe",
