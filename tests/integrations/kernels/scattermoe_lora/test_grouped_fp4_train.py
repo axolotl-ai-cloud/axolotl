@@ -728,3 +728,46 @@ def test_swiglu_clamped_kernel_vs_torch(limit, I, seed):
     got_dgu = swiglu_bwd(gu, dh, limit=limit, act_type="silu")
     _check_rel_err("swiglu_bwd_dg", got_dgu[:, :I].float(), ref_dgu[:, :I].float())
     _check_rel_err("swiglu_bwd_du", got_dgu[:, I:].float(), ref_dgu[:, I:].float())
+
+
+def _marlin_available():
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        _train_backend,
+    )
+
+    return _train_backend("nvfp4") == "marlin"
+
+
+def test_batched_repack4_bit_exact_vs_loop():
+    """One-launch 4-bit batched repack == the per-expert gptq_marlin_repack loop, bit-for-bit."""
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.batched_repack import (
+        batched_repack4,
+    )
+
+    torch.manual_seed(5)
+    ext = load_ext()
+    perm = torch.empty(0, dtype=torch.int, device=DEV)
+    for E, size_n, size_k in ((3, 128, 256), (2, 192, 64)):
+        qdata = torch.randint(
+            0, 256, (E, size_n, size_k // 2), dtype=torch.uint8, device=DEV
+        )
+        ref = torch.stack(
+            [
+                ext.gptq_marlin_repack(
+                    qdata[i].view(torch.int32).T.contiguous(),
+                    perm,
+                    size_k,
+                    size_n,
+                    4,
+                    False,
+                )
+                for i in range(E)
+            ],
+            0,
+        )
+        got = batched_repack4(qdata, size_n, size_k)
+        assert got.shape == ref.shape, (got.shape, ref.shape)
+        assert torch.equal(got, ref), f"repack4 mismatch at {(E, size_n, size_k)}"

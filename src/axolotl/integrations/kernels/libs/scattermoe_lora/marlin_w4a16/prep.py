@@ -153,14 +153,12 @@ def prepare_nvfp4_weight_for_marlin(
     """qdata[E,size_n,size_k//2] uint8, block_scale[E,size_n,size_k//16] e4m3,
     global_scale scalar/[E] fp32. Returns (qw[E,...] int32, scales[E,...] fp8, gscale fp32)."""
     E = qdata.size(0)
-    dev = qdata.device
-    perm = torch.empty(0, dtype=torch.int, device=dev)
 
-    qw = []
-    for i in range(E):
-        qw_i = qdata[i].view(torch.int32).T.contiguous()  # [size_k//8, size_n]
-        qw.append(repack_fn(qw_i, perm, size_k, size_n, 4, False))
-    qw = torch.stack(qw, 0)
+    # one-launch batched repack (bit-identical to the per-expert gptq_marlin_repack loop; also
+    # 2x lower build transient — no per-expert transpose copies, no stack duplication)
+    from .batched_repack import batched_repack4
+
+    qw = batched_repack4(qdata, size_n, size_k)
 
     # Shared scale_factor across experts, then per-expert permute+process.
     scales_p = block_scale.to(param_dtype)
