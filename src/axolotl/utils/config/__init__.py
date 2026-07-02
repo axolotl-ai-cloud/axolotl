@@ -30,6 +30,10 @@ from axolotl.utils.schemas.datasets import (
     SFTDataset,
     SyntheticDataset,
 )
+from axolotl.utils.schemas.enums import (
+    SPARSE_ATTN_IMPLS,
+    SPARSE_ATTN_SUPPORTED_MODELS,
+)
 
 LOG = get_logger(__name__)
 
@@ -286,6 +290,18 @@ def normalize_config(cfg):
         )
 
     cfg.model_config_type = model_config.model_type
+
+    # MLA guard for nsa/fsa: validate_config()
+    if (
+        cfg.attn_implementation in SPARSE_ATTN_IMPLS
+        and cfg.model_config_type not in SPARSE_ATTN_SUPPORTED_MODELS
+    ):
+        raise ValueError(
+            f"attn_implementation={cfg.attn_implementation!r} is only supported "
+            f"for MLA models "
+            f"({', '.join(sorted(SPARSE_ATTN_SUPPORTED_MODELS))}); got "
+            f"model_config_type={cfg.model_config_type!r}."
+        )
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
     if callable(getattr(model_config, "get_text_config", None)):

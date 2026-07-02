@@ -111,8 +111,15 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "xformers",
         "sage",
         "fp8",
+        "nsa",  # Native Sparse Attention (arxiv 2502.11089)
+        "fsa",  # Flash Sparse Attention (arxiv 2508.18224)
     }
 )
+
+# Sparse-attention backends applied as a model-specific module swap (not a
+# generic attention-function registration). Restricted to MLA architectures.
+SPARSE_ATTN_IMPLS = frozenset({"nsa", "fsa"})
+SPARSE_ATTN_SUPPORTED_MODELS = frozenset({"kimi_linear", "deepseek_v2", "deepseek_v3"})
 
 # Legacy boolean flags → canonical attn_implementation. Priority: specific before generic.
 LEGACY_ATTN_FLAG_TO_IMPL = {
@@ -142,6 +149,8 @@ ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
         "kernels-community/flash-attn2",
         "kernels-community/flash-attn3",
         "kernels-community/sage-attention",
+        "nsa",
+        "fsa",
     }
 )
 
