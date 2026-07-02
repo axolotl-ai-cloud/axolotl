@@ -154,6 +154,60 @@ def single_param_sinkgd_specnorm(
         p.copy_(p_f32)
 
 
+def single_param_sinkgd_md(
+    p: Tensor,
+    grad: Tensor,
+    u: Tensor,
+    lr: Tensor,
+    iters: int,
+    eps: float,
+    target_norm: Tensor,
+    sn_iters: int,
+    stochastic_round: bool,
+) -> None:
+    """MD-sphere update (the A+B "unit" variant): SR-Sinkhorn -> spectral-normalize the
+    direction to unit operator norm scaled to the sphere radius -> step -> project the weight
+    back onto the Frobenius sphere ``||W||_F = target_norm``.
+
+    ``target_norm`` is the per-matrix sphere radius (anchored at the enable-time ``||W||_F``,
+    so the weight magnitude is preserved). Gains are dropped (Phase 3: SinkGD already balances
+    per-row/col, so the MD gains are redundant). Batched over leading (expert) dims; the sphere
+    projection and Frobenius are per-matrix.
+    """
+    m, n = grad.shape[-2], grad.shape[-1]
+    sqrt_n = n**0.5
+    sqrt_m = m**0.5
+    x = grad
+    for _ in range(iters):
+        rn = torch.linalg.vector_norm(x, dim=-1, keepdim=True, dtype=torch.float32)
+        x = x * (sqrt_n / rn.clamp_min(eps)).to(x.dtype)
+        cn = torch.linalg.vector_norm(x, dim=-2, keepdim=True, dtype=torch.float32)
+        x = x * (sqrt_m / cn.clamp_min(eps)).to(x.dtype)
+
+    xf = x.float()
+    uu = u
+    sigma = None
+    for _ in range(sn_iters):
+        v = torch.matmul(xf, uu.unsqueeze(-1)).squeeze(-1)
+        v = v / torch.linalg.vector_norm(v, dim=-1, keepdim=True).clamp_min(eps)
+        uu = torch.matmul(xf.transpose(-1, -2), v.unsqueeze(-1)).squeeze(-1)
+        sigma = torch.linalg.vector_norm(uu, dim=-1, keepdim=True).clamp_min(eps)
+        uu = uu / sigma
+    u.copy_(uu)
+    sigma_b = sigma.reshape(*sigma.shape[:-1], 1, 1)
+    tn = target_norm.reshape(*target_norm.shape, 1, 1)
+    xf = xf / sigma_b * tn  # direction at unit operator norm, scaled to the sphere radius
+
+    p_f32 = p.float() - lr * xf
+    fro = torch.linalg.vector_norm(p_f32, dim=(-2, -1), keepdim=True).clamp_min(eps)
+    p_f32 = p_f32 / fro * tn  # Frobenius sphere projection
+
+    if stochastic_round:
+        p.copy_(_fp32_to_bf16_sr(p_f32))
+    else:
+        p.copy_(p_f32)
+
+
 class SinkGD(_AdamBase):
     """SinkGD optimizer with an 8-bit AdamW fallback for non-matrix parameters.
 
@@ -334,6 +388,49 @@ class SinkGD(_AdamBase):
         return loss
 
 
+class SinkGDMD(SinkGD):
+    """Experimental A+B variant: SinkGD direction on a Frobenius weight-sphere (MD, "unit").
+
+    Each SinkGD-routed 2D weight is kept on a fixed-Frobenius sphere (``||W||_F`` anchored at
+    enable time); the SR-Sinkhorn update is spectral-normalized to unit operator norm, applied,
+    and the weight is reprojected onto the sphere. No gains (redundant with SinkGD's balancing).
+    In width sweeps this bounds the deep-layer activation blow-up most tightly, but its optimal
+    LR is width-dependent (``lr_opt ~ d_model**-0.6``) and its optimum is narrow, so it is
+    OFF by default and gated behind ``sinkgd_md_sphere: true``. Non-matrix params still use the
+    8-bit AdamW fallback.
+    """
+
+    def __init__(self, params, **kwargs) -> None:
+        super().__init__(params, **kwargs)
+        self._compiled_md = torch.compile(
+            single_param_sinkgd_md, fullgraph=True, dynamic=False
+        )
+
+    def _md_target_norm(self, p: Tensor, state: dict) -> Tensor:
+        tn = state.get("md_target_norm")
+        if tn is None:
+            tn = torch.linalg.vector_norm(p.detach().float(), dim=(-2, -1))
+            state["md_target_norm"] = tn
+        return tn
+
+    def _sinkgd_update(self, p: Tensor, grad: Tensor, group: dict, lr: Tensor) -> None:
+        alpha = self._alpha_eff(p)
+        state = self.state[p]
+        tn = self._md_target_norm(p, state)
+        u = self._specnorm_u(p, p.shape[-1], p.shape[:-2])
+        self._compiled_md(
+            p.detach(),
+            grad,
+            u,
+            lr * alpha,
+            self.sinkhorn_iters,
+            self.sinkgd_eps,
+            tn,
+            self.sinkgd_spectral_norm_iters,
+            self.bf16_stochastic_round and p.dtype is torch.bfloat16,
+        )
+
+
 def _sinkgd_param_groups(opt_model, weight_decay):
     """Split params: 2D/3D weight matrices -> SR-Sinkhorn; everything else -> AdamW.
 
@@ -420,8 +517,10 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
         optimizer_kwargs.pop(
             "device_mesh", None
         )  # ignored by the single-device variant
+        md_sphere = _as_bool(optimizer_kwargs.pop("sinkgd_md_sphere", False))
+        cls = SinkGDMD if md_sphere else SinkGD
 
-        return SinkGD(
+        return cls(
             _sinkgd_param_groups(opt_model, weight_decay),
             lr=lr,
             betas=betas,
@@ -491,6 +590,23 @@ def _sinkgd_apply_update(p, x, lr, weight_decay, stochastic_round):
 # product (summed across the shard group by an eager all-reduce). Iterating the Gram matrix
 # (rather than U, Uᵀ separately) needs only a single vector all-reduce per step, and the
 # implicit v-normalization cancels. Batched over leading (expert) dims.
+def _md_local_wprime(p_local, x_spec, lr):
+    # W' = W - lr*U_spec (local shard) + its per-matrix local squared-Frobenius partial.
+    pf = p_local.float() - lr * x_spec.float()
+    return pf, (pf * pf).sum(dim=(-2, -1), keepdim=True)
+
+
+def _md_sphere_apply(p_local, pf, frosq, tn, eps, stochastic_round):
+    # project the local shard back onto the Frobenius sphere ||W||_F = tn (frosq is global).
+    fro = frosq.sqrt().clamp_min(eps)
+    tn_b = tn.reshape(*tn.shape, 1, 1)
+    pf = pf / fro * tn_b
+    if stochastic_round:
+        p_local.copy_(_fp32_to_bf16_sr(pf))
+    else:
+        p_local.copy_(pf)
+
+
 def _specnorm_gram_rows(xf, u):
     # rows sharded: local part of (Xᵀ X) u = X_localᵀ (X_local u). xf[...,M_local,N], u[...,N].
     w = torch.matmul(xf, u.unsqueeze(-1)).squeeze(-1)
@@ -538,11 +654,15 @@ class DistSinkGD(SinkGD):
             st["specnorm_u"] = u
         return u
 
-    def _dist_spectral_rescale(self, x, p, device, shard_dim, global_M, global_N):
+    def _dist_spectral_rescale(self, x, p, device, shard_dim, global_M, global_N,
+                               op_target=None):
         """Estimate ``||U||_2`` on the matrix-dim-sharded update via power iteration on the
         Gram matrix — one ``[N]`` (rows sharded) or ``[M]`` (cols sharded) vector all-reduce
         per iter, the same shape and ``dp_shard`` group as the Sinkhorn norm reduce, matrix
-        never gathered — then rescale the local shard to the target operator norm."""
+        never gathered — then rescale the local shard to the target operator norm.
+
+        ``op_target`` overrides the target with a per-matrix tensor (the MD sphere radius);
+        otherwise the class ``unit``/``muon`` scalar is used."""
         xf = x.float()
         lead = x.shape[:-2]
         eps = self.sinkgd_eps
@@ -559,8 +679,13 @@ class DistSinkGD(SinkGD):
             u = up / nrm
         self.state[p]["specnorm_u"] = u
         sigma = nrm.squeeze(-1).sqrt()  # nrm = ||(XᵀX)u|| -> sigma^2 at convergence
-        target = 1.0 if self.sinkgd_spectral_target == "unit" else (global_M / global_N) ** 0.5
         sig_b = sigma.reshape(*sigma.shape, 1, 1)
+        if op_target is not None:
+            target = op_target.reshape(*op_target.shape, 1, 1)
+        else:
+            target = (
+                1.0 if self.sinkgd_spectral_target == "unit" else (global_M / global_N) ** 0.5
+            )
         return (xf * (target / sig_b)).to(x.dtype)
 
     def _dist_sinkgd_step(self, p, grad, group, lr):
@@ -634,6 +759,73 @@ class DistSinkGD(SinkGD):
         return loss
 
 
+class DistSinkGDMD(DistSinkGD):
+    """Distributed :class:`SinkGDMD` (A+B "unit") for FSDP2/TP-sharded weights.
+
+    On a matrix-dim-sharded weight the added communication over the ``dp_shard`` group is: the
+    sharded power iteration's vector all-reduce (spectral norm) plus one per-matrix scalar
+    all-reduce for the global Frobenius norm (sphere projection). The matrix is never gathered;
+    the sphere radius ``target_norm`` and the power-iteration vector round-trip through the
+    checkpoint. Replicated / expert-sharded weights reuse the fully-local single-device MD path.
+    """
+
+    def __init__(self, params, *, process_group=None, **kwargs) -> None:
+        super().__init__(params, process_group=process_group, **kwargs)
+        c = lambda f: torch.compile(f, fullgraph=True, dynamic=False)  # noqa: E731
+        self._compiled_md = c(single_param_sinkgd_md)
+        self._c_md_local_wprime = c(_md_local_wprime)
+        self._c_md_sphere_apply = c(_md_sphere_apply)
+
+    def _dist_md_target(self, p, p_local, shard_dim) -> Tensor:
+        state = self.state[p]
+        tn = state.get("md_target_norm")
+        if tn is None:
+            sq = (p_local.float() ** 2).sum(dim=(-2, -1))  # [*lead] local partial
+            if shard_dim is not None:
+                dist.all_reduce(sq, group=self._process_group)
+            tn = sq.sqrt()
+            state["md_target_norm"] = tn
+        return tn
+
+    def _dist_sinkgd_step(self, p, grad, group, lr):
+        shard_dim = _matrix_shard_dim(p)
+        sr = self.bf16_stochastic_round and p.dtype is torch.bfloat16
+        global_M, global_N = p.shape[-2], p.shape[-1]
+        p_local = p.to_local() if isinstance(p, DTensor) else p
+        x = grad.to_local() if isinstance(grad, DTensor) else grad
+        lr = lr * self._alpha_eff(p)
+        tn = self._dist_md_target(p, p_local, shard_dim)
+
+        if shard_dim is None:
+            # full matrix local -> reuse the fully-compiled single-device MD step.
+            u = self._specnorm_u(p, global_N, p_local.shape[:-2])
+            self._compiled_md(
+                p_local, x, u, lr, self.sinkhorn_iters, self.sinkgd_eps, tn,
+                self.sinkgd_spectral_norm_iters, sr,
+            )
+            return
+
+        sqrt_n, sqrt_m = global_N**0.5, global_M**0.5
+        eps = self.sinkgd_eps
+        for _ in range(self.sinkhorn_iters):
+            if shard_dim == -2:
+                x, csq = self._c_row_scale_col_partial(x, sqrt_n, eps)
+                dist.all_reduce(csq, group=self._process_group)
+                x = self._c_apply_col_scale(x, csq, sqrt_m, eps)
+            else:
+                rsq = self._c_row_partial(x)
+                dist.all_reduce(rsq, group=self._process_group)
+                x = self._c_row_scale_then_col_scale(x, rsq, sqrt_n, sqrt_m, eps)
+        # spectral-normalize the direction to operator norm == sphere radius tn
+        x = self._dist_spectral_rescale(
+            x, p, p_local.device, shard_dim, global_M, global_N, op_target=tn
+        )
+        # weight step + Frobenius sphere projection (one per-matrix scalar all-reduce)
+        pf, frosq = self._c_md_local_wprime(p_local, x, lr)
+        dist.all_reduce(frosq, group=self._process_group)
+        self._c_md_sphere_apply(p_local, pf, frosq, tn, eps, sr)
+
+
 class DistSinkGDOptimizerFactory(BaseOptimizerFactory):
     """Builds a :class:`DistSinkGD` for sharded training; pulls the dp_shard group."""
 
@@ -655,7 +847,10 @@ class DistSinkGDOptimizerFactory(BaseOptimizerFactory):
             elif device_mesh.ndim == 1:
                 process_group = device_mesh.get_group()
 
-        return DistSinkGD(
+        md_sphere = _as_bool(optimizer_kwargs.pop("sinkgd_md_sphere", False))
+        cls = DistSinkGDMD if md_sphere else DistSinkGD
+
+        return cls(
             _sinkgd_param_groups(opt_model, weight_decay),
             lr=lr,
             betas=betas,

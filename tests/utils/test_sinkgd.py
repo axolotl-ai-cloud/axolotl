@@ -5,6 +5,7 @@ import torch
 
 from axolotl.utils.optimizers.sinkgd import (
     SinkGD,
+    SinkGDMD,
     _pop_sinkgd_extra_kwargs,
     _specnorm_gram_cols,
     _specnorm_gram_rows,
@@ -232,3 +233,52 @@ def test_sharded_gram_power_iteration_matches_spectral_norm(shape, shard_dim):
         nrm = partial.norm()
         vec = partial / nrm
     assert nrm.sqrt().item() == pytest.approx(true, rel=1e-2)
+
+
+# ---- A+B: SinkGDMD (MD Frobenius sphere) --------------------------------------------
+
+
+def test_sinkgdmd_keeps_weight_on_sphere():
+    """Every step reprojects the 2D weight onto its enable-time Frobenius sphere."""
+    torch.manual_seed(0)
+    w = torch.nn.Parameter(torch.randn(64, 48))
+    tn0 = w.detach().float().norm().item()
+    opt = SinkGDMD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}], lr=1.0,
+                   sinkgd_lr_scale=0.05)
+    for _ in range(8):
+        w.grad = torch.randn(64, 48)
+        opt.step()
+    assert w.detach().float().norm().item() == pytest.approx(tn0, rel=1e-4)
+    assert set(opt.state[w]) == {"md_target_norm", "specnorm_u"}
+
+
+def test_sinkgdmd_per_expert_sphere():
+    """3D fused-MoE weight: each expert stays on its own Frobenius sphere."""
+    torch.manual_seed(0)
+    w = torch.nn.Parameter(torch.randn(4, 32, 24))
+    tn = w.detach().float().norm(dim=(-2, -1)).clone()
+    opt = SinkGDMD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}], lr=1.0,
+                   sinkgd_lr_scale=0.1)
+    for _ in range(5):
+        w.grad = torch.randn(4, 32, 24)
+        opt.step()
+    after = w.detach().float().norm(dim=(-2, -1))
+    assert torch.allclose(after, tn, atol=1e-3)
+
+
+def test_sinkgdmd_moves_weight_and_uses_adam_fallback():
+    """MD changes the matrix; a 1D param still goes to the 8-bit AdamW fallback."""
+    torch.manual_seed(0)
+    w = torch.nn.Parameter(torch.randn(32, 16))
+    b = torch.nn.Parameter(torch.randn(32))
+    before = w.detach().clone()
+    opt = SinkGDMD(
+        [{"params": [w], "use_sinkgd": True, "weight_decay": 0.0},
+         {"params": [b], "use_sinkgd": False, "weight_decay": 0.0}],
+        lr=1e-2, sinkgd_lr_scale=1.0,
+    )
+    w.grad = torch.randn(32, 16)
+    b.grad = torch.randn(32)
+    opt.step()
+    assert not torch.allclose(before, w.detach())
+    assert "exp_avg" in opt.state[b]  # 1D param uses the Adam fallback

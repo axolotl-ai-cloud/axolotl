@@ -195,6 +195,26 @@ iteration over the `dp_shard` group — the same shape and group as SR-Sinkhorn'
 norm-vector reduce, and the matrix itself is never gathered. The persisted power-iteration
 vector round-trips through FSDP2 checkpoints.
 
+#### Weight-sphere variant (`sinkgd_md_sphere`, experimental)
+
+`sinkgd_md_sphere: true` switches to an experimental magnitude–direction variant: each
+SinkGD-routed 2D weight is held on a fixed Frobenius sphere (`||W||_F` anchored at enable
+time), the SR-Sinkhorn update is spectral-normalized to unit operator norm, applied, and the
+weight is reprojected onto the sphere (no learnable gains — SinkGD's row/column balancing makes
+them redundant). In width/depth sweeps this bounds the deepest-layer activation growth most
+tightly of any variant, but its optimal LR is **width-dependent** (`lr_opt ∝ d_model**-0.6`)
+and its optimum is narrow, so it needs per-scale LR tuning and is **off by default**. Prefer the
+plain spectral-norm path (above) unless you specifically want the tightest activation bound.
+It adds a per-matrix scalar all-reduce (the sphere's global Frobenius norm) on top of the
+spectral all-reduce under FSDP2; the sphere radius and power-iteration vector round-trip.
+
+```yaml
+optim_args:
+  sinkgd_md_sphere: true
+  sinkgd_lr_scale: 0.05
+  # tune learning_rate per width: lr_opt ~ d_model**-0.6 (e.g. ~0.03 at d=2048)
+```
+
 ### q_galore_adamw8bit
 
 Q-GaLore extends [GaLore](https://arxiv.org/abs/2403.03507) with two extra ideas:
