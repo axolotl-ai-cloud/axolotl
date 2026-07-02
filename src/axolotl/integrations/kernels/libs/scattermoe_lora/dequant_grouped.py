@@ -379,15 +379,18 @@ def _grouped_dx_fp8_kernel(
     acc = tl.zeros((BM, BK), tl.float32)
     for n0 in range(0, N, BN):
         rn = n0 + tl.arange(0, BN)
+        # mask N (the contracted dim) too: a non-BN-aligned N otherwise reads out of bounds on
+        # BOTH loads (past the last expert = uninitialized memory; e4m3 0xFF decodes to NaN).
+        nmask = rn < N
         a = tl.load(
             GRAD + rm[:, None] * sg0 + rn[None, :] * sg1,
-            mask=rm[:, None] < M,
+            mask=(rm[:, None] < M) & nmask[None, :],
             other=0.0,
         )
         # mask K dim to handle non-BK-aligned K (e.g. I=704 which is not a multiple of 128)
         w = tl.load(
             W + e * sw0 + rn[:, None] * sw1 + rk[None, :] * sw2,
-            mask=mk[None, :],
+            mask=nmask[:, None] & mk[None, :],
             other=0.0,
         ).to(tl.bfloat16)
         acc += tl.dot(a, w)

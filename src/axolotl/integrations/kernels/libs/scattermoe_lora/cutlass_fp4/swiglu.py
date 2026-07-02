@@ -73,12 +73,17 @@ def _bwd_gelu(GU, DH, DGU, I, sg0, sg1, sd0, sd1, so0, so1, BLK: tl.constexpr):
     u = tl.load(GU + r * sg0 + (I + c) * sg1, mask=m, other=0.0).to(tl.float32)
     dh = tl.load(DH + r * sd0 + c * sd1, mask=m, other=0.0).to(tl.float32)
     k = 0.7978845608028654
-    g2 = g * g
-    inner = k * (g + 0.044715 * g2 * g)
+    # tanh(inner) saturates to exactly +-1 in fp32 by |g|~9, so (1-t^2)==0; without clamping,
+    # extreme g overflows g^2/g^3 to inf and the derivative term becomes 0*inf -> NaN (gemma4 runs
+    # this UNCLAMPED, limit=1e30). Clamping is exact: beyond saturation the true derivative is
+    # already 0 (g<0) or 1 (g>0).
+    gs = tl.minimum(tl.maximum(g, -20.0), 20.0)
+    g2 = gs * gs
+    inner = k * (gs + 0.044715 * g2 * gs)
     t = libdevice.tanh(inner)
     gelu_g = 0.5 * g * (1.0 + t)
     # gelu'(g) = 0.5*(1+t) + 0.5*g*(1-t^2)*k*(1 + 3*0.044715*g^2)
-    dgelu = 0.5 * (1.0 + t) + 0.5 * g * (1.0 - t * t) * k * (1.0 + 3.0 * 0.044715 * g2)
+    dgelu = 0.5 * (1.0 + t) + 0.5 * gs * (1.0 - t * t) * k * (1.0 + 3.0 * 0.044715 * g2)
     dg = dh * u * dgelu
     du = dh * gelu_g
     tl.store(DGU + r * so0 + c * so1, dg.to(DGU.dtype.element_ty), mask=m)

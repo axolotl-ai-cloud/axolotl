@@ -66,6 +66,15 @@ def configure_scattermoe_runtime(cfg) -> None:
     RUNTIME.grouped_backend = str(backend).lower() if backend else None
     chunk = cfg.get("moe_dequant_chunk_size")
     RUNTIME.dequant_chunk_size = int(chunk) if chunk else None
+    # backward base-dX precision: fp8-read (fast, sm120-only default) vs bf16-dequant. Config knob
+    # so users can force the accurate path; env AXOLOTL_FP8_DX=0 as a no-config kill-switch.
+    import os
+
+    fp8_dx = cfg.get("moe_fp8_dx")
+    if fp8_dx is None and os.environ.get("AXOLOTL_FP8_DX") is not None:
+        fp8_dx = os.environ["AXOLOTL_FP8_DX"] != "0"
+    if fp8_dx is not None:
+        RUNTIME.fp4_dx_prefer_fp8 = bool(fp8_dx)
     RUNTIME.layer_gc_active = bool(cfg.get("gradient_checkpointing"))
     fast = cfg.get("moe_bnb_fast")
     RUNTIME.bnb_fast = True if fast is None else bool(fast)

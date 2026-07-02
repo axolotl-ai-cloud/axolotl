@@ -83,6 +83,9 @@ class KernelsArgs(BaseModel):
     # per-kernel rule (by output width and reduction size; autotune_profiles still decide when they
     # match), so a new shape costs at most a compile. Default true (sweep).
     quack_autotune: bool | None = None
+    # grouped-expert backward base-dX precision: True = fp8-read (fast, ~2% grad err; sm120-only
+    # default) | False = bf16-dequant (more accurate). None = arch default.
+    moe_fp8_dx: bool | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
