@@ -44,6 +44,23 @@ def _resolve_weights_and_lora(experts_module):
     Handles both PEFT layouts: module-level wrap (walked via ``unwrap_experts_lora``)
     and per-parameter ``ParamWrapper``. No layout permute applied.
     """
+    # The ParamWrapper fastpath (experts_lora_fastpath) resolves the LoRA tuples itself and
+    # hands them over before calling the raw base module.
+    fastpath_lora = getattr(experts_module, "_sonicmoe_lora", None)
+    if fastpath_lora is not None:
+        w1 = experts_module.gate_up_proj
+        w2 = experts_module.down_proj
+        b1 = getattr(experts_module, "gate_up_proj_bias", None)
+        b2 = getattr(experts_module, "down_proj_bias", None)
+        return (
+            w1,
+            b1,
+            w2,
+            b2,
+            fastpath_lora.get("gate_up_proj"),
+            fastpath_lora.get("down_proj"),
+        )
+
     if has_lora(experts_module):
         base_experts, lora_dict = unwrap_experts_lora(experts_module)
         w1 = base_experts.gate_up_proj
@@ -264,6 +281,15 @@ def register_sonicmoe_experts() -> None:
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
 
     ALL_EXPERTS_FUNCTIONS.register("sonicmoe", sonicmoe_experts_forward_with_lora)
+
+    # Route PEFT target_parameters expert LoRA past the parametrization merge (which cannot
+    # run on quantized bases) to the fused low-rank path.
+    try:
+        from .experts_lora_fastpath import patch_paramwrapper_sonicmoe_fastpath
+
+        patch_paramwrapper_sonicmoe_fastpath()
+    except (ImportError, AttributeError):
+        pass
 
 
 # Re-export utilities for tests / external callers.
