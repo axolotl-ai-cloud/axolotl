@@ -118,44 +118,6 @@ def _model_with_inherited_default_fallback(model_cls, data):
         return _model_validate_with_field_names(model_cls, data_with_defaults)
 
 
-def _check_model_config_constraints(cfg):
-    if cfg.model_config_type != "paddleocr_vl":
-        return
-    liger_flags = (
-        "liger_rope",
-        "liger_rms_norm",
-        "liger_rms_norm_gated",
-        "liger_layer_norm",
-        "liger_glu_activation",
-        "liger_cross_entropy",
-        "liger_fused_linear_cross_entropy",
-        "liger_use_token_scaling",
-    )
-    trl_cfg = getattr(cfg, "trl", None)
-    trl_use_liger_loss = bool(
-        trl_cfg.get("use_liger_loss", False)
-        if isinstance(trl_cfg, dict)
-        else getattr(trl_cfg, "use_liger_loss", False)
-    )
-    if any(getattr(cfg, flag, False) for flag in liger_flags) or trl_use_liger_loss:
-        raise ValueError(
-            "Liger is not supported for PaddleOCR-VL. Disable Liger flags for "
-            "this model."
-        )
-    if cfg.sample_packing:
-        raise ValueError(
-            "sample_packing is not supported for PaddleOCR-VL because packed "
-            "2D position_ids bypass its 3D multimodal RoPE positions. Set "
-            "sample_packing: false."
-        )
-    if getattr(cfg, "cut_cross_entropy", False):
-        raise ValueError(
-            "cut_cross_entropy is not supported for PaddleOCR-VL because CCE "
-            "does not patch PaddleOCRVLForConditionalGeneration. Disable "
-            "cut_cross_entropy for this model."
-        )
-
-
 def choose_device(cfg):
     def get_device():
         try:
@@ -324,7 +286,6 @@ def normalize_config(cfg):
         )
 
     cfg.model_config_type = model_config.model_type
-    _check_model_config_constraints(cfg)
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
     if callable(getattr(model_config, "get_text_config", None)):

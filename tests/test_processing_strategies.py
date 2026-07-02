@@ -675,6 +675,7 @@ def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
 
 
 def _paddleocr_vl_tokenizer():
+    # Real PaddlePaddle/PaddleOCR-VL-1.6 tokenizer ids for each marker.
     vocab = {
         "User: ": [2969, 93963, 93919],
         "Assistant:\n": [92267, 93963, 23],
@@ -700,6 +701,37 @@ def test_paddleocr_vl_masks_user_prompt_and_image_tokens():
     ]
     out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
     assert out == [-100] * (1 + 3 + 1 + 1 + 3) + [88, 89, 2]
+
+
+def test_paddleocr_vl_masks_real_template_sequence():
+    """Token ids from the real processor: apply_chat_template on
+    [user: <image> "OCR:", assistant: "hello world"] renders
+    '<|begin_of_sentence|>User: <|IMAGE_START|><|IMAGE_PLACEHOLDER|><|IMAGE_END|>OCR:\\nAssistant:\\nhello world</s>'.
+    """
+    proc = _Processor(_paddleocr_vl_tokenizer())
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    strategy = PaddleOCRVLProcessingStrategy(proc)
+    seq = [
+        100273,  # <|begin_of_sentence|>
+        2969,
+        93963,
+        93919,  # "User: "
+        101305,
+        100295,
+        101306,  # <|IMAGE_START|><|IMAGE_PLACEHOLDER|><|IMAGE_END|>
+        93972,
+        2497,
+        93963,
+        23,  # "OCR:\n"
+        92267,
+        93963,
+        23,  # "Assistant:\n"
+        18830,
+        3135,  # "hello world"
+        2,  # </s>
+    ]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100] * 14 + [18830, 3135, 2]
 
 
 def test_dispatch_paddleocr_vl():

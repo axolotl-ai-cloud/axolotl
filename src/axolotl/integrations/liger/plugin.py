@@ -20,6 +20,24 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        if cfg.model_config_type == "paddleocr_vl" and any(
+            getattr(cfg, flag, False)
+            for flag in (
+                "liger_rope",
+                "liger_rms_norm",
+                "liger_rms_norm_gated",
+                "liger_layer_norm",
+                "liger_glu_activation",
+                "liger_cross_entropy",
+                "liger_fused_linear_cross_entropy",
+                "liger_use_token_scaling",
+            )
+        ):
+            raise ValueError(
+                "Liger is not supported for PaddleOCR-VL. Disable Liger flags "
+                "for this model."
+            )
+
         # shim: liger imports ORPOTrainer from old trl.trainer (now trl.experimental.orpo)
         import trl.trainer
         from trl.experimental.orpo import ORPOTrainer

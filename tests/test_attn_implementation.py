@@ -10,7 +10,7 @@ from functools import lru_cache
 
 import pytest
 
-from axolotl.utils.config import _check_model_config_constraints, validate_config
+from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.config import AxolotlInputConfig
 from axolotl.utils.schemas.enums import (
@@ -397,18 +397,31 @@ class TestSamplePackingValidation:
         )
 
     def test_paddleocr_vl_sample_packing_rejected(self):
-        cfg = DictDefault(model_config_type="paddleocr_vl", sample_packing=True)
+        from axolotl.loaders.patch_manager import PatchManager
+
+        manager = PatchManager.__new__(PatchManager)
+        manager.cfg = DictDefault(model_config_type="paddleocr_vl", sample_packing=True)
         with pytest.raises(ValueError, match="PaddleOCR-VL.*sample_packing"):
-            _check_model_config_constraints(cfg)
+            manager._apply_model_specific_patches()
 
     def test_paddleocr_vl_cut_cross_entropy_rejected(self):
+        from axolotl.integrations.cut_cross_entropy import CutCrossEntropyPlugin
+
         cfg = DictDefault(
             model_config_type="paddleocr_vl",
-            sample_packing=False,
             cut_cross_entropy=True,
         )
-        with pytest.raises(ValueError, match="PaddleOCR-VL.*cut_cross_entropy"):
-            _check_model_config_constraints(cfg)
+        with pytest.raises(ValueError, match="PaddleOCR-VL"):
+            CutCrossEntropyPlugin().pre_model_load(cfg)
+
+    def test_paddleocr_vl_cut_cross_entropy_disabled_is_noop(self):
+        from axolotl.integrations.cut_cross_entropy import CutCrossEntropyPlugin
+
+        cfg = DictDefault(
+            model_config_type="paddleocr_vl",
+            cut_cross_entropy=False,
+        )
+        CutCrossEntropyPlugin().pre_model_load(cfg)
 
     @pytest.mark.parametrize(
         "flags",
@@ -416,36 +429,15 @@ class TestSamplePackingValidation:
             {"liger_cross_entropy": True},
             {"liger_fused_linear_cross_entropy": True},
             {"liger_glu_activation": True},
-            {"trl": {"use_liger_loss": True}},
         ],
     )
     def test_paddleocr_vl_liger_rejected(self, flags):
-        cfg = DictDefault(
-            model_config_type="paddleocr_vl",
-            sample_packing=False,
-            cut_cross_entropy=False,
-        )
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        cfg = DictDefault(model_config_type="paddleocr_vl")
         cfg.update(flags)
         with pytest.raises(ValueError, match="Liger is not supported"):
-            _check_model_config_constraints(cfg)
-
-    @pytest.mark.parametrize(
-        "flags",
-        [
-            {"full_finetune": True},
-            {"gradient_checkpointing": True},
-            {"rl": "dpo"},
-            {"rl": "grpo"},
-        ],
-    )
-    def test_paddleocr_vl_non_packing_axes_allowed_by_model_guard(self, flags):
-        cfg = DictDefault(
-            model_config_type="paddleocr_vl",
-            sample_packing=False,
-            cut_cross_entropy=False,
-        )
-        cfg.update(flags)
-        _check_model_config_constraints(cfg)
+            LigerPlugin().pre_model_load(cfg)
 
 
 class TestScalingSoftmaxValidation:

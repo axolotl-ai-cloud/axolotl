@@ -86,6 +86,12 @@ class CutCrossEntropyPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
         if cfg.cut_cross_entropy:
+            if cfg.model_config_type == "paddleocr_vl":
+                raise ValueError(
+                    "cut_cross_entropy is not supported for PaddleOCR-VL because "
+                    "CCE does not patch PaddleOCRVLForConditionalGeneration. "
+                    "Disable cut_cross_entropy for this model."
+                )
             self._check_requirements()
             self.patch_llama_like(cfg.model_config_type)
 

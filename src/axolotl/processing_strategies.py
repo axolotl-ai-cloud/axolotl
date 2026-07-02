@@ -12,6 +12,7 @@ from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
 from transformers.image_utils import load_image
 from transformers.models.internvl import InternVLProcessor
+from transformers.models.paddleocr_vl import PaddleOCRVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
@@ -1512,15 +1513,8 @@ def get_processing_strategy(
     if chat_template_type == "paddleocr_vl":
         return PaddleOCRVLProcessingStrategy(**processing_kwargs)
 
-    try:
-        from transformers.models.paddleocr_vl.processing_paddleocr_vl import (
-            PaddleOCRVLProcessor,
-        )
-
-        if isinstance(processor, PaddleOCRVLProcessor):
-            return PaddleOCRVLProcessingStrategy(**processing_kwargs)
-    except (ImportError, ModuleNotFoundError) as exc:
-        LOG.debug("PaddleOCRVLProcessor import failed: %r", exc)
+    if isinstance(processor, PaddleOCRVLProcessor):
+        return PaddleOCRVLProcessingStrategy(**processing_kwargs)
 
     if isinstance(processor, VoxtralProcessor):
         return VoxtralProcessingStrategy(**processing_kwargs)
