@@ -13,6 +13,7 @@ First of all, thank you for your interest in contributing to axolotl! We appreci
 - [Style Guidelines](#style-guidelines)
   - [Code Style](#code-style)
   - [Commit Messages](#commit-messages)
+- [Agent Skills](#agent-skills)
 - [Additional Resources](#additional-resources)
 
 ## Code of Conduct
@@ -42,6 +43,32 @@ pre-commit install
 pytest tests/
 ```
 
+Common tasks are wrapped in the [`Makefile`](../Makefile): `make lint` (pinned ruff/mypy/bandit via pre-commit), `make format`, `make test`, `make test-e2e`. Run `make help` to list them.
+
+CI matrix: Python 3.12 / 3.14, PyTorch 2.9.1–2.12.0 ([tests.yml](workflows/tests.yml)). Tests default to `-m 'not slow'`. Mirror CI's CPU suite locally (GPU e2e runs in a separate job — see below):
+```bash
+pytest -n4 --dist loadfile --ignore=tests/e2e tests/
+```
+
+### Running e2e (GPU) tests locally
+
+Recommended for larger changes before opening a PR. Needs an NVIDIA GPU. Run in the public Docker image with your checkout mounted ([docs/docker.qmd](../docs/docker.qmd)); Blackwell GPUs (sm_120, e.g. RTX 50xx) need a cu130 tag:
+
+```bash
+docker run --gpus all --rm -it --ipc=host -v "$PWD:/workspace/axolotl" -w /workspace/axolotl \
+  axolotlai/axolotl-uv:main-latest             # Blackwell: axolotlai/axolotl-uv:main-py3.11-cu130-2.9.1
+```
+
+The runtime image omits test deps, so install them, then run a test:
+
+```bash
+uv pip install --group test                  # tbparse, etc.
+pytest tests/e2e/test_lora_llama.py          # LoRA smoke test
+pytest tests/e2e/multigpu/                    # needs >= 2 GPUs
+```
+
+Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`). `cicd/cicd.sh` and `cicd/multigpu.sh` list CI's exact run order.
+
 ## How to Contribute
 
 ### Reporting Bugs
@@ -59,7 +86,7 @@ We welcome ideas for improvements and new features. To suggest an enhancement, o
 3. Test your changes and ensure that they don't introduce new issues or break existing functionality.
 4. Commit your changes, following the [commit message guidelines](#commit-messages).
 5. Push your branch to your fork on GitHub.
-6. Open a new pull request against the `main` branch of the axolotl repository. Include a clear and concise description of your changes, referencing any related issues.
+6. Open a new pull request against the `main` branch of the axolotl repository. PR formatting is prescribed in the [PR template](PULL_REQUEST_TEMPLATE.md); reference any related issues.
 
 #### Skipping CI Checks
 
@@ -74,14 +101,27 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 axolotl uses [Ruff](https://docs.astral.sh/ruff/) as its code style guide. Please ensure that your code follows these guidelines.
 
-Use the pre-commit linter to ensure that your code is formatted consistently.
+Use the pre-commit linter to ensure that your code is formatted consistently. It installs and runs the **exact versions CI uses**, so don't rely on a system-installed `ruff`/`mypy`:
 ```bash
+pre-commit install        # one-time
 pre-commit run --all-files
 ```
+
+The exact ruff/mypy/bandit versions are pinned in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) — the same file CI's pre-commit job runs from, so local and CI never drift (the lint job runs on Python 3.11). `make lint` wraps the command above.
+
+To run ruff outside pre-commit, pin it to the `ruff-pre-commit` rev in that file so output matches CI, e.g. `uvx ruff@<rev> check` / `uvx ruff@<rev> format`.
 
 ### Commit Messages
 
 Write clear and concise commit messages that briefly describe the changes made in each commit. Use the imperative mood and start with a capitalized verb, e.g., "Add new feature" or "Fix bug in function".
+
+## Agent Skills
+
+Axolotl ships **agent skills** — self-contained workflow guides and scripts that AI coding assistants can run for repetitive tasks. They live in [`.agents/skills/`](../.agents/skills/), one directory per skill, each with a `SKILL.md`. See [`AGENTS.md`](../AGENTS.md) for the current list.
+
+There is **nothing to install** — the skills are committed to the repo and available on clone. Skills are **on by default**; run `/skills` to toggle them off/on (Codex, Antigravity, and Claude Code).
+
+**See [`.agents/skills/README.md`](../.agents/skills/README.md)** for full usage (across Claude Code, Codex, Gemini, Antigravity, or by hand), how to add a skill, and authoring requirements. Per-skill flags and workflows live in each skill's `SKILL.md`.
 
 ## Additional Resources
 
