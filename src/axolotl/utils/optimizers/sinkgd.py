@@ -35,6 +35,7 @@ from torchao.optim.quant_utils import _fp32_to_bf16_sr
 from torchao.optim.subclass_8bit import OptimState8bit
 
 from axolotl.integrations.base import BaseOptimizerFactory
+from axolotl.utils.optimizers.sinkgd_triton import fused_available, fused_sinkgd_step
 
 
 def sr_sinkhorn(grad: Tensor, iters: int, eps: float) -> Tensor:
@@ -261,6 +262,7 @@ class SinkGD(_AdamBase):
         sinkgd_spectral_target="unit",
         sinkgd_base_width=None,
         sinkgd_lr_width_exponent=1.0,
+        sinkgd_fused_kernel=False,
         block_size=256,
         bf16_stochastic_round=False,
     ) -> None:
@@ -283,6 +285,7 @@ class SinkGD(_AdamBase):
         self.sinkgd_spectral_target = sinkgd_spectral_target
         self.sinkgd_base_width = sinkgd_base_width
         self.sinkgd_lr_width_exponent = sinkgd_lr_width_exponent
+        self.sinkgd_fused_kernel = sinkgd_fused_kernel
         self._compiled_sinkgd = torch.compile(
             single_param_sinkgd, fullgraph=True, dynamic=False
         )
@@ -326,8 +329,32 @@ class SinkGD(_AdamBase):
             self.sinkgd_base_width / d_in
         ) ** self.sinkgd_lr_width_exponent
 
+    def _fused_ok(self, p: Tensor) -> bool:
+        # stochastic rounding is not implemented in the fused kernels -> compiled fallback
+        return (
+            self.sinkgd_fused_kernel
+            and fused_available()
+            and p.is_cuda
+            and not (self.bf16_stochastic_round and p.dtype is torch.bfloat16)
+        )
+
     def _sinkgd_update(self, p: Tensor, grad: Tensor, group: dict, lr: Tensor) -> None:
         alpha = self._alpha_eff(p)
+        if self._fused_ok(p):
+            if self.sinkgd_spectral_norm:
+                u = self._specnorm_u(p, p.shape[-1], p.shape[:-2])
+                fused_sinkgd_step(
+                    p.detach(), grad, float(lr) * alpha, group["weight_decay"],
+                    self.sinkhorn_iters, self.sinkgd_eps, mode="spec", u=u,
+                    spectral_target=self.sinkgd_spectral_target,
+                    sn_iters=self.sinkgd_spectral_norm_iters,
+                )
+            else:
+                fused_sinkgd_step(
+                    p.detach(), grad, float(lr) * alpha, group["weight_decay"],
+                    self.sinkhorn_iters, self.sinkgd_eps, mode="base",
+                )
+            return
         if not self.sinkgd_spectral_norm:
             self._compiled_sinkgd(
                 p.detach(),
@@ -446,6 +473,13 @@ class SinkGDMD(SinkGD):
         state = self.state[p]
         tn = self._md_target_norm(p, state)
         u = self._specnorm_u(p, p.shape[-1], p.shape[:-2])
+        if self._fused_ok(p):
+            fused_sinkgd_step(
+                p.detach(), grad, float(lr) * alpha, 0.0, self.sinkhorn_iters,
+                self.sinkgd_eps, mode="md", u=u, target_norm=tn,
+                sn_iters=self.sinkgd_spectral_norm_iters,
+            )
+            return
         self._compiled_md(
             p.detach(),
             grad,
@@ -517,6 +551,8 @@ def _pop_sinkgd_extra_kwargs(optimizer_kwargs: dict) -> dict:
         out["sinkgd_base_width"] = int(out["sinkgd_base_width"])
     if "sinkgd_lr_width_exponent" in out:
         out["sinkgd_lr_width_exponent"] = float(out["sinkgd_lr_width_exponent"])
+    if "sinkgd_fused_kernel" in out:
+        out["sinkgd_fused_kernel"] = _as_bool(out["sinkgd_fused_kernel"])
     # Mutual exclusion: 1/d_in (base_width) and the Muon spectral target are two width
     # corrections; stacking them double-counts (Phase 2). Let the sphere/spectral own width.
     if (
@@ -748,6 +784,34 @@ class DistSinkGD(SinkGD):
         global_M, global_N = p.shape[-2], p.shape[-1]  # DTensor -> global dims
         p_local = p.to_local() if isinstance(p, DTensor) else p
         x = grad.to_local() if isinstance(grad, DTensor) else grad
+
+        # fused Triton path: replicated/expert-sharded runs locally; rows-sharded (the
+        # FSDP2 dim-0 layout) all-reduces the same vectors as the compiled path. A
+        # cols-sharded matrix dim falls through to the compiled pipeline below.
+        if self._fused_ok(p_local) and shard_dim in (None, -2):
+            lr_f = float(lr) * self._alpha_eff(p)
+            grp = self._process_group if shard_dim == -2 else None
+            m_glob = global_M if shard_dim == -2 else None
+            if self.sinkgd_spectral_norm:
+                if shard_dim == -2:
+                    u = self._dist_specnorm_vec(
+                        p, p_local.device, p_local.shape[:-2], global_N
+                    )
+                else:
+                    u = self._specnorm_u(p, global_N, p_local.shape[:-2])
+                fused_sinkgd_step(
+                    p_local, x, lr_f, group["weight_decay"], self.sinkhorn_iters,
+                    self.sinkgd_eps, mode="spec", u=u,
+                    spectral_target=self.sinkgd_spectral_target,
+                    sn_iters=self.sinkgd_spectral_norm_iters,
+                    m_global=m_glob, process_group=grp,
+                )
+            else:
+                fused_sinkgd_step(
+                    p_local, x, lr_f, group["weight_decay"], self.sinkhorn_iters,
+                    self.sinkgd_eps, mode="base", m_global=m_glob, process_group=grp,
+                )
+            return
         lr = lr * self._alpha_eff(p)  # width-aware; p.shape[-1] is the global d_in
 
         if shard_dim is None:
@@ -852,8 +916,22 @@ class DistSinkGDMD(DistSinkGD):
         global_M, global_N = p.shape[-2], p.shape[-1]
         p_local = p.to_local() if isinstance(p, DTensor) else p
         x = grad.to_local() if isinstance(grad, DTensor) else grad
-        lr = lr * self._alpha_eff(p)
         tn = self._dist_md_target(p, p_local, shard_dim)
+
+        if self._fused_ok(p_local) and shard_dim in (None, -2):
+            if shard_dim == -2:
+                u = self._dist_specnorm_vec(p, p_local.device, p_local.shape[:-2], global_N)
+            else:
+                u = self._specnorm_u(p, global_N, p_local.shape[:-2])
+            fused_sinkgd_step(
+                p_local, x, float(lr) * self._alpha_eff(p), 0.0, self.sinkhorn_iters,
+                self.sinkgd_eps, mode="md", u=u, target_norm=tn,
+                sn_iters=self.sinkgd_spectral_norm_iters,
+                m_global=global_M if shard_dim == -2 else None,
+                process_group=self._process_group if shard_dim == -2 else None,
+            )
+            return
+        lr = lr * self._alpha_eff(p)
 
         if shard_dim is None:
             # full matrix local -> reuse the fully-compiled single-device MD step.

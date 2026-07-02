@@ -282,3 +282,93 @@ def test_sinkgdmd_moves_weight_and_uses_adam_fallback():
     opt.step()
     assert not torch.allclose(before, w.detach())
     assert "exp_avg" in opt.state[b]  # 1D param uses the Adam fallback
+
+
+# ---- fused Triton kernel path (sinkgd_fused_kernel) -----------------------------------
+
+
+requires_cuda = pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="fused kernels need CUDA"
+)
+
+
+@requires_cuda
+@pytest.mark.parametrize("shape", [(256, 192), (1024, 8192), (4, 96, 64)])
+def test_fused_base_matches_compiled(shape):
+    """sinkgd_fused_kernel=True reproduces the compiled base update to bf16 tolerance,
+    including a wide-short shape that exercises the column-split kernels."""
+    torch.manual_seed(0)
+    w0 = torch.randn(*shape, device="cuda", dtype=torch.bfloat16)
+    g = torch.randn_like(w0)
+    results = []
+    for fused in (False, True):
+        w = torch.nn.Parameter(w0.clone())
+        opt = SinkGD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.01}],
+                     lr=1e-2, sinkgd_lr_scale=0.5, weight_decay=0.01,
+                     sinkgd_fused_kernel=fused)
+        w.grad = g.clone()
+        opt.step()
+        results.append(w.detach().float())
+    rel = (results[0] - results[1]).abs().max() / results[0].abs().max()
+    assert rel.item() < 3e-2
+
+
+@requires_cuda
+@pytest.mark.parametrize("target", ["unit", "muon"])
+def test_fused_spectral_matches_compiled(target):
+    torch.manual_seed(0)
+    w0 = torch.randn(96, 64, device="cuda", dtype=torch.bfloat16)
+    g = torch.randn_like(w0)
+    results = []
+    for fused in (False, True):
+        w = torch.nn.Parameter(w0.clone())
+        opt = SinkGD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
+                     lr=1e-2, sinkgd_lr_scale=0.5, sinkgd_spectral_norm=True,
+                     sinkgd_spectral_norm_iters=2, sinkgd_spectral_target=target,
+                     sinkgd_fused_kernel=fused)
+        torch.manual_seed(7)  # same u init both paths
+        for _ in range(3):
+            w.grad = g.clone()
+            opt.step()
+        results.append(w.detach().float())
+    rel = (results[0] - results[1]).abs().max() / results[0].abs().max()
+    assert rel.item() < 3e-2
+
+
+@requires_cuda
+def test_fused_md_matches_compiled_and_stays_on_sphere():
+    torch.manual_seed(0)
+    w0 = torch.randn(96, 64, device="cuda", dtype=torch.bfloat16)
+    tn0 = w0.float().norm().item()
+    g = torch.randn_like(w0)
+    results = []
+    for fused in (False, True):
+        w = torch.nn.Parameter(w0.clone())
+        opt = SinkGDMD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
+                       lr=1e-2, sinkgd_lr_scale=0.5, sinkgd_fused_kernel=fused)
+        torch.manual_seed(7)
+        for _ in range(3):
+            w.grad = g.clone()
+            opt.step()
+        assert w.detach().float().norm().item() == pytest.approx(tn0, rel=1e-3)
+        results.append(w.detach().float())
+    rel = (results[0] - results[1]).abs().max() / results[0].abs().max()
+    assert rel.item() < 3e-2
+
+
+@requires_cuda
+def test_fused_falls_back_for_stochastic_round():
+    """bf16 stochastic rounding is not implemented in the fused kernels -> compiled path."""
+    w = torch.nn.Parameter(torch.randn(32, 16, device="cuda", dtype=torch.bfloat16))
+    opt = SinkGD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}], lr=1e-2,
+                 sinkgd_fused_kernel=True, bf16_stochastic_round=True)
+    assert not opt._fused_ok(w)
+    w2 = torch.nn.Parameter(torch.randn(32, 16, device="cuda", dtype=torch.bfloat16))
+    opt2 = SinkGD([{"params": [w2], "use_sinkgd": True, "weight_decay": 0.0}], lr=1e-2,
+                  sinkgd_fused_kernel=True)
+    assert opt2._fused_ok(w2)
+
+
+def test_pop_kwargs_casts_fused_flag():
+    out = _pop_sinkgd_extra_kwargs({"sinkgd_fused_kernel": "true"})
+    assert out["sinkgd_fused_kernel"] is True

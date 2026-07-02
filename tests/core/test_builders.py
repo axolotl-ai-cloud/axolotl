@@ -227,6 +227,18 @@ class TestHFCausalTrainerBuilder:
         optim2 = trainer2.create_optimizer()
         assert isinstance(optim2, SinkGD) and not isinstance(optim2, SinkGDMD)
 
+    def test_sinkgd_fused_kernel_flag(self, sft_cfg, model, tokenizer):
+        """sinkgd_fused_kernel plumbs through optim_args into the optimizer."""
+        from axolotl.utils.optimizers.sinkgd import SinkGD
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkgd_fused_kernel": True}
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGD)
+        assert optim.sinkgd_fused_kernel is True
+
 
 class TestTrainerClsPlugin:
     """

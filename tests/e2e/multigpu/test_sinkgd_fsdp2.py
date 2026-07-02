@@ -153,3 +153,36 @@ def test_dist_md_sphere_matches_full_and_stays_on_sphere(mesh, dim):
     )
     opt2.load_state_dict(sd)
     torch.testing.assert_close(opt2.state[w]["md_target_norm"], opt.state[w]["md_target_norm"])
+
+
+@pytest.mark.parametrize("mode", ["base", "spec", "md"])
+@pytest.mark.parametrize("wide", [False, True])
+def test_dist_fused_matches_compiled(mesh, mode, wide):
+    """sinkgd_fused_kernel=True on rows-sharded DTensors matches the compiled dist path for
+    all modes, in both the tall and (row-starved) wide kernel regimes."""
+    torch.manual_seed(0)
+    m, n = (128, 4096) if wide else (256, 96)
+    w_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    g_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    dist.broadcast(w_full, 0)
+    dist.broadcast(g_full, 0)
+
+    results = []
+    for fused in (False, True):
+        w = torch.nn.Parameter(distribute_tensor(w_full.clone(), mesh, [Shard(0)]))
+        # sn_iters=3: the compiled dist path estimates sigma via Gram power iteration,
+        # the fused path via the normalized two-matvec form — identical at convergence,
+        # transiently different from a cold start, so compare near convergence.
+        kw = dict(lr=1e-2, sinkgd_lr_scale=0.5, sinkgd_fused_kernel=fused,
+                  sinkgd_spectral_norm_iters=3,
+                  process_group=mesh["dp_shard"].get_group())
+        if mode == "spec":
+            kw.update(sinkgd_spectral_norm=True, sinkgd_spectral_target="muon")
+        cls = DistSinkGDMD if mode == "md" else DistSinkGD
+        opt = cls([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}], **kw)
+        for _ in range(3):
+            w.grad = distribute_tensor(g_full.clone(), mesh, [Shard(0)])
+            opt.step()
+        results.append(w.detach().full_tensor())
+    rel = (results[0] - results[1]).abs().max() / results[0].abs().max()
+    assert rel.item() < 3e-2, f"{mode} wide={wide}: rel={rel.item():.2e}"
