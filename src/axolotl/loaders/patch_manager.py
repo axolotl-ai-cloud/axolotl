@@ -424,13 +424,6 @@ class PatchManager:
         """Apply patches specific to model architectures."""
         self._warn_if_fused_attn_unsupported(self.cfg)
 
-        if self.cfg.model_config_type == "paddleocr_vl" and self.cfg.sample_packing:
-            raise ValueError(
-                "sample_packing is not supported for PaddleOCR-VL because packed "
-                "2D position_ids bypass its 3D multimodal RoPE positions. Set "
-                "sample_packing: false."
-            )
-
         if getattr(self.cfg, "use_kernels", None):
             from axolotl.monkeypatch.kernelize_fixes import patch_kernelize_fixes
 

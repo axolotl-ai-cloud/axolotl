@@ -23,7 +23,6 @@ This guide shows how to fine-tune PaddleOCR-VL with Axolotl's multimodal SFT pat
 
 - The model uses its bundled chat template through `processor_type: AutoProcessor`; no explicit `chat_template` is needed.
 - Do not set `trust_remote_code` for this example; Axolotl's pinned Transformers version includes the PaddleOCR-VL model and processor implementation.
-- Keep `sample_packing: false`; PaddleOCR-VL uses 3D multimodal RoPE positions that are not compatible with Axolotl's packed 2D position IDs.
 - Do not enable Liger or Cut Cross Entropy; neither path currently patches PaddleOCR-VL's multimodal `ForConditionalGeneration` class.
 - PaddleOCR-VL task prompts include `OCR:`, `Table Recognition:`, `Formula Recognition:`, `Chart Recognition:`, `Seal Recognition:`, and `Spotting:`.
 - Dataset rows should use Axolotl's multimodal `messages` format with image content in the user turn and the parsed text or markup in the assistant turn.

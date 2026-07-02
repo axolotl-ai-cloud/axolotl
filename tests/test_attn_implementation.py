@@ -396,14 +396,6 @@ class TestSamplePackingValidation:
             for r in caplog.records
         )
 
-    def test_paddleocr_vl_sample_packing_rejected(self):
-        from axolotl.loaders.patch_manager import PatchManager
-
-        manager = PatchManager.__new__(PatchManager)
-        manager.cfg = DictDefault(model_config_type="paddleocr_vl", sample_packing=True)
-        with pytest.raises(ValueError, match="PaddleOCR-VL.*sample_packing"):
-            manager._apply_model_specific_patches()
-
     def test_paddleocr_vl_cut_cross_entropy_rejected(self):
         from axolotl.integrations.cut_cross_entropy import CutCrossEntropyPlugin
 
