@@ -1,0 +1,403 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
+"""Frozen-base grouped LoRA forward/backward for the sonicmoe NVFP4 backend.
+
+The base expert weights are frozen (NVFP4 in production, dequantized by the
+sibling ``nvfp4`` module before the grouped GEMM). Only the LoRA A/B tensors are
+trainable. Where the whole-weight path (``lora.MoELoRAMaterialize``) builds
+``W_eff = W + scaling * (B @ A)`` per expert and hands it to an opaque CUTLASS
+call, this module keeps the low-rank factors separate and fuses them at the
+grouped-token level so it composes with a real grouped GEMM and never forms a
+base-weight gradient.
+
+The forward per expert group ``e`` is exactly ``x_e @ W_eff_e^T`` with
+``W_eff_e = W_e + scaling * (B_e @ A_e)``, so the hand-written backward mirrors
+``MoELoRAMaterialize.backward``: it forms the full ``dW_eff_e`` from the grouped
+tokens, then maps it to ``dA_e / dB_e`` with the same rank-major reshape/permute.
+Because ``W_e`` is frozen we only route grads to ``x``, ``lora_A`` and
+``lora_B``; ``W`` is treated as a constant tensor for the ``dx`` term.
+
+PEFT rank-major layout (matching ``lora.MoELoRAMaterialize``): for a weight of
+logical shape ``[E, dim1, dim2]``, ``lora_A`` is ``[r*E, dim2]`` (E-outer,
+r-inner rows) and ``lora_B`` is ``[dim1, r*E]`` (r-outer, E-inner cols).
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+import torch
+
+from .nvfp4 import (
+    dequantize_expert_weight,
+    gated_activation,
+    grouped_down_gemm,
+    grouped_up_gemm,
+)
+
+
+def _lora_delta_per_group(
+    x_grouped: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    E: int,
+    dim1: int,
+    dim2: int,
+) -> torch.Tensor:
+    """Low-rank contribution ``scaling * ((x_e @ A_e^T) @ B_e^T)`` per group.
+
+    ``lora_A`` is ``[r*E, dim2]``, ``lora_B`` is ``[dim1, r*E]``. Returns a
+    ``[T, dim1]`` tensor aligned row-for-row with ``x_grouped`` ``[T, dim2]``.
+    """
+    r = lora_A.shape[0] // E
+    A_3d = lora_A.reshape(E, r, dim2)  # [E, r, dim2]
+    B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1)  # [E, dim1, r]
+
+    out = x_grouped.new_zeros((x_grouped.shape[0], dim1))
+    for e in range(E):
+        start = int(expert_offsets[e])
+        end = int(expert_offsets[e + 1])
+        if end <= start:
+            continue
+        x_e = x_grouped[start:end]  # [T_e, dim2]
+        z_e = x_e @ A_3d[e].transpose(0, 1)  # [T_e, r]
+        out[start:end] = scaling * (z_e @ B_3d[e].transpose(0, 1))  # [T_e, dim1]
+    return out
+
+
+def _lora_backward_per_group(
+    grad_h: torch.Tensor,
+    x_grouped: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    base_weight: torch.Tensor,
+    scaling: float,
+) -> tuple:
+    """Grads for a frozen-base grouped-LoRA linear ``h_e = x_e @ W_eff_e^T``.
+
+    ``base_weight`` is ``[E, dim1, dim2]`` (frozen, dense/dequantized), used only
+    for the ``dx`` term. Returns ``(dx, d_lora_A, d_lora_B)``.
+    """
+    E, dim1, dim2 = base_weight.shape
+    r = lora_A.shape[0] // E
+    A_3d = lora_A.reshape(E, r, dim2)  # [E, r, dim2]
+    B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1)  # [E, dim1, r]
+
+    dx = torch.zeros_like(x_grouped)
+    d_A_3d = grad_h.new_zeros((E, r, dim2))
+    d_B_3d = grad_h.new_zeros((E, dim1, r))
+
+    for e in range(E):
+        start = int(expert_offsets[e])
+        end = int(expert_offsets[e + 1])
+        if end <= start:
+            continue
+        x_e = x_grouped[start:end]  # [T_e, dim2]
+        g_e = grad_h[start:end]  # [T_e, dim1]
+
+        # W_eff_e = W_e + scaling * (B_e @ A_e); h_e = x_e @ W_eff_e^T.
+        W_eff_e = base_weight[e] + scaling * (B_3d[e] @ A_3d[e])  # [dim1, dim2]
+
+        # dx_e = grad_h_e @ W_eff_e
+        dx[start:end] = g_e @ W_eff_e
+
+        # dW_eff_e = grad_h_e^T @ x_e  ([dim1, dim2], the [E, dim1, dim2] convention)
+        dW_e = g_e.transpose(0, 1) @ x_e  # [dim1, dim2]
+
+        # Same map as MoELoRAMaterialize.backward:
+        #   dA_e = scaling * B_e^T @ dW_e     ([r, dim1] @ [dim1, dim2] = [r, dim2])
+        #   dB_e = scaling * dW_e @ A_e^T     ([dim1, dim2] @ [dim2, r] = [dim1, r])
+        d_A_3d[e] = scaling * (B_3d[e].transpose(0, 1) @ dW_e)
+        d_B_3d[e] = scaling * (dW_e @ A_3d[e].transpose(0, 1))
+
+    d_lora_A = d_A_3d.reshape(E * r, dim2)
+    d_lora_B = d_B_3d.permute(1, 2, 0).reshape(dim1, E * r)
+    return dx, d_lora_A, d_lora_B
+
+
+class GroupedUpProjLoRA(torch.autograd.Function):
+    """Grouped up-projection with frozen base + trainable LoRA.
+
+    ``h = base_up(x) + scaling * ((x @ A1^T) @ B1^T)`` per expert group, where
+    ``base_up`` is the grouped GEMM ``x_e @ w1[e]^T``. ``w1`` is ``[E, 2I, H]``
+    (dim1=2I, dim2=H); ``lora_A1`` is ``[r*E, H]``, ``lora_B1`` is ``[2I, r*E]``.
+    Grads route to ``x_grouped``, ``lora_A1``, ``lora_B1`` only (``w1`` frozen).
+    """
+
+    @staticmethod
+    def forward(
+        ctx,
+        x_grouped: torch.Tensor,
+        w1: torch.Tensor,
+        expert_offsets: torch.Tensor,
+        lora_A1: torch.Tensor,
+        lora_B1: torch.Tensor,
+        scaling: float,
+        backend: str,
+        concat: bool,
+    ) -> torch.Tensor:
+        E, dim1, dim2 = w1.shape
+        base = grouped_up_gemm(
+            x_grouped, w1, expert_offsets, backend=backend, concat=concat
+        )
+        delta = _lora_delta_per_group(
+            x_grouped, expert_offsets, lora_A1, lora_B1, scaling, E, dim1, dim2
+        )
+        h = base + delta
+
+        ctx.save_for_backward(x_grouped, w1, expert_offsets, lora_A1, lora_B1)
+        ctx.scaling = scaling
+        return h
+
+    @staticmethod
+    def backward(ctx, grad_h: torch.Tensor):
+        x_grouped, w1, expert_offsets, lora_A1, lora_B1 = ctx.saved_tensors
+        dx, dA, dB = _lora_backward_per_group(
+            grad_h.contiguous(),
+            x_grouped,
+            expert_offsets,
+            lora_A1,
+            lora_B1,
+            w1,
+            ctx.scaling,
+        )
+        return dx, None, None, dA, dB, None, None, None
+
+
+class GroupedDownProjLoRA(torch.autograd.Function):
+    """Grouped down-projection with frozen base + trainable LoRA.
+
+    ``y = base_down(a) + scaling * ((a @ A2^T) @ B2^T)`` per expert group, where
+    ``base_down`` is the grouped GEMM ``a_e @ w2[e]^T``. ``w2`` is ``[E, H, I]``
+    (dim1=H, dim2=I); ``lora_A2`` is ``[r*E, I]``, ``lora_B2`` is ``[H, r*E]``.
+    Grads route to ``a_grouped``, ``lora_A2``, ``lora_B2`` only (``w2`` frozen).
+    """
+
+    @staticmethod
+    def forward(
+        ctx,
+        a_grouped: torch.Tensor,
+        w2: torch.Tensor,
+        expert_offsets: torch.Tensor,
+        lora_A2: torch.Tensor,
+        lora_B2: torch.Tensor,
+        scaling: float,
+        backend: str,
+    ) -> torch.Tensor:
+        E, dim1, dim2 = w2.shape
+        base = grouped_down_gemm(a_grouped, w2, expert_offsets, backend=backend)
+        delta = _lora_delta_per_group(
+            a_grouped, expert_offsets, lora_A2, lora_B2, scaling, E, dim1, dim2
+        )
+        y = base + delta
+
+        ctx.save_for_backward(a_grouped, w2, expert_offsets, lora_A2, lora_B2)
+        ctx.scaling = scaling
+        return y
+
+    @staticmethod
+    def backward(ctx, grad_y: torch.Tensor):
+        a_grouped, w2, expert_offsets, lora_A2, lora_B2 = ctx.saved_tensors
+        da, dA, dB = _lora_backward_per_group(
+            grad_y.contiguous(),
+            a_grouped,
+            expert_offsets,
+            lora_A2,
+            lora_B2,
+            w2,
+            ctx.scaling,
+        )
+        return da, None, None, dA, dB, None, None
+
+
+def _add_expert_bias(
+    out: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    bias: torch.Tensor,
+) -> torch.Tensor:
+    """Add a per-expert bias ``[E, dim]`` to grouped rows ``[T, dim]``."""
+    E = bias.shape[0]
+    result = out
+    for e in range(E):
+        start = int(expert_offsets[e])
+        end = int(expert_offsets[e + 1])
+        if end <= start:
+            continue
+        result = result.index_add(
+            0,
+            torch.arange(start, end, device=out.device),
+            bias[e].unsqueeze(0).expand(end - start, -1),
+        )
+    return result
+
+
+def grouped_expert_mlp_lora(
+    x_grouped: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    w1: torch.Tensor,
+    b1: Optional[torch.Tensor],
+    w2: torch.Tensor,
+    b2: Optional[torch.Tensor],
+    lora1: Optional[tuple],
+    lora2: Optional[tuple],
+    *,
+    act: str,
+    backend: str,
+    concat: bool,
+    scaling1: float,
+    scaling2: float,
+    limit: Optional[float] = None,
+) -> torch.Tensor:
+    """Chain up-LoRA -> gated activation -> down-LoRA over grouped tokens.
+
+    ``lora1`` / ``lora2`` are ``(lora_A, lora_B)`` tuples or ``None`` (``None``
+    means plain base grouped GEMM, no low-rank path). ``b1`` / ``b2`` are
+    optional per-expert biases ``[E, dim]``. ``limit`` is the clamped-SwiGLU
+    bound (e.g. DeepSeek-V4). Returns ``y_grouped`` ``[T, H]``.
+    """
+    if lora1 is not None:
+        A1, B1 = lora1
+        h = GroupedUpProjLoRA.apply(
+            x_grouped, w1, expert_offsets, A1, B1, scaling1, backend, concat
+        )
+    else:
+        h = grouped_up_gemm(
+            x_grouped, w1, expert_offsets, backend=backend, concat=concat
+        )
+    if b1 is not None:
+        h = _add_expert_bias(h, expert_offsets, b1)
+
+    a = gated_activation(h, act, concat=concat, limit=limit)
+
+    if lora2 is not None:
+        A2, B2 = lora2
+        y = GroupedDownProjLoRA.apply(a, w2, expert_offsets, A2, B2, scaling2, backend)
+    else:
+        y = grouped_down_gemm(a, w2, expert_offsets, backend=backend)
+    if b2 is not None:
+        y = _add_expert_bias(y, expert_offsets, b2)
+
+    return y
+
+
+def route_and_group(
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    num_experts: int,
+) -> tuple:
+    """Gather tokens into expert-sorted order for a grouped MoE forward.
+
+    ``top_k_index`` / ``top_k_weights`` are ``[T, K]`` (per-token routed experts
+    and combine weights). Returns ``(x_grouped [T*K, H], expert_offsets [E+1],
+    gather_token_idx [T*K], weights_grouped [T*K])`` where ``x_grouped`` rows are
+    sorted by expert. ``index_select`` keeps this differentiable wrt
+    ``hidden_states``; the combine weights stay differentiable wrt the router.
+    """
+    T, K = top_k_index.shape
+    device = hidden_states.device
+
+    flat_expert = top_k_index.reshape(-1)
+    if flat_expert.numel() and int(flat_expert.max()) >= num_experts:
+        # bincount(minlength=num_experts) would return > num_experts bins and the
+        # cumsum-into-a-fixed-slice below would silently drop the overflow. Routed
+        # ids exceed the local expert count under expert parallelism (global ids,
+        # local base shard), which this path does not yet support.
+        raise NotImplementedError(
+            "sonicmoe NVFP4 path received routed expert id >= num_experts "
+            f"({int(flat_expert.max())} >= {num_experts}); expert parallelism is "
+            "not supported yet"
+        )
+
+    flat_weight = top_k_weights.reshape(-1).to(hidden_states.dtype)
+    token_ids = torch.arange(T, device=device).repeat_interleave(K)
+
+    order = torch.sort(flat_expert, stable=True).indices
+    gather_token_idx = token_ids[order]
+    weights_grouped = flat_weight[order]
+    x_grouped = hidden_states.index_select(0, gather_token_idx)
+
+    counts = torch.bincount(flat_expert, minlength=num_experts)
+    expert_offsets = torch.zeros(num_experts + 1, dtype=torch.long, device=device)
+    torch.cumsum(counts, dim=0, out=expert_offsets[1:])
+
+    return x_grouped, expert_offsets, gather_token_idx, weights_grouped
+
+
+def combine_expert_outputs(
+    y_grouped: torch.Tensor,
+    gather_token_idx: torch.Tensor,
+    weights_grouped: torch.Tensor,
+    num_tokens: int,
+) -> torch.Tensor:
+    """Scale expert-sorted rows by router weights and scatter-add to ``[T, H]``."""
+    out = y_grouped.new_zeros((num_tokens, y_grouped.shape[-1]))
+    scaled = y_grouped * weights_grouped.unsqueeze(-1)
+    return out.index_add(0, gather_token_idx, scaled)
+
+
+def grouped_moe_reference_forward(
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    w1: torch.Tensor,
+    b1: Optional[torch.Tensor],
+    w2: torch.Tensor,
+    b2: Optional[torch.Tensor],
+    lora1: Optional[tuple],
+    lora2: Optional[tuple],
+    num_experts: int,
+    *,
+    act: str,
+    backend: str,
+    concat: bool,
+    scaling1: float,
+    scaling2: float,
+    limit: Optional[float] = None,
+) -> torch.Tensor:
+    """End-to-end NVFP4 MoE forward: route -> grouped gated MLP -> combine.
+
+    The frozen base ``w1`` / ``w2`` may be packed NVFP4. ``backend="dequant"``
+    dequantizes the whole base to dense once up front (the Phase-1 memory cost)
+    so both the forward and the hand-written backward operate on dense tensors;
+    ``backend="fp4_cute"`` is the future in-kernel path that keeps weights packed
+    and is not implemented here. ``limit`` is the clamped-SwiGLU bound (e.g.
+    DeepSeek-V4). Runs on CPU (dense base) so the path is validated without a GPU.
+    """
+    if backend == "dequant":
+        w1 = dequantize_expert_weight(w1)
+        w2 = dequantize_expert_weight(w2)
+        backend = "torch"
+    elif backend == "fp4_cute":
+        raise NotImplementedError(
+            "backend='fp4_cute' (in-kernel block-scaled FP4 gated+grouped GEMM) "
+            "is the Phase-2 seam and is not implemented"
+        )
+
+    x_grouped, expert_offsets, gather_token_idx, weights_grouped = route_and_group(
+        hidden_states, top_k_index, top_k_weights, num_experts
+    )
+    y_grouped = grouped_expert_mlp_lora(
+        x_grouped,
+        expert_offsets,
+        w1,
+        b1,
+        w2,
+        b2,
+        lora1,
+        lora2,
+        act=act,
+        backend=backend,
+        concat=concat,
+        scaling1=scaling1,
+        scaling2=scaling2,
+        limit=limit,
+    )
+    return combine_expert_outputs(
+        y_grouped, gather_token_idx, weights_grouped, hidden_states.shape[0]
+    )
