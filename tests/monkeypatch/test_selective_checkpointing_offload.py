@@ -95,5 +95,5 @@ class TestSacOffloadFunctional:
 
         assert engine.stats.offloaded_tensors >= 2 * n_layers
         assert engine.stats.restored_tensors == engine.stats.offloaded_tensors
-        for g0, g1 in zip(baseline, grads):
+        for g0, g1 in zip(baseline, grads, strict=True):
             torch.testing.assert_close(g0, g1)
