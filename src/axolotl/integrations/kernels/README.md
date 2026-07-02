@@ -240,6 +240,21 @@ Backend override for the nvfp4 grouped GEMM (unavailable choice warns + falls ba
 moe_grouped_backend: auto   # auto (default) | marlin | cutlass | deepgemm
 ```
 
+**Backward dX tuning (marlin backend).** `moe_marlin_dx` (opt-in, default `false`) runs the
+frozen-expert backward `dX = grad @ W` as a W4A16 grouped GEMM on a transposed pack requantized
+once at load — ~3–6× faster dX (~2× the full expert layer at DeepSeek-scale experts) at a ~9%
+fixed requant error on the dX weight (LoRA grads barely affected). Modes:
+
+- `true` — packs GPU-resident (fastest). ⚠️ Holds a second 4-bit expert pack, **roughly doubling
+  expert weight residency — a VRAM cost that grows with model size** (+12 GiB on Gemma-4-26B-A4B).
+- `offload` — packs in pinned CPU RAM, streamed to GPU per-layer with one-ahead prefetch on a side
+  stream during backward: GPU holds only ~2 layers' packs; the copy hides under backward compute.
+  Costs host RAM ~= the pack set.
+- `false` (default) — dequant-based dX; `moe_fp8_dx` picks its precision (fp8-read fast vs
+  bf16-dequant accurate).
+
+See the *MoE Expert Quantization* doc for details.
+
 **bitsandbytes 4-/8-bit experts.** Independent of the grouped-mode path, experts can be quantized to bnb NF4/int8 on load with `quantize_moe_experts: true` (QLoRA/LoRA) — see the *MoE Expert Quantization* doc. ScatterMoE routes bnb-NF4 experts through a chunked-dequant grouped path, tunable with `moe_bnb_fast` and `moe_dequant_chunk_size`.
 
 **Non-expert quantization.** `nonexpert_quantization: none|bf16|fp8_blockwise|nf4` quantizes the *non-expert* linears (attention/MLP) — separate from the expert precision above; resolved per-model by the adapter.

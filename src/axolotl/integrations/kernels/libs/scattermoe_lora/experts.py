@@ -798,6 +798,8 @@ def scattermoe_experts_forward(
                 getattr(self, "limit", None),
                 act_type=_detect_act_type(self),
                 weight_recipe=_recipe,
+                # persistent per-module cache for the moe_marlin_dx transposed packs
+                dx_cache=self.__dict__.setdefault("_fp8_dx_cache", {}),
             )
 
     # Config-gated grouped fp4 path (NVFP4 experts + LoRA + available fp4 backend); faster +

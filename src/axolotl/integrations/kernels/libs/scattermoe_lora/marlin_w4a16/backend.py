@@ -430,6 +430,35 @@ def stash_dx_pack(cache, key, pack, mode):
         cache[key] = pack
 
 
+def marlin_dx_gemm(pack, g, m_indices, size_n, size_k, b_type_id, moe_block_size=64):
+    """Generic transposed-pack marlin dX: ``g [Mt, size_k] -> [Mt, size_n]`` on the contiguous-
+    grouped layout. ``pack`` = (qw, scales, global_scale_or_None), resident or offload marker."""
+    ext = load_ext()
+    qw, sc, gs = resolve_dx_pack(pack, g.device)
+    Mt = g.size(0)
+    si, ei, ntpp, tw = marlin_route(m_indices, Mt, g.device)
+    ws = marlin_make_workspace_new(torch.device(g.device.type, g.device.index or 0), 4)
+    return marlin_moe_gemm(
+        ext,
+        g,
+        qw,
+        sc,
+        gs,
+        ws,
+        si,
+        ei,
+        ntpp,
+        tw,
+        moe_block_size,
+        1,
+        False,
+        Mt,
+        size_n,
+        size_k,
+        b_type_id=b_type_id,
+    )
+
+
 def marlin_base_dx(base, dx_data, which, g, m_indices):
     """Backward base-dX via the transposed-Marlin pack: one W4A16 grouped GEMM, no dequant.
     which=0: dx = dgu @ Wgu  (g[Mt,2I] -> [Mt,H]); which=1: dh = d_dn @ Wdn  (g[Mt,H] -> [Mt,I]).

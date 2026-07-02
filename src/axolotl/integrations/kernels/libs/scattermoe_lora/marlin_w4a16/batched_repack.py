@@ -1,9 +1,10 @@
-"""Batched one-pass marlin repack (Triton): all experts in one launch.
+"""Batched one-pass marlin 8-bit repack (Triton): all experts, transposed read, one launch.
 
-``gptq_marlin_repack`` scatters a (64, 16) base tile into fixed output positions; the map is
-probed once per process from the CUDA kernel itself (bijective, bit-exact). Repacking per expert
-costs one kernel launch + transpose copies each; these kernels do every expert in one launch with
-coalesced slab loads and an in-register permute, bit-identical to the loop.
+``gptq_marlin_repack`` scatters a (64, 16) base tile of bytes into 1024 fixed output positions;
+the map is probed once per process (bijective, bit-exact — see ``_build_repack8_lut``). This
+kernel fuses, for every expert at once, the W^T transpose (a strided READ from the original
+``[E, N, K]`` fp8 weight — no intermediate ``.contiguous()`` copies) with the LUT scatter,
+replacing the per-expert loop of 2 transpose copies + repack launch. Same output bit-for-bit.
 """
 
 from __future__ import annotations
@@ -12,8 +13,62 @@ import torch
 import triton
 import triton.language as tl
 
-N_T, K_T = 64, 16  # marlin base tile — matches the 4-bit fused_dequant geometry
+N_T, K_T = 64, 16  # marlin base tile (bytes) — matches the 4-bit fused_dequant geometry
 TILE = N_T * K_T
+
+_REPACK8_LUT: dict[torch.device, torch.Tensor] = {}
+
+
+def _build_repack8_lut(dev: torch.device, ext) -> torch.Tensor:
+    """Probe the (64, 16)-tile byte scatter of ``gptq_marlin_repack(num_bits=8)`` once per
+    process: set one byte, find it in the output. Bijective by construction (asserted)."""
+    if dev in _REPACK8_LUT:
+        return _REPACK8_LUT[dev]
+    perm = torch.empty(0, dtype=torch.int, device=dev)
+    scatter = torch.full((TILE,), -1, dtype=torch.int64)
+    for n in range(N_T):
+        for k in range(K_T):
+            qd = torch.zeros(N_T, K_T, dtype=torch.uint8, device=dev)
+            qd[n, k] = 0xFF
+            qw_i = qd.view(torch.int32).T.contiguous()
+            out = ext.gptq_marlin_repack(qw_i, perm, K_T, N_T, 8, False)
+            pos = (out.view(torch.uint8).flatten() == 0xFF).nonzero()
+            assert pos.numel() == 1, f"repack8 probe ({n},{k}): {pos.numel()} hits"
+            scatter[n * K_T + k] = pos.item()
+    assert (scatter >= 0).all() and scatter.unique().numel() == TILE
+    lut = scatter.to(dev, dtype=torch.int32)
+    _REPACK8_LUT[dev] = lut
+    return lut
+
+
+@triton.jit
+def _batched_repack8_t_kernel(
+    WQ,  # [E, N, K] uint8 (fp8 bytes) — the FORWARD-layout weight
+    LUT,  # [1024] int32
+    OUT,  # [E, N*K] uint8 (int32-viewable marlin pack of W^T)
+    wq_se,
+    wq_sn,
+    wq_sk,
+    out_se,
+    NT_OUT: tl.constexpr,  # size_n(=K) // 64 tiles
+    TILE_SZ: tl.constexpr,  # 1024
+):
+    # int64 ids: e*stride_e exceeds 2^31 at E=256 x [4096,4096] (same overflow class as the
+    # nvfp4_dequant_bf16 E=256 bug).
+    e = tl.program_id(0).to(tl.int64)
+    t = tl.program_id(1).to(tl.int64)
+    nt = t % NT_OUT
+    kt = t // NT_OUT
+    idx = tl.arange(0, TILE_SZ)
+    ln = idx // 16  # local n within the tile (dx-weight n = fwd K index)
+    lk = idx % 16  # local k within the tile (dx-weight k = fwd N index)
+    # dx-weight element (n, k) = W[k, n]: transposed gather from the forward layout
+    src = WQ + e * wq_se + (kt * 16 + lk) * wq_sn + (nt * 64 + ln) * wq_sk
+    val = tl.load(src)
+    pos = tl.load(LUT + idx)
+    tile_off = (kt * NT_OUT + nt) * TILE_SZ
+    tl.store(OUT + e * out_se + tile_off + pos, val)
+
 
 _REPACK4_INV_LUT: dict[torch.device, torch.Tensor] = {}
 
@@ -106,3 +161,32 @@ def batched_repack4(qdata: torch.Tensor, size_n: int, size_k: int) -> torch.Tens
         TILES_K=tiles_k,
     )
     return out.view(torch.int32).reshape(E, size_k // 16, size_n * 2)
+
+
+def batched_repack8_transposed(wq: torch.Tensor, ext) -> torch.Tensor:
+    """Marlin 8-bit repack of ``W^T`` for ALL experts in one launch.
+
+    ``wq [E, N, K]`` float8/uint8 (forward layout) -> int32 pack ``[E, (K//16), N*4]``-shaped
+    exactly as ``gptq_marlin_repack(W^T_bytes, ..., num_bits=8)`` per expert (bit-identical)."""
+    E, N, K = wq.shape
+    assert K % N_T == 0 and N % K_T == 0, (
+        f"repack8 tiling: K%{N_T}, N%{K_T} of {(N, K)}"
+    )
+    lut = _build_repack8_lut(wq.device, ext)
+    wq_b = wq.view(torch.uint8)
+    out = torch.empty(E, N * K, dtype=torch.uint8, device=wq.device)
+    nt_out = K // N_T
+    grid = (E, nt_out * (N // K_T))
+    _batched_repack8_t_kernel[grid](
+        wq_b,
+        lut,
+        out,
+        wq_b.stride(0),
+        wq_b.stride(1),
+        wq_b.stride(2),
+        out.stride(0),
+        NT_OUT=nt_out,
+        TILE_SZ=TILE,
+    )
+    # match the per-expert repack's output shape: [E, size_k // 16, size_n * 4] int32
+    return out.view(torch.int32).reshape(E, N // 16, K * 4)

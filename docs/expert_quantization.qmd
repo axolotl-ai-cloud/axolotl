@@ -72,6 +72,39 @@ lora_target_parameters: [experts.gate_up_proj, experts.down_proj]
   Choose `fp8_block` for memory savings alone; choose `mxfp8` for a native mxfp8 checkpoint or the
   Blackwell hardware MX-GEMM.
 
+### Backward dX tuning (Marlin backend)
+
+Two knobs control how the frozen-expert backward `dX = grad @ W` runs when the Marlin backend is
+active (sm120 and pre-Blackwell GPUs):
+
+```yaml
+moe_marlin_dx: false   # false (default) | true (GPU-resident packs) | offload (CPU-streamed packs)
+moe_fp8_dx: true       # dequant-dX precision: true = fp8-read (fast), false = bf16-dequant (accurate)
+```
+
+- **`moe_marlin_dx`** runs dX as a Marlin grouped GEMM on a transposed `W^T` pack built once at
+  load. It covers both grouped expert formats:
+  - `moe_grouped_mode: nvfp4` — W4A16 pack **requantized** along the flipped axis (~9% fixed error
+    on the dX weight; LoRA gradients barely affected, `d_hidden` cosine ≥ 0.996). ~3–6× faster dX,
+    ~2× the full expert layer at DeepSeek-scale experts.
+  - `moe_grouped_mode: fp8_block` — W8A16 pack via the **exact** quantization-aware transpose
+    (128×128 block scales are transpose-symmetric: byte permute + scale-grid transpose, zero
+    requant error). ~1.5–1.7× faster dX than the Triton fp8-read path at sparse-MoE scale.
+
+  ::: {.callout-warning}
+  `moe_marlin_dx: true` **increases resident VRAM** and is therefore **off by default**: a second
+  resident 4-bit expert pack (~the size of the forward pack) roughly doubles expert weight
+  residency — a cost that grows with model size (e.g. +12 GiB on Gemma-4-26B-A4B) even though
+  per-step transients shrink. Use `moe_marlin_dx: offload` to keep the speed while bounding GPU
+  cost: packs live in pinned CPU RAM (~the pack-set size in host memory) and stream to the GPU
+  per-layer with one-ahead prefetch on a side stream during backward, so the GPU holds only ~2
+  layers' packs and the copy hides under the previous layer's backward compute.
+  :::
+
+- **`moe_fp8_dx`** selects the dequant-based dX precision (used when `moe_marlin_dx: false` and as
+  the fallback path): `true` = fp8-read (sm120 default, ~2% grad error, ~half the transient),
+  `false` = bf16-dequant (most accurate).
+
 See [Kernels Integration](custom_integrations.qmd#kernels-integration) for the full expert-kernel
 config surface (including `nonexpert_quantization` for the attention/MLP linears).
 

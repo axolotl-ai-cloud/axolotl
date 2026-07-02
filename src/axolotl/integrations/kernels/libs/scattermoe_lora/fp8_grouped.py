@@ -84,17 +84,73 @@ def _fp8_base_forward(base, which, x, m_indices, offs):
     return _gmm(x, W.transpose(1, 2), offs)
 
 
-def _fp8_base_dx(w_fp8, g, offs, m_indices, tile):
+def _fp8_base_dx(w_fp8, g, offs, m_indices, tile, dx_pack=None):
     """dX through the frozen block-fp8 weight: g[Mt,out] @ W[E,out,in] -> [Mt,in] (per group).
-    Reads fp8 W in-register + upcasts to bf16 (bf16 grad required; grad-consistent with the forward,
-    no bf16 weight materialization). Falls back to a bf16-dequant grouped_mm off-CUDA."""
+
+    ``dx_pack`` (moe_marlin_dx): the EXACT transposed marlin W8A16 pack (zero requant error —
+    128x128 block scales are transpose-symmetric) -> one grouped GEMM, ~1.5-1.7x the Triton dX at
+    sparse-MoE scale. Otherwise reads fp8 W in-register + upcasts to bf16 (bf16 grad required;
+    grad-consistent with the forward, no bf16 weight materialization). Falls back to a bf16-dequant
+    grouped_mm off-CUDA."""
     wq, ws = w_fp8
+    if dx_pack is not None and g.is_cuda:
+        from .marlin_w4a16.backend import marlin_dx_gemm
+        from .marlin_w4a16.prep import FLOAT8_E4M3FN_ID
+
+        E, N, K = wq.shape
+        return marlin_dx_gemm(dx_pack, g, m_indices, K, N, FLOAT8_E4M3FN_ID)
     if g.is_cuda:
         from .blockfp8_gemm import blockfp8_grouped_dx
 
         return blockfp8_grouped_dx(g, wq, ws, m_indices, tile)
     W = _dequant_fp8_3d(wq, ws)  # [E, out, in]
     return _gmm(g, W, offs)
+
+
+def _build_fp8_dx_packs(gate_up, down, dx_cache):
+    """Build (once) the exact transposed marlin dX packs for both projections into ``dx_cache``
+    per the ``moe_marlin_dx`` mode. Returns (gu_pack, dn_pack) cache entries or (None, None)."""
+    from .marlin_w4a16.backend import _marlin_dx_mode, stash_dx_pack
+
+    mode = _marlin_dx_mode()
+    if not mode or dx_cache is None:
+        return None, None
+    try:
+        import torch.distributed as dist
+
+        from .marlin_w4a16 import load_ext, marlin_w4a16_available
+        from .marlin_w4a16.backend import _marlin_cache_under_fsdp
+
+        if not marlin_w4a16_available():
+            return None, None
+        # Under FSDP the gathered weight is a fresh full copy per step; caching a per-layer pack
+        # re-materializes the un-sharded experts across depth (OOM) — same policy as the nvfp4
+        # marlin cache: only with the explicit headroom opt-in.
+        if (
+            dist.is_available()
+            and dist.is_initialized()
+            and dist.get_world_size() > 1
+            and not _marlin_cache_under_fsdp(gate_up[0].device)
+        ):
+            return None, None
+        if "fp8_gate_up_dxT" not in dx_cache:
+            from .marlin_w4a16.prep import prepare_blockfp8_dx_weight
+
+            ext = load_ext()
+            for key, (wq, ws) in (
+                ("fp8_gate_up_dxT", gate_up),
+                ("fp8_down_dxT", down),
+            ):
+                # marlin tiling: dX output dim (fwd K) %64, reduction (fwd N) %16; block-fp8
+                # dims are 128-multiples so this only guards exotic shapes.
+                if wq.size(2) % 64 or wq.size(1) % 16:
+                    return None, None
+                pack = prepare_blockfp8_dx_weight(wq, ws, ext.gptq_marlin_repack)
+                stash_dx_pack(dx_cache, key, pack, mode)
+    except Exception as ex:  # pragma: no cover - fall back to the Triton dX
+        LOG.warning("fp8 marlin dX pack build failed (%s); using Triton dX", ex)
+        return None, None
+    return dx_cache.get("fp8_gate_up_dxT"), dx_cache.get("fp8_down_dxT")
 
 
 class _Fp8BlockGroupedExperts(torch.autograd.Function):
@@ -116,6 +172,7 @@ class _Fp8BlockGroupedExperts(torch.autograd.Function):
         scaling,
         limit,
         act_type,
+        dx_packs=None,
     ):
         E = Agu.size(0)
         gu = _fp8_base_forward(base, 0, x, m_indices, offs)
@@ -130,6 +187,7 @@ class _Fp8BlockGroupedExperts(torch.autograd.Function):
             limit,
             act_type,
         )
+        ctx.dx_packs = dx_packs  # (gu_pack, dn_pack) marlin dX or None
         return dn
 
     @staticmethod
@@ -138,19 +196,34 @@ class _Fp8BlockGroupedExperts(torch.autograd.Function):
         s, lim, act_type = ctx.scaling, ctx.limit, ctx.act_type
         d_dn = d_dn.contiguous().to(x.dtype)
         gu_fp8, dn_fp8 = ctx.weight_recipe()  # ((wq,ws), (wq,ws)) — FSDP-safe re-read
+        gu_pack, dn_pack = ctx.dx_packs or (None, None)
         E = Agu.size(0)
         tile = x.size(0) // m_indices.numel()  # routing pad granularity (TILE)
-        dh = _fp8_base_dx(dn_fp8, d_dn, offs, m_indices, tile)
+        dh = _fp8_base_dx(dn_fp8, d_dn, offs, m_indices, tile, dx_pack=dn_pack)
         dh, dAdn, dBdn = grouped_lora_bwd(
             d_dn, h, Adn, Bdn, hAd, s, offs, E, residual=dh
         )
         dgu = _swiglu_bwd(dh, gu, lim, act_type).to(x.dtype)
         del dh
-        dx = _fp8_base_dx(gu_fp8, dgu, offs, m_indices, tile)
+        dx = _fp8_base_dx(gu_fp8, dgu, offs, m_indices, tile, dx_pack=gu_pack)
         dx, dAgu, dBgu = grouped_lora_bwd(
             dgu, x, Agu, Bgu, xAg, s, offs, E, residual=dx
         )
-        return (dx, None, None, dAgu, dBgu, dAdn, dBdn, None, None, None, None, None)
+        return (
+            dx,
+            None,
+            None,
+            dAgu,
+            dBgu,
+            dAdn,
+            dBdn,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def grouped_fp8_moe_train(
@@ -166,6 +239,7 @@ def grouped_fp8_moe_train(
     limit,
     act_type="silu",
     weight_recipe=None,
+    dx_cache=None,
 ):
     """Training-capable native block-fp8 grouped MoE forward (no requant).
 
@@ -215,6 +289,11 @@ def grouped_fp8_moe_train(
     Mt = int(ptiles.sum()) * tile
 
     base = (backend, (gate_up_fp8, gate_up_scale), (down_fp8, down_scale))
+    dx_packs = _build_fp8_dx_packs(
+        (gate_up_fp8, gate_up_scale), (down_fp8, down_scale), dx_cache
+    )
+    if dx_packs == (None, None):
+        dx_packs = None
     Agu, Bgu, sgu = _lora_stack(gup_lora, E, H, twoI)
     Adn, Bdn, sdn = _lora_stack(down_lora, E, I, H)
     assert sgu == sdn, "gate_up/down LoRA scaling must match"
@@ -222,7 +301,19 @@ def grouped_fp8_moe_train(
 
     A = hidden.new_zeros(Mt, H).index_copy(0, padded_row, hidden[rep])
     dn = _Fp8BlockGroupedExperts.apply(
-        A, base, weight_recipe, Agu, Bgu, Adn, Bdn, m_indices, offs, sgu, lim, act_type
+        A,
+        base,
+        weight_recipe,
+        Agu,
+        Bgu,
+        Adn,
+        Bdn,
+        m_indices,
+        offs,
+        sgu,
+        lim,
+        act_type,
+        dx_packs,
     )
     out = hidden.new_zeros(N, H)
     return out.index_add(

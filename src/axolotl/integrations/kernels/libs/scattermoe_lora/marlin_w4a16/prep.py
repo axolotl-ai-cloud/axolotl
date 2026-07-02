@@ -85,8 +85,9 @@ def nvfp4_marlin_process_global_scale(global_scale, a_dtype=None):
     return global_scale * (2.0 ** (exponent_bias - 7))
 
 
-# vllm::ScalarType float4_e2m1f.id (stable packed enum id).
+# vllm::ScalarType packed enum ids (stable; the bit-packing is replicated + validated in tests).
 FLOAT4_E2M1F_ID = 562949953487106
+FLOAT8_E4M3FN_ID = 2814749767172868
 
 
 def marlin_moe_gemm(
@@ -107,8 +108,11 @@ def marlin_moe_gemm(
     size_n,
     size_k,
     out=None,
+    b_type_id=FLOAT4_E2M1F_ID,
 ):
-    """Thin vLLM-free call into the standalone moe_wna16_marlin_gemm (NVFP4 W4A16, bf16 act/out)."""
+    """Thin vLLM-free call into the standalone moe_wna16_marlin_gemm (bf16 act/out).
+    ``b_type_id`` selects the weight format: FLOAT4_E2M1F_ID (NVFP4 W4A16, requires global_scale)
+    or FLOAT8_E4M3FN_ID (block-fp8 W8A16, bf16 group-128 scales; global_scale must be None)."""
     if out is None:
         out = torch.empty((size_m * top_k, size_n), device=a.device, dtype=a.dtype)
     return ext.moe_wna16_marlin_gemm(
@@ -130,7 +134,7 @@ def marlin_moe_gemm(
         moe_block_size,
         top_k,
         mul_topk_weights,
-        FLOAT4_E2M1F_ID,
+        b_type_id,
         size_m,
         size_n,
         size_k,
@@ -230,6 +234,49 @@ def prepare_transposed_dx_weight(qdata, block_scale, pt, size_n, size_k, repack_
     g = nvfp4_marlin_process_global_scale(ptT.to(torch.float32), torch.bfloat16) / csf
     return qw, sc, g.float()
 
+
+FP8_BLOCK = 128
+
+
+def prepare_blockfp8_dx_weight(wq, ws, repack_fn):
+    """EXACT transposed Marlin W8A16 pack for the block-fp8 backward dX (zero requant error).
+
+    128x128 block scales are transpose-symmetric: ``W^T`` = byte-permute the e4m3 qdata +
+    transpose the scale grid — no dequant, no requant (the TE#2168 property). dX then runs as a
+    plain W8A16 grouped GEMM ``g [Mt, N] -> [Mt, K]`` with the weight in marlin's natural
+    orientation (``size_n = K``, ``size_k = N``, bf16 group-128 scales).
+
+    wq ``[E, N, K]`` float8_e4m3fn, ws ``[E, N/128, K/128]`` fp32 (``weight_scale_inv``).
+    Returns ``(qw int32 [E, ...], scales bf16 [E, ...], None)`` — the marlin tuple shape used by
+    ``marlin_moe_gemm`` with ``b_type_id=FLOAT8_E4M3FN_ID`` (no global scale)."""
+    E, N, K = wq.shape
+
+    # qdata: fused transpose+repack for ALL experts in one launch (bit-identical to the
+    # per-expert gptq_marlin_repack loop; see batched_repack.py).
+    from .batched_repack import batched_repack8_transposed
+
+    qw = batched_repack8_transposed(wq, _ext_from_repack(repack_fn))
+
+    # group scales [size_k/128, size_n] per expert, vectorized across E. The marlin fp8 dequant
+    # bit-trick leaves values scaled by 2^-120 for bf16 (2^-8 for fp16), so the exponent bias is
+    # fused into the scales (vllm fp8_fused_exponent_bias_into_scales).
+    s = (ws.float() * 2.0**120).to(torch.bfloat16)
+    s = s.repeat_interleave(FP8_BLOCK, dim=2)  # [E, N/128, K]
+    scale_perm, _ = get_scale_perms()
+    sc = (
+        s.reshape(E, -1, len(scale_perm))[:, :, scale_perm]
+        .reshape(E, -1, K)
+        .contiguous()
+    )
+    return qw, sc, None
+
+
+def _ext_from_repack(repack_fn):  # noqa: ARG001 - signature kept for call-site symmetry
+    """Return the (cached) ext module for the LUT probe. pybind functions don't expose a usable
+    ``__self__``, so this just loads the cached extension."""
+    from . import load_ext
+
+    return load_ext()
 
 
 def prepare_nvfp4_weight_for_marlin(
