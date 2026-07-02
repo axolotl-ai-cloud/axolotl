@@ -2,7 +2,7 @@
 
 Correctness gates for the SM100 grouped gated NVFP4 GEMM described in
 `SONICMOE_NVFP4_LORA.md` (Appendix B). Run them in order on a B200/GB200 pod
-(SM100/SM110); smokes 1-3 are standalone (no axolotl install), smoke 4 imports
+(SM100/SM110); smokes 1-3 are standalone (no axolotl install), smokes 4-5 import
 the repo's `axolotl` package by path (torchao required, part of axolotl deps).
 
 ## Pod setup
@@ -24,6 +24,7 @@ python smoke_01_upstream_dense.py   # env + upstream ground truth + host-prep pa
 python smoke_02_dense_gated.py      # THE composition: GemmGatedSm100(sf_vec_size=16), dense
 python smoke_03_varlen_gated.py     # grouped varlen_m + per-expert weights + folded pts
 python smoke_04_end_to_end_lora.py  # seam: MoE-LoRA fwd+bwd on a real torchao NVFP4Tensor
+python smoke_05_real_checkpoint.py  # one real Qwen3-30B-A3B-NVFP4 MoE layer (downloads shards)
 ```
 
 - smoke_01 runs only upstream quack code paths. A failure here is environment,
@@ -39,6 +40,11 @@ python smoke_04_end_to_end_lora.py  # seam: MoE-LoRA fwd+bwd on a real torchao N
   grouped up GEMM + LoRA delta -> gated activation -> quantized grouped down
   GEMM + LoRA delta -> combine, forward AND backward (LoRA A/B + hidden
   grads), against a pure-torch STE oracle plus a dequant-backend info diff.
+- smoke_05 reruns the smoke-4 comparison on a REAL MoE layer (128 experts of
+  nvidia/Qwen3-30B-A3B-NVFP4, fused through the adapter's own load helpers):
+  fp4_cute vs the STE oracle stays the tight gate, and the dequant diff becomes
+  the honest W4A4-at-real-weight-magnitudes number (OQ1). Also prints how many
+  block scales would go e4m3-subnormal if pts were folded (why we post-scale).
 
 All comparisons are against fp32 oracles that dequantize the exact operands the
 kernel consumes, so tolerances only cover fp32 accumulation order + bf16 output
