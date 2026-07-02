@@ -1,0 +1,63 @@
+# Tiny LoRA train gate: 30 steps of Qwen3-30B-A3B-NVFP4 MoE-LoRA on a single B200.
+#
+# Loading mirrors examples/glm_moe_dsa/glm-5.2-nvfp4-lora.yaml: the modelopt NVFP4 checkpoint is
+# unrecognized by transformers (bf16 skeleton) and the kernels plugin's Qwen3MoeAdapter registers
+# WeightConverters that fuse the per-expert tensors into 3D NVFP4Tensor params. Routed-expert LoRA
+# runs through the sonicmoe grouped NVFP4 path (fp4_cute in-kernel W4A4 on SM100 by default;
+# AXOLOTL_SONICMOE_NVFP4_BACKEND=dequant forces the W4A16 reference for the control run).
+#
+#   axolotl train benchmarks/sonicmoe_nvfp4/train_tiny_lora.yaml
+base_model: nvidia/Qwen3-30B-A3B-NVFP4
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+use_sonicmoe: true
+strict: false
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:2%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+val_set_size: 0
+output_dir: ./outputs/qwen3-30b-nvfp4-sonicmoe-lora
+
+sequence_len: 2048
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# Attention projections are plain bf16 nn.Linear after load (non-routed NVFP4 is dequantized).
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# Routed-expert LoRA on the 3D fused NVFP4 params (PEFT ParamWrapper).
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: 30
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_steps: 5
+
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+
+logging_steps: 1
+saves_per_epoch: 1
+
+wandb_project: sonic_nvfp4
+wandb_name: tiny_lora_qwen3-30b_fp4_cute_30steps

@@ -25,6 +25,8 @@ python smoke_02_dense_gated.py      # THE composition: GemmGatedSm100(sf_vec_siz
 python smoke_03_varlen_gated.py     # grouped varlen_m + per-expert weights + folded pts
 python smoke_04_end_to_end_lora.py  # seam: MoE-LoRA fwd+bwd on a real torchao NVFP4Tensor
 python smoke_05_real_checkpoint.py  # one real Qwen3-30B-A3B-NVFP4 MoE layer (downloads shards)
+python smoke_06_full_model_forward.py  # FULL 30B model via the qwen3_moe adapter (needs ~40GB GPU)
+axolotl train train_tiny_lora.yaml  # 30-step LoRA train gate (wandb: sonic_nvfp4)
 ```
 
 - smoke_01 runs only upstream quack code paths. A failure here is environment,
@@ -45,6 +47,14 @@ python smoke_05_real_checkpoint.py  # one real Qwen3-30B-A3B-NVFP4 MoE layer (do
   fp4_cute vs the STE oracle stays the tight gate, and the dequant diff becomes
   the honest W4A4-at-real-weight-magnitudes number (OQ1). Also prints how many
   block scales would go e4m3-subnormal if pts were folded (why we post-scale).
+- smoke_06 is the full integration: KernelsPlugin + Qwen3MoeAdapter load the whole
+  30B checkpoint (converters fuse experts to NVFP4Tensor during from_pretrained),
+  then real text runs through all 48 layers under both backends. NLL/perplexity,
+  top-1 agreement, and KL between fp4_cute (W4A4) and dequant (W4A16) logits are
+  the decisive activation-quant quality numbers (OQ1 with real activations).
+- train_tiny_lora.yaml is the 30-step MoE-LoRA training gate on a single B200;
+  run once as-is (fp4_cute) and once with AXOLOTL_SONICMOE_NVFP4_BACKEND=dequant
+  (set wandb_name accordingly) to compare loss curves.
 
 All comparisons are against fp32 oracles that dequantize the exact operands the
 kernel consumes, so tolerances only cover fp32 accumulation order + bf16 output

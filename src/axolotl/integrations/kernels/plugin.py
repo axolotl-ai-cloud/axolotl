@@ -123,6 +123,9 @@ class KernelsPlugin(BasePlugin):
                 cfg.experts_implementation = "sonicmoe"
             LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")
 
+            # Same frozen-quantized-base + LoRA pattern as the scattermoe path above.
+            relax_quantized_training_guard()
+
         adapters = self._adapters(cfg)
         self._warn_unclaimed_nonexpert_quantization(cfg, adapters)
         for adapter in adapters:
