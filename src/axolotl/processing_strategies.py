@@ -12,6 +12,7 @@ from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
 from transformers.image_utils import load_image
 from transformers.models.internvl import InternVLProcessor
+from transformers.models.paddleocr_vl import PaddleOCRVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
@@ -1155,6 +1156,37 @@ class MistralV7TekkenProcessingStrategy(ProcessingStrategy):
         return boundaries
 
 
+class PaddleOCRVLProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for PaddleOCR-VL."""
+
+    def _build_role_boundaries(self) -> list[RoleBoundary]:
+        tok = self.processor.tokenizer
+        assistant_start = _encode_markers(tok, ["Assistant:\n"])
+        eos = getattr(tok, "eos_token_id", None)
+        if not assistant_start or eos is None:
+            return []
+
+        boundaries = []
+        user_start = _encode_markers(tok, ["User: "])
+        if user_start:
+            boundaries.append(
+                RoleBoundary(
+                    role="user",
+                    start_tokens=user_start[0],
+                    end_tokens=assistant_start[0],
+                    include_end=False,
+                )
+            )
+        boundaries.append(
+            RoleBoundary(
+                role="assistant",
+                start_tokens=assistant_start[0],
+                end_tokens=[eos],
+            )
+        )
+        return boundaries
+
+
 class VoxtralProcessingStrategy(ProcessingStrategy):
     """Processing Strategy class for Voxtral.
 
@@ -1478,6 +1510,11 @@ def get_processing_strategy(
         return PixtralProcessingStrategy(**processing_kwargs)
     if chat_template_type == "mistral_v7_tekken":
         return MistralV7TekkenProcessingStrategy(**processing_kwargs)
+    if chat_template_type == "paddleocr_vl":
+        return PaddleOCRVLProcessingStrategy(**processing_kwargs)
+
+    if isinstance(processor, PaddleOCRVLProcessor):
+        return PaddleOCRVLProcessingStrategy(**processing_kwargs)
 
     if isinstance(processor, VoxtralProcessor):
         return VoxtralProcessingStrategy(**processing_kwargs)

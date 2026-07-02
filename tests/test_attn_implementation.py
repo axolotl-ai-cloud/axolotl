@@ -396,6 +396,41 @@ class TestSamplePackingValidation:
             for r in caplog.records
         )
 
+    def test_paddleocr_vl_cut_cross_entropy_rejected(self):
+        from axolotl.integrations.cut_cross_entropy import CutCrossEntropyPlugin
+
+        cfg = DictDefault(
+            model_config_type="paddleocr_vl",
+            cut_cross_entropy=True,
+        )
+        with pytest.raises(ValueError, match="PaddleOCR-VL"):
+            CutCrossEntropyPlugin().pre_model_load(cfg)
+
+    def test_paddleocr_vl_cut_cross_entropy_disabled_is_noop(self):
+        from axolotl.integrations.cut_cross_entropy import CutCrossEntropyPlugin
+
+        cfg = DictDefault(
+            model_config_type="paddleocr_vl",
+            cut_cross_entropy=False,
+        )
+        CutCrossEntropyPlugin().pre_model_load(cfg)
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            {"liger_cross_entropy": True},
+            {"liger_fused_linear_cross_entropy": True},
+            {"liger_glu_activation": True},
+        ],
+    )
+    def test_paddleocr_vl_liger_rejected(self, flags):
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        cfg = DictDefault(model_config_type="paddleocr_vl")
+        cfg.update(flags)
+        with pytest.raises(ValueError, match="Liger is not supported"):
+            LigerPlugin().pre_model_load(cfg)
+
 
 class TestScalingSoftmaxValidation:
     """`scaling_softmax` is only implemented under flex_attention."""

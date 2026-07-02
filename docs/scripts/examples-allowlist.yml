@@ -9,6 +9,9 @@ examples:
   - name: internvl3_5
     title: InternVL 3.5
 
+  - name: paddleocr-vl
+    title: PaddleOCR-VL
+
   # AllenAI
   - name: olmo3
     title: OLMo 3

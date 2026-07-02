@@ -19,6 +19,7 @@ from axolotl.processing_strategies import (
     Llama4ProcessingStrategy,
     Mistral3ProcessingStrategy,
     MistralV7TekkenProcessingStrategy,
+    PaddleOCRVLProcessingStrategy,
     PixtralProcessingStrategy,
     ProcessingStrategy,
     Qwen2VLProcessingStrategy,
@@ -666,6 +667,65 @@ def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
     # system content masked, [/SYSTEM_PROMPT]=41 kept (include_end=True + all);
     # user + [/INST]=51 masked (include_end=False); assistant 8 + eos 99 kept.
     assert out == [-100, -100, 41, -100, -100, -100, 8, 99]
+
+
+# --------------------------------------------------------------------------- #
+# PaddleOCR-VL
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(scope="module", name="paddleocr_vl_processor")
+def fixture_paddleocr_vl_processor():
+    from transformers import AutoProcessor
+
+    return AutoProcessor.from_pretrained("PaddlePaddle/PaddleOCR-VL-1.6")
+
+
+def _paddleocr_vl_messages(task_text, answer_text):
+    return [
+        {
+            "role": "user",
+            "content": [{"type": "image"}, {"type": "text", "text": task_text}],
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": answer_text}],
+        },
+    ]
+
+
+def test_paddleocr_vl_masks_user_prompt_and_image_tokens(paddleocr_vl_processor):
+    proc = paddleocr_vl_processor
+    tok = proc.tokenizer
+    strategy = PaddleOCRVLProcessingStrategy(proc)
+
+    ids = proc.apply_chat_template(
+        _paddleocr_vl_messages("OCR:", "hello world"), tokenize=True
+    )
+    seq = ids[0]
+    labels = strategy.process_labels(torch.tensor(ids)).tolist()[0]
+
+    first_unmasked = next(i for i, l in enumerate(labels) if l != -100)
+    # Everything through the assistant marker (bos, user turn, image tokens) is masked.
+    assert all(l == -100 for l in labels[:first_unmasked])
+    assert tok.decode(seq[:first_unmasked]).endswith("Assistant:\n")
+    # The assistant response plus eos trains unmasked to end of sequence.
+    assert labels[first_unmasked:] == seq[first_unmasked:]
+    assert tok.decode(seq[first_unmasked:]) == f"hello world{tok.eos_token}"
+    # Image placeholder positions are masked.
+    image_id = tok.convert_tokens_to_ids(proc.image_token)
+    assert image_id in seq
+    assert all(l == -100 for t, l in zip(seq, labels, strict=True) if t == image_id)
+
+
+def test_dispatch_paddleocr_vl(paddleocr_vl_processor):
+    s = _dispatch(paddleocr_vl_processor, None)
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
+
+
+def test_dispatch_paddleocr_vl_chat_template_key(paddleocr_vl_processor):
+    s = _dispatch(paddleocr_vl_processor, "paddleocr_vl")
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
 
 
 # --------------------------------------------------------------------------- #
