@@ -130,23 +130,24 @@ def single_param_sinkgd_specnorm(
         cn = torch.linalg.vector_norm(x, dim=-2, keepdim=True, dtype=torch.float32)
         x = x * (sqrt_m / cn.clamp_min(eps)).to(x.dtype)
 
-    xf = x.float()
+    # Power iteration in the update dtype: matmuls hit tensor cores with fp32 accumulation, so
+    # the full matrix is never cast to fp32 (only the O(m)/O(n) vectors are). `v @ X` avoids
+    # materializing Xᵀ, and the operator-norm rescale folds into the apply (no extra pass).
     uu = u
     sigma = None
     for _ in range(sn_iters):
-        v = torch.matmul(xf, uu.unsqueeze(-1)).squeeze(-1)
+        v = torch.matmul(x, uu.to(x.dtype).unsqueeze(-1)).squeeze(-1).float()
         v = v / torch.linalg.vector_norm(v, dim=-1, keepdim=True).clamp_min(eps)
-        uu = torch.matmul(xf.transpose(-1, -2), v.unsqueeze(-1)).squeeze(-1)
+        uu = torch.matmul(v.to(x.dtype).unsqueeze(-2), x).squeeze(-2).float()
         sigma = torch.linalg.vector_norm(uu, dim=-1, keepdim=True).clamp_min(eps)
         uu = uu / sigma
     u.copy_(uu)
-    sigma_b = sigma.reshape(*sigma.shape[:-1], 1, 1)
-    xf = xf * (target / sigma_b)
+    scale = target / sigma.reshape(*sigma.shape[:-1], 1, 1)  # fp32 [*lead,1,1]
 
     p_f32 = p.float()
     if weight_decay != 0.0:
         p_f32 = p_f32 * (1 - lr * weight_decay)
-    p_f32 = p_f32 - lr * xf
+    p_f32 = p_f32 - (lr * scale) * x.float()
 
     if stochastic_round:
         p.copy_(_fp32_to_bf16_sr(p_f32))
@@ -184,21 +185,22 @@ def single_param_sinkgd_md(
         cn = torch.linalg.vector_norm(x, dim=-2, keepdim=True, dtype=torch.float32)
         x = x * (sqrt_m / cn.clamp_min(eps)).to(x.dtype)
 
-    xf = x.float()
+    # bf16 tensor-core power iteration (see single_param_sinkgd_specnorm); the unit-operator-
+    # norm + sphere-radius rescale folds into the weight step, leaving only the sphere
+    # projection (the one unavoidable extra full-matrix pass for MD).
     uu = u
     sigma = None
     for _ in range(sn_iters):
-        v = torch.matmul(xf, uu.unsqueeze(-1)).squeeze(-1)
+        v = torch.matmul(x, uu.to(x.dtype).unsqueeze(-1)).squeeze(-1).float()
         v = v / torch.linalg.vector_norm(v, dim=-1, keepdim=True).clamp_min(eps)
-        uu = torch.matmul(xf.transpose(-1, -2), v.unsqueeze(-1)).squeeze(-1)
+        uu = torch.matmul(v.to(x.dtype).unsqueeze(-2), x).squeeze(-2).float()
         sigma = torch.linalg.vector_norm(uu, dim=-1, keepdim=True).clamp_min(eps)
         uu = uu / sigma
     u.copy_(uu)
-    sigma_b = sigma.reshape(*sigma.shape[:-1], 1, 1)
     tn = target_norm.reshape(*target_norm.shape, 1, 1)
-    xf = xf / sigma_b * tn  # direction at unit operator norm, scaled to the sphere radius
+    sig_b = sigma.reshape(*sigma.shape[:-1], 1, 1)
 
-    p_f32 = p.float() - lr * xf
+    p_f32 = p.float() - (lr * tn / sig_b) * x.float()
     fro = torch.linalg.vector_norm(p_f32, dim=(-2, -1), keepdim=True).clamp_min(eps)
     p_f32 = p_f32 / fro * tn  # Frobenius sphere projection
 
@@ -607,16 +609,17 @@ def _md_sphere_apply(p_local, pf, frosq, tn, eps, stochastic_round):
         p_local.copy_(pf)
 
 
-def _specnorm_gram_rows(xf, u):
-    # rows sharded: local part of (Xᵀ X) u = X_localᵀ (X_local u). xf[...,M_local,N], u[...,N].
-    w = torch.matmul(xf, u.unsqueeze(-1)).squeeze(-1)
-    return torch.matmul(xf.transpose(-1, -2), w.unsqueeze(-1)).squeeze(-1)
+def _specnorm_gram_rows(x, u):
+    # rows sharded: local part of (Xᵀ X) u = X_localᵀ (X_local u). matmuls in x's dtype
+    # (tensor cores, fp32 accumulation), transpose-free via w @ X; fp32 partial for the reduce.
+    w = torch.matmul(x, u.unsqueeze(-1)).squeeze(-1)
+    return torch.matmul(w.unsqueeze(-2), x).squeeze(-2).float()
 
 
-def _specnorm_gram_cols(xf, v):
-    # cols sharded: local part of (X Xᵀ) v = X_local (X_localᵀ v). xf[...,M,N_local], v[...,M].
-    t = torch.matmul(xf.transpose(-1, -2), v.unsqueeze(-1)).squeeze(-1)
-    return torch.matmul(xf, t.unsqueeze(-1)).squeeze(-1)
+def _specnorm_gram_cols(x, v):
+    # cols sharded: local part of (X Xᵀ) v = X_local (X_localᵀ v). x[...,M,N_local], v[...,M].
+    t = torch.matmul(v.unsqueeze(-2), x).squeeze(-2)
+    return torch.matmul(x, t.unsqueeze(-1)).squeeze(-1).float()
 
 
 class DistSinkGD(SinkGD):
@@ -663,17 +666,17 @@ class DistSinkGD(SinkGD):
 
         ``op_target`` overrides the target with a per-matrix tensor (the MD sphere radius);
         otherwise the class ``unit``/``muon`` scalar is used."""
-        xf = x.float()
         lead = x.shape[:-2]
         eps = self.sinkgd_eps
         vec_len = global_N if shard_dim == -2 else global_M
         u = self._dist_specnorm_vec(p, device, lead, vec_len)
         nrm = None
         for _ in range(self.sinkgd_spectral_norm_iters):
+            ud = u.to(x.dtype)
             if shard_dim == -2:
-                up = self._c_specnorm_gram_rows(xf, u)
+                up = self._c_specnorm_gram_rows(x, ud)
             else:
-                up = self._c_specnorm_gram_cols(xf, u)
+                up = self._c_specnorm_gram_cols(x, ud)
             dist.all_reduce(up, group=self._process_group)
             nrm = torch.linalg.vector_norm(up, dim=-1, keepdim=True).clamp_min(eps)
             u = up / nrm
@@ -686,7 +689,7 @@ class DistSinkGD(SinkGD):
             target = (
                 1.0 if self.sinkgd_spectral_target == "unit" else (global_M / global_N) ** 0.5
             )
-        return (xf * (target / sig_b)).to(x.dtype)
+        return x * (target / sig_b).to(x.dtype)
 
     def _dist_sinkgd_step(self, p, grad, group, lr):
         shard_dim = _matrix_shard_dim(p)
