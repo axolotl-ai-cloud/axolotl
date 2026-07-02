@@ -38,9 +38,12 @@ def set_token_capacity(cap: int | None) -> None:
 
 def _apply_expert_capacity(topk_idx, topk_w, cap):
     """Cap tokens-per-expert to ``cap`` by sentinelling (-1) the lowest-weight excess (token,expert)
-    assignments. DeepEP's intranode combine hangs once one expert receives too many tokens (the
-    GLM router concentrates more with depth, crossing the hang threshold ~layer 31); standard MoE
-    capacity-dropping keeps every expert under the limit. Already-(-1) slots are left untouched."""
+    assignments, then rescale each token's surviving weights back to its pre-drop gate sum. DeepEP's
+    intranode combine hangs once one expert receives too many tokens (the GLM router concentrates more
+    with depth, crossing the hang threshold ~layer 31); standard MoE capacity-dropping keeps every
+    expert under the limit. The GLM router normalizes the top-k weights to sum to 1, so dropping an
+    expert without rescaling would silently attenuate that token's combined expert output. Already-(-1)
+    slots are left untouched. Returns ``(capped_idx, rescaled_w)``."""
     import torch
 
     ntok, K = topk_idx.shape
@@ -59,7 +62,14 @@ def _apply_expert_capacity(topk_idx, topk_w, cap):
     drop_sorted = (within >= cap) & (se >= 0)
     drop = torch.zeros_like(flat_e, dtype=torch.bool)
     drop[order] = drop_sorted
-    return topk_idx.reshape(-1).masked_fill(drop, -1).reshape(ntok, K)
+    capped_idx = flat_e.masked_fill(drop, -1).reshape(ntok, K)
+
+    orig_sum = (topk_w * (topk_idx >= 0)).sum(dim=-1, keepdim=True)
+    kept = (capped_idx >= 0).to(topk_w.dtype)
+    kept_sum = (topk_w * kept).sum(dim=-1, keepdim=True)
+    rescale = torch.where(kept_sum > 0, orig_sum / kept_sum, torch.ones_like(kept_sum))
+    rescaled_w = topk_w * kept * rescale
+    return capped_idx, rescaled_w
 
 
 def set_valid_token_mask(mask: torch.Tensor | None) -> None:
@@ -270,7 +280,9 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     # Cap tokens-per-expert before building the dispatch layout — an overloaded expert deadlocks
     # DeepEP's intranode combine (the GLM router concentrates with depth).
     if _TOKEN_CAPACITY is not None:
-        topk_idx_i64 = _apply_expert_capacity(topk_idx_i64, topk_w_f32, _TOKEN_CAPACITY)
+        topk_idx_i64, topk_w_f32 = _apply_expert_capacity(
+            topk_idx_i64, topk_w_f32, _TOKEN_CAPACITY
+        )
 
     # Drop padding tokens from the dispatch. Under non-packed training with
     # `pad_to_sequence_len`, padding rows carry identical embeddings, so the router
