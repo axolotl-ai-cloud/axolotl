@@ -98,36 +98,22 @@ def _compile_kernel(
     e4m3 = cutlass.Float8E4M3FN
     device_capacity = get_device_capacity(sfa_sample.device)
 
+    # All-symbolic fakes (mixing concrete dims with sym M crashes the varlen
+    # ragged-TMA construction with std::bad_variant_access). The fp4 K dim
+    # needs an explicit even-divisibility hint or the packed-nibble shape
+    # check ("stride=1 dim must be divisible by 2") rejects the compile.
     m_sym = cute.sym_int()
-    if varlen_m:
-        # Fake shapes are LOGICAL fp4 element counts; the runtime tensors are
-        # float4_e2m1fn_x2 with half the K extent (as in quack's dense driver).
-        mA = fake_tensor(fp4, (m_sym, k), leading_dim=1, divisibility=32)
-        mD = (
-            fake_tensor(bf16, (m_sym, n), leading_dim=1, divisibility=8)
-            if has_d
-            else None
-        )
-        mAux = (
-            fake_tensor(bf16, (m_sym, n // 2), leading_dim=1, divisibility=8)
-            if gated
-            else None
-        )
-    else:
-        mA = fake_tensor(fp4, (m_sym, k, num_experts), leading_dim=1, divisibility=32)
-        mD = (
-            fake_tensor(bf16, (m_sym, n, num_experts), leading_dim=1, divisibility=8)
-            if has_d
-            else None
-        )
-        mAux = (
-            fake_tensor(
-                bf16, (m_sym, n // 2, num_experts), leading_dim=1, divisibility=8
-            )
-            if gated
-            else None
-        )
-    mB = fake_tensor(fp4, (n, k, num_experts), leading_dim=1, divisibility=32)
+    n_sym = cute.sym_int(divisibility=8)
+    k_sym = cute.sym_int(divisibility=32)
+    l_sym = cute.sym_int()
+    pa_sym = cute.sym_int(divisibility=8)
+    a_shape = (m_sym, k_sym) if varlen_m else (m_sym, k_sym, l_sym)
+    d_shape = (m_sym, n_sym) if varlen_m else (m_sym, n_sym, l_sym)
+    pa_shape = (m_sym, pa_sym) if varlen_m else (m_sym, pa_sym, l_sym)
+    mA = fake_tensor(fp4, a_shape, leading_dim=1, divisibility=32)
+    mB = fake_tensor(fp4, (n_sym, k_sym, l_sym), leading_dim=1, divisibility=32)
+    mD = fake_tensor(bf16, d_shape, leading_dim=1, divisibility=8) if has_d else None
+    mAux = fake_tensor(bf16, pa_shape, leading_dim=1, divisibility=8) if gated else None
 
     if gated:
         gemm_cls = partial(GemmGatedSm100, sf_vec_size=SF_VEC_SIZE)
@@ -172,8 +158,10 @@ def _compile_kernel(
                 postact, None, alpha=Float32(alpha), rounding_mode=None
             )
         else:
+            # Constexpr fields (add_to_output, rounding_mode) must be None at
+            # call time; the namedtuple default False fails the FFI signature.
             epi_args = GemmDefaultSm100.EpilogueArguments(
-                alpha=Float32(alpha), rounding_mode=None
+                alpha=Float32(alpha), add_to_output=None, rounding_mode=None
             )
         scheduler_args = make_scheduler_args(max_active, 8, None)
         varlen_args = make_varlen_args(cu_seqlens, None, None) or VarlenArguments()

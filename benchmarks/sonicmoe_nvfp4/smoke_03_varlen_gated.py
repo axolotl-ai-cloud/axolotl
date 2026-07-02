@@ -39,15 +39,29 @@ def main():
 
     w = torch.randn(E, N, K, device="cuda") * K**-0.5
     pts = torch.tensor([0.5, 1.0, 2.0, 1.5, 0.7], device="cuda")
-    b_q_list, b_s_list, w_dq = [], [], []
+    b_q_list, b_s_list = [], []
     for e in range(E):
         q_e, s_e, _ = quantize_nvfp4_ref(w[e], per_tensor_scale=pts[e])
         b_q_list.append(q_e)
         b_s_list.append(s_e)
-        w_dq.append(dequantize_nvfp4_ref(q_e, s_e, pts[e]))
     b_q = torch.stack(b_q_list)
     b_s = torch.stack(b_s_list)
-    w_dq = torch.stack(w_dq)
+    # The kernel consumes pts FOLDED into e4m3 block scales (a re-rounding),
+    # so the tight kernel oracle dequantizes with the folded scales. The
+    # folding cost itself (nonzero for non-power-of-2 pts like 1.5/0.7) is
+    # reported separately; it is an accepted quantization-scheme error, not a
+    # kernel error (design doc open question 2).
+    from sf_layout import fold_per_tensor_scale
+
+    b_s_folded, _ = fold_per_tensor_scale(b_s, pts)
+    w_dq = dequantize_nvfp4_ref(b_q, b_s_folded)
+    w_dq_exact = torch.stack(
+        [dequantize_nvfp4_ref(b_q[e], b_s[e], pts[e]) for e in range(E)]
+    )
+    fold_rel = (
+        (w_dq - w_dq_exact).abs().sum() / w_dq_exact.abs().sum().clamp(min=1e-12)
+    ).item()
+    print(f"[info] pts-folding mean rel weight error: {fold_rel:.4e}")
 
     def oracle():
         pre = torch.empty(total_m, N, device="cuda")
