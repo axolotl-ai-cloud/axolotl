@@ -117,10 +117,12 @@ def _kernels():
             scale_e4m3.to(tl.uint8, bitcast=True),
             mask=mask_sf,
         )
-        # encode against the STORED (rounded) scale, like the reference
+        # encode against the STORED (rounded) scale, like the reference.
+        # div_rn: triton's `/` may lower to reciprocal-multiply, which flips
+        # values sitting exactly on E2M1 bucket boundaries vs the torch ref.
         sdec = scale_e4m3.to(tl.float32)
         sdec = tl.where(sdec == 0, 1.0, sdec)
-        q = x / sdec[:, None, None]
+        q = tl.math.div_rn(x, tl.broadcast_to(sdec[:, None, None], x.shape))
 
         a = tl.abs(q)
         idx = (
