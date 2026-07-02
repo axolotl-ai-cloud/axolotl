@@ -716,6 +716,14 @@ class TestEfficientMerge:
         for _key, shard_name in idx["weight_map"].items():
             assert (output_dir / shard_name).exists(), f"Missing shard: {shard_name}"
 
+        # Metadata must report real byte size + param count, not the tensor count.
+        expected_params = sum(t.numel() for t in {**shard1, **shard2}.values())
+        expected_bytes = sum(
+            t.numel() * t.element_size() for t in {**shard1, **shard2}.values()
+        )
+        assert idx["metadata"]["total_parameters"] == expected_params
+        assert idx["metadata"]["total_size"] == expected_bytes
+
     def test_dora_end_to_end(self, tmp_path):
         """DoRA merge through the full sharded merge pipeline."""
         hidden = 16
