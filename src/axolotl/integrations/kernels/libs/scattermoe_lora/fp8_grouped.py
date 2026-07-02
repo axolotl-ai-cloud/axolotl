@@ -7,7 +7,7 @@ the base GEMM natively:
 
   * **base forward** — DeepGEMM ``m_grouped_gemm_fp8_fp8_bf16_nt_contiguous`` (fp8-act x block-fp8-
     weight) on sm90 (H100/H200) + sm100 (B200/B300) — the DeepSeek-V3 MoE recipe. This is the
-    datacenter target for the 1050B model. Preserves fp8 fidelity (~4e-3 vs bf16, ~17x better than
+    datacenter target for the largest checkpoints. Preserves fp8 fidelity (~4e-3 vs bf16, ~17x better than
     requant). Fallback: dequant block-fp8 -> bf16 + ``torch._grouped_mm`` (verifiable on any GPU,
     but materializes bf16 weights so it is a dev/verify path, not memory-efficient at scale).
   * **base dX backward** — dequant the FORWARD block-fp8 weight to bf16 + grouped GEMM (bf16 grad
@@ -56,7 +56,15 @@ def _dequant_fp8_3d(wq: torch.Tensor, ws: torch.Tensor) -> torch.Tensor:
 
 def _fp8_train_backend() -> str:
     from .dequant_grouped import deepgemm_fp8fp8_available
+    from .runtime import RUNTIME
 
+    # marlin W8A16 forward is OPT-IN (moe_grouped_backend: marlin): ~2.6-2.9x the Triton fwd GEMM
+    # at DeepSeek-scale dims, but the resident pack ~doubles fp8 expert weight residency.
+    if RUNTIME.grouped_backend == "marlin":
+        from .marlin_w4a16 import marlin_w4a16_available
+
+        if marlin_w4a16_available():
+            return "marlin_fp8"
     if deepgemm_fp8fp8_available():
         return "deepgemm_fp8"  # native fp8xfp8, sm90 (H200) / sm100 (B200,B300)
     if torch.cuda.is_available():
@@ -64,11 +72,101 @@ def _fp8_train_backend() -> str:
     return "dequant"
 
 
+_FWD_PACK_KEYS = ("fp8_gate_up_fwd", "fp8_down_fwd")
+
+
+def _fp8_fwd_pack(wq, ws, cache, which, probe_only=False, no_cache=False):
+    """Marlin W8A16 forward pack for one projection: cached under the headroom opt-in
+    (AXOLOTL_MARLIN_CACHE_MIN_FREE_GB), else built TRANSIENTLY for this GEMM and freed on
+    return — memory-neutral at any depth (incl. FSDP, where the gathered weight is itself a
+    fresh per-step copy). ``probe_only`` returns only a cache hit; ``no_cache`` never stores
+    (chunked builds). Returns None to fall back to the Triton forward."""
+    key = _FWD_PACK_KEYS[which]
+    if cache is not None:
+        if cache.get("fp8_fwd_failed"):
+            return None
+        got = cache.get(key)
+        if got is not None:
+            return got
+    if probe_only:
+        return None
+    # marlin tiling: out(N) %64, reduction(K) %16; reduction must span >=2 scale groups (a
+    # single group infers channelwise group_size=-1, not instantiated for fp8).
+    if wq.size(1) % 64 or wq.size(2) % 16 or wq.size(2) <= 128:
+        return None
+    try:
+        from .marlin_w4a16 import load_ext, marlin_w4a16_available
+        from .marlin_w4a16.backend import _marlin_cache_under_fsdp
+        from .marlin_w4a16.prep import prepare_blockfp8_fwd_weight
+
+        if not marlin_w4a16_available():
+            return None
+        pack = prepare_blockfp8_fwd_weight(wq, ws, load_ext().gptq_marlin_repack)
+        if not no_cache and cache is not None and _marlin_cache_under_fsdp(wq.device):
+            cache[key] = pack
+        return pack
+    except Exception as ex:  # pragma: no cover - fall back to the Triton forward
+        LOG.warning("fp8 marlin fwd pack build failed (%s); using Triton", ex)
+        if cache is not None:
+            cache["fp8_fwd_failed"] = True
+        return None
+
+
+def _marlin_fp8_forward(wq, ws, cache, which, x, m_indices):
+    """Marlin W8A16 forward for one projection; None -> caller falls back to Triton.
+
+    AXOLOTL_MARLIN_FWD_CHUNKS=<C> (transient mode only) builds the pack in C column chunks,
+    each freed after its GEMM — the pack transient shrinks C-fold for one extra [Mt, N] concat
+    copy. Column ranges of W are independent packs (128-block-aligned so the scale grid slices
+    cleanly)."""
+    import os
+
+    from .marlin_w4a16.backend import marlin_dx_gemm
+    from .marlin_w4a16.prep import FLOAT8_E4M3FN_ID
+
+    E, Nout, Kin = wq.shape
+    pack = _fp8_fwd_pack(wq, ws, cache, which, probe_only=True)
+    if pack is not None:  # resident-cached
+        return marlin_dx_gemm(pack, x, m_indices, Nout, Kin, FLOAT8_E4M3FN_ID)
+    env_chunks = os.environ.get("AXOLOTL_MARLIN_FWD_CHUNKS")
+    if env_chunks:
+        chunks = int(env_chunks)
+    else:
+        # auto: bound the transient pack chunk at ~2.5 GiB (memory-neutral at large expert
+        # dims — measured peak == the Triton baseline — for ~2% over the unchunked build)
+        chunks = max(
+            1, (E * Nout * Kin + (1 << 31) + (1 << 30) - 1) // ((1 << 31) + (1 << 30))
+        )
+    n_blocks = Nout // 128
+    if chunks <= 1 or n_blocks < chunks:
+        pack = _fp8_fwd_pack(wq, ws, cache, which)
+        if pack is None:
+            return None
+        return marlin_dx_gemm(pack, x, m_indices, Nout, Kin, FLOAT8_E4M3FN_ID)
+    nc = ((n_blocks + chunks - 1) // chunks) * 128
+    outs = []
+    for n0 in range(0, Nout, nc):
+        n1 = min(n0 + nc, Nout)
+        pack = _fp8_fwd_pack(
+            wq[:, n0:n1], ws[:, n0 // 128 : n1 // 128], cache, which, no_cache=True
+        )
+        if pack is None:
+            return None
+        outs.append(marlin_dx_gemm(pack, x, m_indices, n1 - n0, Kin, FLOAT8_E4M3FN_ID))
+        del pack
+    return torch.cat(outs, dim=1)
+
+
 def _fp8_base_forward(base, which, x, m_indices, offs):
     """Frozen block-fp8 base GEMM for gate_up (which=0) or down (which=1).
-    base = (backend, (gu_fp8, gu_scale), (dn_fp8, dn_scale)); weights [E, out, in]."""
+    base = (backend, (gu_fp8, gu_scale), (dn_fp8, dn_scale), pack_cache); weights [E, out, in]."""
     backend = base[0]
     wq, ws = base[1] if which == 0 else base[2]
+    if backend == "marlin_fp8":
+        y = _marlin_fp8_forward(wq, ws, base[3], which, x, m_indices)
+        if y is not None:
+            return y
+        backend = "blockfp8_triton"
     if backend == "deepgemm_fp8":
         from .dequant_grouped import deepgemm_grouped_fp8_fp8
 
@@ -109,11 +207,13 @@ def _fp8_base_dx(w_fp8, g, offs, m_indices, tile, dx_pack=None):
 
 def _build_fp8_dx_packs(gate_up, down, dx_cache):
     """Build (once) the exact transposed marlin dX packs for both projections into ``dx_cache``
-    per the ``moe_marlin_dx`` mode. Returns (gu_pack, dn_pack) cache entries or (None, None)."""
-    from .marlin_w4a16.backend import _marlin_dx_mode, stash_dx_pack
+    (moe_marlin_dx opt-in). Returns (gu_pack, dn_pack) cache entries or (None, None).
 
-    mode = _marlin_dx_mode()
-    if not mode or dx_cache is None:
+    Cache-only (unlike the transient forward packs): a transient dX pack would ride ctx across
+    the whole backward graph — all layers' packs alive at once."""
+    from .marlin_w4a16.backend import _marlin_dx_enabled
+
+    if not _marlin_dx_enabled() or dx_cache is None or dx_cache.get("fp8_dxT_failed"):
         return None, None
     try:
         import torch.distributed as dist
@@ -123,9 +223,9 @@ def _build_fp8_dx_packs(gate_up, down, dx_cache):
 
         if not marlin_w4a16_available():
             return None, None
-        # Under FSDP the gathered weight is a fresh full copy per step; caching a per-layer pack
-        # re-materializes the un-sharded experts across depth (OOM) — same policy as the nvfp4
-        # marlin cache: only with the explicit headroom opt-in.
+        # Caching a per-layer pack holds a copy across depth; under FSDP it additionally
+        # re-materializes the un-sharded experts (OOM) — same policy as the nvfp4 marlin cache:
+        # only with the explicit headroom opt-in.
         if (
             dist.is_available()
             and dist.is_initialized()
@@ -141,14 +241,17 @@ def _build_fp8_dx_packs(gate_up, down, dx_cache):
                 ("fp8_gate_up_dxT", gate_up),
                 ("fp8_down_dxT", down),
             ):
-                # marlin tiling: dX output dim (fwd K) %64, reduction (fwd N) %16; block-fp8
-                # dims are 128-multiples so this only guards exotic shapes.
-                if wq.size(2) % 64 or wq.size(1) % 16:
+                # marlin tiling: dX output dim (fwd K) %64, reduction (fwd N) %16, and the
+                # reduction must span >=2 scale groups (single group infers channelwise
+                # group_size=-1, not instantiated for fp8).
+                if wq.size(2) % 64 or wq.size(1) % 16 or wq.size(1) <= 128:
                     return None, None
-                pack = prepare_blockfp8_dx_weight(wq, ws, ext.gptq_marlin_repack)
-                stash_dx_pack(dx_cache, key, pack, mode)
+                dx_cache[key] = prepare_blockfp8_dx_weight(
+                    wq, ws, ext.gptq_marlin_repack
+                )
     except Exception as ex:  # pragma: no cover - fall back to the Triton dX
         LOG.warning("fp8 marlin dX pack build failed (%s); using Triton dX", ex)
+        dx_cache["fp8_dxT_failed"] = True
         return None, None
     return dx_cache.get("fp8_gate_up_dxT"), dx_cache.get("fp8_down_dxT")
 
@@ -176,8 +279,15 @@ class _Fp8BlockGroupedExperts(torch.autograd.Function):
     ):
         E = Agu.size(0)
         gu = _fp8_base_forward(base, 0, x, m_indices, offs)
-        gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
-        h = _swiglu(gu, limit, act_type).to(x.dtype)
+        from .swiglu_epilogue import grouped_lora_swiglu_fwd, swiglu_epilogue_enabled
+
+        if swiglu_epilogue_enabled():
+            gu, h, xAg = grouped_lora_swiglu_fwd(
+                x, Agu, Bgu, scaling, offs, E, gu, act_type, limit
+            )
+        else:
+            gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
+            h = _swiglu(gu, limit, act_type).to(x.dtype)
         dn = _fp8_base_forward(base, 1, h, m_indices, offs)
         dn, hAd = grouped_lora_fwd(h, Adn, Bdn, scaling, offs, E, residual=dn)
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
@@ -288,7 +398,7 @@ def grouped_fp8_moe_train(
     offs = (ptiles * tile).cumsum(0).to(torch.int32)
     Mt = int(ptiles.sum()) * tile
 
-    base = (backend, (gate_up_fp8, gate_up_scale), (down_fp8, down_scale))
+    base = (backend, (gate_up_fp8, gate_up_scale), (down_fp8, down_scale), dx_cache)
     dx_packs = _build_fp8_dx_packs(
         (gate_up_fp8, gate_up_scale), (down_fp8, down_scale), dx_cache
     )
@@ -299,7 +409,9 @@ def grouped_fp8_moe_train(
     assert sgu == sdn, "gate_up/down LoRA scaling must match"
     lim = float(limit) if limit is not None else 1e30
 
-    A = hidden.new_zeros(Mt, H).index_copy(0, padded_row, hidden[rep])
+    from .scatter_fuse import padded_gather, weighted_scatter
+
+    A = padded_gather(hidden, rep, padded_row, Mt)
     dn = _Fp8BlockGroupedExperts.apply(
         A,
         base,
@@ -315,7 +427,4 @@ def grouped_fp8_moe_train(
         act_type,
         dx_packs,
     )
-    out = hidden.new_zeros(N, H)
-    return out.index_add(
-        0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype)
-    )
+    return weighted_scatter(dn, wflat, rep, padded_row, N)

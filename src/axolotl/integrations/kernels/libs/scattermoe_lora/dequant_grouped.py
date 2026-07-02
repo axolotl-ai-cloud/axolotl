@@ -67,7 +67,7 @@ def deepgemm_fp8fp8_available() -> bool:
 
     Unlike the fp8xfp4 kernel (sm100-only), the standard fp8xfp8 blockwise grouped GEMM (the
     DeepSeek-V3 MoE recipe) runs on BOTH sm90 (Hopper / H100,H200) and sm100 (Blackwell /
-    B200,B300) — the intended datacenter targets for the 1050B model. It reads the checkpoint's
+    B200,B300) — the intended datacenter targets for the largest checkpoints. It reads the checkpoint's
     128x128 block-fp8 weights DIRECTLY (no requant to fp4, no dequant), so it preserves fp8
     fidelity."""
     if not torch.cuda.is_available():

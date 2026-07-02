@@ -257,18 +257,36 @@ def prepare_blockfp8_dx_weight(wq, ws, repack_fn):
 
     qw = batched_repack8_transposed(wq, _ext_from_repack(repack_fn))
 
-    # group scales [size_k/128, size_n] per expert, vectorized across E. The marlin fp8 dequant
-    # bit-trick leaves values scaled by 2^-120 for bf16 (2^-8 for fp16), so the exponent bias is
-    # fused into the scales (vllm fp8_fused_exponent_bias_into_scales).
-    s = (ws.float() * 2.0**120).to(torch.bfloat16)
-    s = s.repeat_interleave(FP8_BLOCK, dim=2)  # [E, N/128, K]
+    return qw, _marlin_fp8_group_scales(ws, K), None
+
+
+def _marlin_fp8_group_scales(ws_grid, size_n):
+    """Marlin bf16 group-128 scales ``[E, size_k/128, size_n]`` from a block-scale grid
+    ``[E, size_k/128, size_n/128]``, vectorized across E. The marlin fp8 dequant bit-trick
+    leaves values scaled by 2^-120 for bf16 (2^-8 for fp16), so the exponent bias is fused
+    into the scales (vllm fp8_fused_exponent_bias_into_scales)."""
+    E = ws_grid.size(0)
+    s = (ws_grid.float() * 2.0**120).to(torch.bfloat16)
+    s = s.repeat_interleave(FP8_BLOCK, dim=2)
     scale_perm, _ = get_scale_perms()
-    sc = (
+    return (
         s.reshape(E, -1, len(scale_perm))[:, :, scale_perm]
-        .reshape(E, -1, K)
+        .reshape(E, -1, size_n)
         .contiguous()
     )
-    return qw, sc, None
+
+
+def prepare_blockfp8_fwd_weight(wq, ws, repack_fn):
+    """Marlin W8A16 pack of the block-fp8 weight in FORWARD orientation: ``x [Mt, K] -> [Mt, N]``
+    (``size_n = N``, ``size_k = K``). Exact — same byte permute + scale recipe as the dX pack.
+
+    wq ``[E, N, K]`` float8_e4m3fn, ws ``[E, N/128, K/128]`` fp32. Returns the marlin tuple
+    ``(qw, scales bf16, None)`` for ``marlin_moe_gemm`` with ``b_type_id=FLOAT8_E4M3FN_ID``."""
+    from .batched_repack import batched_repack8_fwd
+
+    _, N, _ = wq.shape
+    qw = batched_repack8_fwd(wq, _ext_from_repack(repack_fn))
+    return qw, _marlin_fp8_group_scales(ws.transpose(1, 2).contiguous(), N), None
 
 
 def _ext_from_repack(repack_fn):  # noqa: ARG001 - signature kept for call-site symmetry

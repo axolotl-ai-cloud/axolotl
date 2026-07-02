@@ -23,86 +23,22 @@ from .prep import (
 )
 
 
-def _marlin_dx_mode() -> str | bool:
-    """Transposed-Marlin backward dX mode: False (off, dequant dX) | 'resident' (packs on GPU —
-    fastest, ~doubles expert residency) | 'offload' (packs pinned in CPU RAM, streamed per-layer
-    one-ahead during backward — GPU holds ~2 layers' packs). Config knob ``moe_marlin_dx``
-    (RUNTIME.marlin_dx); env ``AXOLOTL_MARLIN_DX`` (0 | 1 | offload) overrides at runtime."""
+def _marlin_dx_enabled() -> bool:
+    """Transposed-Marlin backward dX: dX runs as a marlin grouped GEMM on GPU-resident transposed
+    expert packs (fastest, ~doubles expert residency). Config knob ``moe_marlin_dx``
+    (RUNTIME.marlin_dx); env ``AXOLOTL_MARLIN_DX`` (0 | 1) overrides at runtime.
+
+    A CPU-offload/streaming mode was tried and removed: the active pack must be on-GPU to run, so
+    offload's floor is still ~1 layer's pack set, and at multi-GiB per-layer packs the per-step
+    H2D never hides under backward compute on PCIe (3x slower than plain dequant dX)."""
     import os
 
-    from ..runtime import RUNTIME, _canon_marlin_dx
+    from ..runtime import RUNTIME
 
     env = os.environ.get("AXOLOTL_MARLIN_DX")
     if env is not None:
-        return _canon_marlin_dx(env if env == "offload" else env != "0")
-    return _canon_marlin_dx(RUNTIME.marlin_dx)
-
-
-class _DxPackStreamer:
-    """One-ahead H2D prefetcher for CPU-pinned dX packs.
-
-    Backward visits layers in a fixed reverse order, so the first backward RECORDS the access
-    sequence (synchronous copies) and every later step PREFETCHES entry i+1 on a side stream while
-    entry i's GEMM runs — the copy rides the DMA engine under compute. GPU residency = the in-use
-    pack + the in-flight prefetch (~2 layers' packs)."""
-
-    def __init__(self):
-        self.stream = torch.cuda.Stream()
-        self.order: list = []  # slot keys in backward order (first pass records)
-        self.recorded = False
-        self.inflight: dict = {}  # slot -> (gpu_tensors, event)
-
-    def _copy(self, cpu_pack, dev):
-        with torch.cuda.stream(self.stream):
-            gpu = tuple(
-                t.to(dev, non_blocking=True) if isinstance(t, torch.Tensor) else t
-                for t in cpu_pack
-            )
-            ev = torch.cuda.Event()
-            ev.record(self.stream)
-        return gpu, ev
-
-    def _prefetch(self, slot, cpu_pack, dev):
-        if slot not in self.inflight:
-            self.inflight[slot] = self._copy(cpu_pack, dev)
-
-    def acquire(self, slot, cpu_pack, dev, lookup):
-        """Return GPU tensors for ``slot``, then queue the next slot in the recorded order.
-        ``lookup(slot) -> cpu_pack`` resolves the prefetch target."""
-        if not self.recorded:
-            if (
-                slot in self.order
-            ):  # second pass over a recorded slot -> order is complete
-                self.recorded = True
-            else:
-                self.order.append(slot)
-        got = self.inflight.pop(slot, None)
-        if got is None:
-            got = self._copy(cpu_pack, dev)
-        gpu, ev = got
-        torch.cuda.current_stream().wait_event(ev)
-        if self.recorded and self.order:
-            try:
-                nxt = self.order[(self.order.index(slot) + 1) % len(self.order)]
-                nxt_pack = lookup(nxt)
-                if nxt_pack is not None:
-                    self._prefetch(nxt, nxt_pack, dev)
-            except ValueError:
-                pass
-        return gpu
-
-
-_DX_STREAMER: _DxPackStreamer | None = None
-# registry of offloaded packs: slot -> cpu_pack, so the streamer can prefetch across layers
-# (each layer has its own module cache; slots are (id(cache), key)).
-_DX_CPU_PACKS: dict = {}
-
-
-def _dx_streamer() -> _DxPackStreamer:
-    global _DX_STREAMER
-    if _DX_STREAMER is None:
-        _DX_STREAMER = _DxPackStreamer()
-    return _DX_STREAMER
+        return env != "0"
+    return bool(RUNTIME.marlin_dx)
 
 
 # Must equal the marlin MoE block (BSM) so each padded tile maps to exactly one expert; 64
@@ -231,19 +167,16 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
         cache is not None
         and dxt_key not in cache
         and nv.qdata.numel() > 0
-        and _marlin_dx_mode()
+        and _marlin_dx_enabled()
         and (not _gathered or _marlin_cache_under_fsdp(nv.qdata.device))
         # marlin tiling: dxT output dim (fwd size_k) needs %64, reduction (fwd size_n) %16
         and size_k % 64 == 0
         and size_n % 16 == 0
     ):
         E, dev = nv.qdata.size(0), nv.qdata.device
-        pack = prepare_transposed_dx_weight(
+        cache[dxt_key] = prepare_transposed_dx_weight(
             nv.qdata, nv.scale, _pt(nv, E, dev), size_k, size_n, ext.gptq_marlin_repack
         )
-        # offload: pinned-CPU storage streamed per-layer in backward (one-ahead prefetch),
-        # bounding GPU residency to ~2 layers' packs instead of the whole model's.
-        stash_dx_pack(cache, dxt_key, pack, _marlin_dx_mode())
     if cache is not None and not _gathered:
         # Rank-resident: persist the marlin weight and drop the duplicate 4-bit qdata.
         cache[key] = cached
@@ -404,37 +337,11 @@ def marlin_dx_data(base):
     return gu, dn
 
 
-def resolve_dx_pack(w, dev):
-    """Resolve a dX-pack cache entry to GPU tensors: pass through a resident tuple, or stream in a
-    ('cpu', slot) offload marker via the one-ahead prefetcher."""
-    if isinstance(w, tuple) and len(w) == 2 and w[0] == "cpu":
-        slot = w[1]
-        w = _dx_streamer().acquire(slot, _DX_CPU_PACKS[slot], dev, _DX_CPU_PACKS.get)
-        for t in w:
-            if isinstance(t, torch.Tensor):
-                t.record_stream(torch.cuda.current_stream())
-    return w
-
-
-def stash_dx_pack(cache, key, pack, mode):
-    """Store a built dX pack per the mode: GPU-resident tuple, or pinned-CPU + ('cpu', slot)
-    marker for the streamer."""
-    if mode == "offload":
-        slot = (id(cache), key)
-        _DX_CPU_PACKS[slot] = tuple(
-            t.cpu().pin_memory() if isinstance(t, torch.Tensor) else t for t in pack
-        )
-        del pack
-        cache[key] = ("cpu", slot)
-    else:
-        cache[key] = pack
-
-
 def marlin_dx_gemm(pack, g, m_indices, size_n, size_k, b_type_id, moe_block_size=64):
     """Generic transposed-pack marlin dX: ``g [Mt, size_k] -> [Mt, size_n]`` on the contiguous-
-    grouped layout. ``pack`` = (qw, scales, global_scale_or_None), resident or offload marker."""
+    grouped layout. ``pack`` = (qw, scales, global_scale_or_None)."""
     ext = load_ext()
-    qw, sc, gs = resolve_dx_pack(pack, g.device)
+    qw, sc, gs = pack
     Mt = g.size(0)
     si, ei, ntpp, tw = marlin_route(m_indices, Mt, g.device)
     ws = marlin_make_workspace_new(torch.device(g.device.type, g.device.index or 0), 4)
@@ -465,7 +372,7 @@ def marlin_base_dx(base, dx_data, which, g, m_indices):
     Same routing layout as the forward (identical m_indices/tile)."""
     ext = load_ext()
     _, _, (twoI, H, I), ws = base[0], base[1], base[2], base[3]  # noqa: E741
-    w = resolve_dx_pack(dx_data[which], g.device)
+    w = dx_data[which]
     Mt = g.size(0)
     si, ei, ntpp, tw = marlin_route(m_indices, Mt, g.device)
     size_n, size_k = (H, twoI) if which == 0 else (I, H)

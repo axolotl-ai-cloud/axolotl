@@ -62,6 +62,12 @@ lora_target_parameters: [experts.gate_up_proj, experts.down_proj]
   via `moe_grouped_backend: auto|marlin|cutlass|deepgemm`.
 - **`fp8_block`** — keeps the checkpoint's native 128×128 block-fp8 experts (no requant, higher
   fidelity). Runs everywhere (Triton `blockfp8_triton`) and uses DeepGEMM fp8×fp8 on sm90/sm100.
+  `moe_grouped_backend: marlin` opts the forward into Marlin W8A16 packs. By default the pack is
+  rebuilt transiently per projection per forward and freed immediately — **memory-neutral at any
+  model depth** (works under FSDP, where the gathered weight is a fresh per-step copy anyway) for
+  ~1.3× the layer at DeepSeek-scale experts. With headroom to spare, set
+  `AXOLOTL_MARLIN_CACHE_MIN_FREE_GB=<N>` to keep packs resident: ~1.5× the layer (~2.3× combined
+  with `moe_marlin_dx: true`) but a resident repacked expert copy per layer.
 - **`mxfp8`** — OCP-MX fp8 experts (e4m3 data + e8m0 scale every 32 elements; bf16/block-fp8 is
   requantized to mxfp8 at load). Same 1 byte/elem as `fp8_block` — *no VRAM win over it* — but the
   layout is the native Blackwell MX tensor-core format with a finer 32-wide scale. The forward base
@@ -78,7 +84,7 @@ Two knobs control how the frozen-expert backward `dX = grad @ W` runs when the M
 active (sm120 and pre-Blackwell GPUs):
 
 ```yaml
-moe_marlin_dx: false   # false (default) | true (GPU-resident packs) | offload (CPU-streamed packs)
+moe_marlin_dx: false   # false (default) | true (GPU-resident transposed packs)
 moe_fp8_dx: true       # dequant-dX precision: true = fp8-read (fast), false = bf16-dequant (accurate)
 ```
 
@@ -93,13 +99,17 @@ moe_fp8_dx: true       # dequant-dX precision: true = fp8-read (fast), false = b
 
   ::: {.callout-warning}
   `moe_marlin_dx: true` **increases resident VRAM** and is therefore **off by default**: a second
-  resident 4-bit expert pack (~the size of the forward pack) roughly doubles expert weight
-  residency — a cost that grows with model size (e.g. +12 GiB on Gemma-4-26B-A4B) even though
-  per-step transients shrink. Use `moe_marlin_dx: offload` to keep the speed while bounding GPU
-  cost: packs live in pinned CPU RAM (~the pack-set size in host memory) and stream to the GPU
-  per-layer with one-ahead prefetch on a side stream during backward, so the GPU holds only ~2
-  layers' packs and the copy hides under the previous layer's backward compute.
+  resident expert pack (~the size of the forward pack) roughly doubles expert weight residency —
+  a cost that grows with model size (e.g. +12 GiB on Gemma-4-26B-A4B) even though per-step
+  transients shrink. Enable it when the speedup is worth that headroom; leave it off when VRAM is
+  the constraint.
   :::
+
+- **`moe_swiglu_epilogue`** (opt-in, default `false`) fuses the gated activation into the
+  gate_up LoRA-B GEMM epilogue, eliminating the separate activation pass's `[Mt, 2I]` read.
+  Memory-neutral; measured ~speed-neutral at DeepSeek-scale expert widths (the activation pass is
+  ~1% of the layer there) — most useful at small expert widths where the elementwise pass is a
+  larger share.
 
 - **`moe_fp8_dx`** selects the dequant-based dX precision (used when `moe_marlin_dx: false` and as
   the fallback path): `true` = fp8-read (sm120 default, ~2% grad error, ~half the transient),

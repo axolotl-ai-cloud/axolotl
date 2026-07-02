@@ -32,10 +32,15 @@ class ScatterMoERuntime:
     # base dX backward precision on sm120: True = fp8-read (fast, ~2% grad) | False = bf16-dequant.
     fp4_dx_prefer_fp8: bool = True
     # transposed-Marlin backward dX (marlin backend): W4A16 grouped GEMM on a requantized W^T pack.
-    # OPT-IN; cfg knob = moe_marlin_dx. False = off (dequant dX), "resident" = packs on GPU
-    # (fastest, ~doubles expert residency), "offload" = packs pinned in CPU RAM and streamed
-    # per-layer one-ahead during backward (GPU holds ~2 layers' packs).
-    marlin_dx: str | bool = False
+    # OPT-IN; cfg knob = moe_marlin_dx. False = off (dequant dX), True = GPU-resident packs
+    # (fastest, ~doubles expert residency).
+    marlin_dx: bool = False
+    # opt-in full-grid Triton autotune for the s2s kernels (single-process only; winners are
+    # reported to telemetry). Off = deterministic table-pruned configs.
+    kernel_autotune: bool = False
+    # fuse the gated activation into the gate_up LoRA-B GEMM epilogue (kills the separate swiglu
+    # pass's [Mt,2I] read). OPT-IN; cfg knob = moe_swiglu_epilogue.
+    swiglu_epilogue: bool = False
     # grouped base-GEMM backend (grouped_train.py): None/"auto" | marlin | cutlass | deepgemm | dequant.
     grouped_backend: str | None = None
     # bnb-4bit experts (chunked_bnb.py): 1-launch parallel_linear path (recompute-in-backward) vs chunked.
@@ -59,18 +64,6 @@ class ScatterMoERuntime:
 
 
 RUNTIME = ScatterMoERuntime()
-
-
-def _canon_marlin_dx(v) -> str | bool:
-    """Normalize the moe_marlin_dx knob: False | 'resident' (True) | 'offload'."""
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s == "offload":
-            return "offload"
-        if s in ("true", "resident", "1"):
-            return "resident"
-        return False
-    return "resident" if v else False
 
 
 def configure_scattermoe_runtime(cfg) -> None:
@@ -98,23 +91,24 @@ def configure_scattermoe_runtime(cfg) -> None:
         RUNTIME.fp4_dx_prefer_fp8 = bool(fp8_dx)
     marlin_dx = cfg.get("moe_marlin_dx")
     if marlin_dx is None and os.environ.get("AXOLOTL_MARLIN_DX") is not None:
-        env = os.environ["AXOLOTL_MARLIN_DX"]
-        marlin_dx = env if env == "offload" else env != "0"
+        marlin_dx = os.environ["AXOLOTL_MARLIN_DX"] != "0"
     if marlin_dx is not None:
-        RUNTIME.marlin_dx = _canon_marlin_dx(marlin_dx)
-    if RUNTIME.marlin_dx == "resident":
+        RUNTIME.marlin_dx = bool(marlin_dx)
+    if RUNTIME.marlin_dx:
         LOG.info(
             "moe_marlin_dx: backward dX runs as a W4A16 marlin GEMM on GPU-resident transposed "
-            "expert packs. Per-step transients shrink but a second resident 4-bit expert copy "
-            "(~the forward pack size) is held — VRAM increases with model size. Use "
-            "moe_marlin_dx: offload to bound GPU residency to ~2 layers' packs (uses CPU RAM), "
-            "or false to disable."
+            "expert packs. Per-step transients shrink but a second resident expert copy "
+            "(~the forward pack size) is held — VRAM increases with model size. Set "
+            "moe_marlin_dx: false to disable."
         )
-    elif RUNTIME.marlin_dx == "offload":
-        LOG.info(
-            "moe_marlin_dx: offload — transposed dX packs live in pinned CPU RAM (~the pack-set "
-            "size) and stream to GPU per-layer one-ahead during backward (GPU holds ~2 layers')."
-        )
+    ka = cfg.get("moe_kernel_autotune")
+    if ka is not None:
+        RUNTIME.kernel_autotune = bool(ka)
+    swiglu_ep = cfg.get("moe_swiglu_epilogue")
+    if swiglu_ep is None and os.environ.get("AXOLOTL_SWIGLU_EPILOGUE") is not None:
+        swiglu_ep = os.environ["AXOLOTL_SWIGLU_EPILOGUE"] != "0"
+    if swiglu_ep is not None:
+        RUNTIME.swiglu_epilogue = bool(swiglu_ep)
     RUNTIME.layer_gc_active = bool(cfg.get("gradient_checkpointing"))
     fast = cfg.get("moe_bnb_fast")
     RUNTIME.bnb_fast = True if fast is None else bool(fast)

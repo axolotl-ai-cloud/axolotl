@@ -52,11 +52,14 @@ def _batched_repack8_t_kernel(
     out_se,
     NT_OUT: tl.constexpr,  # size_n(=K) // 64 tiles
     TILE_SZ: tl.constexpr,  # 1024
+    NPROG: tl.constexpr,  # tiles per expert
 ):
-    # int64 ids: e*stride_e exceeds 2^31 at E=256 x [4096,4096] (same overflow class as the
-    # nvfp4_dequant_bf16 E=256 bug).
-    e = tl.program_id(0).to(tl.int64)
-    t = tl.program_id(1).to(tl.int64)
+    # flat 1-D grid: 2-D (E, tiles) exceeds the 65535 grid-Y limit once N/16 * K/64 > 65535
+    # (hit at [12288, 6144]). int64: e*stride_e exceeds 2^31 at E=256 x [4096,4096] (same
+    # overflow class as the nvfp4_dequant_bf16 E=256 bug).
+    pid = tl.program_id(0).to(tl.int64)
+    e = pid // NPROG
+    t = pid % NPROG
     nt = t % NT_OUT
     kt = t // NT_OUT
     idx = tl.arange(0, TILE_SZ)
@@ -68,6 +71,48 @@ def _batched_repack8_t_kernel(
     pos = tl.load(LUT + idx)
     tile_off = (kt * NT_OUT + nt) * TILE_SZ
     tl.store(OUT + e * out_se + tile_off + pos, val)
+
+
+@triton.jit
+def _batched_repack8_fwd_kernel(
+    WQ,  # [E, N, K] uint8 (fp8 bytes) — the FORWARD-layout weight
+    LUT,  # [1024] int32
+    OUT,  # [E, N*K] uint8 (int32-viewable marlin pack, forward orientation)
+    wq_se,
+    wq_sn,
+    wq_sk,
+    out_se,
+    NT_OUT: tl.constexpr,  # size_n(=N) // 64 tiles
+    TILE_SZ: tl.constexpr,  # 1024
+    TILES_KT: tl.constexpr,  # adjacent k-tiles per program (slab width)
+    NPROG: tl.constexpr,  # slabs per expert
+):
+    # Forward orientation: marlin B(k, n) = W[n, k], so a tile needs a (64 n-rows x 16 k-cols)
+    # patch of W — 16-byte strided segments if gathered tile-by-tile. Slab TILES_KT adjacent
+    # k-tiles instead: ONE coalesced (64 x TILES_KT*16 contiguous bytes) load, then per-tile
+    # register permutes (same shape that made the 4-bit slab kernel 3x faster).
+    pid = tl.program_id(0).to(tl.int64)
+    e = pid // NPROG
+    t = pid % NPROG
+    nt = t % NT_OUT
+    kt0 = (t // NT_OUT) * TILES_KT
+    rows = tl.arange(0, 64)
+    cols = tl.arange(0, TILES_KT * 16)
+    b = tl.load(
+        WQ
+        + e * wq_se
+        + (nt * 64 + rows)[:, None] * wq_sn
+        + (kt0 * 16 + cols)[None, :] * wq_sk
+    )
+    flat = tl.reshape(b, [64 * TILES_KT * 16])
+    idx = tl.arange(0, TILE_SZ)
+    ln = idx // 16
+    lk = idx % 16
+    pos = tl.load(LUT + idx)
+    for s in tl.static_range(TILES_KT):
+        val = tl.gather(flat, ln * (TILES_KT * 16) + s * 16 + lk, 0)
+        tile_off = ((kt0 + s) * NT_OUT + nt) * TILE_SZ
+        tl.store(OUT + e * out_se + tile_off + pos, val)
 
 
 _REPACK4_INV_LUT: dict[torch.device, torch.Tensor] = {}
@@ -101,9 +146,12 @@ def _batched_repack4_kernel(
     NT_OUT: tl.constexpr,  # size_n // 64
     HALF_TILE: tl.constexpr,  # 512 output bytes per tile
     TILES_K: tl.constexpr,  # adjacent k-tiles per program (slab width)
+    NPROG: tl.constexpr,  # slabs per expert
 ):
-    e = tl.program_id(0).to(tl.int64)
-    t = tl.program_id(1).to(tl.int64)
+    # flat 1-D grid: 2-D (E, slabs) exceeds the 65535 grid-Y limit at large [N, K]
+    pid = tl.program_id(0).to(tl.int64)
+    e = pid // NPROG
+    t = pid % NPROG
     nt = t % NT_OUT
     kt0 = (t // NT_OUT) * TILES_K  # first of TILES_K adjacent k-tiles in this slab
 
@@ -147,8 +195,8 @@ def batched_repack4(qdata: torch.Tensor, size_n: int, size_k: int) -> torch.Tens
     tiles_k = 8
     while k_tiles % tiles_k:
         tiles_k //= 2
-    grid = (E, nt_out * (k_tiles // tiles_k))
-    _batched_repack4_kernel[grid](
+    nprog = nt_out * (k_tiles // tiles_k)
+    _batched_repack4_kernel[(E * nprog,)](
         qdata,
         lut,
         out,
@@ -159,8 +207,42 @@ def batched_repack4(qdata: torch.Tensor, size_n: int, size_k: int) -> torch.Tens
         NT_OUT=nt_out,
         HALF_TILE=TILE // 2,
         TILES_K=tiles_k,
+        NPROG=nprog,
     )
     return out.view(torch.int32).reshape(E, size_k // 16, size_n * 2)
+
+
+def batched_repack8_fwd(wq: torch.Tensor, ext) -> torch.Tensor:
+    """Marlin 8-bit repack of ``W`` in FORWARD orientation for ALL experts in one launch.
+
+    ``wq [E, N, K]`` float8/uint8 -> int32 pack shaped ``[E, K//16, N*4]``, bit-identical to
+    ``gptq_marlin_repack(B, ..., num_bits=8)`` per expert where ``B[k, n] = W[n, k]`` (i.e. the
+    ``x [Mt, K] -> [Mt, N]`` GEMM operand). Coalesced slab loads — ~2x the strided-view path."""
+    E, N, K = wq.shape
+    assert N % N_T == 0 and K % K_T == 0, f"repack8 fwd tiling: {(N, K)}"
+    lut = _build_repack8_lut(wq.device, ext)
+    wq_b = wq.view(torch.uint8)
+    out = torch.empty(E, N * K, dtype=torch.uint8, device=wq.device)
+    nt_out = N // N_T
+    k_tiles = K // K_T
+    tiles_kt = 8
+    while k_tiles % tiles_kt:
+        tiles_kt //= 2
+    nprog = nt_out * (k_tiles // tiles_kt)
+    _batched_repack8_fwd_kernel[(E * nprog,)](
+        wq_b,
+        lut,
+        out,
+        wq_b.stride(0),
+        wq_b.stride(1),
+        wq_b.stride(2),
+        out.stride(0),
+        NT_OUT=nt_out,
+        TILE_SZ=TILE,
+        TILES_KT=tiles_kt,
+        NPROG=nprog,
+    )
+    return out.view(torch.int32).reshape(E, K // 16, N * 4)
 
 
 def batched_repack8_transposed(wq: torch.Tensor, ext) -> torch.Tensor:
@@ -176,8 +258,8 @@ def batched_repack8_transposed(wq: torch.Tensor, ext) -> torch.Tensor:
     wq_b = wq.view(torch.uint8)
     out = torch.empty(E, N * K, dtype=torch.uint8, device=wq.device)
     nt_out = K // N_T
-    grid = (E, nt_out * (N // K_T))
-    _batched_repack8_t_kernel[grid](
+    nprog = nt_out * (N // K_T)
+    _batched_repack8_t_kernel[(E * nprog,)](
         wq_b,
         lut,
         out,
@@ -187,6 +269,7 @@ def batched_repack8_transposed(wq: torch.Tensor, ext) -> torch.Tensor:
         out.stride(0),
         NT_OUT=nt_out,
         TILE_SZ=TILE,
+        NPROG=nprog,
     )
     # match the per-expert repack's output shape: [E, size_k // 16, size_n * 4] int32
     return out.view(torch.int32).reshape(E, N // 16, K * 4)

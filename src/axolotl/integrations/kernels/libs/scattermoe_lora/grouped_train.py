@@ -337,8 +337,15 @@ class _GroupedExperts(torch.autograd.Function):
         E = Agu.size(0)
         gu = _base_forward(base, 0, x, m_indices, mode)
         # LoRA-B GEMM folds the base output in via residual=gu -> gu = base + lora, no separate add.
-        gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
-        h = _swiglu(gu, limit, act_type).to(x.dtype)
+        from .swiglu_epilogue import grouped_lora_swiglu_fwd, swiglu_epilogue_enabled
+
+        if swiglu_epilogue_enabled():
+            gu, h, xAg = grouped_lora_swiglu_fwd(
+                x, Agu, Bgu, scaling, offs, E, gu, act_type, limit
+            )
+        else:
+            gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
+            h = _swiglu(gu, limit, act_type).to(x.dtype)
         dn = _base_forward(base, 1, h, m_indices, mode)
         dn, hAd = grouped_lora_fwd(h, Adn, Bdn, scaling, offs, E, residual=dn)
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
@@ -601,7 +608,9 @@ def grouped_fp4_moe_train(
     lim = (
         float(limit) if limit is not None else 1e30
     )  # no clamp when the model has no swiglu_limit
-    A = hidden.new_zeros(Mt, H).index_copy(0, padded_row, hidden[rep])
+    from .scatter_fuse import padded_gather, weighted_scatter
+
+    A = padded_gather(hidden, rep, padded_row, Mt)
     dn = _GroupedExperts.apply(
         A,
         base,
@@ -618,7 +627,4 @@ def grouped_fp4_moe_train(
         act_type,
         prefer_fp8_dx,
     )
-    out = hidden.new_zeros(N, H)
-    return out.index_add(
-        0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype)
-    )
+    return weighted_scatter(dn, wflat, rep, padded_row, N)

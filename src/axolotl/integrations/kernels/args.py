@@ -90,12 +90,18 @@ class KernelsArgs(BaseModel):
     # transposed-Marlin backward dX (marlin backend): run dX as a W4A16 grouped GEMM on a
     # requantized W^T pack built once at load. ~3-6x faster dX (~2x the expert layer at
     # DeepSeek-scale experts) at ~9% fixed weight-requant error. OPT-IN (None defaults to False):
-    #   false (default) - dequant-based dX, no extra memory
-    #   true            - packs resident on GPU (fastest; ~doubles expert weight residency,
-    #                     a VRAM cost that GROWS with model size)
-    #   "offload"       - packs in pinned CPU RAM, streamed per-layer one-ahead on a side stream
-    #                     during backward (GPU holds ~2 layers' packs; costs CPU RAM ~= the pack set)
-    moe_marlin_dx: bool | str | None = None
+    # packs are GPU-resident, ~doubling expert weight residency — a VRAM cost that GROWS with
+    # model size.
+    moe_marlin_dx: bool | None = None
+
+    # opt-in full-grid Triton autotune for the scattermoe kernels: benchmarks each new shape on
+    # first hit (single-process runs only — benchmarking under collectives desyncs ranks) and
+    # reports winners to telemetry. Default off = deterministic pruned configs (zero overhead).
+    moe_kernel_autotune: bool | None = None
+
+    # fuse the gated activation (SwiGLU / GeGLU) into the gate_up LoRA-B GEMM epilogue,
+    # eliminating the separate activation pass's [Mt, 2I] read. OPT-IN; memory-neutral.
+    moe_swiglu_epilogue: bool | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
@@ -323,17 +329,6 @@ class KernelsArgs(BaseModel):
             raise ValueError(
                 f"moe_grouped_mode must be 'nvfp4', 'fp8_block', or 'mxfp8', got {mode!r}"
             )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_moe_marlin_dx(cls, data):
-        v = data.get("moe_marlin_dx")
-        if v is not None and not isinstance(v, bool):
-            if str(v).lower() not in ("true", "false", "offload", "resident"):
-                raise ValueError(
-                    f"moe_marlin_dx must be true, false, or 'offload', got {v!r}"
-                )
         return data
 
     @model_validator(mode="before")

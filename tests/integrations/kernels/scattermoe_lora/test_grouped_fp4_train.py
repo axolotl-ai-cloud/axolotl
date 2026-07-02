@@ -882,11 +882,6 @@ def test_marlin_dx_grad_quality_and_fallback(cfg, monkeypatch):
     assert dh_on > 0.99, f"{cfg['name']}: dxT d_hidden cosine {dh_on:.4f}"
     assert dag_on > 0.995, f"{cfg['name']}: dxT d_Agu cosine {dag_on:.4f}"
 
-    built_ofl, dh_ofl, dag_ofl = run("offload")
-    assert built_ofl, "dxT packs not built with AXOLOTL_MARLIN_DX=offload"
-    assert dh_ofl > 0.99, f"{cfg['name']}: offload d_hidden cosine {dh_ofl:.4f}"
-    assert dag_ofl > 0.995, f"{cfg['name']}: offload d_Agu cosine {dag_ofl:.4f}"
-
     built_off, dh_off, _ = run("0")
     assert not built_off, "dxT packs built despite AXOLOTL_MARLIN_DX=0"
     assert dh_off > 0.99, f"{cfg['name']}: fallback d_hidden cosine {dh_off:.4f}"

@@ -231,7 +231,7 @@ moe_grouped_mode: fp8_block   # nvfp4 | fp8_block | mxfp8   (omit -> bf16 expert
 |---|---|---|---|
 | *(unset)* | **bf16** | fused Triton `scatter2scatter_lora` | default; experts dequantized to bf16 (heavy VRAM for large MoE) |
 | `nvfp4` | **4-bit NVFP4** | Marlin (sm80–120) / CUTLASS / DeepGEMM (sm90/100) | a block-fp8 checkpoint is **requantized** fp8→nvfp4 at load; a native NVFP4-modelopt checkpoint loads as-is |
-| `fp8_block` | **native 128×128 block-fp8** | `blockfp8_triton` (any CUDA incl. sm120) / DeepGEMM fp8×fp8 (sm90/100) | keeps the checkpoint's fp8 weights — no requant, higher fidelity |
+| `fp8_block` | **native 128×128 block-fp8** | `blockfp8_triton` (any CUDA incl. sm120) / DeepGEMM fp8×fp8 (sm90/100) / Marlin W8A16 fwd via `moe_grouped_backend: marlin` (~1.3× layer memory-neutral via transient per-forward packs; ~1.5× with the `AXOLOTL_MARLIN_CACHE_MIN_FREE_GB` resident-cache opt-in) | keeps the checkpoint's fp8 weights — no requant, higher fidelity |
 | `mxfp8` | **OCP-MX fp8** (e4m3 + e8m0 per-32-block scale) | sm100: hardware-MX `_scaled_grouped_mm` (W8A8); sm120/sm90: `mxfp8_triton` W8A16 | requantized bf16/fp8→mxfp8 at load; same 1 byte/elem as `fp8_block` but hardware-MX-native + finer 32-wide scale |
 
 Backend override for the nvfp4 grouped GEMM (unavailable choice warns + falls back to `auto`):
@@ -245,11 +245,8 @@ frozen-expert backward `dX = grad @ W` as a W4A16 grouped GEMM on a transposed p
 once at load — ~3–6× faster dX (~2× the full expert layer at DeepSeek-scale experts) at a ~9%
 fixed requant error on the dX weight (LoRA grads barely affected). Modes:
 
-- `true` — packs GPU-resident (fastest). ⚠️ Holds a second 4-bit expert pack, **roughly doubling
-  expert weight residency — a VRAM cost that grows with model size** (+12 GiB on Gemma-4-26B-A4B).
-- `offload` — packs in pinned CPU RAM, streamed to GPU per-layer with one-ahead prefetch on a side
-  stream during backward: GPU holds only ~2 layers' packs; the copy hides under backward compute.
-  Costs host RAM ~= the pack set.
+- `true` — packs GPU-resident (fastest). ⚠️ Holds a second expert pack, **roughly doubling expert
+  weight residency — a VRAM cost that grows with model size** (+12 GiB on Gemma-4-26B-A4B).
 - `false` (default) — dequant-based dX; `moe_fp8_dx` picks its precision (fp8-read fast vs
   bf16-dequant accurate).
 

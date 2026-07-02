@@ -65,23 +65,20 @@ def test_scalar_type_id_packing():
     assert pack(4, 3, True, 0, True, 2) == FLOAT8_E4M3FN_ID
 
 
-@pytest.mark.parametrize("mode", ["1", "offload"])
-def test_fp8_marlin_dx_matches_exact_reference(mode, monkeypatch):
-    """Transposed-pack fp8 marlin dX == exact dequant contraction within bf16-scale rounding,
-    in both resident and offload delivery modes."""
+def test_fp8_marlin_dx_matches_exact_reference(monkeypatch):
+    """Transposed-pack fp8 marlin dX == exact dequant contraction within bf16-scale rounding."""
     if not _marlin_ok():
         pytest.skip("marlin backend unavailable")
     from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
     from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
         marlin_dx_gemm,
-        stash_dx_pack,
     )
     from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
         FLOAT8_E4M3FN_ID,
         prepare_blockfp8_dx_weight,
     )
 
-    monkeypatch.setenv("AXOLOTL_MARLIN_DX", mode)
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
     torch.manual_seed(0)
     E, N, K, rows = 4, 256, 128, 64
     wq, ws = _make_blockfp8(E, N, K)
@@ -89,18 +86,13 @@ def test_fp8_marlin_dx_matches_exact_reference(mode, monkeypatch):
 
     ext = load_ext()
     pack = prepare_blockfp8_dx_weight(wq, ws, ext.gptq_marlin_repack)
-    cache = {}
-    stash_dx_pack(cache, "t", pack, "offload" if mode == "offload" else "resident")
-    entry = cache["t"]
-    if mode == "offload":
-        assert isinstance(entry, tuple) and entry[0] == "cpu"
 
     Mt = E * rows
     g = torch.randn(Mt, N, device=DEV, dtype=torch.bfloat16) * 0.1
     m_indices = torch.arange(E, device=DEV, dtype=torch.int32).repeat_interleave(
         rows // 64
     )
-    out = marlin_dx_gemm(entry, g, m_indices, K, N, FLOAT8_E4M3FN_ID)
+    out = marlin_dx_gemm(pack, g, m_indices, K, N, FLOAT8_E4M3FN_ID)
     ref = torch.cat([g[e * rows : (e + 1) * rows].float() @ Wd[e] for e in range(E)])
     relerr = (out.float() - ref).norm() / ref.norm()
     assert relerr < 0.01, f"fp8 marlin dX rel {relerr:.5f}"
@@ -213,3 +205,163 @@ def test_batched_repack_bit_exact_vs_loop():
     assert gs is None
     assert torch.equal(got_qw2, ref_qw)
     assert torch.equal(got_sc.view(torch.uint8), ref_sc.view(torch.uint8))
+
+
+def test_dx_pack_build_failure_is_cached(monkeypatch):
+    """A failed pack build must not retry every step: the cache records the failure."""
+    if not _marlin_ok():
+        pytest.skip("marlin backend unavailable")
+    import axolotl.integrations.kernels.libs.scattermoe_lora.fp8_grouped as fg
+
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        raise RuntimeError("synthetic build failure")
+
+    monkeypatch.setattr(
+        "axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep.prepare_blockfp8_dx_weight",
+        boom,
+    )
+    wq, ws = _make_blockfp8(2, 256, 256)
+    cache = {}
+    assert fg._build_fp8_dx_packs((wq, ws), (wq, ws), cache) == (None, None)
+    assert cache.get("fp8_dxT_failed")
+    assert fg._build_fp8_dx_packs((wq, ws), (wq, ws), cache) == (None, None)
+    assert calls["n"] == 1
+
+
+def test_fp8_marlin_forward_matches_triton(monkeypatch):
+    """moe_grouped_backend: marlin routes the fp8 forward through the W8A16 marlin packs;
+    output must match the Triton forward within bf16-scale rounding, grads unaffected."""
+    if not _marlin_ok():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora import fp8_grouped as fg
+    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
+
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "0")
+    torch.manual_seed(4)
+    # H/I >= 256 so both marlin reduction dims span >=2 scale groups (single-group -> skipped)
+    E, H, I, N, topk, r = 4, 256, 256, 32, 2, 8  # noqa: E741
+    wq_gu, ws_gu = _make_blockfp8(E, 2 * I, H)
+    wq_dn, ws_dn = _make_blockfp8(E, H, I)
+    hidden = torch.randn(N, H, device=DEV, dtype=torch.bfloat16) * 0.5
+    idx = torch.randint(0, E, (N, topk), device=DEV)
+    wts = torch.softmax(torch.randn(N, topk, device=DEV), -1)
+
+    def run(backend):
+        monkeypatch.setattr(RUNTIME, "grouped_backend", backend)
+        fg._BACKEND_LOGGED = True
+        torch.manual_seed(5)
+        Ag = (
+            torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02
+        ).requires_grad_(True)
+        Bg = (
+            torch.randn(2 * I, r * E, device=DEV, dtype=torch.bfloat16) * 0.02
+        ).requires_grad_(True)
+        Ad = (
+            torch.randn(r * E, I, device=DEV, dtype=torch.bfloat16) * 0.02
+        ).requires_grad_(True)
+        Bd = (
+            torch.randn(H, r * E, device=DEV, dtype=torch.bfloat16) * 0.02
+        ).requires_grad_(True)
+        hk = hidden.clone().requires_grad_(True)
+        cache = {}
+        out = fg.grouped_fp8_moe_train(
+            hk,
+            idx,
+            wts,
+            wq_gu,
+            ws_gu,
+            wq_dn,
+            ws_dn,
+            (Ag, Bg, 2.0),
+            (Ad, Bd, 2.0),
+            None,
+            act_type="silu",
+            dx_cache=cache,
+        )
+        out.float().pow(2).mean().backward()
+        return out.detach(), hk.grad.clone(), Ag.grad.clone(), cache
+
+    # default: transient per-forward packs (memory-neutral) -> nothing cached
+    out_m, dh_m, dag_m, cache_m = run("marlin")
+    assert "fp8_gate_up_fwd" not in cache_m, "fwd packs cached without headroom opt-in"
+    # headroom opt-in -> resident cache
+    monkeypatch.setenv("AXOLOTL_MARLIN_CACHE_MIN_FREE_GB", "0")
+    out_c, _, _, cache_c = run("marlin")
+    assert "fp8_gate_up_fwd" in cache_c, "fwd packs not cached with headroom opt-in"
+    monkeypatch.delenv("AXOLOTL_MARLIN_CACHE_MIN_FREE_GB")
+    torch.testing.assert_close(out_c, out_m)
+    out_t, dh_t, dag_t, cache_t = run(None)
+    assert "fp8_gate_up_fwd" not in cache_t
+
+    rel = (out_m.float() - out_t.float()).norm() / out_t.float().norm()
+    assert rel < 0.01, f"marlin fwd rel {rel:.5f}"
+    cos = torch.nn.functional.cosine_similarity
+    assert cos(dh_m.float().flatten(), dh_t.float().flatten(), dim=0) > 0.999
+    assert cos(dag_m.float().flatten(), dag_t.float().flatten(), dim=0) > 0.999
+
+
+def test_batched_repack8_fwd_bit_exact():
+    """The coalesced forward-orientation repack == the strided transposed-view path byte-for-byte
+    (which is itself loop-validated above)."""
+    if not _marlin_ok():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.batched_repack import (
+        batched_repack8_fwd,
+        batched_repack8_transposed,
+    )
+
+    torch.manual_seed(6)
+    ext = load_ext()
+    for E, N, K in ((4, 512, 256), (3, 384, 768)):
+        wq = torch.randint(0, 255, (E, N, K), device=DEV, dtype=torch.uint8).view(
+            torch.float8_e4m3fn
+        )
+        a = batched_repack8_fwd(wq, ext)
+        b = batched_repack8_transposed(wq.transpose(1, 2), ext)
+        assert a.shape == (E, K // 16, N * 4)
+        assert torch.equal(a, b), f"fwd repack differs at {(E, N, K)}"
+
+
+def test_fp8_marlin_forward_chunked_matches_unchunked(monkeypatch):
+    """Chunked transient fwd packs == unchunked within marlin tile-scheduling rounding."""
+    if not _marlin_ok():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora import fp8_grouped as fg
+    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
+
+    monkeypatch.setattr(RUNTIME, "grouped_backend", "marlin")
+    monkeypatch.setattr(fg, "_BACKEND_LOGGED", True)
+    torch.manual_seed(7)
+    E, H, I, N, topk, r = 4, 512, 384, 64, 2, 16  # noqa: E741
+    wq_gu, ws_gu = _make_blockfp8(E, 2 * I, H)
+    wq_dn, ws_dn = _make_blockfp8(E, H, I)
+    hidden = torch.randn(N, H, device=DEV, dtype=torch.bfloat16) * 0.5
+    idx = torch.randint(0, E, (N, topk), device=DEV)
+    wts = torch.softmax(torch.randn(N, topk, device=DEV), -1)
+    g = torch.Generator(device=DEV).manual_seed(8)
+    mk = lambda a, b: (
+        torch.randn(a, b, device=DEV, dtype=torch.bfloat16, generator=g) * 0.02
+    )  # noqa: E731
+    args = (
+        hidden,
+        idx,
+        wts,
+        wq_gu,
+        ws_gu,
+        wq_dn,
+        ws_dn,
+        (mk(r * E, H), mk(2 * I, r * E), 2.0),
+        (mk(r * E, I), mk(H, r * E), 2.0),
+        None,
+    )
+    outs = {}
+    for c in ("1", "3"):
+        monkeypatch.setenv("AXOLOTL_MARLIN_FWD_CHUNKS", c)
+        outs[c] = fg.grouped_fp8_moe_train(*args, act_type="silu", dx_cache={})
+    rel = (outs["3"].float() - outs["1"].float()).norm() / outs["1"].float().norm()
+    assert rel < 1e-3, f"chunked fwd rel {rel:.2e}"
