@@ -163,6 +163,8 @@ class TestCustomOptimizers(unittest.TestCase):
         assert "Muon" in trainer.optimizer.optimizer.__class__.__name__
 
     @with_temp_dir
+    def test_scao(self, temp_dir):
+        pytest.importorskip("scao")
     @require_torch_2_5_1
     def test_sinkgd(self, temp_dir):
         cfg = DictDefault(
@@ -194,6 +196,8 @@ class TestCustomOptimizers(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
+                "optimizer": "scao",
+                "lr_scheduler": "cosine",
                 "optimizer": "sinkgd",
                 "optim_args": {"sinkhorn_iters": 5, "sinkgd_lr_scale": 0.05},
                 "lr_scheduler": "cosine",
@@ -208,6 +212,8 @@ class TestCustomOptimizers(unittest.TestCase):
 
         _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+        assert trainer.optimizer.optimizer.__class__.__name__ == "SCAO"
+
         assert "SinkGD" in trainer.optimizer.optimizer.__class__.__name__
 
     @pytest.mark.skip(

@@ -128,6 +128,25 @@ dion_momentum: 0.95
 lr: 0.00001  # learning rate for embeddings and parameters that fallback to AdamW
 ```
 
+### scao
+
+SCAO (Sparse Curvature-Aware Adaptive Optimizer) is a second-order optimizer
+that approximates curvature information with sparse preconditioning while
+keeping usage close to AdamW.
+
+GitHub: [https://github.com/whispering3/scao](https://github.com/whispering3/scao)
+
+Install: `pip install axolotl[optimizers]`
+
+```yaml
+optimizer: scao
+
+# optional SCAO args can be passed through optim_args
+optim_args:
+  precond_freq: 20
+  k_min: 8
+  k_max: 128
+  sparsity: 0.7
 ### sinkgd
 
 SinkGD (Gradient Multi-Normalization) is a **stateless** optimizer: 2D linear weight
