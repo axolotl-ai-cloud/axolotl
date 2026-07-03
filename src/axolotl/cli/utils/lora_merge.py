@@ -246,33 +246,39 @@ def _find_param_wrapper_lora(
         bl = ".base_layer" * depth
         prefixes_to_try.append(f"base_model.model.{parent_key}{bl}")
 
-    for prefix in prefixes_to_try:
-        a_key = f"{prefix}.lora_A.weight"
-        b_key = f"{prefix}.lora_B.weight"
-        lora_a = lora_state.get(a_key)
-        lora_b = lora_state.get(b_key)
-        if lora_a is None or lora_b is None:
-            continue
+    # Both 3D orientations exist: gpt-oss-style [E, in, out] pairs with
+    # (A_in, B_out) = (shape[1], shape[2]); Qwen3-style [E, out, in] with
+    # (A_in, B_out) = (shape[2], shape[1]). Exhaust every nesting level in the
+    # exact orientation before falling back to the transposed one, so a
+    # transposed outer LoRA cannot shadow an exact inner match.
+    orientations: tuple = (None,)
+    if tensor_shape is not None and len(tensor_shape) >= 3:
+        orientations = (
+            (tensor_shape[1], tensor_shape[2]),
+            (tensor_shape[2], tensor_shape[1]),
+        )
 
-        # When tensor_shape is given, verify dimensions match before returning.
-        # This prevents returning a mismatched LoRA from a different nesting level.
-        # Both 3D orientations exist: gpt-oss-style [E, in, out] pairs with
-        # (A_in, B_out) = (shape[1], shape[2]); Qwen3-style [E, out, in] with
-        # (A_in, B_out) = (shape[2], shape[1]).
-        if tensor_shape is not None and len(tensor_shape) >= 3:
-            num_experts = tensor_shape[0]
-            if not (
-                lora_a.shape[0] == lora_b.shape[1]
-                and lora_a.shape[0] % num_experts == 0
-                and (lora_a.shape[1], lora_b.shape[0])
-                in {
-                    (tensor_shape[1], tensor_shape[2]),
-                    (tensor_shape[2], tensor_shape[1]),
-                }
-            ):
-                continue  # Dimensions don't match, try next nesting level
+    for orientation in orientations:
+        for prefix in prefixes_to_try:
+            a_key = f"{prefix}.lora_A.weight"
+            b_key = f"{prefix}.lora_B.weight"
+            lora_a = lora_state.get(a_key)
+            lora_b = lora_state.get(b_key)
+            if lora_a is None or lora_b is None:
+                continue
 
-        return lora_a, lora_b, param_name
+            # When tensor_shape is given, verify dimensions match before returning.
+            # This prevents returning a mismatched LoRA from a different nesting level.
+            if orientation is not None and tensor_shape is not None:
+                num_experts = tensor_shape[0]
+                if not (
+                    lora_a.shape[0] == lora_b.shape[1]
+                    and lora_a.shape[0] % num_experts == 0
+                    and (lora_a.shape[1], lora_b.shape[0]) == orientation
+                ):
+                    continue  # Dimensions don't match, try next nesting level
+
+            return lora_a, lora_b, param_name
 
     return None, None, None
 
@@ -689,13 +695,15 @@ def _dequant_by_format(fmt, w, scales, dev):
     return _dequant_mxfp4(w, scales["_scale"], dev)  # mxfp4
 
 
-def _requant_by_format(fmt, w_bf16, scales, dev, per_tensor_scale=None):
-    """Re-quantize a merged bf16 weight back to its original format (fresh block scales). Returns
+def _requant_by_format(fmt, w_bf16, scales, dev):
+    """Re-quantize a merged bf16 weight back to its original format. Returns
     ``{"": qweight, "_scale*": scale_tensors}`` matching the original scale dtypes/shapes so the
     merged checkpoint loads exactly like the base did.
 
-    ``per_tensor_scale`` forces the nvfp4 outer scale; tensors quantized as one group (fused
-    gate/up experts) must share it or the loader's fuse step breaks."""
+    nvfp4 reuses the base scales verbatim and only re-rounds the codes: recomputing scales shifts
+    the whole dequant grid, re-rounding EVERY element and burying a small LoRA delta under
+    uncorrelated noise, while on the original grid only elements the delta pushes across a code
+    boundary change. It also keeps gate/up outer scales equal, which the loader's fuse relies on."""
     w = w_bf16.to(dev).float()
     if fmt == "block_fp8":
         si = scales["_scale_inv"]
@@ -718,20 +726,23 @@ def _requant_by_format(fmt, w_bf16, scales, dev, per_tensor_scale=None):
         packed, ebyte = _quant_mxfp4(w)
         s = scales["_scale"]
         return {"": packed.cpu(), "_scale": ebyte.view(s.dtype).cpu()}
-    # nvfp4 via torchao (matches the loader)
-    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
-
-    two_level = "_scale_2" in scales
-    if per_tensor_scale is not None:
-        p = per_tensor_scale.to(dev, torch.float32).reshape(1).clamp_min(1e-12)
-    elif two_level:
-        p = (w.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
-    else:
-        p = None
-    nv = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=p, is_swizzled_scales=False)
-    out = {"": nv.qdata.cpu(), "_scale": nv.scale.to(scales["_scale"].dtype).cpu()}
-    if two_level:
-        out["_scale_2"] = nv.per_tensor_scale.reshape(scales["_scale_2"].shape).cpu()
+    # nvfp4: original grid, fresh codes; bump only the block scales the delta outgrew
+    sc = scales["_scale"]
+    sc2 = scales.get("_scale_2")
+    pts = sc2.to(dev).float().reshape(()) if sc2 is not None else 1.0
+    sc_f = sc.to(dev).float()
+    amax = w.unflatten(-1, (sc_f.shape[-1], 16)).abs().amax(-1)
+    need = amax > 6.0 * sc_f * pts
+    if need.any():
+        sc_f = torch.where(need, (amax / (6.0 * pts)).clamp(max=448.0), sc_f)
+    sc_out = sc_f.to(sc.dtype)
+    denom = (sc_out.float() * pts).repeat_interleave(16, dim=-1).clamp_min(1e-30)
+    lut = torch.tensor(_FP4_E2M1_LUT, dtype=torch.float32, device=w.device)
+    idx = ((w / denom).unsqueeze(-1) - lut).abs().argmin(-1).to(torch.uint8)
+    packed = idx[..., 0::2] | (idx[..., 1::2] << 4)
+    out = {"": packed.cpu(), "_scale": sc_out.cpu()}
+    if sc2 is not None:
+        out["_scale_2"] = sc2.cpu()
     return out
 
 
@@ -1054,12 +1065,6 @@ class _Nvfp4ExpertMergeWriter:
             emitted[fused_key] = merged_t.detach().cpu()
             return emitted, 1
 
-        # group members share one outer scale per expert, like the base checkpoint; per-member
-        # amax scales would diverge under the delta and overflow the loader's fuse fold
-        shared_pts = (
-            merged_t.to(torch.float32).abs().amax(dim=(1, 2)) / (6.0 * 448.0)
-        ).clamp_min(1e-12)
-
         start = 0
         for mp, rows in zip(members, row_counts, strict=True):
             part = merged_t[:, start : start + rows, :]
@@ -1075,7 +1080,6 @@ class _Nvfp4ExpertMergeWriter:
                         "_scale_2": leaves["weight_scale_2"],
                     },
                     dev,
-                    per_tensor_scale=shared_pts[e],
                 )
                 emitted[wkey] = requant.pop("")
                 for suf, t in requant.items():
