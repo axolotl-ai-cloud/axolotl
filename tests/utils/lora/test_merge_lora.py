@@ -483,6 +483,95 @@ class TestEfficientMerge:
         expected_fused = base_fused + scale * (lora_b @ lora_a)
         assert torch.allclose(gate_up, expected_fused, atol=1e-5)
 
+    def test_fuse_skipped_for_incomplete_expert_shard(self):
+        """Expert lists split across shard boundaries must not be fused from a partial shard."""
+        from transformers.core_model_loading import (
+            Concatenate,
+            MergeModulelist,
+            WeightConverter,
+        )
+
+        from axolotl.cli.utils.lora_merge import _fuse_and_unfuse_with_merge
+
+        hidden = 16
+        intermediate = 32
+        num_experts = 8
+
+        # Layer 0: gate/up expert counts mismatch within the shard (previously
+        # crashed in torch.cat). Layer 1: contiguous but partial expert list
+        # (previously silently fused a subset).
+        shard_tensors = {}
+        for i in range(5):
+            shard_tensors[f"model.layers.0.mlp.experts.{i}.gate_proj.weight"] = (
+                torch.randn(intermediate, hidden)
+            )
+        for i in range(4):
+            shard_tensors[f"model.layers.0.mlp.experts.{i}.up_proj.weight"] = (
+                torch.randn(intermediate, hidden)
+            )
+        for i in range(4):
+            shard_tensors[f"model.layers.1.mlp.experts.{i}.gate_proj.weight"] = (
+                torch.randn(intermediate, hidden)
+            )
+            shard_tensors[f"model.layers.1.mlp.experts.{i}.up_proj.weight"] = (
+                torch.randn(intermediate, hidden)
+            )
+
+        converters = [
+            WeightConverter(
+                source_patterns=[
+                    "mlp.experts.*.gate_proj.weight",
+                    "mlp.experts.*.up_proj.weight",
+                ],
+                target_patterns="mlp.experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            ),
+        ]
+
+        config = {"r": 4, "lora_alpha": 8}
+        result, merged_count, processed_keys = _fuse_and_unfuse_with_merge(
+            shard_tensors,
+            converters,
+            {},
+            2.0,
+            config,
+            "cpu",
+            expected_num_experts=num_experts,
+        )
+
+        assert merged_count == 0
+        assert not processed_keys
+        # No fused keys; every per-expert tensor passes through unchanged
+        assert "model.layers.0.mlp.experts.gate_up_proj" not in result
+        assert "model.layers.1.mlp.experts.gate_up_proj" not in result
+        assert set(result.keys()) == set(shard_tensors.keys())
+
+        # Complete layer but still-quantized tensors (nvfp4 uint8 qdata with
+        # weight_scale siblings): fusing raw qdata would orphan the scales.
+        quant_tensors = {}
+        for i in range(num_experts):
+            for proj in ("gate_proj", "up_proj"):
+                key = f"model.layers.2.mlp.experts.{i}.{proj}.weight"
+                quant_tensors[key] = torch.randint(
+                    0, 255, (intermediate, hidden // 2), dtype=torch.uint8
+                )
+                quant_tensors[key + "_scale"] = torch.randn(
+                    intermediate, hidden // 16
+                ).to(torch.float8_e4m3fn)
+        result, merged_count, processed_keys = _fuse_and_unfuse_with_merge(
+            quant_tensors,
+            converters,
+            {},
+            2.0,
+            config,
+            "cpu",
+            expected_num_experts=num_experts,
+        )
+        assert merged_count == 0
+        assert not processed_keys
+        assert "model.layers.2.mlp.experts.gate_up_proj" not in result
+        assert set(result.keys()) == set(quant_tensors.keys())
+
     def test_param_wrapper_merge_math(self):
         """ParamWrapper merge via PEFT's get_delta_weight matches manual einsum."""
         num_experts = 4

@@ -1164,6 +1164,32 @@ def _get_conversion_info(base_model_path: Path) -> tuple[Dict[str, str], list]:
     return renamings, weight_converters
 
 
+def _get_expected_num_experts(base_model_path: Path) -> Optional[int]:
+    """Expert count from config.json, used to detect expert lists split across shards."""
+    import json as _json
+
+    config_path = base_model_path / "config.json"
+    if not config_path.exists():
+        return None
+    try:
+        cfg = _json.loads(config_path.read_text())
+    except (OSError, _json.JSONDecodeError):
+        return None
+    for sub in (cfg, cfg.get("text_config"), cfg.get("llm_config")):
+        if not isinstance(sub, dict):
+            continue
+        for key in (
+            "num_experts",
+            "num_local_experts",
+            "n_routed_experts",
+            "num_routed_experts",
+        ):
+            val = sub.get(key)
+            if isinstance(val, int) and val > 0:
+                return val
+    return None
+
+
 def _fuse_and_unfuse_with_merge(
     shard_tensors: Dict[str, torch.Tensor],
     weight_converters: list,
@@ -1178,6 +1204,7 @@ def _fuse_and_unfuse_with_merge(
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
+    expected_num_experts: Optional[int] = None,
 ) -> tuple[Dict[str, torch.Tensor], int, set]:
     """
     For tensors matching WeightConverter patterns (MoE expert weights):
@@ -1239,10 +1266,62 @@ def _fuse_and_unfuse_with_merge(
                     ] = (key, result[key])
                     break
 
+        is_expert_list = any(
+            isinstance(op, MergeModulelist) for op in converter.operations
+        )
+
         # Process each layer group
         for prefix, pat_groups in layer_groups.items():
             # Check we have all source patterns for this layer
             if not pat_groups:
+                continue
+
+            # Shards are processed one at a time, so a layer's expert list can be
+            # split across shard boundaries. Fusing a partial list either crashes
+            # (gate/up count mismatch in torch.cat) or silently fuses a subset of
+            # experts under the fused key. Fusing still-quantized tensors is also
+            # wrong: it stacks raw qdata and orphans the per-expert scale siblings.
+            # Skip fusion in both cases; the per-tensor pass carries the tensors
+            # through unchanged.
+            index_sets = [set(g.keys()) for g in pat_groups.values()]
+            complete = (
+                len(pat_groups) == len(pattern_regexes)
+                and all(s == index_sets[0] for s in index_sets[1:])
+                and index_sets[0] == set(range(len(index_sets[0])))
+                and (
+                    not is_expert_list
+                    or expected_num_experts is None
+                    or len(index_sets[0]) == expected_num_experts
+                )
+            )
+            skip_reason = None
+            if not complete:
+                expected_str = (
+                    f", expected {expected_num_experts}"
+                    if is_expert_list and expected_num_experts is not None
+                    else ""
+                )
+                skip_reason = (
+                    "expert list incomplete in this shard (found "
+                    f"{[len(pat_groups[p]) for p in sorted(pat_groups)]} experts "
+                    f"per pattern{expected_str})"
+                )
+            elif any(
+                t.dtype in _QUANT_DTYPES
+                or k + "_scale" in result
+                or k + "_scale_inv" in result
+                for g in pat_groups.values()
+                for (k, t) in g.values()
+            ):
+                skip_reason = "tensors are still quantized (raw qdata cannot be fused)"
+            if skip_reason:
+                LOG.info(
+                    "Skipping fuse for '%s%s': %s; leaving per-expert tensors "
+                    "unchanged",
+                    prefix,
+                    tgt_patterns[0],
+                    skip_reason,
+                )
                 continue
 
             # Step 1: Fuse — MergeModulelist (stack experts) per source pattern
@@ -1413,11 +1492,13 @@ def merge_lora_sharded_efficient(
     weight_renamings, weight_converters = _get_conversion_info(base_model_path)
     if weight_renamings:
         LOG.debug(f"Found {len(weight_renamings)} weight renamings for this model type")
+    expected_num_experts = None
     if weight_converters:
         LOG.debug(
             f"Found {len(weight_converters)} weight converters (fuse/unfuse) for this model type. "
             f"Will fuse→merge→unfuse within each shard."
         )
+        expected_num_experts = _get_expected_num_experts(base_model_path)
 
     os.makedirs(output_path, exist_ok=True)
 
@@ -1588,6 +1669,7 @@ def merge_lora_sharded_efficient(
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
+                expected_num_experts=expected_num_experts,
             )
             merged_count += fused_merged
 
