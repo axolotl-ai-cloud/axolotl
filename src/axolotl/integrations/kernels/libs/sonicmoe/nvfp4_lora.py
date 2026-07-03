@@ -142,13 +142,19 @@ def _lora_backward_per_group(
         # scaling lands once on each [T, r] intermediate, not the [T, dim] products.
         dz = torch._grouped_mm(grad_h, B_c, offs=offs) * scaling  # [T, r]
         z = torch._grouped_mm(x_grouped, A_3d.transpose(-2, -1), offs=offs) * scaling
-        # dx_e = g_e @ W_e + dz_e @ A_e (base dequantized whole: one kernel +
-        # one grouped GEMM instead of E slice-dequant matmul pairs). The dequant
-        # must match the forward operands (folded SFB + alpha on fp4_cute).
-        from .fp4_cute_ops import dequantize_engine_weight
+        # dx_e = g_e @ W_e + dz_e @ A_e. Base term: fp8 weight cache on DeepGEMM
+        # when available, else whole-weight dequant + one grouped GEMM. Either
+        # way the weights match the forward operands (folded SFB + alpha on
+        # fp4_cute; the fp8 cache is built from that same folded dequant).
+        from .fp8_bwd import fp8_dx_supported, grouped_fp8_dx
 
-        w_dense = dequantize_engine_weight(base_weight).to(grad_h.dtype)
-        dx = torch._grouped_mm(grad_h, w_dense, offs=offs)
+        if fp8_dx_supported(grad_h, base_weight):
+            dx = grouped_fp8_dx(grad_h, base_weight, expert_offsets)
+        else:
+            from .fp4_cute_ops import dequantize_engine_weight
+
+            w_dense = dequantize_engine_weight(base_weight).to(grad_h.dtype)
+            dx = torch._grouped_mm(grad_h, w_dense, offs=offs)
         dx += torch._grouped_mm(dz, A_3d, offs=offs)
         # dA_e = dz_e^T @ x_e; dB_e = g_e^T @ z_e
         d_A_3d = torch._grouped_mm(dz.transpose(0, 1), x_grouped, offs=offs)

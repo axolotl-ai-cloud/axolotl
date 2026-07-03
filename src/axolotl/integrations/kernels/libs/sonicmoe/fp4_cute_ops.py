@@ -189,7 +189,11 @@ def grouped_dx_dequant(
     grad_h: torch.Tensor, weight, cu_seqlens: torch.Tensor
 ) -> torch.Tensor:
     """``dx[start:end] = g_e @ W_e``, never through the packed fp4 operand."""
+    from .fp8_bwd import fp8_dx_supported, grouped_fp8_dx
     from .nvfp4_lora import _use_grouped_mm
+
+    if fp8_dx_supported(grad_h, weight):
+        return grouped_fp8_dx(grad_h, weight, cu_seqlens)
 
     if _use_grouped_mm(grad_h):
         w_dense = dequantize_engine_weight(weight).to(grad_h.dtype)
