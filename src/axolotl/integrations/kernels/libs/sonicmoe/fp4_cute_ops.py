@@ -12,25 +12,31 @@ expert-sorted rows) to ``fp4_cute.GroupedNvfp4Gemm``:
   frozen, so weights are packed into the engine exactly once);
 - quantizes activations to NVFP4 on the expert-sorted rows (per-16 block
   scales, per-tensor scale 1.0) and builds the dQaccum-padded SFA;
-- applies the per-expert weight ``per_tensor_scale`` to the output rows after
-  the GEMM, in fp32. Folding it into the e4m3 block scales instead truncates:
-  the folded scale is ~``amax_block / 6``, which sits in e4m3's subnormal
-  range (< 2^-6) at real LLM weight magnitudes and keeps only the 3 subnormal
-  mantissa bits (up to tens of percent block error). Post-scaling keeps SFB
-  at the stored full-range scales and makes the forward weights identical to
-  the exact dequant the backward uses;
+- handles the per-expert weight ``per_tensor_scale`` by folding the O(1)
+  RATIOS ``pts_e / pts_ref`` (``pts_ref = pts.max()``) into the e4m3 SFB block
+  scales and passing ``alpha = pts_ref`` to the epilogue. Folding the ABSOLUTE
+  pts instead truncates: ``stored_scale * pts ~ amax_block / 6`` sits in
+  e4m3's subnormal range (< 2^-6) at real LLM weight magnitudes. If even the
+  ratio fold saturates, the engine keeps the stored scales and pts is applied
+  to the output rows post-GEMM in fp32 (the pre-fold scheme);
+- the backward dequant (:func:`dequantize_engine_weight`) uses the SAME folded
+  scales and alpha, so the dense weights the dX path sees are identical to the
+  operands the forward kernel consumed;
 - wraps the grouped GEMM in an autograd.Function whose backward computes dX by
   per-expert chunked dequant matmuls, never through the packed fp4 operand.
 """
 
 from __future__ import annotations
 
+import os
+from typing import NamedTuple, Optional
+
 import torch
 
 from .fp4_cute import GroupedNvfp4Gemm
 from .nvfp4 import dequantize_expert_slice, is_nvfp4_param
 from .nvfp4_quant import quantize_nvfp4_ref
-from .sf_layout import build_varlen_sfa
+from .sf_layout import build_varlen_sfa, fold_per_tensor_scale
 
 
 def unpack_nvfp4_components(w) -> tuple:
@@ -57,23 +63,82 @@ def fp4_cute_dims_ok(w1, w2) -> bool:
     return k1 % 32 == 0 and n1 % 8 == 0 and k2 % 32 == 0 and n2 % 8 == 0
 
 
+class _EngineEntry(NamedTuple):
+    engine: GroupedNvfp4Gemm
+    # alpha scales the fp32 accumulator; folded=True means SFB holds the
+    # pts_e/pts_ref ratios and no post-GEMM row scaling is needed.
+    alpha: float
+    folded_scale: Optional[torch.Tensor]
+    fold_rel_err: float
+    fused: bool
+
+
 # Keyed by the packed storage; safe against pointer reuse because each engine
 # holds a view of its weight's qdata, keeping that storage alive.
 _ENGINE_CACHE: dict = {}
 
 
-def _get_engine(weight) -> GroupedNvfp4Gemm:
-    qdata, scale, _ = unpack_nvfp4_components(weight)
-    key = (qdata.data_ptr(), tuple(qdata.shape), qdata.device.index)
-    engine = _ENGINE_CACHE.get(key)
-    if engine is None:
+def _engine_key(qdata: torch.Tensor) -> tuple:
+    return (qdata.data_ptr(), tuple(qdata.shape), qdata.device.index)
+
+
+def _get_engine(weight) -> _EngineEntry:
+    qdata, scale, pts = unpack_nvfp4_components(weight)
+    key = _engine_key(qdata)
+    entry = _ENGINE_CACHE.get(key)
+    if entry is None:
         e, n, k2 = qdata.shape
         engine = GroupedNvfp4Gemm(n, k2 * 2, e, gated=False)
-        # per_tensor_scale is applied to the output rows in forward(), not
-        # folded into SFB (folding truncates in e4m3's subnormal range).
-        engine.set_weights(qdata, scale)
-        _ENGINE_CACHE[key] = engine
-    return engine
+        alpha, folded, rel_err = 1.0, None, 0.0
+        # The ratio fold re-rounds SFB in e4m3 (~6% max block-scale err on real
+        # checkpoints); "0" recovers the exact stored-scale + rowscale numerics.
+        fold_enabled = os.environ.get("AXOLOTL_SONICMOE_NVFP4_PTS_FOLD", "1") != "0"
+        if pts is not None and fold_enabled:
+            # One-time host sync per weight, at engine build.
+            pts_ref = float(pts.float().max())
+            if pts_ref > 0:
+                try:
+                    folded, rel_err = fold_per_tensor_scale(
+                        scale, pts.float().reshape(-1) / pts_ref, allow_underflow=True
+                    )
+                    alpha = pts_ref
+                except ValueError:
+                    folded = None
+        engine.set_weights(qdata, scale if folded is None else folded)
+        fused = pts is None or folded is not None
+        entry = _EngineEntry(engine, alpha, folded, rel_err, fused)
+        _ENGINE_CACHE[key] = entry
+    return entry
+
+
+def dequantize_engine_weight(weight) -> torch.Tensor:
+    """Dense weights matching the operands the fp4_cute forward consumed.
+
+    When the engine folded the pts ratios into SFB, dequantizes with the same
+    folded scales and alpha so backward sees the forward's exact weights; a
+    dense tensor or a weight without a folded engine falls through to
+    ``dequantize_expert_weight``.
+    """
+    from .nvfp4 import dequantize_expert_weight
+
+    if not is_nvfp4_param(weight):
+        return weight
+    qdata, _, _ = unpack_nvfp4_components(weight)
+    entry = _ENGINE_CACHE.get(_engine_key(qdata))
+    if entry is None or entry.folded_scale is None:
+        return dequantize_expert_weight(weight)
+    from .triton_nvfp4 import dequant_nvfp4_triton, triton_available
+
+    alpha_t = torch.tensor([entry.alpha], dtype=torch.float32, device=qdata.device)
+    if qdata.is_cuda and triton_available():
+        return dequant_nvfp4_triton(
+            qdata, entry.folded_scale, alpha_t, weight.orig_dtype
+        )
+    from .nvfp4_quant import dequantize_nvfp4_ref
+
+    return (dequantize_nvfp4_ref(qdata, entry.folded_scale) * entry.alpha).to(
+        weight.orig_dtype
+    )
 
 
 def quantize_grouped_rows(x_grouped: torch.Tensor, cu_seqlens: torch.Tensor) -> tuple:
@@ -90,24 +155,62 @@ def quantize_grouped_rows(x_grouped: torch.Tensor, cu_seqlens: torch.Tensor) -> 
     return a_q, build_varlen_sfa(a_s, cu_seqlens)
 
 
+def _base_gemm_forward(
+    entry: _EngineEntry,
+    weight,
+    x_grouped: torch.Tensor,
+    cu_seqlens: torch.Tensor,
+    out: torch.Tensor | None = None,
+    add_to_output: bool = False,
+) -> torch.Tensor:
+    a_q, sfa = quantize_grouped_rows(x_grouped, cu_seqlens)
+    if entry.fused:
+        return entry.engine.forward(
+            a_q,
+            sfa,
+            cu_seqlens,
+            alpha=entry.alpha,
+            out=out,
+            add_to_output=add_to_output,
+        )
+    assert not add_to_output
+    result = entry.engine.forward(a_q, sfa, cu_seqlens)
+    pts = weight.per_tensor_scale
+    counts = (cu_seqlens[1:] - cu_seqlens[:-1]).long()
+    row_pts = torch.repeat_interleave(pts.view(-1).float(), counts)
+    from .triton_nvfp4 import rowscale_inplace_triton, triton_available
+
+    if result.is_cuda and triton_available() and result.dtype == x_grouped.dtype:
+        return rowscale_inplace_triton(result.contiguous(), row_pts)
+    return (result.float() * row_pts.unsqueeze(1)).to(x_grouped.dtype)
+
+
 def grouped_dx_dequant(
     grad_h: torch.Tensor, weight, cu_seqlens: torch.Tensor
 ) -> torch.Tensor:
     """``dx[start:end] = g_e @ W_e``, never through the packed fp4 operand."""
-    from .nvfp4 import dequantize_expert_weight
     from .nvfp4_lora import _use_grouped_mm
 
     if _use_grouped_mm(grad_h):
-        w_dense = dequantize_expert_weight(weight).to(grad_h.dtype)
+        w_dense = dequantize_engine_weight(weight).to(grad_h.dtype)
         return torch._grouped_mm(grad_h, w_dense, offs=cu_seqlens[1:].to(torch.int32))
 
     cu = cu_seqlens.tolist()
     dx = grad_h.new_empty((grad_h.shape[0], weight.shape[-1]))
+    qdata, _, _ = unpack_nvfp4_components(weight)
+    entry = _ENGINE_CACHE.get(_engine_key(qdata))
+    folded = entry.folded_scale if entry is not None else None
+    alpha = entry.alpha if entry is not None else 1.0
     for e in range(len(cu) - 1):
         start, end = cu[e], cu[e + 1]
         if end <= start:
             continue
-        w_e = dequantize_expert_slice(weight, e)
+        if folded is not None:
+            from .nvfp4_quant import dequantize_nvfp4_ref
+
+            w_e = dequantize_nvfp4_ref(qdata[e], folded[e]) * alpha
+        else:
+            w_e = dequantize_expert_slice(weight, e)
         dx[start:end] = grad_h[start:end] @ w_e.to(grad_h.dtype)
     return dx
 
@@ -121,19 +224,8 @@ class _GroupedNvfp4Linear(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, x_grouped, weight, cu_seqlens):
-        engine = _get_engine(weight)
-        a_q, sfa = quantize_grouped_rows(x_grouped, cu_seqlens)
-        out = engine.forward(a_q, sfa, cu_seqlens)
-        pts = weight.per_tensor_scale
-        if pts is not None:
-            counts = (cu_seqlens[1:] - cu_seqlens[:-1]).long()
-            row_pts = torch.repeat_interleave(pts.view(-1).float(), counts)
-            from .triton_nvfp4 import rowscale_inplace_triton, triton_available
-
-            if out.is_cuda and triton_available() and out.dtype == x_grouped.dtype:
-                out = rowscale_inplace_triton(out.contiguous(), row_pts)
-            else:
-                out = (out.float() * row_pts.unsqueeze(1)).to(x_grouped.dtype)
+        entry = _get_engine(weight)
+        out = _base_gemm_forward(entry, weight, x_grouped, cu_seqlens)
         ctx.save_for_backward(weight, cu_seqlens)
         return out.to(x_grouped.dtype)
 
@@ -142,6 +234,10 @@ class _GroupedNvfp4Linear(torch.autograd.Function):
         weight, cu_seqlens = ctx.saved_tensors
         dx = grouped_dx_dequant(grad_out.contiguous(), weight, cu_seqlens)
         return dx, None, None
+
+
+def _cu_seqlens(end_offsets: torch.Tensor) -> torch.Tensor:
+    return torch.cat([end_offsets.new_zeros(1), end_offsets]).to(torch.int32)
 
 
 def grouped_nvfp4_linear(
@@ -155,5 +251,27 @@ def grouped_nvfp4_linear(
     assert x_grouped.shape[-1] == weight.shape[-1], (
         f"x K={x_grouped.shape[-1]} vs weight K={weight.shape[-1]}"
     )
-    cu = torch.cat([end_offsets.new_zeros(1), end_offsets]).to(torch.int32)
-    return _GroupedNvfp4Linear.apply(x_grouped, weight, cu)
+    return _GroupedNvfp4Linear.apply(x_grouped, weight, _cu_seqlens(end_offsets))
+
+
+def grouped_nvfp4_linear_add_delta(
+    x_grouped: torch.Tensor,
+    weight,
+    end_offsets: torch.Tensor,
+    delta: torch.Tensor,
+) -> torch.Tensor:
+    """``x_e @ w[e]^T + delta``, accumulated in the GEMM epilogue when possible.
+
+    No autograd: callers (the grouped LoRA autograd.Functions) own the
+    backward. ``delta`` ``[T, N]`` may be overwritten and returned.
+    """
+    assert x_grouped.shape[-1] == weight.shape[-1], (
+        f"x K={x_grouped.shape[-1]} vs weight K={weight.shape[-1]}"
+    )
+    cu = _cu_seqlens(end_offsets)
+    entry = _get_engine(weight)
+    if entry.fused and delta.dtype == torch.bfloat16:
+        out = delta.contiguous()
+        _base_gemm_forward(entry, weight, x_grouped, cu, out=out, add_to_output=True)
+        return out
+    return _base_gemm_forward(entry, weight, x_grouped, cu) + delta

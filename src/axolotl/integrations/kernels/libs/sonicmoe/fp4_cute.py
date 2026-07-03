@@ -68,6 +68,7 @@ def _compile_kernel(
     tile_mn: tuple,
     cluster_mn: tuple,
     varlen_m: bool,
+    add_to_output: bool,
     sfa_sample: torch.Tensor,
     sfb_sample: torch.Tensor,
 ):
@@ -116,6 +117,7 @@ def _compile_kernel(
     mAux = fake_tensor(bf16, pa_shape, leading_dim=1, divisibility=8) if gated else None
 
     if gated:
+        assert not add_to_output, "add_to_output is only wired for the default epilogue"
         gemm_cls = partial(GemmGatedSm100, sf_vec_size=SF_VEC_SIZE)
         compile_epi_args = GemmGatedSm100.EpilogueArguments(
             mAux,
@@ -125,8 +127,12 @@ def _compile_kernel(
         )
     else:
         gemm_cls = partial(GemmDefaultSm100, sf_vec_size=SF_VEC_SIZE)
+        # add_to_output is a Constexpr: True swaps the D TMA store for a
+        # reduce-add, so the kernel accumulates into the caller's out buffer.
         compile_epi_args = GemmDefaultSm100.EpilogueArguments(
-            alpha=Float32(0.0), rounding_mode=RoundingMode.RN
+            alpha=Float32(0.0),
+            add_to_output=add_to_output,
+            rounding_mode=RoundingMode.RN,
         )
 
     compiled = compile_gemm_kernel(
@@ -218,7 +224,7 @@ class GroupedNvfp4Gemm:
         self.cluster_mn = tuple(cluster_mn)
         self._b_operand = None
         self._sfb = None
-        self._run = None
+        self._runs: dict = {}
 
     def set_weights(
         self,
@@ -252,14 +258,20 @@ class GroupedNvfp4Gemm:
         alpha: float = 1.0,
         preact_out: torch.Tensor | None = None,
         out: torch.Tensor | None = None,
+        add_to_output: bool = False,
     ):
         """a_packed ``(total_m, K/2)`` uint8/fp4x2, expert-sorted, unpadded.
         sfa_blocked from ``sf_layout.build_varlen_sfa``. cu_seqlens ``(E+1,)``.
+
+        ``add_to_output=True`` (non-gated only) accumulates ``alpha * acc``
+        into a caller-provided ``out`` instead of overwriting it.
 
         Returns ``(postact [total_m, N/2] bf16, preact [total_m, N] bf16 | None)``
         for gated engines, else ``out [total_m, N]`` bf16.
         """
         assert self._b_operand is not None, "call set_weights first"
+        if add_to_output:
+            assert not self.gated and out is not None
         total_m = a_packed.shape[0]
         assert a_packed.shape[1] * 2 == self.k
         device = a_packed.device
@@ -287,7 +299,8 @@ class GroupedNvfp4Gemm:
                 else torch.empty(total_m, self.n, dtype=torch.bfloat16, device=device)
             )
 
-        if self._run is None:
+        run = self._runs.get(add_to_output)
+        if run is None:
             key = (
                 self.n,
                 self.k,
@@ -298,12 +311,12 @@ class GroupedNvfp4Gemm:
                 self.tile_mn,
                 self.cluster_mn,
                 True,  # varlen_m
+                add_to_output,
                 device.index,
             )
-            self._run = _get_run(key, self._sfb.new_zeros(1, 1, 1, 512), self._sfb)
-        self._run(
-            a, self._b_operand, d, postact, sfa_blocked, self._sfb, cu, float(alpha)
-        )
+            run = _get_run(key, self._sfb.new_zeros(1, 1, 1, 512), self._sfb)
+            self._runs[add_to_output] = run
+        run(a, self._b_operand, d, postact, sfa_blocked, self._sfb, cu, float(alpha))
         return (postact, d) if self.gated else d
 
 
@@ -359,6 +372,7 @@ def dense_nvfp4_gemm(
         tuple(tile_mn),
         tuple(cluster_mn),
         False,  # varlen_m
+        False,  # add_to_output
         device.index,
     )
     run = _get_run(key, sfa, sfb)

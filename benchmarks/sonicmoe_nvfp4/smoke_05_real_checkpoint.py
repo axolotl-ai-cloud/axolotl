@@ -133,17 +133,49 @@ def main():
     torch.cuda.synchronize()
 
     # --- STE oracle (same construction as smoke 4, real weights) ---
+    from axolotl.integrations.kernels.libs.sonicmoe.fp4_cute_ops import _get_engine
+
     def ste_quant(x):
         q, s, _ = quantize_nvfp4_ref(x.detach())
         dq = dequantize_nvfp4_ref(q, s).to(x.dtype)
         return x + (dq - x).detach()
 
+    def fold_stats(name, w):
+        entry = _get_engine(w)
+        if entry.folded_scale is None:
+            print(f"[info] {name}: pts NOT folded (fold rejected), rowscale path")
+            return
+        exact = w.scale.float() * (w.per_tensor_scale.view(-1, 1, 1) / entry.alpha)
+        folded = entry.folded_scale.float()
+        nz = exact != 0
+        under = (folded == 0) & nz
+        ok = nz & ~under
+        max_rel = float(((folded[ok] - exact[ok]).abs() / exact[ok].abs()).max())
+        print(
+            f"[info] {name}: pts ratios folded, alpha={entry.alpha:.6g}, "
+            f"max_rel_err(excl. underflow)={max_rel:.4e}, "
+            f"underflow={int(under.sum())}/{int(nz.sum())} blocks, "
+            f"fold_rel_err(incl.)={entry.fold_rel_err:.4e}"
+        )
+
+    fold_stats("w1 (gate_up)", w1)
+    fold_stats("w2 (down)", w2)
+
     def base_gemm(x, w, offsets):
-        # kernel view of the weights: stored scales, NO pts; then the same
-        # post-GEMM per-expert row scaling in fp32 that fp4_cute_ops applies
+        # kernel view of the weights: folded pts_e/pts_ref ratios in SFB with
+        # alpha=pts_ref when fp4_cute_ops folded, else stored scales plus the
+        # post-GEMM per-expert row scaling.
+        entry = _get_engine(w)
+        xq = ste_quant(x)
+        if entry.folded_scale is not None:
+            w_np = dequantize_nvfp4_ref(w.qdata, entry.folded_scale)
+            outs = []
+            for e in range(E):
+                s0, e0 = int(offsets[e]), int(offsets[e + 1])
+                outs.append((entry.alpha * (xq[s0:e0].float() @ w_np[e].t())).to(dtype))
+            return torch.cat(outs, dim=0)
         w_np = dequantize_nvfp4_ref(w.qdata, w.scale)
         pts = w.per_tensor_scale.view(-1)
-        xq = ste_quant(x)
         outs = []
         for e in range(E):
             s0, e0 = int(offsets[e]), int(offsets[e + 1])

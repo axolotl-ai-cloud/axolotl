@@ -105,15 +105,20 @@ def build_varlen_sfa(
 
 
 def fold_per_tensor_scale(
-    block_scale: torch.Tensor, per_tensor_scale: torch.Tensor
+    block_scale: torch.Tensor,
+    per_tensor_scale: torch.Tensor,
+    *,
+    allow_underflow: bool = False,
 ) -> tuple[torch.Tensor, float]:
     """Fold a per-expert fp32 scale into e4m3 block scales: ``scale * pts -> e4m3``.
 
     block_scale: ``(E, N, sf_k)`` float8_e4m3fn. per_tensor_scale: ``(E,)``,
     ``(E,1,1)`` or scalar fp32. Returns ``(folded e4m3, max relative roundtrip
-    error)``. Raises if any folded value saturates e4m3 (|v| > 448) or rounds a
-    nonzero scale to zero; in that case pts must stay outside the block scale
-    (per-expert alpha, a kernel epilogue change).
+    error)``. Raises if any folded value saturates e4m3 (|v| > 448) or, unless
+    ``allow_underflow``, rounds a nonzero scale to zero (an underflowed block
+    dequantizes to exact zeros and counts as rel err 1.0); in that case pts
+    must stay outside the block scale (per-expert alpha, a kernel epilogue
+    change).
     """
     e4m3_max = 448.0
     pts = per_tensor_scale.float().reshape(-1)
@@ -127,7 +132,7 @@ def fold_per_tensor_scale(
         raise ValueError("per_tensor_scale folding saturates e4m3 (>448)")
     folded = folded_f32.to(torch.float8_e4m3fn)
     roundtrip = folded.float()
-    if bool(((roundtrip == 0) & (folded_f32 != 0)).any()):
+    if not allow_underflow and bool(((roundtrip == 0) & (folded_f32 != 0)).any()):
         raise ValueError("per_tensor_scale folding underflows e4m3 to zero")
     nonzero = folded_f32 != 0
     rel_err = 0.0

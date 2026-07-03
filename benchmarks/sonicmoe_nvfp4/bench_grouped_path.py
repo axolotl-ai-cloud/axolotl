@@ -128,7 +128,7 @@ def main():
         # forward phase breakdown (fp4_cute)
         xg, offs, gidx, wg = route_and_group(hidden, idx, wts, E)
         cu = torch.cat([offs.new_zeros(1), offs[1:]]).to(torch.int32)
-        engine = _get_engine(w1)
+        engine = _get_engine(w1).engine
         a_q, sfa = quantize_grouped_rows(xg, cu)
         phases = {
             "route_and_group": lambda: route_and_group(hidden, idx, wts, E),

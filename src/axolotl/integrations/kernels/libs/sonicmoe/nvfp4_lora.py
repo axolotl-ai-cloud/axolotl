@@ -60,6 +60,15 @@ def _grouped_offs(expert_offsets: torch.Tensor, device) -> torch.Tensor:
     return expert_offsets[1:].to(device=device, dtype=torch.int32)
 
 
+def _b3d_contiguous(lora_B: torch.Tensor, E: int, dim1: int) -> torch.Tensor:
+    """``[E, dim1, r]`` contiguous view of ``lora_B`` ``[dim1, r*E]``.
+
+    The permute leaves no unit-stride dim; grouped GEMM needs one.
+    """
+    r = lora_B.shape[1] // E
+    return lora_B.reshape(dim1, r, E).permute(2, 0, 1).contiguous()
+
+
 def _lora_delta_per_group(
     x_grouped: torch.Tensor,
     expert_offsets: torch.Tensor,
@@ -69,11 +78,13 @@ def _lora_delta_per_group(
     E: int,
     dim1: int,
     dim2: int,
+    B_c: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Low-rank contribution ``scaling * ((x_e @ A_e^T) @ B_e^T)`` per group.
 
     ``lora_A`` is ``[r*E, dim2]``, ``lora_B`` is ``[dim1, r*E]``. Returns a
     ``[T, dim1]`` tensor aligned row-for-row with ``x_grouped`` ``[T, dim2]``.
+    ``B_c`` is an optional precomputed ``_b3d_contiguous(lora_B, E, dim1)``.
     """
     r = lora_A.shape[0] // E
     A_3d = lora_A.reshape(E, r, dim2)  # [E, r, dim2]
@@ -82,9 +93,10 @@ def _lora_delta_per_group(
     if _use_grouped_mm(x_grouped) and lora_A.dtype == x_grouped.dtype:
         offs = _grouped_offs(expert_offsets, x_grouped.device)
         z = torch._grouped_mm(x_grouped, A_3d.transpose(-2, -1), offs=offs)
-        # B_3d's permute leaves no unit-stride dim; grouped GEMM needs one.
-        B_c = B_3d.contiguous()
-        return scaling * torch._grouped_mm(z, B_c.transpose(-2, -1), offs=offs)
+        if B_c is None:
+            B_c = B_3d.contiguous()
+        # scaling applied on the small [T, r] intermediate, not the [T, dim1] product
+        return torch._grouped_mm(z * scaling, B_c.transpose(-2, -1), offs=offs)
 
     out = x_grouped.new_zeros((x_grouped.shape[0], dim1))
     for e in range(E):
@@ -106,11 +118,13 @@ def _lora_backward_per_group(
     lora_B: torch.Tensor,
     base_weight: torch.Tensor,
     scaling: float,
+    B_c: Optional[torch.Tensor] = None,
 ) -> tuple:
     """Grads for a frozen-base grouped-LoRA linear ``h_e = x_e @ W_eff_e^T``.
 
     ``base_weight`` is ``[E, dim1, dim2]`` (frozen; dense or packed NVFP4,
     dequantized one expert slice at a time), used only for the ``dx`` term.
+    ``B_c`` is an optional precomputed ``_b3d_contiguous(lora_B, E, dim1)``.
     Returns ``(dx, d_lora_A, d_lora_B)``.
     """
     E, dim1, dim2 = base_weight.shape
@@ -120,20 +134,25 @@ def _lora_backward_per_group(
 
     if _use_grouped_mm(grad_h) and lora_A.dtype == grad_h.dtype:
         offs = _grouped_offs(expert_offsets, grad_h.device)
-        # B_3d's permute leaves no unit-stride dim; grouped GEMM needs one.
-        B_3d = B_3d.contiguous()
-        # dz_e = g_e @ B_e; z_e = x_e @ A_e^T (forward intermediate, recomputed —
+        if B_c is None:
+            # B_3d's permute leaves no unit-stride dim; grouped GEMM needs one.
+            B_c = B_3d.contiguous()
+        # dz_e = g_e @ B_e; z_e = x_e @ A_e^T (forward intermediate, recomputed:
         # cheaper than saving a [T, r] per GEMM through gradient checkpointing).
-        dz = torch._grouped_mm(grad_h, B_3d, offs=offs)  # [T, r]
-        z = torch._grouped_mm(x_grouped, A_3d.transpose(-2, -1), offs=offs)
-        # dx_e = g_e @ W_e + scaling * dz_e @ A_e (base dequantized whole: one
-        # kernel + one grouped GEMM instead of E slice-dequant matmul pairs).
-        w_dense = dequantize_expert_weight(base_weight).to(grad_h.dtype)
+        # scaling lands once on each [T, r] intermediate, not the [T, dim] products.
+        dz = torch._grouped_mm(grad_h, B_c, offs=offs) * scaling  # [T, r]
+        z = torch._grouped_mm(x_grouped, A_3d.transpose(-2, -1), offs=offs) * scaling
+        # dx_e = g_e @ W_e + dz_e @ A_e (base dequantized whole: one kernel +
+        # one grouped GEMM instead of E slice-dequant matmul pairs). The dequant
+        # must match the forward operands (folded SFB + alpha on fp4_cute).
+        from .fp4_cute_ops import dequantize_engine_weight
+
+        w_dense = dequantize_engine_weight(base_weight).to(grad_h.dtype)
         dx = torch._grouped_mm(grad_h, w_dense, offs=offs)
-        dx += scaling * torch._grouped_mm(dz, A_3d, offs=offs)
-        # dA_e = scaling * dz_e^T @ x_e; dB_e = scaling * g_e^T @ z_e
-        d_A_3d = scaling * torch._grouped_mm(dz.transpose(0, 1), x_grouped, offs=offs)
-        d_B_3d = scaling * torch._grouped_mm(grad_h.transpose(0, 1), z, offs=offs)
+        dx += torch._grouped_mm(dz, A_3d, offs=offs)
+        # dA_e = dz_e^T @ x_e; dB_e = g_e^T @ z_e
+        d_A_3d = torch._grouped_mm(dz.transpose(0, 1), x_grouped, offs=offs)
+        d_B_3d = torch._grouped_mm(grad_h.transpose(0, 1), z, offs=offs)
         d_lora_A = d_A_3d.reshape(E * r, dim2)
         d_lora_B = d_B_3d.permute(1, 2, 0).reshape(dim1, E * r)
         return dx, d_lora_A, d_lora_B
@@ -192,21 +211,31 @@ class GroupedUpProjLoRA(torch.autograd.Function):
         concat: bool,
     ) -> torch.Tensor:
         E, dim1, dim2 = w1.shape
-        base = grouped_up_gemm(
-            x_grouped, w1, expert_offsets, backend=backend, concat=concat
+        B_c = (
+            _b3d_contiguous(lora_B1, E, dim1)
+            if _use_grouped_mm(x_grouped) and lora_A1.dtype == x_grouped.dtype
+            else None
         )
         delta = _lora_delta_per_group(
-            x_grouped, expert_offsets, lora_A1, lora_B1, scaling, E, dim1, dim2
+            x_grouped, expert_offsets, lora_A1, lora_B1, scaling, E, dim1, dim2, B_c=B_c
         )
-        h = base + delta
+        if backend == "fp4_cute":
+            from .fp4_cute_ops import grouped_nvfp4_linear_add_delta
 
-        ctx.save_for_backward(x_grouped, w1, expert_offsets, lora_A1, lora_B1)
+            h = grouped_nvfp4_linear_add_delta(x_grouped, w1, expert_offsets[1:], delta)
+        else:
+            base = grouped_up_gemm(
+                x_grouped, w1, expert_offsets, backend=backend, concat=concat
+            )
+            h = base + delta
+
+        ctx.save_for_backward(x_grouped, w1, expert_offsets, lora_A1, lora_B1, B_c)
         ctx.scaling = scaling
         return h
 
     @staticmethod
     def backward(ctx, grad_h: torch.Tensor):
-        x_grouped, w1, expert_offsets, lora_A1, lora_B1 = ctx.saved_tensors
+        x_grouped, w1, expert_offsets, lora_A1, lora_B1, B_c = ctx.saved_tensors
         dx, dA, dB = _lora_backward_per_group(
             grad_h.contiguous(),
             x_grouped,
@@ -215,6 +244,7 @@ class GroupedUpProjLoRA(torch.autograd.Function):
             lora_B1,
             w1,
             ctx.scaling,
+            B_c=B_c,
         )
         return dx, None, None, dA, dB, None, None, None
 
@@ -240,19 +270,29 @@ class GroupedDownProjLoRA(torch.autograd.Function):
         backend: str,
     ) -> torch.Tensor:
         E, dim1, dim2 = w2.shape
-        base = grouped_down_gemm(a_grouped, w2, expert_offsets, backend=backend)
-        delta = _lora_delta_per_group(
-            a_grouped, expert_offsets, lora_A2, lora_B2, scaling, E, dim1, dim2
+        B_c = (
+            _b3d_contiguous(lora_B2, E, dim1)
+            if _use_grouped_mm(a_grouped) and lora_A2.dtype == a_grouped.dtype
+            else None
         )
-        y = base + delta
+        delta = _lora_delta_per_group(
+            a_grouped, expert_offsets, lora_A2, lora_B2, scaling, E, dim1, dim2, B_c=B_c
+        )
+        if backend == "fp4_cute":
+            from .fp4_cute_ops import grouped_nvfp4_linear_add_delta
 
-        ctx.save_for_backward(a_grouped, w2, expert_offsets, lora_A2, lora_B2)
+            y = grouped_nvfp4_linear_add_delta(a_grouped, w2, expert_offsets[1:], delta)
+        else:
+            base = grouped_down_gemm(a_grouped, w2, expert_offsets, backend=backend)
+            y = base + delta
+
+        ctx.save_for_backward(a_grouped, w2, expert_offsets, lora_A2, lora_B2, B_c)
         ctx.scaling = scaling
         return y
 
     @staticmethod
     def backward(ctx, grad_y: torch.Tensor):
-        a_grouped, w2, expert_offsets, lora_A2, lora_B2 = ctx.saved_tensors
+        a_grouped, w2, expert_offsets, lora_A2, lora_B2, B_c = ctx.saved_tensors
         da, dA, dB = _lora_backward_per_group(
             grad_y.contiguous(),
             a_grouped,
@@ -261,6 +301,7 @@ class GroupedDownProjLoRA(torch.autograd.Function):
             lora_B2,
             w2,
             ctx.scaling,
+            B_c=B_c,
         )
         return da, None, None, dA, dB, None, None
 
@@ -353,11 +394,13 @@ def route_and_group(
     device = hidden_states.device
 
     flat_expert = top_k_index.reshape(-1)
-    if flat_expert.numel() and int(flat_expert.max()) >= num_experts:
-        # bincount(minlength=num_experts) would return > num_experts bins and the
-        # cumsum-into-a-fixed-slice below would silently drop the overflow. Routed
-        # ids exceed the local expert count under expert parallelism (global ids,
-        # local base shard), which this path does not yet support.
+    # CUDA skips this guard: it costs a device-to-host sync per MoE layer, EP is
+    # already rejected upstream, and non-EP routed ids come from a width-E topk.
+    if (
+        not flat_expert.is_cuda
+        and flat_expert.numel()
+        and int(flat_expert.max()) >= num_experts
+    ):
         raise NotImplementedError(
             "sonicmoe NVFP4 path received routed expert id >= num_experts "
             f"({int(flat_expert.max())} >= {num_experts}); expert parallelism is "
@@ -367,7 +410,7 @@ def route_and_group(
     flat_weight = top_k_weights.reshape(-1).to(hidden_states.dtype)
     token_ids = torch.arange(T, device=device).repeat_interleave(K)
 
-    order = torch.sort(flat_expert, stable=True).indices
+    sorted_experts, order = torch.sort(flat_expert, stable=True)
     gather_token_idx = token_ids[order]
     weights_grouped = flat_weight[order]
     if hidden_states.is_cuda:
@@ -377,9 +420,12 @@ def route_and_group(
     else:
         x_grouped = hidden_states.index_select(0, gather_token_idx)
 
-    counts = torch.bincount(flat_expert, minlength=num_experts)
-    expert_offsets = torch.zeros(num_experts + 1, dtype=torch.long, device=device)
-    torch.cumsum(counts, dim=0, out=expert_offsets[1:])
+    # searchsorted on the sorted ids instead of bincount + cumsum: bincount's
+    # output size is data-dependent, so it host-syncs every call.
+    expert_offsets = torch.searchsorted(
+        sorted_experts,
+        torch.arange(num_experts + 1, device=device, dtype=sorted_experts.dtype),
+    )
 
     return x_grouped, expert_offsets, gather_token_idx, weights_grouped
 
