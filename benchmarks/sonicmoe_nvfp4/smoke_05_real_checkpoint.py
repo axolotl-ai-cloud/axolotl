@@ -27,6 +27,10 @@ LAYER = int(os.environ.get("AXOLOTL_SMOKE05_LAYER", "24"))
 def main():
     import torch
 
+    # this smoke validates the bf16-backward semantics; the optional fp8
+    # backward legitimately shifts grads ~4e-2 rel_fro (smoke 7 owns that)
+    os.environ.setdefault("AXOLOTL_SONICMOE_NVFP4_BWD", "bf16")
+
     require_sm100()
 
     from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (

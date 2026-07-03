@@ -49,8 +49,10 @@ def _deep_gemm():
             torch.zeros(1, device="cuda")
             import deep_gemm
 
-            alignment = deep_gemm.get_theoretical_mk_alignment_for_contiguous_layout()
-            deep_gemm.set_mk_alignment_for_contiguous_layout(alignment)
+            # 128 over the theoretical 224: every padded-layout cost (quant,
+            # zero rows, output buffer) scales with E * alignment, and the
+            # GEMM measured slightly FASTER at 128 on B200 (fewer pad rows).
+            deep_gemm.set_mk_alignment_for_contiguous_layout(128)
             _DEEP_GEMM = deep_gemm
         except Exception:
             _DEEP_GEMM = False
@@ -82,6 +84,89 @@ def fp8_dx_supported(grad_h: torch.Tensor, base_weight) -> bool:
             )
         return False
     return True
+
+
+_PAD_QUANT_KERNEL = None
+
+
+def _pad_quant_kernel():
+    """Fused pad + per-token fp8 quant (1x128 ue8m0 scales) in one pass.
+
+    The torch chain (zero-fill the padded buffer, scatter, per_token_cast's
+    fill + copy + amax + mul) moves ~5x the real data and erased the GEMM win;
+    this reads only real rows (padding writes zeros without reading) and its
+    rounding is bit-identical to per_token_cast_to_fp8 because ue8m0 scales
+    are powers of two.
+    """
+    global _PAD_QUANT_KERNEL
+    if _PAD_QUANT_KERNEL is None:
+        import triton
+        import triton.language as tl
+
+        @triton.jit
+        def _kernel(
+            grad_ptr,
+            src_ptr,
+            q_ptr,
+            sf_ptr,
+            N_BLOCKS: tl.constexpr,
+            BLK: tl.constexpr,
+        ):
+            pid = tl.program_id(0)
+            m = pid // N_BLOCKS
+            b = pid % N_BLOCKS
+            src = tl.load(src_ptr + m)
+            offs = b * BLK + tl.arange(0, BLK)
+            if src >= 0:
+                x = tl.load(grad_ptr + src.to(tl.int64) * (N_BLOCKS * BLK) + offs).to(
+                    tl.float32
+                )
+            else:
+                x = tl.zeros([BLK], dtype=tl.float32)
+            amax = tl.maximum(tl.max(tl.abs(x)), 1e-4)
+            sf = amax / 448.0
+            bits = sf.to(tl.int32, bitcast=True)
+            exp = ((bits >> 23) & 0xFF) + tl.where((bits & 0x7FFFFF) != 0, 1, 0)
+            exp = tl.minimum(tl.maximum(exp, 1), 254)
+            sf = (exp << 23).to(tl.float32, bitcast=True)
+            q = x * (1.0 / sf)
+            tl.store(
+                q_ptr + pid.to(tl.int64) * BLK + tl.arange(0, BLK),
+                q.to(q_ptr.dtype.element_ty),
+            )
+            tl.store(sf_ptr + m.to(tl.int64) * N_BLOCKS + b, sf)
+
+        _PAD_QUANT_KERNEL = _kernel
+    return _PAD_QUANT_KERNEL
+
+
+def _pad_and_cast_fp8(
+    grad_h: torch.Tensor, src: torch.Tensor, dest: torch.Tensor, m_max: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """``(a_fp8 [m_max, K], a_sf fp32 [m_max, K/128])`` from real rows of grad_h.
+
+    ``src`` maps padded row -> source row (-1 for padding); ``dest`` is the
+    inverse map. Falls back to the torch scatter + per_token_cast chain when
+    triton is unavailable.
+    """
+    K = grad_h.shape[1]
+    from .triton_nvfp4 import triton_available
+
+    if triton_available() and K % 128 == 0:
+        q = torch.empty((m_max, K), dtype=torch.float8_e4m3fn, device=grad_h.device)
+        sf = torch.empty((m_max, K // 128), dtype=torch.float32, device=grad_h.device)
+        grad_c = grad_h.contiguous()
+        n_blocks = K // 128
+        _pad_quant_kernel()[(m_max * n_blocks,)](
+            grad_c, src, q, sf, N_BLOCKS=n_blocks, BLK=128
+        )
+        return q, sf
+
+    from deep_gemm.utils import per_token_cast_to_fp8
+
+    a_pad = grad_h.new_zeros((m_max, K))
+    a_pad[dest] = grad_h
+    return per_token_cast_to_fp8(a_pad, use_ue8m0=True)
 
 
 class _Fp8Entry(NamedTuple):
@@ -129,24 +214,20 @@ def _get_fp8_cache(base_weight) -> _Fp8Entry:
     return entry
 
 
-def grouped_fp8_dx(
-    grad_h: torch.Tensor, base_weight, expert_offsets: torch.Tensor
-) -> torch.Tensor:
-    """``dx[start:end] = g_e @ W_e`` through the fp8 weight cache.
+def _dx_plan(expert_offsets: torch.Tensor, T: int, E: int, align: int) -> tuple:
+    """``(dest, m_indices, src, m_max)`` for the padded contiguous layout.
 
-    ``expert_offsets`` is ``[E+1]`` cumulative (device). Returns ``[T, dim2]``
-    bf16, row-aligned with ``grad_h`` ``[T, dim1]``.
+    Cached as an attribute on the offsets tensor: the up and down projections
+    of one layer save the SAME offsets object for backward, so the plan builds
+    once per layer per step and dies with the tensor (no stale-pointer risk).
+    The dozen tiny index kernels here cost more than the GEMM otherwise.
     """
-    dg = _deep_gemm()
-    entry = _get_fp8_cache(base_weight)
-    from deep_gemm.utils import per_token_cast_to_fp8
+    plan = getattr(expert_offsets, "_dg_dx_plan", None)
+    if plan is not None and plan[3] == T + E * align:
+        return plan
 
-    T = grad_h.shape[0]
-    E, N, K = entry.w_fp8.shape
-    align = entry.alignment
-    device = grad_h.device
-
-    offsets = expert_offsets.to(device=device, dtype=torch.int64)
+    device = expert_offsets.device
+    offsets = expert_offsets.to(dtype=torch.int64)
     counts = offsets[1:] - offsets[:-1]
     padded = torch.div(counts + (align - 1), align, rounding_mode="floor") * align
     pad_starts = torch.cat([padded.new_zeros(1), padded.cumsum(0)])[:-1]
@@ -157,13 +238,33 @@ def grouped_fp8_dx(
     eid = torch.repeat_interleave(torch.arange(E, device=device), counts, output_size=T)
     dest = pad_starts[eid] + (row - offsets[eid])
 
-    a_pad = grad_h.new_zeros((m_max, K))
-    a_pad[dest] = grad_h
-    m_indices = torch.full((m_max,), -1, dtype=torch.int32, device=device)
+    maps = torch.full((2, m_max), -1, dtype=torch.int32, device=device)
+    m_indices, src = maps[0], maps[1]
     m_indices[dest] = eid.to(torch.int32)
+    src[dest] = row.to(torch.int32)
 
-    a_fp8, a_sf = per_token_cast_to_fp8(a_pad, use_ue8m0=True)
-    d = torch.empty((m_max, N), dtype=torch.bfloat16, device=device)
+    plan = (dest, m_indices, src, m_max)
+    expert_offsets._dg_dx_plan = plan
+    return plan
+
+
+def grouped_fp8_dx(
+    grad_h: torch.Tensor, base_weight, expert_offsets: torch.Tensor
+) -> torch.Tensor:
+    """``dx[start:end] = g_e @ W_e`` through the fp8 weight cache.
+
+    ``expert_offsets`` is ``[E+1]`` cumulative (device). Returns ``[T, dim2]``
+    bf16, row-aligned with ``grad_h`` ``[T, dim1]``.
+    """
+    dg = _deep_gemm()
+    entry = _get_fp8_cache(base_weight)
+
+    T = grad_h.shape[0]
+    E, N, K = entry.w_fp8.shape
+    dest, m_indices, src, m_max = _dx_plan(expert_offsets, T, E, entry.alignment)
+
+    a_fp8, a_sf = _pad_and_cast_fp8(grad_h, src, dest, m_max)
+    d = torch.empty((m_max, N), dtype=torch.bfloat16, device=grad_h.device)
     dg.m_grouped_fp8_gemm_nt_contiguous(
         (a_fp8, a_sf),
         (entry.w_fp8, entry.w_sf),

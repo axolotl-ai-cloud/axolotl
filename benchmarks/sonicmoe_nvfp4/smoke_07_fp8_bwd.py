@@ -9,8 +9,10 @@ Same construction as smoke 4 (real torchao NVFP4Tensor base, bf16 LoRA,
 - down-proj LoRA grads (dA2/dB2) must be BITWISE identical (they depend only
   on the top gradient and forward activations, not on any dX);
 - hidden grad and up-proj LoRA grads shift only through the fp8 base-dX term:
-  compared by relative Frobenius norm (expected ~1e-3, the fp8 GEMM's 7e-4
-  plus propagation);
+  compared by relative Frobenius norm. Expected ~3e-2: DeepGEMM's own gate is
+  calc_diff < 1e-3, a squared-similarity metric, and calc_diff ~= rel_fro^2 /
+  2 for small errors, so their 7e-4 IS ~3.7e-2 rel_fro. The 30-step loss
+  trajectory is the real quality gate;
 - unit check: grouped_fp8_dx vs the dequant grouped GEMM directly;
 - perf: full-backward wall time under both engines (info only; includes the
   pad/scatter/quant/gather overhead the microbench excluded).
@@ -116,9 +118,9 @@ def main():
     check("forward bitwise across backward engines", torch.equal(out_ref, out_fp8))
     check("dA2 bitwise (independent of dX engine)", torch.equal(g_ref[3], g_fp8[3]))
     check("dB2 bitwise (independent of dX engine)", torch.equal(g_ref[4], g_fp8[4]))
-    report_norm("d_hidden fp8 vs bf16 backward", g_fp8[0], g_ref[0], tol=5e-3)
-    report_norm("dA1 fp8 vs bf16 backward", g_fp8[1], g_ref[1], tol=5e-3)
-    report_norm("dB1 fp8 vs bf16 backward", g_fp8[2], g_ref[2], tol=5e-3)
+    report_norm("d_hidden fp8 vs bf16 backward", g_fp8[0], g_ref[0], tol=8e-2)
+    report_norm("dA1 fp8 vs bf16 backward", g_fp8[1], g_ref[1], tol=8e-2)
+    report_norm("dB1 fp8 vs bf16 backward", g_fp8[2], g_ref[2], tol=8e-2)
 
     # unit-level dX: fp8 grouped GEMM vs dequant grouped GEMM on the up proj
     from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import route_and_group
@@ -131,7 +133,7 @@ def main():
     w_dense = dequantize_engine_weight(w1).to(dtype)
     dx_ref = torch._grouped_mm(grad_h, w_dense, offs=expert_offsets[1:].to(torch.int32))
     report_norm(
-        "unit dX: grouped_fp8_dx vs dequant grouped_mm", dx_fp8, dx_ref, tol=3e-3
+        "unit dX: grouped_fp8_dx vs dequant grouped_mm", dx_fp8, dx_ref, tol=5e-2
     )
 
     def time_backward(mode, iters=10):
