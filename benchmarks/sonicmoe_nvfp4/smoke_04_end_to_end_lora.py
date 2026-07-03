@@ -4,16 +4,20 @@ Real torchao NVFP4Tensor base weights (constructed as ``fuse_nvfp4_experts``
 builds them), bf16 LoRA A/B and router, ``backend="fp4_cute"`` through
 ``grouped_moe_reference_forward``. The tight oracle replicates the
 implementation in pure torch: the same activation quantization at both GEMMs
-(straight-through in backward, matching the chunked-dequant dX), fp32
-matmuls rounded to bf16 like the kernel's D store, the same per-expert
-``per_tensor_scale`` handling (folded pts_e/pts_ref ratios in SFB plus the
-fp32 alpha = pts_ref epilogue scale when fp4_cute_ops folded, else the
-post-GEMM row scaling), and it reuses the implementation's own LoRA-delta /
+(straight-through in backward, matching the chunked-dequant dX), and the
+exact per-expert ``per_tensor_scale`` scheme the kernel now runs by default:
+fp32 accumulator (dequantized-operand matmul in fp32, stored block scales),
+per-row FULL pts multiplied in fp32 in the epilogue, THEN a single bf16
+rounding at the D store. With ``AXOLOTL_SONICMOE_NVFP4_PTS_FOLD=1`` the
+oracle instead mirrors the old fold scheme (pts_e/pts_ref ratios re-rounded
+into SFB, fp32 alpha = pts_ref), or the post-GEMM rowscale fallback if the
+fold was rejected. It reuses the implementation's own LoRA-delta /
 activation / route / combine functions so only the base GEMM differs.
 
-Also compared, tolerance-only, against the PRE-fold oracle (stored scales +
-post-GEMM pts rows) to quantify the SFB re-rounding shift, and against the
-dequant backend (info: the W4A4 activation-quant error, not a kernel bug).
+Also compared, tolerance-only, against the OLD post-GEMM rowscale scheme
+(bf16 GEMM output re-scaled through bf16, i.e. double rounding) to quantify
+what the exact epilogue multiply buys, and against the dequant backend
+(info: the W4A4 activation-quant error, not a kernel bug).
 """
 
 from _common import finish, report, report_norm, require_sm100
@@ -116,6 +120,12 @@ def main():
 
     def fold_stats(name, w):
         entry = _get_engine(w)
+        if entry.colvec_pts is not None:
+            print(
+                f"[info] {name}: exact per-row pts colvec in the epilogue "
+                f"(stored scales, alpha={entry.alpha:.6g})"
+            )
+            return
         if entry.folded_scale is None:
             print(f"[info] {name}: pts NOT folded (fold rejected), rowscale path")
             return
@@ -135,23 +145,32 @@ def main():
     fold_stats("w1 (gate_up)", w1)
     fold_stats("w2 (down)", w2)
 
-    def base_gemm(x, w, offsets, folded=True):
-        # folded=True: the kernel view after task-3 folding (SFB holds the
-        # pts_e/pts_ref ratios, alpha=pts_ref scales the fp32 accumulator).
-        # folded=False: the pre-fold view (stored scales, post-GEMM pts rows).
+    def base_gemm(x, w, offsets, kernel_view=True):
+        # kernel_view=True mirrors the mode fp4_cute_ops picked for this
+        # weight: default is the exact colvec scheme (stored scales, fp32
+        # matmul, per-row FULL pts multiplied in fp32, single bf16 rounding);
+        # PTS_FOLD=1 is the old fold (pts_e/pts_ref ratios in SFB, alpha =
+        # pts_ref on the fp32 accumulator) or, if the fold was rejected, the
+        # post-GEMM rowscale fallback.
+        # kernel_view=False is the OLD post-GEMM rowscale scheme (bf16 GEMM
+        # output re-scaled through bf16, double rounding), info only.
         entry = _get_engine(w)
-        if folded and entry.folded_scale is not None:
+        xq = ste_quant(x)
+        pts = w.per_tensor_scale.view(-1).float()
+        outs = []
+        if kernel_view and entry.colvec_pts is not None:
+            w_np = dequantize_nvfp4_ref(w.qdata, w.scale)
+            for e in range(E):
+                s0, e0 = int(offsets[e]), int(offsets[e + 1])
+                outs.append(((xq[s0:e0].float() @ w_np[e].t()) * pts[e]).to(dtype))
+            return torch.cat(outs, dim=0)
+        if kernel_view and entry.folded_scale is not None:
             w_np = dequantize_nvfp4_ref(w.qdata, entry.folded_scale)
-            xq = ste_quant(x)
-            outs = []
             for e in range(E):
                 s0, e0 = int(offsets[e]), int(offsets[e + 1])
                 outs.append((entry.alpha * (xq[s0:e0].float() @ w_np[e].t())).to(dtype))
             return torch.cat(outs, dim=0)
         w_np = dequantize_nvfp4_ref(w.qdata, w.scale)
-        pts = w.per_tensor_scale.view(-1)
-        xq = ste_quant(x)
-        outs = []
         for e in range(E):
             s0, e0 = int(offsets[e]), int(offsets[e + 1])
             o = (xq[s0:e0].float() @ w_np[e].t()).to(dtype)
@@ -172,23 +191,25 @@ def main():
 
     report("e2e lora fp4_cute: forward", out, out_ref)
 
-    # --- pre-fold oracle, info only: the SFB re-rounding shift. This smoke's
-    # synthetic weight magnitudes push many folded scales subnormal (real
-    # modelopt checkpoints keep scales near full range; see smoke 5's stats),
-    # so this quantifies the shift rather than gating it. ---
+    # --- old post-GEMM rowscale scheme, info only: double rounding through
+    # bf16 (GEMM output cast bf16, re-scaled by pts, cast bf16 again). The
+    # delta vs the implementation quantifies what the exact fp32 epilogue
+    # multiply buys (or, under PTS_FOLD=1, the fold's SFB re-rounding shift;
+    # this smoke's synthetic weight magnitudes push many folded scales
+    # subnormal, real modelopt checkpoints keep scales near full range). ---
     with torch.no_grad():
         xg_p = hidden.index_select(0, gidx)
-        h_p = base_gemm(xg_p, w1, offsets, folded=False) + _lora_delta_per_group(
+        h_p = base_gemm(xg_p, w1, offsets, kernel_view=False) + _lora_delta_per_group(
             xg_p, offsets, A1, B1, scaling1, E, 2 * I, H
         )
         a_p = gated_activation(h_p, "silu", concat=True)
-        y_p = base_gemm(a_p, w2, offsets, folded=False) + _lora_delta_per_group(
+        y_p = base_gemm(a_p, w2, offsets, kernel_view=False) + _lora_delta_per_group(
             a_p, offsets, A2, B2, scaling2, E, H, I
         )
         out_ref_old = combine_expert_outputs(y_p, gidx, wg, T)
         d = out.float() - out_ref_old.float()
         print(
-            "[info] forward vs PRE-FOLD oracle: "
+            "[info] forward vs OLD post-GEMM rowscale oracle: "
             f"max_abs={float(d.abs().max()):.4e} "
             f"rel_fro={float(d.norm() / out_ref_old.float().norm()):.4e} "
             f"mean_rel={float(d.abs().mean() / out_ref_old.float().abs().mean()):.4e}"

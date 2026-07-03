@@ -66,7 +66,7 @@ Backend selection: when unset, `fp4_cute` is chosen automatically if available (
 | `fp4_cute` | native NVFP4 tensor cores (`kind::nvf4`) via quack | B200/GB200 (SM100/110) |
 | `dequant` | triton dequant to bf16 + `torch._grouped_mm` | any CUDA GPU with triton |
 
-`AXOLOTL_SONICMOE_NVFP4_PTS_FOLD=0` disables folding per-expert per-tensor scales into the block scale factors (slower, marginally more accurate; see `SONICMOE_NVFP4_LORA.md`).
+Per-expert per-tensor scales are applied exactly in the GEMM epilogue (a per-row fp32 multiply on the accumulator). `AXOLOTL_SONICMOE_NVFP4_PTS_FOLD=1` switches back to the old lossy scheme that folds scale ratios into the block scale factors, kept for A/B numerics debugging (see `SONICMOE_NVFP4_LORA.md`).
 
 **fp8 backward via DeepGEMM (explicit opt-in, VRAM-rich setups only).** `AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm` runs backward dX through an fp8 weight cache on [DeepGEMM](https://github.com/deepseek-ai/DeepGEMM)'s m-grouped GEMM (DeepSeek's 1x128 training recipe): +9% end-to-end tok/s on Qwen3-30B, but the cache is a full fp8 copy of all expert weights (+27 GiB persistent on that model), which is why it is OFF by default. dX-dependent gradients shift ~4e-2 relative Frobenius (within DeepGEMM's own accuracy gate; 30-step loss tracks within ~0.6%). Requires a source build of DeepGEMM (the `deep-gemm` PyPI name is unrelated); install steps and gotchas: `DEEPGEMM.md` at the repo root.
 

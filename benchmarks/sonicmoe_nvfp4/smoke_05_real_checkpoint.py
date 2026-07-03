@@ -7,9 +7,14 @@ comparison on the REAL weights: ``backend="fp4_cute"`` vs the STE oracle (tight:
 bitwise, grads by norm) and vs the ``dequant`` backend (info: the W4A4 activation-quant
 error at real weight magnitudes, the honest OQ1 number vs smoke 4's random-weight 17%).
 
+The oracle encodes the exact per-expert ``per_tensor_scale`` scheme the kernel runs by
+default: fp32 accumulator (dequantized-operand matmul in fp32, stored block scales),
+per-row FULL pts multiplied in fp32 in the epilogue, THEN a single bf16 rounding. Under
+``AXOLOTL_SONICMOE_NVFP4_PTS_FOLD=1`` it mirrors the old fold scheme instead.
+
 Also prints the fraction of e4m3 block scales that would land in e4m3's subnormal range if
-the per-expert ``per_tensor_scale`` were folded in, documenting on a real checkpoint why
-fp4_cute_ops applies pts post-GEMM instead.
+the ABSOLUTE per-expert ``per_tensor_scale`` were folded in, documenting on a real
+checkpoint why any fold is lossy and why the exact epilogue colvec multiply is the default.
 
 Env: AXOLOTL_SMOKE05_REPO (default nvidia/Qwen3-30B-A3B-NVFP4), AXOLOTL_SMOKE05_LAYER
 (default 24). First run downloads the shard(s) holding that layer's experts.
@@ -146,6 +151,12 @@ def main():
 
     def fold_stats(name, w):
         entry = _get_engine(w)
+        if entry.colvec_pts is not None:
+            print(
+                f"[info] {name}: exact per-row pts colvec in the epilogue "
+                f"(stored scales, alpha={entry.alpha:.6g})"
+            )
+            return
         if entry.folded_scale is None:
             print(f"[info] {name}: pts NOT folded (fold rejected), rowscale path")
             return
@@ -166,21 +177,28 @@ def main():
     fold_stats("w2 (down)", w2)
 
     def base_gemm(x, w, offsets):
-        # kernel view of the weights: folded pts_e/pts_ref ratios in SFB with
-        # alpha=pts_ref when fp4_cute_ops folded, else stored scales plus the
-        # post-GEMM per-expert row scaling.
+        # kernel view of the weights: default is the exact colvec scheme
+        # (stored scales, fp32 matmul, per-row FULL pts multiplied in fp32,
+        # single bf16 rounding); under PTS_FOLD=1 the folded pts_e/pts_ref
+        # ratios in SFB with alpha=pts_ref, else the post-GEMM rowscale
+        # fallback.
         entry = _get_engine(w)
         xq = ste_quant(x)
+        pts = w.per_tensor_scale.view(-1).float()
+        outs = []
+        if entry.colvec_pts is not None:
+            w_np = dequantize_nvfp4_ref(w.qdata, w.scale)
+            for e in range(E):
+                s0, e0 = int(offsets[e]), int(offsets[e + 1])
+                outs.append(((xq[s0:e0].float() @ w_np[e].t()) * pts[e]).to(dtype))
+            return torch.cat(outs, dim=0)
         if entry.folded_scale is not None:
             w_np = dequantize_nvfp4_ref(w.qdata, entry.folded_scale)
-            outs = []
             for e in range(E):
                 s0, e0 = int(offsets[e]), int(offsets[e + 1])
                 outs.append((entry.alpha * (xq[s0:e0].float() @ w_np[e].t())).to(dtype))
             return torch.cat(outs, dim=0)
         w_np = dequantize_nvfp4_ref(w.qdata, w.scale)
-        pts = w.per_tensor_scale.view(-1)
-        outs = []
         for e in range(E):
             s0, e0 = int(offsets[e]), int(offsets[e + 1])
             o = (xq[s0:e0].float() @ w_np[e].t()).to(dtype)

@@ -16,8 +16,11 @@ Conventions:
   weights must be row-permuted at load (``sf_layout.gate_up_interleave_perm``),
   and the stored preact D comes out interleaved (deinterleave for backward).
 - ``alpha`` scales the fp32 accumulator before the activation and before the
-  preact store: use it for the activation global scale; fold the per-expert
-  weight ``per_tensor_scale`` into SFB (``sf_layout.fold_per_tensor_scale``).
+  preact store: use it for the activation global scale. Per-expert weight
+  ``per_tensor_scale`` is applied EXACTLY via the epilogue colvec variant
+  (``forward(colvec=...)``: a per-row fp32 vector multiplied into the fp32
+  accumulator before the D store); the lossy SFB fold
+  (``sf_layout.fold_per_tensor_scale``) remains available for A/B debugging.
 
 GPU-only (SM100/SM110); quack/cutlass import lazily.
 """
@@ -58,6 +61,47 @@ def fp4_cute_available() -> bool:
 _COMPILE_CACHE: dict = {}
 
 
+@functools.lru_cache(maxsize=1)
+def _rowscale_gemm_cls():
+    """``GemmDefaultSm100`` with the stock colvec ADD swapped for an exact fp32
+    per-row MULTIPLY on the accumulator (quack's ``vec_multiply``), applied
+    before the D convert/store and thus also before the ``add_to_output``
+    reduce-add."""
+    from typing import Optional
+
+    import cutlass.cute as cute
+    import quack.utils as utils
+    from cutlass import const_expr
+    from quack.epi_ops import vec_multiply
+    from quack.gemm_default_epi import GemmDefaultSm100
+
+    class GemmDefaultRowScaleSm100(GemmDefaultSm100):
+        @cute.jit
+        def epi_visit_subtile(
+            self,
+            params,
+            epi_loop_tensors,
+            tRS_rD: cute.Tensor,
+            tRS_rC: Optional[cute.Tensor] = None,
+        ) -> Optional[cute.Tensor]:
+            # alpha (and beta/C) exactly as stock GemmDefaultEpiMixin, but the
+            # stock colvec ADD is skipped in favor of the multiply below.
+            rD = tRS_rD.load()
+            if const_expr(hasattr(params, "alpha") and params.alpha is not None):
+                rD *= utils.load_scalar_or_pointer(params.alpha)
+            if const_expr(tRS_rC is not None):
+                if const_expr(not hasattr(params, "beta") or params.beta is None):
+                    rD += tRS_rC.load().to(tRS_rD.element_type)  # type: ignore[union-attr]
+                else:
+                    beta = utils.load_scalar_or_pointer(params.beta)
+                    rD += beta * tRS_rC.load().to(tRS_rD.element_type)  # type: ignore[union-attr]
+            tRS_rD.store(rD)
+            vec_multiply(self, tRS_rD, epi_loop_tensors.get("mColVecBroadcast"), None)
+            return None
+
+    return GemmDefaultRowScaleSm100
+
+
 def _compile_kernel(
     n: int,
     k: int,
@@ -69,6 +113,7 @@ def _compile_kernel(
     cluster_mn: tuple,
     varlen_m: bool,
     add_to_output: bool,
+    has_colvec: bool,
     sfa_sample: torch.Tensor,
     sfb_sample: torch.Tensor,
 ):
@@ -118,6 +163,7 @@ def _compile_kernel(
 
     if gated:
         assert not add_to_output, "add_to_output is only wired for the default epilogue"
+        assert not has_colvec, "colvec row scale is only wired for the default epilogue"
         gemm_cls = partial(GemmGatedSm100, sf_vec_size=SF_VEC_SIZE)
         compile_epi_args = GemmGatedSm100.EpilogueArguments(
             mAux,
@@ -126,11 +172,22 @@ def _compile_kernel(
             rounding_mode=RoundingMode.RN,
         )
     else:
-        gemm_cls = partial(GemmDefaultSm100, sf_vec_size=SF_VEC_SIZE)
+        assert not has_colvec or varlen_m, "colvec row scale requires varlen_m"
+        default_cls = _rowscale_gemm_cls() if has_colvec else GemmDefaultSm100
+        gemm_cls = partial(default_cls, sf_vec_size=SF_VEC_SIZE)
+        # Passing a fake mColVecBroadcast at compile time is what activates the
+        # ColVecLoad op (host-side filtering happens during the compile trace);
+        # it shares m_sym with mD, the 1-D (total_m,) varlen colvec convention.
+        mColVec = (
+            fake_tensor(Float32, (m_sym,), leading_dim=0, divisibility=4)
+            if has_colvec
+            else None
+        )
         # add_to_output is a Constexpr: True swaps the D TMA store for a
         # reduce-add, so the kernel accumulates into the caller's out buffer.
         compile_epi_args = GemmDefaultSm100.EpilogueArguments(
             alpha=Float32(0.0),
+            mColVecBroadcast=mColVec,
             add_to_output=add_to_output,
             rounding_mode=RoundingMode.RN,
         )
@@ -158,16 +215,21 @@ def _compile_kernel(
 
     max_active = get_max_active_clusters(cluster_mn[0] * cluster_mn[1])
 
-    def run(a, b, d, postact, sfa, sfb, cu_seqlens, alpha):
+    def run(a, b, d, postact, sfa, sfb, cu_seqlens, alpha, colvec=None):
         if gated:
             epi_args = GemmGatedSm100.EpilogueArguments(
                 postact, None, alpha=Float32(alpha), rounding_mode=None
             )
         else:
+            # Tensor fields compiled non-None must be non-None on every call.
+            assert (colvec is not None) == has_colvec
             # Constexpr fields (add_to_output, rounding_mode) must be None at
             # call time; the namedtuple default False fails the FFI signature.
             epi_args = GemmDefaultSm100.EpilogueArguments(
-                alpha=Float32(alpha), add_to_output=None, rounding_mode=None
+                alpha=Float32(alpha),
+                mColVecBroadcast=colvec,
+                add_to_output=None,
+                rounding_mode=None,
             )
         scheduler_args = make_scheduler_args(max_active, 8, None)
         varlen_args = make_varlen_args(cu_seqlens, None, None) or VarlenArguments()
@@ -256,6 +318,7 @@ class GroupedNvfp4Gemm:
         cu_seqlens: torch.Tensor,
         *,
         alpha: float = 1.0,
+        colvec: torch.Tensor | None = None,
         preact_out: torch.Tensor | None = None,
         out: torch.Tensor | None = None,
         add_to_output: bool = False,
@@ -263,8 +326,13 @@ class GroupedNvfp4Gemm:
         """a_packed ``(total_m, K/2)`` uint8/fp4x2, expert-sorted, unpadded.
         sfa_blocked from ``sf_layout.build_varlen_sfa``. cu_seqlens ``(E+1,)``.
 
+        ``colvec`` ``(total_m,)`` fp32 (non-gated only) multiplies the fp32
+        accumulator per row in the epilogue: ``d = colvec * (alpha * acc)``,
+        exact (single bf16 rounding at the D store).
+
         ``add_to_output=True`` (non-gated only) accumulates ``alpha * acc``
-        into a caller-provided ``out`` instead of overwriting it.
+        (times ``colvec`` if given) into a caller-provided ``out`` instead of
+        overwriting it.
 
         Returns ``(postact [total_m, N/2] bf16, preact [total_m, N] bf16 | None)``
         for gated engines, else ``out [total_m, N]`` bf16.
@@ -273,6 +341,10 @@ class GroupedNvfp4Gemm:
         if add_to_output:
             assert not self.gated and out is not None
         total_m = a_packed.shape[0]
+        if colvec is not None:
+            assert not self.gated, "colvec row scale is non-gated only"
+            assert colvec.dtype == torch.float32 and colvec.shape == (total_m,)
+            colvec = colvec.contiguous()
         assert a_packed.shape[1] * 2 == self.k
         device = a_packed.device
         a = _as_fp4x2(a_packed)
@@ -299,7 +371,8 @@ class GroupedNvfp4Gemm:
                 else torch.empty(total_m, self.n, dtype=torch.bfloat16, device=device)
             )
 
-        run = self._runs.get(add_to_output)
+        run_key = (add_to_output, colvec is not None)
+        run = self._runs.get(run_key)
         if run is None:
             key = (
                 self.n,
@@ -312,11 +385,22 @@ class GroupedNvfp4Gemm:
                 self.cluster_mn,
                 True,  # varlen_m
                 add_to_output,
+                colvec is not None,
                 device.index,
             )
             run = _get_run(key, self._sfb.new_zeros(1, 1, 1, 512), self._sfb)
-            self._runs[add_to_output] = run
-        run(a, self._b_operand, d, postact, sfa_blocked, self._sfb, cu, float(alpha))
+            self._runs[run_key] = run
+        run(
+            a,
+            self._b_operand,
+            d,
+            postact,
+            sfa_blocked,
+            self._sfb,
+            cu,
+            float(alpha),
+            colvec,
+        )
         return (postact, d) if self.gated else d
 
 
@@ -373,6 +457,7 @@ def dense_nvfp4_gemm(
         tuple(cluster_mn),
         False,  # varlen_m
         False,  # add_to_output
+        False,  # has_colvec
         device.index,
     )
     run = _get_run(key, sfa, sfb)
