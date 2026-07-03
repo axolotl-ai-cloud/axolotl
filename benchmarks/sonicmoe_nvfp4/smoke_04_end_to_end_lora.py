@@ -31,6 +31,8 @@ def main():
     # this smoke validates the bf16-backward semantics; the optional fp8
     # backward legitimately shifts grads ~4e-2 rel_fro (smoke 7 owns that)
     os.environ.setdefault("AXOLOTL_SONICMOE_NVFP4_BWD", "bf16")
+    # unfused-up oracle semantics (fused up+act rounds once; smoke 8 owns it)
+    os.environ.setdefault("AXOLOTL_SONICMOE_NVFP4_FUSED_UP", "0")
 
     require_sm100()
 

@@ -255,6 +255,80 @@ class GroupedUpProjLoRA(torch.autograd.Function):
         return dx, None, None, dA, dB, None, None, None
 
 
+def _fused_up_act_enabled() -> bool:
+    """Fuse up-GEMM + gated activation + LoRA-delta add into one fp4_cute
+    gated-engine call. Default on; ``AXOLOTL_SONICMOE_NVFP4_FUSED_UP=0`` is the
+    kill switch back to the unfused up-GEMM + separate activation."""
+    import os
+
+    return os.environ.get("AXOLOTL_SONICMOE_NVFP4_FUSED_UP", "1") != "0"
+
+
+class GroupedUpProjActLoRA(torch.autograd.Function):
+    """Fused grouped up-projection + gated activation with frozen NVFP4 base.
+
+    One fp4_cute gated-engine call computes
+    ``a = act(pts * base_up(x) + delta)`` per expert group: the LoRA delta
+    rides the epilogue as a preact-space aux add, the per-expert pts as an
+    exact per-row colvec multiply, and the activation runs on the fp32
+    accumulator. The INTERLEAVED preact D is stashed for backward; grads route
+    to ``x_grouped``, ``lora_A1``, ``lora_B1`` only (``w1`` frozen).
+    """
+
+    @staticmethod
+    def forward(
+        ctx,
+        x_grouped: torch.Tensor,
+        w1: torch.Tensor,
+        expert_offsets: torch.Tensor,
+        lora_A1: torch.Tensor,
+        lora_B1: torch.Tensor,
+        scaling: float,
+    ) -> torch.Tensor:
+        from .fp4_cute_ops import gated_nvfp4_forward
+
+        E, dim1, dim2 = w1.shape
+        B_c = _b3d_contiguous(lora_B1, E, dim1)
+        delta = _lora_delta_per_group(
+            x_grouped, expert_offsets, lora_A1, lora_B1, scaling, E, dim1, dim2, B_c=B_c
+        )
+        cu = expert_offsets.to(torch.int32)
+        postact, preact = gated_nvfp4_forward(
+            x_grouped, w1, cu, delta.to(torch.bfloat16)
+        )
+        ctx.save_for_backward(
+            x_grouped, w1, expert_offsets, lora_A1, lora_B1, B_c, preact
+        )
+        ctx.scaling = scaling
+        return postact.to(x_grouped.dtype)
+
+    @staticmethod
+    def backward(ctx, grad_a: torch.Tensor):
+        x_grouped, w1, expert_offsets, lora_A1, lora_B1, B_c, preact = ctx.saved_tensors
+        # swiglu backward from the INTERLEAVED preact: even lanes gate, odd up.
+        pre = preact.view(preact.shape[0], -1, 2)
+        gate = pre[..., 0].float()
+        up = pre[..., 1].float()
+        sig = torch.sigmoid(gate)
+        ga = grad_a.float()
+        grad_gate = ga * up * (sig * (1.0 + gate * (1.0 - sig)))
+        grad_up = ga * (gate * sig)
+        # grad wrt the CONCAT-layout virtual preact h = [gate | up], matching
+        # the concat layouts of w1 / lora_B1 in the shared backward.
+        grad_h = torch.cat([grad_gate, grad_up], dim=1).to(grad_a.dtype)
+        dx, dA, dB = _lora_backward_per_group(
+            grad_h,
+            x_grouped,
+            expert_offsets,
+            lora_A1,
+            lora_B1,
+            w1,
+            ctx.scaling,
+            B_c=B_c,
+        )
+        return dx, None, None, dA, dB, None
+
+
 class GroupedDownProjLoRA(torch.autograd.Function):
     """Grouped down-projection with frozen base + trainable LoRA.
 
@@ -357,19 +431,31 @@ def grouped_expert_mlp_lora(
     optional per-expert biases ``[E, dim]``. ``limit`` is the clamped-SwiGLU
     bound (e.g. DeepSeek-V4). Returns ``y_grouped`` ``[T, H]``.
     """
-    if lora1 is not None:
+    if (
+        lora1 is not None
+        and backend == "fp4_cute"
+        and b1 is None
+        and limit is None
+        and concat
+        and act in ("silu", "swiglu")
+        and _fused_up_act_enabled()
+    ):
         A1, B1 = lora1
-        h = GroupedUpProjLoRA.apply(
-            x_grouped, w1, expert_offsets, A1, B1, scaling1, backend, concat
-        )
+        a = GroupedUpProjActLoRA.apply(x_grouped, w1, expert_offsets, A1, B1, scaling1)
     else:
-        h = grouped_up_gemm(
-            x_grouped, w1, expert_offsets, backend=backend, concat=concat
-        )
-    if b1 is not None:
-        h = _add_expert_bias(h, expert_offsets, b1)
+        if lora1 is not None:
+            A1, B1 = lora1
+            h = GroupedUpProjLoRA.apply(
+                x_grouped, w1, expert_offsets, A1, B1, scaling1, backend, concat
+            )
+        else:
+            h = grouped_up_gemm(
+                x_grouped, w1, expert_offsets, backend=backend, concat=concat
+            )
+        if b1 is not None:
+            h = _add_expert_bias(h, expert_offsets, b1)
 
-    a = gated_activation(h, act, concat=concat, limit=limit)
+        a = gated_activation(h, act, concat=concat, limit=limit)
 
     if lora2 is not None:
         A2, B2 = lora2

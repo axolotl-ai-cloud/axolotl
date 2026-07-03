@@ -32,10 +32,15 @@ import functools
 import torch
 
 try:
-    from .sf_layout import fold_per_tensor_scale, pack_scales_blocked
+    from .sf_layout import (
+        fold_per_tensor_scale,
+        gate_up_interleave_perm,
+        pack_scales_blocked,
+    )
 except ImportError:  # loaded standalone by the pod smoke scripts
     from sf_layout import (  # type: ignore[no-redef]
         fold_per_tensor_scale,
+        gate_up_interleave_perm,
         pack_scales_blocked,
     )
 
@@ -102,6 +107,110 @@ def _rowscale_gemm_cls():
     return GemmDefaultRowScaleSm100
 
 
+@functools.lru_cache(maxsize=1)
+def _gated_auxadd_gemm_cls():
+    """``GemmGatedSm100`` extended with an exact per-row colvec MULTIPLY (as in
+    :func:`_rowscale_gemm_cls`) and a preact-space ``TileLoad`` aux ADD, both on
+    the fp32 accumulator BEFORE the gated activation and the preact D store:
+    ``postact = act(colvec * (alpha * acc) + aux)``. The aux rides the epilogue
+    C load pipeline; its fragment is partitioned against the same register
+    layout as D, so the add is element-wise in the interleaved preact space."""
+    from typing import Callable, NamedTuple, Optional
+
+    import cutlass
+    import cutlass.cute as cute
+    import quack.layout_utils as layout_utils
+    import quack.utils as utils
+    from cutlass import Float32, Int32, const_expr
+    from quack.cute_dsl_utils import mlir_namedtuple
+    from quack.epi_ops import (
+        ColVecLoad,
+        RowVecLoad,
+        Scalar,
+        TileLoad,
+        TileStore,
+        vec_multiply,
+    )
+    from quack.gemm_act import GemmGatedSm100, _gated_epi_tile_fn
+    from quack.rounding import RoundingMode
+
+    class GemmGatedAuxAddSm100(GemmGatedSm100):
+        # Stock GemmGatedMixin ops plus the aux TileLoad; __init_subclass__
+        # regenerates EpilogueParams from this tuple.
+        _epi_ops = (
+            Scalar("alpha"),
+            Scalar("beta"),
+            Scalar("sr_seed", dtype=Int32),
+            RowVecLoad("mRowVecBroadcast"),
+            ColVecLoad("mColVecBroadcast"),
+            TileStore("mAuxOut", epi_tile_fn=_gated_epi_tile_fn),
+            TileLoad("mAuxAdd"),
+        )
+
+        @mlir_namedtuple
+        class EpilogueArguments(NamedTuple):
+            mAuxOut: cute.Tensor
+            act_fn: cutlass.Constexpr[Optional[Callable]] = None
+            alpha: Optional[Float32 | cute.Tensor] = None
+            beta: Optional[Float32 | cute.Tensor] = None
+            mRowVecBroadcast: Optional[cute.Tensor] = None
+            mColVecBroadcast: Optional[cute.Tensor] = None
+            mAuxAdd: Optional[cute.Tensor] = None
+            rounding_mode: cutlass.Constexpr[int] = RoundingMode.RN
+            sr_seed: Optional[Int32 | cute.Tensor] = None
+
+        def epi_to_underlying_arguments(self, args, *, loc=None, ip=None):
+            # ``concat_layout`` handles A/B/D/C in the base ``__call__`` and
+            # rowvec/colvec in the mixin, but not our TileLoad: view the concat
+            # [gate; up] aux as interleaved along N (dim 1 of the n-major
+            # (total_m, N) tensor) so it lines up with the interleaved-B preact.
+            if "mAuxAdd" in self.concat_layout and args.mAuxAdd is not None:
+                args = args._replace(
+                    mAuxAdd=layout_utils.concat_to_interleave(args.mAuxAdd, 1)
+                )
+            return super().epi_to_underlying_arguments(args, loc=loc, ip=ip)
+
+        @cute.jit
+        def epi_visit_subtile(
+            self,
+            params,
+            epi_loop_tensors,
+            tRS_rD: cute.Tensor,
+            tRS_rC: Optional[cute.Tensor] = None,
+        ) -> Optional[cute.Tensor]:
+            # alpha (and beta/C) exactly as stock GemmDefaultEpiMixin, but the
+            # stock colvec ADD is replaced by the exact multiply.
+            rD = tRS_rD.load()
+            if const_expr(hasattr(params, "alpha") and params.alpha is not None):
+                rD *= utils.load_scalar_or_pointer(params.alpha)
+            if const_expr(tRS_rC is not None):
+                if const_expr(not hasattr(params, "beta") or params.beta is None):
+                    rD += tRS_rC.load().to(tRS_rD.element_type)  # type: ignore[union-attr]
+                else:
+                    beta = utils.load_scalar_or_pointer(params.beta)
+                    rD += beta * tRS_rC.load().to(tRS_rD.element_type)  # type: ignore[union-attr]
+            tRS_rD.store(rD)
+            vec_multiply(self, tRS_rD, epi_loop_tensors.get("mColVecBroadcast"), None)
+            tDrAux = epi_loop_tensors.get("mAuxAdd")
+            if const_expr(tDrAux is not None):
+                rD2 = tRS_rD.load()
+                rD2 += tDrAux.load().to(tRS_rD.element_type)  # type: ignore[union-attr]
+                tRS_rD.store(rD2)
+            # Gated activation, verbatim from GemmGatedMixin's SM100 branch.
+            tRS_rAuxOut_layout = cute.recast_layout(2, 1, tRS_rD.layout)
+            tRS_rAuxOut = cute.make_rmem_tensor(
+                tRS_rAuxOut_layout.shape, self.acc_dtype
+            )
+            for i in cutlass.range(cute.size(tRS_rAuxOut) // 2, unroll_full=True):
+                tRS_rAuxOut[2 * i], tRS_rAuxOut[2 * i + 1] = params.act_fn(
+                    (tRS_rD[4 * i], tRS_rD[4 * i + 2]),
+                    (tRS_rD[4 * i + 1], tRS_rD[4 * i + 3]),
+                )
+            return tRS_rAuxOut
+
+    return GemmGatedAuxAddSm100
+
+
 def _compile_kernel(
     n: int,
     k: int,
@@ -114,6 +223,8 @@ def _compile_kernel(
     varlen_m: bool,
     add_to_output: bool,
     has_colvec: bool,
+    has_aux: bool,
+    concat_b: bool,
     sfa_sample: torch.Tensor,
     sfb_sample: torch.Tensor,
 ):
@@ -161,17 +272,46 @@ def _compile_kernel(
     mD = fake_tensor(bf16, d_shape, leading_dim=1, divisibility=8) if has_d else None
     mAux = fake_tensor(bf16, pa_shape, leading_dim=1, divisibility=8) if gated else None
 
+    assert not concat_b or gated, "concat_b (concat-layout weights) is gated-only"
     if gated:
         assert not add_to_output, "add_to_output is only wired for the default epilogue"
-        assert not has_colvec, "colvec row scale is only wired for the default epilogue"
-        gemm_cls = partial(GemmGatedSm100, sf_vec_size=SF_VEC_SIZE)
-        compile_epi_args = GemmGatedSm100.EpilogueArguments(
-            mAux,
-            gate_fn_map[activation],
-            alpha=Float32(0.0),
-            rounding_mode=RoundingMode.RN,
+        assert not (has_colvec or has_aux) or varlen_m, (
+            "gated colvec / aux add are only wired for varlen_m"
         )
+        gated_cls = (
+            _gated_auxadd_gemm_cls() if (has_colvec or has_aux) else GemmGatedSm100
+        )
+        gemm_cls = partial(gated_cls, sf_vec_size=SF_VEC_SIZE)
+        mColVec = (
+            fake_tensor(Float32, (m_sym,), leading_dim=0, divisibility=4)
+            if has_colvec
+            else None
+        )
+        # The aux shares mD's fake (same total_m/N and n-major layout): the
+        # interleaved preact-space LoRA delta added before the activation.
+        mAuxAdd = (
+            fake_tensor(bf16, d_shape, leading_dim=1, divisibility=8)
+            if has_aux
+            else None
+        )
+        if has_colvec or has_aux:
+            compile_epi_args = gated_cls.EpilogueArguments(
+                mAux,
+                gate_fn_map[activation],
+                alpha=Float32(0.0),
+                mColVecBroadcast=mColVec,
+                mAuxAdd=mAuxAdd,
+                rounding_mode=RoundingMode.RN,
+            )
+        else:
+            compile_epi_args = GemmGatedSm100.EpilogueArguments(
+                mAux,
+                gate_fn_map[activation],
+                alpha=Float32(0.0),
+                rounding_mode=RoundingMode.RN,
+            )
     else:
+        assert not has_aux, "aux add is only wired for the gated epilogue"
         assert not has_colvec or varlen_m, "colvec row scale requires varlen_m"
         default_cls = _rowscale_gemm_cls() if has_colvec else GemmDefaultSm100
         gemm_cls = partial(default_cls, sf_vec_size=SF_VEC_SIZE)
@@ -192,6 +332,14 @@ def _compile_kernel(
             rounding_mode=RoundingMode.RN,
         )
 
+    # Zero-copy concat weights: the kernel VIEWS B's concat [gate; up] rows as
+    # interleaved (hierarchical (2, N/2) layout, quack's own gated-MLP scheme),
+    # and our subclass applies the same view to the aux TileLoad. SFB must then
+    # be packed from row-permuted scales (set_weights handles that).
+    concat_layout = None
+    if concat_b:
+        concat_layout = ("B",) + (("mAuxAdd",) if has_aux else ())
+
     compiled = compile_gemm_kernel(
         gemm_cls,
         fp4,
@@ -211,15 +359,29 @@ def _compile_kernel(
         make_fake_varlen_args(varlen_m, False, False, None) or VarlenArguments(),
         mSFA=_make_compile_tensor_like(sfa_sample, e4m3, dynamic_layout=True),
         mSFB=_make_compile_tensor_like(sfb_sample, e4m3, dynamic_layout=True),
+        concat_layout=concat_layout,
     )
 
     max_active = get_max_active_clusters(cluster_mn[0] * cluster_mn[1])
 
-    def run(a, b, d, postact, sfa, sfb, cu_seqlens, alpha, colvec=None):
+    def run(a, b, d, postact, sfa, sfb, cu_seqlens, alpha, colvec=None, aux=None):
         if gated:
-            epi_args = GemmGatedSm100.EpilogueArguments(
-                postact, None, alpha=Float32(alpha), rounding_mode=None
-            )
+            # Tensor fields compiled non-None must be non-None on every call.
+            assert (colvec is not None) == has_colvec
+            assert (aux is not None) == has_aux
+            if has_colvec or has_aux:
+                epi_args = gated_cls.EpilogueArguments(
+                    postact,
+                    None,
+                    alpha=Float32(alpha),
+                    mColVecBroadcast=colvec,
+                    mAuxAdd=aux,
+                    rounding_mode=None,
+                )
+            else:
+                epi_args = GemmGatedSm100.EpilogueArguments(
+                    postact, None, alpha=Float32(alpha), rounding_mode=None
+                )
         else:
             # Tensor fields compiled non-None must be non-None on every call.
             assert (colvec is not None) == has_colvec
@@ -274,14 +436,21 @@ class GroupedNvfp4Gemm:
         gated: bool = False,
         activation: str = "swiglu",
         store_preact: bool = True,
+        concat_b: bool = False,
         tile_mn: tuple = (128, 128),
         cluster_mn: tuple = (1, 1),
     ):
+        """``concat_b=True`` (gated only): ``set_weights`` takes CONCAT
+        [gate; up] rows and the kernel views them interleaved zero-copy
+        (quack ``concat_layout``); only the small block-scale copy is
+        row-permuted for SFB. The preact D still comes out INTERLEAVED."""
         _check_dims(n, k, gated, tile_mn)
+        assert not concat_b or gated, "concat_b is gated-only"
         self.n, self.k, self.num_experts = n, k, num_experts
         self.gated = gated
         self.activation = activation
         self.store_preact = store_preact
+        self.concat_b = concat_b
         self.tile_mn = tuple(tile_mn)
         self.cluster_mn = tuple(cluster_mn)
         self._b_operand = None
@@ -297,7 +466,11 @@ class GroupedNvfp4Gemm:
         """qdata ``(E, N, K/2)`` uint8 K-packed; block_scale ``(E, N, K/16)`` e4m3.
 
         Gated engines expect gate/up rows already INTERLEAVED (apply
-        ``gate_up_interleave_perm`` to both tensors for concat-layout weights).
+        ``gate_up_interleave_perm`` to both tensors for concat-layout weights)
+        UNLESS built with ``concat_b=True``, in which case both tensors stay in
+        CONCAT [gate; up] layout: qdata is consumed zero-copy through the
+        kernel's interleaved view, and only the block scales are row-permuted
+        here so SFB rows follow the kernel's logical (interleaved) N order.
         per_tensor_scale ``(E,)``/``(E,1,1)``/scalar fp32 is folded into SFB.
         """
         e, n, k2 = qdata.shape
@@ -305,6 +478,9 @@ class GroupedNvfp4Gemm:
             f"qdata {tuple(qdata.shape)} vs engine (E={self.num_experts}, N={self.n}, K={self.k})"
         )
         assert block_scale.shape == (e, n, self.k // SF_VEC_SIZE)
+        if self.concat_b:
+            perm = gate_up_interleave_perm(n, device=block_scale.device)
+            block_scale = block_scale.index_select(1, perm)
         if per_tensor_scale is not None:
             block_scale, _ = fold_per_tensor_scale(block_scale, per_tensor_scale)
         # (E, N, K/2) contiguous -> (N, K/2, E) K-major view, as the kernel wants.
@@ -319,6 +495,7 @@ class GroupedNvfp4Gemm:
         *,
         alpha: float = 1.0,
         colvec: torch.Tensor | None = None,
+        aux: torch.Tensor | None = None,
         preact_out: torch.Tensor | None = None,
         out: torch.Tensor | None = None,
         add_to_output: bool = False,
@@ -326,9 +503,15 @@ class GroupedNvfp4Gemm:
         """a_packed ``(total_m, K/2)`` uint8/fp4x2, expert-sorted, unpadded.
         sfa_blocked from ``sf_layout.build_varlen_sfa``. cu_seqlens ``(E+1,)``.
 
-        ``colvec`` ``(total_m,)`` fp32 (non-gated only) multiplies the fp32
-        accumulator per row in the epilogue: ``d = colvec * (alpha * acc)``,
-        exact (single bf16 rounding at the D store).
+        ``colvec`` ``(total_m,)`` fp32 multiplies the fp32 accumulator per row
+        in the epilogue: ``d = colvec * (alpha * acc)``, exact (single bf16
+        rounding at the D store). On gated engines it applies before the
+        activation and the preact store.
+
+        ``aux`` ``(total_m, N)`` bf16 (gated only) is ADDED to the fp32
+        accumulator after the colvec multiply, before the activation and the
+        preact store: ``preact = colvec * (alpha * acc) + aux`` in the
+        INTERLEAVED gate/up space.
 
         ``add_to_output=True`` (non-gated only) accumulates ``alpha * acc``
         (times ``colvec`` if given) into a caller-provided ``out`` instead of
@@ -342,9 +525,12 @@ class GroupedNvfp4Gemm:
             assert not self.gated and out is not None
         total_m = a_packed.shape[0]
         if colvec is not None:
-            assert not self.gated, "colvec row scale is non-gated only"
             assert colvec.dtype == torch.float32 and colvec.shape == (total_m,)
             colvec = colvec.contiguous()
+        if aux is not None:
+            assert self.gated, "aux add is gated-engine only"
+            assert aux.dtype == torch.bfloat16 and aux.shape == (total_m, self.n)
+            aux = aux.contiguous()
         assert a_packed.shape[1] * 2 == self.k
         device = a_packed.device
         a = _as_fp4x2(a_packed)
@@ -371,7 +557,7 @@ class GroupedNvfp4Gemm:
                 else torch.empty(total_m, self.n, dtype=torch.bfloat16, device=device)
             )
 
-        run_key = (add_to_output, colvec is not None)
+        run_key = (add_to_output, colvec is not None, aux is not None)
         run = self._runs.get(run_key)
         if run is None:
             key = (
@@ -386,6 +572,8 @@ class GroupedNvfp4Gemm:
                 True,  # varlen_m
                 add_to_output,
                 colvec is not None,
+                aux is not None,
+                self.concat_b,
                 device.index,
             )
             run = _get_run(key, self._sfb.new_zeros(1, 1, 1, 512), self._sfb)
@@ -400,6 +588,7 @@ class GroupedNvfp4Gemm:
             cu,
             float(alpha),
             colvec,
+            aux,
         )
         return (postact, d) if self.gated else d
 
@@ -458,6 +647,8 @@ def dense_nvfp4_gemm(
         False,  # varlen_m
         False,  # add_to_output
         False,  # has_colvec
+        False,  # has_aux
+        False,  # concat_b
         device.index,
     )
     run = _get_run(key, sfa, sfb)

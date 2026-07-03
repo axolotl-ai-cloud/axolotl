@@ -123,6 +123,65 @@ def _get_engine(weight) -> _EngineEntry:
     return entry
 
 
+class _GatedEngineEntry(NamedTuple):
+    engine: GroupedNvfp4Gemm
+    colvec_pts: Optional[torch.Tensor]
+
+
+_GATED_ENGINE_CACHE: dict = {}
+
+
+def _get_gated_engine(weight, activation: str = "swiglu") -> _GatedEngineEntry:
+    """Gated (fused-activation) engine for a concat-layout ``[E, 2I, H]`` NVFP4
+    up-projection weight. ``concat_b=True``: the packed qdata is consumed
+    zero-copy (the kernel views concat rows as interleaved); pts is always
+    applied exactly via the per-row colvec (no fold variant here)."""
+    qdata, scale, pts = unpack_nvfp4_components(weight)
+    key = _engine_key(qdata)
+    entry = _GATED_ENGINE_CACHE.get(key)
+    if entry is None:
+        e, n, k2 = qdata.shape
+        engine = GroupedNvfp4Gemm(
+            n, k2 * 2, e, gated=True, activation=activation, concat_b=True
+        )
+        engine.set_weights(qdata, scale)
+        colvec_pts = pts.float().reshape(-1).contiguous() if pts is not None else None
+        entry = _GatedEngineEntry(engine, colvec_pts)
+        _GATED_ENGINE_CACHE[key] = entry
+    return entry
+
+
+def gated_nvfp4_forward(
+    x_grouped: torch.Tensor,
+    weight,
+    cu_seqlens: torch.Tensor,
+    aux: Optional[torch.Tensor],
+    activation: str = "swiglu",
+) -> tuple:
+    """Fused up-GEMM + gated activation (+ optional preact aux add).
+
+    ``aux`` ``[T, 2I]`` bf16 in CONCAT [gate; up] layout (the LoRA delta) is
+    added to the fp32 accumulator after the exact per-row pts multiply, before
+    the activation. Returns ``(postact [T, I] bf16, preact [T, 2I] bf16)``
+    where the preact memory layout is INTERLEAVED (``preact.view(T, I, 2)``
+    puts gate at ``[..., 0]`` and up at ``[..., 1]``). No autograd."""
+    entry = _get_gated_engine(weight, activation)
+    a_q, sfa = quantize_grouped_rows(x_grouped, cu_seqlens)
+    colvec = None
+    if entry.colvec_pts is not None:
+        counts = (cu_seqlens[1:] - cu_seqlens[:-1]).long()
+        colvec = torch.repeat_interleave(
+            entry.colvec_pts, counts, output_size=x_grouped.shape[0]
+        )
+    return entry.engine.forward(
+        a_q,
+        sfa,
+        cu_seqlens,
+        colvec=colvec,
+        aux=aux,
+    )
+
+
 def dequantize_engine_weight(weight) -> torch.Tensor:
     """Dense weights matching the operands the fp4_cute forward consumed.
 
