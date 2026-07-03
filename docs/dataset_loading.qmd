@@ -206,9 +206,9 @@ Other environment variables that can be set can be found in [boto3 docs](https:/
 
 #### S3-compatible endpoints
 
-To use an S3-compatible object store like [MinIO](https://min.io/), [Tigris](https://www.tigrisdata.com), or [Cloudflare R2](https://developers.cloudflare.com/r2/), keep the `s3://` prefix on your dataset path and set `AWS_ENDPOINT_URL` to the store's endpoint. `s3fs` picks this up via `boto3`, so no code change is required.
+Keep the `s3://` prefix and set `AWS_ENDPOINT_URL` to the store's endpoint. Works with MinIO, [Tigris](https://www.tigrisdata.com), Cloudflare R2, and other S3-compatible stores.
 
-For Tigris:
+Example for Tigris:
 
 ```bash
 export AWS_ENDPOINT_URL=https://t3.storage.dev
@@ -216,7 +216,7 @@ export AWS_ACCESS_KEY_ID=tid_your_access_key_id
 export AWS_SECRET_ACCESS_KEY=tsec_your_secret_access_key
 ```
 
-Tigris access key IDs are prefixed with `tid_` and secret access keys with `tsec_`. Tigris uses a single global endpoint and doesn't charge egress fees, which matters when the same dataset is read across many training epochs or from workers in multiple regions.
+Tigris uses a single global endpoint and doesn't charge egress fees. Useful when the same dataset is re-read across epochs or by workers in multiple regions.
 
 #### GCS
 
