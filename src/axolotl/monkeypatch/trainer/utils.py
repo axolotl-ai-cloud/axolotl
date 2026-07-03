@@ -117,14 +117,105 @@ if TRITON_AVAILABLE:
             tl.log(running_sum_exp) + running_max - running_weighted / running_sum_exp
         )
         tl.store(output_ptr + local_row, entropy)
+import triton
+import triton.language as tl
+
+from axolotl.kernels.op_registry import register_kernel_op
 
 
-def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Tensor:
-    """Triton-fused entropy (online single-pass). Handles non-contiguous tensors without copying."""
-    original_shape = logits.shape[:-1]
+@triton.jit
+def _entropy_online_kernel(
+    logits_ptr,
+    output_ptr,
+    stride_row,
+    V: tl.constexpr,
+    BLOCK_V: tl.constexpr,
+):
+    """Online entropy: single pass with running max correction."""
+    row = tl.program_id(0)
+    row_ptr = logits_ptr + tl.cast(row, tl.int64) * stride_row
+
+    running_max = tl.full([], float("-inf"), dtype=tl.float32)
+    running_sum_exp = tl.full([], 0.0, dtype=tl.float32)
+    running_weighted = tl.full([], 0.0, dtype=tl.float32)
+
+    for v_start in range(0, V, BLOCK_V):
+        offs = v_start + tl.arange(0, BLOCK_V)
+        mask = offs < V
+        x = tl.load(row_ptr + offs, mask=mask, other=float("-inf")).to(tl.float32)
+
+        block_max = tl.max(x, axis=0)
+        new_max = tl.maximum(running_max, block_max)
+
+        correction = tl.exp(running_max - new_max)
+        running_sum_exp = running_sum_exp * correction
+        running_weighted = running_weighted * correction
+
+        exp_x = tl.exp(x - new_max)
+        exp_x = tl.where(mask, exp_x, 0.0)
+        x = tl.where(mask, x, 0.0)
+        running_sum_exp += tl.sum(exp_x, axis=0)
+        running_weighted += tl.sum(exp_x * x, axis=0)
+
+        running_max = new_max
+
+    entropy = tl.log(running_sum_exp) + running_max - running_weighted / running_sum_exp
+    tl.store(output_ptr + row, entropy)
+
+
+@triton.jit
+def _entropy_online_kernel_strided(
+    logits_ptr,
+    output_ptr,
+    stride_outer,
+    stride_inner,
+    n_inner,
+    row_offset,
+    V: tl.constexpr,
+    BLOCK_V: tl.constexpr,
+):
+    """Online entropy for non-contiguous 3D (B, L, V) tensors."""
+    local_row = tl.program_id(0)
+    row = local_row + row_offset
+    outer_idx = row // n_inner
+    inner_idx = row % n_inner
+    off = outer_idx.to(tl.int64) * stride_outer + inner_idx.to(tl.int64) * stride_inner
+    row_ptr = logits_ptr + off
+
+    running_max = tl.full([], float("-inf"), dtype=tl.float32)
+    running_sum_exp = tl.full([], 0.0, dtype=tl.float32)
+    running_weighted = tl.full([], 0.0, dtype=tl.float32)
+
+    for v_start in range(0, V, BLOCK_V):
+        offs = v_start + tl.arange(0, BLOCK_V)
+        mask = offs < V
+        x = tl.load(row_ptr + offs, mask=mask, other=float("-inf")).to(tl.float32)
+
+        block_max = tl.max(x, axis=0)
+        new_max = tl.maximum(running_max, block_max)
+
+        correction = tl.exp(running_max - new_max)
+        running_sum_exp = running_sum_exp * correction
+        running_weighted = running_weighted * correction
+
+        exp_x = tl.exp(x - new_max)
+        exp_x = tl.where(mask, exp_x, 0.0)
+        x = tl.where(mask, x, 0.0)
+        running_sum_exp += tl.sum(exp_x, axis=0)
+        running_weighted += tl.sum(exp_x * x, axis=0)
+
+        running_max = new_max
+
+    entropy = tl.log(running_sum_exp) + running_max - running_weighted / running_sum_exp
+    tl.store(output_ptr + local_row, entropy)
+
+
+@register_kernel_op("entropy_from_logits")
+def _entropy_from_logits_op(logits: torch.Tensor, chunk_size: int) -> torch.Tensor:
+    """CUDA entropy launches; returns flat float32 `(N,)` output."""
     V = logits.shape[-1]
     N = 1
-    for s in original_shape:
+    for s in logits.shape[:-1]:
         N *= s
 
     if not TRITON_AVAILABLE or not logits.is_cuda:
@@ -177,6 +268,28 @@ def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Te
                 flat_logits[start], output[start], stride, V=V, BLOCK_V=BLOCK_V
             )
 
+    return output
+
+
+@_entropy_from_logits_op.register_fake
+def _(logits, chunk_size):
+    N = 1
+    for s in logits.shape[:-1]:
+        N *= s
+    return torch.empty(N, device=logits.device, dtype=torch.float32)
+
+
+def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Tensor:
+    """Triton-fused entropy (online single-pass). Handles non-contiguous tensors without copying."""
+    original_shape = logits.shape[:-1]
+
+    if not logits.is_cuda:
+        # CPU fallback: stable entropy via log_softmax
+        logp = F.log_softmax(logits.float(), dim=-1)
+        ent = -(logp.exp() * logp).sum(dim=-1)
+        return ent.to(logits.dtype).reshape(original_shape)
+
+    output = _entropy_from_logits_op(logits, chunk_size)
     return output.to(logits.dtype).reshape(original_shape)
 
 
@@ -299,6 +412,194 @@ if TRITON_AVAILABLE:
         index_row_ptr = index_ptr + tl.cast(row, tl.int64) * stride_index_row
 
         lse = tl.load(logsumexp_ptr + row).to(tl.float32)
+        block_max = tl.max(x, axis=0)
+        new_max = tl.maximum(running_max, block_max)
+        running_sum_exp = running_sum_exp * tl.exp(running_max - new_max)
+
+        exp_x = tl.exp(x - new_max)
+        exp_x = tl.where(mask, exp_x, 0.0)
+        running_sum_exp += tl.sum(exp_x, axis=0)
+        running_max = new_max
+
+    lse = tl.log(running_sum_exp) + running_max
+    tl.store(logsumexp_ptr + row, lse)
+
+    # Gather and subtract
+    index_row_ptr = index_ptr + tl.cast(row, tl.int64) * stride_index_row
+    output_row_ptr = output_ptr + tl.cast(row, tl.int64) * stride_output_row
+
+    k_offs = tl.arange(0, K_BLOCK)
+    k_mask = k_offs < actual_K
+    indices = tl.load(index_row_ptr + k_offs, mask=k_mask, other=0).to(tl.int64)
+    valid_mask = k_mask & (indices >= 0) & (indices < V)
+    safe_indices = tl.where(valid_mask, indices, 0)
+    selected = tl.load(logits_row_ptr + safe_indices, mask=valid_mask, other=0.0).to(
+        tl.float32
+    )
+    tl.store(output_row_ptr + k_offs, selected - lse, mask=valid_mask)
+
+
+@triton.jit
+def _selective_logsoftmax_bwd_kernel(
+    grad_output_ptr,
+    logits_ptr,
+    index_ptr,
+    logsumexp_ptr,
+    grad_logits_ptr,
+    stride_grad_out_row,
+    stride_logits_row,
+    stride_index_row,
+    stride_grad_logits_row,
+    actual_K,
+    K_BLOCK: tl.constexpr,
+    V: tl.constexpr,
+    BLOCK_V: tl.constexpr,
+):
+    """Backward: d_logits[j] = -softmax(x)[j] * sum(grad_out) + (grad_out[k] if j == index[k]).
+
+    Single fused pass over V. For each tile, computes the base gradient and adds
+    scatter contributions inline by checking which indices fall in the current tile.
+    No separate scatter pass — no read-after-write issues.
+    """
+    row = tl.program_id(0)
+    logits_row_ptr = logits_ptr + tl.cast(row, tl.int64) * stride_logits_row
+    grad_logits_row_ptr = (
+        grad_logits_ptr + tl.cast(row, tl.int64) * stride_grad_logits_row
+    )
+    grad_out_row_ptr = grad_output_ptr + tl.cast(row, tl.int64) * stride_grad_out_row
+    index_row_ptr = index_ptr + tl.cast(row, tl.int64) * stride_index_row
+
+    lse = tl.load(logsumexp_ptr + row).to(tl.float32)
+
+    # Load grad_output and indices (K_BLOCK elements, masked)
+    k_offs = tl.arange(0, K_BLOCK)
+    k_mask = k_offs < actual_K
+    grad_out = tl.load(grad_out_row_ptr + k_offs, mask=k_mask, other=0.0).to(tl.float32)
+    indices = tl.load(
+        index_row_ptr + k_offs, mask=k_mask, other=-1
+    )  # -1 = never matches
+    valid_mask = k_mask & (indices >= 0) & (indices < V)
+    grad_out = tl.where(valid_mask, grad_out, 0.0)
+    indices = tl.where(valid_mask, indices, -1)
+    grad_sum = tl.sum(grad_out, axis=0)
+
+    # Fused pass: for each tile, compute -softmax * grad_sum + scatter
+    for v_start in range(0, V, BLOCK_V):
+        offs = v_start + tl.arange(0, BLOCK_V)  # [BLOCK_V]
+        mask = offs < V
+        x = tl.load(logits_row_ptr + offs, mask=mask, other=0.0).to(tl.float32)
+        softmax_j = tl.exp(x - lse)
+        softmax_j = tl.where(mask, softmax_j, 0.0)
+        grad_j = -softmax_j * grad_sum
+
+        # Scatter: check which selected indices fall in this tile
+        # offs: [BLOCK_V], indices: [K_BLOCK]
+        # Broadcast: offs[:, None] == indices[None, :] → [BLOCK_V, K_BLOCK]
+        match = offs[:, None] == indices[None, :]  # [BLOCK_V, K_BLOCK]
+        # Sum grad_out contributions: for each position j, sum grad_out[k] where index[k]==j
+        scatter_contrib = tl.sum(
+            tl.where(match, grad_out[None, :], 0.0), axis=1
+        )  # [BLOCK_V]
+        grad_j += scatter_contrib
+
+        tl.store(grad_logits_row_ptr + offs, grad_j, mask=mask)
+
+
+@register_kernel_op("selective_log_softmax_fwd")
+def _selective_log_softmax_fwd_op(
+    flat_logits: torch.Tensor,
+    flat_index: torch.Tensor,
+    K: int,
+    K_BLOCK: int,
+    V: int,
+    BLOCK_V: int,
+    MAX_GRID: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    N = flat_logits.shape[0]
+    output = torch.empty(N, K_BLOCK, device=flat_logits.device, dtype=torch.float32)
+    logsumexp = torch.empty(N, device=flat_logits.device, dtype=torch.float32)
+
+    for start in range(0, N, MAX_GRID):
+        n_rows = min(MAX_GRID, N - start)
+        _selective_logsoftmax_fwd_kernel[(n_rows,)](
+            flat_logits[start],
+            flat_index[start],
+            output[start],
+            logsumexp[start],
+            flat_logits.stride(0),
+            flat_index.stride(0),
+            output.stride(0),
+            K,
+            K_BLOCK=K_BLOCK,
+            V=V,
+            BLOCK_V=BLOCK_V,
+        )
+
+    return output, logsumexp
+
+
+@_selective_log_softmax_fwd_op.register_fake
+def _(flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID):
+    N = flat_logits.shape[0]
+    return (
+        torch.empty(N, K_BLOCK, device=flat_logits.device, dtype=torch.float32),
+        torch.empty(N, device=flat_logits.device, dtype=torch.float32),
+    )
+
+
+@register_kernel_op("selective_log_softmax_bwd")
+def _selective_log_softmax_bwd_op(
+    grad_output: torch.Tensor,
+    flat_logits: torch.Tensor,
+    flat_index: torch.Tensor,
+    logsumexp: torch.Tensor,
+    K: int,
+    K_BLOCK: int,
+    V: int,
+    BLOCK_V: int,
+    MAX_GRID: int,
+) -> torch.Tensor:
+    N = flat_logits.shape[0]
+
+    grad_logits = torch.empty_like(flat_logits)
+
+    # grad_output may have K_BLOCK cols; backward kernel reads actual_K
+    grad_output_contig = grad_output.contiguous()
+
+    for start in range(0, N, MAX_GRID):
+        n_rows = min(MAX_GRID, N - start)
+        _selective_logsoftmax_bwd_kernel[(n_rows,)](
+            grad_output_contig[start],
+            flat_logits[start],
+            flat_index[start],
+            logsumexp[start],
+            grad_logits[start],
+            grad_output_contig.stride(0),
+            flat_logits.stride(0),
+            flat_index.stride(0),
+            grad_logits.stride(0),
+            K,
+            K_BLOCK=K_BLOCK,
+            V=V,
+            BLOCK_V=BLOCK_V,
+        )
+
+    return grad_logits
+
+
+@_selective_log_softmax_bwd_op.register_fake
+def _(
+    grad_output, flat_logits, flat_index, logsumexp, K, K_BLOCK, V, BLOCK_V, MAX_GRID
+):
+    return torch.empty_like(flat_logits)
+
+
+class _SelectiveLogSoftmaxTriton(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID):
+        output, logsumexp = _selective_log_softmax_fwd_op(
+            flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID
+        )
 
         # Load grad_output and indices (K_BLOCK elements, masked)
         k_offs = tl.arange(0, K_BLOCK)
@@ -405,6 +706,20 @@ if TRITON_AVAILABLE:
 
             # Return grads for: flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID
             return grad_logits, None, None, None, None, None, None
+        grad_logits = _selective_log_softmax_bwd_op(
+            grad_output,
+            flat_logits,
+            flat_index,
+            logsumexp,
+            K,
+            K_BLOCK,
+            V,
+            BLOCK_V,
+            MAX_GRID,
+        )
+
+        # Return grads for: flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID
+        return grad_logits, None, None, None, None, None, None
 
 
 def selective_log_softmax(logits, index) -> torch.Tensor:
