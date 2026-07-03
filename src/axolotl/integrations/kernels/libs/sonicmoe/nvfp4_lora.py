@@ -286,11 +286,17 @@ class GroupedUpProjActLoRA(torch.autograd.Function):
         scaling: float,
     ) -> torch.Tensor:
         from .fp4_cute_ops import gated_nvfp4_forward
+        from .sf_layout import gate_up_interleave_perm
 
         E, dim1, dim2 = w1.shape
         B_c = _b3d_contiguous(lora_B1, E, dim1)
+        # The delta rides the kernel's INTERLEAVED preact space: permute the
+        # small [2I, r*E] B factor's rows once so the [T, 2I] delta itself
+        # never needs a gather. B_c stays concat for the shared backward.
+        perm = gate_up_interleave_perm(dim1, device=lora_B1.device)
+        B_il = lora_B1.index_select(0, perm)
         delta = _lora_delta_per_group(
-            x_grouped, expert_offsets, lora_A1, lora_B1, scaling, E, dim1, dim2, B_c=B_c
+            x_grouped, expert_offsets, lora_A1, B_il, scaling, E, dim1, dim2
         )
         cu = expert_offsets.to(torch.int32)
         postact, preact = gated_nvfp4_forward(

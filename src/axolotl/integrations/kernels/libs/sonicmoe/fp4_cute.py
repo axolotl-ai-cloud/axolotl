@@ -119,7 +119,6 @@ def _gated_auxadd_gemm_cls():
 
     import cutlass
     import cutlass.cute as cute
-    import quack.layout_utils as layout_utils
     import quack.utils as utils
     from cutlass import Float32, Int32, const_expr
     from quack.cute_dsl_utils import mlir_namedtuple
@@ -134,6 +133,37 @@ def _gated_auxadd_gemm_cls():
     from quack.gemm_act import GemmGatedSm100, _gated_epi_tile_fn
     from quack.rounding import RoundingMode
 
+    # Functional NamedTuple form: this module uses `from __future__ import
+    # annotations`, so a class-body NamedTuple would store STRING annotations
+    # that quack's Constexpr converter later fails to eval (get_type_hints
+    # resolves them in THIS module's globals, where cute/cutlass are factory
+    # locals). The functional form stores real type objects.
+    _EpiArgs = NamedTuple(
+        "EpilogueArguments",
+        [
+            ("mAuxOut", cute.Tensor),
+            ("act_fn", cutlass.Constexpr[Optional[Callable]]),
+            ("alpha", Optional[Float32 | cute.Tensor]),
+            ("beta", Optional[Float32 | cute.Tensor]),
+            ("mRowVecBroadcast", Optional[cute.Tensor]),
+            ("mColVecBroadcast", Optional[cute.Tensor]),
+            ("mAuxAdd", Optional[cute.Tensor]),
+            ("rounding_mode", cutlass.Constexpr[int]),
+            ("sr_seed", Optional[Int32 | cute.Tensor]),
+        ],
+    )
+    _EpiArgs.__new__.__defaults__ = (  # all fields after mAuxOut
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        RoundingMode.RN,
+        None,
+    )
+    _EpiArgs = mlir_namedtuple(_EpiArgs)
+
     class GemmGatedAuxAddSm100(GemmGatedSm100):
         # Stock GemmGatedMixin ops plus the aux TileLoad; __init_subclass__
         # regenerates EpilogueParams from this tuple.
@@ -147,28 +177,12 @@ def _gated_auxadd_gemm_cls():
             TileLoad("mAuxAdd"),
         )
 
-        @mlir_namedtuple
-        class EpilogueArguments(NamedTuple):
-            mAuxOut: cute.Tensor
-            act_fn: cutlass.Constexpr[Optional[Callable]] = None
-            alpha: Optional[Float32 | cute.Tensor] = None
-            beta: Optional[Float32 | cute.Tensor] = None
-            mRowVecBroadcast: Optional[cute.Tensor] = None
-            mColVecBroadcast: Optional[cute.Tensor] = None
-            mAuxAdd: Optional[cute.Tensor] = None
-            rounding_mode: cutlass.Constexpr[int] = RoundingMode.RN
-            sr_seed: Optional[Int32 | cute.Tensor] = None
-
-        def epi_to_underlying_arguments(self, args, *, loc=None, ip=None):
-            # ``concat_layout`` handles A/B/D/C in the base ``__call__`` and
-            # rowvec/colvec in the mixin, but not our TileLoad: view the concat
-            # [gate; up] aux as interleaved along N (dim 1 of the n-major
-            # (total_m, N) tensor) so it lines up with the interleaved-B preact.
-            if "mAuxAdd" in self.concat_layout and args.mAuxAdd is not None:
-                args = args._replace(
-                    mAuxAdd=layout_utils.concat_to_interleave(args.mAuxAdd, 1)
-                )
-            return super().epi_to_underlying_arguments(args, loc=loc, ip=ip)
+        # NOTE: the aux tensor must be INTERLEAVED in memory. Applying quack's
+        # concat_to_interleave view to the TileLoad instead (the trick the
+        # mainloop uses for B) device-crashes with an illegal instruction: the
+        # epilogue TMA-load path does not survive the hierarchical N mode
+        # (probed on B200; mainloop B and the TileStore are fine).
+        EpilogueArguments = _EpiArgs
 
         @cute.jit
         def epi_visit_subtile(
@@ -333,12 +347,11 @@ def _compile_kernel(
         )
 
     # Zero-copy concat weights: the kernel VIEWS B's concat [gate; up] rows as
-    # interleaved (hierarchical (2, N/2) layout, quack's own gated-MLP scheme),
-    # and our subclass applies the same view to the aux TileLoad. SFB must then
-    # be packed from row-permuted scales (set_weights handles that).
-    concat_layout = None
-    if concat_b:
-        concat_layout = ("B",) + (("mAuxAdd",) if has_aux else ())
+    # interleaved (hierarchical (2, N/2) layout, quack's own gated-MLP scheme).
+    # SFB must then be packed from row-permuted scales (set_weights handles
+    # that). The aux TileLoad is NOT listed: it must arrive interleaved in
+    # memory (the view trick crashes the epilogue load path, see the subclass).
+    concat_layout = ("B",) if concat_b else None
 
     compiled = compile_gemm_kernel(
         gemm_cls,

@@ -160,11 +160,12 @@ def gated_nvfp4_forward(
 ) -> tuple:
     """Fused up-GEMM + gated activation (+ optional preact aux add).
 
-    ``aux`` ``[T, 2I]`` bf16 in CONCAT [gate; up] layout (the LoRA delta) is
-    added to the fp32 accumulator after the exact per-row pts multiply, before
-    the activation. Returns ``(postact [T, I] bf16, preact [T, 2I] bf16)``
-    where the preact memory layout is INTERLEAVED (``preact.view(T, I, 2)``
-    puts gate at ``[..., 0]`` and up at ``[..., 1]``). No autograd."""
+    ``aux`` ``[T, 2I]`` bf16 in INTERLEAVED gate/up layout (the LoRA delta;
+    compute it against row-permuted LoRA-B factors) is added to the fp32
+    accumulator after the exact per-row pts multiply, before the activation.
+    Returns ``(postact [T, I] bf16, preact [T, 2I] bf16)`` where the preact
+    memory layout is also INTERLEAVED (``preact.view(T, I, 2)`` puts gate at
+    ``[..., 0]`` and up at ``[..., 1]``). No autograd."""
     entry = _get_gated_engine(weight, activation)
     a_q, sfa = quantize_grouped_rows(x_grouped, cu_seqlens)
     colvec = None
