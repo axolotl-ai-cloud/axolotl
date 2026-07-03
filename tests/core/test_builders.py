@@ -1,9 +1,54 @@
 """Unit tests for axolotl.core.builders SFT and reward-model trainer builders."""
 
+from types import SimpleNamespace
+
 import pytest
 from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.builders.base import TrainerBuilderBase
+
+
+def _gradient_checkpointing_kwargs(cfg):
+    training_args_kwargs = {}
+    TrainerBuilderBase._configure_gradient_checkpointing(
+        SimpleNamespace(cfg=cfg), training_args_kwargs
+    )
+    return training_args_kwargs
+
+
+class TestGradientCheckpointingConfig:
+    def test_hidden_states_offload_uses_non_reentrant_trainer_path(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_offloading="hidden_states",
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": False},
+            )
+        )
+
+        assert training_args_kwargs["gradient_checkpointing"] is True
+        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+            "use_reentrant": False
+        }
+        assert training_args_kwargs["activation_offloading"] == "hidden_states"
+
+    def test_hidden_states_offload_with_reentrant_stays_on_model_loader_path(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_offloading="hidden_states",
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": True},
+            )
+        )
+
+        assert training_args_kwargs["gradient_checkpointing"] is True
+        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+            "use_reentrant": True
+        }
+        assert "activation_offloading" not in training_args_kwargs
 
 
 def _reward_dataset():

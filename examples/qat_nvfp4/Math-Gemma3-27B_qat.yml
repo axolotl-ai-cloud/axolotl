@@ -16,6 +16,8 @@ liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
 seed: 42
 chat_template: gemma3
+eot_tokens:
+  - <end_of_turn>
 datasets:
   - path: AI-MO/NuminaMath-CoT
     type: chat_template
