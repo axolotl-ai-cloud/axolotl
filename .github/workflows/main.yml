@@ -22,37 +22,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.12"
-            pytorch: 2.9.1
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-            is_latest: true
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.12"
-            pytorch: 2.10.0
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.11"
-            pytorch: 2.9.1
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.10.0
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
@@ -65,6 +34,7 @@ jobs:
             pytorch: 2.12.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
+            is_latest: true
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -105,9 +75,11 @@ jobs:
             axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             ${{ (matrix.is_latest) && format('axolotlai/axolotl-uv:{0}-latest', steps.metadata.outputs.version) || '' }}
+            ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-uv:{0}', steps.metadata.outputs.version) || '' }}
             axolotlai/axolotl:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             axolotlai/axolotl:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             ${{ (matrix.is_latest) && format('axolotlai/axolotl:{0}-latest', steps.metadata.outputs.version) || '' }}
+            ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl:{0}', steps.metadata.outputs.version) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-axolotl-cloud-uv:
@@ -118,37 +90,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.12"
-            pytorch: 2.9.1
-            axolotl_extras:
-            is_latest: true
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.12"
-            pytorch: 2.10.0
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.11"
-            pytorch: 2.9.1
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.10.0
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
@@ -161,6 +102,7 @@ jobs:
             pytorch: 2.12.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
+            is_latest: true
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -196,8 +138,10 @@ jobs:
           tags: |
              axolotlai/axolotl-cloud-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud-uv:{0}-latest', steps.metadata.outputs.version) || '' }}
+             ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-cloud-uv:{0}', steps.metadata.outputs.version) || '' }}
              axolotlai/axolotl-cloud:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud:{0}-latest', steps.metadata.outputs.version) || '' }}
+             ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-cloud:{0}', steps.metadata.outputs.version) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-axolotl-cloud-no-tmux-uv:
@@ -208,18 +152,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
-            axolotl_extras:
-            is_latest: true
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.11"
-            pytorch: 2.9.1
+            python_version: "3.12"
+            pytorch: 2.11.0
             axolotl_extras:
-            is_latest:
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.0
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+            is_latest: true
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
@@ -255,4 +200,5 @@ jobs:
           tags: |
              axolotlai/axolotl-cloud-term:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud-term:{0}-latest', steps.metadata.outputs.version) || '' }}
+             ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-cloud-term:{0}', steps.metadata.outputs.version) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}

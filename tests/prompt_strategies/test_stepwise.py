@@ -2,12 +2,9 @@
 tests for chat_template prompt strategy
 """
 
-import datasets
 import pytest
 from datasets import Dataset
-from transformers import AutoTokenizer
 
-from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.stepwise_supervised import (
     StepwiseSupervisedPromptTokenizingStrategy,
 )
@@ -34,29 +31,33 @@ class TestStepWiseSupervisedPromptTokenizingStrategy:
             ]
         )
 
-    @pytest.fixture()
-    def tokenizer(self):
-        return AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
-
-    def test_stepwise_supervised_dataset(self, tokenizer, stepwise_supervised_dataset):
+    def test_stepwise_supervised_dataset(
+        self, qwen3_tokenizer, stepwise_supervised_dataset
+    ):
         strategy = StepwiseSupervisedPromptTokenizingStrategy(
-            tokenizer,
+            qwen3_tokenizer,
             sequence_len=2048,
             step_separator="\n",
         )
-        stepwise_supervised_dataset = stepwise_supervised_dataset.cast_column(
-            "labels", datasets.Sequence(datasets.Value("int64"))
+        sample = stepwise_supervised_dataset[0]
+        labels = strategy.tokenize_prompt(sample)["labels"]
+        prompt_len = len(
+            qwen3_tokenizer(sample["prompt"], add_special_tokens=False)["input_ids"]
         )
-        dataset_wrapper = TokenizedPromptDataset(
-            strategy,
-            stepwise_supervised_dataset,
-            process_count=1,
-        )
-        labels = dataset_wrapper[0]["labels"]
-        # expected labels is:
-        # the prompt + first step are ignored, followed by the label for step 1 (True)
-        # the second step, and its label (False)
-        # the third step, and its label (False)
-        expected = [-100] * 47 + [1] + [-100] * 29 + [0] + [-100] * 48 + [0]
+        if qwen3_tokenizer.bos_token_id is not None:
+            prompt_len += 1
+
+        separator_len = len(qwen3_tokenizer.encode("\n", add_special_tokens=False))
+        completion_lengths = [
+            len(qwen3_tokenizer(completion, add_special_tokens=False)["input_ids"])
+            + separator_len
+            for completion in sample["completions"]
+        ]
+        expected = [-100] * prompt_len
+        for completion_len, label in zip(
+            completion_lengths, sample["labels"], strict=False
+        ):
+            expected.extend([-100] * (completion_len - 1))
+            expected.append(int(label))
 
         assert labels == expected

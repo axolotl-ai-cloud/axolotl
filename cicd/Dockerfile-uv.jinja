@@ -25,6 +25,7 @@ RUN git fetch origin +$GITHUB_REF && \
 RUN uv pip install packaging==26.0 setuptools==78.1.1
 RUN uv pip install torchvision
 RUN uv pip uninstall causal_conv1d
+RUN uv pip install "huggingface_hub>=1.5.0" "httpx<1"
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
@@ -33,6 +34,7 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
 
 # Override with nightly HF packages for nightly builds
 RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
+        uv pip install "kernels>=0.15.2,<0.16"; \
         uv pip install --no-deps \
             "transformers @ git+https://github.com/huggingface/transformers.git@main" \
             "peft @ git+https://github.com/huggingface/peft.git@main" \

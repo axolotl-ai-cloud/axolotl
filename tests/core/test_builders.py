@@ -1,9 +1,76 @@
 """Unit tests for axolotl.core.builders SFT and reward-model trainer builders."""
 
-import pytest
+from types import SimpleNamespace
 
-from axolotl.common.datasets import load_datasets
+import pytest
+from datasets import Dataset
+
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.builders.base import TrainerBuilderBase
+
+
+def _gradient_checkpointing_kwargs(cfg):
+    training_args_kwargs = {}
+    TrainerBuilderBase._configure_gradient_checkpointing(
+        SimpleNamespace(cfg=cfg), training_args_kwargs
+    )
+    return training_args_kwargs
+
+
+class TestGradientCheckpointingConfig:
+    def test_hidden_states_offload_uses_non_reentrant_trainer_path(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_offloading="hidden_states",
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": False},
+            )
+        )
+
+        assert training_args_kwargs["gradient_checkpointing"] is True
+        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+            "use_reentrant": False
+        }
+        assert training_args_kwargs["activation_offloading"] == "hidden_states"
+
+    def test_hidden_states_offload_with_reentrant_stays_on_model_loader_path(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_offloading="hidden_states",
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": True},
+            )
+        )
+
+        assert training_args_kwargs["gradient_checkpointing"] is True
+        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+            "use_reentrant": True
+        }
+        assert "activation_offloading" not in training_args_kwargs
+
+
+def _reward_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "chosen_ids": [1, 2, 3],
+                "rejected_ids": [1, 4],
+            }
+        ]
+    )
+
+
+def _prm_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "input_ids": [1, 2, 3],
+                "labels": [-100, -100, 1],
+            }
+        ]
+    )
 
 
 class TestHFCausalTrainerBuilder:
@@ -53,12 +120,10 @@ class TestHFCausalTrainerBuilder:
         builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
         cfg["optimizer"] = "muon"
 
-        # need to load datasets for reward model and process reward model trainer
-        if cfg_string in ["rm_cfg", "prm_cfg"]:
-            dataset_meta = load_datasets(cfg=cfg)
-
-            builder.train_dataset = dataset_meta.train_dataset
-            builder.eval_dataset = dataset_meta.eval_dataset
+        if cfg_string == "rm_cfg":
+            builder.train_dataset = _reward_dataset()
+        elif cfg_string == "prm_cfg":
+            builder.train_dataset = _prm_dataset()
 
         trainer = builder.build(100)
 
