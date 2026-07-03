@@ -27,6 +27,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 from ._autotune import smem_prune
 from .config import KV_LORA_RANK, QK_NOPE_HEAD_DIM, QK_ROPE_HEAD_DIM, V_HEAD_DIM
 
@@ -359,68 +361,168 @@ def _grid_fn(B, S, H):
     return grid
 
 
+# zero strides signal dummy seq_q/seq_k when has_doc is False (keeps op signature tensor-only)
+def _doc_strides(seq_q, seq_k, has_doc):
+    if has_doc:
+        return (seq_q.stride(0), seq_q.stride(1), seq_k.stride(0), seq_k.stride(1))
+    return (0, 0, 0, 0)
+
+
+@register_kernel_op("glm_dsa_mla_absorb_attn_fwd")
+def _mla_absorb_fwd_op(
+    q_abs: torch.Tensor,
+    k_shared: torch.Tensor,
+    idx: torch.Tensor,
+    seq_q: torch.Tensor,
+    seq_k: torch.Tensor,
+    scale: float,
+    q_offset: int,
+    has_doc: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    B, H, S, _ = (
+        q_abs.shape
+    )  # S = local queries; k_shared may be longer (global, under CP)
+    DV = KV_LORA_RANK
+    TOPK = idx.shape[-1]
+    out = torch.empty(B, H, S, DV, device=q_abs.device, dtype=q_abs.dtype)
+    lse = torch.empty(B, H, S, device=q_abs.device, dtype=torch.float32)
+    _absorb_fwd_kernel[_grid_fn(B, S, H)](
+        q_abs,
+        k_shared,
+        idx,
+        out,
+        lse,
+        scale,
+        S,
+        TOPK,
+        H,
+        q_offset,
+        q_abs.stride(0),
+        q_abs.stride(1),
+        q_abs.stride(2),
+        q_abs.stride(3),
+        k_shared.stride(0),
+        k_shared.stride(1),
+        k_shared.stride(2),
+        idx.stride(0),
+        idx.stride(1),
+        idx.stride(2),
+        out.stride(0),
+        out.stride(1),
+        out.stride(2),
+        out.stride(3),
+        lse.stride(0),
+        lse.stride(1),
+        lse.stride(2),
+        seq_q,
+        seq_k,
+        *_doc_strides(seq_q, seq_k, has_doc),
+        DL=KV_LORA_RANK,
+        DR=QK_ROPE_HEAD_DIM,
+        HAS_DOC=has_doc,
+    )
+    return out, lse
+
+
+@_mla_absorb_fwd_op.register_fake
+def _(q_abs, k_shared, idx, seq_q, seq_k, scale, q_offset, has_doc):
+    B, H, S, _ = q_abs.shape
+    return (
+        torch.empty(B, H, S, KV_LORA_RANK, device=q_abs.device, dtype=q_abs.dtype),
+        torch.empty(B, H, S, device=q_abs.device, dtype=torch.float32),
+    )
+
+
+@register_kernel_op("glm_dsa_mla_absorb_attn_bwd")
+def _mla_absorb_bwd_op(
+    dout: torch.Tensor,
+    q_abs: torch.Tensor,
+    k_shared: torch.Tensor,
+    idx: torch.Tensor,
+    out: torch.Tensor,
+    lse: torch.Tensor,
+    seq_q: torch.Tensor,
+    seq_k: torch.Tensor,
+    scale: float,
+    q_offset: int,
+    has_doc: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    B, H, S, DQk = q_abs.shape
+    Skv = k_shared.shape[1]  # global key count (>= S under CP)
+    TOPK = idx.shape[-1]
+    dout = dout.contiguous()
+    dq_abs = torch.zeros(B, H, S, DQk, device=q_abs.device, dtype=q_abs.dtype)
+    # dk_shared scatters at GLOBAL key positions -> size it like k_shared, not the local queries.
+    dk_shared = torch.zeros(B, Skv, DQk, device=q_abs.device, dtype=torch.float32)
+    _absorb_bwd_kernel[_grid_fn(B, S, H)](
+        q_abs,
+        k_shared,
+        idx,
+        out,
+        dout,
+        lse,
+        dq_abs,
+        dk_shared,
+        scale,
+        S,
+        TOPK,
+        H,
+        q_offset,
+        q_abs.stride(0),
+        q_abs.stride(1),
+        q_abs.stride(2),
+        q_abs.stride(3),
+        dk_shared.stride(0),
+        dk_shared.stride(1),
+        dk_shared.stride(2),
+        idx.stride(0),
+        idx.stride(1),
+        idx.stride(2),
+        out.stride(0),
+        out.stride(1),
+        out.stride(2),
+        out.stride(3),
+        lse.stride(0),
+        lse.stride(1),
+        lse.stride(2),
+        seq_q,
+        seq_k,
+        *_doc_strides(seq_q, seq_k, has_doc),
+        DL=KV_LORA_RANK,
+        DR=QK_ROPE_HEAD_DIM,
+        HAS_DOC=has_doc,
+    )
+    return dq_abs, dk_shared
+
+
+@_mla_absorb_bwd_op.register_fake
+def _(dout, q_abs, k_shared, idx, out, lse, seq_q, seq_k, scale, q_offset, has_doc):
+    B, H, S, DQk = q_abs.shape
+    return (
+        torch.empty(B, H, S, DQk, device=q_abs.device, dtype=q_abs.dtype),
+        torch.empty(
+            B, k_shared.shape[1], DQk, device=q_abs.device, dtype=torch.float32
+        ),
+    )
+
+
 class _MlaAbsorbAttn(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx, q_abs, k_shared, topk_idx, scale, q_offset, seq_q=None, seq_k=None
     ):
-        B, H, S, _ = (
-            q_abs.shape
-        )  # S = local queries; k_shared may be longer (global, under CP)
-        DV = KV_LORA_RANK
-        TOPK = topk_idx.shape[-1]
         q_abs, k_shared = q_abs.contiguous(), k_shared.contiguous()
         idx = topk_idx.contiguous()
         has_doc = seq_q is not None and seq_k is not None
         if has_doc:
             seq_q = seq_q.contiguous()
             seq_k = seq_k.contiguous()
-            doc_args = (
-                seq_q,
-                seq_k,
-                seq_q.stride(0),
-                seq_q.stride(1),
-                seq_k.stride(0),
-                seq_k.stride(1),
-            )
         else:
-            doc_args = (idx, idx, 0, 0, 0, 0)
-        out = torch.empty(B, H, S, DV, device=q_abs.device, dtype=q_abs.dtype)
-        lse = torch.empty(B, H, S, device=q_abs.device, dtype=torch.float32)
-        _absorb_fwd_kernel[_grid_fn(B, S, H)](
-            q_abs,
-            k_shared,
-            idx,
-            out,
-            lse,
-            float(scale),
-            S,
-            TOPK,
-            H,
-            int(q_offset),
-            q_abs.stride(0),
-            q_abs.stride(1),
-            q_abs.stride(2),
-            q_abs.stride(3),
-            k_shared.stride(0),
-            k_shared.stride(1),
-            k_shared.stride(2),
-            idx.stride(0),
-            idx.stride(1),
-            idx.stride(2),
-            out.stride(0),
-            out.stride(1),
-            out.stride(2),
-            out.stride(3),
-            lse.stride(0),
-            lse.stride(1),
-            lse.stride(2),
-            *doc_args,
-            DL=KV_LORA_RANK,
-            DR=QK_ROPE_HEAD_DIM,
-            HAS_DOC=has_doc,
+            seq_q, seq_k = idx, idx
+        out, lse = _mla_absorb_fwd_op(
+            q_abs, k_shared, idx, seq_q, seq_k, float(scale), int(q_offset), has_doc
         )
-        ctx.save_for_backward(q_abs, k_shared, idx, out, lse, doc_args[0], doc_args[1])
+        ctx.save_for_backward(q_abs, k_shared, idx, out, lse, seq_q, seq_k)
         ctx.scale = float(scale)
         ctx.q_offset = int(q_offset)
         ctx.has_doc = has_doc
@@ -429,60 +531,18 @@ class _MlaAbsorbAttn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, dout):
         q_abs, k_shared, idx, out, lse, seq_q, seq_k = ctx.saved_tensors
-        has_doc = ctx.has_doc
-        if has_doc:
-            doc_args = (
-                seq_q,
-                seq_k,
-                seq_q.stride(0),
-                seq_q.stride(1),
-                seq_k.stride(0),
-                seq_k.stride(1),
-            )
-        else:
-            doc_args = (idx, idx, 0, 0, 0, 0)
-        B, H, S, DQk = q_abs.shape
-        Skv = k_shared.shape[1]  # global key count (>= S under CP)
-        TOPK = idx.shape[-1]
-        dout = dout.contiguous()
-        dq_abs = torch.zeros(B, H, S, DQk, device=q_abs.device, dtype=q_abs.dtype)
-        # dk_shared scatters at GLOBAL key positions -> size it like k_shared, not the local queries.
-        dk_shared = torch.zeros(B, Skv, DQk, device=q_abs.device, dtype=torch.float32)
-        _absorb_bwd_kernel[_grid_fn(B, S, H)](
+        dq_abs, dk_shared = _mla_absorb_bwd_op(
+            dout,
             q_abs,
             k_shared,
             idx,
             out,
-            dout,
             lse,
-            dq_abs,
-            dk_shared,
+            seq_q,
+            seq_k,
             ctx.scale,
-            S,
-            TOPK,
-            H,
             ctx.q_offset,
-            q_abs.stride(0),
-            q_abs.stride(1),
-            q_abs.stride(2),
-            q_abs.stride(3),
-            dk_shared.stride(0),
-            dk_shared.stride(1),
-            dk_shared.stride(2),
-            idx.stride(0),
-            idx.stride(1),
-            idx.stride(2),
-            out.stride(0),
-            out.stride(1),
-            out.stride(2),
-            out.stride(3),
-            lse.stride(0),
-            lse.stride(1),
-            lse.stride(2),
-            *doc_args,
-            DL=KV_LORA_RANK,
-            DR=QK_ROPE_HEAD_DIM,
-            HAS_DOC=has_doc,
+            ctx.has_doc,
         )
         return dq_abs, dk_shared.to(k_shared.dtype), None, None, None, None, None
 

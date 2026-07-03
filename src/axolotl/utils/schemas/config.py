@@ -61,7 +61,11 @@ from axolotl.utils.schemas.model import (
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
-from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
+from axolotl.utils.schemas.training import (
+    HyperparametersConfig,
+    JaggedLRConfig,
+    SelectiveCheckpointingConfig,
+)
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -604,6 +608,17 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
+        },
+    )
+    selective_checkpointing: SelectiveCheckpointingConfig | bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Selective activation checkpointing: within each gradient-checkpointed "
+                "layer, save the listed ops during forward instead of recomputing them "
+                "in backward. `true` saves attention (SDPA/flash-attention). Requires "
+                "gradient_checkpointing with non-reentrant checkpointing."
+            )
         },
     )
     activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (

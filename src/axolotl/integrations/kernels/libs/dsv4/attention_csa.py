@@ -21,6 +21,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 from .attention import _CONFIGS, _prune_smem
 
 
@@ -150,7 +152,16 @@ def _csa_fwd_kernel(
     tl.store(L + pid_bh * S + offs_m, m_i + tl.log(l_i), mask=offs_m < S)
 
 
-def _csa_fwd(q, ks, kc, bb, sinks, scale, window):
+@register_kernel_op("dsv4_csa_attn_fwd")
+def _csa_attn_fwd_op(
+    q: torch.Tensor,
+    ks: torch.Tensor,
+    kc: torch.Tensor,
+    bb: torch.Tensor,
+    sinks: torch.Tensor,
+    scale: float,
+    window: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
     B, H, S, D = q.shape
     T = kc.shape[1]
     out = torch.empty(B, H, S, D, device=q.device, dtype=q.dtype)
@@ -194,6 +205,14 @@ def _csa_fwd(q, ks, kc, bb, sinks, scale, window):
         PREC=PREC,
     )
     return out, L
+
+
+@_csa_attn_fwd_op.register_fake
+def _(q, ks, kc, bb, sinks, scale, window):
+    B, H, S, _ = q.shape
+    return torch.empty(q.shape, dtype=q.dtype, device=q.device), torch.empty(
+        B * H, S, device=q.device, dtype=torch.float32
+    )
 
 
 @triton.autotune(
@@ -450,7 +469,19 @@ def _csa_bwd_dkv_kernel(
         tl.atomic_add(ptr, (dk + dv), mask=nmask[:, None])
 
 
-def _csa_bwd(q, ks, kc, bb, sinks, out, do, L, scale, window):
+@register_kernel_op("dsv4_csa_attn_bwd")
+def _csa_attn_bwd_op(
+    do: torch.Tensor,
+    q: torch.Tensor,
+    ks: torch.Tensor,
+    kc: torch.Tensor,
+    bb: torch.Tensor,
+    sinks: torch.Tensor,
+    out: torch.Tensor,
+    L: torch.Tensor,
+    scale: float,
+    window: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     B, H, S, D = q.shape
     T = kc.shape[1]
     do = do.contiguous()
@@ -520,10 +551,20 @@ def _csa_bwd(q, ks, kc, bb, sinks, out, do, L, scale, window):
     return dq, dks.to(ks.dtype), dkc.to(kc.dtype), dsink.to(sinks.dtype)
 
 
+@_csa_attn_bwd_op.register_fake
+def _(do, q, ks, kc, bb, sinks, out, L, scale, window):
+    return (
+        torch.empty_like(q),
+        torch.empty_like(ks),
+        torch.empty_like(kc),
+        torch.empty_like(sinks),
+    )
+
+
 class _CSAAttn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q, ks, kc, bb, sinks, scale, window):
-        out, L = _csa_fwd(q, ks, kc, bb, sinks, scale, window)
+        out, L = _csa_attn_fwd_op(q, ks, kc, bb, sinks, scale, window)
         ctx.save_for_backward(q, ks, kc, bb, sinks, out, L)
         ctx.scale, ctx.window = scale, window
         return out
@@ -531,8 +572,8 @@ class _CSAAttn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, do):
         q, ks, kc, bb, sinks, out, L = ctx.saved_tensors
-        dq, dks, dkc, dsink = _csa_bwd(
-            q, ks, kc, bb, sinks, out, do, L, ctx.scale, ctx.window
+        dq, dks, dkc, dsink = _csa_attn_bwd_op(
+            do, q, ks, kc, bb, sinks, out, L, ctx.scale, ctx.window
         )
         return dq, dks, dkc, None, dsink, None, None
 
