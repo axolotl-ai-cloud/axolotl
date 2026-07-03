@@ -1,0 +1,63 @@
+# 80B validation gate: 30 steps of Qwen3-Next-80B-A3B-Instruct-NVFP4 MoE-LoRA on one B200.
+#
+# Same loading path as train_tiny_lora.yaml (Qwen3MoeAdapter also matches qwen3_next):
+# 48 layers x 512 routed experts (top-10) fuse into 3D NVFP4Tensor params; the shared
+# expert, linear_attn.out_proj and self_attn.o_proj NVFP4 linears dequantize to bf16;
+# per-projection input_scale tensors and the mtp.* head are dropped. Gated DeltaNet
+# linear-attention layers (3/4 of the stack) run transformers' torch path, which is slow
+# without fla kernels but orthogonal to the MoE validation.
+#
+#   HF_HUB_CACHE=/workspace/data/hf_cache axolotl train benchmarks/sonicmoe_nvfp4/train_80b_lora.yaml
+base_model: nvidia/Qwen3-Next-80B-A3B-Instruct-NVFP4
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+use_sonicmoe: true
+strict: false
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:2%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+val_set_size: 0
+output_dir: ./outputs/qwen3-next-80b-nvfp4-sonicmoe-lora
+
+sequence_len: 2048
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# Full attention exists on 1/4 layers; PEFT skips layers without a matching module.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: 30
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_steps: 5
+
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+
+logging_steps: 1
+saves_per_epoch: 1
+
+wandb_project: sonic_nvfp4
+wandb_name: lora30_qwen3-next-80b_fp4_cute

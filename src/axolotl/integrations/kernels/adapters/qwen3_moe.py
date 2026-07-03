@@ -1,13 +1,16 @@
-"""Qwen3-MoE NVFP4 kernel adapter.
+"""Qwen3-MoE / Qwen3-Next NVFP4 kernel adapter.
 
-A ``quant_method: modelopt`` / ``quant_algo: NVFP4`` Qwen3-MoE checkpoint (e.g.
-nvidia/Qwen3-30B-A3B-NVFP4) is not a recognized transformers quantizer, so the model loads as a
-bf16 skeleton; we then register ``WeightConverter``s so the NVFP4 tensors load correctly. Like
-the glm_moe_dsa adapter (this is that adapter minus the DSA attention patching), the checkpoint's
-safetensors index is inspected (:func:`inspect_nvfp4_layout`) to discover what is actually
-quantized: the per-expert projections (fused into 3D ``NVFP4Tensor`` for the grouped MoE paths)
-and any non-routed NVFP4 linears (dequantized to bf16), and exactly those converters are
-registered for THIS checkpoint.
+A ``quant_method: modelopt`` / ``quant_algo: NVFP4`` Qwen3-MoE-family checkpoint (e.g.
+nvidia/Qwen3-30B-A3B-NVFP4, nvidia/Qwen3-Next-80B-A3B-Instruct-NVFP4) is not a recognized
+transformers quantizer, so the model loads as a bf16 skeleton; we then register
+``WeightConverter``s so the NVFP4 tensors load correctly. Like the glm_moe_dsa adapter (this is
+that adapter minus the DSA attention patching), the checkpoint's safetensors index is inspected
+(:func:`inspect_nvfp4_layout`) to discover what is actually quantized: the per-expert
+projections (fused into 3D ``NVFP4Tensor`` for the grouped MoE paths) and any non-routed NVFP4
+linears (dequantized to bf16), and exactly those converters are registered for THIS checkpoint.
+qwen3_next differs only outside the MoE block (Gated DeltaNet linear attention on 3/4 layers,
+a shared expert, per-projection ``input_scale`` tensors, an ``mtp.*`` head the causal-LM class
+never loads); the layout inspection handles all of that without model-specific code.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ LOG = get_logger(__name__)
 
 
 def is_qwen3_moe_nvfp4_modelopt(cfg) -> bool:
-    """True iff the base model is a ``qwen3_moe`` NVFP4-modelopt checkpoint
+    """True iff the base model is a ``qwen3_moe``/``qwen3_next`` NVFP4-modelopt checkpoint
     (``quant_method=modelopt``, ``quant_algo=NVFP4``). Any failure returns False."""
     try:
         from transformers import AutoConfig
@@ -32,7 +35,7 @@ def is_qwen3_moe_nvfp4_modelopt(cfg) -> bool:
         )
     except Exception:
         return False
-    if str(getattr(hf_cfg, "model_type", "")) != "qwen3_moe":
+    if str(getattr(hf_cfg, "model_type", "")) not in ("qwen3_moe", "qwen3_next"):
         return False
     qcfg = getattr(hf_cfg, "quantization_config", None)
     if qcfg is None:
@@ -56,9 +59,19 @@ class Qwen3MoeAdapter(ModelAdapter):
         ) and is_qwen3_moe_nvfp4_modelopt(cfg)
 
     def pre_model_load(self, cfg) -> None:
+        from transformers import AutoConfig
+
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
             inspect_nvfp4_layout,
             patch_nvfp4_tensor_meta_ops,
+        )
+
+        # the conversion mapping is looked up under the model's actual type
+        model_type = str(
+            AutoConfig.from_pretrained(
+                cfg.base_model,
+                trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
+            ).model_type
         )
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_weight_converter import (
             patch_conversion_loader_rank0_only,
@@ -111,10 +124,10 @@ class Qwen3MoeAdapter(ModelAdapter):
             reg_layout["routed_present"] = (
                 False  # don't register the slow routed converters
             )
-            register_nvfp4_converters_for_layout("qwen3_moe", reg_layout)
+            register_nvfp4_converters_for_layout(model_type, reg_layout)
             LOG.info("qwen3_moe: routed experts will be DIRECT-loaded (fast path)")
         else:
-            register_nvfp4_converters_for_layout("qwen3_moe", layout)
+            register_nvfp4_converters_for_layout(model_type, layout)
 
     def post_model_load(self, cfg, model) -> None:
         if getattr(self, "_direct_expert_load", False):
