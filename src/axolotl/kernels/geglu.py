@@ -170,8 +170,6 @@ def geglu_backward(
     Note:
         This function modifies its input tensors in-place to store results.
     """
-    # the op mutates in place: grad_output <- h, gate <- grad_gate, up <- grad_up.
-    # Returning the mutated inputs must happen here — a custom op's outputs may
-    # not alias its inputs.
+    # op mutates in place; return the aliases here — op outputs must not alias inputs
     _geglu_bwd_op(grad_output, gate, up)
     return grad_output, gate, up

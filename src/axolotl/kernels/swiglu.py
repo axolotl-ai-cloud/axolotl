@@ -173,8 +173,6 @@ def swiglu_backward(
             - Gradient with respect to gate (`df`)
             - Gradient with respect to up-projection (`de`)
     """
-    # the op mutates in place: grad_output <- h, gate <- grad_gate, up <- grad_up.
-    # Returning the mutated inputs must happen here — a custom op's outputs may
-    # not alias its inputs.
+    # op mutates in place; return the aliases here — op outputs must not alias inputs
     _swiglu_bwd_op(grad_output, gate, up)
     return grad_output, gate, up

@@ -361,8 +361,7 @@ def _grid_fn(B, S, H):
     return grid
 
 
-# seq_q/seq_k are dummies (idx, zero strides) when has_doc is False, mirroring the
-# flash_attn_d512 pos/doc_end pattern: the op signature stays tensor-only.
+# zero strides signal dummy seq_q/seq_k when has_doc is False (keeps op signature tensor-only)
 def _doc_strides(seq_q, seq_k, has_doc):
     if has_doc:
         return (seq_q.stride(0), seq_q.stride(1), seq_k.stride(0), seq_k.stride(1))

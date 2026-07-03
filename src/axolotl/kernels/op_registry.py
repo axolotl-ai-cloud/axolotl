@@ -19,6 +19,8 @@ LOG = get_logger(__name__)
 
 NAMESPACE = "axolotl"
 
+_warned_registration_failure = False
+
 
 class _UnregisteredOp:
     """Callable shim with the CustomOpDef surface we use, for fallback."""
@@ -46,12 +48,18 @@ def register_kernel_op(name: str, mutates_args: Sequence[str] = ()) -> Callable:
                 f"{NAMESPACE}::{name}", mutates_args=tuple(mutates_args)
             )(fn)
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            LOG.warning(
+            global _warned_registration_failure
+            message = (
                 f"custom op registration failed for {NAMESPACE}::{name} "
                 f"({type(exc).__name__}: {exc}); kernel will run unregistered "
                 "(functional, but invisible to torch.compile and selective "
                 "checkpointing)"
             )
+            if _warned_registration_failure:
+                LOG.debug(message)
+            else:
+                _warned_registration_failure = True
+                LOG.warning(message)
             return _UnregisteredOp(fn)
 
     return decorator

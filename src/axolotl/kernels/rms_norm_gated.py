@@ -294,8 +294,7 @@ def rms_norm_gated_forward(X, G, W, eps, offset):
     dim = shape[-1]
     X = X.view(-1, dim)
     G = G.view(-1, dim)
-    n_rows, n_cols = X.shape
-    BLOCK_SIZE, num_warps = calculate_settings(n_cols)
+    BLOCK_SIZE, num_warps = calculate_settings(X.shape[-1])
 
     assert X.shape[1] == W.shape[0], (
         f"Incompatible hidden size: X.shape[1]={X.shape[1]} vs W.shape[0]={W.shape[0]}"
