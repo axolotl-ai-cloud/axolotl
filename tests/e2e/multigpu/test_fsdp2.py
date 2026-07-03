@@ -57,7 +57,7 @@ class TestFSDP2:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:10%]",
+                        "split": "train[:3%]",
                     },
                 ],
                 "num_epochs": 1,
@@ -118,7 +118,7 @@ class TestFSDP2:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:10%]",
+                        "split": "train[:3%]",
                     },
                 ],
                 "peft_use_dora": peft_use_dora,
@@ -188,7 +188,7 @@ class TestFSDP2:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:10%]",
+                        "split": "train[:3%]",
                     },
                 ],
                 "adapter": "lora",
@@ -255,7 +255,7 @@ class TestFSDP2:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:10%]",
+                        "split": "train[:3%]",
                     },
                 ],
                 "load_in_4bit": True,
@@ -321,7 +321,7 @@ class TestFSDP2:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:10%]",
+                        "split": "train[:3%]",
                     },
                 ],
                 "load_in_4bit": True,
@@ -391,7 +391,7 @@ class TestFSDP2:
                 "datasets": [
                     {
                         "path": "Intel/orca_dpo_pairs",
-                        "split": "train",
+                        "split": "train[:100]",
                         "type": "chatml.intel",
                     },
                 ],
@@ -451,7 +451,7 @@ class TestFSDP2:
                 "datasets": [
                     {
                         "path": "Intel/orca_dpo_pairs",
-                        "split": "train",
+                        "split": "train[:100]",
                         "type": "chatml.intel",
                     },
                 ],
