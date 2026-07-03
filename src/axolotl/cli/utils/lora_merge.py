@@ -689,10 +689,13 @@ def _dequant_by_format(fmt, w, scales, dev):
     return _dequant_mxfp4(w, scales["_scale"], dev)  # mxfp4
 
 
-def _requant_by_format(fmt, w_bf16, scales, dev):
+def _requant_by_format(fmt, w_bf16, scales, dev, per_tensor_scale=None):
     """Re-quantize a merged bf16 weight back to its original format (fresh block scales). Returns
     ``{"": qweight, "_scale*": scale_tensors}`` matching the original scale dtypes/shapes so the
-    merged checkpoint loads exactly like the base did."""
+    merged checkpoint loads exactly like the base did.
+
+    ``per_tensor_scale`` forces the nvfp4 outer scale; tensors quantized as one group (fused
+    gate/up experts) must share it or the loader's fuse step breaks."""
     w = w_bf16.to(dev).float()
     if fmt == "block_fp8":
         si = scales["_scale_inv"]
@@ -719,11 +722,12 @@ def _requant_by_format(fmt, w_bf16, scales, dev):
     from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
     two_level = "_scale_2" in scales
-    p = (
-        (w.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
-        if two_level
-        else None
-    )
+    if per_tensor_scale is not None:
+        p = per_tensor_scale.to(dev, torch.float32).reshape(1).clamp_min(1e-12)
+    elif two_level:
+        p = (w.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+    else:
+        p = None
     nv = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=p, is_swizzled_scales=False)
     out = {"": nv.qdata.cpu(), "_scale": nv.scale.to(scales["_scale"].dtype).cpu()}
     if two_level:
@@ -1050,6 +1054,12 @@ class _Nvfp4ExpertMergeWriter:
             emitted[fused_key] = merged_t.detach().cpu()
             return emitted, 1
 
+        # group members share one outer scale per expert, like the base checkpoint; per-member
+        # amax scales would diverge under the delta and overflow the loader's fuse fold
+        shared_pts = (
+            merged_t.to(torch.float32).abs().amax(dim=(1, 2)) / (6.0 * 448.0)
+        ).clamp_min(1e-12)
+
         start = 0
         for mp, rows in zip(members, row_counts, strict=True):
             part = merged_t[:, start : start + rows, :]
@@ -1065,6 +1075,7 @@ class _Nvfp4ExpertMergeWriter:
                         "_scale_2": leaves["weight_scale_2"],
                     },
                     dev,
+                    per_tensor_scale=shared_pts[e],
                 )
                 emitted[wkey] = requant.pop("")
                 for suf, t in requant.items():
