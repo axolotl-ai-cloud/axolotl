@@ -942,6 +942,7 @@ class _Nvfp4ExpertMergeWriter:
             self._prefix_lora[prefix] = has
         return has
 
+    @torch.no_grad()
     def consume(
         self, shard_tensors: Dict[str, torch.Tensor]
     ) -> tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor], int]:
