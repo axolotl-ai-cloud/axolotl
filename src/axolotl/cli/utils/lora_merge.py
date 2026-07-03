@@ -256,13 +256,19 @@ def _find_param_wrapper_lora(
 
         # When tensor_shape is given, verify dimensions match before returning.
         # This prevents returning a mismatched LoRA from a different nesting level.
+        # Both 3D orientations exist: gpt-oss-style [E, in, out] pairs with
+        # (A_in, B_out) = (shape[1], shape[2]); Qwen3-style [E, out, in] with
+        # (A_in, B_out) = (shape[2], shape[1]).
         if tensor_shape is not None and len(tensor_shape) >= 3:
             num_experts = tensor_shape[0]
             if not (
                 lora_a.shape[0] == lora_b.shape[1]
                 and lora_a.shape[0] % num_experts == 0
-                and lora_a.shape[1] == tensor_shape[1]
-                and lora_b.shape[0] == tensor_shape[2]
+                and (lora_a.shape[1], lora_b.shape[0])
+                in {
+                    (tensor_shape[1], tensor_shape[2]),
+                    (tensor_shape[2], tensor_shape[1]),
+                }
             ):
                 continue  # Dimensions don't match, try next nesting level
 
@@ -854,6 +860,228 @@ def _detect_per_expert_unfused_mismatch(model_shards, lora_state) -> bool:
         if any(_PER_EXPERT_WEIGHT_RE.search(k) for k in keys):
             return True
     return False
+
+
+def _per_expert_weights_are_packed(model_shards) -> bool:
+    """True if any per-expert unfused expert weight is packed uint8 (NVFP4/MXFP4 qdata) — the layout
+    the expert-merge writer understands. Reads safetensors headers only."""
+    for shard in model_shards:
+        try:
+            if str(shard).endswith(".safetensors"):
+                with safetensors.safe_open(shard, framework="pt") as f:
+                    for k in f.keys():
+                        if _PER_EXPERT_WEIGHT_RE.search(k) and ".experts." in k:
+                            if f.get_slice(k).get_dtype() == "U8":
+                                return True
+            else:
+                tensors = torch.load(shard, map_location="meta", weights_only=True)  # nosec B614
+                for k, t in tensors.items():
+                    if _PER_EXPERT_WEIGHT_RE.search(k) and t.dtype == torch.uint8:
+                        return True
+        except Exception:  # noqa: BLE001  # nosec B112 - unreadable shard: skip the peek, not fatal
+            continue
+    return False
+
+
+_EXPERT_TRIPLE_RE = re.compile(
+    r"^(?P<prefix>.*\.experts)\.(?P<e>\d+)\."
+    r"(?P<proj>gate_proj|up_proj|down_proj|w1|w2|w3)\."
+    r"(?P<leaf>weight|weight_scale|weight_scale_2)$"
+)
+_EXPERT_LEAVES = ("weight", "weight_scale", "weight_scale_2")
+# (fused runtime param name, per-expert checkpoint proj names, concatenated on the row axis in order)
+_EXPERT_FUSED_GROUPS = (
+    ("gate_up_proj", ("gate_proj", "up_proj")),
+    ("gate_up_proj", ("w1", "w3")),
+    ("down_proj", ("down_proj",)),
+    ("down_proj", ("w2",)),
+)
+
+
+class _Nvfp4ExpertMergeWriter:
+    """Folds a FUSED expert LoRA (PEFT ParamWrapper over ``experts.gate_up_proj``/``down_proj``)
+    into a base that stores experts PER-EXPERT unfused as modelopt NVFP4
+    (``experts.<i>.<proj>.{weight,weight_scale,weight_scale_2}``), where no base key matches the
+    adapter and the shard merge would otherwise drop the expert LoRA.
+
+    ``consume`` claims the per-expert quantized tensors of LoRA-targeted layers out of each shard
+    (buffering across shard boundaries, since a layer's expert list can be split). When a fused
+    group is complete it dequantizes each expert (torchao, the same path training saw), fuses
+    to the runtime 3D layout (stack experts, concat gate-then-up rows), folds the ParamWrapper
+    delta, then unfuses and re-quantizes each expert back to NVFP4 with fresh scales — so the
+    merged checkpoint keeps the base's exact per-expert layout. Under ``dequant=True`` it emits
+    the merged FUSED bf16 param instead (matching the bf16 fuse pass convention).
+    """
+
+    def __init__(
+        self,
+        lora_state: Dict[str, torch.Tensor],
+        lora_config_dict: Dict,
+        expected_num_experts: int,
+        device: str,
+        dequant: bool = False,
+    ):
+        self.lora_state = lora_state
+        self.lora_config_dict = lora_config_dict
+        self.num_experts = expected_num_experts
+        self.dequant = dequant
+        self._dev = device if (device != "cpu" and torch.cuda.is_available()) else "cpu"
+        # prefix -> proj -> expert_idx -> {leaf: tensor}
+        self.pending: Dict[str, Dict[str, Dict[int, Dict[str, torch.Tensor]]]] = {}
+        self._prefix_lora: Dict[str, bool] = {}
+        self.merged_groups = 0
+
+    def _prefix_has_fused_lora(self, prefix: str) -> bool:
+        has = self._prefix_lora.get(prefix)
+        if has is None:
+            has = any(
+                f"base_model.model.{prefix}{'.base_layer' * d}.lora_A.weight"
+                in self.lora_state
+                for d in range(4)
+            )
+            self._prefix_lora[prefix] = has
+        return has
+
+    def consume(
+        self, shard_tensors: Dict[str, torch.Tensor]
+    ) -> tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor], int]:
+        """Claim this shard's per-expert NVFP4 tensors for LoRA-targeted expert modules and emit
+        the merged tensors of every layer group that is now complete. Returns
+        ``(remaining_shard_tensors, emitted_tensors, merged_lora_count)``."""
+        remaining = dict(shard_tensors)
+        for key in list(remaining):
+            m = _EXPERT_TRIPLE_RE.match(key)
+            if m is None or not self._prefix_has_fused_lora(m["prefix"]):
+                continue
+            # only the packed-uint8 layout is understood; a float weight (bf16 base) flows through
+            if m["leaf"] == "weight" and remaining[key].dtype != torch.uint8:
+                continue
+            self.pending.setdefault(m["prefix"], {}).setdefault(
+                m["proj"], {}
+            ).setdefault(int(m["e"]), {})[m["leaf"]] = remaining.pop(key)
+
+        emitted: Dict[str, torch.Tensor] = {}
+        merged = 0
+        for prefix in list(self.pending):
+            for fused_name, members in _EXPERT_FUSED_GROUPS:
+                if not self._group_complete(prefix, members):
+                    continue
+                out, n = self._process_group(prefix, fused_name, members)
+                emitted.update(out)
+                merged += n
+                for mp in members:
+                    del self.pending[prefix][mp]
+            if not self.pending[prefix]:
+                del self.pending[prefix]
+        self.merged_groups += merged
+        return remaining, emitted, merged
+
+    def _group_complete(self, prefix: str, members: tuple) -> bool:
+        projs = self.pending[prefix]
+        if not any(mp in projs for mp in members):
+            return False
+        expected = set(range(self.num_experts))
+        return all(
+            mp in projs
+            and set(projs[mp]) == expected
+            and all(
+                all(leaf in projs[mp][e] for leaf in _EXPERT_LEAVES) for e in expected
+            )
+            for mp in members
+        )
+
+    def _process_group(
+        self, prefix: str, fused_name: str, members: tuple
+    ) -> tuple[Dict[str, torch.Tensor], int]:
+        projs = self.pending[prefix]
+        E = self.num_experts
+        # fused shape from the packed qdata headers (rows N, packed K/2 -> K), no dequant needed
+        row_counts = [projs[mp][0]["weight"].shape[0] for mp in members]
+        k_dim = projs[members[0]][0]["weight"].shape[1] * 2
+        fused_key = f"{prefix}.{fused_name}"
+        lora_a, lora_b, _ = _find_param_wrapper_lora(
+            self.lora_state, fused_key, tensor_shape=(E, sum(row_counts), k_dim)
+        )
+        emitted: Dict[str, torch.Tensor] = {}
+        if lora_a is None or lora_b is None:
+            LOG.warning(
+                "expert-merge writer: no shape-matching fused LoRA for %s; "
+                "passing its per-expert tensors through unchanged",
+                fused_key,
+            )
+            for mp in members:
+                for e in range(E):
+                    for leaf, t in projs[mp][e].items():
+                        emitted[f"{prefix}.{e}.{mp}.{leaf}"] = t
+            return emitted, 0
+
+        dev = self._dev
+        per_proj = [
+            torch.stack(
+                [
+                    _dequant_nvfp4(
+                        projs[mp][e]["weight"],
+                        projs[mp][e]["weight_scale"],
+                        projs[mp][e]["weight_scale_2"],
+                        dev,
+                    )
+                    for e in range(E)
+                ],
+                dim=0,
+            )
+            for mp in members
+        ]
+        fused = per_proj[0] if len(per_proj) == 1 else torch.cat(per_proj, dim=1)
+        del per_proj
+        delta = _build_peft_layer_and_get_delta(
+            lora_a.to(dev),
+            lora_b.to(dev),
+            self.lora_config_dict,
+            fused,
+            is_param_wrapper=True,
+        )
+        merged_t = (fused.to(torch.float32) + delta.to(torch.float32)).to(
+            torch.bfloat16
+        )
+        del fused, delta
+
+        if self.dequant:
+            emitted[fused_key] = merged_t.detach().cpu()
+            return emitted, 1
+
+        start = 0
+        for mp, rows in zip(members, row_counts, strict=True):
+            part = merged_t[:, start : start + rows, :]
+            start += rows
+            for e in range(E):
+                leaves = projs[mp][e]
+                wkey = f"{prefix}.{e}.{mp}.weight"
+                requant = _requant_by_format(
+                    "nvfp4",
+                    part[e],
+                    {
+                        "_scale": leaves["weight_scale"],
+                        "_scale_2": leaves["weight_scale_2"],
+                    },
+                    dev,
+                )
+                emitted[wkey] = requant.pop("")
+                for suf, t in requant.items():
+                    emitted[wkey + suf] = t
+        return emitted, 1
+
+    def assert_drained(self) -> None:
+        if not self.pending:
+            return
+        detail = {
+            prefix: {mp: len(ed) for mp, ed in projs.items()}
+            for prefix, projs in self.pending.items()
+        }
+        raise RuntimeError(
+            f"expert-merge writer: expert groups never completed (experts seen per projection: "
+            f"{detail}; expected {self.num_experts} per projection with weight/weight_scale/"
+            f"weight_scale_2 each). The base checkpoint is missing per-expert tensors."
+        )
 
 
 def _update_config_vocab_size(output_path: Path, vocab_size: int) -> None:
@@ -1602,15 +1830,44 @@ def merge_lora_sharded_efficient(
     LOG.debug(f"Found {len(model_shards)} model shards in {base_model_path}")
     copy_non_model_files(base_model_path, output_path, model_shards)
 
+    expert_writer = None
     if _detect_per_expert_unfused_mismatch(model_shards, lora_state):
-        LOG.warning(
-            "MERGE INCOMPLETE: the adapter has a FUSED expert LoRA (experts.gate_up_proj/down_proj) "
-            "but this base stores experts PER-EXPERT and unfused (experts.<i>.gate_proj.weight ...). "
-            "The shard-by-shard merge cannot fold a fused delta into per-expert tensors, so the "
-            "EXPERT LoRA is being DROPPED (non-expert LoRA still merges). Use the nvfp4 expert-merge "
-            "writer (fuse->merge->unfuse), or merge_method: legacy (loads the full model so PEFT "
-            "fuses the experts itself)."
-        )
+        try:
+            import torchao  # noqa: F401
+
+            has_torchao = True
+        except ImportError:
+            has_torchao = False
+        if not has_torchao or not _per_expert_weights_are_packed(model_shards):
+            LOG.warning(
+                "MERGE INCOMPLETE: the adapter has a FUSED expert LoRA (experts.gate_up_proj/down_proj) "
+                "but this base stores experts PER-EXPERT and unfused (experts.<i>.gate_proj.weight ...) "
+                "in a layout the nvfp4 expert-merge writer cannot handle (%s), so the EXPERT LoRA is "
+                "being DROPPED (non-expert LoRA still merges). Use merge_method: legacy (loads the "
+                "full model so PEFT fuses the experts itself).",
+                "torchao is not installed"
+                if not has_torchao
+                else "expert weights are not packed uint8 NVFP4",
+            )
+        else:
+            n_experts = expected_num_experts or _get_expected_num_experts(
+                base_model_path
+            )
+            if n_experts is None:
+                raise RuntimeError(
+                    "The adapter has a fused expert LoRA over a per-expert unfused base, but "
+                    "config.json exposes no expert count (num_experts/num_local_experts/"
+                    "n_routed_experts), so the expert-merge writer cannot validate layer "
+                    "completeness across shards. Add the expert count to config.json or use "
+                    "merge_method: legacy."
+                )
+            expert_writer = _Nvfp4ExpertMergeWriter(
+                lora_state, lora_config_dict, n_experts, device, dequant=dequant
+            )
+            LOG.info(
+                "Adapter has a FUSED expert LoRA over a PER-EXPERT unfused NVFP4 base: using "
+                "the expert-merge writer (dequant -> fuse -> fold delta -> unfuse -> requant)."
+            )
 
     merged_count = 0
     total_tensors = 0
@@ -1636,6 +1893,16 @@ def merge_lora_sharded_efficient(
             )
 
         total_tensors += len(shard_tensors)
+
+        # Per-expert unfused NVFP4 experts with a fused adapter: the writer claims those tensors
+        # (buffered across shard boundaries) and emits the merged per-expert keys itself, so the
+        # dequant/fuse/per-tensor passes below never see them.
+        if expert_writer is not None:
+            shard_tensors, expert_emitted, expert_merged = expert_writer.consume(
+                shard_tensors
+            )
+            merged_tensors.update(expert_emitted)
+            merged_count += expert_merged
 
         # Step 0: dequantize quantized weights so the LoRA delta folds into the TRUE weight (a raw read
         # misses the block scale). Default (dequant=False) touches only LoRA-targeted weights and plans
@@ -1753,6 +2020,15 @@ def merge_lora_sharded_efficient(
         if device != "cpu" and torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
+
+    if expert_writer is not None:
+        expert_writer.assert_drained()
+        if expert_writer.merged_groups == 0:
+            LOG.warning(
+                "MERGE INCOMPLETE: the expert-merge writer matched no fused expert LoRA to any "
+                "per-expert layer group (unrecognized checkpoint naming or shape mismatch); the "
+                "expert LoRA was NOT merged."
+            )
 
     # Regenerate weight-map index if the model was sharded
     if len(model_shards) > 1 and weight_map:

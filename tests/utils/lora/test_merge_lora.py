@@ -1547,6 +1547,208 @@ class TestQuantizedBaseMerge:
             "expected a per-expert-unfused mismatch warning"
         )
 
+    def test_nvfp4_expert_merge_writer(self, tmp_path):
+        """The expert-merge writer folds a FUSED expert LoRA into a PER-EXPERT unfused NVFP4 base:
+        per expert the output must be BITWISE requant(dequant(base) + delta), including a layer split
+        across the shard boundary; non-LoRA layers pass through byte-identical; --dequant emits the
+        fused bf16 param instead."""
+        pytest.importorskip("torchao")
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+        from axolotl.cli.utils.lora_merge import (
+            _build_peft_layer_and_get_delta,
+            _dequant_nvfp4,
+            _find_param_wrapper_lora,
+            _requant_by_format,
+            merge_lora_sharded_efficient,
+        )
+
+        torch.manual_seed(0)
+        E, H, I, r, alpha = 4, 64, 16, 4, 8
+
+        def quant(w2d):
+            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+            nv = NVFP4Tensor.to_nvfp4(
+                w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
+            )
+            return (
+                nv.qdata,
+                nv.scale.to(torch.float8_e4m3fn),
+                nv.per_tensor_scale.reshape(()),
+            )
+
+        def make_layer(layer, seed):
+            torch.manual_seed(seed)
+            keys = {}
+            for proj, (n, k) in (
+                ("gate_proj", (I, H)),
+                ("up_proj", (I, H)),
+                ("down_proj", (H, I)),
+            ):
+                for e in range(E):
+                    qd, sc, pts = quant(torch.randn(n, k) * k**-0.5)
+                    base = f"model.layers.{layer}.mlp.experts.{e}.{proj}"
+                    keys[f"{base}.weight"] = qd
+                    keys[f"{base}.weight_scale"] = sc
+                    keys[f"{base}.weight_scale_2"] = pts
+            return keys
+
+        def subset(keys, experts):
+            return {
+                k: v
+                for k, v in keys.items()
+                if int(k.split(".experts.")[1].split(".")[0]) in experts
+            }
+
+        # layer 0 complete in shard 0; layer 1 SPLIT across shards; layer 2 has no LoRA
+        l0, l1, l2 = make_layer(0, 10), make_layer(1, 11), make_layer(2, 12)
+        shard0 = {**l0, **subset(l1, {0, 1})}
+        shard1 = {**subset(l1, {2, 3}), **l2}
+
+        torch.manual_seed(99)
+        adapter = {}
+        for layer in (0, 1):
+            p = f"base_model.model.model.layers.{layer}.mlp.experts"
+            # outer wrapper = down_proj, inner .base_layer = gate_up (sonicmoe chain);
+            # Qwen3 orientation [E, out, in]: lora_A [r*E, in], lora_B [out, r*E]
+            adapter[f"{p}.lora_A.weight"] = (
+                torch.randn(r * E, I, dtype=torch.bfloat16) * 0.2
+            )
+            adapter[f"{p}.lora_B.weight"] = (
+                torch.randn(H, r * E, dtype=torch.bfloat16) * 0.2
+            )
+            adapter[f"{p}.base_layer.lora_A.weight"] = (
+                torch.randn(r * E, H, dtype=torch.bfloat16) * 0.2
+            )
+            adapter[f"{p}.base_layer.lora_B.weight"] = (
+                torch.randn(2 * I, r * E, dtype=torch.bfloat16) * 0.2
+            )
+
+        base_dir, adapter_dir = tmp_path / "base", tmp_path / "adapter"
+        base_dir.mkdir(), adapter_dir.mkdir()
+        safetensors.torch.save_file(
+            shard0, base_dir / "model-00001-of-00002.safetensors"
+        )
+        safetensors.torch.save_file(
+            shard1, base_dir / "model-00002-of-00002.safetensors"
+        )
+        wmap = {k: "model-00001-of-00002.safetensors" for k in shard0}
+        wmap.update({k: "model-00002-of-00002.safetensors" for k in shard1})
+        (base_dir / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": 0}, "weight_map": wmap})
+        )
+        (base_dir / "config.json").write_text(
+            json.dumps({"model_type": "synthetic-test", "num_experts": E})
+        )
+        safetensors.torch.save_file(adapter, adapter_dir / "adapter_model.safetensors")
+        (adapter_dir / "adapter_config.json").write_text(
+            json.dumps({"r": r, "lora_alpha": alpha, "peft_type": "LORA"})
+        )
+
+        out = tmp_path / "merged"
+        merge_lora_sharded_efficient(base_dir, adapter_dir, out, device="cpu")
+        merged = {}
+        for f in sorted(out.glob("*.safetensors")):
+            merged.update(safetensors.torch.load_file(f))
+
+        all_base = {**shard0, **shard1}
+        assert set(merged) == set(all_base)
+        assert all(
+            merged[k].dtype == v.dtype and merged[k].shape == v.shape
+            for k, v in all_base.items()
+        )
+        assert all(torch.equal(merged[k], v) for k, v in l2.items())
+
+        def fused_dequant(keys, layer, projs):
+            per = [
+                torch.stack(
+                    [
+                        _dequant_nvfp4(
+                            keys[f"model.layers.{layer}.mlp.experts.{e}.{proj}.weight"],
+                            keys[
+                                f"model.layers.{layer}.mlp.experts.{e}.{proj}.weight_scale"
+                            ],
+                            keys[
+                                f"model.layers.{layer}.mlp.experts.{e}.{proj}.weight_scale_2"
+                            ],
+                            "cpu",
+                        )
+                        for e in range(E)
+                    ]
+                )
+                for proj in projs
+            ]
+            return per[0] if len(per) == 1 else torch.cat(per, dim=1)
+
+        cfg = {"r": r, "lora_alpha": alpha}
+        for layer, src in ((0, l0), (1, l1)):
+            for fused_name, projs in (
+                ("gate_up_proj", ("gate_proj", "up_proj")),
+                ("down_proj", ("down_proj",)),
+            ):
+                base_f = fused_dequant(src, layer, projs)
+                lora_a, lora_b, _ = _find_param_wrapper_lora(
+                    adapter,
+                    f"model.layers.{layer}.mlp.experts.{fused_name}",
+                    tensor_shape=tuple(base_f.shape),
+                )
+                assert lora_a is not None, f"orientation fix: L{layer} {fused_name}"
+                delta = _build_peft_layer_and_get_delta(
+                    lora_a, lora_b, cfg, base_f, is_param_wrapper=True
+                )
+                want = (base_f.float() + delta.float()).to(torch.bfloat16)
+                col = 0
+                for proj in projs:
+                    n_rows = src[
+                        f"model.layers.{layer}.mlp.experts.0.{proj}.weight"
+                    ].shape[0]
+                    for e in range(E):
+                        kb = f"model.layers.{layer}.mlp.experts.{e}.{proj}"
+                        ref = _requant_by_format(
+                            "nvfp4",
+                            want[e, col : col + n_rows, :],
+                            {
+                                "_scale": src[f"{kb}.weight_scale"],
+                                "_scale_2": src[f"{kb}.weight_scale_2"],
+                            },
+                            "cpu",
+                        )
+                        assert torch.equal(merged[f"{kb}.weight"], ref[""])
+                        assert torch.equal(
+                            merged[f"{kb}.weight_scale"].view(torch.uint8),
+                            ref["_scale"].view(torch.uint8),
+                        )
+                        assert torch.equal(
+                            merged[f"{kb}.weight_scale_2"], ref["_scale_2"]
+                        )
+                    col += n_rows
+
+        # --dequant: the writer emits the merged FUSED bf16 param instead
+        out2 = tmp_path / "merged_dq"
+        merge_lora_sharded_efficient(
+            base_dir, adapter_dir, out2, device="cpu", dequant=True
+        )
+        merged2 = {}
+        for f in sorted(out2.glob("*.safetensors")):
+            merged2.update(safetensors.torch.load_file(f))
+        for layer in (0, 1):
+            for fused_name, projs in (
+                ("gate_up_proj", ("gate_proj", "up_proj")),
+                ("down_proj", ("down_proj",)),
+            ):
+                key = f"model.layers.{layer}.mlp.experts.{fused_name}"
+                assert merged2[key].dtype == torch.bfloat16
+                src = l0 if layer == 0 else l1
+                base_f = fused_dequant(src, layer, projs)
+                lora_a, lora_b, _ = _find_param_wrapper_lora(
+                    adapter, key, tensor_shape=tuple(merged2[key].shape)
+                )
+                delta = _build_peft_layer_and_get_delta(
+                    lora_a, lora_b, cfg, base_f, is_param_wrapper=True
+                )
+                want = (base_f.float() + delta.float()).to(torch.bfloat16)
+                assert torch.allclose(merged2[key].float(), want.float(), atol=1e-2)
+
     def test_fused_expert_base_no_false_positive(self, tmp_path):
         """A FUSED expert base (Mistral-Large-4 style) + fused adapter must NOT trigger the per-expert
         warning."""
