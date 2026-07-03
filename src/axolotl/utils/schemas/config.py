@@ -885,9 +885,10 @@ class AxolotlInputConfig(
                 "With sample packing + attn_implementation=sdpa, route packed rows through "
                 "torch.nn.attention.varlen.varlen_attn (cu_seqlens) instead of an explicit 4D "
                 "block-diagonal mask. Skips cross-document blocks (faster + lower memory) with no "
-                "flash_attn dependency. Requires torch >= 2.10 and head_dim <= 256; non-packed rows "
-                "and larger head_dim fall back to stock SDPA. Sliding-window attention additionally "
-                "needs torch >= 2.11 (varlen_attn window_size)."
+                "flash_attn dependency. Left unset (null) it auto-enables when supported (torch >= "
+                "2.10, head_dim <= 256, no sliding window); set true/false to force. When it can't "
+                "be used, packed rows still isolate documents via the block-diagonal mask. "
+                "Sliding-window attention needs torch >= 2.11 (varlen_attn window_size)."
             )
         },
     )
@@ -1463,6 +1464,18 @@ class AxolotlInputConfig(
     @property
     def attn_supports_packing(self) -> bool:
         return self.attn_implementation in ATTN_IMPLS_SUPPORTING_PACKING
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_decontaminates_packing(self) -> bool:
+        # Backends that isolate packed documents once the 2D attention mask is dropped
+        # and only position_ids remain. Varlen backends (attn_supports_packing) do it via
+        # cu_seqlens; plain sdpa/eager via the block-diagonal mask transformers builds from
+        # position_ids (find_packed_sequence_indices). Anything else cannot, and packing
+        # would silently leak attention across documents.
+        if self.attn_supports_packing:
+            return True
+        return self.attn_implementation in ("sdpa", "eager")
 
     @computed_field  # type: ignore[misc]
     @property
