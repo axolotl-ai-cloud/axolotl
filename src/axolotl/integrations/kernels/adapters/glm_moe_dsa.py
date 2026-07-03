@@ -126,6 +126,7 @@ class GlmMoeDsaAdapter(ModelAdapter):
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
             inspect_nvfp4_layout,
             patch_nvfp4_tensor_meta_ops,
+            patch_skip_missing_expert_init,
         )
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_weight_converter import (
             patch_conversion_loader_rank0_only,
@@ -179,6 +180,7 @@ class GlmMoeDsaAdapter(ModelAdapter):
                 False  # don't register the slow routed converters
             )
             register_nvfp4_converters_for_layout("glm_moe_dsa", reg_layout)
+            patch_skip_missing_expert_init()
             LOG.info("glm_moe_dsa: routed experts will be DIRECT-loaded (fast path)")
         else:
             register_nvfp4_converters_for_layout("glm_moe_dsa", layout)

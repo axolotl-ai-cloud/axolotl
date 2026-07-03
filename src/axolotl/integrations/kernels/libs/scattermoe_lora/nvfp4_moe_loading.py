@@ -402,6 +402,46 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
     return fixed
 
 
+def patch_skip_missing_expert_init() -> None:
+    """Skip transformers' random init of the fused routed-expert params under direct load.
+
+    With the routed converters skipped (direct-load path), ``experts.gate_up_proj``/``down_proj``
+    are MISSING keys, so ``_initialize_missing_keys`` fills them with CPU ``normal_()`` right
+    before :func:`direct_load_nvfp4_experts` overwrites every byte. At Qwen3-Next-80B scale that
+    is ~155 GB of bf16 randn at a measured 0.11 GB/s: ~23 min of pure waste per launch. Mark the
+    fused 3D expert params ``_is_hf_initialized`` before init runs so ``initialize_weights``
+    skips them. Only call when the direct load WILL fill these params (same contract as skipping
+    the routed converters). Idempotent.
+    """
+    from transformers.modeling_utils import PreTrainedModel
+
+    if getattr(
+        PreTrainedModel._initialize_missing_keys, "_axolotl_skip_expert_init", False
+    ):
+        return
+    orig = PreTrainedModel._initialize_missing_keys
+
+    def patched(self, *args, **kwargs):
+        for mod in self.modules():
+            gup = getattr(mod, "gate_up_proj", None)
+            dn = getattr(mod, "down_proj", None)
+            if (
+                isinstance(gup, torch.Tensor)
+                and isinstance(dn, torch.Tensor)
+                and gup.ndim == 3
+                and dn.ndim == 3
+            ):
+                gup._is_hf_initialized = True
+                dn._is_hf_initialized = True
+        return orig(self, *args, **kwargs)
+
+    patched._axolotl_skip_expert_init = True  # type: ignore[attr-defined]
+    PreTrainedModel._initialize_missing_keys = patched
+    LOG.info(
+        "Patched _initialize_missing_keys to skip fused expert params (direct load fills them)"
+    )
+
+
 def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> int:
     """FAST routed-expert load that BYPASSES transformers' conversion loader.
 

@@ -64,6 +64,7 @@ class Qwen3MoeAdapter(ModelAdapter):
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
             inspect_nvfp4_layout,
             patch_nvfp4_tensor_meta_ops,
+            patch_skip_missing_expert_init,
         )
 
         # the conversion mapping is looked up under the model's actual type
@@ -125,6 +126,7 @@ class Qwen3MoeAdapter(ModelAdapter):
                 False  # don't register the slow routed converters
             )
             register_nvfp4_converters_for_layout(model_type, reg_layout)
+            patch_skip_missing_expert_init()
             LOG.info("qwen3_moe: routed experts will be DIRECT-loaded (fast path)")
         else:
             register_nvfp4_converters_for_layout(model_type, layout)
