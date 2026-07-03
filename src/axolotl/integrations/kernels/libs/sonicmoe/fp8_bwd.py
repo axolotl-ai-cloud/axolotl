@@ -19,14 +19,18 @@ not built for sm100a) and kills the CUDA context. See ``DEEPGEMM.md`` for the
 install steps (source build; CUTLASS symlinks into ``deep_gemm/include`` are
 mandatory or every JIT compile fails).
 
-``AXOLOTL_SONICMOE_NVFP4_BWD``: unset/``auto`` uses DeepGEMM when available,
-``bf16`` disables it, ``deepgemm`` raises if unavailable.
+VERDICT (2026-07-03): REJECTED as a default. The cache is inherently a full
+fp8 copy of all expert weights: +27 GiB persistent on Qwen3-30B for +9% E2E
+tok/s. Kept as an EXPLICIT opt-in for VRAM-rich setups only:
+``AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm`` enables it (raises if deep_gemm is
+missing); anything else, including unset, keeps the bf16 dequant backward.
 
 DeepGEMM's contiguous layout needs every expert segment padded to its M block
-alignment (224 on B200); rows are scattered into a padded buffer whose
-padding carries ``m_indices == -1`` (skipped by the kernel) and gathered back
-after. All index math stays on device; the buffer is sized ``T + E * align``
-so no host sync is needed.
+alignment (we set 128); rows are scattered into a padded buffer whose padding
+carries ``m_indices == -1`` (skipped by the kernel) and gathered back after.
+All index math stays on device; the buffer is sized ``T + E * align`` so no
+host sync is needed, and the index plan is cached on the offsets tensor (one
+build serves both projections of a layer).
 """
 
 from __future__ import annotations
@@ -60,8 +64,9 @@ def _deep_gemm():
 
 
 def fp8_dx_supported(grad_h: torch.Tensor, base_weight) -> bool:
-    mode = os.environ.get("AXOLOTL_SONICMOE_NVFP4_BWD", "auto")
-    if mode == "bf16":
+    # explicit opt-in only: the fp8 cache costs a full fp8 copy of the expert
+    # weights (+27 GiB on Qwen3-30B), unacceptable as a default
+    if os.environ.get("AXOLOTL_SONICMOE_NVFP4_BWD") != "deepgemm":
         return False
     if not (
         grad_h.is_cuda
@@ -70,19 +75,15 @@ def fp8_dx_supported(grad_h: torch.Tensor, base_weight) -> bool:
         and base_weight.shape[-2] % 128 == 0  # K of the dX GEMM (dim1)
         and torch.cuda.get_device_capability(grad_h.device)[0] == 10
     ):
-        if mode == "deepgemm":
-            raise RuntimeError(
-                "AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm requires a CUDA bf16 grad, "
-                "a packed NVFP4 base with dim1 % 128 == 0, and an SM100 GPU"
-            )
-        return False
+        raise RuntimeError(
+            "AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm requires a CUDA bf16 grad, "
+            "a packed NVFP4 base with dim1 % 128 == 0, and an SM100 GPU"
+        )
     if _deep_gemm() is None:
-        if mode == "deepgemm":
-            raise RuntimeError(
-                "AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm but deep_gemm is not "
-                "importable; see DEEPGEMM.md for the source-build steps"
-            )
-        return False
+        raise RuntimeError(
+            "AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm but deep_gemm is not "
+            "importable; see DEEPGEMM.md for the source-build steps"
+        )
     return True
 
 
