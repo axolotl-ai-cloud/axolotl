@@ -1447,6 +1447,52 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_selective_checkpointing(self):
+        if not self.selective_checkpointing:
+            self.selective_checkpointing = None
+            return self
+        if self.selective_checkpointing is True:
+            from axolotl.utils.schemas.training import SelectiveCheckpointingConfig
+
+            self.selective_checkpointing = SelectiveCheckpointingConfig()
+        if not self.gradient_checkpointing:
+            raise ValueError("selective_checkpointing requires gradient_checkpointing")
+        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
+            raise ValueError(
+                "selective_checkpointing requires non-reentrant checkpointing "
+                "(gradient_checkpointing_kwargs.use_reentrant: false)"
+            )
+        if self.activation_offloading and self.activation_offloading != "hidden_states":
+            raise ValueError(
+                "selective_checkpointing is only compatible with "
+                "activation_offloading: hidden_states (or false); the TRL offloader "
+                "paths bypass HF gradient checkpointing"
+            )
+        if self.adapter:
+            # PEFT adds the adapter delta into the base linear output in-place,
+            # mutating cached mm outputs; SAC's cache-mutation guard errors at runtime
+            matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
+            bad = [
+                spec
+                for spec in self.selective_checkpointing.save
+                if spec != "attention" and any(spec in op for op in matmul_ops)
+            ]
+            if bad:
+                raise ValueError(
+                    f"selective_checkpointing.save entries {bad} match matmul ops, "
+                    "which cannot be saved when training with a LoRA/QLoRA adapter: "
+                    "PEFT mutates the base linear output in-place to add the adapter "
+                    "delta, which invalidates the cached tensor. Use save: [attention] "
+                    "or train without an adapter."
+                )
+        if self.torch_compile:
+            LOG.warning(
+                "selective_checkpointing with torch_compile is untested in axolotl; "
+                "the SAC context_fn targets the eager checkpointing path"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_hidden_states_offloading(self):
         if self.activation_offloading != "hidden_states":
             return self
