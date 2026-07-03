@@ -106,12 +106,14 @@ def _register_global_packed_sdpa() -> None:
             )
             if routed is not None:
                 return routed
-        # Detect genuine (multi-document) packing: more doc-starts than batch rows.
+        # Packing detection: static under a declared config (compile-clean), runtime probe otherwise.
         pid = None
-        if attention_mask is None and position_ids is not None:
-            p = position_ids if position_ids.dim() > 1 else position_ids[None]
-            if int((p == 0).sum()) > p.shape[0]:
-                pid = p
+        if attention_mask is None:
+            from axolotl.monkeypatch.attention.large_head import (
+                _multidoc_position_ids,
+            )
+
+            pid = _multidoc_position_ids(position_ids)
         # Packed without the kernel -> block-diagonal mask so globals respect doc boundaries.
         # Single-document -> mask stays None (SDPA is_causal, the fast path).
         if pid is not None:
