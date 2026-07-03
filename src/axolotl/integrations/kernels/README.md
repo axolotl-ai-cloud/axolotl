@@ -47,6 +47,27 @@ pip install kernels "nvidia-cutlass-dsl==4.4.2"
 
 **Note:** Blackwell support is in upstream beta. On Blackwell GPUs Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
 
+### SonicMoE NVFP4 (W4A4) LoRA backend
+
+When `use_sonicmoe` is enabled on a ModelOpt NVFP4 checkpoint (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`), expert forwards route through an in-repo W4A4 grouped GEMM composed from quack's SM100 blockscaled kernels (the frozen base stays NVFP4-packed in memory; LoRA A/B train in bf16). Dense bf16 experts continue to use the upstream sonic-moe CUTLASS kernel.
+
+**Pin quack.** This backend composes quack *private* internals (`GemmDefaultSm100`, the blockscaled varlen operand builders, TVM-FFI utils) that carry no stability guarantee. The validated pin is:
+
+```bash
+pip install "quack-kernels==0.5.0" "nvidia-cutlass-dsl==4.5.2"
+```
+
+(Source-level behavior was cross-checked against quack upstream commit `f4f54db0`.) Other quack versions are untested and the imported internals have churned across minor releases; expect import or numerics breakage rather than graceful fallback if the pin drifts.
+
+Backend selection: when unset, `fp4_cute` is chosen automatically if available (NVFP4 weights, compatible dims, SM100+, quack + cutlass-dsl importable), else `dequant`. `AXOLOTL_SONICMOE_NVFP4_BACKEND` forces one:
+
+| Value | Engine | Requirement |
+|-------|--------|-------------|
+| `fp4_cute` | native NVFP4 tensor cores (`kind::nvf4`) via quack | B200/GB200 (SM100/110) |
+| `dequant` | triton dequant to bf16 + `torch._grouped_mm` | any CUDA GPU with triton |
+
+`AXOLOTL_SONICMOE_NVFP4_PTS_FOLD=0` disables folding per-expert per-tensor scales into the block scale factors (slower, marginally more accurate; see `SONICMOE_NVFP4_LORA.md`).
+
 ## How It Works
 
 The `KernelsPlugin` runs once before model loading and:

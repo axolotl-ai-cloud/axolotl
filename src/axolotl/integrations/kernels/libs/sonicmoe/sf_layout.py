@@ -11,7 +11,8 @@ and the allocation is ``ceil(total_m / 128) + (E - 1)`` row-tiles. Operand data
 (A/B/D) stays packed and unpadded; only the SF storage pads.
 
 These mirror quack's ``pack_scale_2d_to_blocked_contig`` /
-``create_blockscaled_varlen_m_operands`` (verified at quack f4f54db0, v0.5.3);
+``create_blockscaled_varlen_m_operands`` (verified at quack source f4f54db0;
+runtime pin quack-kernels==0.5.0);
 the on-pod smoke scripts assert bit-parity against quack's packer.
 """
 

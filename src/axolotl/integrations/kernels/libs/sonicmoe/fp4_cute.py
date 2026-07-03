@@ -5,7 +5,7 @@ Instantiates quack's ``GemmGatedSm100`` / ``GemmDefaultSm100`` with
 zero quack kernel changes) and drives it with our own compile path:
 quack's stock drivers never marry the blockscaled mainloop with the act/gated
 epilogue, and its varlen host helpers guard fp4 off. Verified against quack
-f4f54db0 (v0.5.3); pin quack, internals are private API.
+source at f4f54db0; runtime pin quack-kernels==0.5.0, internals are private API.
 
 Conventions:
 - All GEMMs are ``C[e] = A[e] @ B[e]^T`` per expert, A/B K-major, fp32 accum.
