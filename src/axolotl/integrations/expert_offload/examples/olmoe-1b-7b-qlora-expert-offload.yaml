@@ -1,0 +1,59 @@
+# Single-GPU QLoRA of a fused-MoE with the frozen 4-bit experts offloaded to CPU RAM.
+# The experts stream to the GPU one block at a time, so peak VRAM stays low enough to fit a
+# small card. NOTE: single-GPU only — do NOT add fsdp / deepspeed / expert_parallel here.
+
+base_model: allenai/OLMoE-1B-7B-0924
+trust_remote_code: true
+
+plugins:
+  - axolotl.integrations.expert_offload.ExpertOffloadPlugin
+
+# --- the feature ---
+expert_offload: true
+# expert_offload_pin_memory: true   # default
+
+load_in_8bit: false
+load_in_4bit: true
+adapter: qlora
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+# Target attention (and, if you want, the expert projections via lora_target_parameters).
+# lora_target_linear quantizes/targets all linears; keep experts frozen + offloaded.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+dataset_prepared_path:
+val_set_size: 0.05
+output_dir: ./outputs/olmoe-expert-offload
+
+sequence_len: 2048
+sample_packing: true
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0001
+
+bf16: auto
+tf32: true
+
+# Required by expert_offload: the backward recompute re-stages each block's experts.
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+logging_steps: 1
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:
