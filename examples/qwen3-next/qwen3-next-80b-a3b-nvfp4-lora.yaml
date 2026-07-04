@@ -1,0 +1,73 @@
+# Qwen3-Next-80B-A3B MoE LoRA on an NVFP4 (modelopt) checkpoint, single B200.
+#
+# Loading: same path as examples/qwen3/30b-a3b-nvfp4-lora.yaml (the kernels plugin's
+# Qwen3MoeAdapter also matches qwen3_next). The 48 layers x 512 routed experts (top-10) fuse into
+# 3D NVFP4Tensor params; the shared expert, linear_attn.out_proj and self_attn.o_proj NVFP4
+# linears dequantize to bf16; per-projection input_scale tensors and the mtp.* head are dropped.
+#
+# Training: routed-expert LoRA runs through the sonicmoe grouped NVFP4 path. On SM100 (B200) the
+# default fp4_cute backend runs the expert GEMMs in-kernel at W4A4 and needs quack:
+#   pip install "quack-kernels @ git+https://github.com/Dao-AILab/quack.git"
+# The Gated DeltaNet linear-attention layers (3/4 of the stack) dominate step time; install fla
+# so they don't fall back to the slow torch path:
+#   pip uninstall causal-conv1d && pip install flash-linear-attention==0.4.1
+# Note: with sample_packing, fla requires micro_batch_size 1 (cu_seqlens wants one flat row).
+#
+# Validated on 1x B200: ~85 GiB peak at sequence_len 2048 (~106 GiB at 16k tokens/step).
+base_model: nvidia/Qwen3-Next-80B-A3B-Instruct-NVFP4
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+use_sonicmoe: true
+strict: false
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:2%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+dataset_prepared_path: last_run_prepared
+val_set_size: 0
+output_dir: ./outputs/qwen3-next-80b-nvfp4-lora
+
+sequence_len: 2048
+sample_packing: true
+attn_implementation: flash_attention_2
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# Full attention exists on 1/4 of the layers; PEFT skips layers without a matching module.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# Routed-expert LoRA on the 3D fused NVFP4 params (PEFT ParamWrapper).
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_ratio: 0.1
+
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+
+logging_steps: 1
+saves_per_epoch: 1
+
+wandb_project:
+wandb_entity:
+wandb_name:
