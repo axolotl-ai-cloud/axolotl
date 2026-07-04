@@ -251,6 +251,7 @@ class ModelLoader:
             self.model = self.model.merge_and_unload()
 
         self._configure_experts_implementation()
+        self._apply_selective_checkpointing()
         self._apply_activation_checkpointing()
         self._resize_token_embeddings()
         self._reinitialize_classification_head()
@@ -318,6 +319,24 @@ class ModelLoader:
                 )
 
         self.model.set_experts_implementation(impl)
+
+    def _apply_selective_checkpointing(self):
+        sac = self.cfg.selective_checkpointing
+        if not sac:
+            return
+
+        from axolotl.monkeypatch.selective_checkpointing import (
+            apply_selective_checkpointing,
+        )
+
+        sac_kwargs = sac if isinstance(sac, dict) else {}
+        apply_selective_checkpointing(
+            self.model,
+            save=sac_kwargs.get("save"),
+            save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
+            recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
+            offload=bool(sac_kwargs.get("offload")),
+        )
 
     def _apply_activation_checkpointing(self):
         ao = self.cfg.activation_offloading

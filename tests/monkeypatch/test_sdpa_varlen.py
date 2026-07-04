@@ -188,7 +188,11 @@ def test_falls_back_when_not_packed(patched):
 
 
 def test_falls_back_on_large_head_dim(patched):
-    """head_dim > 256 can't use Flash varlen; must defer to stock SDPA."""
+    """head_dim > 256 can't use Flash varlen, but a packed row whose padding mask was
+    dropped (attention_mask=None) must still be isolated: the wrapper rebuilds the
+    block-diagonal mask rather than running pure-causal (which would leak)."""
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
     pos = _pos([[256, 256]])
     B, S = pos.shape
     Hq, Hkv, D = 8, 2, 512  # head_dim 512
@@ -196,4 +200,79 @@ def test_falls_back_on_large_head_dim(patched):
     q = torch.randn(B, Hq, S, D, device=DEV, dtype=torch.bfloat16)
     k = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.bfloat16)
     v = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.bfloat16)
-    _assert_defers_to_stock(_Mod(num_key_value_groups=Hq // Hkv), q, k, v, pos)
+    mod = _Mod(num_key_value_groups=Hq // Hkv)
+    scaling = D**-0.5
+
+    wrapper = ALL_ATTENTION_FUNCTIONS["sdpa"]
+    out, _ = wrapper(mod, q, k, v, None, scaling=scaling, position_ids=pos)
+    # matches the block-diagonal reference (documents isolated)...
+    ref = _ref(q, k, v, scaling, pos)
+    assert torch.allclose(out, ref, atol=1e-2)
+    # ...and is NOT the pure-causal result stock SDPA gives with a None mask (a leak).
+    leak, _ = wrapper._axolotl_sdpa_original(
+        mod, q, k, v, None, scaling=scaling, position_ids=pos
+    )
+    assert not torch.allclose(out, leak, atol=1e-2)
+
+
+def test_varlen_engages_in_training_forward():
+    """Regression: in a real training forward (use_cache=False) transformers builds a 4D
+    packed mask from position_ids, which used to bypass the varlen path entirely. The mask
+    override must make ``varlen_attn`` actually fire for a padded packed row, and the
+    result must match per-document forwards (no cross-document leakage)."""
+    import torch.nn.attention.varlen as va
+    from transformers import LlamaConfig, LlamaModel
+
+    calls = {"n": 0}
+    original_varlen = va.varlen_attn
+    va.varlen_attn = lambda *a, **k: (  # spy captured by the wrapper at patch time
+        calls.__setitem__("n", calls["n"] + 1),
+        original_varlen(*a, **k),
+    )[1]
+    try:
+        assert patch_sdpa_varlen()
+        try:
+            cfg = LlamaConfig(
+                hidden_size=256,
+                num_hidden_layers=2,
+                num_attention_heads=8,
+                num_key_value_heads=2,
+                intermediate_size=512,
+                vocab_size=256,
+                head_dim=32,
+                _attn_implementation="sdpa",
+            )
+            torch.manual_seed(0)
+            model = LlamaModel(cfg).to(DEV).to(torch.bfloat16).eval()
+
+            doc1, doc2 = list(range(1, 21)), list(range(21, 37))  # len 20 + 16
+            ids = torch.tensor([doc1 + doc2 + [0, 0, 0, 0]], device=DEV)  # + padding
+            pos = torch.tensor(
+                [list(range(20)) + list(range(16)) + list(range(4))], device=DEV
+            )
+            with torch.no_grad():
+                # attention_mask=None mimics axolotl dropping the mask for packing.
+                packed = model(
+                    input_ids=ids,
+                    attention_mask=None,
+                    position_ids=pos,
+                    use_cache=False,
+                ).last_hidden_state[:, :36]
+                ref1 = model(
+                    input_ids=torch.tensor([doc1], device=DEV),
+                    position_ids=torch.tensor([list(range(20))], device=DEV),
+                    use_cache=False,
+                ).last_hidden_state
+                ref2 = model(
+                    input_ids=torch.tensor([doc2], device=DEV),
+                    position_ids=torch.tensor([list(range(16))], device=DEV),
+                    use_cache=False,
+                ).last_hidden_state
+
+            assert calls["n"] > 0, "varlen_attn did not fire in the training forward"
+            reference = torch.cat([ref1, ref2], dim=1)
+            assert torch.allclose(packed, reference, atol=1e-2)
+        finally:
+            unpatch_sdpa_varlen()
+    finally:
+        va.varlen_attn = original_varlen

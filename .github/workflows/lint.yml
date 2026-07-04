@@ -31,3 +31,7 @@ jobs:
           python-version: "3.11"
           cache: 'pip' # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
+        env:
+          # check-cli-config-options needs an installed axolotl; the dedicated
+          # tests.yml step covers it in CI
+          SKIP: check-cli-config-options
