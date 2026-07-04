@@ -34,10 +34,11 @@ backward that runs against the *initial* forward's graph. Gradient checkpointing
 initial-forward saved tensors and **recomputes** each layer in backward (re-staging via the
 pre-hook and rebuilding the saved tensors from the staged weights), which is what makes eviction
 both correct and actually memory-freeing rather than pinning every staged weight alive as a saved
-tensor. The plugin enforces ``gradient_checkpointing: true`` with ``use_reentrant: false``.
+tensor. ``gradient_checkpointing: true`` with an explicit ``use_reentrant: false`` is enforced at
+config validation (the ``ExpertOffloadArgs`` schema validator).
 
 Single-GPU only: FSDP / DeepSpeed / expert-parallel move or shard these same weights and would
-race the stage/evict swaps. The plugin refuses to enable under any of them.
+race the stage/evict swaps. The config schema refuses to enable under any of them.
 """
 
 from __future__ import annotations
@@ -72,7 +73,7 @@ def _is_pinned(t: torch.Tensor) -> bool:
     where ``is_pinned`` is unavailable/raises without CUDA."""
     try:
         return bool(t.is_pinned())
-    except Exception:  # pragma: no cover - platform dependent
+    except (RuntimeError, AssertionError):  # pragma: no cover - platform dependent
         return False
 
 
@@ -242,12 +243,13 @@ def install_expert_offload(
     """
     blocks = find_moe_expert_blocks(model)
     if not blocks:
-        LOG.warning(
-            "expert_offload: no 4-bit MoE expert blocks found. This integration offloads "
-            "per-expert bitsandbytes Linear4bit weights (Mixtral / Qwen-MoE / OLMoE / DeepSeek "
-            "style). Fused-expert or non-quantized models are unaffected."
+        raise RuntimeError(
+            "expert_offload is enabled but no 4-bit MoE expert blocks were found. This "
+            "integration offloads per-expert bitsandbytes Linear4bit weights (an ``experts`` "
+            "ModuleList — Mixtral / Qwen-MoE / OLMoE / DeepSeek style); fused-expert layouts "
+            "(GPT-OSS, DBRX) and non-4bit models have nothing to offload — disable "
+            "expert_offload for this model."
         )
-        return []
 
     if device is None:
         device = blocks[0][2][0].weight.data.device
