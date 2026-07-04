@@ -798,6 +798,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.utils.get_cu_seqlens" id="toc-axolotl.monkeypatch.utils.get_cu_seqlens" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_cu_seqlens">get_cu_seqlens</a></li>
   <li><a href="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" id="toc-axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</a></li>
+  <li><a href="#axolotl.monkeypatch.utils.get_max_seqlen_in_batch" id="toc-axolotl.monkeypatch.utils.get_max_seqlen_in_batch" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_max_seqlen_in_batch">get_max_seqlen_in_batch</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -831,6 +832,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</a></td>
 <td>generate a cumulative sequence length mask for flash attention using pos ids</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.utils.get_max_seqlen_in_batch">get_max_seqlen_in_batch</a></td>
+<td>Token counts for each packed sub-sequence in a multipack attention mask.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.monkeypatch.utils.get_cu_seqlens" class="level3">
@@ -842,6 +847,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_cu_seqlens_from_pos_ids(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>generate a cumulative sequence length mask for flash attention using pos ids</p>
+</section>
+<section id="axolotl.monkeypatch.utils.get_max_seqlen_in_batch" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.get_max_seqlen_in_batch">get_max_seqlen_in_batch</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_max_seqlen_in_batch(attention_mask)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Token counts for each packed sub-sequence in a multipack attention mask.</p>
+<p>Multipack encodes every packed document as a distinct positive integer id
+(<code>1, 2, 3, ...</code>) with <code>0</code> for padding, so a row looks like
+<code>[1, 1, 1, 2, 2, 3, 3, 0, 0]</code>. This returns the length of each non-pad
+document, flattened across the batch.</p>
+<p>Vectorized on purpose: the previous implementation used
+<code>int(mask.max().item())</code> as a Python loop bound, which forced a
+device-&gt;host sync and broke torch.compile. This variant computes segment
+boundaries with tensor ops only.</p>
 
 
 </section>
