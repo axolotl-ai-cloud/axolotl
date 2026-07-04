@@ -2019,6 +2019,32 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Additional kwargs to pass to the trainer for gradient checkpointing",
     ),
     (
+        ("--selective-checkpointing.save",),
+        "selective_checkpointing__save",
+        None,
+        "Ops to save during forward instead of recomputing in backward. 'attention' matches SDPA and flash-attention forward ops; other entries are substring-matched against qualified torch op names (e.g. 'aten::mm').",
+    ),
+    (
+        (
+            "--selective-checkpointing.save-sliding-window/--no-selective-checkpointing.save-sliding-window",
+        ),
+        "selective_checkpointing__save_sliding_window",
+        None,
+        "In hybrid full/sliding-window attention models, also save sliding-window attention calls. Default false: SWA is cheap to recompute, so only full-attention calls are saved.",
+    ),
+    (
+        ("--selective-checkpointing.recompute-layer-types",),
+        "selective_checkpointing__recompute_layer_types",
+        None,
+        "Layer types (config.layer_types values) whose attention is recomputed instead of saved. Defaults to ['sliding_attention', 'chunked_attention']. Ignored when save_sliding_window is true. Linear-attention layers never dispatch a matchable attention op, so they need no entry.",
+    ),
+    (
+        ("--selective-checkpointing.offload/--no-selective-checkpointing.offload",),
+        "selective_checkpointing__offload",
+        None,
+        "Offload saved tensors to pinned CPU memory (side-stream copies with backward prefetch) instead of keeping them on GPU.",
+    ),
+    (
         ("--activation-offloading",),
         None,
         None,
@@ -2280,7 +2306,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--sdpa-varlen/--no-sdpa-varlen",),
         None,
         None,
-        "With sample packing + attn_implementation=sdpa, route packed rows through torch.nn.attention.varlen.varlen_attn (cu_seqlens) instead of an explicit 4D block-diagonal mask. Skips cross-document blocks (faster + lower memory) with no flash_attn dependency. Requires torch >= 2.10 and head_dim <= 256; non-packed rows and larger head_dim fall back to stock SDPA. Sliding-window attention additionally needs torch >= 2.11 (varlen_attn window_size).",
+        "With sample packing + attn_implementation=sdpa, route packed rows through torch.nn.attention.varlen.varlen_attn (cu_seqlens) instead of an explicit 4D block-diagonal mask. Skips cross-document blocks (faster + lower memory) with no flash_attn dependency. Left unset (null) it auto-enables when supported (torch >= 2.10, head_dim <= 256, no sliding window); set true/false to force. When it can't be used, packed rows still isolate documents via the block-diagonal mask. Sliding-window attention needs torch >= 2.11 (varlen_attn window_size).",
     ),
     (
         ("--fused-attn-kernel/--no-fused-attn-kernel",),

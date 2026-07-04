@@ -185,12 +185,12 @@ class AttentionValidationMixin:
 
     @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
-        if self.sample_packing and not self.attn_supports_packing:
+        if self.sample_packing and not self.attn_decontaminates_packing:
             if self.attn_implementation:
                 LOG.warning(
                     "`sample_packing` with `attn_implementation=%r` does not handle "
-                    "cross-sample decontamination. Use a varlen-capable backend "
-                    "(e.g. flash_attention_2, flex_attention, xformers, sage) to "
+                    "cross-sample decontamination. Use a packing-capable backend "
+                    "(e.g. flash_attention_2, flex_attention, sdpa, eager) to "
                     "isolate samples.",
                     self.attn_implementation,
                 )
@@ -198,7 +198,7 @@ class AttentionValidationMixin:
                 LOG.warning(
                     "`sample_packing` without an attention backend does not handle "
                     "cross-sample decontamination. Set `attn_implementation` to a "
-                    "varlen-capable backend (e.g. flash_attention_2)."
+                    "packing-capable backend (e.g. flash_attention_2)."
                 )
         return self
 
@@ -1444,6 +1444,52 @@ class ModelCompatibilityValidationMixin:
     def check_activation_offloading_wo_gc(self):
         if self.activation_offloading and not self.gradient_checkpointing:
             raise ValueError("activation_offloading requires gradient_checkpointing")
+        return self
+
+    @model_validator(mode="after")
+    def check_selective_checkpointing(self):
+        if not self.selective_checkpointing:
+            self.selective_checkpointing = None
+            return self
+        if self.selective_checkpointing is True:
+            from axolotl.utils.schemas.training import SelectiveCheckpointingConfig
+
+            self.selective_checkpointing = SelectiveCheckpointingConfig()
+        if not self.gradient_checkpointing:
+            raise ValueError("selective_checkpointing requires gradient_checkpointing")
+        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
+            raise ValueError(
+                "selective_checkpointing requires non-reentrant checkpointing "
+                "(gradient_checkpointing_kwargs.use_reentrant: false)"
+            )
+        if self.activation_offloading and self.activation_offloading != "hidden_states":
+            raise ValueError(
+                "selective_checkpointing is only compatible with "
+                "activation_offloading: hidden_states (or false); the TRL offloader "
+                "paths bypass HF gradient checkpointing"
+            )
+        if self.adapter:
+            # PEFT adds the adapter delta into the base linear output in-place,
+            # mutating cached mm outputs; SAC's cache-mutation guard errors at runtime
+            matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
+            bad = [
+                spec
+                for spec in self.selective_checkpointing.save
+                if spec != "attention" and any(spec in op for op in matmul_ops)
+            ]
+            if bad:
+                raise ValueError(
+                    f"selective_checkpointing.save entries {bad} match matmul ops, "
+                    "which cannot be saved when training with a LoRA/QLoRA adapter: "
+                    "PEFT mutates the base linear output in-place to add the adapter "
+                    "delta, which invalidates the cached tensor. Use save: [attention] "
+                    "or train without an adapter."
+                )
+        if self.torch_compile:
+            LOG.warning(
+                "selective_checkpointing with torch_compile is untested in axolotl; "
+                "the SAC context_fn targets the eager checkpointing path"
+            )
         return self
 
     @model_validator(mode="after")

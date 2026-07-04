@@ -14,6 +14,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 DEV = "cuda"
 
 
@@ -358,6 +360,148 @@ def _bwd_dq(
     )
 
 
+@register_kernel_op("flash_attn_d512_fwd")
+def _flash_d512_fwd_op(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    pos: torch.Tensor,
+    causal: bool,
+    varlen: bool,
+    scale: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    B, H, N, D = q.shape
+    spb, spn = pos.stride()
+    o = torch.empty_like(q)
+    L = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
+    # BLOCK_M/BLOCK_N, num_warps, num_stages come from the autotuner (SMEM-pruned per device).
+    _fwd[lambda meta: (triton.cdiv(N, meta["BLOCK_M"]), B * H)](
+        q,
+        k,
+        v,
+        scale,
+        o,
+        L,
+        *q.stride(),
+        *k.stride(),
+        *v.stride(),
+        *o.stride(),
+        pos,
+        spb,
+        spn,
+        H,
+        N,
+        HEAD_DIM=D,
+        CAUSAL=causal,
+        VARLEN=varlen,
+    )
+    return o, L
+
+
+@_flash_d512_fwd_op.register_fake
+def _(q, k, v, pos, causal, varlen, scale):
+    B, H, N, _ = q.shape
+    return torch.empty_like(q), torch.empty(
+        (B * H, N), device=q.device, dtype=torch.float32
+    )
+
+
+@register_kernel_op("flash_attn_d512_bwd")
+def _flash_d512_bwd_op(
+    do: torch.Tensor,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    o: torch.Tensor,
+    L: torch.Tensor,
+    pos: torch.Tensor,
+    doc_end: torch.Tensor,
+    causal: bool,
+    varlen: bool,
+    scale: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    B, H, N, D = q.shape
+    spb, spn = pos.stride()
+    do = do.contiguous()
+    dq = torch.empty_like(q)
+    dk = torch.empty_like(k)
+    dv = torch.empty_like(v)
+    delta = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
+    BM, BN = 16, 32
+    _bwd_pre[(triton.cdiv(N, BM), B * H)](
+        o, do, delta, *o.stride(), H, N, HEAD_DIM=D, BLOCK_M=BM, num_warps=4
+    )
+    _bwd_dkdv[(triton.cdiv(N, BN), B * H)](
+        q,
+        k,
+        v,
+        scale,
+        do,
+        dk,
+        dv,
+        L,
+        delta,
+        pos,
+        doc_end,
+        spb,
+        spn,
+        *q.stride(),
+        H,
+        N,
+        HEAD_DIM=D,
+        BLOCK_M=BM,
+        BLOCK_N=BN,
+        CAUSAL=causal,
+        VARLEN=varlen,
+        num_warps=4,
+        num_stages=1,
+    )
+    _bwd_dq[(triton.cdiv(N, BM), B * H)](
+        q,
+        k,
+        v,
+        scale,
+        do,
+        dq,
+        L,
+        delta,
+        pos,
+        spb,
+        spn,
+        *q.stride(),
+        H,
+        N,
+        HEAD_DIM=D,
+        BLOCK_M=BM,
+        BLOCK_N=BN,
+        CAUSAL=causal,
+        VARLEN=varlen,
+        num_warps=4,
+        num_stages=1,
+    )
+    return dq, dk, dv
+
+
+@_flash_d512_bwd_op.register_fake
+def _(do, q, k, v, o, L, pos, doc_end, causal, varlen, scale):
+    return torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
+
+
+def _compute_doc_end(pos: torch.Tensor) -> torch.Tensor:
+    """Per-row index of the next document start after each position (or N).
+
+    Suffix-min of "j if pos[j]==0 else N" shifted left by one — fully tensorized so
+    torch.compile can trace it (the per-row ``.nonzero()`` loop graph-breaks).
+    """
+    B, N = pos.shape
+    idx = torch.arange(N, device=pos.device, dtype=pos.dtype)
+    starts_or_n = torch.where(pos == 0, idx.expand_as(pos), pos.new_full((), N))
+    shifted = torch.cat([starts_or_n[:, 1:], pos.new_full((B, 1), N)], dim=1)
+    return torch.flip(
+        torch.cummin(torch.flip(shifted, dims=[1]), dim=1).values, dims=[1]
+    )
+
+
 class _FlashD512(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q, k, v, causal, position_ids, scale=None):
@@ -366,7 +510,8 @@ class _FlashD512(torch.autograd.Function):
         # repeat_interleave); the mismatched strides make the backward read wrong memory and explode
         # the gradient (forward is unaffected -- it passes each tensor's own strides). Force one layout.
         q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
-        B, H, N, D = q.shape
+        B, N = q.shape[0], q.shape[2]
+        D = q.shape[3]
         VARLEN = position_ids is not None
         if position_ids is None:
             pos = torch.zeros((B, N), device=q.device, dtype=torch.int32)
@@ -376,43 +521,12 @@ class _FlashD512(torch.autograd.Function):
                 .to(torch.int32)
                 .contiguous()
             )
-        spb, spn = pos.stride()
         if VARLEN:
-            doc_end = torch.empty_like(pos)
-            for b in range(B):
-                starts = (pos[b] == 0).nonzero().flatten()
-                bounds = torch.cat(
-                    [starts, torch.tensor([N], device=pos.device, dtype=starts.dtype)]
-                )
-                doc_end[b] = (
-                    bounds[1:].repeat_interleave(bounds[1:] - bounds[:-1]).to(pos.dtype)
-                )
+            doc_end = _compute_doc_end(pos)
         else:
             doc_end = pos
-        o = torch.empty_like(q)
-        L = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
         scale = D**-0.5 if scale is None else float(scale)
-        # BLOCK_M/BLOCK_N, num_warps, num_stages come from the autotuner (SMEM-pruned per device).
-        _fwd[lambda meta: (triton.cdiv(N, meta["BLOCK_M"]), B * H)](
-            q,
-            k,
-            v,
-            scale,
-            o,
-            L,
-            *q.stride(),
-            *k.stride(),
-            *v.stride(),
-            *o.stride(),
-            pos,
-            spb,
-            spn,
-            H,
-            N,
-            HEAD_DIM=D,
-            CAUSAL=causal,
-            VARLEN=VARLEN,
-        )
+        o, L = _flash_d512_fwd_op(q, k, v, pos, causal, VARLEN, scale)
         ctx.save_for_backward(q, k, v, o, L, pos, doc_end)
         ctx.causal = causal
         ctx.scale = scale
@@ -422,67 +536,8 @@ class _FlashD512(torch.autograd.Function):
     @staticmethod
     def backward(ctx, do):
         q, k, v, o, L, pos, doc_end = ctx.saved_tensors
-        B, H, N, D = q.shape
-        causal = ctx.causal
-        scale = ctx.scale
-        VARLEN = ctx.varlen
-        spb, spn = pos.stride()
-        do = do.contiguous()
-        dq = torch.empty_like(q)
-        dk = torch.empty_like(k)
-        dv = torch.empty_like(v)
-        delta = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
-        BM, BN = 16, 32
-        _bwd_pre[(triton.cdiv(N, BM), B * H)](
-            o, do, delta, *o.stride(), H, N, HEAD_DIM=D, BLOCK_M=BM, num_warps=4
-        )
-        _bwd_dkdv[(triton.cdiv(N, BN), B * H)](
-            q,
-            k,
-            v,
-            scale,
-            do,
-            dk,
-            dv,
-            L,
-            delta,
-            pos,
-            doc_end,
-            spb,
-            spn,
-            *q.stride(),
-            H,
-            N,
-            HEAD_DIM=D,
-            BLOCK_M=BM,
-            BLOCK_N=BN,
-            CAUSAL=causal,
-            VARLEN=VARLEN,
-            num_warps=4,
-            num_stages=1,
-        )
-        _bwd_dq[(triton.cdiv(N, BM), B * H)](
-            q,
-            k,
-            v,
-            scale,
-            do,
-            dq,
-            L,
-            delta,
-            pos,
-            spb,
-            spn,
-            *q.stride(),
-            H,
-            N,
-            HEAD_DIM=D,
-            BLOCK_M=BM,
-            BLOCK_N=BN,
-            CAUSAL=causal,
-            VARLEN=VARLEN,
-            num_warps=4,
-            num_stages=1,
+        dq, dk, dv = _flash_d512_bwd_op(
+            do, q, k, v, o, L, pos, doc_end, ctx.causal, ctx.varlen, ctx.scale
         )
         return dq, dk, dv, None, None, None
 
