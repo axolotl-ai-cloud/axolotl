@@ -185,12 +185,12 @@ class AttentionValidationMixin:
 
     @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
-        if self.sample_packing and not self.attn_supports_packing:
+        if self.sample_packing and not self.attn_decontaminates_packing:
             if self.attn_implementation:
                 LOG.warning(
                     "`sample_packing` with `attn_implementation=%r` does not handle "
-                    "cross-sample decontamination. Use a varlen-capable backend "
-                    "(e.g. flash_attention_2, flex_attention, xformers, sage) to "
+                    "cross-sample decontamination. Use a packing-capable backend "
+                    "(e.g. flash_attention_2, flex_attention, sdpa, eager) to "
                     "isolate samples.",
                     self.attn_implementation,
                 )
@@ -198,7 +198,7 @@ class AttentionValidationMixin:
                 LOG.warning(
                     "`sample_packing` without an attention backend does not handle "
                     "cross-sample decontamination. Set `attn_implementation` to a "
-                    "varlen-capable backend (e.g. flash_attention_2)."
+                    "packing-capable backend (e.g. flash_attention_2)."
                 )
         return self
 
