@@ -58,6 +58,7 @@ class TestMonkeyPatchUtils(unittest.TestCase):
         self.assertTrue(torch.allclose(get_max_seqlen_in_batch(attn_mask), target_res))
 
         indices, cu_seqlen, max_seqlen_in_batch = get_unpad_data(attn_mask)
+        self.assertTrue(torch.allclose(indices, torch.arange(8)))
         self.assertTrue(
             torch.allclose(cu_seqlen, torch.tensor([0, 4, 8], dtype=torch.int32))
         )

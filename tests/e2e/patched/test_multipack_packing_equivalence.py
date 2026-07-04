@@ -56,5 +56,5 @@ def test_packed_forward_matches_per_document_forward():
         ).logits
 
     reference = torch.cat([ref1, ref2], dim=1)
-    # Bit-identical: each document must see only itself, so packing changes nothing.
-    assert torch.equal(packed, reference)
+    # Each document must see only itself; flash-attn isn't bit-exact across tiling shapes.
+    assert torch.allclose(packed, reference, atol=1e-2)

@@ -120,10 +120,7 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
         packed = position_ids is not None and _is_packed(position_ids)
         use_varlen = use_varlen and packed  # single-doc rows -> stock SDPA
         if not use_varlen:
-            # When the mask override is active the interface gets attention_mask=None for
-            # packed rows. If varlen is unusable here (dropout / custom scale) we must
-            # rebuild the block-diagonal mask from position_ids, otherwise stock SDPA would
-            # run pure-causal and leak attention across the packed documents.
+            # Rebuild isolation the dropped mask no longer provides, else stock SDPA leaks.
             if attention_mask is None and packed:
                 attention_mask = _block_diagonal_causal_mask(
                     position_ids, query.shape[2]
@@ -185,15 +182,12 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
 
 
 def _build_varlen_mask(original_mask: Callable) -> Callable:
-    def sdpa_varlen_mask(**kwargs: Any):
-        # Packing carries document boundaries in position_ids. When the 2D padding mask
-        # has been dropped (attention_mask is None), return None so the varlen attention
-        # wrapper takes over via cu_seqlens instead of transformers materializing an
-        # O(S^2) block-diagonal mask here — mirrors transformers' `flash_attention_mask`.
-        # With a real 2D mask present, defer to the stock sdpa mask builder.
+    def sdpa_varlen_mask(*args: Any, **kwargs: Any):
+        # None for packed (mask-dropped) rows lets the varlen wrapper own isolation via
+        # cu_seqlens, mirroring transformers' `flash_attention_mask`; else defer to stock.
         if kwargs.get("attention_mask") is None:
             return None
-        return original_mask(**kwargs)
+        return original_mask(*args, **kwargs)
 
     return sdpa_varlen_mask
 
@@ -221,15 +215,20 @@ def patch_sdpa_varlen() -> bool:
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
     original = ALL_ATTENTION_FUNCTIONS["sdpa"]
+    original_mask = ALL_MASK_ATTENTION_FUNCTIONS["sdpa"]
     wrapper = _build_varlen_forward(original)
     wrapper._axolotl_sdpa_original = original  # type: ignore[attr-defined]
-    ALL_ATTENTION_FUNCTIONS.register("sdpa", wrapper)
-    _PATCH_APPLIED = True
-
-    original_mask = ALL_MASK_ATTENTION_FUNCTIONS["sdpa"]
     mask_wrapper = _build_varlen_mask(original_mask)
     mask_wrapper._axolotl_sdpa_mask_original = original_mask  # type: ignore[attr-defined]
-    ALL_MASK_ATTENTION_FUNCTIONS.register("sdpa", mask_wrapper)
+
+    # Register both or neither, so a mid-way failure can't leave sdpa half-patched.
+    ALL_ATTENTION_FUNCTIONS.register("sdpa", wrapper)
+    try:
+        ALL_MASK_ATTENTION_FUNCTIONS.register("sdpa", mask_wrapper)
+    except Exception:
+        ALL_ATTENTION_FUNCTIONS.register("sdpa", original)
+        raise
+    _PATCH_APPLIED = True
     _MASK_PATCH_APPLIED = True
 
     LOG.info(

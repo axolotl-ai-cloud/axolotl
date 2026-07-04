@@ -1468,11 +1468,7 @@ class AxolotlInputConfig(
     @computed_field  # type: ignore[misc]
     @property
     def attn_decontaminates_packing(self) -> bool:
-        # Backends that isolate packed documents once the 2D attention mask is dropped
-        # and only position_ids remain. Varlen backends (attn_supports_packing) do it via
-        # cu_seqlens; plain sdpa/eager via the block-diagonal mask transformers builds from
-        # position_ids (find_packed_sequence_indices). Anything else cannot, and packing
-        # would silently leak attention across documents.
+        # sdpa/eager isolate packed docs via the dropped-mask block-diagonal; others can't.
         if self.attn_supports_packing:
             return True
         return self.attn_implementation in ("sdpa", "eager")
