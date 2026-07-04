@@ -63,8 +63,7 @@ def _multidoc_position_ids(position_ids):
         return None
     p = position_ids if position_ids.dim() > 1 else position_ids[None]
     if _PACKED is not None:
-        # single-doc rows under a packed config still run the varlen path
-        # (correct, marginally slower) in exchange for a compile-clean branch
+        # packed config: single-doc rows still run varlen (slower, compile-clean)
         return p if _PACKED else None
     return p if int((p == 0).sum()) > p.shape[0] else None
 

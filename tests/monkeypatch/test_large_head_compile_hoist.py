@@ -3,6 +3,11 @@
 import pytest
 import torch
 
+# Import the production helper directly so the parity tests exercise the real
+# vectorized path instead of a duplicate that could silently drift.
+from axolotl.monkeypatch.attention.flash_attn_d512 import (
+    _compute_doc_end as _doc_end_vectorized,
+)
 from axolotl.monkeypatch.attention.large_head import (
     _multidoc_position_ids,
     set_large_head_packed,
@@ -54,16 +59,6 @@ def _doc_end_loop_reference(pos: torch.Tensor) -> torch.Tensor:
             bounds[1:].repeat_interleave(bounds[1:] - bounds[:-1]).to(pos.dtype)
         )
     return doc_end
-
-
-def _doc_end_vectorized(pos: torch.Tensor) -> torch.Tensor:
-    B, N = pos.shape
-    idx = torch.arange(N, device=pos.device, dtype=pos.dtype)
-    starts_or_n = torch.where(pos == 0, idx.expand_as(pos), pos.new_full((), N))
-    shifted = torch.cat([starts_or_n[:, 1:], pos.new_full((B, 1), N)], dim=1)
-    return torch.flip(
-        torch.cummin(torch.flip(shifted, dims=[1]), dim=1).values, dims=[1]
-    )
 
 
 class TestDocEndVectorization:
