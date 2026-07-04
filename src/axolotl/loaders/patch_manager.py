@@ -206,6 +206,7 @@ class PatchManager:
 
         from axolotl.monkeypatch.attention.large_head import (
             resolve_large_head_policy,
+            set_large_head_packed,
             set_large_head_policy,
         )
         from axolotl.monkeypatch.gemma4_hybrid_mask import (
@@ -217,6 +218,7 @@ class PatchManager:
         # Gemma-4 global layers reuse the generic large-head router. Default policy 'sdpa' (flash is
         # opt-in via large_head_attention / the deprecated flash_attn_d512), preserving prior default.
         set_large_head_policy(resolve_large_head_policy(self.cfg))
+        set_large_head_packed(bool(self.cfg.sample_packing))
 
         # Navigate to the module that has 'layers' - varies by model structure:
         # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
@@ -707,6 +709,7 @@ class PatchManager:
         globals through its own impl, so skip the generic sdpa wrapper there to avoid double-wiring."""
         from axolotl.monkeypatch.attention.large_head import (
             resolve_large_head_policy,
+            set_large_head_packed,
             set_large_head_policy,
             unpatch_sdpa_large_head,
         )
@@ -715,6 +718,7 @@ class PatchManager:
         # Always (re)set the policy global from this run's config so a long-lived process can't
         # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
         set_large_head_policy(policy)
+        set_large_head_packed(bool(self.cfg.sample_packing))
         if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
             unpatch_sdpa_large_head()
             return
