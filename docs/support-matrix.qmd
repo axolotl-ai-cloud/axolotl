@@ -19,7 +19,7 @@ If you are here for what makes Axolotl fast, jump to [§5 Performance integratio
 ::: {.callout-important}
 ## Read the status markers
 "Supported" moves fast, especially for kernels and quantization. Rows are annotated:
-🟢 stable (default, unmarked) · 🟡 experimental/beta · 🚧 WIP / feature-branch only · 🔴 deprecated · ⚪ out-of-scope / not supported. Limits live on the row they affect; [§12](#maturity-roadmap) is only the cross-cutting roll-up. This page reflects the **0.17.0 development line**; 🚧 items may not be in a tagged release yet.
+🟢 stable (default, unmarked) · 🟡 experimental/beta · 🚧 WIP / feature-branch only · 🔵 planned / not yet · 🔴 deprecated · ⚪ out-of-scope / won't-fix. Limits live on the row they affect; [§12](#maturity-roadmap) is only the cross-cutting roll-up. This page reflects the **0.17.0 development line**; 🚧 items may not be in a tagged release yet.
 :::
 
 ## Training methods
@@ -107,7 +107,7 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 
 ### MoE expert kernels
 
-| Kernel | Config | GPU | Trains |
+| Kernel | Config | GPU | Scope |
 |---|---|---|---|
 | ScatterMoE | `use_kernels: true` + `use_scattermoe: true` | any CUDA (Triton) | LoRA on experts (fused into grouped GEMM); **composes with EP** |
 | SonicMoE 🚧 | `use_kernels: true` + `use_sonicmoe: true` | Hopper/Blackwell, CUDA 12.9+ | LoRA; **NVFP4 path is WIP**; ⚪ **blocked under EP** (use ScatterMoE) |
@@ -255,19 +255,50 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 
 ## Maturity & roadmap
 
-At-a-glance roll-up. Per-feature limits are annotated *inline* on the row they affect (with the same 🟡/🚧/🔴/⚪ markers); this section is only the cross-cutting view and forward roadmap.
+At-a-glance roll-up. Per-feature limits are annotated *inline* on the row they affect (with the same 🟡/🚧/🔵/🔴/⚪ markers); this section is only the cross-cutting view and forward roadmap.
 
 ### 🟡 Experimental / beta
-Works, but flagged unstable: FP8 training, Flash Attention 4, multimodal / VLM ("limited, no full feature parity"), N-D parallelism and Tensor Parallel, Expert Parallel / DeepEP.
+Works, but flagged unstable:
+
+- FP8 training
+- Flash Attention 4
+- Multimodal / VLM ("limited, no full feature parity")
+- N-D parallelism and Tensor Parallel
+- Expert Parallel / DeepEP
 
 ### 🚧 WIP / feature-branch only
-Not in a tagged release yet: **SonicMoE + NVFP4** grouped-experts training (ScatterMoE is the working path).
+Not in a tagged release yet:
+
+- **SonicMoE + NVFP4** grouped-experts training (ScatterMoE is the working path)
 
 ### 🔴 Deprecated (still works)
-`fsdp_version: 1` and bare `fsdp:` (use `fsdp_config`); legacy attention booleans (use `attn_implementation`); `rl: ipo` direct (use `dpo_loss_type: [ipo]`); `noisy_embedding_alpha`, `dpo_beta`, `evaluation_strategy`. Removed: `s2_attention`, `flash_attn_rms_norm`.
+
+- `fsdp_version: 1` and bare `fsdp:` — use `fsdp_config`
+- Legacy attention booleans — use `attn_implementation`
+- `rl: ipo` direct — use `dpo_loss_type: [ipo]`
+- `noisy_embedding_alpha`, `dpo_beta`, `evaluation_strategy`
+- Removed entirely: `s2_attention`, `flash_attn_rms_norm`
 
 ### 🔵 Not supported yet / planned
-**Full fine-tune of NVFP4** (fp4 base FFT — "a separate, larger effort"); **SonicMoE + Expert Parallel** (ScatterMoE + EP works today; a partial sm_120 fallback exists but is gated by the config validator); multimodal + sample packing; LoRA kernels + RLHF; EP + TP/CP; multiple DPO loss types (RPO); sample packing across multiple streaming datasets; FA4 backward on Hopper via pip.
+
+- **Full fine-tune of NVFP4** (fp4 base FFT — "a separate, larger effort")
+- **SonicMoE + Expert Parallel** (ScatterMoE + EP works today; a partial sm_120 fallback exists but is gated by the config validator)
+- Multimodal + sample packing
+- LoRA kernels + RLHF
+- EP + TP/CP
+- Multiple DPO loss types (RPO)
+- Sample packing across multiple streaming datasets
+- FA4 backward on Hopper via pip
 
 ### ⚪ Out-of-scope / won't-fix
-Cross-cutting (no single-row home): **Ascend NPU** feature parity — attention, optimizers, and quantization are all unsupported there. Everything else that is out-of-scope is marked on its own row above: GGUF / K-quant training ([§11.1](#precision-x-trainable-params)), FA2/FA3 pre-Ampere ([attention](#attention-backends)), BitNet + LoRA ([models](#model-architectures)), CPU-only + activation offload ([throughput](#throughput-memory)), FP8 + DDP + `torch.compile` ([§11.3](#incompatible)), SonicMoE under EP ([§5](#moe-expert-kernels)).
+
+- **Ascend NPU** feature parity — attention, optimizers, and quantization are all unsupported there (cross-cutting, no single-row home)
+
+Everything else out-of-scope is marked on its own row above:
+
+- GGUF / K-quant training — [§11.1](#precision-x-trainable-params)
+- FA2 / FA3 pre-Ampere (Turing) — [attention backends](#attention-backends)
+- BitNet + LoRA — [model architectures](#model-architectures)
+- CPU-only + activation offloading — [throughput / memory](#throughput-memory)
+- FP8 + DDP + `torch.compile` — [§11.3](#incompatible)
+- SonicMoE under Expert Parallel — [§5 MoE expert kernels](#moe-expert-kernels)

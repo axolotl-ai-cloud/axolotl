@@ -97,6 +97,7 @@ docs/                            # Quarto documentation site
 
 - [Getting Started](docs/getting-started.qmd) — quickstart tutorial
 - [Choosing a Method](docs/choosing_method.qmd) — SFT vs DPO vs GRPO decision guide
+- [Support Matrix](docs/support-matrix.qmd) — what Axolotl supports, feature couplings, and known gaps
 - [Config Reference](docs/config-reference.qmd) — all config options
 - [Dataset Formats](docs/dataset-formats/) — chat_template, alpaca, input_output, completion
 - [RLHF](docs/rlhf.qmd) — DPO, KTO, ORPO, GRPO, EBFT configs and dataset formats
