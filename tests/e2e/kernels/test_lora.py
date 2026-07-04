@@ -585,3 +585,133 @@ def test_inplace_operations(sample_tensors, apply_function):
     out2 = apply_function(mlp, X.clone(), inplace=False)
 
     assert torch.allclose(out1, out2, rtol=1e-3)
+
+
+class ViewOutputFunction(torch.autograd.Function):
+    """Returns a view created inside the Function, like liger RMSNorm does."""
+
+    @staticmethod
+    def forward(ctx, x):
+        flat = x.reshape(-1, x.shape[-1])
+        return (flat * 1.0).view(x.shape)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output
+
+
+def _qkv_params(hidden, rank):
+    torch.manual_seed(42)
+    weights = [
+        torch.randn(hidden, hidden, device="cuda", dtype=torch.float16) * 0.02
+        for _ in range(3)
+    ]
+    adapters = [
+        (
+            torch.randn(
+                rank, hidden, device="cuda", dtype=torch.float16, requires_grad=True
+            ),
+            torch.randn(
+                hidden, rank, device="cuda", dtype=torch.float16, requires_grad=True
+            ),
+        )
+        for _ in range(3)
+    ]
+    return weights, adapters
+
+
+def test_backward_does_not_mutate_saved_activation():
+    """Input gradient must not be written into the saved activation buffer."""
+    hidden, rank = 64, 8
+    (q_w, k_w, v_w), ((q_a, q_b), (k_a, k_b), (v_a, v_b)) = _qkv_params(hidden, rank)
+    X = torch.randn(
+        2, 3, hidden, device="cuda", dtype=torch.float16, requires_grad=True
+    )
+
+    h = ViewOutputFunction.apply(X)
+    h_before = h.detach().clone()
+    q, k, v = LoRA_QKV.apply(
+        h,
+        None,
+        q_w,
+        None,
+        None,
+        q_a,
+        q_b,
+        1.0,
+        None,
+        None,
+        k_w,
+        None,
+        None,
+        k_a,
+        k_b,
+        1.0,
+        None,
+        None,
+        v_w,
+        None,
+        None,
+        v_a,
+        v_b,
+        1.0,
+        None,
+        None,
+        True,
+    )
+    (q.float().sum() + k.float().sum() + v.float().sum()).backward()
+
+    assert torch.equal(h.detach(), h_before)
+
+
+def test_qkv_compile_traceable_with_view_input():
+    """LoRA_QKV must trace under fullgraph compile when its input is a custom-Function view."""
+    hidden, rank = 64, 8
+    (q_w, k_w, v_w), ((q_a, q_b), (k_a, k_b), (v_a, v_b)) = _qkv_params(hidden, rank)
+    X = torch.randn(
+        2, 3, hidden, device="cuda", dtype=torch.float16, requires_grad=True
+    )
+
+    def fn(x):
+        h = ViewOutputFunction.apply(x)
+        return LoRA_QKV.apply(
+            h,
+            None,
+            q_w,
+            None,
+            None,
+            q_a,
+            q_b,
+            1.0,
+            None,
+            None,
+            k_w,
+            None,
+            None,
+            k_a,
+            k_b,
+            1.0,
+            None,
+            None,
+            v_w,
+            None,
+            None,
+            v_a,
+            v_b,
+            1.0,
+            None,
+            None,
+            True,
+        )
+
+    torch._dynamo.reset()
+    suppress_prior = torch._dynamo.config.suppress_errors
+    torch._dynamo.config.suppress_errors = False
+    try:
+        q, k, v = torch.compile(fn, fullgraph=True)(X)
+        (q.float().sum() + k.float().sum() + v.float().sum()).backward()
+    finally:
+        torch._dynamo.config.suppress_errors = suppress_prior
+        torch._dynamo.reset()
+
+    assert X.grad is not None
