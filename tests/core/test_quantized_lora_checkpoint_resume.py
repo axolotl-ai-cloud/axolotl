@@ -53,3 +53,35 @@ def test_resume_state_failure_keeps_adapter_and_does_not_raise(tmp_path):
     out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
     assert out is None  # did not raise
     stub._save_fsdp2_quantized_lora_adapter.assert_called_once()
+
+
+def test_fsdp2_checkpoint_save_uses_axolotl_cfg_when_trainer_flag_unset():
+    stub = SimpleNamespace(
+        is_fsdp_enabled=False,
+        axolotl_cfg=SimpleNamespace(
+            fsdp_version=2,
+            fsdp_config={"state_dict_type": "SHARDED_STATE_DICT"},
+            fsdp=None,
+        ),
+    )
+    assert AxolotlTrainer._is_fsdp2_checkpoint_save_enabled(stub)
+
+
+def test_fsdp2_checkpoint_save_ignores_non_fsdp2_cfg():
+    stub = SimpleNamespace(
+        is_fsdp_enabled=False,
+        axolotl_cfg=SimpleNamespace(fsdp_version=1, fsdp_config={}, fsdp=None),
+    )
+    assert not AxolotlTrainer._is_fsdp2_checkpoint_save_enabled(stub)
+
+
+def test_fsdp2_quantized_param_detector_checks_dtensor_local_tensor():
+    NVFP4Tensor = type("NVFP4Tensor", (), {})
+    param = SimpleNamespace(_local_tensor=NVFP4Tensor())
+    assert AxolotlTrainer._is_fsdp2_quantized_param(param)
+
+
+def test_fsdp2_quantized_param_detector_checks_parameter_data():
+    MXTensor = type("MXTensor", (), {})
+    param = SimpleNamespace(data=MXTensor())
+    assert AxolotlTrainer._is_fsdp2_quantized_param(param)

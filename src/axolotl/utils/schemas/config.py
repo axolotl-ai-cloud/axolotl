@@ -60,7 +60,11 @@ from axolotl.utils.schemas.model import (
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
-from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
+from axolotl.utils.schemas.training import (
+    HyperparametersConfig,
+    JaggedLRConfig,
+    SelectiveCheckpointingConfig,
+)
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -604,6 +608,17 @@ class AxolotlInputConfig(
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
         },
     )
+    selective_checkpointing: SelectiveCheckpointingConfig | bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Selective activation checkpointing: within each gradient-checkpointed "
+                "layer, save the listed ops during forward instead of recomputing them "
+                "in backward. `true` saves attention (SDPA/flash-attention). Requires "
+                "gradient_checkpointing with non-reentrant checkpointing."
+            )
+        },
+    )
     activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
         Field(
             default=False,
@@ -870,9 +885,10 @@ class AxolotlInputConfig(
                 "With sample packing + attn_implementation=sdpa, route packed rows through "
                 "torch.nn.attention.varlen.varlen_attn (cu_seqlens) instead of an explicit 4D "
                 "block-diagonal mask. Skips cross-document blocks (faster + lower memory) with no "
-                "flash_attn dependency. Requires torch >= 2.10 and head_dim <= 256; non-packed rows "
-                "and larger head_dim fall back to stock SDPA. Sliding-window attention additionally "
-                "needs torch >= 2.11 (varlen_attn window_size)."
+                "flash_attn dependency. Left unset (null) it auto-enables when supported (torch >= "
+                "2.10, head_dim <= 256, no sliding window); set true/false to force. When it can't "
+                "be used, packed rows still isolate documents via the block-diagonal mask. "
+                "Sliding-window attention needs torch >= 2.11 (varlen_attn window_size)."
             )
         },
     )
@@ -1448,6 +1464,14 @@ class AxolotlInputConfig(
     @property
     def attn_supports_packing(self) -> bool:
         return self.attn_implementation in ATTN_IMPLS_SUPPORTING_PACKING
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_decontaminates_packing(self) -> bool:
+        # sdpa/eager isolate packed docs via the dropped-mask block-diagonal; others can't.
+        if self.attn_supports_packing:
+            return True
+        return self.attn_implementation in ("sdpa", "eager")
 
     @computed_field  # type: ignore[misc]
     @property

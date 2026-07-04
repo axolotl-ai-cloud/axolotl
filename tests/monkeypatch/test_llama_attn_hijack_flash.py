@@ -50,6 +50,20 @@ class TestMonkeyPatchUtils(unittest.TestCase):
         target_res = torch.tensor([4, 3, 5, 2], dtype=torch.int32)
         self.assertTrue(torch.allclose(get_max_seqlen_in_batch(attn_mask), target_res))
 
+    def test_get_max_seqlen_in_batch_adjacent_rows_same_id(self):
+        # Rows whose first/last segment ids match across the row boundary must not
+        # be merged into a single segment (each row is a fresh pack).
+        attn_mask = torch.tensor([[1, 1, 1, 1], [1, 1, 1, 1]])
+        target_res = torch.tensor([4, 4], dtype=torch.int32)
+        self.assertTrue(torch.allclose(get_max_seqlen_in_batch(attn_mask), target_res))
+
+        indices, cu_seqlen, max_seqlen_in_batch = get_unpad_data(attn_mask)
+        self.assertTrue(torch.allclose(indices, torch.arange(8)))
+        self.assertTrue(
+            torch.allclose(cu_seqlen, torch.tensor([0, 4, 8], dtype=torch.int32))
+        )
+        self.assertEqual(max_seqlen_in_batch, 4)
+
     def test_get_unpad_data(self):
         attn_mask = torch.tensor([[1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 0, 0]])
         target_indices = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])

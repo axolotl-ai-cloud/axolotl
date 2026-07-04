@@ -51,6 +51,60 @@ parallelism.
 `activation_offloading: true` can still be faster because adapter activations are smaller and pure offload
 avoids the recompute cost.
 
+### Selective Activation Checkpointing (SAC)
+
+```yaml
+gradient_checkpointing: true
+selective_checkpointing: true
+```
+
+Plain gradient checkpointing recomputes every op in a decoder layer during backward. Selective
+checkpointing keeps the recompute for cheap ops but *saves* the outputs of expensive ones — by
+default the attention op — so backward skips re-running them. At long context, attention dominates
+the recompute cost, so this recovers most of the checkpointing slowdown for one extra
+hidden-state-sized tensor per layer.
+
+This runs eagerly (no `torch.compile`) via torch's selective-checkpoint policy API. Ops are matched
+at the dispatcher level: SDPA and flash-attention are matched out of the box, and custom kernels
+that are not registered as torch ops are simply recomputed as usual — nothing breaks.
+
+The explicit form lets you save additional ops, matched as substrings of the qualified op name:
+
+```yaml
+selective_checkpointing:
+  save:
+    - attention
+    - aten::mm        # example: also save all matmuls
+```
+
+For hybrid models mixing full attention and sliding-window attention (SWA), only full-attention
+calls are saved by default — SWA is cheap to recompute and not worth the memory. Hybrid layers are
+detected two ways: the flash-attention window arguments, and the model's `layer_types` (published
+per-layer via hooks, which also covers SDPA where the window lives inside the attention mask).
+Set `selective_checkpointing.save_sliding_window: true` to save SWA calls too, or override which
+layer types recompute with `selective_checkpointing.recompute_layer_types` (default
+`[sliding_attention, chunked_attention]`; linear-attention layers never dispatch a matchable
+attention op, so they need no entry).
+
+To offload the saved tensors to pinned CPU memory instead of keeping them on GPU — asynchronous
+side-stream copies during forward, prefetched back one region ahead during backward — set:
+
+```yaml
+selective_checkpointing:
+  save: [attention]
+  offload: true
+```
+
+This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
+traffic, and stacks with `activation_offloading: hidden_states`.
+
+Requires non-reentrant checkpointing (the default). Composes with
+`activation_offloading: hidden_states`: layer inputs go to CPU while attention outputs are saved
+(on GPU, or on CPU with `offload: true`). It is incompatible with the TRL-offloader modes
+(`true`/`legacy`/`disk`), which replace gradient checkpointing instead of running inside it.
+Saving matmul ops (e.g. `aten::mm`) is rejected for LoRA/QLoRA runs: PEFT mutates the base linear
+output in-place, which invalidates cached tensors.
+
 ### Enabling Layer Offloading
 
 ```yaml
