@@ -10,9 +10,18 @@ When PyTorch exposes ``torch.nn.attention.varlen.varlen_attn`` (>= 2.10) and the
 head_dim is within Flash-Attention's limit (<= 256), we can instead run the
 attention as variable-length with ``cu_seqlens`` derived from ``position_ids``,
 which skips the cross-document blocks entirely — faster and lower memory — with
-no dependency on the ``flash_attn`` package. This is opt-in via ``sdpa_varlen:
-true`` and only activates for genuinely multi-document (packed) rows; everything
-else falls back to the stock SDPA implementation.
+no dependency on the ``flash_attn`` package. It only activates for genuinely
+multi-document (packed) rows; everything else falls back to the stock SDPA
+implementation. Auto-enabled for ``sdpa`` + ``sample_packing`` when the kernel
+can serve the model (see ``PatchManager._apply_sdpa_varlen_patch``); ``sdpa_varlen``
+overrides the choice.
+
+To make varlen actually engage during training (``use_cache=False``), patching
+also overrides the ``sdpa`` mask builder to return ``None`` for packed rows whose
+2D padding mask has been dropped. Otherwise transformers materializes a 4D
+block-diagonal mask from ``position_ids`` and hands it to the attention interface,
+which would keep the stock O(S^2) SDPA path (and, before the padding mask was
+dropped for sdpa packing, silently leak across documents on padded rows).
 """
 
 from __future__ import annotations
@@ -24,6 +33,7 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 _PATCH_APPLIED = False
+_MASK_PATCH_APPLIED = False
 # head_dim limit of the Flash-Attention kernel backing varlen_attn.
 _VARLEN_MAX_HEAD_DIM = 256
 
@@ -34,6 +44,26 @@ def varlen_available() -> bool:
     except ImportError:
         return False
     return True
+
+
+def _is_packed(position_ids) -> bool:
+    """More document starts (position resets to 0) than rows -> packed."""
+    pid = position_ids if position_ids.dim() > 1 else position_ids[None]
+    return int((pid == 0).sum()) > pid.shape[0]
+
+
+def _block_diagonal_causal_mask(position_ids, seq_len: int):
+    """Bool (B, 1, S, S) block-diagonal causal mask (True = attend) built from
+    per-document-resetting position_ids. Used only on the non-varlen fallback so
+    stock SDPA still isolates documents when the 2D padding mask has been dropped."""
+    import torch
+
+    pid = position_ids if position_ids.dim() > 1 else position_ids[None]
+    doc = (pid == 0).cumsum(-1)  # document id per token
+    same_doc = doc[:, :, None] == doc[:, None, :]
+    idx = torch.arange(seq_len, device=pid.device)
+    causal = idx[:, None] >= idx[None, :]
+    return (same_doc & causal[None])[:, None]
 
 
 def _build_varlen_forward(original_sdpa: Callable) -> Callable:
@@ -87,11 +117,14 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             and position_ids is not None
             and standard_scale
         )
-        if use_varlen:
-            pid = position_ids if position_ids.dim() > 1 else position_ids[None]
-            # genuine packing only (more document starts than rows); single-doc -> stock SDPA.
-            use_varlen = int((pid == 0).sum()) > pid.shape[0]
+        packed = position_ids is not None and _is_packed(position_ids)
+        use_varlen = use_varlen and packed  # single-doc rows -> stock SDPA
         if not use_varlen:
+            # Rebuild isolation the dropped mask no longer provides, else stock SDPA leaks.
+            if attention_mask is None and packed:
+                attention_mask = _block_diagonal_causal_mask(
+                    position_ids, query.shape[2]
+                )
             return original_sdpa(
                 module,
                 query,
@@ -117,6 +150,7 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             n = Hq // Hkv
             key = key.repeat_interleave(n, dim=1)
             value = value.repeat_interleave(n, dim=1)
+        pid = position_ids if position_ids.dim() > 1 else position_ids[None]
         (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(pid)
         qf = query.transpose(1, 2).reshape(B * S, Hq, D)
         kf = key.transpose(1, 2).reshape(B * S, Hq, D)
@@ -147,9 +181,28 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
     return sdpa_varlen_forward
 
 
+def _build_varlen_mask(original_mask: Callable) -> Callable:
+    def sdpa_varlen_mask(*args: Any, **kwargs: Any):
+        # None for packed (mask-dropped) rows lets the varlen wrapper own isolation via
+        # cu_seqlens, mirroring transformers' `flash_attention_mask`; else defer to stock.
+        if kwargs.get("attention_mask") is None:
+            return None
+        return original_mask(*args, **kwargs)
+
+    return sdpa_varlen_mask
+
+
 def patch_sdpa_varlen() -> bool:
-    """Replace the registered ``sdpa`` attention with a varlen-aware wrapper (idempotent)."""
-    global _PATCH_APPLIED
+    """Replace the registered ``sdpa`` attention with a varlen-aware wrapper (idempotent).
+
+    Also overrides the ``sdpa`` mask builder to return ``None`` for packed rows whose
+    padding mask was dropped, so the varlen wrapper actually engages during training
+    (``use_cache=False``) instead of transformers building a 4D block-diagonal mask that
+    would otherwise force the stock O(S^2) SDPA path. Only call this for models the varlen
+    path can serve (head_dim <= 256, no sliding window); other cases keep stock SDPA which
+    decontaminates via the dropped-mask block-diagonal path.
+    """
+    global _PATCH_APPLIED, _MASK_PATCH_APPLIED
     if _PATCH_APPLIED:
         return True
     if not varlen_available():
@@ -158,13 +211,26 @@ def patch_sdpa_varlen() -> bool:
             "leaving stock SDPA in place."
         )
         return False
+    from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
     original = ALL_ATTENTION_FUNCTIONS["sdpa"]
+    original_mask = ALL_MASK_ATTENTION_FUNCTIONS["sdpa"]
     wrapper = _build_varlen_forward(original)
     wrapper._axolotl_sdpa_original = original  # type: ignore[attr-defined]
+    mask_wrapper = _build_varlen_mask(original_mask)
+    mask_wrapper._axolotl_sdpa_mask_original = original_mask  # type: ignore[attr-defined]
+
+    # Register both or neither, so a mid-way failure can't leave sdpa half-patched.
     ALL_ATTENTION_FUNCTIONS.register("sdpa", wrapper)
+    try:
+        ALL_MASK_ATTENTION_FUNCTIONS.register("sdpa", mask_wrapper)
+    except Exception:
+        ALL_ATTENTION_FUNCTIONS.register("sdpa", original)
+        raise
     _PATCH_APPLIED = True
+    _MASK_PATCH_APPLIED = True
+
     LOG.info(
         "sdpa_varlen: patched 'sdpa' to use cu_seqlens varlen_attn for packed rows "
         "(head_dim <= %d), falling back to stock SDPA otherwise",
@@ -174,13 +240,20 @@ def patch_sdpa_varlen() -> bool:
 
 
 def unpatch_sdpa_varlen() -> None:
-    global _PATCH_APPLIED
-    if not _PATCH_APPLIED:
-        return
+    global _PATCH_APPLIED, _MASK_PATCH_APPLIED
+    from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-    current = ALL_ATTENTION_FUNCTIONS["sdpa"]
-    original = getattr(current, "_axolotl_sdpa_original", None)
-    if original is not None:
-        ALL_ATTENTION_FUNCTIONS.register("sdpa", original)
-    _PATCH_APPLIED = False
+    if _PATCH_APPLIED:
+        current = ALL_ATTENTION_FUNCTIONS["sdpa"]
+        original = getattr(current, "_axolotl_sdpa_original", None)
+        if original is not None:
+            ALL_ATTENTION_FUNCTIONS.register("sdpa", original)
+        _PATCH_APPLIED = False
+
+    if _MASK_PATCH_APPLIED:
+        current_mask = ALL_MASK_ATTENTION_FUNCTIONS["sdpa"]
+        original_mask = getattr(current_mask, "_axolotl_sdpa_mask_original", None)
+        if original_mask is not None:
+            ALL_MASK_ATTENTION_FUNCTIONS.register("sdpa", original_mask)
+        _MASK_PATCH_APPLIED = False

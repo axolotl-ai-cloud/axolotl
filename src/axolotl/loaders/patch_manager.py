@@ -727,10 +727,57 @@ class PatchManager:
         patch_sdpa_large_head(policy)
 
     def _apply_sdpa_varlen_patch(self):
-        """Route packed-row SDPA through cu_seqlens varlen_attn when ``sdpa_varlen`` is set."""
-        if not self.cfg.sdpa_varlen:
+        """Route packed-row SDPA through cu_seqlens ``varlen_attn`` (no 4D mask).
+
+        Auto-enabled for ``sdpa`` + ``sample_packing`` when the varlen kernel can serve
+        the model (torch >= 2.10, head_dim <= 256, no sliding window). Opt in/out
+        explicitly with ``sdpa_varlen``. When varlen is unavailable/unsuitable, stock SDPA
+        stays and packing is still isolated via the dropped-mask block-diagonal path.
+        """
+        # False -> explicit opt-out; True -> explicit opt-in; None -> auto for sdpa packing.
+        if self.cfg.sdpa_varlen is False:
             return
-        from axolotl.monkeypatch.attention.sdpa_varlen import patch_sdpa_varlen
+        explicit = self.cfg.sdpa_varlen is True
+        auto = (
+            self.cfg.sdpa_varlen is None
+            and self.cfg.attn_implementation == "sdpa"
+            and self.cfg.sample_packing
+        )
+        if not (explicit or auto):
+            return
+
+        from axolotl.monkeypatch.attention.sdpa_varlen import (
+            _VARLEN_MAX_HEAD_DIM,
+            patch_sdpa_varlen,
+            varlen_available,
+        )
+
+        if not varlen_available():
+            return  # torch < 2.10; block-diagonal packing path is correct
+
+        def _attr(name):
+            mc = self.model_config
+            return mc.get(name) if isinstance(mc, dict) else getattr(mc, name, None)
+
+        head_dim = _attr("head_dim")
+        if not head_dim and _attr("hidden_size") and _attr("num_attention_heads"):
+            head_dim = _attr("hidden_size") // _attr("num_attention_heads")
+        sliding = _attr("sliding_window")
+        layer_types = _attr("layer_types")
+        uses_sliding = bool(sliding) and (
+            any(lt == "sliding_attention" for lt in layer_types)
+            if layer_types
+            else True
+        )
+
+        if (head_dim and head_dim > _VARLEN_MAX_HEAD_DIM) or uses_sliding:
+            if explicit:
+                LOG.info(
+                    "sdpa_varlen: model has head_dim > %d or a sliding window; keeping "
+                    "stock SDPA (packing still isolated via the block-diagonal mask).",
+                    _VARLEN_MAX_HEAD_DIM,
+                )
+            return
 
         patch_sdpa_varlen()
 
