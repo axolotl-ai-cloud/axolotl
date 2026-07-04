@@ -200,11 +200,12 @@ def _patch_use_gqa_head_dim_guard() -> bool:
     if getattr(original, "_axolotl_head_dim_guarded", False):
         return True
 
-    def use_gqa_in_sdpa_guarded(attention_mask, key):
+    # *args/**kwargs: transformers 5.13 adds a `value` positional arg
+    def use_gqa_in_sdpa_guarded(attention_mask, key, *args, **kwargs):
         # head_dim > 256 -> enable_gqa drops to the MATH backend; force repeat_kv (efficient) instead.
         if key.shape[-1] > 256:
             return False
-        return original(attention_mask, key)
+        return original(attention_mask, key, *args, **kwargs)
 
     use_gqa_in_sdpa_guarded._axolotl_head_dim_guarded = True  # type: ignore[attr-defined]
     use_gqa_in_sdpa_guarded._axolotl_original = original  # type: ignore[attr-defined]
