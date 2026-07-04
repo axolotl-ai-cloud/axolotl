@@ -8,15 +8,15 @@ real ``bitsandbytes.nn.Linear4bit`` experts.
 """
 
 import copy
-from types import SimpleNamespace
 
 import pytest
 import torch
 import torch.nn.functional as F
+from pydantic import ValidationError
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
-from axolotl.integrations.expert_offload import ExpertOffloadArgs, ExpertOffloadPlugin
+from axolotl.integrations.expert_offload import ExpertOffloadArgs
 from axolotl.integrations.expert_offload.offload import (
     _PLACEHOLDERS,
     _base_layer,
@@ -112,14 +112,18 @@ def _reset_offload_globals():
 # --------------------------------------------------------------------------- #
 # Args + config validation                                                    #
 # --------------------------------------------------------------------------- #
-class TestArgs:
-    def test_defaults(self):
-        a = ExpertOffloadArgs()
-        assert a.expert_offload is False
-        assert a.expert_offload_pin_memory is True
+class MergedConfig(ExpertOffloadArgs):
+    """Mimics ``integrations/config.py::merge_input_args``, which folds plugin args into the full
+    config by inheritance — so the schema validator sees base-config fields via ``self``."""
 
-    def test_enabled(self):
-        assert ExpertOffloadArgs(expert_offload=True).expert_offload is True
+    load_in_4bit: bool = False
+    adapter: str | None = None
+    gradient_checkpointing: bool | str = False
+    gradient_checkpointing_kwargs: dict | None = None
+    fsdp: list | None = None
+    fsdp_config: dict | None = None
+    deepspeed: str | dict | None = None
+    expert_parallel_size: int = 1
 
 
 def _cfg(**overrides):
@@ -129,24 +133,28 @@ def _cfg(**overrides):
         adapter="qlora",
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        fsdp_config=None,
-        fsdp=None,
-        deepspeed=None,
-        expert_parallel_size=1,
     )
     base.update(overrides)
-    return SimpleNamespace(**base)
+    return MergedConfig(**base)
+
+
+class TestArgs:
+    def test_defaults(self):
+        a = ExpertOffloadArgs()
+        assert a.expert_offload is False
+        assert a.expert_offload_pin_memory is True
+
+    def test_enabled(self):
+        assert _cfg().expert_offload is True
 
 
 class TestValidation:
     def test_valid_config_passes(self):
-        ExpertOffloadPlugin._validate(_cfg())  # must not raise
+        _cfg()  # must not raise
 
     def test_disabled_skips_validation(self):
-        # pre_model_load must be a no-op when the feature is off, even with an otherwise bad config.
-        ExpertOffloadPlugin().pre_model_load(
-            _cfg(expert_offload=False, load_in_4bit=False)
-        )
+        # The validator must be a no-op when the feature is off, even with an otherwise bad config.
+        MergedConfig(expert_offload=False, load_in_4bit=False)
 
     @pytest.mark.parametrize(
         "override, needle",
@@ -159,6 +167,9 @@ class TestValidation:
                 dict(gradient_checkpointing_kwargs={"use_reentrant": True}),
                 "use_reentrant",
             ),
+            # omitted kwargs must fail too: normalize_config later defaults them to
+            # {"use_reentrant": True}, after this validator has already run.
+            (dict(gradient_checkpointing_kwargs=None), "use_reentrant"),
             (dict(fsdp_config={"x": 1}), "FSDP"),
             (dict(fsdp=["full_shard"]), "FSDP"),
             (dict(deepspeed="ds.json"), "DeepSpeed"),
@@ -166,13 +177,11 @@ class TestValidation:
         ],
     )
     def test_invalid_configs_raise(self, override, needle):
-        with pytest.raises(ValueError, match=needle):
-            ExpertOffloadPlugin._validate(_cfg(**override))
+        with pytest.raises(ValidationError, match=needle):
+            _cfg(**override)
 
     def test_lora_with_4bit_is_accepted(self):
-        ExpertOffloadPlugin._validate(
-            _cfg(adapter="lora")
-        )  # lora + load_in_4bit is fine
+        _cfg(adapter="lora")  # lora + load_in_4bit is fine
 
 
 # --------------------------------------------------------------------------- #
@@ -206,6 +215,13 @@ class TestDiscovery:
             [nn.Linear(8, 8), nn.Linear(8, 8)]
         )  # not 4bit
         assert find_moe_expert_blocks(model) == []
+
+    def test_install_raises_when_no_offloadable_blocks(self):
+        # expert_offload was explicitly enabled; a layout with nothing to offload is a
+        # misconfiguration and must fail loudly, not proceed without the VRAM reduction.
+        model = nn.Sequential(nn.Linear(8, 8), nn.Linear(8, 8))
+        with pytest.raises(RuntimeError, match="no 4-bit MoE expert blocks"):
+            install_expert_offload(model, device="cpu", pin=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -296,7 +312,7 @@ class TestRecompute:
 class TestCudaLinear4bit:
     @staticmethod
     def _build(d=512, n_experts=16, n_layers=4):
-        import bitsandbytes as bnb
+        bnb = pytest.importorskip("bitsandbytes")
 
         class Block(nn.Module):
             def __init__(self):
