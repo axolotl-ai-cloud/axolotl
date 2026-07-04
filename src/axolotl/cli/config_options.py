@@ -2537,6 +2537,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "FSDP version",
     ),
     (
+        ("--fsdp-expert-cpu-offload/--no-fsdp-expert-cpu-offload",),
+        None,
+        None,
+        "Offload only MoE expert blocks to CPU under FSDP2, keeping attention and the rest of the model resident on GPU. Trades PCIe bandwidth for VRAM on sparse-MoE models. Requires fsdp_version: 2 and is mutually exclusive with a global fsdp_config.offload_params (which already offloads everything). Only fused-experts MoE blocks (3D gate_up_proj/down_proj, e.g. the scattermoe path) are detected.",
+    ),
+    (
         ("--fp32-norms/--no-fp32-norms",),
         None,
         None,

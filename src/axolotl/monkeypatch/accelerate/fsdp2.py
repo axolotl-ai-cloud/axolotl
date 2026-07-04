@@ -177,6 +177,12 @@ def fsdp2_load_full_state_dict(
     meta_sharded_sd = model.state_dict()
     sharded_sd = {}
 
+    # Params belonging to blocks wrapped with a selective CPUOffloadPolicy
+    # (fsdp_expert_cpu_offload) must land on CPU even when the global offload flag is off.
+    expert_offload_names = (
+        getattr(model, "_axolotl_expert_offload_param_names", None) or set()
+    )
+
     for param_name, sharded_meta_param in meta_sharded_sd.items():
         # Pure-EP: the EP-sharded experts are excluded from the FSDP wrap (ignored_params), so they
         # stay PLAIN per-rank meta params here. shard_expert_weights already scattered each rank's
@@ -328,7 +334,7 @@ def fsdp2_load_full_state_dict(
                 )
             dist.broadcast(sharded_param, src=0)
 
-        if offload_to_cpu:
+        if offload_to_cpu or param_name in expert_offload_names:
             sharded_param = sharded_param.cpu()
 
         sharded_sd[param_name] = nn.Parameter(sharded_param)
@@ -536,6 +542,65 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     return log_bias_dtype_mismatch
 
 
+def _detect_moe_blocks(model):
+    """Yield (name, module) for each MoE block (the parent of a fused-experts module).
+
+    FSDP2's H2D unshard fires on the module whose forward is actually called. The
+    scattermoe fused forward reads the expert params directly instead of calling
+    ``experts.forward()``, so the offload unit must be the enclosing block (the decoder
+    layer calls ``block(...)``), not the experts submodule itself. Only fused-experts
+    modules (3D gate_up_proj/down_proj) are matched; ModuleList-style experts are not.
+    """
+    from axolotl.integrations.expert_parallel.shard import _detect_experts_modules
+
+    seen: set[int] = set()
+    for name, _experts in _detect_experts_modules(model):
+        if "." not in name:
+            continue
+        parent_name = name.rsplit(".", 1)[0]
+        block = model.get_submodule(parent_name)
+        if id(block) in seen:
+            continue
+        seen.add(id(block))
+        yield parent_name, block
+
+
+def shard_moe_experts_cpu_offload(model, fully_shard_kwargs=None, pin_memory=True):
+    """Pre-wrap each fused-experts MoE block as its own FSDP2 unit with a CPUOffloadPolicy.
+
+    Only the experts (plus the small router / shared expert sharing the block) live on
+    CPU; attention and the rest of the model stay resident on GPU. Inherits the outer
+    wrap's mesh/mp/reshard policy and only swaps the offload policy. Must be called BEFORE
+    the outer auto-wrap so the layer walker skips these already-wrapped blocks.
+
+    Returns ``(num_blocks, offloaded_param_names)`` where ``offloaded_param_names`` are the
+    ``state_dict`` keys of the offloaded shards, captured by parameter identity (robust to
+    any checkpoint-wrapper name infix) so the ``cpu_ram_efficient_loading`` state-dict load
+    — which otherwise honors a single global offload flag — places them on CPU too.
+    """
+    from torch.distributed.fsdp import CPUOffloadPolicy, FSDPModule, fully_shard
+
+    kwargs = dict(fully_shard_kwargs or {})
+    kwargs.pop("ignored_params", None)
+    kwargs["offload_policy"] = CPUOffloadPolicy(pin_memory=pin_memory)
+
+    blocks = [
+        block
+        for _bname, block in _detect_moe_blocks(model)
+        if not isinstance(block, FSDPModule)
+    ]
+    for block in blocks:
+        fully_shard(block, **kwargs)
+    if not blocks:
+        return 0, set()
+
+    offload_ids = {id(p) for block in blocks for p in block.parameters()}
+    names = {
+        k for k, v in model.state_dict(keep_vars=True).items() if id(v) in offload_ids
+    }
+    return len(blocks), names
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -710,6 +775,30 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             LOG.info(
                 f"expert_parallel (pure EP): excluded {len(ep_ignored)} EP-sharded expert "
                 "param(s) from the FSDP wrap (kept as plain per-rank slices)."
+            )
+
+    # Skip when EP already shards the experts or a global CPUOffloadPolicy offloads everything.
+    if (
+        getattr(model, "_axolotl_fsdp_expert_cpu_offload", False)
+        and _ep_shard_axis is None
+        and not offload_to_cpu
+    ):
+        n_blocks, offload_names = shard_moe_experts_cpu_offload(
+            model,
+            fully_shard_kwargs=fsdp2_kwargs,
+            pin_memory=os.environ.get("FSDP_CPU_OFFLOAD_PIN_MEMORY", "").lower()
+            != "false",
+        )
+        if n_blocks:
+            model._axolotl_expert_offload_param_names = offload_names
+            LOG.info(
+                f"fsdp_expert_cpu_offload: CPU-offloaded {n_blocks} MoE block(s); "
+                "attention and other params remain resident on GPU."
+            )
+        else:
+            LOG.warning(
+                "fsdp_expert_cpu_offload is set but no fused-experts MoE blocks were "
+                "detected; nothing was offloaded."
             )
 
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)

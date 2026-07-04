@@ -1052,6 +1052,19 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "FSDP version"},
     )
+    fsdp_expert_cpu_offload: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Offload only MoE expert blocks to CPU under FSDP2, keeping "
+                "attention and the rest of the model resident on GPU. Trades PCIe "
+                "bandwidth for VRAM on sparse-MoE models. Requires fsdp_version: 2 "
+                "and is mutually exclusive with a global fsdp_config.offload_params "
+                "(which already offloads everything). Only fused-experts MoE blocks "
+                "(3D gate_up_proj/down_proj, e.g. the scattermoe path) are detected."
+            )
+        },
+    )
     fp32_norms: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1619,6 +1632,29 @@ class AxolotlInputConfig(
                 "fp32_norm_classes is set but fp32_norms is not enabled; "
                 "it will be ignored."
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_fsdp_expert_cpu_offload(self):
+        if self.fsdp_expert_cpu_offload:
+            # fsdp_config is the canonical "is_fsdp" signal in the rest of axolotl;
+            # fsdp_version alone does not enable FSDP.
+            if self.fsdp_config is None:
+                raise ValueError(
+                    "fsdp_expert_cpu_offload requires FSDP to be enabled "
+                    "(fsdp_config block must be set)."
+                )
+            if str(self.fsdp_version) != "2":
+                raise ValueError(
+                    "fsdp_expert_cpu_offload requires fsdp_version: 2 "
+                    "(per-module offload policies are an FSDP2-only capability)."
+                )
+            if self.fsdp_config.offload_params:
+                raise ValueError(
+                    "fsdp_expert_cpu_offload is redundant with "
+                    "fsdp_config.offload_params, which already offloads ALL "
+                    "parameters to CPU. Use one or the other."
+                )
         return self
 
     @model_validator(mode="after")

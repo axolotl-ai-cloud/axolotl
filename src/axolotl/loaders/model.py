@@ -199,6 +199,9 @@ class ModelLoader:
         if self.cfg.fp32_norms:
             tag_model_fp32_norms(self.model, self.cfg)
 
+        if self.cfg.fsdp_expert_cpu_offload:
+            self.model._axolotl_fsdp_expert_cpu_offload = True
+
         return self.model, lora_config
 
     def _apply_pre_model_load_setup(self):

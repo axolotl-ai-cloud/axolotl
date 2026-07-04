@@ -131,6 +131,37 @@ fsdp_config:
 
 When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the minimum parameter count a module must have to be wrapped (e.g. `100000000`).
 
+### Selective MoE expert CPU offload (FSDP2) {#sec-fsdp-expert-cpu-offload}
+
+For sparse Mixture-of-Experts models, the routed experts dominate the parameter
+count while being touched less per step than attention. `fsdp_expert_cpu_offload`
+offloads **only** the MoE expert blocks to CPU under FSDP2, keeping attention and
+the rest of the model resident on GPU — trading PCIe bandwidth for VRAM where it
+pays off most. This is unlike `fsdp_config.offload_params`, which offloads *every*
+parameter.
+
+```{.yaml}
+fsdp_version: 2
+fsdp_expert_cpu_offload: true
+fsdp_config:
+  version: 2
+  offload_params: false            # global offload must be off
+  cpu_offload_pin_memory: true     # keeps the H2D copy async so it can overlap
+```
+
+Each expert block is wrapped as its own FSDP2 unit with a `CPUOffloadPolicy`.
+FSDP2 prefetches the block's host-to-device copy one layer ahead, so with pinned
+memory it overlaps the preceding attention compute; how completely it hides
+depends on the expert size vs. sequence length (longer sequences hide it better).
+
+Requirements and scope:
+
+- Requires `fsdp_version: 2` (per-module offload policies are FSDP2-only).
+- Mutually exclusive with `fsdp_config.offload_params` (which already offloads everything).
+- Only fused-experts MoE blocks (3D `gate_up_proj`/`down_proj`, e.g. the ScatterMoE
+  path) are detected; `ModuleList`-style experts (e.g. stock Mixtral) are not.
+- Not applied when expert parallelism is already sharding the experts.
+
 ### FSDP1 (deprecated) {#sec-fsdp-config}
 
 ::: {.callout-note}
