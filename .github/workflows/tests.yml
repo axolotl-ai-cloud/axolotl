@@ -10,6 +10,7 @@ on:
       - "pyproject.toml"
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
+      - "cicd/cicd_cuda_kernels.sh"
       - "cicd/Dockerfile-uv.jinja"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -18,6 +19,7 @@ on:
       - "pyproject.toml"
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
+      - "cicd/cicd_cuda_kernels.sh"
       - "cicd/Dockerfile-uv.jinja"
   workflow_dispatch:
 
@@ -46,7 +48,9 @@ jobs:
           cache: "pip" # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
         env:
-          SKIP: no-commit-to-branch
+          # check-cli-config-options needs an installed axolotl; the dedicated
+          # tests.yml step covers it in CI
+          SKIP: no-commit-to-branch,check-cli-config-options
 
   prime-cdn-s3-cache:
     name: Prefetch S3 once to prime the CDN cache
@@ -69,16 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.9.1", "2.10.0", "2.11.0", "2.12.0"]
-        exclude:
-          - python_version: "3.14"
-            pytorch_version: "2.9.1"
-          - python_version: "3.14"
-            pytorch_version: "2.10.0"
-          - python_version: "3.12"
-            pytorch_version: "2.11.0"
-          - python_version: "3.12"
-            pytorch_version: "2.12.0"
+        pytorch_version: ["2.11.0", "2.12.0"]
     timeout-minutes: 30
 
     steps:
@@ -127,6 +122,11 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Check generated CLI config options
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        run: |
+          axolotl generate-cli-config-options --check
+
       - name: Pre-Download dataset fixture
         run: |
           hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
@@ -141,7 +141,15 @@ jobs:
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 \
+            --ignore=tests/integrations/kernels/ \
+            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+            --ignore=tests/integrations/test_gemma4_moe.py \
+            --ignore=tests/integrations/test_scattermoe_lora.py \
+            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
@@ -164,16 +172,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.9.1", "2.10.0", "2.11.0", "2.12.0"]
-        exclude:
-          - python_version: "3.14"
-            pytorch_version: "2.9.1"
-          - python_version: "3.14"
-            pytorch_version: "2.10.0"
-          - python_version: "3.12"
-            pytorch_version: "2.11.0"
-          - python_version: "3.12"
-            pytorch_version: "2.12.0"
+        pytorch_version: ["2.11.0", "2.12.0"]
     timeout-minutes: 30
 
     steps:
@@ -224,6 +223,11 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Check generated CLI config options
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        run: |
+          axolotl generate-cli-config-options --check
+
       - name: Verify agent docs are discoverable
         run: |
           # Agent docs live in docs/agents/ (source of truth) and are resolved
@@ -244,7 +248,15 @@ jobs:
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 \
+            --ignore=tests/integrations/kernels/ \
+            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+            --ignore=tests/integrations/test_gemma4_moe.py \
+            --ignore=tests/integrations/test_scattermoe_lora.py \
+            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
@@ -286,7 +298,7 @@ jobs:
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
-    needs: [pre-commit, pytest]
+    needs: [pre-commit, pytest, gate-skip-e2e]
 
     strategy:
       fail-fast: false
@@ -341,12 +353,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.10.0
-            num_gpus: 1
-            axolotl_extras:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
@@ -381,20 +387,73 @@ jobs:
         run: |
           modal run -m cicd.e2e_tests
 
+  docker-e2e-kernel-tests:
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      needs.gate-skip-e2e.outputs.skip != 'true'
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 90
+    needs: [pre-commit, pytest, gate-skip-e2e, docker-e2e-tests-1st]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.11.0
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.0
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          modal run -m cicd.e2e_cuda_kernels
+
   docker-e2e-cleanup:
     runs-on: [self-hosted, modal]
     timeout-minutes: 90
-    needs: [docker-e2e-tests]
+    needs: [docker-e2e-tests, docker-e2e-kernel-tests]
     if: ${{ !github.event.pull_request.draft }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.0
             num_gpus: 1
             axolotl_extras:
     steps:

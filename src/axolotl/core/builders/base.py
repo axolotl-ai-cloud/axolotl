@@ -341,6 +341,21 @@ class TrainerBuilderBase(abc.ABC):
                 _, device_mesh = build_parallelism_config(self.cfg)
                 if device_mesh is not None:
                     optimizer_kwargs["device_mesh"] = device_mesh
+            elif self.cfg.optimizer == "sinkgd":
+                _, device_mesh = build_parallelism_config(self.cfg)
+
+                if device_mesh is not None:
+                    from axolotl.utils.optimizers.sinkgd import (
+                        DistSinkGDOptimizerFactory,
+                    )
+
+                    optimizer_cls = DistSinkGDOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                else:
+                    from axolotl.utils.optimizers.sinkgd import SinkGDOptimizerFactory
+
+                    optimizer_cls = SinkGDOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
@@ -556,12 +571,13 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.layer_offloading:
             training_args_kwargs["layer_offloading"] = True
         if self.cfg.activation_offloading == "hidden_states":
-            # The checkpoint monkeypatch offloads the per-layer input, so HF
-            # checkpointing stays on and must be reentrant for the patch to apply.
             training_args_kwargs["gradient_checkpointing"] = True
             gc_kwargs = dict(self.cfg.gradient_checkpointing_kwargs or {})
-            gc_kwargs["use_reentrant"] = True
             training_args_kwargs["gradient_checkpointing_kwargs"] = gc_kwargs
+            if gc_kwargs["use_reentrant"] is False:
+                training_args_kwargs["activation_offloading"] = (
+                    self.cfg.activation_offloading
+                )
         elif self.cfg.activation_offloading:
             # TRL offloader replaces HF recompute (re-added for full finetune in the
             # model loader), so disable HF checkpointing and pass the mode through.

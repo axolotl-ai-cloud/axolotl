@@ -31,71 +31,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.9.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.12"
-            pytorch: 2.9.1
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.10.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.12"
-            pytorch: 2.10.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
-#          - cuda: "129"
-#            cuda_version: 12.9.1
-#            cudnn_version: ""
-#            python_version: "3.12"
-#            pytorch: 2.9.1
-#            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-#            dockerfile: "Dockerfile-uv-base"
-#            platforms: "linux/amd64,linux/arm64"
-          - cuda: "130"
-            cuda_version: 13.0.0
-            cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.9.1
-            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
-          # py3.12-cu130-2.9.1 base is unused downstream (no app/test build pulls it)
-#          - cuda: "130"
-#            cuda_version: 13.0.0
-#            cudnn_version: ""
-#            python_version: "3.12"
-#            pytorch: 2.9.1
-#            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
-#            dockerfile: "Dockerfile-uv-base"
-#            platforms: "linux/amd64,linux/arm64"
-          - cuda: "130"
-            cuda_version: 13.0.0
-            cudnn_version: ""
-            python_version: "3.12"
-            pytorch: 2.10.0
-            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
@@ -109,6 +44,23 @@ jobs:
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.12.0
+            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.12.1
+            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "132"
+            cuda_version: 13.2.1
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.12.1
+            torch_index_url: "https://download.pytorch.org/whl/cu132"
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -146,6 +98,8 @@ jobs:
             CUDA_VERSION=${{ matrix.cuda_version }}
             CUDNN_VERSION=${{ matrix.cudnn_version }}
             CUDA=${{ matrix.cuda }}
+            TORCH_BACKEND=${{ matrix.torch_backend || format('cu{0}', matrix.cuda) }}
+            TORCH_INDEX_URL=${{ matrix.torch_index_url }}
             PYTHON_VERSION=${{ matrix.python_version }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
             TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}

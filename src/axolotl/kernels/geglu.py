@@ -9,6 +9,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 
 @triton.jit
 def _geglu_fwd_kernel(
@@ -42,6 +44,7 @@ def _geglu_fwd_kernel(
     tl.store(out_ptr + offsets, result, mask=mask)
 
 
+@register_kernel_op("geglu_fwd")
 def geglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """GEGLU forward pass.
 
@@ -122,6 +125,32 @@ def _geglu_bwd_kernel(
     tl.store(up_ptr + offsets, grad_up, mask=mask)
 
 
+@geglu_forward.register_fake
+def _(gate, up):
+    return torch.empty_like(gate)
+
+
+@register_kernel_op("geglu_bwd", mutates_args=("grad_output", "gate", "up"))
+def _geglu_bwd_op(
+    grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
+) -> None:
+    n_elements = grad_output.numel()
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # noqa: E731
+    _geglu_bwd_kernel[grid](
+        grad_out_ptr=grad_output,
+        gate_ptr=gate,
+        up_ptr=up,
+        n_elements=n_elements,
+        BLOCK_SIZE=1024,
+    )
+
+
+@_geglu_bwd_op.register_fake
+def _(grad_output, gate, up):
+    return None
+
+
 def geglu_backward(
     grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -141,15 +170,6 @@ def geglu_backward(
     Note:
         This function modifies its input tensors in-place to store results.
     """
-    n_elements = grad_output.numel()
-
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # noqa: E731
-    _geglu_bwd_kernel[grid](
-        grad_out_ptr=grad_output,
-        gate_ptr=gate,
-        up_ptr=up,
-        n_elements=n_elements,
-        BLOCK_SIZE=1024,
-    )
-
+    # op mutates in place; return the aliases here — op outputs must not alias inputs
+    _geglu_bwd_op(grad_output, gate, up)
     return grad_output, gate, up

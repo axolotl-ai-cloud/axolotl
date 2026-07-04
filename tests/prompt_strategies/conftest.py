@@ -105,7 +105,7 @@ def fixture_toolcalling_dataset():
     )
 
 
-@pytest.fixture(name="llama3_tokenizer", scope="session", autouse=True)
+@pytest.fixture(name="llama3_tokenizer", scope="session")
 @enable_hf_offline
 def fixture_llama3_tokenizer(
     download_llama3_8b_instruct_model_fixture,
@@ -115,14 +115,14 @@ def fixture_llama3_tokenizer(
     return tokenizer
 
 
-@pytest.fixture(name="smollm2_tokenizer", scope="session", autouse=True)
+@pytest.fixture(name="smollm2_tokenizer", scope="session")
 @enable_hf_offline
 def fixture_smollm2_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M")
     return tokenizer
 
 
-@pytest.fixture(name="mistralv03_tokenizer", scope="session", autouse=True)
+@pytest.fixture(name="mistralv03_tokenizer", scope="session")
 @enable_hf_offline
 def fixture_mistralv03_tokenizer(
     download_mlx_mistral_7b_model_fixture,
@@ -133,21 +133,21 @@ def fixture_mistralv03_tokenizer(
     return tokenizer
 
 
-@pytest.fixture(name="phi35_tokenizer", scope="session", autouse=True)
+@pytest.fixture(name="phi35_tokenizer", scope="session")
 @enable_hf_offline
 def fixture_phi35_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3.5-mini-instruct")
     return tokenizer
 
 
-@pytest.fixture(name="phi4_tokenizer", scope="session", autouse=True)
+@pytest.fixture(name="phi4_tokenizer", scope="session")
 @enable_hf_offline
 def fixture_phi4_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-4-reasoning")
     return tokenizer
 
 
-@pytest.fixture(name="gemma2_tokenizer", scope="session", autouse=True)
+@pytest.fixture(name="gemma2_tokenizer", scope="session")
 def fixture_gemma2_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("mlx-community/gemma-2-9b-it-4bit")
 

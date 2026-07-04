@@ -90,7 +90,7 @@ Features:
 
 - NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
 - Python >=3.11 (3.12 recommended)
-- PyTorch ≥2.9.1
+- PyTorch ≥2.11.0
 
 ### Google Colab
 
@@ -103,13 +103,13 @@ Features:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # change depending on system
-export UV_TORCH_BACKEND=cu128
+export UV_TORCH_BACKEND=cu130
 
 # create a new virtual environment
 uv venv --python 3.12
 source .venv/bin/activate
 
-uv pip install torch==2.10.0 torchvision
+uv pip install torch==2.12.0 torchvision
 uv pip install --no-build-isolation axolotl[deepspeed]
 
 # Download example axolotl configs, deepspeed configs

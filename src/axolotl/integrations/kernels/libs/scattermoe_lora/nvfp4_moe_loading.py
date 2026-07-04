@@ -62,6 +62,219 @@ def _shard_open(repo_id: str, shard: str):
     return safe_open(_resolve_repo_file(repo_id, shard), framework="pt")
 
 
+def _safetensors_metadata(repo_id: str) -> dict[str, tuple[str, tuple[int, ...]]]:
+    """Return ``{tensor_name: (dtype_str, shape)}`` for every checkpoint tensor, read from the
+    safetensors *headers* only (no weight download). Works for a hub repo or a local snapshot dir.
+    """
+    if os.path.isdir(repo_id):
+        from safetensors import safe_open
+
+        out: dict[str, tuple[str, tuple[int, ...]]] = {}
+        index = os.path.join(repo_id, "model.safetensors.index.json")
+        if os.path.exists(index):
+            shards = sorted(set(_load_index(repo_id).values()))
+        else:  # single-file checkpoint
+            shards = ["model.safetensors"]
+        for shard in shards:
+            with safe_open(os.path.join(repo_id, shard), framework="pt") as f:
+                for name in f.keys():
+                    sl = f.get_slice(name)
+                    out[name] = (sl.get_dtype(), tuple(sl.get_shape()))
+        return out
+
+    from huggingface_hub import HfApi
+
+    meta = HfApi().get_safetensors_metadata(repo_id)
+    out = {}
+    for fmeta in meta.files_metadata.values():
+        for name, tinfo in fmeta.tensors.items():
+            out[name] = (str(tinfo.dtype), tuple(tinfo.shape))
+    return out
+
+
+# Known per-module leaf names across NVFP4 export conventions. The packed 4-bit weight is the
+# robust NVFP4 signal (uint8 qdata) — distinguishing NVFP4 from FP8 (which also carries a
+# ``weight_scale`` but stores an fp8 weight, not uint8). Names differ by exporter:
+#   modelopt          : weight        / weight_scale / weight_scale_2
+#   compressed-tensors: weight_packed / weight_scale / weight_global_scale
+_QDATA_LEAVES = ("weight", "weight_packed")
+_GROUP_SCALE_LEAVES = ("weight_scale",)
+_PER_TENSOR_LEAVES = ("weight_scale_2", "weight_global_scale")
+_ALL_LEAVES = (
+    "weight_scale_2",
+    "weight_global_scale",
+    "weight_scale",
+    "weight_packed",
+    "weight",
+    "input_scale",
+    "input_global_scale",
+)
+
+
+def inspect_nvfp4_layout(repo_id: str) -> dict:
+    """Detect a checkpoint's NVFP4 layout from its safetensors headers — no layout assumptions.
+
+    A module is treated as **NVFP4** only when it has a *packed* 4-bit weight (uint8 qdata, under
+    ``weight`` or ``weight_packed``) plus a group ``weight_scale`` — this distinguishes NVFP4 from
+    FP8 modules (which also carry a ``weight_scale`` but store an fp8, not uint8, weight) so a mixed
+    NVFP4+FP8 checkpoint is classified correctly. The NVFP4 modules are split into:
+      * ``routed_projs``  — proj names under ``...experts.<int>.<proj>`` (fused into 3D expert params),
+      * ``nonrouted_suffixes`` — layer-relative paths of every other NVFP4 linear THIS checkpoint
+        quantizes (shared experts, dense MLPs, ...),
+    plus the detected key ``naming`` (``modelopt`` vs ``compressed-tensors`` vs ``mixed``) so the
+    caller can tell whether its converters (which assume modelopt ``weight``/``weight_scale_2``)
+    apply. Everything is derived from the headers; differing exports are described, not assumed.
+    """
+    import re
+
+    meta = _safetensors_metadata(repo_id)
+    bases: dict[str, dict[str, tuple[str, tuple[int, ...]]]] = {}
+    for name, dt_shape in meta.items():
+        for leaf in _ALL_LEAVES:
+            if name.endswith("." + leaf):
+                bases.setdefault(name[: -len(leaf) - 1], {})[leaf] = dt_shape
+                break
+
+    def _qdata(parts):
+        for leaf in _QDATA_LEAVES:
+            if leaf in parts and parts[leaf][0] == "U8":
+                return leaf
+        return None
+
+    routed_re = re.compile(r"\.experts\.\d+\.([A-Za-z_][A-Za-z0-9_]*)$")
+    layer_re = re.compile(r"^.*?layers\.\d+\.")
+    routed_projs: list[str] = []
+    routed_sample: dict[str, tuple | None] = {}
+    nonrouted: dict[str, dict] = {}
+    qdata_names: set[str] = set()
+    per_tensor_names: set[str] = set()
+    for base, parts in bases.items():
+        qd = _qdata(parts)
+        is_nvfp4 = qd is not None and any(g in parts for g in _GROUP_SCALE_LEAVES)
+        if not is_nvfp4:  # bf16 (excluded) or fp8 module — not NVFP4
+            continue
+        qdata_names.add(qd)
+        for leaf in _PER_TENSOR_LEAVES:
+            if leaf in parts:
+                per_tensor_names.add(leaf)
+        m = routed_re.search(base)
+        if m:
+            proj = m.group(1)
+            if proj not in routed_projs:
+                routed_projs.append(proj)
+                routed_sample[proj] = parts.get(qd)
+        else:
+            nonrouted.setdefault(layer_re.sub("", base), parts)
+
+    modelopt = qdata_names <= {"weight"} and per_tensor_names <= {"weight_scale_2"}
+    ct = qdata_names <= {"weight_packed"} and per_tensor_names <= {
+        "weight_global_scale"
+    }
+    naming = (
+        "modelopt" if modelopt else ("compressed-tensors" if ct else "mixed/unknown")
+    )
+
+    return {
+        "routed_present": bool(routed_projs),
+        "routed_projs": sorted(routed_projs),
+        "routed_sample_shapes": routed_sample,
+        "nonrouted_suffixes": sorted(nonrouted),
+        "nonrouted_sample_shapes": nonrouted,
+        "qdata_names": sorted(qdata_names),
+        "per_tensor_names": sorted(per_tensor_names),
+        "naming": naming,
+    }
+
+
+def fuse_nvfp4_experts(projs: list[dict], *, block_size: int = 16, dtype=None):
+    """Shared NVFP4-expert fusion core (one implementation for every load path).
+
+    ``projs`` is the ordered list of projections to fuse on the N (row) axis — one entry for a
+    single proj (``down``), two for a fused ``gate_up`` — each a dict of per-expert lists::
+
+        {"qd": [E uint8 [N, K/2]], "sc": [E e4m3 [N, K/16]], "pts": [E f32 scalar]}
+
+    Returns a torchao ``NVFP4Tensor`` ``[E, ΣN, K/2]``. The fused tensor carries ONE per-expert
+    per-tensor scale (``pts``), so when the projections export different ``pts`` the ratio is
+    folded into the later proj's group scale (dequant = qdata · group_scale · per_tensor_scale, so
+    this is exact up to e4m3 rounding) rather than silently dropping it. Used by both the
+    ``WeightConverter`` (modelopt skeleton load) and the post-load scale-attach path so the fusion
+    + scale reconciliation live in exactly one place.
+    """
+    import torch as _torch
+
+    NVFP4Tensor = _nvfp4_cls()
+    if NVFP4Tensor is None:
+        raise RuntimeError("torchao NVFP4Tensor not available")
+    dtype = dtype or _torch.bfloat16
+
+    # cpu_ram_efficient_loading runs the converter once on META placeholders (shape inference) and
+    # again on the real tensors on rank 0. On meta the scale-reconciliation value ops (`allclose`,
+    # `.item()`) can't run, so skip them — only the OUTPUT SHAPE matters on the meta pass, and the
+    # stack/cat below produce correctly-shaped meta tensors regardless.
+    is_meta = bool(projs[0]["qd"]) and projs[0]["qd"][0].is_meta
+
+    pts0 = _torch.stack([t.to(_torch.float32) for t in projs[0]["pts"]]).view(-1, 1, 1)
+    qdatas, scales = [], []
+    for i, p in enumerate(projs):
+        qd = _torch.stack(list(p["qd"]), dim=0)  # [E, N, K/2]
+        sc = _torch.stack(list(p["sc"]), dim=0)  # [E, N, K/16]
+        if i > 0 and not is_meta:
+            pts_i = _torch.stack([t.to(_torch.float32) for t in p["pts"]]).view(
+                -1, 1, 1
+            )
+            if not _torch.allclose(pts_i, pts0):
+                sc = (sc.to(_torch.float32) * (pts_i / pts0)).to(_torch.float8_e4m3fn)
+                LOG.warning(
+                    "fuse_nvfp4_experts: proj #%d per-tensor scale differs from the first; "
+                    "folded the ratio into its group scale (max %.4g)",
+                    i,
+                    (pts_i / pts0).max().item(),
+                )
+        qdatas.append(qd)
+        scales.append(sc)
+    qdata = qdatas[0] if len(qdatas) == 1 else _torch.cat(qdatas, dim=1)
+    scale = scales[0] if len(scales) == 1 else _torch.cat(scales, dim=1)
+    return NVFP4Tensor(qdata, scale, block_size, dtype, per_tensor_scale=pts0)
+
+
+def patch_nvfp4_tensor_meta_ops() -> None:
+    """Register ``zeros_like`` / ``empty_like`` / ``new_zeros`` on torchao's NVFP4Tensor.
+
+    FSDP2's ``cpu_ram_efficient_loading`` keeps non-rank-0 params on ``meta`` and materializes the
+    receive buffers with ``zeros_like`` / ``empty_like`` before scattering rank 0's shards. torchao
+    doesn't implement those for NVFP4Tensor (only matmul / view / slice / copy), so a 4-bit expert
+    param hits 'unimplemented operator'. Each just applies the op to the packed data + scales and
+    rebuilds the tensor, preserving block_size / dtype / per-tensor scale. Idempotent."""
+    import torch as _torch
+
+    NVFP4Tensor = _nvfp4_cls()
+    if NVFP4Tensor is None or getattr(NVFP4Tensor, "_axolotl_meta_ops", False):
+        return
+    from torchao.utils import return_and_correct_aliasing
+
+    aten = _torch.ops.aten
+
+    @NVFP4Tensor.implements([aten.zeros_like.default, aten.empty_like.default])
+    def _nvfp4_like(func, types, args, kwargs):
+        # FSDP2 passes device / pin_memory / memory_format; forward them to the packed data + scale
+        # tensors. dtype/layout would break the int-packed payload, so drop them.
+        passthru = {
+            k: v
+            for k, v in kwargs.items()
+            if k in ("device", "pin_memory", "memory_format")
+        }
+        out = args[0]._apply_fn_to_data(lambda x: func(x, **passthru))
+        return return_and_correct_aliasing(func, args, kwargs, out)
+
+    @NVFP4Tensor.implements([aten.new_zeros.default])
+    def _nvfp4_new_zeros(func, types, args, kwargs):
+        out = args[0]._apply_fn_to_data(lambda x: _torch.zeros_like(x))
+        return return_and_correct_aliasing(func, args, kwargs, out)
+
+    NVFP4Tensor._axolotl_meta_ops = True
+
+
 # Per-architecture checkpoint naming for the unfused per-expert NVFP4 tensors.
 # base_fmt formats with (layer, e, proj); gate_up/down are the proj names fused
 # (gate_up = cat on the N/row axis in this order; down is single).
@@ -91,11 +304,11 @@ def _detect_scheme(wmap):
 
 
 def _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs, n_experts, device):
-    """Rebuild fused qdata + E4M3 block scale + per-tensor scale for all experts of one
-    fused projection straight from the raw checkpoint (no dependence on transformers' own
-    fusion). Fused on the N (row) axis: qdata [E, sumN, K/2] uint8, scale [E, sumN, K/16]
-    E4M3, per_tensor scalar."""
-    qd_proj, sc_proj, pts_list = [[] for _ in projs], [[] for _ in projs], []
+    """Rebuild a fused NVFP4Tensor for one expert projection group straight from the raw
+    checkpoint (no dependence on transformers' own fusion), reading every proj's per-expert qdata,
+    E4M3 block scale and per-tensor scale, then delegating the stack/concat/scale-reconcile to the
+    shared :func:`fuse_nvfp4_experts` core. Returns an ``NVFP4Tensor`` ``[E, ΣN, K/2]`` on ``device``."""
+    proj_parts = [{"qd": [], "sc": [], "pts": []} for _ in projs]
     opened: dict[str, object] = {}
     for e in range(n_experts):
         for pi, proj in enumerate(projs):
@@ -104,17 +317,12 @@ def _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs, n_experts, device
             f = opened.get(shard) or opened.setdefault(
                 shard, _shard_open(repo_id, shard)
             )
-            qd_proj[pi].append(f.get_tensor(f"{base}.weight"))
-            sc_proj[pi].append(f.get_tensor(f"{base}.weight_scale"))
-            if pi == 0:  # gate/up share weight_scale_2; one per expert
-                pts_list.append(
-                    f.get_tensor(f"{base}.weight_scale_2").to(torch.float32)
-                )
-    qdata = torch.cat([torch.stack(q, 0) for q in qd_proj], dim=1).to(device)
-    scale = torch.cat([torch.stack(s, 0) for s in sc_proj], dim=1).to(device)
-    # Per-expert weight_scale_2 stacked to [E,1,1], not expert-0's scalar broadcast to all experts.
-    pts = torch.stack(pts_list).view(-1, 1, 1).to(device)
-    return qdata, scale, pts
+            proj_parts[pi]["qd"].append(f.get_tensor(f"{base}.weight").to(device))
+            proj_parts[pi]["sc"].append(f.get_tensor(f"{base}.weight_scale").to(device))
+            proj_parts[pi]["pts"].append(
+                f.get_tensor(f"{base}.weight_scale_2").to(torch.float32).to(device)
+            )
+    return fuse_nvfp4_experts(proj_parts)
 
 
 def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
@@ -156,18 +364,14 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
         if base_fmt.format(layer=layer, e=0, proj=projs_gu[0]) + ".weight" not in wmap:
             continue
         E = gup.shape[0]
-        gqd, gscale, gpts = _build_expert_nvfp4(
-            repo_id, wmap, base_fmt, layer, projs_gu, E, gup.device
-        )
-        dqd, dscale, dpts = _build_expert_nvfp4(
-            repo_id, wmap, base_fmt, layer, projs_dn, E, dn.device
-        )
         mod.gate_up_proj = nn.Parameter(
-            NVFP4Tensor(gqd, gscale, 16, torch.bfloat16, per_tensor_scale=gpts),
+            _build_expert_nvfp4(
+                repo_id, wmap, base_fmt, layer, projs_gu, E, gup.device
+            ),
             requires_grad=False,
         )
         mod.down_proj = nn.Parameter(
-            NVFP4Tensor(dqd, dscale, 16, torch.bfloat16, per_tensor_scale=dpts),
+            _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs_dn, E, dn.device),
             requires_grad=False,
         )
         # Drop the stale FP8 scale params the quantizer created for these experts
@@ -196,6 +400,86 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
             scheme_name,
         )
     return fixed
+
+
+def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> int:
+    """FAST routed-expert load that BYPASSES transformers' conversion loader.
+
+    Transformers' loader spends ~7 min on GLM-5.2 iterating/matching ~240k per-expert source tensors
+    through its Python machinery; a DIRECT read+fuse of the same experts is ~25s (profiled). This
+    reads each MoE layer's routed-expert ``weight``(uint8)/``weight_scale``(fp8)/``weight_scale_2``
+    components straight from the safetensors (native dtype) and fuses them into the 3D NVFP4 expert
+    params, mirroring :class:`Nvfp4ExpertsDeserialize` but without the per-tensor loader overhead.
+
+    Only the LOCAL-RANK-0 process materializes (others stay meta for the FSDP broadcast). Requires the
+    routed converters to be SKIPPED at registration (so transformers leaves the fused params unfilled).
+    Returns the number of fused params filled. Safe no-op on non-rank0 / no routed experts.
+    """
+    import os
+    import re
+
+    import torch
+
+    if str(os.environ.get("LOCAL_RANK", "0")) not in ("0", ""):
+        return 0
+    if not routed_projs:
+        return 0
+    NVFP4Tensor = _nvfp4_cls()
+    if NVFP4Tensor is None:
+        return 0
+    wmap = _load_index(repo_id)
+    # per-layer expert count, from the index (no reads): count ...experts.<e>.<proj0>.weight keys.
+    proj0 = routed_projs[0]
+    layer_E: dict[int, int] = {}
+    pat = re.compile(
+        r"\.layers\.(\d+)\.mlp\.experts\.(\d+)\." + re.escape(proj0) + r"\.weight$"
+    )
+    for key in wmap:
+        m = pat.search(key)
+        if m:
+            L, e = int(m.group(1)), int(m.group(2))
+            layer_E[L] = max(layer_E.get(L, 0), e + 1)
+
+    handles: dict[str, object] = {}
+
+    def gt(key):
+        sh = wmap[key]
+        if sh not in handles:
+            handles[sh] = _shard_open(repo_id, sh)
+        return handles[sh].get_tensor(key)  # native dtype (uint8/fp8/fp32)
+
+    fused_map = (
+        ("gate_up_proj", ["gate_proj", "up_proj"]),
+        ("down_proj", ["down_proj"]),
+    )
+    n = 0
+    for mod_name, mod in model.named_modules():
+        if not (hasattr(mod, "gate_up_proj") and hasattr(mod, "down_proj")):
+            continue
+        m = re.search(r"\.layers\.(\d+)\.", "." + mod_name)
+        if m is None:
+            continue
+        L = int(m.group(1))
+        if L not in layer_E:
+            continue
+        E = layer_E[L]
+        base = f"model.layers.{L}.mlp.experts"
+        for fused, parts in fused_map:
+            sel = [p for p in parts if p in routed_projs]
+            if not sel:
+                continue
+            projs = [
+                {
+                    "qd": [gt(f"{base}.{e}.{p}.weight") for e in range(E)],
+                    "sc": [gt(f"{base}.{e}.{p}.weight_scale") for e in range(E)],
+                    "pts": [gt(f"{base}.{e}.{p}.weight_scale_2") for e in range(E)],
+                }
+                for p in sel
+            ]
+            nvfp4 = fuse_nvfp4_experts(projs)
+            setattr(mod, fused, torch.nn.Parameter(nvfp4, requires_grad=False))
+            n += 1
+    return n
 
 
 if __name__ == "__main__":  # local self-consistency test on real layer-0 data

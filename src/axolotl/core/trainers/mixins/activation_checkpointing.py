@@ -4,6 +4,7 @@ Trainer mixin for activation checkpointing w offloading
 
 import contextlib
 
+import torch
 from peft import PeftModel
 from torch import nn
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -22,6 +23,42 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _patch_trl_offload_current_stream() -> None:
+    """Make TRL ``OffloadActivations`` sync its CPU<->GPU copies against the LIVE compute stream
+    instead of the once-captured ``torch.cuda.default_stream()``.
+
+    ``OffloadActivations`` caches ``self.s0 = torch.cuda.default_stream()`` in ``__init__`` and uses
+    it for every ``s0.wait_stream(s1)`` / ``s0.wait_event`` / ``record_stream(s0)``. When the actual
+    forward/backward compute runs on a NON-default stream — FSDP2, the checkpoint recompute, or any
+    custom autograd Function whose backward launches kernels (e.g. the scattermoe NVFP4 MoE) — that
+    sync targets the wrong stream, so a streamed-in activation is read before its H2D copy finishes:
+    garbage saved tensors -> NaN/illegal-memory in the backward (silent, finite forward). Querying
+    ``current_stream()`` at each use site fixes the ordering (xpu/npu already use ``current_stream``).
+    """
+    from trl.models.activation_offloading import OffloadActivations
+
+    if getattr(OffloadActivations, "_axolotl_live_stream", False):
+        return
+
+    def _live_compute_stream(self):
+        t = getattr(self, "accelerator_type", "cuda")
+        if t == "xpu":
+            return torch.xpu.current_stream()
+        if t == "npu":
+            import torch_npu  # noqa: F401
+
+            return torch.npu.current_stream()
+        return torch.cuda.current_stream()
+
+    # property read returns the live stream; the no-op setter swallows __init__'s `self.s0 = ...`.
+    OffloadActivations.s0 = property(_live_compute_stream, lambda self, _v: None)
+    OffloadActivations._axolotl_live_stream = True
+    LOG.info(
+        "Patched TRL OffloadActivations to sync against the live compute stream "
+        "(fixes streamed activation offloading under FSDP2 / custom-Function backward)"
+    )
+
+
 class ActivationOffloadingMixin(Trainer):
     """
     Trainer mixin class for activation checkpointing w offloading
@@ -35,7 +72,19 @@ class ActivationOffloadingMixin(Trainer):
             # the stream-overlapped path (True/"disk"); the streams path stashes
             # several activations to overlap copies, inflating peak reserved.
             use_streams = self.args.activation_offloading != "legacy"
-            if isinstance(self.model, PeftModel):
+            if use_streams:
+                _patch_trl_offload_current_stream()
+            if self.args.activation_offloading == "hidden_states":
+                from axolotl.monkeypatch.checkpoint_activation_offload import (
+                    get_checkpoint_hidden_states_offloading_ctx_manager,
+                )
+
+                self.activation_offload_context = (
+                    get_checkpoint_hidden_states_offloading_ctx_manager(
+                        use_streams=use_streams
+                    )
+                )
+            elif isinstance(self.model, PeftModel):
                 self.activation_offload_context = get_lora_act_offloading_ctx_manager(
                     self.model, use_streams=use_streams
                 )

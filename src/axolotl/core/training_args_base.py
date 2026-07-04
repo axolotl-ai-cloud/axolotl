@@ -235,14 +235,14 @@ class AxolotlTrainingMixins:
         },
     )
 
-    # "hidden_states" never reaches the trainer (it's handled via the checkpoint
-    # monkeypatch in the model loader), so the trainer only sees these values.
-    activation_offloading: Literal["legacy", "disk"] | bool | None = field(
-        default=None,
-        metadata={
-            "help": "Activation offloading mode: True (stream-overlapped), "
-            "'legacy' (synchronous), 'disk', or False."
-        },
+    activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
+        field(
+            default=None,
+            metadata={
+                "help": "Activation offloading mode: True (stream-overlapped), "
+                "'legacy' (synchronous), 'disk', 'hidden_states', or False."
+            },
+        )
     )
 
     layer_offloading: bool | None = field(

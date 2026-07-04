@@ -33,3 +33,31 @@ class TestActivationOffloading:
         cfg = validate_config(cfg)
         assert cfg.gradient_checkpointing is True
         assert cfg.activation_offloading is True
+
+    def test_hidden_states_offload_defaults_to_non_reentrant(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=True,
+                activation_offloading="hidden_states",
+            )
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert cfg.gradient_checkpointing is True
+        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
+        assert cfg.activation_offloading == "hidden_states"
+
+    def test_hidden_states_offload_accepts_reentrant_alst(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": True},
+                activation_offloading="hidden_states",
+            )
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+        assert cfg.activation_offloading == "hidden_states"

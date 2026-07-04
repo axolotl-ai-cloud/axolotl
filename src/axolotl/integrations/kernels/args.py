@@ -47,6 +47,11 @@ class KernelsArgs(BaseModel):
     use_sonicmoe: bool | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
+    # GLM-5.2 (glm_moe_dsa) DSA fused attention: MLA-absorption head-batched sparse-gather attn
+    # (fwd+bwd) + fused Lightning-Indexer + length-aware dense/sparse dispatch, replacing the dense
+    # [B,S,T]-mask eager/sdpa path. The router is kept fp32. Composes with use_scattermoe (experts)
+    # and context_parallel_size (the attention shards the sequence on the cp axis).
+    use_glm_dsa_kernels: bool | None = None
     # DeepSeek-V4 FP8 non-expert weight storage: "float8tensor" (default, 1-byte torchao
     # Float8Tensor base) or "bf16" (dequantize to bf16 at load).
     dsv4_fp8_nonexpert_mode: str | None = None

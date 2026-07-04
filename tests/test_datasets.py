@@ -16,12 +16,14 @@ from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.data.sft import (
     _load_tokenized_prepared_datasets,
 )
+from axolotl.utils.data.shared import load_preprocessed_dataset
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import (
     ALPACA_MESSAGES_CONFIG_OG,
     ALPACA_MESSAGES_CONFIG_REVISION,
     SPECIAL_TOKENS,
+    alpaca_messages_dpo_rows,
 )
 from tests.hf_offline_utils import enable_hf_offline
 
@@ -47,6 +49,27 @@ class TestDatasetPreparation:
                 }
             ]
         )
+
+    def test_load_preprocessed_dataset_uses_default_prepared_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_hash = "prepared-hash"
+            prepared_path = Path(tmp_dir) / dataset_hash
+            Dataset.from_dict({"value": [1]}).save_to_disk(str(prepared_path))
+            cfg = DictDefault(
+                {
+                    "dataset_prepared_path": None,
+                    "skip_prepare_dataset": False,
+                    "is_preprocess": False,
+                }
+            )
+
+            with patch(
+                "axolotl.utils.data.shared.DEFAULT_DATASET_PREPARED_PATH", tmp_dir
+            ):
+                dataset = load_preprocessed_dataset(cfg, dataset_hash)
+
+            assert dataset is not None
+            assert dataset["value"] == [1]
 
     @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
@@ -319,7 +342,7 @@ class TestDatasetPreparation:
         tokenizer = load_tokenizer(cfg)
         train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-        assert len(train_dataset) == 1800
+        assert len(train_dataset) == 64
         assert "conversation" not in train_dataset.features
         assert "chosen" in train_dataset.features
         assert "rejected" in train_dataset.features
@@ -360,10 +383,9 @@ class TestDatasetPreparation:
             assert "labels" in dataset.features
 
     @enable_hf_offline
-    def test_load_hub_with_revision_with_dpo(
-        self, dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
-    ):
+    def test_load_hub_with_revision_with_dpo(self):
         """Verify that processing dpo data from the hub works with a specific revision"""
+        dataset = Dataset.from_list(alpaca_messages_dpo_rows())
 
         cfg = DictDefault(
             {
@@ -372,7 +394,7 @@ class TestDatasetPreparation:
                 "rl": "dpo",
                 "chat_template": "llama3",
                 "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
             }
         )
 
@@ -380,14 +402,12 @@ class TestDatasetPreparation:
             "axolotl.utils.data.rl.load_dataset_with_config"
         ) as mock_load_dataset:
             # Set up the mock to return different values on successive calls
-            mock_load_dataset.return_value = (
-                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
-            )
+            mock_load_dataset.return_value = dataset
 
             tokenizer = load_tokenizer(cfg)
             train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-            assert len(train_dataset) == 1800
+            assert len(train_dataset) == len(dataset)
             assert "conversation" not in train_dataset.features
             assert "chosen" in train_dataset.features
             assert "rejected" in train_dataset.features

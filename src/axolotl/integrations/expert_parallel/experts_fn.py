@@ -18,7 +18,57 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from .buffer import get_buffer
+from .buffer import barrier_ep, get_buffer, get_combine_config, get_dispatch_config
+
+# Per-forward [B*S] bool mask of real (non-padding) tokens, set by the EP plugin's model
+# pre-hook from the batch `attention_mask` and consumed by `_deep_ep_forward` to exclude
+# padding from the dispatch. ``None`` when there is no padding (packed / no attention_mask).
+_VALID_TOKEN_MASK: torch.Tensor | None = None
+
+# Max tokens routed to any single expert per forward (``expert_parallel_token_capacity``), set by the
+# EP plugin. ``None`` disables the cap. Overloaded experts deadlock DeepEP's intranode combine, so
+# GLM-style routers (concentration grows with depth) need this.
+_TOKEN_CAPACITY: int | None = None
+
+
+def set_token_capacity(cap: int | None) -> None:
+    global _TOKEN_CAPACITY
+    _TOKEN_CAPACITY = cap
+
+
+def _apply_expert_capacity(topk_idx, topk_w, cap):
+    """Cap tokens-per-expert to ``cap`` by sentinelling (-1) the lowest-weight excess (token,expert)
+    assignments. DeepEP's intranode combine hangs once one expert receives too many tokens (the
+    GLM router concentrates more with depth, crossing the hang threshold ~layer 31); standard MoE
+    capacity-dropping keeps every expert under the limit. Already-(-1) slots are left untouched."""
+    import torch
+
+    ntok, K = topk_idx.shape
+    flat_e = topk_idx.reshape(-1)
+    flat_w = topk_w.reshape(-1)
+    # sort assignments by (expert asc, weight desc) via two stable passes
+    o1 = torch.argsort(flat_w, descending=True, stable=True)
+    o2 = torch.argsort(flat_e[o1], stable=True)
+    order = o1[o2]
+    se = flat_e[order]
+    pos = torch.arange(se.numel(), device=se.device)
+    is_new = torch.ones_like(se, dtype=torch.bool)
+    is_new[1:] = se[1:] != se[:-1]
+    grp_start = torch.cummax(torch.where(is_new, pos, torch.zeros_like(pos)), 0).values
+    within = pos - grp_start
+    drop_sorted = (within >= cap) & (se >= 0)
+    drop = torch.zeros_like(flat_e, dtype=torch.bool)
+    drop[order] = drop_sorted
+    return topk_idx.reshape(-1).masked_fill(drop, -1).reshape(ntok, K)
+
+
+def set_valid_token_mask(mask: torch.Tensor | None) -> None:
+    global _VALID_TOKEN_MASK
+    _VALID_TOKEN_MASK = mask
+
+
+def _get_valid_token_mask() -> torch.Tensor | None:
+    return _VALID_TOKEN_MASK
 
 
 def _eager_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
@@ -134,6 +184,7 @@ class _DeepEPDispatch(torch.autograd.Function):
             num_tokens_per_expert=num_per_expert,
             topk_idx=topk_idx,
             topk_weights=topk_weights,
+            config=get_dispatch_config(),
         )
         ctx.handle = handle
         return recv_x, recv_topk_idx, recv_topk_weights, _DeepEPHandleHolder(handle)
@@ -148,10 +199,12 @@ class _DeepEPDispatch(torch.autograd.Function):
             if (grad_recv_w is not None and grad_recv_w.numel() > 0)
             else None
         )
+        barrier_ep()
         grad_x, grad_topk_w, _ = buffer.combine(
             grad_recv_x.contiguous(),
             ctx.handle,
             topk_weights=topk_w_grad,
+            config=get_combine_config(),
         )
         return grad_x, None, grad_topk_w, None, None, None
 
@@ -167,7 +220,9 @@ class _DeepEPCombine(torch.autograd.Function):
     def forward(ctx, x, handle_holder):
         buffer = get_buffer()
         ctx.handle = handle_holder.handle
-        combined, _, _ = buffer.combine(x.contiguous(), handle_holder.handle)
+        combined, _, _ = buffer.combine(
+            x.contiguous(), handle_holder.handle, config=get_combine_config()
+        )
         return combined
 
     @staticmethod
@@ -176,7 +231,7 @@ class _DeepEPCombine(torch.autograd.Function):
         # backward-of-combine is dispatch: reuse the cached handle to send
         # gradients to the ranks that produced partial outputs.
         recv_grad, _, _, _, _, _ = buffer.dispatch(
-            grad_combined.contiguous(), handle=ctx.handle
+            grad_combined.contiguous(), handle=ctx.handle, config=get_dispatch_config()
         )
         return recv_grad, None
 
@@ -212,6 +267,30 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     topk_idx_i64 = top_k_index.to(torch.int64)
     topk_w_f32 = top_k_weights.to(torch.float32)
 
+    # Cap tokens-per-expert before building the dispatch layout — an overloaded expert deadlocks
+    # DeepEP's intranode combine (the GLM router concentrates with depth).
+    if _TOKEN_CAPACITY is not None:
+        topk_idx_i64 = _apply_expert_capacity(topk_idx_i64, topk_w_f32, _TOKEN_CAPACITY)
+
+    # Drop padding tokens from the dispatch. Under non-packed training with
+    # `pad_to_sequence_len`, padding rows carry identical embeddings, so the router
+    # sends them all to the same one or two experts — a routing imbalance DeepEP's
+    # intranode dispatch can't survive ('unspecified launch failure'). Sentinelling
+    # their routing to -1 makes `get_dispatch_layout` skip them entirely (they get a
+    # zero expert output, which is correct: their loss is masked anyway). Real long
+    # sequences (packed, or a single long sample) have no padding and are unaffected.
+    valid = _get_valid_token_mask()
+    if valid is not None and valid.numel() == topk_idx_i64.shape[0]:
+        import os as _os
+
+        if _os.environ.get("AXOLOTL_EP_DEBUG"):
+            from axolotl.utils.logging import get_logger
+
+            get_logger(__name__).info(
+                f"EP padding sentinel: {int(valid.sum())}/{valid.numel()} real tokens dispatched"
+            )
+        topk_idx_i64 = topk_idx_i64.masked_fill(~valid.view(-1, 1), -1)
+
     # Layout is non-differentiable (bookkeeping only).
     with torch.no_grad():
         num_per_rank, _, num_per_expert, is_in_rank, _ = buffer.get_dispatch_layout(
@@ -233,6 +312,7 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
         self, recv_x, recv_topk_idx, recv_topk_weights
     )
 
+    barrier_ep()  # wait out the local-kernel autotune skew before the combine collective
     combined = _DeepEPCombine.apply(local_out, handle_holder)
 
     if original_dtype is not None:
