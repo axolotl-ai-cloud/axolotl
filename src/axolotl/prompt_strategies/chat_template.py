@@ -355,7 +355,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 and "eos_token" not in self.prompter.chat_template
             ):
                 LOG.warning(
-                    f"EOS token '{self.tokenizer.eos_token}' not found in chat_template. Please check if your template/EOS token is correct."
+                    f"EOS token '{self.tokenizer.eos_token}' not found in chat_template; the turn "
+                    "terminator won't be trained. Set `eot_tokens` to your template's turn-ending token."
                 )
             return
 

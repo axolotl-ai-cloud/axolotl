@@ -21,12 +21,25 @@ LOG = get_logger(__name__)
 
 _LARGE_HEAD_MIN_DIM = 256
 _POLICY = "sdpa"
+_PACKED: bool | None = None
 _SDPA_ORIG_ATTR = "_axolotl_large_head_sdpa_original"
 
 
 def set_large_head_policy(policy: str | None) -> None:
     global _POLICY
     _POLICY = str(policy).lower() if policy else "sdpa"
+
+
+def set_large_head_packed(packed: bool | None) -> None:
+    """Declare statically whether batches carry packed (multi-document) rows.
+
+    Known at config time (``sample_packing``); declaring it lets the router skip
+    the per-call GPU-sync probe in ``_multidoc_position_ids``, which is a
+    data-dependent graph break under torch.compile. ``None`` keeps the runtime
+    probe (eager-only callers).
+    """
+    global _PACKED
+    _PACKED = packed
 
 
 def get_large_head_policy() -> str:
@@ -45,10 +58,13 @@ def resolve_large_head_policy(cfg) -> str:
 
 
 def _multidoc_position_ids(position_ids):
-    """Return [B,S] position_ids iff they encode genuine (multi-document) packing, else None."""
+    """Return [B,S] position_ids iff they encode (multi-document) packing, else None."""
     if position_ids is None:
         return None
     p = position_ids if position_ids.dim() > 1 else position_ids[None]
+    if _PACKED is not None:
+        # packed config: single-doc rows still run varlen (slower, compile-clean)
+        return p if _PACKED else None
     return p if int((p == 0).sum()) > p.shape[0] else None
 
 

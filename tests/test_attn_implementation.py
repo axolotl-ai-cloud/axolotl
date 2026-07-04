@@ -124,6 +124,25 @@ class TestCapabilityTables:
         assert validated.attn_uses_flash_lib is False
         assert validated.attn_needs_dtype_cast is False
 
+    @pytest.mark.parametrize(
+        "impl,expected",
+        [
+            ("flash_attention_2", True),
+            ("flex_attention", True),
+            (
+                "sdpa",
+                True,
+            ),  # not varlen, but isolates via block-diagonal from position_ids
+            ("eager", True),
+            ("fp8", False),
+        ],
+    )
+    def test_decontaminates_packing(self, min_base_cfg, impl, expected):
+        validated = validate_config(
+            min_base_cfg | DictDefault(attn_implementation=impl)
+        )
+        assert validated.attn_decontaminates_packing is expected
+
     def test_computed_flags_not_overridable_from_yaml(self, min_base_cfg):
         """YAML attempts to override a computed field must not win."""
         cfg = min_base_cfg | DictDefault(
@@ -361,26 +380,30 @@ class TestGemma4HybridMode:
 
 
 class TestSamplePackingValidation:
-    """`sample_packing` warns for non-varlen backends; s2 raises outright."""
+    """`sample_packing` warns only for backends that can't isolate documents.
 
-    def test_eager_warns(self, min_base_cfg, caplog):
+    sdpa/eager decontaminate via the dropped-mask block-diagonal (sdpa additionally
+    through cu_seqlens varlen when available), so they must not warn.
+    """
+
+    def test_eager_does_not_warn(self, min_base_cfg, caplog):
         cfg = min_base_cfg | DictDefault(
             attn_implementation="eager", sample_packing=True
         )
         with _capture_axolotl_warnings(caplog):
             validate_config(cfg)
-        assert any(
+        assert not any(
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )
 
-    def test_sdpa_warns(self, min_base_cfg, caplog):
+    def test_sdpa_does_not_warn(self, min_base_cfg, caplog):
         cfg = min_base_cfg | DictDefault(
             attn_implementation="sdpa", sample_packing=True
         )
         with _capture_axolotl_warnings(caplog):
             validate_config(cfg)
-        assert any(
+        assert not any(
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )
@@ -392,6 +415,15 @@ class TestSamplePackingValidation:
         with _capture_axolotl_warnings(caplog):
             validate_config(cfg)
         assert not any(
+            "does not handle cross-sample decontamination" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_non_decontaminating_backend_warns(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(attn_implementation="fp8", sample_packing=True)
+        with _capture_axolotl_warnings(caplog):
+            validate_config(cfg)
+        assert any(
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )
