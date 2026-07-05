@@ -18,6 +18,8 @@ from axolotl.kernels.lora import (
 )
 from axolotl.kernels.swiglu import swiglu_backward, swiglu_forward
 
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+
 
 @pytest.fixture
 def mock_quantstate():
