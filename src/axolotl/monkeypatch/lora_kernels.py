@@ -364,10 +364,11 @@ LINEAR_ATTN_PROJS = LINEAR_ATTN_IN_PROJS + (LINEAR_ATTN_OUT_PROJ,)
 def find_linear_attn_in_layer(layer: nn.Module) -> Generator[nn.Module, None, None]:
     # Qwen3.5 / Qwen3.5-MoE hybrid layers (GatedDeltaNet). qwen3_next fuses its
     # projections (in_proj_qkvz / in_proj_ba) under different names and must not
-    # match here.
+    # match here. Require all four canonical in-projections: the fused node and the
+    # patched forward both index every one, so a partial match falls back to peft.
     if hasattr(layer, "linear_attn"):
         linear_attn = layer.linear_attn
-        if hasattr(linear_attn, LINEAR_ATTN_OUT_PROJ) and any(
+        if hasattr(linear_attn, LINEAR_ATTN_OUT_PROJ) and all(
             hasattr(linear_attn, proj) for proj in LINEAR_ATTN_IN_PROJS
         ):
             yield linear_attn
