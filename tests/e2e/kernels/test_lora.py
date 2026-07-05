@@ -9,6 +9,7 @@ from axolotl.kernels.geglu import geglu_backward, geglu_forward
 from axolotl.kernels.lora import (
     LoRA_MLP,
     LoRA_O,
+    LoRA_QK,
     LoRA_QKV,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
@@ -600,66 +601,44 @@ class ViewOutputFunction(torch.autograd.Function):
         return grad_output
 
 
-def _qkv_params(hidden, rank):
+def _fused_kernel_args(kernel, hidden, rank):
     torch.manual_seed(42)
-    weights = [
-        torch.randn(hidden, hidden, device="cuda", dtype=torch.float16) * 0.02
-        for _ in range(3)
-    ]
-    adapters = [
-        (
-            torch.randn(
-                rank, hidden, device="cuda", dtype=torch.float16, requires_grad=True
-            ),
-            torch.randn(
-                hidden, rank, device="cuda", dtype=torch.float16, requires_grad=True
-            ),
+    n_proj = {"qkv": 3, "qk": 2, "mlp": 3}[kernel]
+    args = []
+    for _ in range(n_proj):
+        weight = torch.randn(hidden, hidden, device="cuda", dtype=torch.float16) * 0.02
+        lora_a = torch.randn(
+            rank, hidden, device="cuda", dtype=torch.float16, requires_grad=True
         )
-        for _ in range(3)
-    ]
-    return weights, adapters
+        lora_b = torch.randn(
+            hidden, rank, device="cuda", dtype=torch.float16, requires_grad=True
+        )
+        args += [weight, None, None, lora_a, lora_b, 1.0, None, None]
+    return args
 
 
-def test_backward_does_not_mutate_saved_activation():
+def _apply_fused_kernel(kernel, h, proj_args):
+    if kernel == "qkv":
+        return LoRA_QKV.apply(h, None, *proj_args, True)
+    if kernel == "qk":
+        return LoRA_QK.apply(h, None, *proj_args, True)
+    return LoRA_MLP.apply(h, None, *proj_args, swiglu_forward, swiglu_backward, True)
+
+
+@pytest.mark.parametrize("kernel", ["qkv", "qk", "mlp"])
+def test_backward_does_not_mutate_saved_activation(kernel):
     """Input gradient must not be written into the saved activation buffer."""
     hidden, rank = 64, 8
-    (q_w, k_w, v_w), ((q_a, q_b), (k_a, k_b), (v_a, v_b)) = _qkv_params(hidden, rank)
+    proj_args = _fused_kernel_args(kernel, hidden, rank)
     X = torch.randn(
         2, 3, hidden, device="cuda", dtype=torch.float16, requires_grad=True
     )
 
     h = ViewOutputFunction.apply(X)
     h_before = h.detach().clone()
-    q, k, v = LoRA_QKV.apply(
-        h,
-        None,
-        q_w,
-        None,
-        None,
-        q_a,
-        q_b,
-        1.0,
-        None,
-        None,
-        k_w,
-        None,
-        None,
-        k_a,
-        k_b,
-        1.0,
-        None,
-        None,
-        v_w,
-        None,
-        None,
-        v_a,
-        v_b,
-        1.0,
-        None,
-        None,
-        True,
-    )
-    (q.float().sum() + k.float().sum() + v.float().sum()).backward()
+    out = _apply_fused_kernel(kernel, h, proj_args)
+    outputs = out if isinstance(out, tuple) else (out,)
+    sum(o.float().sum() for o in outputs).backward()
 
     assert torch.equal(h.detach(), h_before)
 
@@ -667,42 +646,14 @@ def test_backward_does_not_mutate_saved_activation():
 def test_qkv_compile_traceable_with_view_input():
     """LoRA_QKV must trace under fullgraph compile when its input is a custom-Function view."""
     hidden, rank = 64, 8
-    (q_w, k_w, v_w), ((q_a, q_b), (k_a, k_b), (v_a, v_b)) = _qkv_params(hidden, rank)
+    proj_args = _fused_kernel_args("qkv", hidden, rank)
     X = torch.randn(
         2, 3, hidden, device="cuda", dtype=torch.float16, requires_grad=True
     )
 
     def fn(x):
         h = ViewOutputFunction.apply(x)
-        return LoRA_QKV.apply(
-            h,
-            None,
-            q_w,
-            None,
-            None,
-            q_a,
-            q_b,
-            1.0,
-            None,
-            None,
-            k_w,
-            None,
-            None,
-            k_a,
-            k_b,
-            1.0,
-            None,
-            None,
-            v_w,
-            None,
-            None,
-            v_a,
-            v_b,
-            1.0,
-            None,
-            None,
-            True,
-        )
+        return LoRA_QKV.apply(h, None, *proj_args, True)
 
     torch._dynamo.reset()
     suppress_prior = torch._dynamo.config.suppress_errors

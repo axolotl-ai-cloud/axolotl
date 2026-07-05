@@ -1096,7 +1096,6 @@ class LoRA_QKV(torch.autograd.Function):
         # Initialize LoRA gradients as None
         d_A_q = d_B_q = d_A_k = d_B_k = d_A_v = d_B_v = None
 
-        # Compute LoRA gradients using X_lora
         # A_q, B_q etc. are already in compute dtype (converted in forward)
         # Key optimization: compute grad @ B once, reuse for both dA and dX_lora
         # A has shape [rank, in], B has shape [out, rank]
