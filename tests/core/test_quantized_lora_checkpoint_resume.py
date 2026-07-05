@@ -9,6 +9,8 @@ and assert the resume artifacts are written after the adapter save.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import peft
+
 from axolotl.core.trainers.base import AxolotlTrainer
 
 
@@ -85,3 +87,46 @@ def test_fsdp2_quantized_param_detector_checks_parameter_data():
     MXTensor = type("MXTensor", (), {})
     param = SimpleNamespace(data=MXTensor())
     assert AxolotlTrainer._is_fsdp2_quantized_param(param)
+
+
+def test_quantized_lora_checkpoint_uses_ep_adapter_save(monkeypatch, tmp_path):
+    class NVFP4Tensor:
+        pass
+
+    class FakePeftModel:
+        def parameters(self):
+            return [SimpleNamespace(_local_tensor=NVFP4Tensor())]
+
+    model = FakePeftModel()
+    stub = SimpleNamespace(
+        is_fsdp_enabled=True,
+        axolotl_cfg=SimpleNamespace(expert_parallel_size=2),
+        accelerator=SimpleNamespace(unwrap_model=lambda wrapped: wrapped),
+        _is_fsdp2_quantized_param=AxolotlTrainer._is_fsdp2_quantized_param,
+    )
+    # _save_fsdp2_quantized_lora_adapter gates on these helpers; bind the real
+    # implementations so the test exercises actual enablement + quant detection.
+    stub._is_fsdp2_checkpoint_save_enabled = lambda: (
+        AxolotlTrainer._is_fsdp2_checkpoint_save_enabled(stub)
+    )
+
+    monkeypatch.setattr(peft, "PeftModel", FakePeftModel)
+
+    from axolotl.integrations.expert_parallel import shard
+    from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+    resolve_ep_group = MagicMock(return_value=object())
+    save_ep_lora_adapter = MagicMock(return_value=True)
+    save_fsdp2_lora_adapter = MagicMock(return_value=True)
+    monkeypatch.setattr(ExpertParallelPlugin, "_resolve_ep_group", resolve_ep_group)
+    monkeypatch.setattr(shard, "save_ep_lora_adapter", save_ep_lora_adapter)
+    monkeypatch.setattr(shard, "save_fsdp2_lora_adapter", save_fsdp2_lora_adapter)
+
+    handled = AxolotlTrainer._save_fsdp2_quantized_lora_adapter(
+        stub, model, str(tmp_path)
+    )
+
+    assert handled is True
+    resolve_ep_group.assert_called_once_with(stub.axolotl_cfg)
+    save_ep_lora_adapter.assert_called_once()
+    save_fsdp2_lora_adapter.assert_not_called()
