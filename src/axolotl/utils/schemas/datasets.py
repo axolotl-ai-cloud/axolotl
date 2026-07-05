@@ -276,6 +276,18 @@ class PretrainingDataset(BaseModel):
             "description": "Override the image placeholder token (autodetected from processor if unset)."
         },
     )
+    skip_bad_images: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Drop rows that fail placeholder/image validation or whose images fail to load, instead of aborting the run."
+        },
+    )
+    allow_remote_images: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Permit fetching image sources with a URL scheme (http(s)/etc.). Off by default to avoid SSRF from untrusted shards."
+        },
+    )
 
 
 class MultiModalEvalDataset(PretrainingDataset):

@@ -610,3 +610,277 @@ def test_collator_mixed_batch_still_succeeds(smolvlm_processor, two_tiny_images)
     batch = collator.torch_call(rows)
     for k in ("input_ids", "attention_mask", "pixel_values", "labels"):
         assert k in batch, f"missing batch key {k}"
+
+
+# ---- padding / EOS label masking ------------------------------------------
+
+
+def test_build_labels_masks_padding_structurally_not_by_pad_id(smolvlm_processor):
+    """Padding is masked via attention_mask, not by pad-token-id value.
+
+    Regression for the pad_token_id == eos_token_id case (and for a processor
+    that pads with a different id than self.tokenizer): a real, attended EOS
+    that shares the pad id must survive as a label; only the unattended pad
+    positions are masked.
+    """
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+    )
+    eos_id = smolvlm_processor.tokenizer.eos_token_id
+    # index 2 is the real end-of-sequence token (attended); indices 3-4 are
+    # padding that happens to reuse the same id (pad == eos).
+    input_ids = torch.tensor([[10, 11, eos_id, eos_id, eos_id]])
+    attention_mask = torch.tensor([[1, 1, 1, 0, 0]])
+    labels = collator._build_labels(
+        {"input_ids": input_ids, "attention_mask": attention_mask}
+    )
+    assert labels[0, 2].item() == eos_id, "real EOS was masked out of labels"
+    assert labels[0, 3].item() == -100
+    assert labels[0, 4].item() == -100
+
+
+def test_collator_all_text_preserves_real_eos_when_pad_equals_eos(
+    smolvlm_processor, monkeypatch
+):
+    """End-to-end all-text batch with pad_token == eos_token keeps the real EOS.
+
+    Axolotl falls back to `pad_token = eos_token` for tokenizers without a pad
+    token (see loaders/tokenizer.py). Masking padding by value would delete the
+    trailing EOS the collator appends, leaving CPT with no stop supervision.
+    """
+    tok = smolvlm_processor.tokenizer
+    monkeypatch.setattr(tok, "pad_token", tok.eos_token)
+    assert tok.pad_token_id == tok.eos_token_id
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=tok, processor=smolvlm_processor, image_token_spec=spec
+    )
+    rows = [
+        {"_mm_text": "short", "images": []},
+        {
+            "_mm_text": "a considerably longer row that forces the first to pad",
+            "images": [],
+        },
+    ]
+    batch = collator.torch_call(rows)
+    labels, attn, ids = batch["labels"], batch["attention_mask"], batch["input_ids"]
+    eos_id = tok.eos_token_id
+    # Every unattended (padding) position is masked...
+    assert int((labels[attn == 0] != -100).sum().item()) == 0
+    # ...and the real, attended EOS survives as a training target.
+    real_eos = (attn == 1) & (ids == eos_id)
+    assert int(real_eos.sum().item()) >= 1, "expected a real EOS token in the batch"
+    assert int((labels[real_eos] != eos_id).sum().item()) == 0, (
+        "real EOS was masked out of labels (pad==eos value-masking regression)"
+    )
+
+
+# ---- encoder EOS / bad-row handling ---------------------------------------
+
+
+class _FakeEncTok:
+    """Minimal tokenizer stub for encoder EOS-handling tests."""
+
+    def __init__(self, eos_id, already_appends=False):
+        self.eos_token_id = eos_id
+        self._already = already_appends
+
+    def __call__(self, text, add_special_tokens=True):
+        ids = [5, 6, 7]
+        if self._already and self.eos_token_id is not None:
+            ids = ids + [self.eos_token_id]
+        return {"input_ids": ids, "attention_mask": [1] * len(ids)}
+
+
+def test_encode_no_none_when_tokenizer_lacks_eos():
+    """A tokenizer with eos_token_id=None must not append a None id (L1)."""
+    out = encode_streaming_multimodal(
+        {"text": ["hello"], "images": [[]]},
+        tokenizer=_FakeEncTok(eos_id=None),
+        max_tokens=64,
+        image_token="<image>",
+        image_token_id=999,
+    )
+    ids = out["input_ids"][0]
+    assert None not in ids
+    assert ids == [5, 6, 7]
+    assert len(out["attention_mask"][0]) == len(ids)
+
+
+def test_encode_no_double_eos_when_tokenizer_appends_eos():
+    """When the tokenizer already appends EOS, the encoder must not add another (M2)."""
+    out = encode_streaming_multimodal(
+        {"text": ["hello"], "images": [[]]},
+        tokenizer=_FakeEncTok(eos_id=9, already_appends=True),
+        max_tokens=64,
+        image_token="<image>",
+        image_token_id=999,
+    )
+    ids = out["input_ids"][0]
+    assert ids == [5, 6, 7, 9]
+    assert ids.count(9) == 1
+
+
+def test_encode_skip_bad_rows_drops_mismatch_and_oversize(smolvlm_processor):
+    """skip_bad_rows warns-and-drops malformed rows instead of aborting the map (#4)."""
+    spec = build_image_token_spec(smolvlm_processor)
+    good = f"{spec.image_token}\ngood"
+    examples = {
+        "text": [
+            good,
+            f"{spec.image_token}{spec.image_token}\ntwo placeholders one image",
+            "word " * 5000,
+        ],
+        "images": [["a.png"], ["b.png"], []],
+    }
+    out = encode_streaming_multimodal(
+        examples,
+        tokenizer=smolvlm_processor.tokenizer,
+        max_tokens=128,
+        image_token=spec.image_token,
+        image_token_id=spec.image_token_id,
+        skip_bad_rows=True,
+    )
+    assert out["_mm_text"] == [good]
+    assert out["images"] == [["a.png"]]
+
+
+def test_encode_bad_row_still_raises_by_default(smolvlm_processor):
+    """Default (skip_bad_rows=False) keeps the loud-failure contract."""
+    spec = build_image_token_spec(smolvlm_processor)
+    examples = {
+        "text": [f"{spec.image_token}{spec.image_token}\nmismatch"],
+        "images": [["a.png"]],
+    }
+    with pytest.raises(ValueError, match="occurrence"):
+        encode_streaming_multimodal(
+            examples,
+            tokenizer=smolvlm_processor.tokenizer,
+            max_tokens=128,
+            image_token=spec.image_token,
+            image_token_id=spec.image_token_id,
+        )
+
+
+# ---- image-family masking of structural tokens (#2) -----------------------
+
+
+def test_spec_family_includes_structural_image_tokens(smolvlm_processor):
+    """SmolVLM tile/grid/global markers join the family set (were leaking)."""
+    spec = build_image_token_spec(smolvlm_processor)
+    tok = smolvlm_processor.tokenizer
+    for surface in ("<fake_token_around_image>", "<global-img>", "<row_1_col_1>"):
+        tid = tok.convert_tokens_to_ids(surface)
+        assert tid is not None and tid != tok.unk_token_id, surface
+        assert tid in spec.image_family_token_ids, f"{surface} not masked"
+    # bos/eos are never swept into the family.
+    assert tok.eos_token_id not in spec.image_family_token_ids
+
+
+def test_collator_masks_structural_image_tokens(smolvlm_processor, two_tiny_images):
+    """No structural image token survives as a valid label after collation."""
+    spec = build_image_token_spec(smolvlm_processor)
+    tok = smolvlm_processor.tokenizer
+    struct_ids = [
+        tok.convert_tokens_to_ids(t)
+        for t in ("<fake_token_around_image>", "<global-img>", "<row_1_col_1>")
+    ]
+    encoded = encode_streaming_multimodal(
+        {"text": [f"{spec.image_token}\nrow"], "images": [[str(two_tiny_images[0])]]},
+        tokenizer=tok,
+        max_tokens=4096,
+        image_token=spec.image_token,
+        image_token_id=spec.image_token_id,
+    )
+    rows = [
+        {
+            k: encoded[k][0]
+            for k in ("input_ids", "labels", "attention_mask", "images", "_mm_text")
+        }
+    ]
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=tok, processor=smolvlm_processor, image_token_spec=spec
+    )
+    batch = collator.torch_call(rows)
+    for tid in struct_ids:
+        assert int((batch["labels"] == tid).sum().item()) == 0, (
+            f"structural image id {tid} leaked into labels"
+        )
+
+
+# ---- remote-URL / path-traversal image rejection (#3 / M1) -----------------
+
+
+def test_collator_rejects_remote_image_source(smolvlm_processor):
+    """A URL-scheme image source is rejected (SSRF guard) — never fetched."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+    )
+    with pytest.raises(RuntimeError, match="remote image source"):
+        collator._load_images_for_row(
+            ["http://169.254.169.254/latest/meta-data/"], row_index=0
+        )
+
+
+def test_collator_remote_skipped_with_skip_bad_images(smolvlm_processor):
+    """skip_bad_images drops a remote source instead of raising."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+        skip_bad_images=True,
+    )
+    assert collator._load_images_for_row(["https://evil.example/x.png"], 0) == []
+
+
+def test_collator_allows_remote_when_opted_in(smolvlm_processor):
+    """allow_remote_images=True stops the scheme short-circuit (fetch still up to load_image)."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+        allow_remote_images=True,
+    )
+    assert collator._reject_remote("http://example.com/x.png") is None
+
+
+def test_collator_rejects_path_traversal(smolvlm_processor, tmp_path):
+    """A relative path escaping image_base_dir is rejected with a clear message."""
+    spec = build_image_token_spec(smolvlm_processor)
+    base = tmp_path / "imgs"
+    base.mkdir()
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+        image_base_dir=str(base),
+    )
+    with pytest.raises(RuntimeError, match="escapes image_base_dir"):
+        collator._load_images_for_row(["../../../../etc/passwd"], row_index=0)
+
+
+def test_collator_double_eos_guard_respects_add_eos_token(
+    smolvlm_processor, monkeypatch
+):
+    """With tokenizer.add_eos_token=True the collator must not append its own EOS (M2).
+
+    SmolVLM honors add_eos_token, so the tokenizer already emits exactly one
+    EOS. Without the guard the collator would append the EOS string on top,
+    yielding a doubled `<eos><eos>` tail (count == 2).
+    """
+    spec = build_image_token_spec(smolvlm_processor)
+    tok = smolvlm_processor.tokenizer
+    monkeypatch.setattr(tok, "add_eos_token", True, raising=False)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=tok, processor=smolvlm_processor, image_token_spec=spec
+    )
+    batch = collator.torch_call([{"_mm_text": "no eos please", "images": []}])
+    assert int((batch["input_ids"] == tok.eos_token_id).sum().item()) == 1

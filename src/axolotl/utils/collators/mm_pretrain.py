@@ -33,6 +33,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
     pad_to_multiple_of: Optional[int] = None
     max_length: Optional[int] = None
     skip_bad_images: bool = False
+    allow_remote_images: bool = False
     add_eos_token: bool = True
 
     _image_family_token_ids: set[int] = field(init=False, default_factory=set)
@@ -58,21 +59,55 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
 
     def _resolve_image_source(self, src: Any) -> Any:
         # Only join base_dir for relative string paths; pass everything else
-        # (PIL images, URLs, base64, absolute paths) through to load_image.
+        # (PIL images, base64, absolute paths) through to load_image.
         if (
             self.image_base_dir
             and isinstance(src, str)
             and not os.path.isabs(src)
             and "://" not in src
         ):
-            return os.path.join(self.image_base_dir, src)
+            joined = os.path.join(self.image_base_dir, src)
+            # Reject relative paths that escape image_base_dir (e.g. `../../etc`).
+            base = os.path.realpath(self.image_base_dir)
+            full = os.path.realpath(joined)
+            if full != base and os.path.commonpath([base, full]) != base:
+                raise ValueError(
+                    f"image path {os.path.basename(src)!r} escapes image_base_dir"
+                )
+            return joined
         return src
+
+    def _reject_remote(self, src: Any) -> Optional[str]:
+        # Remote/URL sources are an SSRF vector when shards are untrusted; opt
+        # in with allow_remote_images. Local paths never contain a `scheme://`.
+        if not self.allow_remote_images and isinstance(src, str) and "://" in src:
+            return src.split("://", 1)[0]
+        return None
 
     def _load_images_for_row(self, sources: list, row_index: int) -> list[Image.Image]:
         out: list[Image.Image] = []
         for raw in sources:
+            scheme = self._reject_remote(raw)
+            if scheme is not None:
+                msg = (
+                    f"Row {row_index}: rejected remote image source "
+                    f"(scheme {scheme!r}); set `allow_remote_images: true` to permit."
+                )
+                if self.skip_bad_images:
+                    LOG.warning("%s — skipping", msg)
+                    continue
+                raise RuntimeError(msg)
             try:
-                img = load_image(self._resolve_image_source(raw))
+                resolved = self._resolve_image_source(raw)
+            except ValueError as exc:
+                # Path traversal outside image_base_dir — surface clearly.
+                msg = f"Row {row_index}: {exc}"
+                if self.skip_bad_images:
+                    LOG.warning("%s — skipping", msg)
+                    continue
+                raise RuntimeError(msg) from exc
+            try:
+                img = load_image(resolved)
             except Exception as exc:
                 label = (
                     os.path.basename(raw)
@@ -91,9 +126,32 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
             out.append(img)
         return out
 
+    def _build_labels(self, batch: dict[str, Any]) -> Tensor:
+        labels = batch["input_ids"].clone()
+        # Mask padding by attention_mask, never by pad-token-id value: CPT
+        # tokenizers routinely set pad_token == eos_token (and the processor may
+        # pad with a different id than self.tokenizer), so value-masking would
+        # delete the real trailing EOS and strip all end-of-sequence supervision.
+        attention_mask = batch.get("attention_mask")
+        if attention_mask is not None:
+            labels[attention_mask == 0] = -100
+        else:
+            pad_id = getattr(self.tokenizer, "pad_token_id", None)
+            eos_id = getattr(self.tokenizer, "eos_token_id", None)
+            if pad_id is not None and pad_id != eos_id:
+                labels[labels == pad_id] = -100
+        # Without this, image-family ids dominate loss and blow it up ~10x.
+        for tid in self._image_family_token_ids:
+            labels[labels == tid] = -100
+        return labels
+
     def torch_call(self, examples: list[dict]) -> dict[str, Any]:
         if not examples:
             raise ValueError("Empty batch passed to MultiModalPretrainDataCollator.")
+
+        # Skip our own EOS append when the tokenizer's post-processor already
+        # appends one (add_eos_token=True) — otherwise the row gets a double EOS.
+        tokenizer_appends_eos = bool(getattr(self.tokenizer, "add_eos_token", False))
 
         texts: list[str] = []
         images: list[list[Image.Image]] = []
@@ -122,9 +180,13 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                     f"{type(raw).__name__}."
                 )
             # Processor re-tokenizes below, discarding the encoder's EOS — re-append.
-            if self.add_eos_token and self.tokenizer.eos_token:
-                if not mm_text.endswith(self.tokenizer.eos_token):
-                    mm_text = mm_text + self.tokenizer.eos_token
+            if (
+                self.add_eos_token
+                and self.tokenizer.eos_token
+                and not tokenizer_appends_eos
+                and not mm_text.endswith(self.tokenizer.eos_token)
+            ):
+                mm_text = mm_text + self.tokenizer.eos_token
             texts.append(mm_text)
             loaded = self._load_images_for_row(raw_sources, row_index=i)
             if self.skip_bad_images and len(loaded) != len(raw_sources):
@@ -160,14 +222,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
             if self.pad_to_multiple_of is not None:
                 tok_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
             batch = self.tokenizer(**tok_kwargs)
-            tok_input_ids: Tensor = batch["input_ids"]
-            tok_labels = tok_input_ids.clone()
-            pad_id = getattr(self.tokenizer, "pad_token_id", None)
-            if pad_id is not None:
-                tok_labels[tok_labels == pad_id] = -100
-            for tid in self._image_family_token_ids:
-                tok_labels[tok_labels == tid] = -100
-            batch["labels"] = tok_labels
+            batch["labels"] = self._build_labels(batch)
             return batch
 
         # No truncation: it chops input_ids mid-placeholder while pixel_values
@@ -242,16 +297,5 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 self.max_length,
             )
 
-        input_ids: Tensor = batch["input_ids"]
-        labels = input_ids.clone()
-
-        pad_id = getattr(self.tokenizer, "pad_token_id", None)
-        if pad_id is not None:
-            labels[labels == pad_id] = -100
-
-        # Without this, image-family ids dominate loss and blow it up ~10x.
-        for tid in self._image_family_token_ids:
-            labels[labels == tid] = -100
-
-        batch["labels"] = labels
+        batch["labels"] = self._build_labels(batch)
         return batch

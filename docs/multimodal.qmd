@@ -427,6 +427,8 @@ pretraining_dataset:
     image_column: images
     image_base_dir: /path/to/images   # optional, for relative paths
     # image_token: "<image>"           # optional override; autodetect by default
+    # skip_bad_images: false           # drop malformed/unloadable rows instead of aborting
+    # allow_remote_images: false       # permit http(s)/URL image sources (off = SSRF-safe)
 
 streaming: true
 sequence_len: 2048
@@ -452,6 +454,18 @@ merged eval stream.
 Rows with no images are allowed. All-text batches bypass the processor and
 tokenize via the base tokenizer (no `pixel_values`). Mixed batches are
 handed to the processor as-is.
+
+### Bad rows and image sources
+
+By default a row that fails validation (placeholder/image-count mismatch,
+over-length, or an image that won't load) aborts the run — failures are loud,
+not silent. Set `skip_bad_images: true` on the dataset entry to warn-and-drop
+those rows instead, which is useful for large, noisy corpora.
+
+Image sources with a URL scheme (`http://`, `https://`, …) are **rejected by
+default** — a training collator fetching arbitrary URLs from dataset shards is
+an SSRF vector. Set `allow_remote_images: true` to opt in. Relative paths that
+escape `image_base_dir` (e.g. `../../etc/passwd`) are always rejected.
 
 Verified VLM families:
 
@@ -493,10 +507,15 @@ inspect the tokenized ids rather than the raw string.
 
 ### Why masking image tokens in labels is automatic
 
-For this multimodal CPT path, the collator masks every image-family token id
-(`<image>`, `<\|image_pad\|>`, `<\|vision_start\|>`, `<\|vision_end\|>`,
-`<start_of_image>`, `<end_of_image>`, `<image_soft_token>`, `<\|image\|>`,
-etc.) to `-100` in the labels tensor.
+For this multimodal CPT path, the collator masks image-family token ids to
+`-100` in the labels tensor. The masked set is built per-processor from a
+static list (`<image>`, `<\|image_pad\|>`, `<\|vision_start\|>`,
+`<\|vision_end\|>`, `<start_of_image>`, `<end_of_image>`, `<image_soft_token>`,
+`<\|image\|>`, …) **plus** any registered special token the processor inserts
+for image layout — tile/grid/global markers such as SmolVLM/Idefics
+`<fake_token_around_image>`, `<global-img>`, and `<row_i_col_j>`. Detection is
+restricted to special/added tokens, so real text and `bos`/`eos`/`pad` are
+never masked.
 
 Supported processors expand image placeholders into vision-specific token ids.
 If those ids contribute to loss, the model is trained to predict patch or

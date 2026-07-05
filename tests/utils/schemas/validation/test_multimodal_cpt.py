@@ -88,6 +88,16 @@ class TestMultimodalCPTGates:
         assert pd.type == "multimodal_pretrain"
         assert pd.image_column == "images"
 
+    def test_skip_and_remote_flags_round_trip(self, min_base_cfg):
+        """`skip_bad_images` / `allow_remote_images` survive validation on the entry."""
+        cfg = _mm_cpt_cfg(min_base_cfg)
+        cfg.pretraining_dataset[0]["skip_bad_images"] = True
+        cfg.pretraining_dataset[0]["allow_remote_images"] = True
+        validated = validate_config(cfg)
+        pd = validated.pretraining_dataset[0]
+        assert pd.skip_bad_images is True
+        assert pd.allow_remote_images is True
+
     def test_multimodal_flag_triggers_gates(self, min_base_cfg):
         cfg = _mm_cpt_cfg(min_base_cfg)
         cfg.pretraining_dataset[0]["type"] = "pretrain"

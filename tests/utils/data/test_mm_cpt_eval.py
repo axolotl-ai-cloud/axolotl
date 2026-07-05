@@ -246,6 +246,62 @@ def test_eval_collator_uses_eval_image_settings(monkeypatch):
     assert captured["kwargs"]["image_base_dir"] == "/train_images"
 
 
+def test_collator_forwards_skip_and_remote_flags(monkeypatch):
+    """`skip_bad_images` / `allow_remote_images` on the dataset entry reach the collator."""
+    from axolotl.core.builders.causal import HFCausalTrainerBuilder
+
+    captured = {}
+
+    class _FakeSpec:
+        image_token = "<img>"
+        image_token_id = 7
+        image_family_token_ids = (7,)
+
+    monkeypatch.setattr(
+        "axolotl.prompt_strategies.multimodal_pretrain.build_image_token_spec",
+        lambda processor, override=None: _FakeSpec(),
+    )
+
+    class _FakeCollator:
+        def __init__(self, **kw):
+            captured["kwargs"] = kw
+
+    monkeypatch.setattr(
+        "axolotl.core.builders.causal.MultiModalPretrainDataCollator", _FakeCollator
+    )
+
+    builder = HFCausalTrainerBuilder.__new__(HFCausalTrainerBuilder)
+    builder.tokenizer = object()
+    builder.processor = object()
+    builder.cfg = DictDefault(
+        {
+            "pretraining_dataset": [
+                {
+                    "type": "multimodal_pretrain",
+                    "skip_bad_images": True,
+                    "allow_remote_images": True,
+                }
+            ],
+            "sequence_len": 2048,
+        }
+    )
+    builder._build_mm_pretrain_collator(is_eval=False)
+    assert captured["kwargs"]["skip_bad_images"] is True
+    assert captured["kwargs"]["allow_remote_images"] is True
+
+    # Unset -> secure defaults (False), never None.
+    captured.clear()
+    builder.cfg = DictDefault(
+        {
+            "pretraining_dataset": [{"type": "multimodal_pretrain"}],
+            "sequence_len": 2048,
+        }
+    )
+    builder._build_mm_pretrain_collator(is_eval=False)
+    assert captured["kwargs"]["skip_bad_images"] is False
+    assert captured["kwargs"]["allow_remote_images"] is False
+
+
 def test_eval_collator_honors_eval_sequence_len(monkeypatch):
     """Eval collator uses cfg.eval_sequence_len when set; train collator uses cfg.sequence_len."""
     from axolotl.core.builders.causal import HFCausalTrainerBuilder

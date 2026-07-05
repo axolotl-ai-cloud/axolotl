@@ -68,6 +68,31 @@ _IMAGE_FAMILY_TOKEN_CANDIDATES: tuple[str, ...] = (
     "<IMG_CONTEXT>",
 )
 
+# Substrings that mark a *registered special token* as processor-inserted image
+# layout (tile/grid/global markers). Used to extend the family set dynamically
+# so model-specific structural tokens (e.g. SmolVLM/Idefics `<row_i_col_j>`,
+# `<fake_token_around_image>`, `<global-img>`) don't leak into the CPT loss.
+# Matched only against special/added tokens, so plain text and bos/eos/pad are
+# never touched.
+_IMAGE_STRUCTURAL_KEYWORDS: tuple[str, ...] = (
+    "image",
+    "img",
+    "vision",
+    "patch",
+    "tile",
+)
+
+
+def _is_image_structural_token(surface: str) -> bool:
+    core = surface.strip("<>| \t").lower()
+    if any(kw in core for kw in _IMAGE_STRUCTURAL_KEYWORDS):
+        return True
+    # Tile-grid cells like `<row_2_col_3>`; require both so `<arrow_*>` etc. miss.
+    if "row" in core and "col" in core:
+        return True
+    return False
+
+
 _INCOMPATIBLE_PROCESSOR_REASONS: dict[str, str] = {
     "MllamaProcessor": (
         "Llama-3.2-Vision (Mllama) uses cross-attention image injection, not "
@@ -186,6 +211,16 @@ def build_image_token_spec(
         if cand != image_token and cand not in known_special_tokens:
             continue
         tid = resolve_id(cand)
+        if tid is not None:
+            family.add(tid)
+    # Dynamically mask processor-inserted layout tokens (tile/grid/global
+    # markers) that vary by model and aren't in the static candidate list.
+    # Restricted to registered special tokens, so bos/eos/pad and real text
+    # are never masked.
+    for special in known_special_tokens:
+        if not _is_image_structural_token(special):
+            continue
+        tid = resolve_id(special)
         if tid is not None:
             family.add(tid)
     return ImageTokenSpec(

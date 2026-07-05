@@ -511,6 +511,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             "image_token_spec": spec,
             "image_base_dir": _mm_cpt_get(pt_cfg, "image_base_dir"),
             "max_length": max_length,
+            "skip_bad_images": bool(_mm_cpt_get(pt_cfg, "skip_bad_images")),
+            "allow_remote_images": bool(_mm_cpt_get(pt_cfg, "allow_remote_images")),
         }
         if pad_to_multiple_of is not None:
             collator_kwargs["pad_to_multiple_of"] = pad_to_multiple_of

@@ -217,6 +217,8 @@ def _pretraining_config_from_entry(entry: dict) -> DictDefault:
             "image_column": entry.get("image_column", "images"),
             "image_base_dir": entry.get("image_base_dir"),
             "image_token": entry.get("image_token"),
+            "skip_bad_images": entry.get("skip_bad_images"),
+            "allow_remote_images": entry.get("allow_remote_images"),
             "trust_remote_code": entry.get("trust_remote_code", False),
         }
     )
@@ -243,6 +245,8 @@ def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
             "image_column": "images",
             "image_base_dir": None,
             "image_token": None,  # nosec
+            "skip_bad_images": None,
+            "allow_remote_images": None,
             "trust_remote_code": False,
         }
     )

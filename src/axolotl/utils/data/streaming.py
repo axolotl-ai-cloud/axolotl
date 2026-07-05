@@ -184,6 +184,7 @@ def encode_streaming_multimodal(
     image_token_id: int,
     text_column: str = "text",
     image_column: str = "images",
+    skip_bad_rows: bool = False,
 ) -> Dict[str, List]:
     texts: List[str] = examples[text_column]
     imgs_list: List[List[str]] = examples[image_column]
@@ -223,23 +224,37 @@ def encode_streaming_multimodal(
         # (which the collator re-tokenizes without truncation) silently produces
         # oversize batches and confusing placeholder/image-count mismatches.
         enc = tokenizer(text, add_special_tokens=True)
-        ids = list(enc["input_ids"]) + [tokenizer.eos_token_id]
-        mask = list(enc["attention_mask"]) + [1]
+        ids = list(enc["input_ids"])
+        mask = list(enc["attention_mask"])
+        # Append EOS unless the tokenizer already did (avoids a double EOS on
+        # add_eos_token tokenizers) or has none (avoids appending a None id).
+        eos_id = tokenizer.eos_token_id
+        if eos_id is not None and (not ids or ids[-1] != eos_id):
+            ids.append(eos_id)
+            mask.append(1)
         # Count by id — `text.count` substring-matches `<image>` in `<image_soft_token>`.
         n_placeholders = sum(1 for t in ids if t == image_token_id)
         if n_placeholders != len(imgs):
-            raise ValueError(
+            msg = (
                 f"Multimodal CPT row has {n_placeholders} occurrence(s) of "
                 f"{image_token!r} in text but {len(imgs)} image path(s). "
                 f"Text and image count must match (one placeholder per image)."
             )
+            if skip_bad_rows:
+                LOG.warning("%s — dropping row.", msg)
+                continue
+            raise ValueError(msg)
         if len(ids) > max_tokens:
-            raise ValueError(
+            msg = (
                 f"Multimodal CPT row tokenizes to {len(ids)} tokens which "
                 f"exceeds sequence_len={max_tokens}. Pre-chunk your text or "
                 f"raise sequence_len (image patch expansion at the processor "
                 f"may push the final length even higher)."
             )
+            if skip_bad_rows:
+                LOG.warning("%s — dropping row.", msg)
+                continue
+            raise ValueError(msg)
         # Labels = ids; collator masks image-family ids after re-tokenization.
         input_ids.append(ids)
         labels.append(list(ids))
@@ -340,6 +355,7 @@ def wrap_streaming_dataset(
                 override=get_ds_value("image_token", None),
             )
             image_column = get_ds_value("image_column", None) or "images"
+            skip_bad_rows = bool(get_ds_value("skip_bad_images", False))
             LOG.info(
                 f"multimodal streaming CPT: placeholder={spec.image_token!r} "
                 f"(id={spec.image_token_id})"
@@ -352,6 +368,7 @@ def wrap_streaming_dataset(
                 image_token_id=spec.image_token_id,
                 text_column=text_column,
                 image_column=image_column,
+                skip_bad_rows=skip_bad_rows,
             )
         else:
             encode = functools.partial(
