@@ -1886,7 +1886,6 @@ class LoRA_FusedProj(torch.autograd.Function):
         has_dropout = ctx.has_dropout
 
         batch, seq_len = X.shape[:2]
-        X = X.view(-1, X.shape[-1])
         X_lora = X_lora.view(-1, X_lora.shape[-1])
         # X_lora aliases X when there is no dropout; keep grad_X out-of-place so
         # this transpose stays valid across every projection's LoRA grads.
@@ -1917,7 +1916,10 @@ class LoRA_FusedProj(torch.autograd.Function):
                 d_A.addmm_(X_lora_t, grad_B, alpha=s, beta=0)
                 d_B.addmm_(A @ X_lora_t, dY, alpha=s, beta=0)
 
-            W_deq = dequantize(W, quant)  # [out, in]
+            # .to(dY.dtype): an NF4 base with an fp32 quant_state dequants to fp32,
+            # which the shared in-place grad_X accumulator cannot mix. No-op in the
+            # supported paths (bf16 quant_state / fp8 / Float8Tensor all give bf16).
+            W_deq = dequantize(W, quant).to(dY.dtype)  # [out, in]
             if grad_X is None:
                 grad_X = torch.mm(dY, W_deq)
             else:
