@@ -21,9 +21,11 @@ plugins:
 
 benchmark_api:
   endpoint: http://localhost:8765/eval
+  mode: sync          # sync (default) | async
+  poll_interval_steps: 10  # async only: how often to poll pending jobs
   run_on:
     - save            # save | eval | train_end (default: [save])
-  timeout_sec: 3600
+  timeout_sec: 3600   # sync: HTTP read timeout; async: per-job deadline
   fail_training_on_error: false
 
   early_stopping:
@@ -70,6 +72,37 @@ Response (runner -> Axolotl):
   watches one of the returned metric names via `early_stopping.metric`.
 - Any `artifacts` field is ignored in this version.
 
+## Sync vs async
+
+**sync** (default) — the POST blocks until the runner returns `completed` with
+metrics. Simplest, and metrics attribute cleanly to the current step. Best when
+the benchmark is quick.
+
+**async** — the runner replies immediately so training keeps moving while an
+expensive benchmark runs in the background:
+
+```json
+{ "status": "queued", "job_id": "bench-123", "poll_url": "http://host/eval/bench-123" }
+```
+
+The plugin tracks the job and polls `poll_url` (GET) every `poll_interval_steps`
+training steps; when it returns `completed`, the metrics are logged and early
+stopping is evaluated. Any jobs still outstanding at the end are drained
+(blocking) at `on_train_end`. Notes:
+
+- `poll_url` is optional; if omitted it defaults to `<endpoint>/<job_id>`.
+- Statuses `queued`/`running`/`accepted`/`pending` mean "not done yet".
+- `timeout_sec` becomes a per-job deadline; a job that never completes is
+  dropped (or fails training if `fail_training_on_error: true`).
+- Because results lag, a late benchmark logs against the step at which it
+  *completes*, and early stopping reacts a few steps after the metric plateaus —
+  the throughput/promptness trade-off inherent to async.
+- The runner may also answer a submit with `completed` directly (running
+  synchronously under an async client); that is handled too.
+
+Polling and the stop/error decision are driven on the main process and
+broadcast to all ranks, so early stopping stays consistent under multi-GPU.
+
 ## Early stopping
 
 Stops when **either** condition is met:
@@ -84,6 +117,6 @@ Stops when **either** condition is met:
 
 ## Scope
 
-Version 1 is synchronous, main-process-only, single early-stopping metric. Not
-supported: async/queued runs, multiple stopping rules, artifact handling, or any
-model loading/merging inside Axolotl.
+Main-process-driven (with stop/error broadcast to all ranks), single
+early-stopping metric, sync or async submission. Not supported: multiple
+stopping rules, artifact handling, or any model loading/merging inside Axolotl.

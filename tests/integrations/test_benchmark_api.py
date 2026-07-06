@@ -357,3 +357,253 @@ def test_plugin_no_callback_without_config():
 
     plugin = BenchmarkAPIPlugin()
     assert plugin.add_callbacks_post_trainer(DictDefault({}), Mock()) == []
+
+
+# --------------------------------------------------------------------------- #
+# async mode
+# --------------------------------------------------------------------------- #
+
+
+class _FakeRunner:
+    """Scripts POST (submit) and GET (poll) responses for async tests."""
+
+    def __init__(self, submit=None, polls=None, post_exc=None, get_exc=None):
+        self.submit = submit
+        self.polls = list(polls or [])
+        self.post_exc = post_exc
+        self.get_exc = get_exc
+        self.post_calls = []
+        self.get_calls = []
+
+    @staticmethod
+    def _resp(payload):
+        resp = Mock()
+        resp.raise_for_status = Mock()
+        resp.json = Mock(return_value=payload)
+        return resp
+
+    def post(self, url, json=None, timeout=None):
+        self.post_calls.append({"url": url, "json": json, "timeout": timeout})
+        if self.post_exc is not None:
+            raise self.post_exc
+        return self._resp(self.submit)
+
+    def get(self, url, timeout=None):
+        self.get_calls.append({"url": url, "timeout": timeout})
+        if self.get_exc is not None:
+            raise self.get_exc
+        # last scripted response repeats
+        payload = self.polls.pop(0) if len(self.polls) > 1 else self.polls[0]
+        return self._resp(payload)
+
+
+def _async_callback(monkeypatch, runner, **benchmark_api):
+    benchmark_api.setdefault("mode", "async")
+    benchmark_api.setdefault("poll_interval_steps", 1)
+    cfg = _make_cfg(**benchmark_api)
+    trainer = Mock()
+    callback = BenchmarkAPICallback(cfg, trainer)
+    monkeypatch.setattr("axolotl.integrations.benchmark_api.requests.post", runner.post)
+    monkeypatch.setattr("axolotl.integrations.benchmark_api.requests.get", runner.get)
+    monkeypatch.setattr(
+        "axolotl.integrations.benchmark_api.time.sleep", lambda *_: None
+    )
+    return callback, trainer
+
+
+def test_async_submit_queued_tracks_job(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"}
+    )
+    callback, trainer = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval"
+    )
+    control = callback.on_save(_args(tmp_path), _state(step=100), _control())
+
+    assert len(callback._pending) == 1
+    assert callback._pending[0].job_id == "job-1"
+    assert callback._pending[0].poll_url == "http://bench/j/1"
+    trainer.log.assert_not_called()  # nothing logged yet
+    assert control.should_training_stop is False
+    assert runner.post_calls[0]["json"]["event"] == "save"
+
+
+def test_async_submit_completed_immediately(monkeypatch, tmp_path):
+    # runner may choose to run synchronously and return metrics on submit
+    runner = _FakeRunner(submit={"status": "completed", "metrics": {"eval/cer": 0.1}})
+    callback, trainer = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval"
+    )
+    callback.on_save(_args(tmp_path), _state(), _control())
+
+    trainer.log.assert_called_once_with({"eval/cer": 0.1})
+    assert callback._pending == []
+
+
+def test_async_poll_completes_and_logs(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "completed", "metrics": {"eval/cer": 0.07}}],
+    )
+    callback, trainer = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval"
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    # poll fires on step multiples of poll_interval_steps (=1)
+    callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+
+    trainer.log.assert_called_once_with({"eval/cer": 0.07})
+    assert callback._pending == []
+    assert runner.get_calls[0]["url"] == "http://bench/j/1"
+
+
+def test_async_poll_still_queued_keeps_pending(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "running"}],
+    )
+    callback, trainer = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval"
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+
+    assert len(callback._pending) == 1
+    trainer.log.assert_not_called()
+
+
+def test_async_poll_respects_step_gating(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "running"}],
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", poll_interval_steps=10
+    )
+    callback.on_save(_args(tmp_path), _state(step=5), _control())
+    callback.on_step_end(_args(tmp_path), _state(step=5), _control())  # 5 % 10 != 0
+    assert runner.get_calls == []
+    callback.on_step_end(_args(tmp_path), _state(step=10), _control())  # 10 % 10 == 0
+    assert len(runner.get_calls) == 1
+
+
+def test_async_poll_url_fallback(monkeypatch, tmp_path):
+    # runner omits poll_url -> constructed from endpoint + job_id
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-9"},
+        polls=[{"status": "queued"}],
+    )
+    callback, _ = _async_callback(monkeypatch, runner, endpoint="http://bench/eval")
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    assert callback._pending[0].poll_url == "http://bench/eval/job-9"
+
+
+def test_async_early_stopping_on_poll(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "completed", "metrics": {"eval/cer": 0.05}}],
+    )
+    callback, _ = _async_callback(
+        monkeypatch,
+        runner,
+        endpoint="http://bench/eval",
+        early_stopping={
+            "enabled": True,
+            "metric": "eval/cer",
+            "mode": "lower",
+            "threshold": 0.075,
+        },
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    control = callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+    assert control.should_training_stop is True
+
+
+def test_async_deadline_timeout_dropped(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "queued"}],  # never completes
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=False
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    callback._pending[0].deadline = -1.0  # force past deadline
+    control = callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+    assert callback._pending == []  # dropped
+    assert control.should_training_stop is False  # no raise, training continues
+
+
+def test_async_deadline_timeout_raises_when_configured(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "queued"}],
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=True
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    callback._pending[0].deadline = -1.0
+    with pytest.raises(RuntimeError):
+        callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+
+
+def test_async_drain_at_train_end(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "running"}, {"status": "completed", "metrics": {"m": 0.5}}],
+    )
+    callback, trainer = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval"
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    # not yet complete during training
+    callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+    assert len(callback._pending) == 1
+    # train_end drains until the job completes
+    callback.on_train_end(_args(tmp_path), _state(step=3), _control())
+    trainer.log.assert_called_once_with({"m": 0.5})
+    assert callback._pending == []
+
+
+def test_async_submit_error_swallowed(monkeypatch, tmp_path):
+    runner = _FakeRunner(post_exc=RuntimeError("refused"))
+    callback, trainer = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=False
+    )
+    callback.on_save(_args(tmp_path), _state(), _control())
+    assert callback._pending == []
+    trainer.log.assert_not_called()
+
+
+def test_async_submit_error_raised_when_configured(monkeypatch, tmp_path):
+    runner = _FakeRunner(post_exc=RuntimeError("refused"))
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=True
+    )
+    with pytest.raises(RuntimeError):
+        callback.on_save(_args(tmp_path), _state(), _control())
+
+
+def test_sync_mode_ignores_step_end(monkeypatch, tmp_path):
+    callback, trainer, _ = _callback(
+        monkeypatch,
+        response={"status": "completed", "metrics": {"m": 1.0}},
+        endpoint="http://bench/eval",
+    )
+    # sync mode: on_step_end is a no-op, no polling
+    callback.on_step_end(_args(tmp_path), _state(), _control())
+    trainer.log.assert_not_called()
+
+
+def test_async_config_defaults_and_validation():
+    cfg = _make_cfg(endpoint="http://x")
+    assert cfg.benchmark_api.mode == "sync"  # default
+    assert cfg.benchmark_api.poll_interval_steps == 10
+
+    with pytest.raises(ValidationError):
+        BenchmarkAPIArgs(benchmark_api={"endpoint": "http://x", "mode": "background"})
+    with pytest.raises(ValidationError):
+        BenchmarkAPIArgs(
+            benchmark_api={"endpoint": "http://x", "poll_interval_steps": 0}
+        )
