@@ -610,6 +610,12 @@ class TestFindLinearAttnInLayer:
         layer = _gdn_layer(_gdn_module_with(["out_proj"]))
         assert list(find_linear_attn_in_layer(layer)) == []
 
+    def test_partial_in_projs_is_excluded(self):
+        # out_proj + only some of the four canonical in-projections: the fused node
+        # and patched forward index all four, so a partial mixer falls back to peft.
+        layer = _gdn_layer(_gdn_module_with(["in_proj_qkv", "in_proj_z", "out_proj"]))
+        assert list(find_linear_attn_in_layer(layer)) == []
+
     def test_missing_linear_attn_attr_is_excluded(self):
         assert list(find_linear_attn_in_layer(nn.Module())) == []
 
@@ -775,6 +781,56 @@ def test_apply_lora_gdn_in_proj_matches_peft_with_dora():
     assert _gdn_rel_l2(gx_fused, gx_ref) < 2e-2
     for name in targets:
         assert _gdn_rel_l2(ga_fused[name], ga_ref[name]) < 2e-2
+
+
+def _wrapped_gdn_block_nf4(targets, in_features=256, base_dtype=torch.bfloat16):
+    """NF4 (4-bit) GDN in-projection block. ``base_dtype`` (set before quantizing) becomes
+    quant_state.dtype — bf16 is the common QLoRA path; fp32 exercises the fp32 NF4 dequant
+    kernel, which used to fall through to the bf16 kernel and dequant to garbage."""
+    bnb = pytest.importorskip("bitsandbytes")
+
+    class _Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            for name, out_features in _GDN_IN_SIZES.items():
+                setattr(
+                    self,
+                    name,
+                    bnb.nn.Linear4bit(
+                        in_features,
+                        out_features,
+                        bias=False,
+                        compute_dtype=torch.bfloat16,
+                        quant_type="nf4",
+                    ),
+                )
+
+    block = get_peft_model(
+        _Block().to(base_dtype).to("cuda"),
+        LoraConfig(r=16, lora_alpha=32, target_modules=list(targets), lora_dropout=0.0),
+    ).base_model.model
+    block.train()
+    with torch.no_grad():
+        for name, param in block.named_parameters():
+            if "lora_B" in name:
+                param.add_(torch.randn_like(param) * 0.02)
+    return block
+
+
+@pytest.mark.parametrize("base_dtype", [torch.bfloat16, torch.float32])
+def test_apply_lora_gdn_in_proj_matches_peft_nf4(base_dtype):
+    """QLoRA (NF4 4-bit base, W_quant dequant path) fused in-projection matches peft for
+    both bf16 and fp32 quant_state. The committed parity tests only cover unquantized bf16."""
+    targets = ("in_proj_qkv", "in_proj_b")  # one large + one starved; rest base-only
+    block = _wrapped_gdn_block_nf4(targets, base_dtype=base_dtype)
+    out_ref, gx_ref, ga_ref = _run_gdn_block(block, fused=False, targets=targets)
+    out_fused, gx_fused, ga_fused = _run_gdn_block(block, fused=True, targets=targets)
+
+    for name in _GDN_IN_SIZES:
+        assert _gdn_rel_l2(out_fused[name], out_ref[name]) < 5e-3
+    assert _gdn_rel_l2(gx_fused, gx_ref) < 1e-2
+    for name in targets:
+        assert _gdn_rel_l2(ga_fused[name], ga_ref[name]) < 5e-3
 
 
 @contextlib.contextmanager
