@@ -9,10 +9,22 @@
 """Expert-granularity CPU offload for 4-bit MoE QLoRA on a single GPU.
 
 Only the *frozen 4-bit expert* weights are moved; attention, router/gate, norms and the
-trainable LoRA adapters stay GPU-resident. Each expert is a ``bitsandbytes`` ``Linear4bit`` whose
-big packed tensor is ``weight.data`` (the ``quant_state`` scales are ~1/32 the size and are left
-resident). We home every offloaded block's ``weight.data`` in *pinned* CPU RAM, and a **forward
-pre-hook** on the MoE block copies that block's experts onto the GPU just before the block runs.
+trainable LoRA adapters stay GPU-resident. Two expert layouts are supported:
+
+- **Per-expert ``Linear4bit``** (an ``experts`` ``ModuleList``): each expert is a ``bitsandbytes``
+  ``Linear4bit`` whose big packed tensor is ``weight.data`` (the ``quant_state`` scales are ~1/32
+  the size and are left resident).
+- **Grouped 3D stacks quantized via ``quantize_moe_experts``**: models whose experts are fused 3D
+  ``nn.Parameter`` stacks (one ``[n_experts, out, in]`` tensor per projection — OLMoE / Qwen3-MoE
+  style on current transformers). ``quantize_moe_experts: true`` quantizes each stack in place
+  through ``bitsandbytes.nn.parametrize.replace_parameter_4bit``: the packed tensor becomes
+  ``module.parametrizations[name].original`` and a ``Bnb4bitParametrization`` (carrying the small
+  resident ``quant_state``) dequantizes it on access, under ``no_grad`` — so autograd only ever
+  holds the *dequantized* activation, never the packed tensor, and eviction of the packed data is
+  safe outside the module's forward.
+
+In both layouts we home the packed tensor's ``.data`` in *pinned* CPU RAM, and a **forward
+pre-hook** on the owning module copies that block's experts onto the GPU just before it runs.
 
 Eviction is driven entirely by a **single-resident-slot** policy: staging a block first evicts the
 previously-staged one. There is deliberately **no evict post-hook**. Under ``use_reentrant=False``
@@ -47,12 +59,29 @@ stage/evict swaps; the config schema refuses to enable under any of them.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import torch
 from torch import nn
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+class _Slot(NamedTuple):
+    """One offloadable packed tensor: the frozen ``nn.Parameter`` whose ``.data`` is swapped
+    between its pinned CPU home and the GPU, plus where it appears in ``state_dict``.
+
+    ``keys`` are candidate keys relative to ``owner``'s prefix — the parametrized layout needs two
+    because bitsandbytes' own state-dict post-hook renames ``parametrizations.<p>.original`` to the
+    clean ``<p>`` (hook order puts ours after bnb's, but both spellings are covered regardless).
+    """
+
+    param: nn.Parameter
+    owner: nn.Module
+    keys: tuple[str, ...]
+
 
 # 0-element GPU placeholders that an evicted expert's ``weight.data`` points at while offloaded.
 # Shared across all offloaded experts (reads never mutate them) and cached per (device, dtype) —
@@ -107,12 +136,11 @@ def find_moe_expert_blocks(
     """Discover offloadable MoE blocks and their frozen 4-bit expert base layers.
 
     A block is any module exposing an ``experts`` ``ModuleList`` of length >= 2 whose leaves include
-    ``Linear4bit`` weights — the canonical per-expert layout of Mixtral, Qwen2/3-MoE, OLMoE,
-    DeepSeek-MoE, Jamba, etc. (``block_sparse_moe.experts`` / ``mlp.experts``). Fused-experts
-    layouts that pack all experts into one 3D parameter (GPT-OSS, DBRX, and the
-    ``@use_experts_implementation`` path handled by the ``expert_parallel`` integration) are **not**
-    matched — bitsandbytes does not 4-bit-quantize raw 3D parameters, so there is nothing to offload
-    there; those are out of scope for this integration.
+    ``Linear4bit`` weights — the classic per-expert layout (``block_sparse_moe.experts`` /
+    ``mlp.experts``). Fused-experts layouts that pack all experts into one 3D parameter (OLMoE /
+    Qwen3-MoE on current transformers, GPT-OSS, DBRX) are **not** matched here — raw 3D parameters
+    are only 4-bit under ``quantize_moe_experts: true``, whose parametrized stacks are discovered by
+    :func:`find_parametrized_expert_stacks` instead.
 
     Returns ``(block_name, block_module, expert_base_layers)`` triples. Deduplicates base layers so a
     projection shared across the list is homed once. The hook attaches to ``block_module`` because
@@ -138,6 +166,42 @@ def find_moe_expert_blocks(
     return blocks
 
 
+def find_parametrized_expert_stacks(
+    model: nn.Module,
+) -> list[tuple[str, nn.Module, list[_Slot]]]:
+    """Discover grouped 3D expert stacks quantized via ``quantize_moe_experts``.
+
+    Matches any module carrying a ``Bnb4bitParametrization`` (by class name, mirroring
+    ``_is_linear4bit``'s structural matching) — the layout ``quantize_moe_experts: true`` produces
+    for fused-expert models (OLMoE / Qwen3-MoE style ``[n_experts, out, in]`` stacks). The packed
+    tensor is ``module.parametrizations[<p>].original``; the parametrization's ``quant_state``
+    stays resident. The module itself is the hook site: its ``forward`` dequantizes the stacks on
+    access (and is what gradient checkpointing recomputes).
+    """
+    blocks: list[tuple[str, nn.Module, list[_Slot]]] = []
+    for name, module in model.named_modules():
+        plists = getattr(module, "parametrizations", None)
+        if not isinstance(plists, nn.ModuleDict):
+            continue
+        slots: list[_Slot] = []
+        for pname, plist in plists.items():
+            if not any(type(p).__name__ == "Bnb4bitParametrization" for p in plist):
+                continue
+            packed = plist.original
+            if not isinstance(packed, nn.Parameter) or packed.requires_grad:
+                continue  # trainable parametrized params are not ours to move
+            slots.append(
+                _Slot(
+                    param=packed,
+                    owner=module,
+                    keys=(pname, f"parametrizations.{pname}.original"),
+                )
+            )
+        if slots:
+            blocks.append((name, module, slots))
+    return blocks
+
+
 class _BlockOffload:
     """Owns the pinned-CPU home copies of one MoE block's expert ``weight.data`` tensors and streams
     them to ``device`` for the duration of each forward / gradient-checkpoint recompute.
@@ -158,23 +222,25 @@ class _BlockOffload:
     # forward AND backward.
     _resident: _BlockOffload | None = None
 
-    def __init__(
-        self, name: str, base_layers: list[nn.Module], device, pin: bool = True
-    ):
+    def __init__(self, name: str, slots: list[_Slot], device, pin: bool = True):
         self.name = name
         self.device = torch.device(device)
-        self.base_layers = base_layers
+        self.slots = slots
         # Capture each packed weight as a SEPARATE (pinned) CPU tensor BEFORE any placeholder swap.
         # The source is on the GPU at install time, so ``.to("cpu")`` is a real device->host copy
         # that decouples the home from the live parameter we then overwrite with a placeholder.
         self.homes: list[torch.Tensor] = [
-            self._to_home(base.weight.data.detach(), pin) for base in base_layers
+            self._to_home(slot.param.data.detach(), pin) for slot in slots
         ]
         self.pinned = all(_is_pinned(t) for t in self.homes)
         self.staged = False
-        for base in base_layers:
-            self._install_state_dict_hook(base)
+        for idx, slot in enumerate(slots):
+            self._install_state_dict_hook(slot, idx)
         self.evict()  # start evicted: experts hold placeholders, ~0 GPU footprint
+
+    @property
+    def params(self) -> list[nn.Parameter]:
+        return [slot.param for slot in self.slots]
 
     @staticmethod
     def _to_home(t: torch.Tensor, pin: bool) -> torch.Tensor:
@@ -186,23 +252,23 @@ class _BlockOffload:
                 pass  # pinning is best-effort; pageable fallback is correct, just no async H2D
         return cpu
 
-    def _install_state_dict_hook(self, base: nn.Module) -> None:
+    def _install_state_dict_hook(self, slot: _Slot, idx: int) -> None:
         """Keep full-model ``state_dict()`` correct while evicted: substitute the (pinned) CPU home
-        for the 0-element ``weight`` placeholder. References, not copies, so adapter-only saves stay
-        cheap and while *staged* it is a no-op (the entry is the real GPU tensor)."""
-        idx = self.base_layers.index(base)
+        for the 0-element placeholder under any of the slot's candidate keys. References, not
+        copies, so adapter-only saves stay cheap and while *staged* it is a no-op (the entry is the
+        real GPU tensor)."""
 
         def hook(module, state_dict, prefix, local_metadata):
-            key = prefix + "weight"
-            t = state_dict.get(key)
-            if t is not None and t.numel() == 0:
-                state_dict[key] = self.homes[idx]
+            for key in slot.keys:
+                t = state_dict.get(prefix + key)
+                if t is not None and t.numel() == 0:
+                    state_dict[prefix + key] = self.homes[idx]
 
-        register = getattr(base, "register_state_dict_post_hook", None)
+        register = getattr(slot.owner, "register_state_dict_post_hook", None)
         if (
             register is None
         ):  # older torch: private hook, same (mod, sd, prefix, meta) signature
-            register = base._register_state_dict_hook
+            register = slot.owner._register_state_dict_hook
         register(hook)
 
     @property
@@ -219,17 +285,16 @@ class _BlockOffload:
         cls = type(self)
         if cls._resident is not None and cls._resident is not self:
             cls._resident.evict()  # single-slot: free the prior block before staging this one
-        for base, home in zip(self.base_layers, self.homes, strict=True):
-            base.weight.data = home.to(self.device, non_blocking=True)
+        for slot, home in zip(self.slots, self.homes, strict=True):
+            slot.param.data = home.to(self.device, non_blocking=True)
         self.staged = True
         cls._resident = self
 
     def evict(self) -> None:
         """Point this block's expert weights back at shared 0-element placeholders (idempotent),
         dropping the GPU copies so the caching allocator can reuse the memory for the next block."""
-        for base in self.base_layers:
-            w = base.weight
-            w.data = _placeholder(self.device, w.data.dtype)
+        for slot in self.slots:
+            slot.param.data = _placeholder(self.device, slot.param.data.dtype)
         self.staged = False
         cls = type(self)
         if cls._resident is self:
@@ -246,30 +311,43 @@ def install_expert_offload(
     ``model._expert_offload_handles`` so they live as long as the model. Returns the handles (empty
     if no offloadable MoE block was found).
     """
-    blocks = find_moe_expert_blocks(model)
-    if not blocks:
+    slot_blocks: list[tuple[str, nn.Module, list[_Slot]]] = [
+        (
+            name,
+            block,
+            [
+                _Slot(param=base.weight, owner=base, keys=("weight",))
+                for base in base_layers
+            ],
+        )
+        for name, block, base_layers in find_moe_expert_blocks(model)
+    ]
+    slot_blocks += find_parametrized_expert_stacks(model)
+    if not slot_blocks:
         raise RuntimeError(
-            "expert_offload is enabled but no 4-bit MoE expert blocks were found. This "
+            "expert_offload is enabled but no 4-bit MoE expert weights were found. This "
             "integration offloads per-expert bitsandbytes Linear4bit weights (an ``experts`` "
-            "ModuleList — Mixtral / Qwen-MoE / OLMoE / DeepSeek style); fused-expert layouts "
-            "(GPT-OSS, DBRX) and non-4bit models have nothing to offload — disable "
-            "expert_offload for this model."
+            "ModuleList) or grouped 3D expert stacks quantized via ``quantize_moe_experts: "
+            "true`` (OLMoE / Qwen3-MoE style fused layouts on current transformers). If your "
+            "model stores experts as fused 3D parameters, set ``quantize_moe_experts: true`` — "
+            "plain ``load_in_4bit`` leaves those stacks unquantized, so there is nothing 4-bit "
+            "to offload. Otherwise disable expert_offload for this model."
         )
 
     if device is None:
-        device = blocks[0][2][0].weight.data.device
+        device = slot_blocks[0][2][0].param.data.device
     device = torch.device(device)
 
     handles: list[_BlockOffload] = []
-    for name, block, base_layers in blocks:
-        handle = _BlockOffload(name, base_layers, device, pin=pin)
+    for name, block, slots in slot_blocks:
+        handle = _BlockOffload(name, slots, device, pin=pin)
         block.register_forward_pre_hook(lambda module, args, h=handle: h.stage())
         handles.append(handle)
 
     model._expert_offload_handles = handles
     _register_ddp_ignore(model, handles)
     total_gb = sum(h.bytes for h in handles) / 1e9
-    n_experts = sum(len(h.base_layers) for h in handles)
+    n_experts = sum(len(h.slots) for h in handles)
     pinned = "pinned" if all(h.pinned for h in handles) else "pageable (no async H2D)"
     rank = (
         f" [rank {torch.distributed.get_rank()}]"
@@ -297,9 +375,7 @@ def _register_ddp_ignore(model: nn.Module, handles: list[_BlockOffload]) -> None
     The frozen weight Parameter objects survive eviction (only ``.data`` is swapped), so identity
     matching against ``named_parameters`` yields their fully-qualified names.
     """
-    offloaded_ids = {
-        id(base.weight) for handle in handles for base in handle.base_layers
-    }
+    offloaded_ids = {id(param) for handle in handles for param in handle.params}
     names = [
         name
         for name, param in model.named_parameters(remove_duplicate=False)

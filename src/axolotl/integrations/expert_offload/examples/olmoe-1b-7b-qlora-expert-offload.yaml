@@ -15,6 +15,10 @@ expert_offload: true
 
 load_in_8bit: false
 load_in_4bit: true
+# OLMoE stores its experts as fused 3D stacks on current transformers; plain load_in_4bit
+# leaves those UNQUANTIZED (bf16). This quantizes them on load — required both to fit the
+# model and for expert_offload to have 4-bit experts to home.
+quantize_moe_experts: true
 adapter: qlora
 lora_r: 8
 lora_alpha: 16

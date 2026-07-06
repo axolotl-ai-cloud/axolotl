@@ -31,9 +31,14 @@ composes with `activation_offloading`; it is orthogonal to `expert_parallel` (wh
   `use_reentrant` to `true` for a QLoRA run when the kwargs are omitted, and the plugin errors on a
   reentrant config. The `gradient_checkpointing: offload` / `offload_disk` variants are untested
   with this integration.
-- A per-expert MoE layout (`experts` is a `ModuleList`): Mixtral, Qwen2/3-MoE, OLMoE, DeepSeek-MoE,
-  Jamba, etc. Fused-expert layouts (GPT-OSS, DBRX) are not 4-bit-quantized as `Linear4bit` and are
-  left untouched.
+- A supported expert layout, either:
+  - **per-expert** (`experts` is a `ModuleList` of `Linear4bit`) — the classic Mixtral /
+    DeepSeek-MoE / Jamba shape; quantized by plain `load_in_4bit`.
+  - **grouped 3D stacks** (one `[n_experts, out, in]` parameter per projection) — OLMoE /
+    Qwen3-MoE on current transformers. Plain `load_in_4bit` does NOT quantize these; set
+    `quantize_moe_experts: true` so the stacks are 4-bit-quantized on load (bitsandbytes
+    parametrization) and there is something to offload. Without it the experts stay bf16 —
+    the model may not even fit resident, and the plugin fails loudly at install.
 
 ## Usage
 
@@ -45,6 +50,7 @@ expert_offload: true
 # expert_offload_pin_memory: true   # default; set false only if pinned RAM is scarce
 
 load_in_4bit: true
+quantize_moe_experts: true   # required for grouped-3D-stack models (OLMoE, Qwen3-MoE)
 adapter: qlora
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
@@ -76,10 +82,13 @@ Notes:
 
 ## How it works
 
-Each expert is a `Linear4bit` whose big tensor is the packed `weight.data`; its `quant_state`
-scales are ~1/32 the size and stay resident. Every offloaded block's `weight.data` is homed in
-pinned CPU RAM. A forward **pre-hook** on the MoE block copies its experts to the GPU just before
-the block runs. Eviction is driven by a **single-resident-slot** policy — staging a block first
+The big packed 4-bit tensor is either an expert's `weight.data` (`Linear4bit` layout) or the
+stack's `parametrizations.<p>.original.data` (`quantize_moe_experts` layout); the `quant_state`
+scales are ~1/32 the size and stay resident in both. Every offloaded block's packed data is homed
+in pinned CPU RAM. A forward **pre-hook** on the owning module copies its experts to the GPU just
+before it runs. In the parametrized layout the dequant runs under `no_grad` on access, so autograd
+only ever saves the *dequantized* activation — the packed tensor itself is never captured by the
+graph, and checkpoint recompute re-stages it through the same pre-hook. Eviction is driven by a **single-resident-slot** policy — staging a block first
 evicts the previously-staged one — and there is deliberately **no evict post-hook**: a block is
 never dropped until the *next* block stages.
 
