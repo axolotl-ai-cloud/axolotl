@@ -22,9 +22,12 @@ class ExpertOffloadArgs(BaseModel):
 
     expert_offload: bool = False
     """Keep frozen 4-bit MoE experts in CPU RAM and stream one block's experts to the GPU at a time,
-    lowering peak VRAM so MoE models whose experts exceed VRAM can QLoRA-train on a single small GPU.
-    Requires a 4-bit adapter (``load_in_4bit`` + ``adapter: qlora``), ``gradient_checkpointing: true``
-    with ``use_reentrant: false``, and a single GPU (no FSDP / DeepSpeed / expert-parallel)."""
+    lowering peak VRAM so MoE models whose experts exceed VRAM can QLoRA-train on a small GPU.
+    Requires a 4-bit adapter (``load_in_4bit`` + ``adapter: qlora``) and
+    ``gradient_checkpointing: true`` with ``use_reentrant: false``. One GPU per replica: single-GPU
+    and plain DDP (multi-GPU data parallel) are supported — under DDP each rank homes its own pinned
+    copy of the experts, so CPU RAM cost scales with world size. FSDP / DeepSpeed / expert-parallel
+    shard or move the same weights and are refused."""
 
     expert_offload_pin_memory: bool = True
     """Home the offloaded expert weights in pinned CPU memory so the per-block host->device copy is
@@ -65,12 +68,13 @@ class ExpertOffloadArgs(BaseModel):
                 "re-run the block pre-hook on recompute)"
             )
 
-        # Single GPU: FSDP / DeepSpeed / expert-parallel move or shard these same weights and
-        # would race the stage/evict swaps.
+        # One GPU per replica: plain DDP is fine (per-process replicas; the offloaded weights go
+        # on DDP's ignore list at install), but FSDP / DeepSpeed / expert-parallel move or shard
+        # these same weights and would race the stage/evict swaps.
         if getattr(self, "fsdp_config", None) or getattr(self, "fsdp", None):
-            errors.append("is single-GPU only and incompatible with FSDP")
+            errors.append("is incompatible with FSDP (use single-GPU or plain DDP)")
         if getattr(self, "deepspeed", None):
-            errors.append("is single-GPU only and incompatible with DeepSpeed")
+            errors.append("is incompatible with DeepSpeed (use single-GPU or plain DDP)")
         if (getattr(self, "expert_parallel_size", None) or 1) > 1:
             errors.append(
                 "is incompatible with expert_parallel (both manage the expert weights)"
