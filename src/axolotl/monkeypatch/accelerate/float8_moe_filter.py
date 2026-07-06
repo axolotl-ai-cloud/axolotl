@@ -52,12 +52,12 @@ def patch_fp8_exclude_moe_router():
         else:
             inner = module_filter_func
 
-        def module_filter_func(module, fqn, _inner=inner):
+        def _router_aware_filter(module, fqn, _inner=inner):
             if _is_router(fqn):
                 return False
             return _inner(module, fqn)
 
-        return orig(model, config=config, module_filter_func=module_filter_func)
+        return orig(model, config=config, module_filter_func=_router_aware_filter)
 
     acc.convert_model_to_fp8_ao = patched
     _PATCHED = True
