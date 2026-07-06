@@ -198,6 +198,7 @@ def test_callback_logs_scalar_metrics(monkeypatch, tmp_path):
     assert posted["json"]["event"] == "save"
     assert posted["json"]["step"] == 100
     assert posted["json"]["output_dir"] == str(tmp_path)
+    assert posted["timeout"] == 3600  # timeout_sec default propagated to requests
     assert control.should_training_stop is False
 
 
@@ -301,8 +302,22 @@ def test_callback_non_dict_response_raised_when_configured(monkeypatch, tmp_path
         endpoint="http://bench/eval",
         fail_training_on_error=True,
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         callback.on_save(_args(tmp_path), _state(), _control())
+
+
+def test_callback_empty_run_on_disables_all_triggers(monkeypatch, tmp_path):
+    callback, trainer, posted = _callback(
+        monkeypatch,
+        response={"status": "completed", "metrics": {"m": 1.0}},
+        endpoint="http://bench/eval",
+        run_on=[],  # explicitly disable every trigger
+    )
+    callback.on_save(_args(tmp_path), _state(), _control())
+    callback.on_evaluate(_args(tmp_path), _state(), _control())
+    callback.on_train_end(_args(tmp_path), _state(), _control())
+    trainer.log.assert_not_called()
+    assert posted == {}  # no HTTP call for any event
 
 
 def test_callback_early_stopping_sets_control(monkeypatch, tmp_path):
@@ -319,6 +334,12 @@ def test_callback_early_stopping_sets_control(monkeypatch, tmp_path):
     )
     control = callback.on_save(_args(tmp_path), _state(), _control())
     assert control.should_training_stop is True
+
+
+def test_sync_status_identity_without_distributed():
+    # not in a distributed run -> status is returned unchanged, no collective
+    assert BenchmarkAPICallback._sync_status(1, SimpleNamespace()) == 1
+    assert BenchmarkAPICallback._sync_status(0, SimpleNamespace()) == 0
 
 
 def test_plugin_registers_callback(monkeypatch):

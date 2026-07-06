@@ -9,7 +9,7 @@ datasets are used, whether adapters are merged, how the model is loaded, or what
 the metrics mean. All benchmark-specific logic lives in the external runner. The
 plugin is a checkpoint-event webhook:
 
-```
+```text
 training event -> POST checkpoint info -> external runner -> scalar metrics -> log + optional stop
 ```
 

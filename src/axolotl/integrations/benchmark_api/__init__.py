@@ -11,6 +11,8 @@ metrics come back, optionally applying single-metric early stopping.
 import os
 
 import requests
+import torch
+import torch.distributed as dist
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
@@ -21,6 +23,11 @@ from .args import BenchmarkAPIArgs as BenchmarkAPIArgs
 from .early_stopping import EarlyStopper
 
 LOG = get_logger(__name__)
+
+# status codes broadcast from the main process to all ranks
+_CONTINUE = 0
+_STOP = 1
+_ERROR = 2
 
 
 def _extract_scalar_metrics(raw_metrics) -> dict:
@@ -43,7 +50,8 @@ class BenchmarkAPICallback(TrainerCallback):
         bench = cfg.benchmark_api
         self.trainer = trainer
         self.endpoint = bench.endpoint
-        self.run_on = set(bench.run_on or ["save"])
+        # distinguish an explicit empty list (disable all triggers) from a missing value
+        self.run_on = set(bench.run_on if bench.run_on is not None else ["save"])
         self.timeout_sec = bench.timeout_sec
         self.fail_training_on_error = bench.fail_training_on_error
 
@@ -65,12 +73,31 @@ class BenchmarkAPICallback(TrainerCallback):
         return candidate if os.path.isdir(candidate) else args.output_dir
 
     def _run_benchmark(self, event, args, state, control):
-        # only the main process talks to the benchmark runner and logs metrics
-        if not state.is_world_process_zero:
-            return control
+        # `event in run_on` and the sync/error flags are config-derived, so every
+        # rank agrees on control flow and reaches the same collective (no deadlock).
         if event not in self.run_on:
             return control
 
+        # only the main process talks to the benchmark runner and logs metrics
+        status = _CONTINUE
+        if state.is_world_process_zero:
+            status = self._benchmark_on_main(event, args, state)
+
+        # the stop/error decision is made on rank 0 but must apply on every rank,
+        # or the workers desync at the next collective
+        if self.early_stopper is not None or self.fail_training_on_error:
+            status = self._sync_status(status, args)
+
+        if status == _ERROR:
+            raise RuntimeError(
+                f"Benchmark API call failed ({event}) and fail_training_on_error is set"
+            )
+        if status == _STOP:
+            control.should_training_stop = True
+        return control
+
+    def _benchmark_on_main(self, event, args, state) -> int:
+        """Run the benchmark on rank 0 and return a status code; never raises."""
         payload = {
             "event": event,
             "step": state.global_step,
@@ -92,16 +119,17 @@ class BenchmarkAPICallback(TrainerCallback):
                 raise ValueError(f"expected a JSON object, got {type(result).__name__}")
         except Exception as exc:  # noqa: BLE001
             if self.fail_training_on_error:
-                raise
+                LOG.error(f"Benchmark API call failed ({event}): {exc}")
+                return _ERROR
             LOG.warning(f"Benchmark API call failed ({event}): {exc}")
-            return control
+            return _CONTINUE
 
         if result.get("status") != "completed":
             LOG.warning(
                 f"Benchmark API returned status {result.get('status')!r} "
                 f"for {event}; skipping metric logging"
             )
-            return control
+            return _CONTINUE
 
         metrics = _extract_scalar_metrics(result.get("metrics"))
         if metrics:
@@ -112,9 +140,18 @@ class BenchmarkAPICallback(TrainerCallback):
             should_stop, reason = self.early_stopper.update(metrics)
             if should_stop:
                 LOG.info(f"Benchmark API: early stopping — {reason}")
-                control.should_training_stop = True
+                return _STOP
 
-        return control
+        return _CONTINUE
+
+    @staticmethod
+    def _sync_status(status: int, args) -> int:
+        """Broadcast rank 0's status code to all ranks (identity if not distributed)."""
+        if dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1:
+            flag = torch.tensor([status], device=args.device)
+            dist.broadcast(flag, src=0)
+            return int(flag.item())
+        return status
 
     def on_save(self, args, state, control, **kwargs):
         return self._run_benchmark("save", args, state, control)

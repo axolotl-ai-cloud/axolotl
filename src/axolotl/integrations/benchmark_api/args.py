@@ -2,6 +2,7 @@
 Config schema for the external benchmark API plugin.
 """
 
+import re
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -59,12 +60,19 @@ class BenchmarkAPIConfig(BaseModel):
     """
 
     endpoint: str
-    run_on: List[Literal["save", "eval", "train_end"]] = Field(
-        default_factory=lambda: ["save"]
-    )
+    run_on: List[Literal["save", "eval", "train_end"]] = Field(default=["save"])
     timeout_sec: int = Field(default=3600, gt=0)
     fail_training_on_error: bool = False
     early_stopping: Optional[EarlyStoppingConfig] = None
+
+    @field_validator("endpoint")
+    @classmethod
+    def _require_http_scheme(cls, value: str) -> str:
+        if not re.match(r"^https?://", value):
+            raise ValueError(
+                "benchmark_api.endpoint must start with http:// or https://"
+            )
+        return value
 
 
 class BenchmarkAPIArgs(BaseModel):
