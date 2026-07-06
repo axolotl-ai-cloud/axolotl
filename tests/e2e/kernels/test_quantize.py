@@ -1,6 +1,7 @@
 """Tests for quantization utility functions."""
 
 import bitsandbytes as bnb
+import pytest
 import torch
 
 from axolotl.kernels.quantize import dequantize
@@ -40,6 +41,23 @@ def test_dequantize_transposed():
     result = dequantize(packed.t(), quant_state)
     assert tuple(result.shape) == (shape[1], shape[0])
     torch.testing.assert_close(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
+def test_dequantize_matches_bnb(dtype):
+    """Bit-exact vs bnb's own dequant for every supported output dtype. fp32 previously
+    fell through to the bf16 kernel writing into an fp32 buffer and produced garbage."""
+    shape = (128, 64)
+    packed, quant_state = _nf4_pair(shape, dtype=dtype)
+    expected = bnb.functional.dequantize_4bit(packed, quant_state, quant_type="nf4")
+
+    result = dequantize(packed, quant_state)
+    assert result.dtype == dtype
+    torch.testing.assert_close(result, expected)
+
+    # transposed input → transposed output (values, not just shape)
+    result_t = dequantize(packed.t(), quant_state)
+    torch.testing.assert_close(result_t, expected.t())
 
 
 def test_dequantize_non_nested():
