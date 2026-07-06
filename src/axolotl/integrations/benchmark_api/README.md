@@ -21,7 +21,7 @@ plugins:
 
 benchmark_api:
   endpoint: http://localhost:8765/eval
-  mode: sync          # sync (default) | async
+  execution_mode: sync     # sync (default) | async
   poll_interval_steps: 10  # async only: how often to poll pending jobs
   run_on:
     - save            # save | eval | train_end (default: [save])

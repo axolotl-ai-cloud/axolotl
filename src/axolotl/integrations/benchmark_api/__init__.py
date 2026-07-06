@@ -80,7 +80,7 @@ class BenchmarkAPICallback(TrainerCallback):
         bench = cfg.benchmark_api
         self.trainer = trainer
         self.endpoint = bench.endpoint
-        self.mode = bench.mode or "sync"
+        self.mode = bench.execution_mode or "sync"
         self.poll_interval_steps = bench.poll_interval_steps or 10
         # distinguish an explicit empty list (disable all triggers) from a missing value
         self.run_on = set(bench.run_on if bench.run_on is not None else ["save"])

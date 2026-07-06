@@ -60,7 +60,7 @@ class BenchmarkAPIConfig(BaseModel):
     """
 
     endpoint: str
-    mode: Literal["sync", "async"] = "sync"
+    execution_mode: Literal["sync", "async"] = "sync"
     poll_interval_steps: int = Field(default=10, gt=0)
     run_on: List[Literal["save", "eval", "train_end"]] = Field(default=["save"])
     timeout_sec: int = Field(default=3600, gt=0)

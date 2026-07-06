@@ -47,7 +47,7 @@ saves_per_epoch: 4
 
 benchmark_api:
   endpoint: http://localhost:8765/eval
-  mode: async
+  execution_mode: async
   poll_interval_steps: 10
   run_on:
     - save

@@ -399,7 +399,7 @@ class _FakeRunner:
 
 
 def _async_callback(monkeypatch, runner, **benchmark_api):
-    benchmark_api.setdefault("mode", "async")
+    benchmark_api.setdefault("execution_mode", "async")
     benchmark_api.setdefault("poll_interval_steps", 1)
     cfg = _make_cfg(**benchmark_api)
     trainer = Mock()
@@ -599,11 +599,13 @@ def test_sync_mode_ignores_step_end(monkeypatch, tmp_path):
 
 def test_async_config_defaults_and_validation():
     cfg = _make_cfg(endpoint="http://x")
-    assert cfg.benchmark_api.mode == "sync"  # default
+    assert cfg.benchmark_api.execution_mode == "sync"  # default
     assert cfg.benchmark_api.poll_interval_steps == 10
 
     with pytest.raises(ValidationError):
-        BenchmarkAPIArgs(benchmark_api={"endpoint": "http://x", "mode": "background"})
+        BenchmarkAPIArgs(
+            benchmark_api={"endpoint": "http://x", "execution_mode": "background"}
+        )
     with pytest.raises(ValidationError):
         BenchmarkAPIArgs(
             benchmark_api={"endpoint": "http://x", "poll_interval_steps": 0}
