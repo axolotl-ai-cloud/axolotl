@@ -37,8 +37,12 @@ both correct and actually memory-freeing rather than pinning every staged weight
 tensor. ``gradient_checkpointing: true`` with an explicit ``use_reentrant: false`` is enforced at
 config validation (the ``ExpertOffloadArgs`` schema validator).
 
-Single-GPU only: FSDP / DeepSpeed / expert-parallel move or shard these same weights and would
-race the stage/evict swaps. The config schema refuses to enable under any of them.
+One GPU **per replica**: plain DDP (multi-GPU data parallel) is supported — each rank is its own
+process with a full replica, so each rank homes its own pinned copy of the experts (CPU RAM cost
+scales with world size) and stages to its own device; the offloaded weights are registered on
+DDP's ignore list so the initial module-state sync never touches the 0-element placeholders.
+FSDP / DeepSpeed / expert-parallel move or shard these same weights and would race the
+stage/evict swaps; the config schema refuses to enable under any of them.
 """
 
 from __future__ import annotations
@@ -147,10 +151,11 @@ class _BlockOffload:
     """
 
     # The single block whose experts are currently GPU-staged. Class-wide, so it assumes one
-    # offloaded model per process (the training case). Under use_reentrant=False gradient
-    # checkpointing the backward RECOMPUTE re-runs a layer's forward to rebuild its saved tensors;
-    # staging a new block first evicts this previously-staged one, so at most one block is
-    # GPU-resident at any instant, in forward AND backward.
+    # offloaded model per process (the training case — including DDP, where each rank is its own
+    # process with its own replica). Under use_reentrant=False gradient checkpointing the backward
+    # RECOMPUTE re-runs a layer's forward to rebuild its saved tensors; staging a new block first
+    # evicts this previously-staged one, so at most one block is GPU-resident at any instant, in
+    # forward AND backward.
     _resident: _BlockOffload | None = None
 
     def __init__(
@@ -262,11 +267,45 @@ def install_expert_offload(
         handles.append(handle)
 
     model._expert_offload_handles = handles
+    _register_ddp_ignore(model, handles)
     total_gb = sum(h.bytes for h in handles) / 1e9
     n_experts = sum(len(h.base_layers) for h in handles)
     pinned = "pinned" if all(h.pinned for h in handles) else "pageable (no async H2D)"
+    rank = (
+        f" [rank {torch.distributed.get_rank()}]"
+        if torch.distributed.is_available() and torch.distributed.is_initialized()
+        else ""
+    )
     LOG.info(
-        f"expert_offload: homed {n_experts} expert layers across {len(handles)} MoE blocks "
+        f"expert_offload{rank}: homed {n_experts} expert layers across {len(handles)} MoE blocks "
         f"({total_gb:.2f} GB) to {pinned} CPU RAM; one block resident on {device} at a time."
     )
     return handles
+
+
+def _register_ddp_ignore(model: nn.Module, handles: list[_BlockOffload]) -> None:
+    """Register every offloaded expert weight on DDP's ignore list.
+
+    While evicted, those weights are 0-element placeholders; DDP's initial module-state sync
+    (and any buffer broadcast) must never touch them — broadcasting a placeholder is at best a
+    no-op and at worst re-materializes state DDP has no business managing. The offloaded experts
+    are frozen (``requires_grad=False``) so they never participate in gradient buckets either;
+    the ignore list makes that contract explicit. ``_ddp_params_and_buffers_to_ignore`` is the
+    mechanism behind ``DistributedDataParallel._set_params_and_buffers_to_ignore_for_model`` and
+    is read off the module at DDP construction, which happens after ``post_model_load``.
+
+    The frozen weight Parameter objects survive eviction (only ``.data`` is swapped), so identity
+    matching against ``named_parameters`` yields their fully-qualified names.
+    """
+    offloaded_ids = {
+        id(base.weight) for handle in handles for base in handle.base_layers
+    }
+    names = [
+        name
+        for name, param in model.named_parameters(remove_duplicate=False)
+        if id(param) in offloaded_ids
+    ]
+    existing = list(getattr(model, "_ddp_params_and_buffers_to_ignore", []) or [])
+    model._ddp_params_and_buffers_to_ignore = existing + [
+        n for n in names if n not in existing
+    ]

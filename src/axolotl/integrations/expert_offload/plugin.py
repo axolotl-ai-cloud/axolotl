@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Expert-offload plugin for axolotl: single-GPU CPU offload of frozen 4-bit MoE experts."""
+"""Expert-offload plugin for axolotl: per-replica CPU offload of frozen 4-bit MoE experts."""
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ class ExpertOffloadPlugin(BasePlugin):
 
     Surgical counterpart to ``layer_offloading``: it moves only the frozen 4-bit experts (the bulk
     of a MoE's parameters) while attention, router, norms and the trainable LoRA adapters stay
-    GPU-resident — minimizing per-step PCIe traffic for the same peak-VRAM reduction. Single-GPU
-    QLoRA only; the cross-field config requirements are enforced at config-parse time by the
-    ``ExpertOffloadArgs`` schema validator. See ``offload.py`` for the mechanism and this
-    integration's README.
+    GPU-resident — minimizing per-step PCIe traffic for the same peak-VRAM reduction. One GPU per
+    replica (single-GPU or plain DDP; no FSDP / DeepSpeed / expert-parallel); the cross-field
+    config requirements are enforced at config-parse time by the ``ExpertOffloadArgs`` schema
+    validator. See ``offload.py`` for the mechanism and this integration's README.
     """
 
     def get_input_args(self):

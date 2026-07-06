@@ -224,6 +224,41 @@ class TestDiscovery:
             install_expert_offload(model, device="cpu", pin=False)
 
 
+class TestDDPIgnoreList:
+    # DDP's initial module-state sync must never touch the evicted 0-element placeholders, so
+    # install registers every offloaded weight on ``_ddp_params_and_buffers_to_ignore`` (read by
+    # DistributedDataParallel at construction, which happens after post_model_load).
+
+    def test_install_registers_offloaded_weights(self):
+        model = FakeMoEModel(n_experts=4, n_layers=3)
+        handles = install_expert_offload(model, device="cpu", pin=False)
+        ignore = model._ddp_params_and_buffers_to_ignore
+        offloaded = {
+            id(base.weight) for handle in handles for base in handle.base_layers
+        }
+        named = dict(model.named_parameters(remove_duplicate=False))
+        # exactly the offloaded expert weights, each resolvable by name on the model DDP wraps
+        assert len(ignore) == len(offloaded) == 3 * 4
+        assert all(name in named and id(named[name]) in offloaded for name in ignore)
+
+    def test_ignore_list_appends_without_duplicating(self):
+        model = FakeMoEModel(n_experts=2, n_layers=1)
+        model._ddp_params_and_buffers_to_ignore = ["pre.existing"]
+        install_expert_offload(model, device="cpu", pin=False)
+        ignore = model._ddp_params_and_buffers_to_ignore
+        assert ignore[0] == "pre.existing"
+        assert len(ignore) == 1 + 2
+        assert len(ignore) == len(set(ignore))
+
+    def test_trainable_lora_params_not_ignored(self):
+        model = FakeMoEModel(n_experts=2, n_layers=2, lora=True)
+        install_expert_offload(model, device="cpu", pin=False)
+        ignore = set(model._ddp_params_and_buffers_to_ignore)
+        for name, param in model.named_parameters():
+            if param.requires_grad:  # LoRA A/B must stay in DDP's gradient buckets
+                assert name not in ignore
+
+
 # --------------------------------------------------------------------------- #
 # The core: gradient-checkpoint recompute correctness + single-resident       #
 # --------------------------------------------------------------------------- #

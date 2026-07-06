@@ -23,7 +23,8 @@ composes with `activation_offloading`; it is orthogonal to `expert_parallel` (wh
 
 ## Requirements
 
-- Single GPU (no FSDP / DeepSpeed / expert-parallel).
+- One GPU per replica: single-GPU, or plain DDP for multi-GPU data parallel (no FSDP /
+  DeepSpeed / expert-parallel — those shard or move the same weights this plugin manages).
 - `load_in_4bit: true` with `adapter: qlora` — it offloads 4-bit `Linear4bit` experts.
 - `gradient_checkpointing: true` with `gradient_checkpointing_kwargs.use_reentrant: false`. This is
   **required**, not just recommended — see "How it works". Set it explicitly: axolotl defaults
@@ -51,6 +52,27 @@ gradient_checkpointing_kwargs:
 ```
 
 See `examples/` for a full config.
+
+### Multi-GPU (plain DDP)
+
+The same config runs data-parallel unmodified — launch across N GPUs and each rank keeps its own
+full replica, homes its own pinned copy of the experts, and streams to its own device:
+
+```bash
+axolotl train examples/olmoe-1b-7b-qlora-expert-offload.yaml   # auto-detects visible GPUs
+```
+
+Notes:
+
+- **CPU RAM scales with world size** (one pinned home set per rank): budget
+  `world_size x total 4-bit expert bytes` of pinned RAM.
+- The offloaded expert weights are registered on DDP's parameter ignore list at install, so
+  DDP's initial module-state sync never touches the evicted 0-element placeholders; they are
+  frozen (`requires_grad=False`) and never enter gradient buckets.
+- The per-step NCCL all-reduce covers only the trainable LoRA parameters (a few tens of MB), so
+  contention with the expert H2D copies over PCIe is small; measure on your topology if the
+  interconnect is shared.
+- FSDP / DeepSpeed / expert-parallel remain unsupported and are refused at config validation.
 
 ## How it works
 
