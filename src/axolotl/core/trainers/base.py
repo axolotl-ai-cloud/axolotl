@@ -842,6 +842,19 @@ class AxolotlTrainer(
                 save_fsdp2_lora_adapter,
             )
 
+            cfg = getattr(self, "axolotl_cfg", None)
+            if cfg and (getattr(cfg, "expert_parallel_size", 1) or 1) > 1:
+                from axolotl.integrations.expert_parallel.plugin import (
+                    ExpertParallelPlugin,
+                )
+                from axolotl.integrations.expert_parallel.shard import (
+                    save_ep_lora_adapter,
+                )
+
+                ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+                if save_ep_lora_adapter(unwrapped, output_dir, ep_group):
+                    return True
+
             return bool(save_fsdp2_lora_adapter(unwrapped, output_dir))
         except Exception as exc:  # pylint: disable=broad-except
             LOG.warning(
