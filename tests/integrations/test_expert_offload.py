@@ -12,6 +12,7 @@ import copy
 import pytest
 import torch
 import torch.nn.functional as F
+import torch.nn.utils.parametrize as parametrize
 from pydantic import ValidationError
 from torch import nn
 from torch.utils.checkpoint import checkpoint
@@ -23,6 +24,7 @@ from axolotl.integrations.expert_offload.offload import (
     _BlockOffload,
     _is_linear4bit,
     find_moe_expert_blocks,
+    find_parametrized_expert_stacks,
     install_expert_offload,
 )
 
@@ -89,6 +91,66 @@ class FakeMoEModel(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList(
             [FakeMoEBlock(d, n_experts, lora) for _ in range(n_layers)]
+        )
+        self.head = nn.Linear(d, d)
+
+    def forward(self, x, use_ckpt: bool = False):
+        for blk in self.layers:
+            x = x + (checkpoint(blk, x, use_reentrant=False) if use_ckpt else blk(x))
+        return self.head(x)
+
+
+class Bnb4bitParametrization(nn.Module):
+    """Stand-in for bitsandbytes' dequantizing parametrization — detection matches on the class
+    name. Identity "dequant" over a float packed tensor keeps the math checkable on CPU; the real
+    one also runs under ``no_grad``, so autograd never sees the packed tensor in either case."""
+
+    @torch.no_grad()
+    def forward(self, packed):
+        return packed
+
+
+class FakeGroupedExperts(nn.Module):
+    """OLMoE-style fused experts: one frozen 3D stack per projection, parametrized "4-bit"."""
+
+    def __init__(self, d: int, n_experts: int):
+        super().__init__()
+        self.n_experts = n_experts
+        self.gate_up_proj = nn.Parameter(
+            torch.randn(n_experts, d, d) * 0.1, requires_grad=False
+        )
+        self.down_proj = nn.Parameter(
+            torch.randn(n_experts, d, d) * 0.1, requires_grad=False
+        )
+        for pname in ("gate_up_proj", "down_proj"):
+            parametrize.register_parametrization(
+                self, pname, Bnb4bitParametrization(), unsafe=True
+            )
+
+    def forward(self, x, w):
+        out = torch.zeros_like(x)
+        for i in range(self.n_experts):
+            h = torch.tanh(F.linear(x, self.gate_up_proj[i]))
+            out = out + w[..., i : i + 1] * F.linear(h, self.down_proj[i])
+        return out
+
+
+class FakeGroupedMoEBlock(nn.Module):
+    def __init__(self, d: int, n_experts: int):
+        super().__init__()
+        self.router = nn.Linear(d, n_experts)  # trainable, stays resident
+        self.experts = FakeGroupedExperts(d, n_experts)  # a module, NOT a ModuleList
+
+    def forward(self, x):
+        w = torch.softmax(self.router(x), dim=-1)
+        return self.experts(x, w)
+
+
+class FakeGroupedMoEModel(nn.Module):
+    def __init__(self, d: int = 16, n_experts: int = 4, n_layers: int = 3):
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [FakeGroupedMoEBlock(d, n_experts) for _ in range(n_layers)]
         )
         self.head = nn.Linear(d, d)
 
@@ -220,7 +282,7 @@ class TestDiscovery:
         # expert_offload was explicitly enabled; a layout with nothing to offload is a
         # misconfiguration and must fail loudly, not proceed without the VRAM reduction.
         model = nn.Sequential(nn.Linear(8, 8), nn.Linear(8, 8))
-        with pytest.raises(RuntimeError, match="no 4-bit MoE expert blocks"):
+        with pytest.raises(RuntimeError, match="no 4-bit MoE expert weights"):
             install_expert_offload(model, device="cpu", pin=False)
 
 
@@ -233,9 +295,7 @@ class TestDDPIgnoreList:
         model = FakeMoEModel(n_experts=4, n_layers=3)
         handles = install_expert_offload(model, device="cpu", pin=False)
         ignore = model._ddp_params_and_buffers_to_ignore
-        offloaded = {
-            id(base.weight) for handle in handles for base in handle.base_layers
-        }
+        offloaded = {id(p) for handle in handles for p in handle.params}
         named = dict(model.named_parameters(remove_duplicate=False))
         # exactly the offloaded expert weights, each resolvable by name on the model DDP wraps
         assert len(ignore) == len(offloaded) == 3 * 4
@@ -322,8 +382,8 @@ class TestRecompute:
         handles = install_expert_offload(model, device="cpu", pin=False)
         # Right after install, every block is evicted: each expert weight is a 0-element placeholder.
         for h in handles:
-            for base in h.base_layers:
-                assert base.weight.data.numel() == 0
+            for p in h.params:
+                assert p.data.numel() == 0
         assert handles[0].bytes > 0  # but the homes hold the real data
 
     def test_state_dict_substitutes_homes_for_placeholders(self):
@@ -336,6 +396,91 @@ class TestRecompute:
         assert len(expert_keys) == 8
         for k in expert_keys:
             assert sd[k].numel() > 0  # home substituted, not the placeholder
+
+
+# --------------------------------------------------------------------------- #
+# Grouped 3D stacks quantized via quantize_moe_experts (parametrized layout)  #
+# --------------------------------------------------------------------------- #
+class TestParametrizedStacks:
+    def test_discovery_finds_parametrized_stacks(self):
+        model = FakeGroupedMoEModel(n_experts=4, n_layers=3)
+        blocks = find_parametrized_expert_stacks(model)
+        assert len(blocks) == 3
+        for _name, module, slots in blocks:
+            assert isinstance(module, FakeGroupedExperts)  # the hook site
+            assert len(slots) == 2  # gate_up_proj + down_proj stacks
+            assert all(not s.param.requires_grad for s in slots)
+
+    def test_moduleList_path_does_not_match_grouped_layout(self):
+        model = FakeGroupedMoEModel(n_experts=4, n_layers=2)
+        assert find_moe_expert_blocks(model) == []  # no double-discovery
+
+    def test_install_evicts_stacks(self):
+        model = FakeGroupedMoEModel(n_experts=4, n_layers=3)
+        handles = install_expert_offload(model, device="cpu", pin=False)
+        assert len(handles) == 3
+        for h in handles:
+            assert len(h.params) == 2
+            for p in h.params:
+                assert p.data.numel() == 0  # evicted to placeholder
+            assert h.bytes > 0  # homes hold the real data
+
+    def test_offloaded_grads_match_reference(self):
+        """Same contract as the Linear4bit path: offloaded + checkpointed training must produce
+        identical outputs and trainable gradients — the recompute pre-hook re-stages the packed
+        stacks before the parametrization dequantizes them."""
+        torch.manual_seed(0)
+        model = FakeGroupedMoEModel(d=16, n_experts=4, n_layers=3)
+        reference = copy.deepcopy(model)
+        x = torch.randn(2, 5, 16)
+
+        reference.zero_grad()
+        out_ref = reference(x, use_ckpt=True)
+        out_ref.sum().backward()
+        ref_grads = {
+            n: p.grad.clone()
+            for n, p in reference.named_parameters()
+            if p.grad is not None
+        }
+
+        install_expert_offload(model, device="cpu", pin=False)
+        model.zero_grad()
+        out_off = model(x, use_ckpt=True)
+        out_off.sum().backward()
+        off_grads = {
+            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+        }
+
+        assert torch.allclose(out_ref, out_off, atol=1e-6)
+        assert set(ref_grads) == set(off_grads) and len(ref_grads) > 0
+        assert not any("parametrizations" in n for n in off_grads)  # stacks stay frozen
+        for name, g in ref_grads.items():
+            assert torch.allclose(g, off_grads[name], atol=1e-6), (
+                f"grad mismatch for {name}"
+            )
+
+    def test_state_dict_substitutes_homes_for_placeholders(self):
+        model = FakeGroupedMoEModel(d=16, n_experts=4, n_layers=2)
+        install_expert_offload(model, device="cpu", pin=False)
+        sd = model.state_dict()
+        stack_keys = [k for k in sd if ".original" in k]
+        assert len(stack_keys) == 4  # 2 layers x 2 stacks
+        for k in stack_keys:
+            assert sd[k].numel() > 0  # home substituted, not the placeholder
+
+    def test_ddp_ignore_covers_parametrized_stacks(self):
+        model = FakeGroupedMoEModel(n_experts=4, n_layers=3)
+        install_expert_offload(model, device="cpu", pin=False)
+        ignore = model._ddp_params_and_buffers_to_ignore
+        named = dict(model.named_parameters(remove_duplicate=False))
+        assert len(ignore) == 3 * 2
+        assert all(
+            ".parametrizations." in n and n.endswith(".original") for n in ignore
+        )
+        assert all(n in named and not named[n].requires_grad for n in ignore)
+        for name, param in model.named_parameters():
+            if param.requires_grad:  # router/head must stay in DDP's buckets
+                assert name not in ignore
 
 
 # --------------------------------------------------------------------------- #
@@ -404,10 +549,7 @@ class TestCudaLinear4bit:
         assert expert_bytes > 0
         # Everything is evicted between forwards -> no expert data resident on the GPU.
         resident = sum(
-            b.weight.data.numel()
-            for h in handles
-            for b in h.base_layers
-            if b.weight.data.is_cuda
+            p.data.numel() for h in handles for p in h.params if p.data.is_cuda
         )
         assert resident == 0
         # The freed GPU memory accounts for (most of) the experts' packed bytes.
@@ -440,3 +582,128 @@ class TestCudaLinear4bit:
         assert set(ref_grads) == set(off_grads) and len(ref_grads) > 0
         for name, g in ref_grads.items():
             assert torch.allclose(g, off_grads[name], atol=1e-3, rtol=1e-2), name
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="requires CUDA + bitsandbytes"
+)
+class TestCudaParametrized:
+    """The real ``quantize_moe_experts`` layout: grouped 3D stacks quantized in place through
+    ``bitsandbytes.nn.parametrize.replace_parameter_4bit`` (what axolotl's on-load patch calls)."""
+
+    @staticmethod
+    def _build(d=256, n_experts=8, n_layers=3):
+        pytest.importorskip("bitsandbytes")
+        from bitsandbytes.nn.parametrize import replace_parameter_4bit
+
+        class Experts(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.n_experts = n_experts
+                self.gate_up_proj = nn.Parameter(
+                    torch.randn(n_experts, d, d, device="cuda", dtype=torch.float16)
+                    * 0.02,
+                    requires_grad=False,
+                )
+                self.down_proj = nn.Parameter(
+                    torch.randn(n_experts, d, d, device="cuda", dtype=torch.float16)
+                    * 0.02,
+                    requires_grad=False,
+                )
+
+            def forward(self, x, w):
+                out = torch.zeros_like(x)
+                for i in range(self.n_experts):
+                    h = torch.tanh(F.linear(x, self.gate_up_proj[i]))
+                    out = out + w[..., i : i + 1] * F.linear(h, self.down_proj[i])
+                return out
+
+        class Block(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.router = nn.Linear(d, n_experts)
+                self.experts = Experts()
+
+            def forward(self, x):
+                w = torch.softmax(self.router(x), dim=-1)
+                return self.experts(x, w)
+
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.layers = nn.ModuleList([Block() for _ in range(n_layers)])
+
+            def forward(self, x, use_ckpt=True):
+                for blk in self.layers:
+                    x = x + (
+                        checkpoint(blk, x, use_reentrant=False) if use_ckpt else blk(x)
+                    )
+                return x
+
+        model = Model().cuda().half()
+        for blk in model.layers:
+            for pname in ("gate_up_proj", "down_proj"):
+                replace_parameter_4bit(blk.experts, pname, quant_type="nf4")
+        return model, d
+
+    def test_install_frees_stacks_from_gpu(self):
+        torch.manual_seed(0)
+        model, _d = self._build()
+        blocks = find_parametrized_expert_stacks(model)
+        assert len(blocks) == 3 and all(len(s) == 2 for _n, _m, s in blocks)
+        torch.cuda.synchronize()
+        alloc_before = torch.cuda.memory_allocated()
+
+        handles = install_expert_offload(model, device="cuda", pin=True)
+        torch.cuda.synchronize()
+        alloc_after = torch.cuda.memory_allocated()
+
+        stack_bytes = sum(h.bytes for h in handles)
+        assert stack_bytes > 0
+        resident = sum(
+            p.data.numel() for h in handles for p in h.params if p.data.is_cuda
+        )
+        assert resident == 0
+        assert alloc_before - alloc_after >= 0.8 * stack_bytes
+
+    def test_recompute_grads_match_same_quantized_weights(self):
+        """Reference and offloaded runs share the same quantized model (dequantization is
+        deterministic), so outputs and trainable grads must match across the install."""
+        torch.manual_seed(0)
+        model, d = self._build()
+        x = torch.randn(2, 8, d, device="cuda", dtype=torch.float16)
+
+        model.zero_grad()
+        out_ref = model(x)
+        out_ref.sum().backward()
+        ref_grads = {
+            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+        }
+
+        install_expert_offload(model, device="cuda", pin=True)
+        model.zero_grad()
+        out_off = model(x)
+        out_off.sum().backward()
+        off_grads = {
+            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+        }
+
+        assert torch.allclose(out_ref, out_off, atol=1e-3, rtol=1e-2)
+        assert set(ref_grads) == set(off_grads) and len(ref_grads) > 0
+        for name, g in ref_grads.items():
+            assert torch.allclose(g, off_grads[name], atol=1e-3, rtol=1e-2), name
+
+    def test_state_dict_keeps_packed_stacks_while_evicted(self):
+        torch.manual_seed(0)
+        model, _d = self._build()
+        packed_numels = {
+            n: p.numel() for n, p in model.named_parameters() if n.endswith(".original")
+        }
+        install_expert_offload(model, device="cuda", pin=True)
+        sd = model.state_dict()
+        # bitsandbytes' own post-hook renames parametrizations.<p>.original -> <p>; our hook must
+        # still substitute the full-size home wherever the packed tensor landed.
+        for name, numel in packed_numels.items():
+            clean = name.replace(".parametrizations", "").replace(".original", "")
+            t = sd.get(name) if name in sd else sd.get(clean)
+            assert t is not None and t.numel() == numel
