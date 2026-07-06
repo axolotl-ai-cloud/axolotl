@@ -1,0 +1,75 @@
+"""
+Config schema for the external benchmark API plugin.
+"""
+
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# alias -> normalized mode
+_MODE_ALIASES = {
+    "lower": "min",
+    "min": "min",
+    "smaller": "min",
+    "decrease": "min",
+    "higher": "max",
+    "max": "max",
+    "larger": "max",
+    "increase": "max",
+}
+
+
+class EarlyStoppingConfig(BaseModel):
+    """
+    Generic early stopping on a single benchmark metric.
+    """
+
+    enabled: bool = False
+    metric: Optional[str] = None
+    mode: Literal["min", "max"] = "min"
+    patience: int = Field(default=3, ge=1)
+    min_delta: float = Field(default=0.0, ge=0.0)
+    threshold: Optional[float] = None
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value):
+        if isinstance(value, str):
+            normalized = _MODE_ALIASES.get(value.strip().lower())
+            if normalized is None:
+                raise ValueError(
+                    f"invalid early_stopping mode {value!r}; "
+                    f"expected one of {sorted(_MODE_ALIASES)}"
+                )
+            return normalized
+        return value
+
+    @model_validator(mode="after")
+    def _require_metric(self):
+        if self.enabled and not self.metric:
+            raise ValueError(
+                "benchmark_api.early_stopping.metric is required when enabled is true"
+            )
+        return self
+
+
+class BenchmarkAPIConfig(BaseModel):
+    """
+    Settings for the external benchmark runner webhook.
+    """
+
+    endpoint: str
+    run_on: List[Literal["save", "eval", "train_end"]] = Field(
+        default_factory=lambda: ["save"]
+    )
+    timeout_sec: int = Field(default=3600, gt=0)
+    fail_training_on_error: bool = False
+    early_stopping: Optional[EarlyStoppingConfig] = None
+
+
+class BenchmarkAPIArgs(BaseModel):
+    """
+    Top-level `benchmark_api:` config block.
+    """
+
+    benchmark_api: Optional[BenchmarkAPIConfig] = None
