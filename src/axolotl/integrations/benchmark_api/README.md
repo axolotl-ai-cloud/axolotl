@@ -91,14 +91,38 @@ stopping is evaluated. Any jobs still outstanding at the end are drained
 (blocking) at `on_train_end`. Notes:
 
 - `poll_url` is optional; if omitted it defaults to `<endpoint>/<job_id>`.
-- Statuses `queued`/`running`/`accepted`/`pending` mean "not done yet".
+- Statuses `queued`/`running`/`accepted`/`pending` mean "not done yet"; any other
+  status is treated as a failed job (dropped, or fails training if
+  `fail_training_on_error: true`).
 - `timeout_sec` becomes a per-job deadline; a job that never completes is
   dropped (or fails training if `fail_training_on_error: true`).
-- Because results lag, a late benchmark logs against the step at which it
-  *completes*, and early stopping reacts a few steps after the metric plateaus —
-  the throughput/promptness trade-off inherent to async.
+- Because results lag, early stopping reacts a few steps after the metric
+  plateaus — the throughput/promptness trade-off inherent to async.
 - The runner may also answer a submit with `completed` directly (running
   synchronously under an async client); that is handled too.
+
+## Where metrics land
+
+Each completed benchmark result is written to the **axolotl log** (via the
+logger) with its values and the true source/checkpoint step, e.g.
+`Benchmark API metrics for job-3 (step 8): {'eval/ocr/cer_mean': 0.03, ...}`.
+It is also sent through `trainer.log` for live trackers (W&B/TensorBoard) — but
+at the `on_train_end` drain the trainer's printer and reporting callbacks have
+already closed, so `trainer.log` alone would silently drop those final results;
+the explicit log line is what guarantees they are captured. Non-finite values
+(`nan`/`inf`) are dropped before logging.
+
+## Distributed (multi-GPU)
+
+The HTTP call, polling, and metric logging run on the main process only; the
+early-stop/error decision is broadcast to all ranks so `should_training_stop`
+stays consistent. Because a blocking benchmark holds rank 0 while the other
+ranks wait on the next collective, a **sync** benchmark that runs longer than the
+process-group/NCCL watchdog (default ~10 min) can abort the run — prefer
+**async** for slow benchmarks, and keep the runner responsive to submit/poll
+requests. The `on_train_end` drain runs on rank 0 without a collective, but a
+very long drain can still delay shutdown under sharded saving (FSDP/DeepSpeed);
+keep `timeout_sec` modest so outstanding jobs don't stall teardown.
 
 Polling and the stop/error decision are driven on the main process and
 broadcast to all ranks, so early stopping stays consistent under multi-GPU.

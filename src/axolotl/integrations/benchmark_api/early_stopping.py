@@ -63,17 +63,18 @@ class EarlyStopper:
                 f"(mode={self.mode})"
             )
 
-        # a run counts as progress only if it clears best by at least min_delta
+        # A run counts as progress only if it clears best by at least min_delta.
+        # best moves only on a qualifying improvement (Keras-style, not a moving
+        # reference), so a metric that improves in sub-min_delta steps still resets
+        # once the cumulative gain clears the threshold.
         qualifies = self.best is None or (
             self._is_better(value) and abs(value - self.best) >= self.min_delta
         )
         if qualifies:
             self.num_bad_runs = 0
+            self.best = value
         else:
             self.num_bad_runs += 1
-
-        if self._is_better(value):
-            self.best = value
 
         if self.num_bad_runs >= self.patience:
             return True, (

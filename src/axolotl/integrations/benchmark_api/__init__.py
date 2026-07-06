@@ -15,6 +15,7 @@ Two modes:
     expensive benchmark runs in the background.
 """
 
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -48,13 +49,15 @@ _PENDING_STATUSES = {"queued", "running", "accepted", "pending"}
 
 
 def _extract_scalar_metrics(raw_metrics) -> dict:
-    """Keep only scalar int/float values (bools excluded)."""
+    """Keep only finite scalar int/float values (bools and nan/inf excluded)."""
     if not isinstance(raw_metrics, dict):
         return {}
     return {
         key: value
         for key, value in raw_metrics.items()
-        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        if isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
     }
 
 
@@ -121,17 +124,35 @@ class BenchmarkAPICallback(TrainerCallback):
             return control
         status = _CONTINUE
         if state.is_world_process_zero:
-            status = self._poll_on_main(args, state)
+            status = self._safe_main(lambda: self._poll_on_main(args, state), "poll")
         return self._finish(status, args, control, "poll")
 
     def on_train_end(self, args, state, control, **kwargs):
+        # Training is over: the stop decision is moot and no other rank is waiting
+        # on a step/gradient collective, so the (possibly long) drain runs on the
+        # main process only, without a broadcast that would otherwise force the
+        # workers to wait on rank 0 past the collective watchdog. Errors raise
+        # locally on rank 0, which is sufficient to signal a failed run at the end.
+        if not state.is_world_process_zero:
+            return control
         status = _CONTINUE
-        if state.is_world_process_zero:
-            if "train_end" in self.run_on:
-                status = _merge_status(status, self._submit(args, state, "train_end"))
-            if self.mode == "async":
-                status = _merge_status(status, self._drain_on_main(args, state))
-        return self._finish(status, args, control, "train_end")
+        if "train_end" in self.run_on:
+            status = _merge_status(
+                status,
+                self._safe_main(
+                    lambda: self._submit(args, state, "train_end"), "train_end"
+                ),
+            )
+        if self.mode == "async":
+            status = _merge_status(
+                status,
+                self._safe_main(lambda: self._drain_on_main(args, state), "drain"),
+            )
+        if status == _ERROR:
+            raise RuntimeError(
+                "Benchmark API call failed (train_end) and fail_training_on_error is set"
+            )
+        return control
 
     # ------------------------------------------------------------------ #
     # dispatch / distributed sync
@@ -144,7 +165,7 @@ class BenchmarkAPICallback(TrainerCallback):
             return control
         status = _CONTINUE
         if state.is_world_process_zero:
-            status = self._submit(args, state, event)
+            status = self._safe_main(lambda: self._submit(args, state, event), event)
         return self._finish(status, args, control, event)
 
     def _submit(self, args, state, event) -> int:
@@ -174,6 +195,18 @@ class BenchmarkAPICallback(TrainerCallback):
             dist.broadcast(flag, src=0)
             return int(flag.item())
         return status
+
+    def _safe_main(self, fn, label) -> int:
+        """Run main-process work, converting any unexpected error into a status.
+
+        Guarantees the caller still reaches the broadcast in ``_finish`` even if
+        e.g. ``trainer.log`` raises, so the other ranks never hang on the
+        collective waiting for a rank 0 that died early.
+        """
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            return self._on_error("callback", label, exc)
 
     # ------------------------------------------------------------------ #
     # main-process work (never raises; returns a status code)
@@ -214,7 +247,7 @@ class BenchmarkAPICallback(TrainerCallback):
                 f"for {event}; skipping metric logging"
             )
             return _CONTINUE
-        return self._process_result(result, event)
+        return self._process_result(result, event, state.global_step)
 
     def _submit_on_main(self, event, args, state) -> int:
         """Async submit: POST and either process an immediate result or enqueue."""
@@ -233,7 +266,7 @@ class BenchmarkAPICallback(TrainerCallback):
 
         status = result.get("status")
         if status == "completed":
-            return self._process_result(result, event)
+            return self._process_result(result, event, state.global_step)
         if status in _PENDING_STATUSES:
             job_id = result.get("job_id") or f"{event}-{state.global_step}"
             poll_url = result.get("poll_url") or f"{self.endpoint.rstrip('/')}/{job_id}"
@@ -251,10 +284,9 @@ class BenchmarkAPICallback(TrainerCallback):
             )
             return _CONTINUE
 
-        LOG.warning(
-            f"Benchmark API: unexpected submit status {status!r} for {event}; ignoring"
+        return self._on_error(
+            "submit", event, ValueError(f"unexpected submit status {status!r}")
         )
-        return _CONTINUE
 
     def _poll_on_main(self, args, state) -> int:
         """Poll every pending job once; log completed ones, drop timed-out ones."""
@@ -285,18 +317,31 @@ class BenchmarkAPICallback(TrainerCallback):
 
             job_status = result.get("status")
             if job_status == "completed":
-                status = _merge_status(status, self._process_result(result, job.job_id))
-            elif timed_out:
+                status = _merge_status(
+                    status, self._process_result(result, job.job_id, job.step)
+                )
+            elif job_status in _PENDING_STATUSES:
+                if timed_out:
+                    status = _merge_status(
+                        status,
+                        self._on_error(
+                            "timeout",
+                            job.job_id,
+                            TimeoutError(f"job {job.job_id} exceeded timeout_sec"),
+                        ),
+                    )
+                else:
+                    still_pending.append(job)
+            else:
+                # unexpected/failed status: stop waiting on this job
                 status = _merge_status(
                     status,
                     self._on_error(
-                        "timeout",
+                        "poll",
                         job.job_id,
-                        TimeoutError(f"job {job.job_id} exceeded timeout_sec"),
+                        ValueError(f"unexpected status {job_status!r}"),
                     ),
                 )
-            else:
-                still_pending.append(job)
         self._pending = still_pending
         return status
 
@@ -311,12 +356,16 @@ class BenchmarkAPICallback(TrainerCallback):
                 time.sleep(_DRAIN_POLL_SLEEP_SEC)
         return status
 
-    def _process_result(self, result, label) -> int:
+    def _process_result(self, result, label, step) -> int:
         """Log scalar metrics and apply early stopping for a completed result."""
         metrics = _extract_scalar_metrics(result.get("metrics"))
         if metrics:
-            self.trainer.log(metrics)
-            LOG.info(f"Benchmark API: logged {len(metrics)} metric(s) for {label}")
+            # Log the values through the axolotl logger first: at train-end drain
+            # the trainer's printer/reporting callbacks have already closed, so
+            # trainer.log alone would silently drop them. Hand trainer.log a copy
+            # since it augments the dict in place (epoch, memory stats, ...).
+            LOG.info(f"Benchmark API metrics for {label} (step {step}): {metrics}")
+            self.trainer.log(dict(metrics))
         if self.early_stopper is not None:
             should_stop, reason = self.early_stopper.update(metrics)
             if should_stop:

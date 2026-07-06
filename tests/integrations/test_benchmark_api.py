@@ -1,5 +1,6 @@
 """Tests for the external benchmark API plugin."""
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -607,3 +608,187 @@ def test_async_config_defaults_and_validation():
         BenchmarkAPIArgs(
             benchmark_api={"endpoint": "http://x", "poll_interval_steps": 0}
         )
+
+
+def test_async_drain_metrics_reach_axolotl_log(monkeypatch, tmp_path, caplog):
+    # the critical case: a job that only completes at train_end drain, when the
+    # trainer's printer/reporting callbacks have closed. The values must still
+    # land in the axolotl log (not just a count).
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[
+            {"status": "running"},
+            {"status": "completed", "metrics": {"eval/ocr/cer_mean": 0.03}},
+        ],
+    )
+    callback, _ = _async_callback(monkeypatch, runner, endpoint="http://bench/eval")
+    callback.on_save(_args(tmp_path), _state(step=10), _control())
+    callback.on_step_end(_args(tmp_path), _state(step=11), _control())  # still running
+    assert len(callback._pending) == 1
+
+    with caplog.at_level(logging.INFO, logger="axolotl.integrations.benchmark_api"):
+        callback.on_train_end(_args(tmp_path), _state(step=11), _control())
+
+    assert "eval/ocr/cer_mean" in caplog.text  # the key
+    assert "0.03" in caplog.text  # the value
+    assert "step 10" in caplog.text  # true source/checkpoint step, not the drain step
+
+
+def test_metrics_logged_with_values_and_source_step(monkeypatch, tmp_path, caplog):
+    callback, _, _ = _callback(
+        monkeypatch,
+        response={"status": "completed", "metrics": {"eval/cer": 0.08}},
+        endpoint="http://bench/eval",
+    )
+    with caplog.at_level(logging.INFO, logger="axolotl.integrations.benchmark_api"):
+        callback.on_save(_args(tmp_path), _state(step=250), _control())
+    assert "eval/cer" in caplog.text
+    assert "0.08" in caplog.text
+    assert "step 250" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
+# robustness / coverage (from adversarial review)
+# --------------------------------------------------------------------------- #
+
+
+def test_extract_scalar_metrics_drops_non_finite():
+    raw = {"a": 0.5, "nan": float("nan"), "inf": float("inf"), "ninf": float("-inf")}
+    assert _extract_scalar_metrics(raw) == {"a": 0.5}
+
+
+def test_early_stopping_ignores_nan_metric(monkeypatch, tmp_path):
+    # a runner emitting nan for the watched metric must not silently drive a stop
+    stopper = EarlyStopper("cer", mode="min", patience=1)
+    # nan is filtered upstream, so the stopper simply never sees the key
+    assert stopper.update({}) == (False, "")
+    assert stopper.best is None
+
+
+def test_early_stopping_cumulative_gain_resets_patience():
+    # sub-min_delta steps that cumulatively clear min_delta must NOT stop early
+    stopper = EarlyStopper("cer", mode="min", patience=2, min_delta=0.01)
+    assert stopper.update({"cer": 0.50})[0] is False  # best=0.50
+    assert stopper.update({"cer": 0.492})[0] is False  # d0.008 < 0.01 -> bad 1
+    # 0.484 vs frozen best 0.50 = 0.016 >= 0.01 -> qualifies, counter resets
+    assert stopper.update({"cer": 0.484})[0] is False
+    assert stopper.num_bad_runs == 0
+    assert stopper.best == 0.484
+
+
+def test_sync_status_broadcasts_when_distributed(monkeypatch):
+    # exercise the actual dist.broadcast branch: rank 0's value overrides local
+    from axolotl.integrations import benchmark_api as mod
+
+    monkeypatch.setattr(mod.dist, "is_available", lambda: True)
+    monkeypatch.setattr(mod.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(mod.dist, "get_world_size", lambda: 2)
+    captured = {}
+
+    def fake_broadcast(tensor, src=0):
+        captured["src"] = src
+        captured["local"] = int(tensor.item())
+        tensor.fill_(1)  # simulate receiving rank 0's _STOP
+
+    monkeypatch.setattr(mod.dist, "broadcast", fake_broadcast)
+    out = BenchmarkAPICallback._sync_status(0, SimpleNamespace(device="cpu"))
+    assert captured["src"] == 0
+    assert out == 1  # adopted the broadcast value, not the local 0
+
+
+def test_finish_reaches_broadcast_despite_main_exception(monkeypatch, tmp_path):
+    # if trainer.log raises on rank 0, _safe_main converts it to a status so the
+    # broadcast is still reached (no hang); with fail=False it must not raise
+    callback, trainer, _ = _callback(
+        monkeypatch,
+        response={"status": "completed", "metrics": {"m": 1.0}},
+        endpoint="http://bench/eval",
+        fail_training_on_error=False,
+    )
+    trainer.log.side_effect = RuntimeError("tracker exploded")
+    # should not propagate
+    control = callback.on_save(_args(tmp_path), _state(), _control())
+    assert control.should_training_stop is False
+
+
+def test_async_poll_error_retries_then_drops_on_deadline(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        get_exc=RuntimeError("poll refused"),
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=False
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    callback.on_step_end(
+        _args(tmp_path), _state(step=2), _control()
+    )  # error, in-deadline
+    assert len(callback._pending) == 1  # retried, kept
+    callback._pending[0].deadline = -1.0
+    control = callback.on_step_end(_args(tmp_path), _state(step=3), _control())
+    assert callback._pending == []  # dropped past deadline
+    assert control.should_training_stop is False  # no raise
+
+
+def test_async_poll_unexpected_status_dropped(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "failed"}],  # not completed, not a pending status
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=False
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+    assert callback._pending == []  # not re-polled forever; dropped
+
+
+def test_async_poll_unexpected_status_raises_when_configured(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"},
+        polls=[{"status": "failed"}],
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=True
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    with pytest.raises(RuntimeError):
+        callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+
+
+def test_async_unexpected_submit_status_raises_when_configured(monkeypatch, tmp_path):
+    runner = _FakeRunner(submit={"status": "rejected"})
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", fail_training_on_error=True
+    )
+    with pytest.raises(RuntimeError):
+        callback.on_save(_args(tmp_path), _state(), _control())
+
+
+def test_async_train_end_submits_and_drains(monkeypatch, tmp_path):
+    # train_end is both a trigger (submit) and the drain point
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "je", "poll_url": "http://bench/je"},
+        polls=[{"status": "completed", "metrics": {"final/score": 0.9}}],
+    )
+    callback, trainer = _async_callback(
+        monkeypatch,
+        runner,
+        endpoint="http://bench/eval",
+        run_on=["train_end"],
+    )
+    callback.on_train_end(_args(tmp_path), _state(step=50), _control())
+    trainer.log.assert_called_once_with({"final/score": 0.9})
+    assert callback._pending == []
+
+
+def test_async_train_end_skips_on_non_main_process(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "je", "poll_url": "http://bench/je"},
+    )
+    callback, trainer = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", run_on=["train_end"]
+    )
+    callback.on_train_end(_args(tmp_path), _state(world_zero=False), _control())
+    assert runner.post_calls == []  # non-main process does nothing
+    trainer.log.assert_not_called()
