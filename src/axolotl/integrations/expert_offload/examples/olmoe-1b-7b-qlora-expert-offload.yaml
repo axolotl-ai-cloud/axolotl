@@ -1,6 +1,7 @@
-# Single-GPU QLoRA of a fused-MoE with the frozen 4-bit experts offloaded to CPU RAM.
+# QLoRA of a fused-MoE with the frozen 4-bit experts offloaded to CPU RAM.
 # The experts stream to the GPU one block at a time, so peak VRAM stays low enough to fit a
-# small card. NOTE: single-GPU only — do NOT add fsdp / deepspeed / expert_parallel here.
+# small card. One GPU per replica: runs single-GPU or plain-DDP data parallel as-is (each rank
+# homes its own pinned expert copy). Do NOT add fsdp / deepspeed / expert_parallel here.
 
 base_model: allenai/OLMoE-1B-7B-0924
 trust_remote_code: true
