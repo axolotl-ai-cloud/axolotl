@@ -147,6 +147,8 @@ optim_args:
   k_min: 8
   k_max: 128
   sparsity: 0.7
+```
+
 ### sinkgd
 
 SinkGD (Gradient Multi-Normalization) is a **stateless** optimizer: 2D linear weight
