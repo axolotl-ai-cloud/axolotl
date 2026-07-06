@@ -46,7 +46,9 @@ def mesh():
     torch.cuda.set_device(rank % torch.cuda.device_count())
     if not dist.is_initialized():
         dist.init_process_group(backend="nccl")
-    dm = init_device_mesh("cuda", (dist.get_world_size(),), mesh_dim_names=("dp_shard",))
+    dm = init_device_mesh(
+        "cuda", (dist.get_world_size(),), mesh_dim_names=("dp_shard",)
+    )
     yield dm
     if dist.is_initialized():
         dist.barrier()
@@ -99,7 +101,9 @@ def test_sharded_spectral_matches_full(mesh, shard_dim, dim, target_mode):
     )
     opt.step()
 
-    ref = _full_reference(w_full, grad_full, shard_dim, target_mode, sn_iters, lr_alpha=1.0)
+    ref = _full_reference(
+        w_full, grad_full, shard_dim, target_mode, sn_iters, lr_alpha=1.0
+    )
     got = w.detach().full_tensor()
     torch.testing.assert_close(got, ref, rtol=2e-3, atol=2e-3)
 
@@ -132,7 +136,9 @@ def test_dist_md_sphere_matches_full_and_stays_on_sphere(mesh, dim):
     w = torch.nn.Parameter(distribute_tensor(w_full.clone(), mesh, [Shard(dim)]))
     opt = DistSinkGDMD(
         [{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
-        lr=1.0, sinkgd_lr_scale=0.1, sinkgd_spectral_norm_iters=3,
+        lr=1.0,
+        sinkgd_lr_scale=0.1,
+        sinkgd_spectral_norm_iters=3,
         process_group=mesh["dp_shard"].get_group(),
     )
     for _ in range(4):
@@ -148,11 +154,15 @@ def test_dist_md_sphere_matches_full_and_stays_on_sphere(mesh, dim):
     sd = opt.state_dict()
     opt2 = DistSinkGDMD(
         [{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
-        lr=1.0, sinkgd_lr_scale=0.1, sinkgd_spectral_norm_iters=3,
+        lr=1.0,
+        sinkgd_lr_scale=0.1,
+        sinkgd_spectral_norm_iters=3,
         process_group=mesh["dp_shard"].get_group(),
     )
     opt2.load_state_dict(sd)
-    torch.testing.assert_close(opt2.state[w]["md_target_norm"], opt.state[w]["md_target_norm"])
+    torch.testing.assert_close(
+        opt2.state[w]["md_target_norm"], opt.state[w]["md_target_norm"]
+    )
 
 
 @pytest.mark.parametrize("mode", ["base", "spec", "md"])
@@ -173,9 +183,13 @@ def test_dist_fused_matches_compiled(mesh, mode, wide):
         # sn_iters=3: the compiled dist path estimates sigma via Gram power iteration,
         # the fused path via the normalized two-matvec form — identical at convergence,
         # transiently different from a cold start, so compare near convergence.
-        kw = dict(lr=1e-2, sinkgd_lr_scale=0.5, sinkgd_fused_kernel=fused,
-                  sinkgd_spectral_norm_iters=3,
-                  process_group=mesh["dp_shard"].get_group())
+        kw = dict(
+            lr=1e-2,
+            sinkgd_lr_scale=0.5,
+            sinkgd_fused_kernel=fused,
+            sinkgd_spectral_norm_iters=3,
+            process_group=mesh["dp_shard"].get_group(),
+        )
         if mode == "spec":
             kw.update(sinkgd_spectral_norm=True, sinkgd_spectral_target="muon")
         cls = DistSinkGDMD if mode == "md" else DistSinkGD

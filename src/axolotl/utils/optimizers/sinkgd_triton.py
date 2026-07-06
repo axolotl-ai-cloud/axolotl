@@ -47,10 +47,19 @@ if HAVE_TRITON:
 
     @triton.jit
     def _iter_tall(
-        x_ptr, out_ptr, colsq_in_ptr, colsq_out_ptr,
-        M, N, sqrt_n, sqrt_m, eps,
-        stride_b, stride_m,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+        x_ptr,
+        out_ptr,
+        colsq_in_ptr,
+        colsq_out_ptr,
+        M,
+        N,
+        sqrt_n,
+        sqrt_m,
+        eps,
+        stride_b,
+        stride_m,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
     ):
         pid_m = tl.program_id(0)
         pid_b = tl.program_id(1)
@@ -63,8 +72,11 @@ if HAVE_TRITON:
             col_mask = cols < N
             csq = tl.load(colsq_in_ptr + pid_b * N + cols, mask=col_mask, other=1.0)
             cscale = sqrt_m / tl.maximum(tl.sqrt(csq), eps)
-            tile = tl.load(x_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                           mask=row_mask[:, None] & col_mask[None, :], other=0.0)
+            tile = tl.load(
+                x_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                mask=row_mask[:, None] & col_mask[None, :],
+                other=0.0,
+            )
             v = tile.to(tl.float32) * cscale[None, :]
             rowsq += tl.sum(v * v, axis=1)
         rscale = sqrt_n / tl.maximum(tl.sqrt(rowsq), eps)
@@ -74,20 +86,35 @@ if HAVE_TRITON:
             csq = tl.load(colsq_in_ptr + pid_b * N + cols, mask=col_mask, other=1.0)
             cscale = sqrt_m / tl.maximum(tl.sqrt(csq), eps)
             m2 = row_mask[:, None] & col_mask[None, :]
-            tile = tl.load(x_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                           mask=m2, other=0.0)
+            tile = tl.load(
+                x_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                mask=m2,
+                other=0.0,
+            )
             v = tile.to(tl.float32) * cscale[None, :] * rscale[:, None]
-            tl.store(out_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                     v.to(out_ptr.dtype.element_ty), mask=m2)
-            tl.atomic_add(colsq_out_ptr + pid_b * N + cols, tl.sum(v * v, axis=0),
-                          mask=col_mask)
+            tl.store(
+                out_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                v.to(out_ptr.dtype.element_ty),
+                mask=m2,
+            )
+            tl.atomic_add(
+                colsq_out_ptr + pid_b * N + cols, tl.sum(v * v, axis=0), mask=col_mask
+            )
 
     @triton.jit
     def _rowsq_wide(
-        x_ptr, colsq_in_ptr, rowsq_ptr,
-        M, N, sqrt_m, eps, cols_per,
-        stride_b, stride_m,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+        x_ptr,
+        colsq_in_ptr,
+        rowsq_ptr,
+        M,
+        N,
+        sqrt_m,
+        eps,
+        cols_per,
+        stride_b,
+        stride_m,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
     ):
         pid_m = tl.program_id(0)
         pid_n = tl.program_id(1)
@@ -102,18 +129,32 @@ if HAVE_TRITON:
             col_mask = cols < N
             csq = tl.load(colsq_in_ptr + pid_b * N + cols, mask=col_mask, other=1.0)
             cscale = sqrt_m / tl.maximum(tl.sqrt(csq), eps)
-            tile = tl.load(x_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                           mask=row_mask[:, None] & col_mask[None, :], other=0.0)
+            tile = tl.load(
+                x_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                mask=row_mask[:, None] & col_mask[None, :],
+                other=0.0,
+            )
             v = tile.to(tl.float32) * cscale[None, :]
             acc += tl.sum(v * v, axis=1)
         tl.atomic_add(rowsq_ptr + pid_b * M + rows, acc, mask=row_mask)
 
     @triton.jit
     def _scale_wide(
-        x_ptr, out_ptr, colsq_in_ptr, rowsq_ptr, colsq_out_ptr,
-        M, N, sqrt_n, sqrt_m, eps, cols_per,
-        stride_b, stride_m,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+        x_ptr,
+        out_ptr,
+        colsq_in_ptr,
+        rowsq_ptr,
+        colsq_out_ptr,
+        M,
+        N,
+        sqrt_n,
+        sqrt_m,
+        eps,
+        cols_per,
+        stride_b,
+        stride_m,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
     ):
         pid_m = tl.program_id(0)
         pid_n = tl.program_id(1)
@@ -130,21 +171,40 @@ if HAVE_TRITON:
             csq = tl.load(colsq_in_ptr + pid_b * N + cols, mask=col_mask, other=1.0)
             cscale = sqrt_m / tl.maximum(tl.sqrt(csq), eps)
             m2 = row_mask[:, None] & col_mask[None, :]
-            tile = tl.load(x_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                           mask=m2, other=0.0)
+            tile = tl.load(
+                x_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                mask=m2,
+                other=0.0,
+            )
             v = tile.to(tl.float32) * cscale[None, :] * rscale[:, None]
-            tl.store(out_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                     v.to(out_ptr.dtype.element_ty), mask=m2)
-            tl.atomic_add(colsq_out_ptr + pid_b * N + cols, tl.sum(v * v, axis=0),
-                          mask=col_mask)
+            tl.store(
+                out_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                v.to(out_ptr.dtype.element_ty),
+                mask=m2,
+            )
+            tl.atomic_add(
+                colsq_out_ptr + pid_b * N + cols, tl.sum(v * v, axis=0), mask=col_mask
+            )
 
     @triton.jit
     def _matvec1_partials(
-        x_ptr, colsq_ptr, p_ptr, u_ptr, v_ptr, sums_ptr,
-        M, N, sqrt_m, eps, cols_per,
-        stride_b, stride_m,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
-        WITH_PARTIALS: tl.constexpr, ATOMIC_V: tl.constexpr,
+        x_ptr,
+        colsq_ptr,
+        p_ptr,
+        u_ptr,
+        v_ptr,
+        sums_ptr,
+        M,
+        N,
+        sqrt_m,
+        eps,
+        cols_per,
+        stride_b,
+        stride_m,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        WITH_PARTIALS: tl.constexpr,
+        ATOMIC_V: tl.constexpr,
     ):
         # v = (X . colscale) @ u on the CTA's rows; optionally the three projection
         # partials ||p||^2, <p, Xd>, ||Xd||^2 (per-matrix scalar atomics) in the same pass.
@@ -165,13 +225,22 @@ if HAVE_TRITON:
             csq = tl.load(colsq_ptr + pid_b * N + cols, mask=col_mask, other=1.0)
             cscale = sqrt_m / tl.maximum(tl.sqrt(csq), eps)
             m2 = row_mask[:, None] & col_mask[None, :]
-            xt = tl.load(x_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                         mask=m2, other=0.0).to(tl.float32) * cscale[None, :]
+            xt = (
+                tl.load(
+                    x_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                    mask=m2,
+                    other=0.0,
+                ).to(tl.float32)
+                * cscale[None, :]
+            )
             ut = tl.load(u_ptr + pid_b * N + cols, mask=col_mask, other=0.0)
             acc_v += tl.sum(xt * ut[None, :], axis=1)
             if WITH_PARTIALS:
-                pt = tl.load(p_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                             mask=m2, other=0.0).to(tl.float32)
+                pt = tl.load(
+                    p_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                    mask=m2,
+                    other=0.0,
+                ).to(tl.float32)
                 s0 += tl.sum(pt * pt)
                 s1 += tl.sum(pt * xt)
                 s2 += tl.sum(xt * xt)
@@ -186,10 +255,19 @@ if HAVE_TRITON:
 
     @triton.jit
     def _matvec2(
-        x_ptr, colsq_ptr, v_ptr, uu_ptr,
-        M, N, sqrt_m, eps, cols_per,
-        stride_b, stride_m,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+        x_ptr,
+        colsq_ptr,
+        v_ptr,
+        uu_ptr,
+        M,
+        N,
+        sqrt_m,
+        eps,
+        cols_per,
+        stride_b,
+        stride_m,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
     ):
         # uu = v^T (X . colscale), accumulated per column via atomics.
         pid_m = tl.program_id(0)
@@ -206,17 +284,37 @@ if HAVE_TRITON:
             csq = tl.load(colsq_ptr + pid_b * N + cols, mask=col_mask, other=1.0)
             cscale = sqrt_m / tl.maximum(tl.sqrt(csq), eps)
             m2 = row_mask[:, None] & col_mask[None, :]
-            xt = tl.load(x_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                         mask=m2, other=0.0).to(tl.float32) * cscale[None, :]
-            tl.atomic_add(uu_ptr + pid_b * N + cols, tl.sum(xt * vt[:, None], axis=0),
-                          mask=col_mask)
+            xt = (
+                tl.load(
+                    x_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                    mask=m2,
+                    other=0.0,
+                ).to(tl.float32)
+                * cscale[None, :]
+            )
+            tl.atomic_add(
+                uu_ptr + pid_b * N + cols,
+                tl.sum(xt * vt[:, None], axis=0),
+                mask=col_mask,
+            )
 
     @triton.jit
     def _apply(
-        p_ptr, x_ptr, colsq_ptr, a_ptr, scale2_ptr,
-        M, N, decay, sqrt_m, eps, cols_per,
-        stride_b, stride_m,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+        p_ptr,
+        x_ptr,
+        colsq_ptr,
+        a_ptr,
+        scale2_ptr,
+        M,
+        N,
+        decay,
+        sqrt_m,
+        eps,
+        cols_per,
+        stride_b,
+        stride_m,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
     ):
         # p = (p * decay - a * (x . colscale)) * scale2 — one form covers all modes:
         # base/spec: scale2 = 1, decay = 1 - lr*wd, a = lr[*target/sigma];
@@ -237,11 +335,18 @@ if HAVE_TRITON:
             cscale = sqrt_m / tl.maximum(tl.sqrt(csq), eps)
             m2 = row_mask[:, None] & col_mask[None, :]
             pp = p_ptr + base + rows[:, None] * stride_m + cols[None, :]
-            xt = tl.load(x_ptr + base + rows[:, None] * stride_m + cols[None, :],
-                         mask=m2, other=0.0).to(tl.float32) * cscale[None, :]
+            xt = (
+                tl.load(
+                    x_ptr + base + rows[:, None] * stride_m + cols[None, :],
+                    mask=m2,
+                    other=0.0,
+                ).to(tl.float32)
+                * cscale[None, :]
+            )
             pt = tl.load(pp, mask=m2, other=0.0).to(tl.float32)
-            tl.store(pp, ((pt * decay - a * xt) * s2c).to(p_ptr.dtype.element_ty),
-                     mask=m2)
+            tl.store(
+                pp, ((pt * decay - a * xt) * s2c).to(p_ptr.dtype.element_ty), mask=m2
+            )
 
 
 _SM_COUNT = None
@@ -274,9 +379,22 @@ def fused_available() -> bool:
 
 @torch.no_grad()
 def fused_sinkgd_step(
-    p, grad, lr, weight_decay, iters, eps, *,
-    mode="base", u=None, target_norm=None, spectral_target="muon", sn_iters=1,
-    m_global=None, process_group=None, block_m=16, block_n=512,
+    p,
+    grad,
+    lr,
+    weight_decay,
+    iters,
+    eps,
+    *,
+    mode="base",
+    u=None,
+    target_norm=None,
+    spectral_target="muon",
+    sn_iters=1,
+    m_global=None,
+    process_group=None,
+    block_m=16,
+    block_n=512,
 ):
     """One fused SinkGD step; single-device when ``process_group`` is None, else the
     rows-sharded FSDP2 step (``p``/``grad`` are local shards, ``m_global`` the full row dim,
@@ -308,18 +426,56 @@ def fused_sinkgd_step(
     for _ in range(iters):
         colsq_b.zero_()
         if nsplits == 1:
-            _iter_tall[(grid[0], B)](src, x_buf, colsq_a, colsq_b, m_local, n,
-                                     sqrt_n, sqrt_m, eps, m_local * n, n,
-                                     BLOCK_M=block_m, BLOCK_N=block_n)
+            _iter_tall[(grid[0], B)](
+                src,
+                x_buf,
+                colsq_a,
+                colsq_b,
+                m_local,
+                n,
+                sqrt_n,
+                sqrt_m,
+                eps,
+                m_local * n,
+                n,
+                BLOCK_M=block_m,
+                BLOCK_N=block_n,
+            )
         else:
             if rowsq is None:
                 rowsq = torch.empty(B, m_local, device=dev, dtype=torch.float32)
             rowsq.zero_()
-            _rowsq_wide[grid](src, colsq_a, rowsq, m_local, n, sqrt_m, eps, cols_per,
-                              m_local * n, n, BLOCK_M=block_m, BLOCK_N=block_n)
-            _scale_wide[grid](src, x_buf, colsq_a, rowsq, colsq_b, m_local, n,
-                              sqrt_n, sqrt_m, eps, cols_per, m_local * n, n,
-                              BLOCK_M=block_m, BLOCK_N=block_n)
+            _rowsq_wide[grid](
+                src,
+                colsq_a,
+                rowsq,
+                m_local,
+                n,
+                sqrt_m,
+                eps,
+                cols_per,
+                m_local * n,
+                n,
+                BLOCK_M=block_m,
+                BLOCK_N=block_n,
+            )
+            _scale_wide[grid](
+                src,
+                x_buf,
+                colsq_a,
+                rowsq,
+                colsq_b,
+                m_local,
+                n,
+                sqrt_n,
+                sqrt_m,
+                eps,
+                cols_per,
+                m_local * n,
+                n,
+                BLOCK_M=block_m,
+                BLOCK_N=block_n,
+            )
         if process_group is not None:
             dist.all_reduce(colsq_b, group=process_group)
         src = x_buf
@@ -329,8 +485,23 @@ def fused_sinkgd_step(
     if mode == "base":
         a = torch.full((B,), lr, device=dev, dtype=torch.float32)
         scale2 = torch.ones(B, device=dev, dtype=torch.float32)
-        _apply[grid](pw, x_buf, colsq_a, a, scale2, m_local, n, decay, sqrt_m, eps,
-                     cols_per, m_local * n, n, BLOCK_M=block_m, BLOCK_N=block_n)
+        _apply[grid](
+            pw,
+            x_buf,
+            colsq_a,
+            a,
+            scale2,
+            m_local,
+            n,
+            decay,
+            sqrt_m,
+            eps,
+            cols_per,
+            m_local * n,
+            n,
+            BLOCK_M=block_m,
+            BLOCK_N=block_n,
+        )
         return
 
     # spec/md: power iteration on the (colscale-folded) update, sn_iters rounds
@@ -342,10 +513,25 @@ def fused_sinkgd_step(
         with_partials = mode == "md" and it == 0
         if nsplits > 1:
             v.zero_()
-        _matvec1_partials[grid](x_buf, colsq_a, pw, uw, v, sums, m_local, n, sqrt_m,
-                                eps, cols_per, m_local * n, n, BLOCK_M=block_m,
-                                BLOCK_N=block_n, WITH_PARTIALS=with_partials,
-                                ATOMIC_V=nsplits > 1)
+        _matvec1_partials[grid](
+            x_buf,
+            colsq_a,
+            pw,
+            uw,
+            v,
+            sums,
+            m_local,
+            n,
+            sqrt_m,
+            eps,
+            cols_per,
+            m_local * n,
+            n,
+            BLOCK_M=block_m,
+            BLOCK_N=block_n,
+            WITH_PARTIALS=with_partials,
+            ATOMIC_V=nsplits > 1,
+        )
         vsq = (v * v).sum(dim=-1)
         if with_partials:
             packed = torch.cat([sums, vsq.unsqueeze(-1)], dim=-1)
@@ -357,8 +543,21 @@ def fused_sinkgd_step(
             dist.all_reduce(vsq, group=process_group)
         v /= vsq.sqrt().clamp_min(eps).unsqueeze(-1)
         uu = torch.zeros(B, n, device=dev, dtype=torch.float32)
-        _matvec2[grid](x_buf, colsq_a, v, uu, m_local, n, sqrt_m, eps, cols_per,
-                       m_local * n, n, BLOCK_M=block_m, BLOCK_N=block_n)
+        _matvec2[grid](
+            x_buf,
+            colsq_a,
+            v,
+            uu,
+            m_local,
+            n,
+            sqrt_m,
+            eps,
+            cols_per,
+            m_local * n,
+            n,
+            BLOCK_M=block_m,
+            BLOCK_N=block_n,
+        )
         if process_group is not None:
             dist.all_reduce(uu, group=process_group)
         sigma = uu.norm(dim=-1, keepdim=True).clamp_min(eps)
@@ -372,8 +571,25 @@ def fused_sinkgd_step(
     else:
         tn = target_norm.reshape(-1).float().to(dev)
         a = (lr * tn / sig).contiguous()
-        fro = (sums[:, 0] - 2 * a * sums[:, 1] + a * a * sums[:, 2]).clamp_min(eps).sqrt()
+        fro = (
+            (sums[:, 0] - 2 * a * sums[:, 1] + a * a * sums[:, 2]).clamp_min(eps).sqrt()
+        )
         scale2 = (tn / fro).contiguous()
         decay = 1.0  # sphere projection subsumes any decay
-    _apply[grid](pw, x_buf, colsq_a, a, scale2, m_local, n, decay, sqrt_m, eps,
-                 cols_per, m_local * n, n, BLOCK_M=block_m, BLOCK_N=block_n)
+    _apply[grid](
+        pw,
+        x_buf,
+        colsq_a,
+        a,
+        scale2,
+        m_local,
+        n,
+        decay,
+        sqrt_m,
+        eps,
+        cols_per,
+        m_local * n,
+        n,
+        BLOCK_M=block_m,
+        BLOCK_N=block_n,
+    )
