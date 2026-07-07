@@ -67,7 +67,11 @@ def _apply_expert_capacity(topk_idx, topk_w, cap):
     orig_sum = (topk_w * (topk_idx >= 0)).sum(dim=-1, keepdim=True)
     kept = (capped_idx >= 0).to(topk_w.dtype)
     kept_sum = (topk_w * kept).sum(dim=-1, keepdim=True)
-    rescale = torch.where(kept_sum > 0, orig_sum / kept_sum, torch.ones_like(kept_sum))
+    # double-where: guard the divisor so a fully-dropped token (kept_sum==0) can't backprop 0*inf=NaN
+    safe_kept_sum = torch.where(kept_sum > 0, kept_sum, torch.ones_like(kept_sum))
+    rescale = torch.where(
+        kept_sum > 0, orig_sum / safe_kept_sum, torch.ones_like(kept_sum)
+    )
     rescaled_w = topk_w * kept * rescale
     return capped_idx, rescaled_w
 

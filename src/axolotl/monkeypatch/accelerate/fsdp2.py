@@ -812,9 +812,8 @@ def patch_tied_keys_for_meta_device():
 
     from transformers import PreTrainedModel
 
-    # transformers >= 5.11 dropped data_ptr-based tie detection (_adjust_tied_keys_with_tied_pointers)
-    # for the config-driven get_expanded_tied_weights_keys, so on the pinned version there is nothing
-    # to patch; bail rather than bind a phantom method that transformers never calls.
+    # recent transformers replaced data_ptr tie detection (_adjust_tied_keys_with_tied_pointers) with
+    # config-driven get_expanded_tied_weights_keys; absent on the pinned version, so bail (nothing to patch).
     if not hasattr(PreTrainedModel, "_adjust_tied_keys_with_tied_pointers"):
         return
 

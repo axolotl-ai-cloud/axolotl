@@ -71,6 +71,20 @@ def test_expert_capacity_preserves_existing_sentinels():
     assert int((out == 0).sum()) <= 2
 
 
+def test_expert_capacity_no_nan_grad_when_token_fully_dropped():
+    # 3 tokens all route both top-2 slots to expert 0; cap=1 keeps only the single highest-weight
+    # assignment, so tokens 1 and 2 lose every slot (kept_sum==0). The gate-sum rescale must not
+    # backprop 0*inf=NaN into the router weights (double-where guard on the divisor).
+    topk_idx = torch.tensor([[0, 0], [0, 0], [0, 0]], dtype=torch.int64)
+    topk_w = torch.tensor([[0.9, 0.8], [0.7, 0.6], [0.5, 0.4]], requires_grad=True)
+    out, w = _apply_expert_capacity(topk_idx.clone(), topk_w, cap=1)
+
+    assert (~(out >= 0).any(dim=-1)).any()  # at least one token lost every slot
+    assert not torch.isnan(w).any()  # forward weights stay finite
+    w.sum().backward()
+    assert not (torch.isnan(topk_w.grad).any() or torch.isinf(topk_w.grad).any())
+
+
 def _absorb():
     import axolotl.integrations.kernels.libs.glm_dsa.attention_mla_absorb as M
 
