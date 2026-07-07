@@ -20,7 +20,7 @@ dependencies = [
     "transformers>=5.12.1,<5.13",
     "accelerate==1.13.0",
     "datasets>=4.8.4,<4.9.0",
-    "trl==1.5.1",
+    "trl==1.7.0",
     "hf_xet==1.4.3",
     "kernels==0.13.0",
     "trackio>=0.16.1",
