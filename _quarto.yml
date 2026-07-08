@@ -441,9 +441,9 @@ website:
           contents:
             - docs/getting-started.qmd
             - docs/choosing_method.qmd
-            - docs/support-matrix.qmd
             - docs/installation.qmd
             - docs/inference.qmd
+            - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
                 - docs/models/kimi-linear.qmd

@@ -5,21 +5,30 @@ description: What Axolotl supports, how features couple together, and what is no
 
 Axolotl is config-driven: every capability below is a YAML key, not a code change. **Any HuggingFace causal/seq2seq LM trains out of the box** through generic Transformers support. The tables list *first-class* features and the exact key that enables each.
 
-This page is organized in three layers so it stays manageable as features grow:
+New here? You mostly need three tables: [Training methods](#training-methods) (what objective you are optimizing), [Fine-tuning strategies](#fine-tuning-strategies) (how much of the model updates), and [Model architectures](#model-architectures) (whether your model is covered). Everything else is reference for when you hit a specific wall.
 
-1. **Catalog** ([§1](#training-methods)–[§10](#experiment-tracking)) — what exists, one small table per axis. Most features are independent, so adding one is one new row.
-2. **Compatibility** ([§11](#compatibility-rules)) — the couplings that actually bite (what *requires* what, what is *blocked*), plus the one dense corner worth a grid: precision x trainable params.
-3. **Roll-up** ([§12](#maturity-roadmap)) — maturity, deprecations, and roadmap at a glance. Feature-specific limits (e.g. "not on Turing", "LoRA unsupported") are marked *inline* on the relevant row, not hidden in §12.
+**I want to...**
+
+| Goal | Start here |
+|---|---|
+| Check if my model is supported | Any HuggingFace causal/seq2seq LM trains as-is; [Model architectures](#model-architectures) lists the ones with extra acceleration |
+| Fit a large model on one GPU | [QLoRA](#fine-tuning-strategies), plus [FSDP + QLoRA](#distributed-parallelism) for the biggest |
+| Choose a training objective (SFT, DPO, GRPO, ...) | [Training methods](#training-methods) |
+| Train faster or use less memory | [Performance integrations](#performance-integrations-custom-kernels); Liger and Cut Cross Entropy are the two most people enable first |
+| Know whether two features combine | [Compatibility rules](#compatibility-rules) |
+| See what is experimental, deprecated, or planned | [Maturity & roadmap](#maturity-roadmap) |
+
+The catalog below has one small table per axis, and most features are independent. The couplings that actually bite are collected in [Compatibility rules](#compatibility-rules), and maturity plus roadmap are rolled up in [Maturity & roadmap](#maturity-roadmap). Feature-specific limits (for example "not on Turing" or "LoRA unsupported") are marked inline on the row they affect.
 
 ::: {.callout-tip}
-## The differentiators
-If you are here for what makes Axolotl fast, jump to [§5 Performance integrations & custom kernels](#performance-integrations-custom-kernels) (Liger, Cut Cross Entropy, ScatterMoE/SonicMoE, Expert Parallel).
+## Want faster training?
+Most people start with two, each a single plugin to turn on: [Liger](#fused-training-kernels) kernels and [Cut Cross Entropy](#fused-training-kernels). The full set of speed and memory work (ScatterMoE/SonicMoE, Expert Parallel, fused attention) lives in [Performance integrations & custom kernels](#performance-integrations-custom-kernels).
 :::
 
 ::: {.callout-important}
 ## Read the status markers
 "Supported" moves fast, especially for kernels and quantization. Rows are annotated:
-🟢 stable (default, unmarked) · 🟡 experimental/beta · 🚧 WIP / feature-branch only · 🔵 planned / not yet · 🔴 deprecated · ⚪ out-of-scope / won't-fix. Limits live on the row they affect; [§12](#maturity-roadmap) is only the cross-cutting roll-up. This page reflects the **0.17.0 development line**; 🚧 items may not be in a tagged release yet.
+🟢 stable (default, unmarked) · 🟡 experimental/beta · 🚧 WIP / feature-branch only · 🔵 planned / not yet · 🔴 deprecated · ⚪ out-of-scope / won't-fix. Limits live on the row they affect; [Maturity & roadmap](#maturity-roadmap) is only the cross-cutting roll-up. This page reflects the **0.17.0 development line**; 🚧 items may not be in a tagged release yet.
 :::
 
 ## Training methods
@@ -28,10 +37,10 @@ If you are here for what makes Axolotl fast, jump to [§5 Performance integratio
 
 | Method | Config | Ref model | Data shape | Notes |
 |---|---|---|---|---|
-| Supervised FT (SFT) | *(default)* | — | prompt to response | `train_on_inputs`, chat/alpaca/completion |
-| Continued pretraining | `pretraining_dataset:` | — | raw text | streaming; needs `max_steps` |
-| Reward model (ORM) | `reward_model: true` | — | chosen/rejected | Bradley-Terry, sequence classification |
-| Process reward model (PRM) | `process_reward_model: true` | — | stepwise | token classification, `stepwise_supervised` |
+| Supervised FT (SFT) | *(default)* | n/a | prompt to response | `train_on_inputs`, chat/alpaca/completion |
+| Continued pretraining | `pretraining_dataset:` | n/a | raw text | streaming; needs `max_steps` |
+| Reward model (ORM) | `reward_model: true` | n/a | chosen/rejected | Bradley-Terry, sequence classification |
+| Process reward model (PRM) | `process_reward_model: true` | n/a | stepwise | token classification, `stepwise_supervised` |
 | DPO | `rl: dpo` | ✔ | paired | `dpo_loss_type`, `rl_beta`, liger/padding-free variants |
 | IPO | `rl: dpo` + `dpo_loss_type: [ipo]` | ✔ | paired | `rl: ipo` still works (🔴 will deprecate) |
 | ORPO | `rl: orpo` | No | paired | single-stage, ~half the VRAM of DPO |
@@ -41,13 +50,15 @@ If you are here for what makes Axolotl fast, jump to [§5 Performance integratio
 | GRPO | `rl: grpo` | ✔ | prompts (online) | vLLM generation, custom `reward_funcs`, async/replay |
 | EBFT | `rl: ebft` | ✔ | QA or raw text | energy/feature-matching rewards; needs `ebft:` block |
 
+Most runs start with **SFT** (the default). Reach for the preference methods (DPO and its variants) once you have chosen/rejected pairs, and GRPO when you have a verifiable reward. The rest are specialized.
+
 ## Fine-tuning strategies
 
 *The "how much of the model updates" axis.*
 
 | Strategy | Config | Notes |
 |---|---|---|
-| Full fine-tune | `adapter:` *(omit)* | all params trainable; requires unquantized weights (see [§11.1](#precision-x-trainable-params)) |
+| Full fine-tune | `adapter:` *(omit)* | all params trainable; requires unquantized weights (see [Precision x trainable params](#precision-x-trainable-params)) |
 | LoRA | `adapter: lora` | `lora_r` / `lora_alpha` / `lora_target_modules` / `lora_target_linear` |
 | QLoRA | `adapter: qlora` | requires `load_in_4bit: true` |
 | DoRA | `+ peft_use_dora: true` | weight-decomposed |
@@ -78,7 +89,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 
 | Strategy | Config | Composes with |
 |---|---|---|
-| DDP | *(default multi-GPU)* | — |
+| DDP | *(default multi-GPU)* | n/a |
 | DeepSpeed ZeRO 1/2/3 (+CPU offload) | `deepspeed: deepspeed_configs/zeroN*.json` | TP |
 | FSDP1 🔴 | `fsdp_version: 1` | *(deprecated, use FSDP2)* |
 | FSDP2 | `fsdp_version: 2` + `fsdp_config:` | TP, CP, EP |
@@ -88,7 +99,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2 (DeepEP backend) |
 | N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
-Blocked combinations: **EP x TP/CP**, **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [§11.3](#incompatible).
+Blocked combinations: **EP x TP/CP**, **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
 
 ## Performance integrations & custom kernels
 
@@ -115,10 +126,10 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 | GLM-DSA kernels | `use_glm_dsa_kernels: true` | SM90+ | GLM-4.7/5.2 sparse-MLA (DSA) attention |
 | Grouped-GEMM backend | `moe_grouped_backend: auto\|marlin\|cutlass\|deepgemm` | capability-selected | fp4 grouped experts |
 
-**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`). **SonicMoE + EP is blocked at config validation** (`use_sonicmoe: true` with `expert_parallel_size > 1` raises) — use `use_scattermoe` under EP.
+**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`). **SonicMoE + EP is blocked at config validation** (`use_sonicmoe: true` with `expert_parallel_size > 1` raises), use `use_scattermoe` under EP.
 
 ::: {.callout-warning}
-**NVFP4 MoE training is narrow today.** It covers **DeepSeek-V4** and **GLM-4.7/5.2** (`glm_moe_dsa`) only, is **LoRA-only** (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base), and the **SonicMoE NVFP4 path is 🚧 WIP** (ScatterMoE is the working path). See [§11.1](#precision-x-trainable-params).
+**NVFP4 MoE training is narrow today.** It covers **DeepSeek-V4** and **GLM-4.7/5.2** (`glm_moe_dsa`) only, is **LoRA-only** (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base), and the **SonicMoE NVFP4 path is 🚧 WIP** (ScatterMoE is the working path). See [Precision x trainable params](#precision-x-trainable-params).
 :::
 
 ### Attention backends
@@ -162,7 +173,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | Hybrid SSM (Mamba, Nemotron-H, Falcon-H1, GraniteMoE-Hybrid) | packing + CP for Mamba2 layers |
 | OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, Apertus, SEED-OSS | packing / tokenizer / activation patches |
 | Multimodal 🟡 (Qwen-VL, Pixtral, Llama-Vision, LLaVA, InternVL, SmolVLM2, Voxtral, LFM2-VL) | processor + VL attention support (no full feature parity) |
-| BitNet (1.58-bit) ⚪ | full fine-tune only — **LoRA not supported** (see [1_58bit_finetuning](1_58bit_finetuning.qmd)) |
+| BitNet (1.58-bit) ⚪ | full fine-tune only, **LoRA not supported** (see [1_58bit_finetuning](1_58bit_finetuning.qmd)) |
 
 ## Dataset formats
 
@@ -216,8 +227,8 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | GPTQ / AWQ (prequantized) | ❌ | ✅ (LoRA) | frozen; adapter can't be merged back |
 | FP8 frozen base (`FineGrainedFP8Config`) | ❌ | ✅ (LoRA) | distinct from `fp8:` compute |
 | MXFP4 (`Mxfp4Config`) | ❌ | ✅ (LoRA) | frozen |
-| NVFP4 MoE — **DeepSeek-V4 & GLM-4.7/5.2 only** | ❌ *(no FFT-fp4 path)* | ✅ experts-only LoRA via `use_scattermoe` (`use_sonicmoe` 🚧 WIP) | frozen fp4 experts + fused grouped-GEMM LoRA |
-| **GGUF / llama.cpp K-quants** (Q4_K, Q6_K, ...) | ⚪ ❌ | ⚪ ❌ | **not trainable** — inference / merge-export format only |
+| NVFP4 MoE: **DeepSeek-V4 & GLM-4.7/5.2 only** | ❌ *(no FFT-fp4 path)* | ✅ experts-only LoRA via `use_scattermoe` (`use_sonicmoe` 🚧 WIP) | frozen fp4 experts + fused grouped-GEMM LoRA |
+| **GGUF / llama.cpp K-quants** (Q4_K, Q6_K, ...) | ⚪ ❌ | ⚪ ❌ | **not trainable**, inference / merge-export format only |
 
 **Rule of thumb:** *quantized weights ⇒ frozen base ⇒ adapter-only. Full fine-tune needs unquantized weights.* The exceptions that *look* like quantized full fine-tune are actually train-time modes with high-precision master weights: `fp8: true` (mixed-precision compute) and `qat:` (fake-quant during training). GGUF and K-quant (QX) formats are deployment artifacts and cannot be trained at all.
 
@@ -273,15 +284,15 @@ Not in a tagged release yet:
 
 ### 🔴 Deprecated (still works)
 
-- `fsdp_version: 1` and bare `fsdp:` — use `fsdp_config`
-- Legacy attention booleans — use `attn_implementation`
-- `rl: ipo` direct — use `dpo_loss_type: [ipo]`
+- `fsdp_version: 1` and bare `fsdp:`: use `fsdp_config`
+- Legacy attention booleans: use `attn_implementation`
+- `rl: ipo` direct: use `dpo_loss_type: [ipo]`
 - `noisy_embedding_alpha`, `dpo_beta`, `evaluation_strategy`
 - Removed entirely: `s2_attention`, `flash_attn_rms_norm`
 
 ### 🔵 Not supported yet / planned
 
-- **Full fine-tune of NVFP4** (fp4 base FFT — "a separate, larger effort")
+- **Full fine-tune of NVFP4** (fp4 base FFT, "a separate, larger effort")
 - **SonicMoE + Expert Parallel** (ScatterMoE + EP works today; a partial sm_120 fallback exists but is gated by the config validator)
 - Multimodal + sample packing
 - LoRA kernels + RLHF
@@ -292,13 +303,13 @@ Not in a tagged release yet:
 
 ### ⚪ Out-of-scope / won't-fix
 
-- **Ascend NPU** feature parity — attention, optimizers, and quantization are all unsupported there (cross-cutting, no single-row home)
+- **Ascend NPU** feature parity: attention, optimizers, and quantization are all unsupported there (cross-cutting, no single-row home)
 
 Everything else out-of-scope is marked on its own row above:
 
-- GGUF / K-quant training — [§11.1](#precision-x-trainable-params)
-- FA2 / FA3 pre-Ampere (Turing) — [attention backends](#attention-backends)
-- BitNet + LoRA — [model architectures](#model-architectures)
-- CPU-only + activation offloading — [throughput / memory](#throughput-memory)
-- FP8 + DDP + `torch.compile` — [§11.3](#incompatible)
-- SonicMoE under Expert Parallel — [§5 MoE expert kernels](#moe-expert-kernels)
+- GGUF / K-quant training, see [Precision x trainable params](#precision-x-trainable-params)
+- FA2 / FA3 pre-Ampere (Turing), see [Attention backends](#attention-backends)
+- BitNet + LoRA, see [Model architectures](#model-architectures)
+- CPU-only + activation offloading, see [Throughput / memory](#throughput-memory)
+- FP8 + DDP + `torch.compile`, see [Incompatible combinations](#incompatible)
+- SonicMoE under Expert Parallel, see [MoE expert kernels](#moe-expert-kernels)
