@@ -565,7 +565,7 @@ def test_kernel_training_integration_dropout_non_zero(temp_dir):
     model_loader.patch_manager._apply_self_attention_lora_patch()
     model_loader.patch_manager._apply_lora_kernel_patch(model)
 
-    # Source rewrite must run despite dropout > 0 (the removed no-dropout gate)
+    # Source rewrite must run with dropout > 0
     layers = get_layers(model)
     for layer in layers:
         for self_attn in find_self_attn_in_layer(layer):
