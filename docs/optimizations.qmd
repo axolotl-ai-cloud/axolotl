@@ -150,12 +150,12 @@ Enables training with 8-bit floating point precision on supported hardware (e.g.
 
 ### NVFP4 (W4A4) LoRA
 
-Trains LoRA adapters on a ModelOpt NVFP4 MoE checkpoint with the experts kept 4-bit-packed in memory (W4A4 grouped GEMM on the frozen base; LoRA `A` / `B` train in bf16).
-The native NVFP4 tensor-core path runs on Blackwell (B200/GB200, SM100+); other GPUs fall back to a dequant-to-bf16 path.
+Train LoRA adapters on a ModelOpt NVFP4 MoE checkpoint (the experts stay 4-bit-packed; LoRA `A` / `B` train in bf16).
+Two kernels support it: **SonicMoE** (`use_sonicmoe: true`, W4A4 native on Blackwell SM100+ or W4A16 elsewhere) and **ScatterMoE** (`use_scattermoe: true`, W4A16 on any CUDA GPU).
 
-- **Config:** `use_sonicmoe: true` with a ModelOpt NVFP4 `base_model` (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`)
-- **Example:** [Qwen3-30B-A3B NVFP4 LoRA](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml)
-- **Learn more:** [SonicMoE NVFP4 backend](custom_integrations.qmd#kernels-integration)
+- **Config:** `use_sonicmoe: true` or `use_scattermoe: true` with a ModelOpt NVFP4 `base_model` (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`)
+- **Examples:** [Qwen3-30B-A3B (SonicMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml), [GLM-5.2 (ScatterMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/glm_moe_dsa/glm-5.2-nvfp4-lora.yaml)
+- **Learn more:** [ScatterMoE NVFP4](custom_integrations.qmd#scattermoe-nvfp4-w4a16-lora) / [SonicMoE NVFP4](custom_integrations.qmd#sonicmoe-nvfp4-w4a4-lora)
 
 ### Quantization Aware Training (QAT)
 

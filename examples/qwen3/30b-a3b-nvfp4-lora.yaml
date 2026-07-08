@@ -1,18 +1,4 @@
-# Qwen3-30B-A3B MoE LoRA on an NVFP4 (modelopt) checkpoint, single B200.
-#
-# Loading: the checkpoint is quant_method=modelopt / quant_algo=NVFP4, which transformers does not
-# recognize (it builds a bf16 skeleton). The kernels plugin's Qwen3MoeAdapter registers
-# WeightConverters that fuse the 128 per-expert NVFP4 tensors of each layer into 3D NVFP4Tensor
-# params; non-routed NVFP4 linears are dequantized to bf16.
-#
-# Training: routed-expert LoRA runs through the sonicmoe grouped NVFP4 path. On SM100 (B200) the
-# default fp4_cute backend runs the expert GEMMs in-kernel at W4A4 and needs quack:
-#   pip install "quack-kernels @ git+https://github.com/Dao-AILab/quack.git"
-# AXOLOTL_SONICMOE_NVFP4_BACKEND=dequant selects the Triton W4A16 reference path instead.
-#
-# Validated on 1x B200: ~30 GiB peak at sequence_len 2048 (~58 GiB at 16k tokens/step).
-# After training, `axolotl merge-lora` re-quantizes the merged expert weights back onto the base
-# checkpoint's NVFP4 grid, so the output stays a modelopt NVFP4 checkpoint.
+# Qwen3-30B-A3B MoE LoRA on an NVFP4 (modelopt) checkpoint via SonicMoE.
 base_model: nvidia/Qwen3-30B-A3B-NVFP4
 
 plugins:
@@ -41,13 +27,11 @@ adapter: lora
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0
-# Attention projections are plain bf16 nn.Linear after load (non-routed NVFP4 is dequantized).
 lora_target_modules:
   - q_proj
   - k_proj
   - v_proj
   - o_proj
-# Routed-expert LoRA on the 3D fused NVFP4 params (PEFT ParamWrapper).
 lora_target_parameters:
   - experts.gate_up_proj
   - experts.down_proj
