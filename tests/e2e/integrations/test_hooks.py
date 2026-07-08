@@ -171,7 +171,7 @@ class TestPluginHooks:
             assert "pre_lora_load" in file_contents
             assert "post_lora_load" in file_contents
             assert "post_model_load" in file_contents
-            # assert "create_optimizer" in file_contents  # not implemented yet
+            assert "create_optimizer" in file_contents
             assert "get_trainer_cls" in file_contents
             assert "create_lr_scheduler" in file_contents
             assert "add_callbacks_pre_trainer" in file_contents

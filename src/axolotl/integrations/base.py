@@ -74,7 +74,8 @@ class BasePlugin:
             inclusive of any adapters.
         - post_trainer_create(cfg, trainer): Performs actions after the trainer is
             created.
-        - create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
+        - create_optimizer(cfg, trainer): Creates and returns an optimizer (or an
+            optimizer factory callable) for training.
         - create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and
             returns a learning rate scheduler.
         - add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before
@@ -213,7 +214,9 @@ class BasePlugin:
             class: The class for the collator.
         """
 
-    def create_optimizer(self, cfg: DictDefault, trainer: Trainer) -> Optimizer | None:
+    def create_optimizer(
+        self, cfg: DictDefault, trainer: Trainer
+    ) -> Optimizer | Callable | None:
         """Creates and returns an optimizer for training.
 
         Args:
@@ -221,7 +224,10 @@ class BasePlugin:
             trainer: The trainer object for training.
 
         Returns:
-            The created optimizer.
+            Either an instantiated `torch.optim.Optimizer`, an optimizer factory
+            callable (detected via `transformers.trainer_optimizer.is_optimizer_factory`
+            and invoked as `factory(opt_model, training_args)`), or `None` if this
+            plugin does not provide a custom optimizer.
         """
 
     def create_lr_scheduler(
@@ -631,15 +637,17 @@ class PluginManager:
         for plugin in self.plugins.values():
             plugin.post_trainer_create(cfg, trainer)
 
-    def create_optimizer(self, trainer: Trainer) -> Optimizer | None:
+    def create_optimizer(self, trainer: Trainer) -> Optimizer | Callable | None:
         """Calls the `create_optimizer` method of all registered plugins and returns
-        the first non-`None` optimizer.
+        the first non-`None` result.
 
         Args:
             trainer: The trainer object for training.
 
         Returns:
-            The created optimizer, or `None` if none was found.
+            The created optimizer (an instantiated `torch.optim.Optimizer`, or an
+            optimizer factory callable — see `BasePlugin.create_optimizer`), or
+            `None` if none was found.
         """
         for plugin in self.plugins.values():
             optimizer = plugin.create_optimizer(self.cfg, trainer)
