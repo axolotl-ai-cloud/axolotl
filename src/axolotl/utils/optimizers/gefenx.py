@@ -7,7 +7,7 @@ from typing import Any
 from axolotl.integrations.base import BaseOptimizerFactory
 
 
-def _coerce(value: Any) -> Any:
+def coerce_optim_arg(value: Any) -> Any:
     # String-form optim_args (key=value) arrive as strings; restore native types.
     if not isinstance(value, str):
         return value
@@ -31,7 +31,7 @@ class GefenXMuonHybridOptimizerFactory(BaseOptimizerFactory):
     def __call__(self, opt_model, training_args=None, **optimizer_kwargs):
         from gefen import GefenMuonHybrid
 
-        optimizer_kwargs = {k: _coerce(v) for k, v in optimizer_kwargs.items()}
+        optimizer_kwargs = {k: coerce_optim_arg(v) for k, v in optimizer_kwargs.items()}
 
         lr = optimizer_kwargs.pop("lr")
         weight_decay = optimizer_kwargs.pop("weight_decay", 0.0)

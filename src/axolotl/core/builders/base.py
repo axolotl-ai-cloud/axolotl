@@ -464,6 +464,15 @@ class TrainerBuilderBase(abc.ABC):
                         key, value = mapping.split("=")
                         optimizer_kwargs[key] = value
 
+            if self.cfg.optimizer == "gefenx":
+                # Restore native types on string-form optim_args (the gefenx_muon
+                # factory does this itself).
+                from axolotl.utils.optimizers.gefenx import coerce_optim_arg
+
+                optimizer_kwargs = {
+                    k: coerce_optim_arg(v) for k, v in optimizer_kwargs.items()
+                }
+
             # Note: This is not used in training_args_kwargs, but in trainer_kwargs
             trainer_kwargs["optimizer_cls_and_kwargs"] = (
                 optimizer_cls,
