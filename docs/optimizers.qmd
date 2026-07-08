@@ -189,3 +189,79 @@ qgalore_cos_threshold: 0.4         # skip SVD if P_t is this similar to P_{t-1}
 qgalore_gamma_proj: 2              # grow update_proj_gap by this factor when stable
 qgalore_queue_size: 5
 ```
+
+### gefenx
+
+Memory-efficient drop-in replacement for AdamW that quantizes the optimizer
+state to ≈1 byte/parameter (≈8× smaller than AdamW's fp32 moments, below
+bitsandbytes 8-bit), at AdamW-level loss. This wires up the **Gefen-X** fork
+(config name `gefenx` to distinguish it from upstream's `gefen`). Two variants:
+
+- `optimizer: gefenx` — the core quantized AdamW replacement (`Gefen`).
+- `optimizer: gefenx_muon` — the whole-model Muon hybrid (`GefenMuonHybrid`):
+  Muon-style pseudo-orthogonalized updates on the 2D hidden weight matrices,
+  Gefen on everything else (embeddings, LM head, norms, biases). Same ≈1
+  B/param footprint; slower per step (Newton-Schulz), so pick it only when you
+  specifically want Muon updates.
+
+GitHub: [https://github.com/thad0ctor/Gefen-X](https://github.com/thad0ctor/Gefen-X)
+Paper: [https://arxiv.org/abs/2606.13894](https://arxiv.org/abs/2606.13894)
+
+::: {.callout-important}
+Install the **Gefen-X** fork from source, not the PyPI package. `pip install
+gefen` pulls *upstream* Gefen, which lacks this fork's fixes — the modern-arch
+(Qwen3 / Gemma / etc.) `period==1` memory fallback, the ≈2× fused CUDA kernels,
+the robustness guards, and `GefenMuonHybrid`.
+
+```bash
+git clone https://github.com/thad0ctor/Gefen-X
+cd Gefen-X && pip install -e .   # imports as `gefen`
+```
+
+The fused CUDA kernels are JIT-built on first use (needs `nvcc`); the first
+step takes a few minutes, later runs reuse the cache. If the build fails, Gefen
+falls back to the pure-PyTorch path with a warning and training continues.
+:::
+
+**Learning rate.** Gefen takes larger effective steps than AdamW on a few
+high-leverage tensors, so it needs a lower LR — start at **≈0.6× your AdamW
+LR** and tune from there (find it empirically with `python -m gefen.tools.find_lr
+--model <path> --optimizer gefen --method sweep`).
+
+```yaml
+optimizer: gefenx
+learning_rate: 6.0e-6   # ≈0.6× the AdamW LR you would have used
+bf16: true
+```
+
+Constructor arguments beyond `learning_rate` / `weight_decay` /
+`adam_beta1` / `adam_beta2` / `adam_epsilon` are passed through `optim_args`
+(use the dict form so booleans keep their type):
+
+```yaml
+optimizer: gefenx
+optim_args:
+  fused: true              # ≈2× faster opt.step, bit-exact (default true)
+  factored_v_2d: true      # Adafactor-style 2D 2nd moment — matches AdamW loss (default true)
+  force_1d_period_one: false   # AdamW-like per-element 2nd moment on 1D params (norms/biases)
+  stochastic_round: false
+  capturable: false        # CUDA-graph capturable step
+```
+
+For the Muon hybrid, `gefenx_muon` applies the fork's recommended recipe by
+default — Muon at AdamW LR scale, the Gefen backup at `backup_lr = 0.5 × lr`,
+`backup_1d_period_one=true`, and `adjust_lr_fn="match_rms_adamw"` — all
+overridable via `optim_args`:
+
+```yaml
+optimizer: gefenx_muon
+learning_rate: 5.0e-5     # Muon tolerates a hotter LR than plain gefenx
+bf16: true
+optim_args:
+  fused: true
+  backup_lr: 2.5e-5       # defaults to 0.5 × learning_rate if unset
+  backup_1d_period_one: true
+  backup_2d_period_one: false   # set true to match AdamW's 2nd moment on embed/LM head (more memory)
+  ns_steps: 5             # Newton-Schulz iterations
+  sharded_mode: exact     # "distributed" splits Newton-Schulz across GPUs under FSDP2
+```

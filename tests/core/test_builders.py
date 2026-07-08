@@ -168,6 +168,61 @@ class TestHFCausalTrainerBuilder:
         # linear weight matrices must be in the stateless SR-Sinkhorn group
         assert any(group.get("use_sinkgd") for group in optim.param_groups)
 
+    def test_gefenx_optimizer(self, sft_cfg, model, tokenizer):
+        pytest.importorskip("gefen")
+        from gefen import Gefen
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "gefenx"
+        # fused kernels need CUDA; keep the CPU test on the pure-torch path
+        cfg["optim_args"] = {"fused": False}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is Gefen
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["weight_decay"] == 0.01
+        assert optimizer_kwargs["fused"] is False
+
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, Gefen)
+
+    def test_gefenx_muon_optimizer(self, sft_cfg, model, tokenizer):
+        pytest.importorskip("gefen")
+        from gefen import GefenMuonHybrid
+
+        from axolotl.utils.optimizers.gefenx import GefenXMuonHybridOptimizerFactory
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "gefenx_muon"
+        cfg["optim_args"] = {"fused": False}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is GefenXMuonHybridOptimizerFactory
+        assert optimizer_kwargs["lr"] == 0.00005
+
+        # factory needs the model to split params -> whole-model hybrid instance
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, GefenMuonHybrid)
+
+
+def test_gefenx_optim_args_coercion():
+    """String-form optim_args (key=value) must coerce back to native types."""
+    from axolotl.utils.optimizers.gefenx import _coerce
+
+    assert _coerce("false") is False
+    assert _coerce("True") is True
+    assert _coerce("none") is None
+    assert _coerce("5") == 5
+    assert _coerce("2.5e-5") == 2.5e-5
+    assert _coerce("match_rms_adamw") == "match_rms_adamw"
+    assert _coerce(True) is True  # already-typed values pass through
+
 
 class TestTrainerClsPlugin:
     """

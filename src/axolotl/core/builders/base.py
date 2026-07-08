@@ -437,6 +437,18 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = FlashLion
                 if "betas" in adam_kwargs:
                     optimizer_kwargs["betas"] = adam_kwargs["betas"]
+            elif self.cfg.optimizer == "gefenx":
+                from gefen import Gefen
+
+                optimizer_cls = Gefen
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "gefenx_muon":
+                from axolotl.utils.optimizers.gefenx import (
+                    GefenXMuonHybridOptimizerFactory,
+                )
+
+                optimizer_cls = GefenXMuonHybridOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
