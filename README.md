@@ -29,12 +29,22 @@
 
 ## 🎉 Latest Updates
 
+- 2026/07:
+  - NVFP4 (4-bit) MoE LoRA training is now supported via [ScatterMoE](https://docs.axolotl.ai/docs/custom_integrations.html#scattermoe-nvfp4-w4a16-lora) and [SonicMoE](https://docs.axolotl.ai/docs/custom_integrations.html#sonicmoe-nvfp4-w4a4-lora).
+- 2026/06:
+  - [Expert Parallelism (EP)](https://docs.axolotl.ai/docs/nd_parallelism.html) for distributed MoE training via DeepEP, remote training through [Tinker-compatible APIs](https://github.com/axolotl-ai-cloud/axolotl/pull/3614), [Context Parallelism for hybrid SSM models](https://github.com/axolotl-ai-cloud/axolotl/pull/3572) (Nemotron-H, Falcon-H1, Bamba), [BitNet 1.58-bit](https://github.com/axolotl-ai-cloud/axolotl/pull/3634) fine-tuning, and a [multimodal assistant-only loss-masking fix](https://github.com/axolotl-ai-cloud/axolotl/pull/3625).
 - 2026/04:
   - New model support has been added in Axolotl for [Mistral Medium 3.5](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/mistral-medium-3_5) and [Gemma 4](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/gemma4).
+  - New RL and kernels: [Async GRPO](https://github.com/axolotl-ai-cloud/axolotl/pull/3486) (up to 58% faster steps), [Flash Attention 4](https://docs.axolotl.ai/docs/attention.html#flash-attention), [NeMo Gym](https://github.com/axolotl-ai-cloud/axolotl/pull/3516), and [EBFT](https://github.com/axolotl-ai-cloud/axolotl/pull/3527).
   - Axolotl is now [uv-first](https://github.com/axolotl-ai-cloud/axolotl/pull/3545) and has [SonicMoE fused LoRA](https://github.com/axolotl-ai-cloud/axolotl/pull/3519) support.
 - 2026/03:
   - New model support has been added in Axolotl for [Mistral Small 4](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/mistral4), [Qwen3.5, Qwen3.5 MoE](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/qwen3.5), [GLM-4.7-Flash](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm47-flash), [GLM-4.6V](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm46v), and [GLM-4.5-Air](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45).
   - [MoE expert quantization](https://docs.axolotl.ai/docs/expert_quantization.html) support (via `quantize_moe_experts: true`) greatly reduces VRAM when training MoE models (FSDP2 compat).
+
+<details>
+
+<summary>Expand older updates</summary>
+
 - 2026/02:
   - [ScatterMoE LoRA](https://github.com/axolotl-ai-cloud/axolotl/pull/3410) support. LoRA fine-tuning directly on MoE expert weights using custom Triton kernels.
   - Axolotl now has support for [SageAttention](https://github.com/axolotl-ai-cloud/axolotl/pull/2823) and [GDPO](https://github.com/axolotl-ai-cloud/axolotl/pull/3353) (Generalized DPO).
@@ -44,11 +54,6 @@
   - Axolotl now includes support for [Kimi-Linear](https://docs.axolotl.ai/docs/models/kimi-linear.html), [Plano-Orchestrator](https://docs.axolotl.ai/docs/models/plano.html), [MiMo](https://docs.axolotl.ai/docs/models/mimo.html), [InternVL 3.5](https://docs.axolotl.ai/docs/models/internvl3_5.html), [Olmo3](https://docs.axolotl.ai/docs/models/olmo3.html), [Trinity](https://docs.axolotl.ai/docs/models/trinity.html), and [Ministral3](https://docs.axolotl.ai/docs/models/ministral3.html).
   - [Distributed Muon Optimizer](https://github.com/axolotl-ai-cloud/axolotl/pull/3264) support has been added for FSDP2 pretraining.
 - 2025/10: New model support has been added in Axolotl for: [Qwen3 Next](https://docs.axolotl.ai/docs/models/qwen3-next.html), [Qwen2.5-vl, Qwen3-vl](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/qwen2_5-vl), [Qwen3, Qwen3MoE](https://docs.axolotl.ai/docs/models/qwen3.html), [Granite 4](https://docs.axolotl.ai/docs/models/granite4.html), [HunYuan](https://docs.axolotl.ai/docs/models/hunyuan.html), [Magistral 2509](https://docs.axolotl.ai/docs/models/magistral/vision.html), [Apertus](https://docs.axolotl.ai/docs/models/apertus.html), and [Seed-OSS](https://docs.axolotl.ai/docs/models/seed-oss.html).
-
-<details>
-
-<summary>Expand older updates</summary>
-
 - 2025/09: Axolotl now has text diffusion training. Read more [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/diffusion).
 - 2025/08: QAT has been updated to include NVFP4 support. See [PR](https://github.com/axolotl-ai-cloud/axolotl/pull/3107).
 - 2025/07:
