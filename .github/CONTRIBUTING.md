@@ -42,9 +42,11 @@ pre-commit install
 pytest tests/
 ```
 
-Common tasks are wrapped in the [`Makefile`](../Makefile): `make lint` (pinned ruff/mypy/bandit via pre-commit), `make format`, `make test`, `make test-e2e`. Run `make help` to list them.
+CI tests across a matrix of Python and PyTorch versions — see [tests.yml](workflows/tests.yml) for the current one. Tests default to `-m 'not slow'`. Run the CPU suite locally (GPU e2e runs in separate jobs — see below):
 
-CI tests across a matrix of Python and PyTorch versions — see [tests.yml](workflows/tests.yml) for the current one. Tests default to `-m 'not slow'`; `make test` runs the CPU suite locally (GPU e2e runs in separate jobs — see below).
+```bash
+pytest -m "not slow" -n4 --dist loadfile --ignore=tests/e2e tests/
+```
 
 ### Running e2e (GPU) tests locally
 
@@ -103,7 +105,7 @@ pre-commit install        # one-time
 pre-commit run --all-files
 ```
 
-The exact ruff/mypy/bandit versions are pinned in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) — the same file CI's pre-commit job runs from, so local and CI never drift. `make lint` wraps the command above.
+The exact ruff/mypy/bandit versions are pinned in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) — the same file CI's pre-commit job runs from, so local and CI never drift.
 
 To run ruff outside pre-commit, pin it to the `ruff-pre-commit` rev in that file so output matches CI, e.g. `uvx ruff@<rev> check` / `uvx ruff@<rev> format`.
 

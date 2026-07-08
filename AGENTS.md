@@ -81,9 +81,9 @@ docs/                            # Quarto documentation site
 
 The repo pins CI tool versions in `.pre-commit-config.yaml` — never run system `ruff`/`mypy`.
 
-- `make lint` / `pre-commit run --all-files` — ruff, ruff-format, mypy, bandit at the CI-pinned versions
-- `make format` — auto-fix with the pinned ruff (standalone ruff: `uvx ruff@<rev>` at the `ruff-pre-commit` rev)
-- `make test` — CPU suite (pytest defaults to `-m 'not slow'`)
+- `pre-commit run --all-files` — ruff, ruff-format, mypy, bandit at the CI-pinned versions
+- `uvx ruff@<rev> check --fix && uvx ruff@<rev> format` — auto-fix with the pinned ruff (`<rev>` = the `ruff-pre-commit` rev in `.pre-commit-config.yaml`)
+- `pytest -m 'not slow' --ignore=tests/e2e tests/` — CPU suite
 
 Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
