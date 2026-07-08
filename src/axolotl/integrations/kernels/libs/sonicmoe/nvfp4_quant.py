@@ -6,7 +6,7 @@ per 16 contiguous K elements + an optional fp32 per-tensor scale.
 
 Used as the numeric oracle for the fp4_cute kernel path (dequantize the exact
 operands the kernel consumes, matmul in fp32) and as a checkpoint-free
-quantizer for tests and smoke scripts. Encoder rounding does not need to be
+quantizer for tests. Encoder rounding does not need to be
 bit-identical to torchao/quack: the oracle always dequantizes the operands
 actually fed to the kernel, so correctness checks are encoder-independent.
 """

@@ -4,33 +4,20 @@
 
 """Optional fp8 backward-dX engine over DeepGEMM for the frozen NVFP4 base.
 
-The bf16 backward dequantizes the whole expert weight every backward pass and
-runs ``torch._grouped_mm``. This module instead caches the weights once as
-fp8 e4m3 (128x128-block ue8m0 scales, built from the SAME folded dequant the
-forward consumed) and runs dX through DeepGEMM's m-grouped contiguous fp8
-GEMM (1x128 per-token dY scales), DeepSeek's validated training recipe.
-Measured 1.5-1.8x over the bf16 grouped GEMM at Qwen3-30B backward shapes,
-before counting the skipped per-backward dequant; dX rel err ~7e-4.
+Opt-in via ``AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm``. The default bf16 backward
+dequantizes each expert weight every pass and runs ``torch._grouped_mm``; this
+caches the weights once as fp8 e4m3 (from the same folded dequant the forward
+consumed) and runs dX through DeepGEMM's m-grouped contiguous fp8 GEMM. About
+1.5-1.8x over the bf16 grouped GEMM at Qwen3-30B backward shapes (dX rel err
+~7e-4), but the cache is a full fp8 copy of every expert weight (+27 GiB on
+Qwen3-30B), so it stays off by default.
 
-Engine chain: DeepGEMM if importable, else the bf16 dequant path (caller's
-fallback). ``torch._scaled_grouped_mm`` is deliberately NOT in the chain: its
-rowwise fp8 grouped kernel device-aborts on SM100 (torch 2.10+cu130, kernel
-not built for sm100a) and kills the CUDA context. See ``DEEPGEMM.md`` for the
-install steps (source build; CUTLASS symlinks into ``deep_gemm/include`` are
-mandatory or every JIT compile fails).
-
-VERDICT (2026-07-03): REJECTED as a default. The cache is inherently a full
-fp8 copy of all expert weights: +27 GiB persistent on Qwen3-30B for +9% E2E
-tok/s. Kept as an EXPLICIT opt-in for VRAM-rich setups only:
-``AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm`` enables it (raises if deep_gemm is
-missing); anything else, including unset, keeps the bf16 dequant backward.
-
-DeepGEMM's contiguous layout needs every expert segment padded to its M block
-alignment (we set 128); rows are scattered into a padded buffer whose padding
-carries ``m_indices == -1`` (skipped by the kernel) and gathered back after.
-All index math stays on device; the buffer is sized ``T + E * align`` so no
-host sync is needed, and the index plan is cached on the offsets tensor (one
-build serves both projections of a layer).
+``torch._scaled_grouped_mm`` is deliberately not a fallback: its rowwise fp8
+grouped kernel device-aborts on SM100 (torch 2.10+cu130, not built for sm100a)
+and kills the CUDA context. DeepGEMM's contiguous layout needs every expert
+segment padded to its M block alignment (128); padded rows carry
+``m_indices == -1`` (skipped) and are gathered back after. All index math stays
+on device (buffer sized ``T + E * align``) so no host sync is needed.
 """
 
 from __future__ import annotations
@@ -82,7 +69,8 @@ def fp8_dx_supported(grad_h: torch.Tensor, base_weight) -> bool:
     if _deep_gemm() is None:
         raise RuntimeError(
             "AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm but deep_gemm is not "
-            "importable; see DEEPGEMM.md for the source-build steps"
+            "importable; build it from source "
+            "(https://github.com/deepseek-ai/DeepGEMM)"
         )
     return True
 

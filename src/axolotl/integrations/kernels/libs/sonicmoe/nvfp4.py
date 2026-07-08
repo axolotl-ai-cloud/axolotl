@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 
 """
-NVFP4 base-weight support for the sonicmoe MoE-LoRA backend (Phase 1).
+NVFP4 base-weight support for the sonicmoe MoE-LoRA backend.
 
 Grouped up/down GEMMs and the gated activation that the LoRA forward composes
 over frozen expert weights, plus NVFP4 detection and dequantization helpers. The

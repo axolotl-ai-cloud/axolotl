@@ -37,7 +37,7 @@ try:
         gate_up_interleave_perm,
         pack_scales_blocked,
     )
-except ImportError:  # loaded standalone by the pod smoke scripts
+except ImportError:  # loaded standalone (no package parent)
     from sf_layout import (  # type: ignore[no-redef]
         fold_per_tensor_scale,
         gate_up_interleave_perm,
@@ -619,7 +619,7 @@ def dense_nvfp4_gemm(
     tile_mn: tuple = (128, 128),
     cluster_mn: tuple = (1, 1),
 ):
-    """Batched dense (non-varlen) NVFP4 GEMM: the composition smoke path.
+    """Batched dense (non-varlen) NVFP4 GEMM.
 
     a_q ``(L, M, K/2)`` uint8, a_scale ``(L, M, K/16)`` e4m3; b likewise with N.
     Returns ``(postact (L,M,N/2), preact (L,M,N) | None)`` if gated else

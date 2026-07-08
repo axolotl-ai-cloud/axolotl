@@ -47,30 +47,6 @@ pip install kernels "nvidia-cutlass-dsl==4.4.2"
 
 **Note:** Blackwell support is in upstream beta. On Blackwell GPUs Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
 
-### SonicMoE NVFP4 (W4A4) LoRA backend
-
-When `use_sonicmoe` is enabled on a ModelOpt NVFP4 checkpoint (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`), expert forwards route through an in-repo W4A4 grouped GEMM composed from quack's SM100 blockscaled kernels (the frozen base stays NVFP4-packed in memory; LoRA A/B train in bf16). Dense bf16 experts continue to use the upstream sonic-moe CUTLASS kernel.
-
-**Pin quack.** This backend composes quack *private* internals (`GemmDefaultSm100`, the blockscaled varlen operand builders, TVM-FFI utils) that carry no stability guarantee. The validated pin is:
-
-```bash
-pip install "quack-kernels==0.5.0" "nvidia-cutlass-dsl==4.5.2"
-```
-
-(Source-level behavior was cross-checked against quack upstream commit `f4f54db0`.) Other quack versions are untested and the imported internals have churned across minor releases; expect import or numerics breakage rather than graceful fallback if the pin drifts.
-
-Backend selection: when unset, `fp4_cute` is chosen automatically if available (NVFP4 weights, compatible dims, SM100+, quack + cutlass-dsl importable), else `dequant`. `AXOLOTL_SONICMOE_NVFP4_BACKEND` forces one:
-
-| Value | Engine | Requirement |
-|-------|--------|-------------|
-| `fp4_cute` | native NVFP4 tensor cores (`kind::nvf4`) via quack | B200/GB200 (SM100/110) |
-| `dequant` | triton dequant to bf16 + `torch._grouped_mm` | any CUDA GPU with triton |
-
-Per-expert per-tensor scales are applied exactly in the GEMM epilogue (a per-row fp32 multiply on the accumulator). `AXOLOTL_SONICMOE_NVFP4_PTS_FOLD=1` switches back to the old lossy scheme that folds scale ratios into the block scale factors, kept for A/B numerics debugging (see `SONICMOE_NVFP4_LORA.md`).
-
-The up-projection fuses the grouped GEMM, the per-expert scale multiply, the LoRA delta add, and the SwiGLU activation into a single kernel launch (the delta rides the epilogue as a preact-space aux input; weights are consumed zero-copy in the checkpoint's concat gate/up layout). `AXOLOTL_SONICMOE_NVFP4_FUSED_UP=0` falls back to the unfused up-GEMM plus separate activation; throughput is equivalent, the fused path rounds the pre-activation once instead of twice.
-
-**fp8 backward via DeepGEMM (explicit opt-in, VRAM-rich setups only).** `AXOLOTL_SONICMOE_NVFP4_BWD=deepgemm` runs backward dX through an fp8 weight cache on [DeepGEMM](https://github.com/deepseek-ai/DeepGEMM)'s m-grouped GEMM (DeepSeek's 1x128 training recipe): +9% end-to-end tok/s on Qwen3-30B, but the cache is a full fp8 copy of all expert weights (+27 GiB persistent on that model), which is why it is OFF by default. dX-dependent gradients shift ~4e-2 relative Frobenius (within DeepGEMM's own accuracy gate; 30-step loss tracks within ~0.6%). Requires a source build of DeepGEMM (the `deep-gemm` PyPI name is unrelated); install steps and gotchas: `DEEPGEMM.md` at the repo root.
 
 ## How It Works
 
@@ -82,7 +58,7 @@ The `KernelsPlugin` runs once before model loading and:
 
 That's the entire integration — there is no per-architecture SparseMoEBlock monkey-patch, no per-model routing code, and no weight-layout conversion. As new MoE models adopt the decorator upstream they immediately benefit from both kernels.
 
-## LoRA Support
+## BF16 LoRA Support
 
 Both kernels train PEFT adapters on `gate_up_proj` / `down_proj` (and `gate` for the router) end-to-end:
 
@@ -90,6 +66,31 @@ Both kernels train PEFT adapters on `gate_up_proj` / `down_proj` (and `gate` for
 - **SonicMoE** materializes `W_eff = W + scaling * (B @ A)` per expert inside a custom `MoELoRAMaterialize` `autograd.Function` and passes the effective weight into the CUTLASS kernel. Backward decomposes `dW_eff` into `dA` and `dB` via the chain rule, so LoRA parameters train without modifying the kernel.
 
 Both paths detect PEFT `ParamWrapper` on individual expert parameters (`target_parameters` API) and unwrap them before dispatch.
+
+### SonicMoE NVFP4 (W4A4) LoRA backend
+
+When `use_sonicmoe` is enabled on a ModelOpt NVFP4 checkpoint (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`), expert forwards run a W4A4 grouped GEMM that keeps the frozen base NVFP4-packed in memory and trains LoRA `A` / `B` in bf16.
+
+```bash
+pip install "quack-kernels==0.5.0" "nvidia-cutlass-dsl==4.5.2"
+```
+
+**Note:** Other quack versions are untested.
+
+**Backend.** Auto-selected when `AXOLOTL_SONICMOE_NVFP4_BACKEND` is unset: `fp4_cute` if the checkpoint is NVFP4 with compatible dims on SM100+ with quack importable, else `dequant`.
+
+| Backend | Engine | Runs on |
+|---------|--------|---------|
+| `fp4_cute` | (W4A4) native NVFP4 tensor cores via quack | Blackwell (B200/GB200, SM100/110) |
+| `dequant` | (W4A16) dequant to bf16 -> `torch._grouped_mm` (sm90+) or per-expert loop | any CUDA GPU with Triton |
+
+**Advanced env vars** (defaults are correct for normal training):
+
+| Variable | Default | Effect when changed |
+|----------|---------|---------------------|
+| `AXOLOTL_SONICMOE_NVFP4_FUSED_UP` | `1` | `0` unfuses the up-GEMM from its scale / LoRA-delta / SwiGLU epilogue; throughput is equivalent, the fused path just rounds the pre-activation once instead of twice. |
+| `AXOLOTL_SONICMOE_NVFP4_PTS_FOLD` | `0` | `1` folds per-tensor scale ratios into the block scales (lossy); kept only for A/B numerics debugging. |
+| `AXOLOTL_SONICMOE_NVFP4_BWD` | cute | `deepgemm` routes backward dX through an fp8 weight cache on [DeepGEMM](https://github.com/deepseek-ai/DeepGEMM)'s m-grouped GEMM: about +9% tok/s on Qwen3-30B, but holds a full fp8 copy of every expert weight (+27 GiB on that model) and needs a source build, so it is off by default. |
 
 ## Model Support
 
