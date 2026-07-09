@@ -2231,6 +2231,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Buffer size for multipack streaming datasets",
     ),
     (
+        ("--mm-pack-buffer-size",),
+        None,
+        None,
+        "Lookahead buffer size (rows) for the buffered multimodal sample packer used on streaming / non-prepared multimodal datasets",
+    ),
+    (
         ("--xformers-attention/--no-xformers-attention",),
         None,
         None,

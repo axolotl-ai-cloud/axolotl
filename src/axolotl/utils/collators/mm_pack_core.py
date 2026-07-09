@@ -219,7 +219,9 @@ def _pack_ragged_pixel_values(values) -> np.ndarray:
     # Model crops padding back via image_sizes, so pad to a common H x W and stack.
     images: list[np.ndarray] = []
     for value in values:
-        images.extend(_iter_images(value))
+        value_images = _iter_images(value)
+        if value_images is not None:
+            images.extend(value_images)
     return _pad_and_stack_images(images)
 
 

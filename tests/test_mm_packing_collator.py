@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import torch
 
 from axolotl.utils.collators import MultiModalBatchSamplerDataCollatorForSeq2Seq
@@ -85,42 +84,26 @@ def test_llava_style_pixel_values_no_spurious_batch_dim():
     assert tuple(batch["pixel_values"].shape) == (3, 3, 8, 8)
 
 
-@pytest.mark.parametrize("model", ["Qwen/Qwen2-VL-7B-Instruct"])
-def test_qwen2vl_flat_patches_concat(model):
-    from PIL import Image
-    from transformers import AutoProcessor
-
-    proc = AutoProcessor.from_pretrained(model)
-
-    def row(px, off):
-        msgs = [
-            {
-                "role": "user",
-                "content": [{"type": "image"}, {"type": "text", "text": "hi"}],
-            },
-            {"role": "assistant", "content": [{"type": "text", "text": "ok"}]},
-        ]
-        text = proc.apply_chat_template(msgs, tokenize=False)
-        out = proc(
-            text=[text], images=[Image.new("RGB", (px, px), "red")], return_tensors="pt"
-        )
-        n = out["input_ids"].shape[1]
-        return {
-            "input_ids": out["input_ids"].squeeze(0).tolist(),
-            "labels": out["input_ids"].squeeze(0).tolist(),
-            "attention_mask": [1] * n,
-            "position_ids": list(range(n)),
-            "pixel_values": out["pixel_values"].tolist(),
-            "image_grid_thw": out["image_grid_thw"].squeeze(0).tolist(),
-        }
-
-    r1, r2 = row(56, 0), row(84, 0)
-    p1 = np.asarray(r1["pixel_values"]).shape[0]
-    p2 = np.asarray(r2["pixel_values"]).shape[0]
+def test_qwen2vl_flat_patches_concat():
+    # Qwen2-VL ships 2D flat patches (num_patches, embed_dim) + image_grid_thw
+    # (num_images, 3); packing concatenates both along axis 0, no batch dim.
+    embed_dim = 8
+    p1, p2 = 1 * 4 * 4, 1 * 2 * 6
+    r1 = {
+        **_text(3, 10),
+        "pixel_values": np.ones((p1, embed_dim), np.float32),
+        "image_grid_thw": np.array([[1, 4, 4]], np.int64),
+    }
+    r2 = {
+        **_text(2, 20),
+        "pixel_values": np.full((p2, embed_dim), 2.0, np.float32),
+        "image_grid_thw": np.array([[1, 2, 6]], np.int64),
+    }
     batch = _collator()([[r1, r2]])
     assert batch["pixel_values"].ndim == 2
-    assert batch["pixel_values"].shape[0] == p1 + p2
-    assert batch["image_grid_thw"].shape[0] == 2
+    assert tuple(batch["pixel_values"].shape) == (p1 + p2, embed_dim)
+    assert tuple(batch["image_grid_thw"].shape) == (2, 3)
+    assert batch["image_grid_thw"].tolist() == [[1, 4, 4], [1, 2, 6]]
 
 
 def test_pixtral_ragged_stacked_per_row_pads_and_stacks():
@@ -178,37 +161,22 @@ def test_pixtral_ragged_micro_batch_size_gt_1_pads_across_packs():
     assert batch["pixel_values"][1, 0, 0, 0] == 2
 
 
-@pytest.mark.parametrize("model", ["mistral-community/pixtral-12b"])
-def test_pixtral_processor_end_to_end(model):
-    from PIL import Image
-    from transformers import AutoProcessor
-
-    proc = AutoProcessor.from_pretrained(model)
-
-    def row(px, off):
-        msgs = [
-            {
-                "role": "user",
-                "content": [{"type": "image"}, {"type": "text", "text": "hi"}],
-            }
-        ]
-        text = proc.apply_chat_template(msgs, tokenize=False)
-        out = proc(
-            text=[text], images=[Image.new("RGB", px, "red")], return_tensors="pt"
-        )
-        n = out["input_ids"].shape[1]
-        return {
-            "input_ids": out["input_ids"].squeeze(0).tolist(),
-            "labels": out["input_ids"].squeeze(0).tolist(),
-            "attention_mask": [1] * n,
-            "position_ids": list(range(n)),
-            "pixel_values": out["pixel_values"],
-            "image_sizes": out["image_sizes"],
-        }
-
-    r1, r2 = row((64, 96), 0), row((128, 64), 0)
-    batch = _collator()([[r1, r2]])
-    # padded stack to pack-wide max H/W; a Python list would break the vision tower
+def test_pixtral_ragged_list_of_images_pads_and_concats_image_sizes():
+    # Pixtral carries a Python list of variable-resolution images + image_sizes
+    # (num_images, 2); packing pads to the pack-wide max H/W and stacks to 4D,
+    # while a plain list would break the vision tower.
+    r1 = {
+        **_text(4, 10),
+        "pixel_values": [
+            np.ones((3, 64, 96), np.float32),
+            np.full((3, 128, 64), 2.0, np.float32),
+        ],
+        "image_sizes": np.array([[64, 96], [128, 64]], np.int64),
+    }
+    batch = _collator()([[r1]])
     assert batch["pixel_values"].ndim == 4
-    assert batch["pixel_values"].shape[0] == 2
+    assert tuple(batch["pixel_values"].shape) == (2, 3, 128, 96)
+    assert batch["pixel_values"][0, 0, 0, 0] == 1
+    assert batch["pixel_values"][1, 0, 0, 0] == 2
     assert tuple(batch["image_sizes"].shape) == (2, 2)
+    assert batch["image_sizes"].tolist() == [[64, 96], [128, 64]]
