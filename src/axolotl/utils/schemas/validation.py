@@ -1295,7 +1295,8 @@ class ChatTemplateValidationMixin:
             "chat_template_jinja"
         ):
             raise ValueError(
-                "chat_template_jinja is required when chat_template is set to jinja"
+                "chat_template_jinja is required when chat_template is set to 'jinja'. "
+                "Please provide the Jinja template string in chat_template_jinja field."
             )
 
         # If chat_template_jinja is set, set chat_template to jinja

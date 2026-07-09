@@ -739,6 +739,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens. For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models. `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities.",
     ),
     (
+        ("--lora-rank-pattern",),
+        None,
+        None,
+        "Per-module LoRA rank overrides (regex \u2192 int > 0). Forwarded to PEFT LoraConfig.rank_pattern.",
+    ),
+    (
+        ("--lora-alpha-pattern",),
+        None,
+        None,
+        "Per-module LoRA alpha overrides (regex \u2192 int > 0). Forwarded to PEFT LoraConfig.alpha_pattern.",
+    ),
+    (
         ("--lora-dropout",),
         None,
         None,
