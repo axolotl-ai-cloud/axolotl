@@ -41,6 +41,10 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "The multiprocessing start method to use."},
     )
+    sample_packing_strategy: Literal["first_fit_decreasing", "balanced_greedy"] = field(
+        default="first_fit_decreasing",
+        metadata={"help": "The sampler packing algorithm to use."},
+    )
     sample_packing_drop_attention_mask: bool = field(
         default=False,
         metadata={"help": "Drop attention mask from inputs when using packing."},

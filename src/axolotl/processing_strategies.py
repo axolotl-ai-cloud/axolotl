@@ -700,7 +700,8 @@ def _resolve_role_boundary_override(specs: list[dict], tokenizer) -> list[RoleBo
     """
     out: list[RoleBoundary] = []
     for i, spec in enumerate(specs):
-        if hasattr(spec, "model_dump"):
+        # DictDefault returns None (not callable) for model_dump; treat as a mapping.
+        if callable(getattr(spec, "model_dump", None)):
             d = spec.model_dump()
         else:
             d = dict(spec)

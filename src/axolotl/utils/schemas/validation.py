@@ -179,6 +179,57 @@ class DatasetValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_mm_sample_packing(cls, data):
+        is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
+        packing = bool(data.get("sample_packing") or data.get("eval_sample_packing"))
+        if not (is_multimodal and packing):
+            return data
+
+        # Packing needs the `length` column and cached media, which only exist once
+        # the dataset is prepared (skip_prepare_dataset false/unset).
+        if data.get("skip_prepare_dataset"):
+            raise ValueError(
+                "Multimodal sample packing requires pre-tokenization: the dataset must "
+                "carry a `length` column (expanded image tokens + text) and cached "
+                "media, which only happens when the dataset is prepared. Set "
+                "`skip_prepare_dataset: false` (or leave it unset) when enabling "
+                "`sample_packing`/`eval_sample_packing` on a multimodal run."
+            )
+
+        if data.get("remove_unused_columns") is None:
+            LOG.info(
+                "setting `remove_unused_columns: false` for multimodal sample packing"
+            )
+            data["remove_unused_columns"] = False
+        elif data.get("remove_unused_columns") is not False:
+            raise ValueError(
+                "Multimodal sample packing requires `remove_unused_columns: false` so "
+                "media columns (e.g. `pixel_values`) survive collation."
+            )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mm_sample_packing_streaming(cls, data):
+        is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
+        packing = bool(data.get("sample_packing") or data.get("eval_sample_packing"))
+        streaming = bool(data.get("streaming") or data.get("pretraining_dataset"))
+        if is_multimodal and packing and streaming:
+            raise ValueError(
+                "Multimodal sample packing is not supported with streaming or "
+                "pretraining datasets: it knapsacks pre-tokenized rows by their "
+                "`length` column and concatenates cached media (e.g. `pixel_values`) "
+                "at collation, which only exist for a prepared (non-streaming) "
+                "dataset. The streaming multipack path uses a different collator and "
+                "would silently drop media. Disable `streaming`/`pretraining_dataset`, "
+                "or turn off `sample_packing`/`eval_sample_packing` for this "
+                "multimodal run."
+            )
+        return data
+
 
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
