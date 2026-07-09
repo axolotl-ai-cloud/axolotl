@@ -85,8 +85,7 @@ def test_llava_style_pixel_values_no_spurious_batch_dim():
 
 
 def test_qwen2vl_flat_patches_concat():
-    # Qwen2-VL ships 2D flat patches (num_patches, embed_dim) + image_grid_thw
-    # (num_images, 3); packing concatenates both along axis 0, no batch dim.
+    # Qwen2-VL's 2D flat patches must stay 2D (concat along axis 0), not gain a batch dim.
     embed_dim = 8
     p1, p2 = 1 * 4 * 4, 1 * 2 * 6
     r1 = {
@@ -162,9 +161,7 @@ def test_pixtral_ragged_micro_batch_size_gt_1_pads_across_packs():
 
 
 def test_pixtral_ragged_list_of_images_pads_and_concats_image_sizes():
-    # Pixtral carries a Python list of variable-resolution images + image_sizes
-    # (num_images, 2); packing pads to the pack-wide max H/W and stacks to 4D,
-    # while a plain list would break the vision tower.
+    # A plain list of variable-resolution images must pad to 4D; a list breaks the vision tower.
     r1 = {
         **_text(4, 10),
         "pixel_values": [

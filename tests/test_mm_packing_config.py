@@ -154,6 +154,29 @@ class TestMultimodalPretrainingPacking:
         assert out.dataloader_num_workers == 0
         assert out.dataloader_prefetch_factor is None
 
+    def test_skip_prepare_mm_packing_forces_num_workers_zero(self):
+        # The buffered packer also serves skip_prepare_dataset, so its guards fire.
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            skip_prepare_dataset=True,
+            dataloader_num_workers=4,
+            dataloader_prefetch_factor=2,
+        )
+        out = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+        assert out.dataloader_num_workers == 0
+        assert out.dataloader_prefetch_factor is None
+
+    def test_skip_prepare_mm_packing_forces_dispatch_batches_off(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            skip_prepare_dataset=True,
+        )
+        out = validate_config(cfg)
+        assert out.accelerator_config.dispatch_batches is False
+        assert out.accelerator_config.split_batches is False
+
     def test_non_mm_pretraining_dataset_unaffected(self):
         cfg = _cfg(
             sample_packing=True,

@@ -35,6 +35,17 @@ def _is_streaming_mm_packing(data) -> bool:
     return bool(data.get("streaming")) and _is_multimodal_packing(data)
 
 
+def _is_buffered_mm_packing(data) -> bool:
+    """True when MM sample packing routes to the buffered (tokenize-on-the-fly) packer.
+
+    Both `streaming` and `skip_prepare_dataset` mean the dataset is never prepared
+    with cached `length`/media, so packing runs through the buffered packer.
+    """
+    return _is_multimodal_packing(data) and bool(
+        data.get("streaming") or data.get("skip_prepare_dataset")
+    )
+
+
 class DatasetValidationMixin:
     """Validation methods related to dataset configuration."""
 
@@ -197,8 +208,9 @@ class DatasetValidationMixin:
         if not _is_multimodal_packing(data):
             return data
 
-        # skip_prepare_dataset (no cached `length`/media) routes to the buffered
-        # multimodal packer instead of the materialized MultipackBatchSampler.
+        # `streaming` or `skip_prepare_dataset` (no cached `length`/media) routes to
+        # the buffered multimodal packer instead of the materialized
+        # MultipackBatchSampler; both tokenize on the fly.
 
         if data.get("remove_unused_columns") is None:
             LOG.info(
@@ -1382,8 +1394,8 @@ class PretrainingValidationMixin:
         # alternatively set ACCELERATE_SPLIT_BATCHES=False
         # Accelerate's default dispatch would slice pixel_values' non-batch leading
         # dim (patches, not batch), corrupting media; force it off for streaming MM.
-        streaming_mm_packing = _is_streaming_mm_packing(data)
-        if data.get("pretraining_dataset") or streaming_mm_packing:
+        buffered_mm_packing = _is_buffered_mm_packing(data)
+        if data.get("pretraining_dataset") or buffered_mm_packing:
             accelerator_config = data.get("accelerator_config", {})
             if not accelerator_config:
                 data["accelerator_config"] = {
@@ -1402,13 +1414,13 @@ class PretrainingValidationMixin:
     def force_num_workers_zero_for_streaming_mm(cls, data):
         # The buffered MM packer has no worker sharding, so num_workers > 0 would
         # re-iterate the source per worker and duplicate rows.
-        if _is_streaming_mm_packing(data):
+        if _is_buffered_mm_packing(data):
             if data.get("dataloader_num_workers") or (
                 data.get("dataloader_prefetch_factor") is not None
             ):
                 LOG.warning(
                     "Overriding `dataloader_num_workers` to 0 (and "
-                    "`dataloader_prefetch_factor` to None) for streaming multimodal "
+                    "`dataloader_prefetch_factor` to None) for buffered multimodal "
                     "sample packing; the buffered packer has no worker sharding, so "
                     "workers > 0 would duplicate rows."
                 )
