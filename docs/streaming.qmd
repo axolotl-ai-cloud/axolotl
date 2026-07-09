@@ -77,7 +77,7 @@ memory for the shuffle buffer.
 ## Sample Packing with Streaming
 
 Sample packing is supported for streaming datasets. When enabled, multiple samples are
-packed into a single sequence to maximize GPU utilization. (Multimodal sample packing is not supported with streaming — it requires a prepared dataset; see [Multipack](multipack.qmd).)
+packed into a single sequence to maximize GPU utilization. Multimodal (VLM) streaming packing is also supported via a buffered packer (`mm_pack_buffer_size`); it is single-process and non-deterministic across runs — see [Multipack](multipack.qmd).
 
 ```yaml
 sample_packing: true

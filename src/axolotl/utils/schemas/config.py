@@ -779,6 +779,12 @@ class AxolotlInputConfig(
             "description": "Buffer size for multipack streaming datasets"
         },
     )
+    mm_pack_buffer_size: int | None = Field(
+        default=1000,
+        json_schema_extra={
+            "description": "Lookahead buffer size (rows) for the buffered multimodal sample packer used on streaming / non-prepared multimodal datasets"
+        },
+    )
 
     xformers_attention: bool | None = Field(
         default=None,

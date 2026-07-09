@@ -1,5 +1,5 @@
 """Robustness tests for multimodal (VLM) sample packing: over-long media rows must not be
-silently truncated, and packing is rejected with streaming/pretraining datasets."""
+silently truncated, and streaming/pretraining packing routes to the buffered packer."""
 
 import pytest
 
@@ -77,38 +77,43 @@ def _cfg(**extra):
 
 
 class TestMultimodalPackingStreaming:
-    """check_mm_sample_packing_streaming in DatasetValidationMixin."""
+    """check_mm_sample_packing_streaming in DatasetValidationMixin.
 
-    def test_mm_packing_with_streaming_raises(self):
+    Streaming multimodal packing is served by the buffered packer, so it
+    validates; the `pretraining_dataset` route lacks that packer and raises.
+    """
+
+    def test_mm_packing_with_streaming_ok(self):
         cfg = _cfg(
             processor_type="AutoProcessor",
             sample_packing=True,
             streaming=True,
             max_steps=100,
         )
-        with pytest.raises(Exception, match="(?i)streaming or pretraining"):
-            validate_config(cfg)
+        out = validate_config(cfg)
+        assert out.remove_unused_columns is False
 
     def test_mm_packing_with_pretraining_dataset_raises(self):
+        # pretraining_dataset routes to the text streaming loader (no buffered MM
+        # packer), which would silently drop media -> blocked at validation.
         cfg = _cfg(
             processor_type="AutoProcessor",
             sample_packing=True,
-            pretraining_dataset="allenai/c4",
+            pretraining_dataset=[{"path": "allenai/c4", "name": "en"}],
             streaming=True,
             max_steps=100,
         )
-        with pytest.raises(Exception, match="(?i)multimodal sample packing"):
+        with pytest.raises(Exception, match="(?i)pretraining_dataset"):
             validate_config(cfg)
 
-    def test_mm_eval_packing_with_streaming_raises(self):
+    def test_mm_eval_packing_with_streaming_ok(self):
         cfg = _cfg(
             is_multimodal=True,
             eval_sample_packing=True,
             streaming=True,
             max_steps=100,
         )
-        with pytest.raises(Exception, match="(?i)streaming"):
-            validate_config(cfg)
+        validate_config(cfg)
 
     def test_non_mm_packing_streaming_unaffected(self):
         # No processor_type / is_multimodal -> streaming validator is a no-op here.

@@ -187,16 +187,8 @@ class DatasetValidationMixin:
         if not (is_multimodal and packing):
             return data
 
-        # Packing needs the `length` column and cached media, which only exist once
-        # the dataset is prepared (skip_prepare_dataset false/unset).
-        if data.get("skip_prepare_dataset"):
-            raise ValueError(
-                "Multimodal sample packing requires pre-tokenization: the dataset must "
-                "carry a `length` column (expanded image tokens + text) and cached "
-                "media, which only happens when the dataset is prepared. Set "
-                "`skip_prepare_dataset: false` (or leave it unset) when enabling "
-                "`sample_packing`/`eval_sample_packing` on a multimodal run."
-            )
+        # skip_prepare_dataset (no cached `length`/media) routes to the buffered
+        # multimodal packer instead of the materialized MultipackBatchSampler.
 
         if data.get("remove_unused_columns") is None:
             LOG.info(
@@ -214,19 +206,17 @@ class DatasetValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_mm_sample_packing_streaming(cls, data):
+        # The buffered MM packer only serves the `streaming: true` path; a
+        # `pretraining_dataset` routes to the text streaming loader, which would
+        # silently drop media.
         is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
         packing = bool(data.get("sample_packing") or data.get("eval_sample_packing"))
-        streaming = bool(data.get("streaming") or data.get("pretraining_dataset"))
-        if is_multimodal and packing and streaming:
+        if is_multimodal and packing and data.get("pretraining_dataset"):
             raise ValueError(
-                "Multimodal sample packing is not supported with streaming or "
-                "pretraining datasets: it knapsacks pre-tokenized rows by their "
-                "`length` column and concatenates cached media (e.g. `pixel_values`) "
-                "at collation, which only exist for a prepared (non-streaming) "
-                "dataset. The streaming multipack path uses a different collator and "
-                "would silently drop media. Disable `streaming`/`pretraining_dataset`, "
-                "or turn off `sample_packing`/`eval_sample_packing` for this "
-                "multimodal run."
+                "Multimodal sample packing is not supported with "
+                "`pretraining_dataset` (media would be silently dropped). Use "
+                "`streaming: true` with a `datasets:` entry for streaming "
+                "multimodal packing instead."
             )
         return data
 
@@ -1382,7 +1372,14 @@ class PretrainingValidationMixin:
     @classmethod
     def check_pretraining_split_batches_accelerate(cls, data):
         # alternatively set ACCELERATE_SPLIT_BATCHES=False
-        if data.get("pretraining_dataset"):
+        # Accelerate's default dispatch would slice pixel_values' non-batch leading
+        # dim (patches, not batch), corrupting media; force it off for streaming MM.
+        streaming_mm_packing = bool(
+            data.get("streaming")
+            and (data.get("processor_type") or data.get("is_multimodal"))
+            and (data.get("sample_packing") or data.get("eval_sample_packing"))
+        )
+        if data.get("pretraining_dataset") or streaming_mm_packing:
             accelerator_config = data.get("accelerator_config", {})
             if not accelerator_config:
                 data["accelerator_config"] = {
@@ -1394,6 +1391,22 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["split_batches"] = False
                 if accelerator_config.get("dispatch_batches") is None:
                     data["accelerator_config"]["dispatch_batches"] = False
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def force_num_workers_zero_for_streaming_mm(cls, data):
+        # The buffered MM packer has no worker sharding, so num_workers > 0 would
+        # re-iterate the source per worker and duplicate rows.
+        streaming_mm_packing = bool(
+            data.get("streaming")
+            and (data.get("processor_type") or data.get("is_multimodal"))
+            and (data.get("sample_packing") or data.get("eval_sample_packing"))
+        )
+        if streaming_mm_packing:
+            data["dataloader_num_workers"] = 0
+            # prefetch_factor is only valid with workers > 0.
+            data["dataloader_prefetch_factor"] = None
         return data
 
     @model_validator(mode="before")

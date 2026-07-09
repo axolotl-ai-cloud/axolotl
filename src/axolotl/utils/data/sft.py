@@ -142,7 +142,13 @@ def _prepare_streaming_dataset(
         # Ensure we have a split set - default to 'train' if not specified
         if not hasattr(dataset_config, "split") or not dataset_config.split:
             dataset_config.split = "train"
-        train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
+
+        if processor is not None and (cfg.processor_type or cfg.is_multimodal):
+            train_dataset = _load_streaming_mm_dataset(
+                dataset_config, cfg, tokenizer, processor
+            )
+        else:
+            train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
     else:
         # Use legacy loading function for non-packed streaming datasets
         train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
@@ -246,6 +252,28 @@ def _load_streaming_dataset(
 
     # Format for PyTorch
     return train_dataset.with_format("torch")
+
+
+def _load_streaming_mm_dataset(
+    dataset_config: DictDefault,
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin,
+) -> IterableDataset:
+    """Buffered multimodal packer for streaming / non-prepared MM sample_packing (see utils/data/mm_streaming.py)."""
+    from axolotl.utils.data.mm_streaming import build_streaming_mm_dataset
+
+    raw_dataset = load_dataset(
+        dataset_config["path"],
+        streaming=True,
+        split=dataset_config["split"],
+        name=dataset_config.get("name"),
+        data_files=dataset_config.get("data_files"),
+    )
+    if isinstance(raw_dataset, (DatasetDict, IterableDatasetDict)):
+        raw_dataset = raw_dataset[dataset_config["split"]]
+
+    return build_streaming_mm_dataset(raw_dataset, cfg, tokenizer, processor)
 
 
 def _create_placeholder_dataset() -> IterableDataset:
