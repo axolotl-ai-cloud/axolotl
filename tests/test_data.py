@@ -71,48 +71,55 @@ class TestEncodePretraining(unittest.TestCase):
         return load_pretrain(self.tokenizer, cfg)
 
     def test_long_document_is_chunked_not_dropped(self):
-        """Long docs must be chunked into windows that survive the length filter (#3441)."""
+        """Long docs must be chunked into chunks that survive the length filter (#3441)."""
         for sequence_len in (256, 512, 2048):
             with self.subTest(sequence_len=sequence_len):
                 strat = self._pretrain_strategy(sequence_len)
                 long_doc = " ".join(f"token{i}" for i in range(4 * sequence_len))
-                windows = strat._tokenize(long_doc)["input_ids"]
+                chunks = strat._tokenize(long_doc)["input_ids"]
 
-                # the document spans more than one window (i.e. it was chunked)
-                self.assertGreater(len(windows), 1)
+                # the document spans more than one chunk (i.e. it was chunked)
+                self.assertGreater(len(chunks), 1)
 
-                for window in windows:
-                    # every window survives the downstream length filter ...
-                    self.assertLessEqual(len(window), sequence_len)
+                for chunk in chunks:
+                    # every chunk survives the downstream length filter
+                    self.assertLessEqual(len(chunk), sequence_len)
                     self.assertTrue(
                         filter_sequences_by_length(
-                            {"input_ids": window}, sequence_len=sequence_len
+                            {"input_ids": chunk}, sequence_len=sequence_len
                         )
                     )
-                    # ... and ends with EOS
-                    self.assertEqual(window[-1], self.tokenizer.eos_token_id)
+
+                # BOS only at the very start of the document (first chunk)
+                self.assertEqual(chunks[0][0], self.tokenizer.bos_token_id)
+                for chunk in chunks[1:]:
+                    self.assertNotEqual(chunk[0], self.tokenizer.bos_token_id)
+
+                # EOS only at the very end of the document (last chunk)
+                self.assertEqual(chunks[-1][-1], self.tokenizer.eos_token_id)
+                for chunk in chunks[:-1]:
+                    self.assertNotEqual(chunk[-1], self.tokenizer.eos_token_id)
 
     def test_no_tokens_dropped_for_oversized_docs(self):
         """A doc longer than sequence_len must not be dropped entirely (#3441)."""
         sequence_len = 256
         strat = self._pretrain_strategy(sequence_len)
         long_doc = " ".join(f"token{i}" for i in range(2000))
-        windows = strat._tokenize(long_doc)["input_ids"]
+        chunks = strat._tokenize(long_doc)["input_ids"]
 
         kept = [
             w
-            for w in windows
+            for w in chunks
             if filter_sequences_by_length({"input_ids": w}, sequence_len=sequence_len)
         ]
-        self.assertTrue(kept, "all windows were dropped — oversized doc lost entirely")
-        self.assertEqual(len(kept), len(windows))
+        self.assertTrue(kept, "all chunks were dropped — oversized doc lost entirely")
+        self.assertEqual(len(kept), len(chunks))
 
-    def test_stride_below_window_size(self):
-        """Tokenization must not raise from a stride >= effective max length."""
+    def test_long_document_tokenization_does_not_raise(self):
+        """Tokenising a document much longer than sequence_len must not raise."""
         for sequence_len in (256, 2048):
             with self.subTest(sequence_len=sequence_len):
                 strat = self._pretrain_strategy(sequence_len)
-                # would raise ValueError from the tokenizer if stride were too large
                 strat._tokenize(" ".join(f"token{i}" for i in range(sequence_len * 3)))
 
     def test_md5(self):
