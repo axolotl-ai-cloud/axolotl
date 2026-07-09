@@ -2060,7 +2060,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--activation-offloading",),
         None,
         None,
-        "Whether to offload activations. Options: true/false, 'legacy', 'disk' (TRL offloader), or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true).",
+        "Whether to offload activations. Options: true (TRL offloader, stream-overlapped), false, 'legacy' (TRL offloader, synchronous), 'disk' (offload activations to disk via the Disco gradient checkpointer), or 'hidden_states' (checkpoint input offload to CPU; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true).",
     ),
     (
         ("--layer-offloading/--no-layer-offloading",),
