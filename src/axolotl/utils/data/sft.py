@@ -261,6 +261,8 @@ def _load_streaming_mm_dataset(
     processor: ProcessorMixin,
 ) -> IterableDataset:
     """Buffered multimodal packer for streaming / non-prepared MM sample_packing (see utils/data/mm_streaming.py)."""
+    # Single-process by design (dispatch_batches forced off, num_workers forced to
+    # 0), so — unlike the pretraining loader — no non-main-rank placeholder guard.
     from axolotl.utils.data.mm_streaming import build_streaming_mm_dataset
 
     raw_dataset = load_dataset(

@@ -23,6 +23,18 @@ LOG = get_logger(__name__)
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 
+def _is_multimodal_packing(data) -> bool:
+    """True when the config is a multimodal run using sample packing."""
+    is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
+    packing = bool(data.get("sample_packing") or data.get("eval_sample_packing"))
+    return is_multimodal and packing
+
+
+def _is_streaming_mm_packing(data) -> bool:
+    """True when multimodal sample packing runs through the buffered streaming packer."""
+    return bool(data.get("streaming")) and _is_multimodal_packing(data)
+
+
 class DatasetValidationMixin:
     """Validation methods related to dataset configuration."""
 
@@ -182,9 +194,7 @@ class DatasetValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_mm_sample_packing(cls, data):
-        is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
-        packing = bool(data.get("sample_packing") or data.get("eval_sample_packing"))
-        if not (is_multimodal and packing):
+        if not _is_multimodal_packing(data):
             return data
 
         # skip_prepare_dataset (no cached `length`/media) routes to the buffered
@@ -209,9 +219,7 @@ class DatasetValidationMixin:
         # The buffered MM packer only serves the `streaming: true` path; a
         # `pretraining_dataset` routes to the text streaming loader, which would
         # silently drop media.
-        is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
-        packing = bool(data.get("sample_packing") or data.get("eval_sample_packing"))
-        if is_multimodal and packing and data.get("pretraining_dataset"):
+        if _is_multimodal_packing(data) and data.get("pretraining_dataset"):
             raise ValueError(
                 "Multimodal sample packing is not supported with "
                 "`pretraining_dataset` (media would be silently dropped). Use "
@@ -1374,11 +1382,7 @@ class PretrainingValidationMixin:
         # alternatively set ACCELERATE_SPLIT_BATCHES=False
         # Accelerate's default dispatch would slice pixel_values' non-batch leading
         # dim (patches, not batch), corrupting media; force it off for streaming MM.
-        streaming_mm_packing = bool(
-            data.get("streaming")
-            and (data.get("processor_type") or data.get("is_multimodal"))
-            and (data.get("sample_packing") or data.get("eval_sample_packing"))
-        )
+        streaming_mm_packing = _is_streaming_mm_packing(data)
         if data.get("pretraining_dataset") or streaming_mm_packing:
             accelerator_config = data.get("accelerator_config", {})
             if not accelerator_config:
@@ -1398,12 +1402,16 @@ class PretrainingValidationMixin:
     def force_num_workers_zero_for_streaming_mm(cls, data):
         # The buffered MM packer has no worker sharding, so num_workers > 0 would
         # re-iterate the source per worker and duplicate rows.
-        streaming_mm_packing = bool(
-            data.get("streaming")
-            and (data.get("processor_type") or data.get("is_multimodal"))
-            and (data.get("sample_packing") or data.get("eval_sample_packing"))
-        )
-        if streaming_mm_packing:
+        if _is_streaming_mm_packing(data):
+            if data.get("dataloader_num_workers") or (
+                data.get("dataloader_prefetch_factor") is not None
+            ):
+                LOG.warning(
+                    "Overriding `dataloader_num_workers` to 0 (and "
+                    "`dataloader_prefetch_factor` to None) for streaming multimodal "
+                    "sample packing; the buffered packer has no worker sharding, so "
+                    "workers > 0 would duplicate rows."
+                )
             data["dataloader_num_workers"] = 0
             # prefetch_factor is only valid with workers > 0.
             data["dataloader_prefetch_factor"] = None

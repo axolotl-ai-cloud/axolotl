@@ -62,6 +62,9 @@ def balanced_greedy_pack_group(
                 placed = True
                 break
 
+            # Bins are popped in increasing `used` order and share one
+            # `bin_capacity`; if the least-used non-full bin can't fit this item,
+            # no other bin can either, so re-push it and stop scanning.
             heapq.heappush(available, (used, bin_idx))
             break
 
