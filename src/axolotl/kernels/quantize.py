@@ -10,6 +10,15 @@ from bitsandbytes.functional import QuantState, get_ptr
 cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32
 cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4
 cdequantize_blockwise_bf16_nf4 = bnb.functional.lib.cdequantize_blockwise_bf16_nf4
+cdequantize_blockwise_fp32_nf4 = bnb.functional.lib.cdequantize_blockwise_fp32_nf4
+
+# NF4 dequant kernel per output dtype; the buffer dtype must match or the kernel
+# writes past/short of each element (e.g. a bf16 kernel into an fp32 buffer = garbage).
+_NF4_DEQUANT_KERNELS = {
+    torch.float16: cdequantize_blockwise_fp16_nf4,
+    torch.bfloat16: cdequantize_blockwise_bf16_nf4,
+    torch.float32: cdequantize_blockwise_fp32_nf4,
+}
 
 # Cached per-device: per-call current_stream() measurably slows this hot path.
 CUDA_STREAM: dict[torch.device, torch.cuda.Stream] = {}
@@ -51,11 +60,9 @@ def _ctypes_nf4_dequant(
     )
     out_absmax += offset
 
-    fx = (
-        cdequantize_blockwise_fp16_nf4
-        if dtype == torch.float16
-        else cdequantize_blockwise_bf16_nf4
-    )
+    fx = _NF4_DEQUANT_KERNELS.get(dtype)
+    if fx is None:
+        raise ValueError(f"NF4 dequantization unsupported for output dtype {dtype}")
     fx(
         get_ptr(None),
         get_ptr(W),

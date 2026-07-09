@@ -164,6 +164,7 @@ That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/ge
 ## 📚 Documentation
 
 - [Installation Options](https://docs.axolotl.ai/docs/installation.html) - Detailed setup instructions for different environments
+- [Support Matrix](https://docs.axolotl.ai/docs/support-matrix.html) - Feature support, compatibility, and known gaps
 - [Configuration Guide](https://docs.axolotl.ai/docs/config-reference.html) - Full configuration options and examples
 - [Dataset Loading](https://docs.axolotl.ai/docs/dataset_loading.html) - Loading datasets from various sources
 - [Dataset Guide](https://docs.axolotl.ai/docs/dataset-formats/) - Supported formats and how to use them
@@ -175,7 +176,7 @@ That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/ge
 
 ## AI Agent Support
 
-Axolotl ships with built-in documentation optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.). These docs are bundled with the pip package — no repo clone needed.
+Axolotl ships with built-in documentation optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.). These docs are bundled with the pip package, no repo clone needed.
 
 ```bash
 # Show overview and available training methods
@@ -211,7 +212,7 @@ Contributions are welcome! Please see our [Contributing Guide](https://github.co
 
 Axolotl has opt-out telemetry that helps us understand how the project is being used
 and prioritize improvements. We collect basic system information, model types, and
-error rates—never personal data or file paths. Telemetry is enabled by default. To
+error rates, never personal data or file paths. Telemetry is enabled by default. To
 disable it, set AXOLOTL_DO_NOT_TRACK=1. For more details, see our [telemetry documentation](https://docs.axolotl.ai/docs/telemetry.html).
 
 ## ❤️ Sponsors

@@ -106,12 +106,14 @@ def _register_global_packed_sdpa() -> None:
             )
             if routed is not None:
                 return routed
-        # Detect genuine (multi-document) packing: more doc-starts than batch rows.
+        # Packing detection: static under a declared config (compile-clean), runtime probe otherwise.
         pid = None
-        if attention_mask is None and position_ids is not None:
-            p = position_ids if position_ids.dim() > 1 else position_ids[None]
-            if int((p == 0).sum()) > p.shape[0]:
-                pid = p
+        if attention_mask is None:
+            from axolotl.monkeypatch.attention.large_head import (
+                _multidoc_position_ids,
+            )
+
+            pid = _multidoc_position_ids(position_ids)
         # Packed without the kernel -> block-diagonal mask so globals respect doc boundaries.
         # Single-document -> mask stays None (SDPA is_causal, the fast path).
         if pid is not None:
@@ -198,11 +200,12 @@ def _patch_use_gqa_head_dim_guard() -> bool:
     if getattr(original, "_axolotl_head_dim_guarded", False):
         return True
 
-    def use_gqa_in_sdpa_guarded(attention_mask, key):
+    # *args/**kwargs: transformers 5.13 adds a `value` positional arg
+    def use_gqa_in_sdpa_guarded(attention_mask, key, *args, **kwargs):
         # head_dim > 256 -> enable_gqa drops to the MATH backend; force repeat_kv (efficient) instead.
         if key.shape[-1] > 256:
             return False
-        return original(attention_mask, key)
+        return original(attention_mask, key, *args, **kwargs)
 
     use_gqa_in_sdpa_guarded._axolotl_head_dim_guarded = True  # type: ignore[attr-defined]
     use_gqa_in_sdpa_guarded._axolotl_original = original  # type: ignore[attr-defined]

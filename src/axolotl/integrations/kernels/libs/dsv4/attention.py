@@ -27,6 +27,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 # Autotuner prunes configs that overflow SMEM per dtype/head_dim. ``EL`` (element size) is
 # in the autotune key so fp32 and bf16 are tuned/cached separately.
 _CONFIGS = [
@@ -202,12 +204,21 @@ def _fwd_kernel(
     tl.store(L + pid_bh * S + offs_m, m_i + tl.log(l_i), mask=offs_m < S)
 
 
-def _fwd(q, k, v, sinks, scale, window, acc_dtype):
+@register_kernel_op("dsv4_sliding_attn_fwd")
+def _sliding_attn_fwd_op(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    sinks: torch.Tensor,
+    scale: float,
+    window: int,
+    acc_fp32: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
     B, H, S, D = q.shape
     KV = k.shape[1]
     out = torch.empty(B, H, S, D, device=q.device, dtype=q.dtype)
     L = torch.empty(B * H, S, device=q.device, dtype=torch.float32)
-    ACC = tl.float32 if acc_dtype == torch.float32 else tl.bfloat16
+    ACC = tl.float32 if acc_fp32 else tl.bfloat16
     grid = lambda meta: (triton.cdiv(S, meta["BLOCK_M"]), B * H)
     _fwd_kernel[grid](
         q,
@@ -241,6 +252,14 @@ def _fwd(q, k, v, sinks, scale, window, acc_dtype):
         PREC=("ieee" if q.element_size() == 4 else "tf32"),
     )
     return out, L
+
+
+@_sliding_attn_fwd_op.register_fake
+def _(q, k, v, sinks, scale, window, acc_fp32):
+    B, H, S, _ = q.shape
+    return torch.empty(q.shape, dtype=q.dtype, device=q.device), torch.empty(
+        B * H, S, device=q.device, dtype=torch.float32
+    )
 
 
 # Two-kernel backward (dq pass, dk/dv pass): splitting halves the resident D-wide dot
@@ -464,7 +483,19 @@ def _bwd_dkdv_kernel(
     tl.atomic_add(dv_ptr, dv, mask=nmask[:, None])
 
 
-def _bwd(q, k, v, sinks, out, do, L, scale, window, acc_dtype):
+@register_kernel_op("dsv4_sliding_attn_bwd")
+def _sliding_attn_bwd_op(
+    do: torch.Tensor,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    sinks: torch.Tensor,
+    out: torch.Tensor,
+    L: torch.Tensor,
+    scale: float,
+    window: int,
+    acc_fp32: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     B, H, S, D = q.shape
     KV = k.shape[1]
     do = do.contiguous()
@@ -473,7 +504,7 @@ def _bwd(q, k, v, sinks, out, do, L, scale, window, acc_dtype):
     dk = torch.zeros_like(k, dtype=torch.float32)
     dv = torch.zeros_like(v, dtype=torch.float32)
     dsink = torch.zeros_like(sinks, dtype=torch.float32)
-    ACC = tl.float32 if acc_dtype == torch.float32 else tl.bfloat16
+    ACC = tl.float32 if acc_fp32 else tl.bfloat16
     PREC = "ieee" if q.element_size() == 4 else "tf32"
     EL = q.element_size()
     args = (
@@ -499,10 +530,22 @@ def _bwd(q, k, v, sinks, out, do, L, scale, window, acc_dtype):
     return dq, dk.to(k.dtype), dv.to(v.dtype), dsink.to(sinks.dtype)
 
 
+@_sliding_attn_bwd_op.register_fake
+def _(do, q, k, v, sinks, out, L, scale, window, acc_fp32):
+    return (
+        torch.empty_like(q),
+        torch.empty_like(k),
+        torch.empty_like(v),
+        torch.empty_like(sinks),
+    )
+
+
 class _SlidingAttn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q, k, v, sinks, scale, window, acc_dtype):
-        out, L = _fwd(q, k, v, sinks, scale, window, acc_dtype)
+        out, L = _sliding_attn_fwd_op(
+            q, k, v, sinks, scale, window, acc_dtype == torch.float32
+        )
         ctx.save_for_backward(q, k, v, sinks, out, L)
         ctx.scale, ctx.window, ctx.acc_dtype = scale, window, acc_dtype
         return out
@@ -510,8 +553,17 @@ class _SlidingAttn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, do):
         q, k, v, sinks, out, L = ctx.saved_tensors
-        dq, dk, dv, dsink = _bwd(
-            q, k, v, sinks, out, do, L, ctx.scale, ctx.window, ctx.acc_dtype
+        dq, dk, dv, dsink = _sliding_attn_bwd_op(
+            do,
+            q,
+            k,
+            v,
+            sinks,
+            out,
+            L,
+            ctx.scale,
+            ctx.window,
+            ctx.acc_dtype == torch.float32,
         )
         return dq, dk, dv, dsink, None, None, None
 

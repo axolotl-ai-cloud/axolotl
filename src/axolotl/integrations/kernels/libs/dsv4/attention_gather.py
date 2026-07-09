@@ -20,6 +20,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 from .attention import _max_m, _smem_limit
 
 # BH (head tile, MMA M-axis) must be >= 16 (tensor-core min M). bwd also holds do +
@@ -295,50 +297,148 @@ def _gather_bwd_kernel(
     )
 
 
+@register_kernel_op("dsv4_csa_topk_attn_fwd")
+def _csa_topk_attn_fwd_op(
+    q: torch.Tensor,
+    ks: torch.Tensor,
+    kc: torch.Tensor,
+    idx: torch.Tensor,
+    sinks: torch.Tensor,
+    scale: float,
+    window: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    B, H, S, D = q.shape
+    K = idx.shape[2]
+    out = torch.empty(B, H, S, D, device=q.device, dtype=q.dtype)
+    L = torch.empty(B, H, S, device=q.device, dtype=torch.float32)
+    ACC = tl.bfloat16 if q.dtype == torch.bfloat16 else tl.float32
+    PREC = "ieee" if q.element_size() == 4 else "tf32"
+    args = (
+        q.stride(0),
+        q.stride(1),
+        q.stride(2),
+        q.stride(3),
+        ks.stride(0),
+        ks.stride(1),
+        ks.stride(2),
+        kc.stride(0),
+        kc.stride(1),
+        kc.stride(2),
+        idx.stride(0),
+        idx.stride(1),
+        idx.stride(2),
+    )
+    grid = lambda m: (S, B * triton.cdiv(H, m["BH"]))
+    _gather_fwd_kernel[grid](
+        q,
+        ks,
+        kc,
+        idx,
+        sinks,
+        out,
+        L,
+        scale,
+        *args,
+        H,
+        S,
+        K,
+        window,
+        q.element_size(),
+        D=D,
+        ACC=ACC,
+        PREC=PREC,
+    )
+    return out, L
+
+
+@_csa_topk_attn_fwd_op.register_fake
+def _(q, ks, kc, idx, sinks, scale, window):
+    B, H, S, _ = q.shape
+    return torch.empty(q.shape, dtype=q.dtype, device=q.device), torch.empty(
+        B, H, S, device=q.device, dtype=torch.float32
+    )
+
+
+@register_kernel_op("dsv4_csa_topk_attn_bwd")
+def _csa_topk_attn_bwd_op(
+    do: torch.Tensor,
+    q: torch.Tensor,
+    ks: torch.Tensor,
+    kc: torch.Tensor,
+    idx: torch.Tensor,
+    sinks: torch.Tensor,
+    out: torch.Tensor,
+    L: torch.Tensor,
+    scale: float,
+    window: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    B, H, S, D = q.shape
+    K = idx.shape[2]
+    do = do.contiguous()
+    delta = (do.to(torch.float32) * out.to(torch.float32)).sum(-1)  # [B,H,S]
+    dq = torch.empty_like(q)
+    dks = torch.zeros_like(ks, dtype=torch.float32)
+    dkc = torch.zeros_like(kc, dtype=torch.float32)
+    dsink = torch.zeros_like(sinks, dtype=torch.float32)
+    ACC = tl.bfloat16 if q.dtype == torch.bfloat16 else tl.float32
+    PREC = "ieee" if q.element_size() == 4 else "tf32"
+    args = (
+        q.stride(0),
+        q.stride(1),
+        q.stride(2),
+        q.stride(3),
+        ks.stride(0),
+        ks.stride(1),
+        ks.stride(2),
+        kc.stride(0),
+        kc.stride(1),
+        kc.stride(2),
+        idx.stride(0),
+        idx.stride(1),
+        idx.stride(2),
+    )
+    grid = lambda m: (S, B * triton.cdiv(H, m["BH"]))
+    _gather_bwd_kernel[grid](
+        q,
+        ks,
+        kc,
+        idx,
+        sinks,
+        do,
+        L,
+        delta,
+        dq,
+        dks,
+        dkc,
+        dsink,
+        scale,
+        *args,
+        H,
+        S,
+        K,
+        window,
+        q.element_size(),
+        D=D,
+        ACC=ACC,
+        PREC=PREC,
+    )
+    return dq, dks.to(ks.dtype), dkc.to(kc.dtype), dsink.to(sinks.dtype)
+
+
+@_csa_topk_attn_bwd_op.register_fake
+def _(do, q, ks, kc, idx, sinks, out, L, scale, window):
+    return (
+        torch.empty_like(q),
+        torch.empty_like(ks),
+        torch.empty_like(kc),
+        torch.empty_like(sinks),
+    )
+
+
 class _CSATopK(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q, ks, kc, idx, sinks, scale, window):
-        B, H, S, D = q.shape
-        K = idx.shape[2]
-        out = torch.empty(B, H, S, D, device=q.device, dtype=q.dtype)
-        L = torch.empty(B, H, S, device=q.device, dtype=torch.float32)
-        ACC = tl.bfloat16 if q.dtype == torch.bfloat16 else tl.float32
-        PREC = "ieee" if q.element_size() == 4 else "tf32"
-        args = (
-            q.stride(0),
-            q.stride(1),
-            q.stride(2),
-            q.stride(3),
-            ks.stride(0),
-            ks.stride(1),
-            ks.stride(2),
-            kc.stride(0),
-            kc.stride(1),
-            kc.stride(2),
-            idx.stride(0),
-            idx.stride(1),
-            idx.stride(2),
-        )
-        grid = lambda m: (S, B * triton.cdiv(H, m["BH"]))
-        _gather_fwd_kernel[grid](
-            q,
-            ks,
-            kc,
-            idx,
-            sinks,
-            out,
-            L,
-            scale,
-            *args,
-            H,
-            S,
-            K,
-            window,
-            q.element_size(),
-            D=D,
-            ACC=ACC,
-            PREC=PREC,
-        )
+        out, L = _csa_topk_attn_fwd_op(q, ks, kc, idx, sinks, scale, window)
         ctx.save_for_backward(q, ks, kc, idx, sinks, out, L)
         ctx.scale, ctx.window = scale, window
         return out
@@ -346,65 +446,10 @@ class _CSATopK(torch.autograd.Function):
     @staticmethod
     def backward(ctx, do):
         q, ks, kc, idx, sinks, out, L = ctx.saved_tensors
-        B, H, S, D = q.shape
-        K = idx.shape[2]
-        do = do.contiguous()
-        delta = (do.to(torch.float32) * out.to(torch.float32)).sum(-1)  # [B,H,S]
-        dq = torch.empty_like(q)
-        dks = torch.zeros_like(ks, dtype=torch.float32)
-        dkc = torch.zeros_like(kc, dtype=torch.float32)
-        dsink = torch.zeros_like(sinks, dtype=torch.float32)
-        ACC = tl.bfloat16 if q.dtype == torch.bfloat16 else tl.float32
-        PREC = "ieee" if q.element_size() == 4 else "tf32"
-        args = (
-            q.stride(0),
-            q.stride(1),
-            q.stride(2),
-            q.stride(3),
-            ks.stride(0),
-            ks.stride(1),
-            ks.stride(2),
-            kc.stride(0),
-            kc.stride(1),
-            kc.stride(2),
-            idx.stride(0),
-            idx.stride(1),
-            idx.stride(2),
+        dq, dks, dkc, dsink = _csa_topk_attn_bwd_op(
+            do, q, ks, kc, idx, sinks, out, L, ctx.scale, ctx.window
         )
-        grid = lambda m: (S, B * triton.cdiv(H, m["BH"]))
-        _gather_bwd_kernel[grid](
-            q,
-            ks,
-            kc,
-            idx,
-            sinks,
-            do,
-            L,
-            delta,
-            dq,
-            dks,
-            dkc,
-            dsink,
-            ctx.scale,
-            *args,
-            H,
-            S,
-            K,
-            ctx.window,
-            q.element_size(),
-            D=D,
-            ACC=ACC,
-            PREC=PREC,
-        )
-        return (
-            dq,
-            dks.to(ks.dtype),
-            dkc.to(kc.dtype),
-            None,
-            dsink.to(sinks.dtype),
-            None,
-            None,
-        )
+        return dq, dks, dkc, None, dsink, None, None
 
 
 def csa_attn_topk(

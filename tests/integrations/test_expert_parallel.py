@@ -63,6 +63,19 @@ class TestExpertParallelArgs:
         with pytest.raises(ValueError):
             ExpertParallelArgs(expert_parallel_size=0)
 
+    def test_invalid_token_capacity(self):
+        with pytest.raises(ValueError):
+            ExpertParallelArgs(expert_parallel_token_capacity=0)
+
+    def test_token_capacity_none_and_positive(self):
+        assert ExpertParallelArgs().expert_parallel_token_capacity is None
+        assert (
+            ExpertParallelArgs(
+                expert_parallel_token_capacity=1024
+            ).expert_parallel_token_capacity
+            == 1024
+        )
+
 
 class TestKernelInference:
     """Plugin auto-composes with user's chosen local kernel."""

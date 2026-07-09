@@ -11,11 +11,43 @@ import safetensors.torch
 import torch
 from huggingface_hub import snapshot_download
 from peft import LoraConfig
+from peft.utils.other import get_pattern_key
 from tqdm import tqdm
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+def _resolve_lora_alpha_for_key(
+    weight_key: str,
+    lora_config_dict: Dict,
+    weight_renamings: Optional[Dict[str, str]] = None,
+) -> Optional[int]:
+    # Mirror PEFT's get_pattern_key matching so merge uses the same per-module alpha as training.
+    alpha_pattern = lora_config_dict.get("alpha_pattern") or {}
+    if not alpha_pattern:
+        return None
+    module_path = (
+        weight_key.rsplit(".weight", 1)[0]
+        if weight_key.endswith(".weight")
+        else weight_key
+    )
+    pattern_keys = list(alpha_pattern.keys())
+    matched_key = get_pattern_key(pattern_keys, module_path)
+    if matched_key in alpha_pattern:
+        return alpha_pattern[matched_key]
+    # Fall back to renamed path so alpha lookup follows the same key resolution as find_lora_weights.
+    if weight_renamings:
+        import re
+
+        for src_pattern, tgt_pattern in weight_renamings.items():
+            renamed = re.sub(src_pattern, tgt_pattern, module_path)
+            if renamed != module_path:
+                matched_key = get_pattern_key(pattern_keys, renamed)
+                if matched_key in alpha_pattern:
+                    return alpha_pattern[matched_key]
+    return None
 
 
 def _build_layer_type_map(
@@ -292,6 +324,7 @@ def _build_peft_layer_and_get_delta(
     is_param_wrapper: bool = False,
     magnitude: Optional[torch.Tensor] = None,
     layer_type: Optional[str] = None,
+    lora_alpha_override: Optional[int] = None,
 ) -> torch.Tensor:
     """
     Use PEFT's own layer classes to compute the LoRA delta weight.
@@ -310,7 +343,11 @@ def _build_peft_layer_and_get_delta(
     r_total = lora_a.shape[0]
     in_features = lora_a.shape[1]
     out_features = lora_b.shape[0]
-    lora_alpha = lora_config_dict.get("lora_alpha", lora_config_dict.get("r", 1))
+    # Per-module override from alpha_pattern wins over the global alpha so merge matches training scale.
+    if lora_alpha_override is not None:
+        lora_alpha = lora_alpha_override
+    else:
+        lora_alpha = lora_config_dict.get("lora_alpha", lora_config_dict.get("r", 1))
     use_rslora = bool(lora_config_dict.get("use_rslora", False))
     use_dora = bool(lora_config_dict.get("use_dora", False))
 
@@ -1296,6 +1333,9 @@ def _merge_tensor_with_lora(
             tensor.to(device),
             magnitude=magnitude.to(device) if magnitude is not None else None,
             layer_type=_layer_type,
+            lora_alpha_override=_resolve_lora_alpha_for_key(
+                key, lora_config_dict, weight_renamings
+            ),
         )
         merged_tensor = (
             (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
@@ -1331,6 +1371,9 @@ def _merge_tensor_with_lora(
                     lora_config_dict,
                     tensor.to(device),
                     is_param_wrapper=True,
+                    lora_alpha_override=_resolve_lora_alpha_for_key(
+                        key, lora_config_dict, weight_renamings
+                    ),
                 )
                 merged = (
                     (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
@@ -1667,6 +1710,9 @@ def _fuse_and_unfuse_with_merge(
                     fused_tensor.to(device),
                     magnitude=magnitude.to(device) if magnitude is not None else None,
                     layer_type=_layer_type,
+                    lora_alpha_override=_resolve_lora_alpha_for_key(
+                        fused_key, lora_config_dict, weight_renamings
+                    ),
                 )
                 fused_tensor = (
                     (
@@ -1781,11 +1827,10 @@ def merge_lora_sharded_efficient(
     ]:
         unsupported_methods.append(f"Task type: {task_type}")
 
-    # Check for rank adaptation patterns (AdaLoRA indicators)
-    # Use .get() so empty dicts/None don't false-positive
-    if any(
-        lora_config_dict.get(key)
-        for key in ["rank_pattern", "alpha_pattern", "target_rank"]
+    # PEFT writes peft_type=ADALORA and target_r for AdaLoRA; rank_pattern/alpha_pattern alone are plain LoRA.
+    if (
+        lora_config_dict.get("peft_type") == "ADALORA"
+        or lora_config_dict.get("target_r") is not None
     ):
         unsupported_methods.append("AdaLoRA (rank adaptation detected)")
 
