@@ -14,6 +14,9 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
     ```bash
     axolotl train examples/qwen3/32b-qlora.yaml
+
+    # NVFP4 MoE-LoRA (~30 GiB at sequence_len 2048, ~58 GiB at 16k tokens/step)
+    axolotl train examples/qwen3/30b-a3b-nvfp4-lora.yaml
     ```
 
 Let us know how it goes. Happy finetuning! 🚀

@@ -23,11 +23,13 @@ jobs:
           run: |
             sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         - name: Check out repository
-          uses: actions/checkout@v4
+          uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+          with:
+            persist-credentials: false
         - name: Set up Quarto
-          uses: quarto-dev/quarto-actions/setup@v2
+          uses: quarto-dev/quarto-actions/setup@8a96df13519ee81fd526f2dfca5962811136661b # v2.2.0
         - name: Setup Python
-          uses: actions/setup-python@v5
+          uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
           with:
             python-version: '3.11'
         - name: Install dependencies
@@ -37,7 +39,7 @@ jobs:
         - name: Build autodoc
           run: quartodoc build
         - name: Publish to GitHub Pages (and render)
-          uses: quarto-dev/quarto-actions/publish@v2
+          uses: quarto-dev/quarto-actions/publish@8a96df13519ee81fd526f2dfca5962811136661b # v2.2.0
           with:
             target: gh-pages
           env:

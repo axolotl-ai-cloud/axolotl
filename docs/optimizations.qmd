@@ -89,7 +89,7 @@ fused_attn_kernel: true
 Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
 
 - **ScatterMoE**: Triton, any CUDA GPU.
-- **SonicMoE**: CUTLASS / cute-DSL, Hopper+ only.
+- **SonicMoE**: CUTLASS / cute-DSL, Hopper (H100/H200) or Blackwell (B200/GB200).
 
 - **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
 - **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration)
@@ -147,6 +147,15 @@ The recommended approach for quantization-based training. It loads the base mode
 Enables training with 8-bit floating point precision on supported hardware (e.g., NVIDIA Hopper series GPUs) for significant speed and memory gains.
 
 - **Example:** [Llama 3 FP8 FSDP Example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/3b-fp8-fsdp2.yaml)
+
+### NVFP4 (W4A4) LoRA
+
+Train LoRA adapters on a ModelOpt NVFP4 MoE checkpoint (the experts stay 4-bit-packed; LoRA `A` / `B` train in bf16).
+Two kernels support it: **SonicMoE** (`use_sonicmoe: true`, W4A4 native on Blackwell SM100+ or W4A16 elsewhere) and **ScatterMoE** (`use_scattermoe: true`, W4A16 on any CUDA GPU).
+
+- **Config:** `use_sonicmoe: true` or `use_scattermoe: true` with a ModelOpt NVFP4 `base_model` (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`)
+- **Examples:** [Qwen3-30B-A3B (SonicMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml), [GLM-5.2 (ScatterMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/glm_moe_dsa/glm-5.2-nvfp4-lora.yaml)
+- **Learn more:** [ScatterMoE NVFP4](custom_integrations.qmd#scattermoe-nvfp4-w4a16-lora) / [SonicMoE NVFP4](custom_integrations.qmd#sonicmoe-nvfp4-w4a4-lora)
 
 ### Quantization Aware Training (QAT)
 
