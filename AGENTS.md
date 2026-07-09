@@ -77,6 +77,16 @@ deepspeed_configs/               # DeepSpeed JSON configs (zero2, zero3)
 docs/                            # Quarto documentation site
 ```
 
+## Linting & Tests
+
+The repo pins CI tool versions in `.pre-commit-config.yaml` — never run system `ruff`/`mypy`.
+
+- `pre-commit run --all-files` — ruff, ruff-format, mypy, bandit at the CI-pinned versions
+- `uvx ruff@<rev> check --fix && uvx ruff@<rev> format` — auto-fix with the pinned ruff (`<rev>` = the `ruff-pre-commit` rev in `.pre-commit-config.yaml`)
+- `pytest -m 'not slow' --ignore=tests/e2e tests/` — CPU suite
+
+Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
+
 ## Code Conventions
 
 - Config-driven: features are toggled via YAML, not code changes
