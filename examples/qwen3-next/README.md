@@ -18,10 +18,12 @@ uv pip uninstall causal-conv1d && uv pip install flash-linear-attention==0.4.1
 4. Run the finetuning example:
 
 ```bash
+# ~47 GiB (no target experts) and ~71GiB (target experts) VRAM.
 axolotl train examples/qwen3-next/qwen3-next-80b-a3b-qlora.yaml
-```
 
-This config uses about ~47 GiB (no target experts) and ~71GiB (target experts) VRAM.
+# NVFP4 MoE-LoRA (~85 GiB at sequence_len 2048, ~106 GiB at 16k tokens/step)
+axolotl train examples/qwen3-next/qwen3-next-80b-a3b-nvfp4-lora.yaml
+```
 
 Let us know how it goes. Happy finetuning! 🚀
 

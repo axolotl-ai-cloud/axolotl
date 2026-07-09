@@ -812,6 +812,11 @@ def patch_tied_keys_for_meta_device():
 
     from transformers import PreTrainedModel
 
+    # recent transformers replaced data_ptr tie detection (_adjust_tied_keys_with_tied_pointers) with
+    # config-driven get_expanded_tied_weights_keys; absent on the pinned version, so bail (nothing to patch).
+    if not hasattr(PreTrainedModel, "_adjust_tied_keys_with_tied_pointers"):
+        return
+
     def _patched_adjust_tied_keys_with_tied_pointers(self, missing_keys):
         param_pointers = defaultdict(list)
         for param_name, param_value in self.state_dict().items():

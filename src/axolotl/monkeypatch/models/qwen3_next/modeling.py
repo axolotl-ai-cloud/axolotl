@@ -127,6 +127,9 @@ def patch_qwen3_next_gateddelta_layer():
         cache_params=None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
+        cache_position: Optional[
+            torch.LongTensor
+        ] = None,  # unused: no cache in packed training
     ):
         hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
 
