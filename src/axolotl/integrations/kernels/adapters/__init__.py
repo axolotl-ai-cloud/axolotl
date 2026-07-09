@@ -49,8 +49,9 @@ def _all_adapters() -> list[ModelAdapter]:
     from axolotl.integrations.kernels.adapters.dsv4 import DSV4Adapter
     from axolotl.integrations.kernels.adapters.gemma4 import Gemma4Adapter
     from axolotl.integrations.kernels.adapters.glm_moe_dsa import GlmMoeDsaAdapter
+    from axolotl.integrations.kernels.adapters.qwen3_moe import Qwen3MoeAdapter
 
-    return [DSV4Adapter(), Gemma4Adapter(), GlmMoeDsaAdapter()]
+    return [DSV4Adapter(), Gemma4Adapter(), GlmMoeDsaAdapter(), Qwen3MoeAdapter()]
 
 
 def get_active_adapters(cfg) -> list[ModelAdapter]:

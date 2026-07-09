@@ -31,11 +31,16 @@ def test_expert_capacity_caps_tokens_per_expert():
         [[0.9, 0.5], [0.8, 0.4], [0.7, 0.6], [0.3, 0.2], [0.95, 0.1], [0.55, 0.45]]
     )
     cap = 2
-    out = _apply_expert_capacity(topk_idx.clone(), topk_w, cap)
+    out, w = _apply_expert_capacity(topk_idx.clone(), topk_w, cap)
 
     # every expert now has <= cap surviving assignments
     for e in range(3):
         assert int((out == e).sum()) <= cap, f"expert {e} exceeds cap"
+    # surviving weights are rescaled back to each token's original gate sum (no silent attenuation)
+    survived = (out >= 0).any(dim=-1)
+    assert torch.allclose(
+        w.sum(dim=-1)[survived], topk_w.sum(dim=-1)[survived], atol=1e-6
+    )
     # dropped slots are sentinelled to -1, and the number dropped is exactly the overflow
     n_orig = int((topk_idx >= 0).sum())
     n_kept = int((out >= 0).sum())
@@ -53,16 +58,31 @@ def test_expert_capacity_caps_tokens_per_expert():
 def test_expert_capacity_noop_when_under_cap():
     topk_idx = torch.tensor([[0, 1], [2, 3]], dtype=torch.int64)
     topk_w = torch.tensor([[0.9, 0.1], [0.5, 0.5]])
-    out = _apply_expert_capacity(topk_idx.clone(), topk_w, cap=8)
+    out, w = _apply_expert_capacity(topk_idx.clone(), topk_w, cap=8)
     assert torch.equal(out, topk_idx)  # nothing dropped when every expert is under cap
+    assert torch.allclose(w, topk_w)  # weights unchanged when nothing is dropped
 
 
 def test_expert_capacity_preserves_existing_sentinels():
     topk_idx = torch.tensor([[0, -1], [0, 0]], dtype=torch.int64)
     topk_w = torch.tensor([[0.9, 0.0], [0.8, 0.7]])
-    out = _apply_expert_capacity(topk_idx.clone(), topk_w, cap=2)
+    out, _ = _apply_expert_capacity(topk_idx.clone(), topk_w, cap=2)
     assert out[0, 1] == -1  # pre-existing -1 untouched
     assert int((out == 0).sum()) <= 2
+
+
+def test_expert_capacity_no_nan_grad_when_token_fully_dropped():
+    # 3 tokens all route both top-2 slots to expert 0; cap=1 keeps only the single highest-weight
+    # assignment, so tokens 1 and 2 lose every slot (kept_sum==0). The gate-sum rescale must not
+    # backprop 0*inf=NaN into the router weights (double-where guard on the divisor).
+    topk_idx = torch.tensor([[0, 0], [0, 0], [0, 0]], dtype=torch.int64)
+    topk_w = torch.tensor([[0.9, 0.8], [0.7, 0.6], [0.5, 0.4]], requires_grad=True)
+    out, w = _apply_expert_capacity(topk_idx.clone(), topk_w, cap=1)
+
+    assert (~(out >= 0).any(dim=-1)).any()  # at least one token lost every slot
+    assert not torch.isnan(w).any()  # forward weights stay finite
+    w.sum().backward()
+    assert not (torch.isnan(topk_w.grad).any() or torch.isinf(topk_w.grad).any())
 
 
 def _absorb():
