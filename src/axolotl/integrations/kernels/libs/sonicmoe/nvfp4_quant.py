@@ -9,6 +9,11 @@ operands the kernel consumes, matmul in fp32) and as a checkpoint-free
 quantizer for tests. Encoder rounding does not need to be
 bit-identical to torchao/quack: the oracle always dequantizes the operands
 actually fed to the kernel, so correctness checks are encoder-independent.
+
+``quantize_nvfp4_merge`` / ``fake_quant_nvfp4`` are different: they are the
+single merge-identity quantizer shared by merge-aware LoRA training and the
+``merge-lora`` writer, and delegate to torchao so both sides are bitwise
+identical to each other and to the ecosystem encoder.
 """
 
 from __future__ import annotations
@@ -110,3 +115,116 @@ def simulate_nvfp4_quant(
     """Quantize-dequantize roundtrip: the exact value grid the tensor core sees."""
     packed, scale, pts = quantize_nvfp4_ref(x, per_tensor_scale)
     return dequantize_nvfp4_ref(packed, scale, pts)
+
+
+def _normalize_pts(
+    per_tensor_scale: float | torch.Tensor | None, x: torch.Tensor
+) -> torch.Tensor | None:
+    """fp32 pts broadcastable inside torchao's ``[d0, nblocks]`` block layout.
+
+    Scalars stay 0-dim; a per-expert vector (3D ``x`` only) becomes ``[E, 1]``.
+    """
+    if per_tensor_scale is None:
+        return None
+    pts = torch.as_tensor(per_tensor_scale, dtype=torch.float32, device=x.device)
+    if pts.numel() == 1:
+        return pts.reshape(())
+    assert x.dim() == 3 and pts.numel() == x.shape[0], (
+        f"per_tensor_scale numel {pts.numel()} must be 1 or match dim 0 of {tuple(x.shape)}"
+    )
+    return pts.reshape(-1, 1)
+
+
+def quantize_nvfp4_merge(
+    x: torch.Tensor,
+    per_tensor_scale: float | torch.Tensor | None = None,
+    *,
+    scale_mode: str = "fresh",
+    base_block_scale: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """The merge-identity NVFP4 quantizer. ``x [..., K]`` (2D or 3D, K % 16 == 0).
+
+    Merge-aware LoRA training fake-quant and the ``merge-lora`` writer MUST both
+    go through this function so the grid trained against and the grid written to
+    disk agree bitwise. Slicing dim 0/1 commutes with quantization (blocks live
+    on the last dim), so a fused ``[E, 2I, H]`` call and per-projection row
+    slices with the same pts produce identical bytes.
+
+    scale_mode:
+      - ``fresh``: block scales recomputed from ``x`` via torchao's
+        ``nvfp4_quantize`` (bit-identical to ``NVFP4Tensor.to_nvfp4``). For
+        merge-aware adapters, whose deltas the training grid already snapped.
+      - ``reuse``: keep ``base_block_scale`` (e4m3), bumping only blocks whose
+        amax outgrew the grid, nearest-code encode. For unprepared adapters,
+        where recomputing scales would re-round every element and bury a
+        sub-grid-step delta under uncorrelated noise.
+
+    per_tensor_scale: None | scalar | per-expert ``[E]`` (3D ``x`` only).
+    Returns ``(packed u8 [..., K/2], block_scale e4m3 [..., K/16])``.
+    """
+    assert x.dim() in (2, 3), f"expected 2D/3D weight, got {tuple(x.shape)}"
+    assert x.shape[-1] % SF_VEC_SIZE == 0, (
+        f"K={x.shape[-1]} not a multiple of {SF_VEC_SIZE}"
+    )
+    if scale_mode == "fresh":
+        from torchao.prototype.mx_formats.nvfp4_tensor import nvfp4_quantize
+
+        xc = x.contiguous()
+        if xc.dtype not in (torch.bfloat16, torch.float32):
+            xc = xc.float()
+        pts = _normalize_pts(per_tensor_scale, xc)
+        scale, packed = nvfp4_quantize(xc, SF_VEC_SIZE, pts)
+        return packed, scale.view(*x.shape[:-1], x.shape[-1] // SF_VEC_SIZE)
+    if scale_mode == "reuse":
+        assert base_block_scale is not None, "reuse mode needs base_block_scale"
+        return _quantize_nvfp4_reuse_grid(
+            x, base_block_scale, 1.0 if per_tensor_scale is None else per_tensor_scale
+        )
+    raise ValueError(f"unknown scale_mode {scale_mode!r}")
+
+
+def _quantize_nvfp4_reuse_grid(
+    x: torch.Tensor,
+    base_block_scale: torch.Tensor,
+    pts: float | torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Original grid, fresh codes; bump only the block scales the value outgrew."""
+    xf = x.float()
+    if isinstance(pts, torch.Tensor):
+        pts = pts.float()
+    sc_f = base_block_scale.to(x.device).float()
+    amax = xf.unflatten(-1, (sc_f.shape[-1], SF_VEC_SIZE)).abs().amax(-1)
+    need = amax > 6.0 * sc_f * pts
+    if need.any():
+        sc_f = torch.where(need, (amax / (6.0 * pts)).clamp(max=E4M3_MAX), sc_f)
+    sc_out = sc_f.to(base_block_scale.dtype)
+    denom = (
+        (sc_out.float() * pts).repeat_interleave(SF_VEC_SIZE, dim=-1).clamp_min(1e-30)
+    )
+    lut = torch.tensor(FP4_CODE_VALUES, dtype=torch.float32, device=x.device)
+    idx = ((xf / denom).unsqueeze(-1) - lut).abs().argmin(-1).to(torch.uint8)
+    packed = idx[..., 0::2] | (idx[..., 1::2] << 4)
+    return packed, sc_out
+
+
+def fake_quant_nvfp4(
+    x: torch.Tensor,
+    per_tensor_scale: float | torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Roundtrip through the merge quantizer (fresh scales) and torchao's own
+    dequantize: the exact weight values the merged checkpoint will load as.
+    Differentiate via STE: ``x + (fake_quant_nvfp4(x, pts) - x).detach()``."""
+    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+    packed, scale = quantize_nvfp4_merge(x, per_tensor_scale, scale_mode="fresh")
+    pts = _normalize_pts(per_tensor_scale, x)
+    if pts is not None:
+        # dimensioned (never 0-dim), like the loader's fused [E,1,1] pts: a 0-dim pts
+        # loses the promotion to fp32 in get_hp_scales (bf16 * 0-dim f32 stays bf16),
+        # rounding the scale product differently than the fused-load dequant
+        pts = (
+            pts.reshape([-1] + [1] * (x.dim() - 1)) if pts.dim() else pts.reshape(1, 1)
+        )
+    # orig_dtype bf16 = the loader's construction, so scale math matches it bitwise
+    nv = NVFP4Tensor(packed, scale, SF_VEC_SIZE, torch.bfloat16, per_tensor_scale=pts)
+    return nv.dequantize(x.dtype)

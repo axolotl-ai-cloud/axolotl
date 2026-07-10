@@ -200,4 +200,33 @@ class KernelsPlugin(BasePlugin):
             )
 
             callbacks.append(AutotuneReportCallback())
+        if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:
+            from axolotl.integrations.kernels.merge_aware_callback import (
+                MergeAwareScheduleCallback,
+            )
+
+            callbacks.append(
+                MergeAwareScheduleCallback(cfg.nvfp4_merge_aware_start_step)
+            )
         return callbacks
+
+    def post_train_unload(self, cfg):
+        # runs after the FINAL adapter save (on_save only covers checkpoint-*/)
+        if not (cfg.use_sonicmoe and cfg.nvfp4_merge_aware):
+            return
+        from axolotl.integrations.kernels.libs.sonicmoe import merge_aware_enabled
+        from axolotl.integrations.kernels.merge_aware_callback import (
+            write_merge_aware_metadata,
+        )
+        from axolotl.utils.distributed import is_main_process
+
+        # merge_aware_enabled() still False => start_step was never reached, the
+        # adapter never trained through the fake-quant: leave it unstamped
+        if is_main_process() and merge_aware_enabled():
+            if write_merge_aware_metadata(
+                cfg.output_dir, start_step=cfg.nvfp4_merge_aware_start_step
+            ):
+                LOG.info(
+                    "stamped nvfp4_merge_aware quantizer identity into %s/adapter_config.json",
+                    cfg.output_dir,
+                )

@@ -732,15 +732,22 @@ def _dequant_by_format(fmt, w, scales, dev):
     return _dequant_mxfp4(w, scales["_scale"], dev)  # mxfp4
 
 
-def _requant_by_format(fmt, w_bf16, scales, dev):
+def _requant_by_format(fmt, w_bf16, scales, dev, nvfp4_scale_mode="reuse"):
     """Re-quantize a merged bf16 weight back to its original format. Returns
     ``{"": qweight, "_scale*": scale_tensors}`` matching the original scale dtypes/shapes so the
     merged checkpoint loads exactly like the base did.
 
-    nvfp4 reuses the base scales verbatim and only re-rounds the codes: recomputing scales shifts
-    the whole dequant grid, re-rounding EVERY element and burying a small LoRA delta under
-    uncorrelated noise, while on the original grid only elements the delta pushes across a code
-    boundary change. It also keeps gate/up outer scales equal, which the loader's fuse relies on."""
+    nvfp4 has two scale modes (shared quantizer in sonicmoe ``nvfp4_quant``):
+
+    - ``reuse`` (default, unprepared adapters): keep the base scales verbatim and only re-round
+      the codes. Recomputing scales shifts the whole dequant grid, re-rounding EVERY element and
+      burying a small LoRA delta under uncorrelated noise, while on the original grid only
+      elements the delta pushes across a code boundary change. It also keeps gate/up outer scales
+      equal, which the loader's fuse otherwise reconciles by folding ratios into block scales.
+    - ``fresh`` (merge-aware adapters): recompute block scales from the merged weight with the
+      SAME quantizer the training fake-quant used, so the written grid is bitwise the grid the
+      adapter trained against; ``_scale_2`` is passed through (the expert writer supplies the
+      fused-max pts training saw)."""
     w = w_bf16.to(dev).float()
     if fmt == "block_fp8":
         si = scales["_scale_inv"]
@@ -763,20 +770,23 @@ def _requant_by_format(fmt, w_bf16, scales, dev):
         packed, ebyte = _quant_mxfp4(w)
         s = scales["_scale"]
         return {"": packed.cpu(), "_scale": ebyte.view(s.dtype).cpu()}
-    # nvfp4: original grid, fresh codes; bump only the block scales the delta outgrew
+    # nvfp4: shared merge-identity quantizer (see docstring for the two scale modes)
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+        quantize_nvfp4_merge,
+    )
+
     sc = scales["_scale"]
     sc2 = scales.get("_scale_2")
-    pts = sc2.to(dev).float().reshape(()) if sc2 is not None else 1.0
-    sc_f = sc.to(dev).float()
-    amax = w.unflatten(-1, (sc_f.shape[-1], 16)).abs().amax(-1)
-    need = amax > 6.0 * sc_f * pts
-    if need.any():
-        sc_f = torch.where(need, (amax / (6.0 * pts)).clamp(max=448.0), sc_f)
-    sc_out = sc_f.to(sc.dtype)
-    denom = (sc_out.float() * pts).repeat_interleave(16, dim=-1).clamp_min(1e-30)
-    lut = torch.tensor(_FP4_E2M1_LUT, dtype=torch.float32, device=w.device)
-    idx = ((w / denom).unsqueeze(-1) - lut).abs().argmin(-1).to(torch.uint8)
-    packed = idx[..., 0::2] | (idx[..., 1::2] << 4)
+    pts = sc2.to(dev).float().reshape(()) if sc2 is not None else None
+    if nvfp4_scale_mode == "fresh":
+        packed, sc_out = quantize_nvfp4_merge(w, pts, scale_mode="fresh")
+    else:
+        packed, sc_out = quantize_nvfp4_merge(
+            w,
+            1.0 if pts is None else pts,
+            scale_mode="reuse",
+            base_block_scale=sc.to(dev),
+        )
     out = {"": packed.cpu(), "_scale": sc_out.cpu()}
     if sc2 is not None:
         out["_scale_2"] = sc2.cpu()
@@ -808,6 +818,58 @@ def _quant_mxfp4(w_f32):
     packed = idx[..., 0::2] | (idx[..., 1::2] << 4)
     ebyte = (exp + 127.0).clamp_(0, 254).to(torch.uint8)
     return packed, ebyte
+
+
+def _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer: bool = False):
+    """Read the merge-aware quantizer-identity metadata from adapter_config.json.
+
+    Returns the nvfp4 requant scale mode: ``reuse`` for unprepared adapters,
+    ``fresh`` for merge-aware ones. A merge-aware adapter trained against one
+    quantizer and merged with another silently voids the retention guarantee,
+    so any identity mismatch (missing torchao, different encoder version,
+    unknown scale mode / pts policy) is a hard error; ``override_quantizer``
+    downgrades the encoder-version check to a warning.
+    """
+    meta = lora_config_dict.get("nvfp4_merge_aware")
+    if meta is None or meta is False:
+        return "reuse"
+    if meta is True:
+        meta = {}
+    if not isinstance(meta, dict):
+        raise ValueError(
+            f"adapter_config.json nvfp4_merge_aware must be a dict, got {meta!r}"
+        )
+    try:
+        import torchao
+    except ImportError as ex:
+        raise RuntimeError(
+            "this adapter was trained merge-aware (nvfp4_merge_aware) and its merge "
+            "requires torchao (the training quantizer); pip install torchao"
+        ) from ex
+    scale_mode = meta.get("scale_mode", "fresh")
+    if scale_mode != "fresh":
+        raise ValueError(
+            f"unsupported nvfp4_merge_aware scale_mode {scale_mode!r} (expected 'fresh')"
+        )
+    pts_policy = meta.get("pts_policy", "base_fused_max")
+    if pts_policy != "base_fused_max":
+        raise ValueError(
+            f"unsupported nvfp4_merge_aware pts_policy {pts_policy!r} "
+            "(expected 'base_fused_max')"
+        )
+    recorded = meta.get("encoder")
+    current = f"torchao-{torchao.__version__}"
+    if recorded and recorded != current:
+        msg = (
+            f"merge-aware adapter was trained with encoder {recorded!r} but this "
+            f"environment has {current!r}; the written grid may not be the grid the "
+            "adapter trained against. Install the matching torchao version, or pass "
+            "--override-quantizer to merge anyway."
+        )
+        if not override_quantizer:
+            raise RuntimeError(msg)
+        LOG.warning("%s (overridden)", msg)
+    return scale_mode
 
 
 def _key_has_lora(key, shape, lora_state, weight_renamings):
@@ -960,9 +1022,16 @@ class _Nvfp4ExpertMergeWriter:
     (buffering across shard boundaries, since a layer's expert list can be split). When a fused
     group is complete it dequantizes each expert (torchao, the same path training saw), fuses
     to the runtime 3D layout (stack experts, concat gate-then-up rows), folds the ParamWrapper
-    delta, then unfuses and re-quantizes each expert back to NVFP4 with fresh scales — so the
-    merged checkpoint keeps the base's exact per-expert layout. Under ``dequant=True`` it emits
-    the merged FUSED bf16 param instead (matching the bf16 fuse pass convention).
+    delta, then unfuses and re-quantizes each expert back to NVFP4, so the merged checkpoint
+    keeps the base's exact per-expert layout. Under ``dequant=True`` it emits the merged FUSED
+    bf16 param instead (matching the bf16 fuse pass convention).
+
+    ``scale_mode`` selects the requant grid (see ``_requant_by_format``): ``reuse`` keeps each
+    expert's base grid; ``fresh`` (merge-aware adapters) rebuilds the FUSED grid the way the
+    loader's ``fuse_nvfp4_experts`` did (one per-expert pts = max across projections, per-proj
+    ratios folded into block scales), merges on it, and re-quantizes with the shared training
+    quantizer, emitting the fused-max pts as every projection's ``weight_scale_2``, so the next
+    load fuses exactly and the written grid is bitwise the grid training snapped to.
     """
 
     def __init__(
@@ -972,16 +1041,20 @@ class _Nvfp4ExpertMergeWriter:
         expected_num_experts: int,
         device: str,
         dequant: bool = False,
+        scale_mode: str = "reuse",
     ):
         self.lora_state = lora_state
         self.lora_config_dict = lora_config_dict
         self.num_experts = expected_num_experts
         self.dequant = dequant
+        self.scale_mode = scale_mode
         self._dev = device if (device != "cpu" and torch.cuda.is_available()) else "cpu"
         # prefix -> proj -> expert_idx -> {leaf: tensor}
         self.pending: Dict[str, Dict[str, Dict[int, Dict[str, torch.Tensor]]]] = {}
         self._prefix_lora: Dict[str, bool] = {}
         self.merged_groups = 0
+        self._delta_mag_sum = 0.0
+        self._base_mag_sum = 0.0
 
     def _prefix_has_fused_lora(self, prefix: str) -> bool:
         has = self._prefix_lora.get(prefix)
@@ -1069,21 +1142,52 @@ class _Nvfp4ExpertMergeWriter:
             return emitted, 0
 
         dev = self._dev
-        per_proj = [
-            torch.stack(
-                [
-                    _dequant_nvfp4(
-                        projs[mp][e]["weight"],
-                        projs[mp][e]["weight_scale"],
-                        projs[mp][e]["weight_scale_2"],
-                        dev,
-                    )
-                    for e in range(E)
-                ],
-                dim=0,
-            )
-            for mp in members
-        ]
+        fresh = self.scale_mode == "fresh"
+        pts_fused = None
+        if fresh:
+            # mirror fuse_nvfp4_experts: one per-expert pts (max across projs), each
+            # proj's ratio folded into its block scales -> dequant here == the fused
+            # weight training fake-quantized against
+            pts_all = [
+                torch.stack(
+                    [
+                        projs[mp][e]["weight_scale_2"].to(dev).float().reshape(())
+                        for e in range(E)
+                    ]
+                ).view(-1, 1, 1)
+                for mp in members
+            ]
+            pts_fused = pts_all[0]
+            for pts_i in pts_all[1:]:
+                pts_fused = torch.maximum(pts_fused, pts_i)
+            from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+            per_proj = []
+            for i, mp in enumerate(members):
+                qd = torch.stack([projs[mp][e]["weight"].to(dev) for e in range(E)])
+                sc = torch.stack(
+                    [projs[mp][e]["weight_scale"].to(dev) for e in range(E)]
+                )
+                if not torch.allclose(pts_all[i], pts_fused):
+                    sc = (sc.float() * (pts_all[i] / pts_fused)).to(torch.float8_e4m3fn)
+                nv = NVFP4Tensor(qd, sc, 16, torch.bfloat16, per_tensor_scale=pts_fused)
+                per_proj.append(nv.dequantize(torch.bfloat16))
+        else:
+            per_proj = [
+                torch.stack(
+                    [
+                        _dequant_nvfp4(
+                            projs[mp][e]["weight"],
+                            projs[mp][e]["weight_scale"],
+                            projs[mp][e]["weight_scale_2"],
+                            dev,
+                        )
+                        for e in range(E)
+                    ],
+                    dim=0,
+                )
+                for mp in members
+            ]
         fused = per_proj[0] if len(per_proj) == 1 else torch.cat(per_proj, dim=1)
         del per_proj
         delta = _build_peft_layer_and_get_delta(
@@ -1096,6 +1200,9 @@ class _Nvfp4ExpertMergeWriter:
         merged_t = (fused.to(torch.float32) + delta.to(torch.float32)).to(
             torch.bfloat16
         )
+        if not fresh and not self.dequant:
+            self._delta_mag_sum += float(delta.float().abs().mean())
+            self._base_mag_sum += float(fused.float().abs().mean())
         del fused, delta
 
         if self.dequant:
@@ -1109,14 +1216,16 @@ class _Nvfp4ExpertMergeWriter:
             for e in range(E):
                 leaves = projs[mp][e]
                 wkey = f"{prefix}.{e}.{mp}.weight"
+                sc2 = leaves["weight_scale_2"]
+                if pts_fused is not None:
+                    # clone: gate/up share pts_fused storage, safetensors refuses aliases
+                    sc2 = pts_fused[e].reshape(sc2.shape).to(sc2.dtype).cpu().clone()
                 requant = _requant_by_format(
                     "nvfp4",
                     part[e],
-                    {
-                        "_scale": leaves["weight_scale"],
-                        "_scale_2": leaves["weight_scale_2"],
-                    },
+                    {"_scale": leaves["weight_scale"], "_scale_2": sc2},
                     dev,
+                    nvfp4_scale_mode=self.scale_mode,
                 )
                 emitted[wkey] = requant.pop("")
                 for suf, t in requant.items():
@@ -1124,17 +1233,27 @@ class _Nvfp4ExpertMergeWriter:
         return emitted, 1
 
     def assert_drained(self) -> None:
-        if not self.pending:
-            return
-        detail = {
-            prefix: {mp: len(ed) for mp, ed in projs.items()}
-            for prefix, projs in self.pending.items()
-        }
-        raise RuntimeError(
-            f"expert-merge writer: expert groups never completed (experts seen per projection: "
-            f"{detail}; expected {self.num_experts} per projection with weight/weight_scale/"
-            f"weight_scale_2 each). The base checkpoint is missing per-expert tensors."
-        )
+        if self.pending:
+            detail = {
+                prefix: {mp: len(ed) for mp, ed in projs.items()}
+                for prefix, projs in self.pending.items()
+            }
+            raise RuntimeError(
+                f"expert-merge writer: expert groups never completed (experts seen per projection: "
+                f"{detail}; expected {self.num_experts} per projection with weight/weight_scale/"
+                f"weight_scale_2 each). The base checkpoint is missing per-expert tensors."
+            )
+        if self._base_mag_sum > 0:
+            ratio = self._delta_mag_sum / self._base_mag_sum
+            if ratio < 0.02:
+                LOG.warning(
+                    "NEAR-NO-OP expert merge: mean |LoRA delta| is %.2f%% of mean |base weight|, "
+                    "far below the NVFP4 grid step (~25-50%% of the block max), so re-rounding "
+                    "onto the base grid erases most of the adapter. Train with "
+                    "nvfp4_merge_aware: true, merge with --dequant (bf16, fully preserves the "
+                    "adapter), or serve base + adapter unmerged.",
+                    100.0 * ratio,
+                )
 
 
 def _update_config_vocab_size(output_path: Path, vocab_size: int) -> None:
@@ -1753,6 +1872,7 @@ def merge_lora_sharded_efficient(
     nf4_double_quant: bool = True,
     trust_remote_code: bool = False,
     dequant: bool = False,
+    override_quantizer: bool = False,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -1762,6 +1882,8 @@ def merge_lora_sharded_efficient(
         quantization_config). Default False = FORMAT-PRESERVING: LoRA-targeted quantized weights are
         dequantized, the delta folded, then re-quantized back to the SAME format (fp8 stays fp8,
         nvfp4 stays nvfp4), so a large quantized base does not double in size.
+    override_quantizer: proceed despite a quantizer-identity mismatch on a merge-aware
+        adapter (encoder version drift); see ``_resolve_nvfp4_scale_mode``.
 
     Args:
         simulate_nf4: Apply NF4 roundtrip to ALL weight tensors (for QLoRA)
@@ -1799,6 +1921,13 @@ def merge_lora_sharded_efficient(
     lora_config_dict = LoraConfig.from_json_file(str(config_file))
     if not lora_config_dict.get("r") or lora_config_dict["r"] <= 0:
         raise ValueError("LoRA config 'r' must be > 0")
+
+    nvfp4_scale_mode = _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer)
+    if nvfp4_scale_mode == "fresh":
+        LOG.info(
+            "merge-aware adapter detected: expert weights re-quantize with fresh "
+            "scales (bitwise the grid training fake-quantized against)"
+        )
 
     use_dora = bool(lora_config_dict.get("use_dora", False))
 
@@ -1923,7 +2052,12 @@ def merge_lora_sharded_efficient(
                     "merge_method: legacy."
                 )
             expert_writer = _Nvfp4ExpertMergeWriter(
-                lora_state, lora_config_dict, n_experts, device, dequant=dequant
+                lora_state,
+                lora_config_dict,
+                n_experts,
+                device,
+                dequant=dequant,
+                scale_mode=nvfp4_scale_mode,
             )
             LOG.info(
                 "Adapter has a FUSED expert LoRA over a PER-EXPERT unfused NVFP4 base: using "

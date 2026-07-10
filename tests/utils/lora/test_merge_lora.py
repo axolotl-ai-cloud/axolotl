@@ -2031,6 +2031,391 @@ class TestQuantizedBaseMerge:
                 want = (base_f.float() + delta.float()).to(torch.bfloat16)
                 assert torch.allclose(merged2[key].float(), want.float(), atol=1e-2)
 
+    def test_nvfp4_merge_aware_quantizer_identity(self):
+        """The merge-aware invariant: one quantizer, bitwise, on both sides. Fresh mode
+        must equal torchao's ``to_nvfp4`` (the ecosystem encoder), quantizing the fused
+        ``[E, 2I, H]`` training view must equal quantizing per-projection row slices with
+        the same pts, and ``fake_quant_nvfp4`` must be idempotent (a snapped weight
+        re-quantizes to itself -> merge retention by construction)."""
+        pytest.importorskip("torchao")
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+            fake_quant_nvfp4,
+            quantize_nvfp4_merge,
+        )
+
+        torch.manual_seed(0)
+        w = (torch.randn(48, 128) * 0.02).float()
+        pts = (w.abs().max() / (6.0 * 448.0)).reshape(())
+        ref = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=pts)
+        p, s = quantize_nvfp4_merge(w, pts, scale_mode="fresh")
+        assert torch.equal(p, ref.qdata)
+        assert torch.equal(
+            s.view(torch.uint8), ref.scale.reshape(s.shape).view(torch.uint8)
+        )
+
+        E, N, K = 4, 64, 128
+        wf = (torch.randn(E, N, K) * 0.02).to(torch.bfloat16)
+        pts_e = torch.rand(E) * 1e-4 + 1e-5
+        pf, sf = quantize_nvfp4_merge(wf, pts_e, scale_mode="fresh")
+        for e in range(E):
+            for rows in (slice(0, N // 2), slice(N // 2, N)):
+                pe, se = quantize_nvfp4_merge(
+                    wf[e, rows].contiguous(), pts_e[e], scale_mode="fresh"
+                )
+                assert torch.equal(pe, pf[e, rows])
+                assert torch.equal(se.view(torch.uint8), sf[e, rows].view(torch.uint8))
+
+        fq = fake_quant_nvfp4(wf, pts_e)
+        nv = NVFP4Tensor(
+            pf, sf, 16, torch.bfloat16, per_tensor_scale=pts_e.reshape(-1, 1, 1)
+        )
+        assert fq.dtype == torch.bfloat16
+        assert torch.equal(fq, nv.dequantize(torch.bfloat16))
+        assert torch.equal(fake_quant_nvfp4(fq, pts_e), fq)
+
+    def test_nvfp4_expert_writer_fresh_mode_matches_training_grid(self):
+        """``scale_mode="fresh"``: the expert writer's bytes ARE the training grid.
+        Gate/up export UNEQUAL pts on purpose, so the loader's fused-max fold is in
+        play; the writer must rebuild that fused view, emit the fused max as every
+        projection's ``weight_scale_2``, and dequantizing the emitted tensors must
+        BITWISE equal ``fake_quant_nvfp4`` of the fused merged weight (what a
+        merge-aware training forward computed on its last step)."""
+        pytest.importorskip("torchao")
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+        from axolotl.cli.utils.lora_merge import (
+            _build_peft_layer_and_get_delta,
+            _find_param_wrapper_lora,
+            _Nvfp4ExpertMergeWriter,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+            fake_quant_nvfp4,
+        )
+
+        torch.manual_seed(3)
+        E, H, I, r, alpha = 2, 64, 32, 4, 8
+
+        def quant(w2d):
+            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+            nv = NVFP4Tensor.to_nvfp4(
+                w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
+            )
+            return (
+                nv.qdata,
+                nv.scale.to(torch.float8_e4m3fn),
+                nv.per_tensor_scale.reshape(()),
+            )
+
+        shard = {}
+        # gate scaled 3x vs up -> unequal weight_scale_2 across the fused pair
+        for proj, (n, k), mult in (
+            ("gate_proj", (I, H), 3.0),
+            ("up_proj", (I, H), 1.0),
+            ("down_proj", (H, I), 1.0),
+        ):
+            for e in range(E):
+                qd, sc, pts = quant(torch.randn(n, k) * k**-0.5 * mult)
+                base = f"model.layers.0.mlp.experts.{e}.{proj}"
+                shard[f"{base}.weight"] = qd
+                shard[f"{base}.weight_scale"] = sc
+                shard[f"{base}.weight_scale_2"] = pts
+
+        p = "base_model.model.model.layers.0.mlp.experts"
+        adapter = {
+            f"{p}.lora_A.weight": torch.randn(r * E, I, dtype=torch.bfloat16) * 0.2,
+            f"{p}.lora_B.weight": torch.randn(H, r * E, dtype=torch.bfloat16) * 0.2,
+            f"{p}.base_layer.lora_A.weight": torch.randn(r * E, H, dtype=torch.bfloat16)
+            * 0.2,
+            f"{p}.base_layer.lora_B.weight": torch.randn(
+                2 * I, r * E, dtype=torch.bfloat16
+            )
+            * 0.2,
+        }
+        cfg = {"r": r, "lora_alpha": alpha}
+
+        writer = _Nvfp4ExpertMergeWriter(adapter, cfg, E, "cpu", scale_mode="fresh")
+        remaining, emitted, merged = writer.consume(shard)
+        writer.assert_drained()
+        assert merged == 2 and not remaining
+
+        for fused_name, projs in (
+            ("gate_up_proj", ("gate_proj", "up_proj")),
+            ("down_proj", ("down_proj",)),
+        ):
+            # the training view: fuse exactly as fuse_nvfp4_experts does
+            pts_all = [
+                torch.stack(
+                    [
+                        shard[f"model.layers.0.mlp.experts.{e}.{proj}.weight_scale_2"]
+                        for e in range(E)
+                    ]
+                ).view(-1, 1, 1)
+                for proj in projs
+            ]
+            pts_fused = pts_all[0]
+            for pts_i in pts_all[1:]:
+                pts_fused = torch.maximum(pts_fused, pts_i)
+            per = []
+            for i, proj in enumerate(projs):
+                qd = torch.stack(
+                    [
+                        shard[f"model.layers.0.mlp.experts.{e}.{proj}.weight"]
+                        for e in range(E)
+                    ]
+                )
+                sc = torch.stack(
+                    [
+                        shard[f"model.layers.0.mlp.experts.{e}.{proj}.weight_scale"]
+                        for e in range(E)
+                    ]
+                )
+                if not torch.allclose(pts_all[i], pts_fused):
+                    sc = (sc.float() * (pts_all[i] / pts_fused)).to(torch.float8_e4m3fn)
+                per.append(
+                    NVFP4Tensor(
+                        qd, sc, 16, torch.bfloat16, per_tensor_scale=pts_fused
+                    ).dequantize(torch.bfloat16)
+                )
+            base_f = per[0] if len(per) == 1 else torch.cat(per, dim=1)
+            lora_a, lora_b, _ = _find_param_wrapper_lora(
+                adapter,
+                f"model.layers.0.mlp.experts.{fused_name}",
+                tensor_shape=tuple(base_f.shape),
+            )
+            assert lora_a is not None
+            delta = _build_peft_layer_and_get_delta(
+                lora_a, lora_b, cfg, base_f, is_param_wrapper=True
+            )
+            w_eff = (base_f.float() + delta.float()).to(torch.bfloat16)
+            train_view = fake_quant_nvfp4(w_eff, pts_fused.reshape(-1))
+
+            # every projection must carry the fused-max pts, so the next load
+            # fuses exactly (no ratio fold, no warning)
+            for proj in projs:
+                for e in range(E):
+                    kb = f"model.layers.0.mlp.experts.{e}.{proj}"
+                    assert torch.equal(
+                        emitted[f"{kb}.weight_scale_2"].reshape(()),
+                        pts_fused[e].reshape(()),
+                    )
+            # reload the emitted tensors the way fuse_nvfp4_experts will:
+            # stack experts, cat projections, one per-expert pts
+            qd_r = torch.cat(
+                [
+                    torch.stack(
+                        [
+                            emitted[f"model.layers.0.mlp.experts.{e}.{proj}.weight"]
+                            for e in range(E)
+                        ]
+                    )
+                    for proj in projs
+                ],
+                dim=1,
+            )
+            sc_r = torch.cat(
+                [
+                    torch.stack(
+                        [
+                            emitted[
+                                f"model.layers.0.mlp.experts.{e}.{proj}.weight_scale"
+                            ]
+                            for e in range(E)
+                        ]
+                    )
+                    for proj in projs
+                ],
+                dim=1,
+            )
+            reloaded = NVFP4Tensor(
+                qd_r, sc_r, 16, torch.bfloat16, per_tensor_scale=pts_fused
+            ).dequantize(torch.bfloat16)
+            assert torch.equal(reloaded, train_view)
+
+    def test_nvfp4_merge_aware_metadata_resolution(self):
+        """adapter_config.json quantizer-identity metadata drives the requant mode:
+        absent -> reuse; present -> fresh; any identity mismatch hard-errors unless
+        overridden (a wrong quantizer silently voids the retention guarantee)."""
+        pytest.importorskip("torchao")
+        import torchao
+
+        from axolotl.cli.utils.lora_merge import _resolve_nvfp4_scale_mode
+
+        assert _resolve_nvfp4_scale_mode({"r": 4}) == "reuse"
+
+        good = {
+            "nvfp4_merge_aware": {
+                "scale_mode": "fresh",
+                "pts_policy": "base_fused_max",
+                "encoder": f"torchao-{torchao.__version__}",
+                "start_step": 0,
+            }
+        }
+        assert _resolve_nvfp4_scale_mode(good) == "fresh"
+        # unrecorded encoder (older stamp): accepted
+        assert _resolve_nvfp4_scale_mode({"nvfp4_merge_aware": {}}) == "fresh"
+
+        with pytest.raises(RuntimeError, match="override-quantizer"):
+            _resolve_nvfp4_scale_mode(
+                {"nvfp4_merge_aware": {"encoder": "torchao-0.0.1"}}
+            )
+        assert (
+            _resolve_nvfp4_scale_mode(
+                {"nvfp4_merge_aware": {"encoder": "torchao-0.0.1"}},
+                override_quantizer=True,
+            )
+            == "fresh"
+        )
+        with pytest.raises(ValueError, match="scale_mode"):
+            _resolve_nvfp4_scale_mode({"nvfp4_merge_aware": {"scale_mode": "reuse"}})
+        with pytest.raises(ValueError, match="pts_policy"):
+            _resolve_nvfp4_scale_mode({"nvfp4_merge_aware": {"pts_policy": "per_proj"}})
+
+    @staticmethod
+    def _quant_expert(w2d):
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+        p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+        nv = NVFP4Tensor.to_nvfp4(
+            w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
+        )
+        return (
+            nv.qdata,
+            nv.scale.to(torch.float8_e4m3fn),
+            nv.per_tensor_scale.reshape(()),
+        )
+
+    def _make_expert_shard(self, E, H, I, gate_mult=1.0):  # noqa: E741
+        shard = {}
+        for proj, (n, k), mult in (
+            ("gate_proj", (I, H), gate_mult),
+            ("up_proj", (I, H), 1.0),
+            ("down_proj", (H, I), 1.0),
+        ):
+            for e in range(E):
+                qd, sc, pts = self._quant_expert(torch.randn(n, k) * k**-0.5 * mult)
+                base = f"model.layers.0.mlp.experts.{e}.{proj}"
+                shard[f"{base}.weight"] = qd
+                shard[f"{base}.weight_scale"] = sc
+                shard[f"{base}.weight_scale_2"] = pts
+        return shard
+
+    @staticmethod
+    def _make_fused_expert_adapter(E, H, I, r, scale=0.2):  # noqa: E741
+        p = "base_model.model.model.layers.0.mlp.experts"
+        return {
+            f"{p}.lora_A.weight": torch.randn(r * E, I, dtype=torch.bfloat16) * scale,
+            f"{p}.lora_B.weight": torch.randn(H, r * E, dtype=torch.bfloat16) * scale,
+            f"{p}.base_layer.lora_A.weight": torch.randn(r * E, H, dtype=torch.bfloat16)
+            * scale,
+            f"{p}.base_layer.lora_B.weight": torch.randn(
+                2 * I, r * E, dtype=torch.bfloat16
+            )
+            * scale,
+        }
+
+    def test_nvfp4_merge_aware_metadata_selects_fresh_mode_e2e(self, tmp_path):
+        """A stamped adapter merged through merge_lora_sharded_efficient must requant
+        with fresh scales: gate/up emit the SAME (fused-max) weight_scale_2 even though
+        the base exported unequal pts; a stale encoder refuses to merge unless
+        overridden."""
+        pytest.importorskip("torchao")
+        import torchao
+
+        from axolotl.cli.utils.lora_merge import merge_lora_sharded_efficient
+
+        torch.manual_seed(11)
+        E, H, I, r, alpha = 2, 64, 32, 4, 8  # noqa: E741
+        shard = self._make_expert_shard(E, H, I, gate_mult=3.0)
+        adapter = self._make_fused_expert_adapter(E, H, I, r)
+
+        base_dir, adapter_dir = tmp_path / "base", tmp_path / "adapter"
+        base_dir.mkdir(), adapter_dir.mkdir()
+        safetensors.torch.save_file(shard, base_dir / "model.safetensors")
+        (base_dir / "model.safetensors.index.json").write_text(
+            json.dumps(
+                {
+                    "metadata": {"total_size": 0},
+                    "weight_map": {k: "model.safetensors" for k in shard},
+                }
+            )
+        )
+        (base_dir / "config.json").write_text(
+            json.dumps({"model_type": "synthetic-test", "num_experts": E})
+        )
+        safetensors.torch.save_file(adapter, adapter_dir / "adapter_model.safetensors")
+        (adapter_dir / "adapter_config.json").write_text(
+            json.dumps(
+                {
+                    "r": r,
+                    "lora_alpha": alpha,
+                    "peft_type": "LORA",
+                    "nvfp4_merge_aware": {
+                        "scale_mode": "fresh",
+                        "pts_policy": "base_fused_max",
+                        "encoder": f"torchao-{torchao.__version__}",
+                        "start_step": 0,
+                    },
+                }
+            )
+        )
+
+        out = tmp_path / "merged"
+        merge_lora_sharded_efficient(base_dir, adapter_dir, out, device="cpu")
+        merged = {}
+        for f in sorted(out.glob("*.safetensors")):
+            merged.update(safetensors.torch.load_file(f))
+
+        for e in range(E):
+            kb = f"model.layers.0.mlp.experts.{e}"
+            g = merged[f"{kb}.gate_proj.weight_scale_2"].reshape(())
+            u = merged[f"{kb}.up_proj.weight_scale_2"].reshape(())
+            want = torch.maximum(
+                shard[f"{kb}.gate_proj.weight_scale_2"],
+                shard[f"{kb}.up_proj.weight_scale_2"],
+            )
+            assert torch.equal(g, u)
+            assert torch.equal(g, want.reshape(()))
+
+        cfg = json.loads((adapter_dir / "adapter_config.json").read_text())
+        cfg["nvfp4_merge_aware"]["encoder"] = "torchao-0.0.1"
+        (adapter_dir / "adapter_config.json").write_text(json.dumps(cfg))
+        with pytest.raises(RuntimeError, match="override-quantizer"):
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, tmp_path / "m2", device="cpu"
+            )
+        merge_lora_sharded_efficient(
+            base_dir,
+            adapter_dir,
+            tmp_path / "m3",
+            device="cpu",
+            override_quantizer=True,
+        )
+
+    def test_nvfp4_near_noop_merge_warns(self):
+        """An unprepared adapter whose delta is far below the grid step must warn
+        that the format-preserving merge is a near-no-op."""
+        pytest.importorskip("torchao")
+        from unittest.mock import patch
+
+        import axolotl.cli.utils.lora_merge as lm
+
+        torch.manual_seed(13)
+        E, H, I, r, alpha = 2, 64, 32, 4, 8  # noqa: E741
+        shard = self._make_expert_shard(E, H, I)
+        # sub-grid-step delta: ~1e-6 relative, rounds back to the base codes
+        adapter = self._make_fused_expert_adapter(E, H, I, r, scale=1e-6)
+
+        writer = lm._Nvfp4ExpertMergeWriter(
+            adapter, {"r": r, "lora_alpha": alpha}, E, "cpu"
+        )
+        _, emitted, merged = writer.consume(shard)
+        assert merged == 2 and emitted
+        with patch.object(lm.LOG, "warning") as mock_warn:
+            writer.assert_drained()
+        assert any("NEAR-NO-OP" in str(c.args[0]) for c in mock_warn.call_args_list)
+
     def test_fused_expert_base_no_false_positive(self, tmp_path):
         """A FUSED expert base (Mistral-Large-4 style) + fused adapter must NOT trigger the per-expert
         warning."""

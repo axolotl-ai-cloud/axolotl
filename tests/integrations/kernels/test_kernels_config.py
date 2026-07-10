@@ -206,3 +206,58 @@ def test_warn_unclaimed_nonexpert_quantization_skips_noop_policies(policy, caplo
     assert not any(
         "no active model adapter consumes it" in r.message for r in caplog.records
     )
+
+
+def test_nvfp4_merge_aware_accepted_with_sonicmoe_lora():
+    a = KernelsArgs.model_validate(
+        {
+            "use_sonicmoe": True,
+            "adapter": "lora",
+            "nvfp4_merge_aware": True,
+            "nvfp4_merge_aware_start_step": 100,
+        }
+    )
+    assert a.nvfp4_merge_aware is True
+    assert a.nvfp4_merge_aware_start_step == 100
+
+
+def test_nvfp4_merge_aware_fractional_start_step():
+    a = KernelsArgs.model_validate(
+        {
+            "use_sonicmoe": True,
+            "adapter": "lora",
+            "nvfp4_merge_aware": True,
+            "nvfp4_merge_aware_start_step": 0.1,
+        }
+    )
+    assert a.nvfp4_merge_aware_start_step == 0.1
+
+
+def test_nvfp4_merge_aware_requires_sonicmoe():
+    with pytest.raises(pydantic.ValidationError, match="sonicmoe"):
+        KernelsArgs.model_validate({"adapter": "lora", "nvfp4_merge_aware": True})
+
+
+def test_nvfp4_merge_aware_requires_adapter():
+    with pytest.raises(pydantic.ValidationError, match="adapter"):
+        KernelsArgs.model_validate({"use_sonicmoe": True, "nvfp4_merge_aware": True})
+
+
+def test_nvfp4_merge_aware_start_step_requires_flag():
+    with pytest.raises(pydantic.ValidationError, match="requires nvfp4_merge_aware"):
+        KernelsArgs.model_validate(
+            {"use_sonicmoe": True, "adapter": "lora", "nvfp4_merge_aware_start_step": 5}
+        )
+
+
+@pytest.mark.parametrize("bad", [-1, 1.5, -0.5, True])
+def test_nvfp4_merge_aware_start_step_invalid(bad):
+    with pytest.raises(pydantic.ValidationError):
+        KernelsArgs.model_validate(
+            {
+                "use_sonicmoe": True,
+                "adapter": "lora",
+                "nvfp4_merge_aware": True,
+                "nvfp4_merge_aware_start_step": bad,
+            }
+        )
