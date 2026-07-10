@@ -23,6 +23,9 @@ axolotl train examples/qwen3-next/qwen3-next-80b-a3b-qlora.yaml
 
 # NVFP4 MoE-LoRA (~85 GiB at sequence_len 2048, ~106 GiB at 16k tokens/step)
 axolotl train examples/qwen3-next/qwen3-next-80b-a3b-nvfp4-lora.yaml
+
+# bake the adapter back into a plain NVFP4 checkpoint (see docs: NVFP4 MoE LoRA)
+axolotl merge-lora examples/qwen3-next/qwen3-next-80b-a3b-nvfp4-lora.yaml
 ```
 
 Let us know how it goes. Happy finetuning! 🚀

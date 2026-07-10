@@ -17,6 +17,9 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
     # NVFP4 MoE-LoRA (~30 GiB at sequence_len 2048, ~58 GiB at 16k tokens/step)
     axolotl train examples/qwen3/30b-a3b-nvfp4-lora.yaml
+
+    # bake the adapter back into a plain NVFP4 checkpoint (see docs: NVFP4 MoE LoRA)
+    axolotl merge-lora examples/qwen3/30b-a3b-nvfp4-lora.yaml
     ```
 
 Let us know how it goes. Happy finetuning! 🚀
