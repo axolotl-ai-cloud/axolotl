@@ -66,6 +66,10 @@ touch /path/to/output_dir/my_trigger.save
 
 Pressing `Ctrl+C` during training saves the model state and exits gracefully. **Note:** This saves only the model weights, not optimizer state. For resumable checkpoints, use the file-based trigger.
 
+## Benchmark or evaluate a checkpoint externally
+
+To fire an external benchmark/eval runner on each checkpoint and log the returned scalar metrics back into training (with optional early stopping), use the [Benchmark API plugin](custom_integrations.qmd) (`axolotl.integrations.benchmark_api.BenchmarkAPIPlugin`). It POSTs the checkpoint path to an HTTP endpoint on `save`/`eval`/`train_end` and supports both synchronous and asynchronous (poll + drain) runners, so a slow benchmark doesn't block training.
+
 ## Best Practices
 
 - **Check interval**: Lower values (10-50) for fast training, default 100 for slower training
