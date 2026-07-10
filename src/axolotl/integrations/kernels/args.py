@@ -103,7 +103,7 @@ class KernelsArgs(BaseModel):
                 "nvfp4_merge_aware requires the sonicmoe expert backend "
                 "(expert_backend: sonicmoe)"
             )
-        if not data.get("adapter"):
+        if data.get("adapter") != "lora":
             raise ValueError(
                 "nvfp4_merge_aware requires a LoRA adapter (adapter: lora); it snaps "
                 "the LoRA delta to the NVFP4 grid of the frozen base"

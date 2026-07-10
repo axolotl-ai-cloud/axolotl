@@ -1897,6 +1897,25 @@ def merge_lora_sharded_efficient(
     lora_adapter_path = Path(lora_adapter_path)
     output_path = Path(output_path)
 
+    config_file = lora_adapter_path / "adapter_config.json"
+    if not config_file.exists():
+        raise FileNotFoundError(f"LoRA config not found: {config_file}")
+
+    lora_config_dict = LoraConfig.from_json_file(str(config_file))
+    if not lora_config_dict.get("r") or lora_config_dict["r"] <= 0:
+        raise ValueError("LoRA config 'r' must be > 0")
+
+    if dequant and lora_config_dict.get("nvfp4_merge_aware"):
+        raise ValueError(
+            "--dequant on a merge-aware adapter: the bf16 dequant merge writes "
+            "the raw un-snapped effective weight, which is NOT the function "
+            "training optimized (it can score worse than the base model). Merge "
+            "without --dequant; the format-preserving NVFP4 merge is lossless "
+            "for merge-aware adapters."
+        )
+
+    nvfp4_scale_mode = _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer)
+
     if "/" in str(base_model_path) and not base_model_path.exists():
         base_model_path = Path(snapshot_download(str(base_model_path)))
 
@@ -1914,24 +1933,7 @@ def merge_lora_sharded_efficient(
 
     os.makedirs(output_path, exist_ok=True)
 
-    config_file = lora_adapter_path / "adapter_config.json"
-    if not config_file.exists():
-        raise FileNotFoundError(f"LoRA config not found: {config_file}")
-
-    lora_config_dict = LoraConfig.from_json_file(str(config_file))
-    if not lora_config_dict.get("r") or lora_config_dict["r"] <= 0:
-        raise ValueError("LoRA config 'r' must be > 0")
-
-    nvfp4_scale_mode = _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer)
     if nvfp4_scale_mode == "fresh":
-        if dequant:
-            raise ValueError(
-                "--dequant on a merge-aware adapter: the bf16 dequant merge writes "
-                "the raw un-snapped effective weight, which is NOT the function "
-                "training optimized (it can score worse than the base model). Merge "
-                "without --dequant; the format-preserving NVFP4 merge is lossless "
-                "for merge-aware adapters."
-            )
         LOG.info(
             "merge-aware adapter detected: expert weights re-quantize with fresh "
             "scales (bitwise the grid training fake-quantized against)"
