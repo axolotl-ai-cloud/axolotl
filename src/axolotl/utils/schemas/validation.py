@@ -1646,6 +1646,14 @@ class ComplexValidationMixin:
             self.context_parallel_size = self.sequence_parallel_degree
         if not self.context_parallel_size:
             self.context_parallel_size = 1
+        elif self.context_parallel_size > 1 and getattr(
+            self, "use_glm_dsa_kernels", False
+        ):
+            # GLM DSA kernels do their own context-parallel attention; skip the flash/ring requirement.
+            LOG.warning(
+                "context_parallel_size > 1 with use_glm_dsa_kernels: the DSA kernels handle context "
+                "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
+            )
         elif self.context_parallel_size > 1:
             if not self.attn_uses_flash_lib:
                 raise ValueError(
@@ -1734,6 +1742,9 @@ class ComplexValidationMixin:
 
         if self.ring_attn_func is not None:
             self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
+        elif getattr(self, "use_glm_dsa_kernels", False):
+            # GLM DSA kernels own attention; leave ring_attn_func None.
+            pass
         else:
             # Default ring attention function selection
             sample_packing = getattr(self, "sample_packing", False)
