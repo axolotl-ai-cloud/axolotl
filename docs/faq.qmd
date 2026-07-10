@@ -73,7 +73,7 @@ description: Frequently asked questions
 
 **Q: How do I run an external benchmark or eval during training?**
 
-> A: Use the [Benchmark API plugin](custom_integrations.qmd) (`axolotl.integrations.benchmark_api.BenchmarkAPIPlugin`). It POSTs each checkpoint to an HTTP endpoint you run and logs the returned scalar metrics back into training, with optional early stopping and async (non-blocking) runners.
+> A: Use the [Benchmark API plugin](custom_integrations.qmd) (`axolotl.integrations.benchmark_api.BenchmarkAPIPlugin`). By default it POSTs on save events to an HTTP endpoint you run; set `run_on` to also (or instead) trigger on evaluation or train end. It logs the returned scalar metrics back into training, with optional early stopping and asynchronous (non-blocking) execution.
 
 ### Chat templates
 
