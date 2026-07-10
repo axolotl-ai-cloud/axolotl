@@ -198,6 +198,9 @@ class ScatterMoELoRA(torch.autograd.Function):
 
             # Gate gradients (top-k gating with routing weights)
             if gates is not None:
+                # grad_out arrives in the autocast dtype but output_expanded stays fp32; align before the d_gates bmm
+                if grad_out.dtype != output_expanded.dtype:
+                    grad_out = grad_out.to(output_expanded.dtype)
                 # d_gates[t, j] = output_expanded[t, j, :] . grad_out[t, :]
                 d_gates = (output_expanded @ grad_out.unsqueeze(-1)).squeeze(-1)
                 gates_flat = gates.flatten()
