@@ -2352,7 +2352,8 @@ class TestQuantizedBaseMerge:
     def test_nvfp4_merge_aware_metadata_selects_fresh_mode_e2e(self, tmp_path):
         """A stamped adapter merged through merge_lora_sharded_efficient must requant
         with fresh scales: gate/up emit the SAME (fused-max) weight_scale_2 even though
-        the base exported unequal pts; a stale encoder refuses to merge unless
+        the base exported unequal pts; --dequant is rejected (the un-snapped bf16 merge
+        is not the trained function); a stale encoder refuses to merge unless
         overridden."""
         pytest.importorskip("torchao")
         import torchao
@@ -2411,6 +2412,11 @@ class TestQuantizedBaseMerge:
             )
             assert torch.equal(g, u)
             assert torch.equal(g, want.reshape(()))
+
+        with pytest.raises(ValueError, match="dequant"):
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, tmp_path / "m_dq", device="cpu", dequant=True
+            )
 
         cfg = json.loads((adapter_dir / "adapter_config.json").read_text())
         cfg["nvfp4_merge_aware"]["encoder"] = "torchao-0.0.1"

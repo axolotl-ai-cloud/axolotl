@@ -1924,6 +1924,14 @@ def merge_lora_sharded_efficient(
 
     nvfp4_scale_mode = _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer)
     if nvfp4_scale_mode == "fresh":
+        if dequant:
+            raise ValueError(
+                "--dequant on a merge-aware adapter: the bf16 dequant merge writes "
+                "the raw un-snapped effective weight, which is NOT the function "
+                "training optimized (it can score worse than the base model). Merge "
+                "without --dequant; the format-preserving NVFP4 merge is lossless "
+                "for merge-aware adapters."
+            )
         LOG.info(
             "merge-aware adapter detected: expert weights re-quantize with fresh "
             "scales (bitwise the grid training fake-quantized against)"

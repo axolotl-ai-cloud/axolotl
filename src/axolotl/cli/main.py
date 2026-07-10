@@ -287,6 +287,20 @@ def merge_sharded_fsdp_weights(
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--dequant",
+    is_flag=True,
+    default=False,
+    help="Dequantize a quantized base to bf16 in the merged checkpoint instead of "
+    "re-quantizing to the base's format.",
+)
+@click.option(
+    "--override-quantizer",
+    is_flag=True,
+    default=False,
+    help="Merge a merge-aware adapter despite a quantizer-identity mismatch "
+    "(e.g. different torchao version than trained with).",
+)
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs

@@ -328,7 +328,7 @@ class GroupedUpProjLoRA(torch.autograd.Function):
             w1,
             ctx.scaling,
             B_c=B_c,
-            dx_via_weight_only=getattr(ctx, "merge_aware", False),
+            dx_via_weight_only=ctx.merge_aware,
         )
         return dx, None, None, dA, dB, None, None, None, None, None
 
@@ -483,7 +483,7 @@ class GroupedDownProjLoRA(torch.autograd.Function):
             w2,
             ctx.scaling,
             B_c=B_c,
-            dx_via_weight_only=getattr(ctx, "merge_aware", False),
+            dx_via_weight_only=ctx.merge_aware,
         )
         return da, None, None, dA, dB, None, None, None, None
 

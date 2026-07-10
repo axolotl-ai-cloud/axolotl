@@ -26,8 +26,17 @@ All fall back to the callers' torch paths when triton is unavailable.
 from __future__ import annotations
 
 import functools
+from typing import Any, NamedTuple
 
 import torch
+
+
+class _KernelSet(NamedTuple):
+    dequant: Any
+    quant: Any
+    quant_sfa: Any
+    rowscale: Any
+    fake_quant: Any
 
 
 @functools.lru_cache(maxsize=1)
@@ -290,12 +299,12 @@ def _kernels():
         p = tl.load(pts_ptr + row)
         tl.store(x_ptr + row * N + offs, (x * p).to(x_ptr.dtype.element_ty), mask=mask)
 
-    return (
-        _dequant_kernel,
-        _quant_kernel,
-        _quant_sfa_kernel,
-        _rowscale_kernel,
-        _fake_quant_kernel,
+    return _KernelSet(
+        dequant=_dequant_kernel,
+        quant=_quant_kernel,
+        quant_sfa=_quant_sfa_kernel,
+        rowscale=_rowscale_kernel,
+        fake_quant=_fake_quant_kernel,
     )
 
 
@@ -315,7 +324,7 @@ def dequant_nvfp4_triton(
     ``per_tensor_scale``, if given, has one entry per leading-dim slice (the
     ``[E, N, K]`` expert convention: entry ``e`` scales rows of slice ``e``).
     """
-    dequant_kernel, _, _, _, _ = _get_kernels()
+    dequant_kernel = _get_kernels().dequant
     if qdata.dtype != torch.uint8:
         qdata = qdata.view(torch.uint8)
     k2 = qdata.shape[-1]
@@ -350,7 +359,7 @@ def dequant_nvfp4_triton(
 def rowscale_inplace_triton(x: torch.Tensor, row_scale: torch.Tensor) -> torch.Tensor:
     """In-place ``x[r] = x.dtype(f32(x[r]) * row_scale[r])``; bit-identical to
     ``(x.float() * row_scale[:, None]).to(x.dtype)`` in one pass."""
-    _, _, _, rowscale_kernel, _ = _get_kernels()
+    rowscale_kernel = _get_kernels().rowscale
     assert x.dim() == 2 and x.is_contiguous()
     rows, n = x.shape
     BLOCK_N = 1024
@@ -361,7 +370,7 @@ def rowscale_inplace_triton(x: torch.Tensor, row_scale: torch.Tensor) -> torch.T
 
 def quantize_nvfp4_triton(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """``x [T, K]`` (K % 16 == 0) -> ``(packed u8 [T, K/2], scale e4m3 [T, K/16])``."""
-    _, quant_kernel, _, _, _ = _get_kernels()
+    quant_kernel = _get_kernels().quant
     assert x.dim() == 2 and x.shape[-1] % 16 == 0
     t, k = x.shape
     sf_k = k // 16
@@ -385,7 +394,7 @@ def quantize_rows_fused_sfa_triton(
     """
     from .sf_layout import SF_TILE_ROWS, varlen_padded_num_row_tiles
 
-    _, _, quant_sfa_kernel, _, _ = _get_kernels()
+    quant_sfa_kernel = _get_kernels().quant_sfa
     assert x.dim() == 2 and x.shape[-1] % 16 == 0
     t, k = x.shape
     sf_k = k // 16
@@ -428,7 +437,7 @@ def fake_quant_nvfp4_triton(
     leading-dim slice (the ``[E, N, K]`` expert convention). ``inplace``
     overwrites ``x`` (safe when ``x`` is the freshly built W_eff buffer).
     """
-    _, _, _, _, fake_quant_kernel = _get_kernels()
+    fake_quant_kernel = _get_kernels().fake_quant
     k = x.shape[-1]
     assert k % 16 == 0
     x2 = x.reshape(-1, k)

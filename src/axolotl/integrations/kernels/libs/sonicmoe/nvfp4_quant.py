@@ -18,6 +18,8 @@ identical to each other and to the ecosystem encoder.
 
 from __future__ import annotations
 
+import os
+
 import torch
 
 SF_VEC_SIZE = 16
@@ -216,8 +218,6 @@ def fake_quant_nvfp4_dispatch(
     """``fake_quant_nvfp4`` via the fused triton kernel on CUDA (bitwise-equal),
     torchao reference otherwise. ``AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL=0`` is
     the kill switch."""
-    import os
-
     if x.is_cuda and os.environ.get("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL") != "0":
         from .triton_nvfp4 import fake_quant_nvfp4_triton, triton_available
 
