@@ -271,13 +271,15 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def check_sonicmoe_ep_unsupported(cls, data):
-        """SonicMoE + EP is not yet implemented (EP `_sonicmoe_local` raises)."""
+    def check_sonicmoe_ep(cls, data):
+        """SonicMoE + EP routes through the EP-sentinel remap in `_sonicmoe_local`. Wired but
+        not yet loss-validated on GPU, so warn rather than block (NVFP4 + EP still raises at
+        runtime; sm_120 falls back to scattermoe)."""
         data = cls._canonicalize_expert_backend(data)
         if data.get("use_sonicmoe") and (data.get("expert_parallel_size") or 1) > 1:
-            raise ValueError(
-                "use_sonicmoe=true is not supported with expert_parallel_size > 1. "
-                "Use use_scattermoe=true under EP, or set expert_parallel_size=1."
+            LOG.warning(
+                "use_sonicmoe=true with expert_parallel_size > 1 is experimental (EP-sentinel "
+                "path, not yet loss-validated); compare loss against grouped_mm or scattermoe."
             )
         return data
 
