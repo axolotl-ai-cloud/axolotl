@@ -272,16 +272,11 @@ class KernelsArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_sonicmoe_ep(cls, data):
-        """SonicMoE + EP routes through the EP-sentinel remap in `_sonicmoe_local`. Wired but
-        not yet loss-validated on GPU, so warn rather than block (NVFP4 + EP still raises at
-        runtime; sm_120 falls back to scattermoe)."""
-        data = cls._canonicalize_expert_backend(data)
-        if data.get("use_sonicmoe") and (data.get("expert_parallel_size") or 1) > 1:
-            LOG.warning(
-                "use_sonicmoe=true with expert_parallel_size > 1 is experimental (EP-sentinel "
-                "path, not yet loss-validated); compare loss against grouped_mm or scattermoe."
-            )
-        return data
+        """SonicMoE + EP routes through the EP-sentinel remap in `_sonicmoe_local`, which also
+        patches the kernel's sentinel backward at runtime (see ep_backward_patch.py) and pads
+        recv batches for shape-stable autotuning. Loss-validated on 4xH100 vs grouped_mm.
+        NVFP4 + EP still raises at runtime; sm_120 falls back to scattermoe."""
+        return cls._canonicalize_expert_backend(data)
 
     @model_validator(mode="before")
     @classmethod

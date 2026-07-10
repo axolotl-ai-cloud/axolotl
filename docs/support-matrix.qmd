@@ -121,12 +121,12 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 | Kernel | Config | GPU | Scope |
 |---|---|---|---|
 | ScatterMoE | `use_kernels: true` + `use_scattermoe: true` | any CUDA (Triton) | LoRA on experts (fused into grouped GEMM); **composes with EP** |
-| SonicMoE 🚧 | `use_kernels: true` + `use_sonicmoe: true` | Hopper/Blackwell, CUDA 12.9+ | LoRA; **NVFP4 path is WIP**; ⚪ **blocked under EP** (use ScatterMoE) |
+| SonicMoE 🚧 | `use_kernels: true` + `use_sonicmoe: true` | Hopper/Blackwell, CUDA 12.9+ | LoRA; **NVFP4 path is WIP**; **composes with EP** (bf16; NVFP4 + EP raises) |
 | DSv4 fused kernels | `use_dsv4_kernels: true` | SM90+ | DeepSeek-V4 attention/RoPE/MLP |
 | GLM-DSA kernels | `use_glm_dsa_kernels: true` | SM90+ | GLM-4.7/5.2 sparse-MLA (DSA) attention |
 | Grouped-GEMM backend | `moe_grouped_backend: auto\|marlin\|cutlass\|deepgemm` | capability-selected | fp4 grouped experts |
 
-**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`). **SonicMoE + EP is blocked at config validation** (`use_sonicmoe: true` with `expert_parallel_size > 1` raises), use `use_scattermoe` under EP.
+**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`). SonicMoE composes with EP too (registered as `deep_ep_sonicmoe`): axolotl patches the kernel's EP-sentinel backward at runtime until the fix lands upstream, and pads recv batches so the kernel's shape-keyed autotuner tunes once. NVFP4 + EP still raises at runtime.
 
 ::: {.callout-warning}
 **NVFP4 MoE training is narrow today.** It covers **DeepSeek-V4** and **GLM-4.7/5.2** (`glm_moe_dsa`) only, is **LoRA-only** (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base), and the **SonicMoE NVFP4 path is 🚧 WIP** (ScatterMoE is the working path). See [Precision x trainable params](#precision-x-trainable-params).
@@ -254,7 +254,6 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | DeepSpeed | FSDP | pick one |
 | EP | TP / CP | raises `NotImplementedError` |
 | DDP | TP / CP | use FSDP2 instead |
-| EP | SonicMoE | blocked at config validation; use ScatterMoE under EP (ScatterMoE + EP *is* supported) |
 | QAT | any adapter, or 4/8-bit | full-model only |
 | Sample packing | any `rl:`, multimodal | RLHF & MM packing not supported |
 | Cut Cross Entropy | Liger CE / chunked CE | one CE optimization only |
@@ -293,7 +292,6 @@ Not in a tagged release yet:
 ### 🔵 Not supported yet / planned
 
 - **Full fine-tune of NVFP4** (fp4 base FFT, "a separate, larger effort")
-- **SonicMoE + Expert Parallel** (ScatterMoE + EP works today; a partial sm_120 fallback exists but is gated by the config validator)
 - Multimodal + sample packing
 - LoRA kernels + RLHF
 - EP + TP/CP
@@ -312,4 +310,3 @@ Everything else out-of-scope is marked on its own row above:
 - BitNet + LoRA, see [Model architectures](#model-architectures)
 - CPU-only + activation offloading, see [Throughput / memory](#throughput-memory)
 - FP8 + DDP + `torch.compile`, see [Incompatible combinations](#incompatible)
-- SonicMoE under Expert Parallel, see [MoE expert kernels](#moe-expert-kernels)

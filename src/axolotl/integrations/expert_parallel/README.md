@@ -168,14 +168,14 @@ See full example configs at [`examples/expert_parallel/`](https://github.com/axo
 
 #### Implementation notes
 
-EP composes with the local-experts kernel you've already configured: ScatterMoE, ~SonicMoE~ (WIP), grouped_mm, or eager.
+EP composes with the local-experts kernel you've already configured: ScatterMoE, SonicMoE, grouped_mm, or eager.
 
 EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
 
 | Your existing config                                | Local kernel under DeepEP |
 |-----------------------------------------------------|---------------------------|
 | `use_scattermoe: true`                              | ScatterMoE (Triton)       |
-| `use_sonicmoe: true` (WIP)                          | SonicMoE (Gemma4)         |
+| `use_sonicmoe: true`                                | SonicMoE (Gemma4)         |
 | `experts_implementation: grouped_mm` / `batched_mm` | grouped_mm (transformers) |
 | `experts_implementation: eager`                     | eager Python loop         |
 | (unset)                                             | grouped_mm (default)      |

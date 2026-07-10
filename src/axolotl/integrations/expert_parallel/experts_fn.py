@@ -166,6 +166,14 @@ def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
             "Sonicmoe + EP on sm_120 needs a standard expert layout; use use_scattermoe."
         )
 
+    # The kernel's own backward emits NaN router grads for sentinel lanes; patch it in
+    # the loaded module (no-op once upstream ships the fix).
+    from axolotl.integrations.kernels.libs.sonicmoe.ep_backward_patch import (
+        apply_sonicmoe_ep_backward_patch,
+    )
+
+    apply_sonicmoe_ep_backward_patch()
+
     # The `ep-support` sonic-moe build treats expert_id == E_local as the EP sentinel (dropped
     # from the histogram/GEMM, guarded in the router backward); DeepEP tags remote slots -1.
     E_local = getattr(experts, "num_local_experts", experts.num_experts)
