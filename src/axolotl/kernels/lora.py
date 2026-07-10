@@ -472,7 +472,6 @@ class LoRA_MLP(torch.autograd.Function):
         ctx.weights = (gate_weight, up_weight, down_weight)
         ctx.activation_fn = activation_fn
         ctx.activation_fn_backward = activation_fn_backward
-        ctx.inplace = inplace
         ctx.has_dropout = has_dropout
         ctx.has_dora = has_dora
 
@@ -639,10 +638,8 @@ class LoRA_MLP(torch.autograd.Function):
         if ctx.needs_input_grad[0]:
             # Base path gradients through gate and up
             up_weight_deq = dequantize(up_weight.t(), up_quant)
-            if ctx.inplace:
-                dX = torch.matmul(grad_up, up_weight_deq.t(), out=X)
-            else:
-                dX = torch.matmul(grad_up, up_weight_deq.t())
+            # writing into saved X is untraceable when X is another Function's view output
+            dX = torch.matmul(grad_up, up_weight_deq.t())
             del up_weight_deq
 
             gate_weight_deq = dequantize(gate_weight, gate_quant)
@@ -985,7 +982,6 @@ class LoRA_QKV(torch.autograd.Function):
         ctx.scales = (q_scale, k_scale, v_scale)
         ctx.quants = (q_quant, k_quant, v_quant)
         ctx.weights = (q_weight, k_weight, v_weight)
-        ctx.inplace = inplace
         ctx.has_dropout = has_dropout
         ctx.has_dora = has_dora
 
@@ -1100,7 +1096,6 @@ class LoRA_QKV(torch.autograd.Function):
         # Initialize LoRA gradients as None
         d_A_q = d_B_q = d_A_k = d_B_k = d_A_v = d_B_v = None
 
-        # Compute LoRA gradients using X_lora (before any inplace ops on X)
         # A_q, B_q etc. are already in compute dtype (converted in forward)
         # Key optimization: compute grad @ B once, reuse for both dA and dX_lora
         # A has shape [rank, in], B has shape [out, rank]
@@ -1127,11 +1122,9 @@ class LoRA_QKV(torch.autograd.Function):
             d_A_v.addmm_(X_lora_t, grad_B_v, alpha=v_scale, beta=0)
             d_B_v.addmm_(A_v @ X_lora_t, v_grad, alpha=v_scale, beta=0)
 
-        # Base path input gradient (can use inplace on X since X_lora refs are done)
-        out_buffer = X if ctx.inplace else None
-
+        # writing into saved X is untraceable when X is another Function's view output
         q_weight_t = dequantize(q_weight, q_quant)
-        grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
+        grad_X = torch.mm(q_grad, q_weight_t)
         del q_weight_t
 
         k_weight_t = dequantize(k_weight, k_quant)
@@ -1421,7 +1414,6 @@ class LoRA_QK(torch.autograd.Function):
         ctx.scales = (q_scale, k_scale)
         ctx.quants = (q_quant, k_quant)
         ctx.weights = (q_weight, k_weight)
-        ctx.inplace = inplace
         ctx.has_dropout = has_dropout
         ctx.has_dora = has_dora
 
@@ -1516,11 +1508,9 @@ class LoRA_QK(torch.autograd.Function):
             d_A_k.addmm_(X_lora_t, grad_B_k, alpha=k_scale, beta=0)
             d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
 
-        # Base path input gradient
-        out_buffer = X if ctx.inplace else None
-
+        # writing into saved X is untraceable when X is another Function's view output
         q_weight_t = dequantize(q_weight, q_quant)
-        grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
+        grad_X = torch.mm(q_grad, q_weight_t)
         del q_weight_t
 
         k_weight_t = dequantize(k_weight, k_quant)

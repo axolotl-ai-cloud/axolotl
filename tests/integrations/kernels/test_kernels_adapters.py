@@ -11,6 +11,7 @@ from axolotl.integrations.kernels.adapters.gemma4 import (
     Gemma4Adapter,
     resolve_nonexpert_quantization,
 )
+from axolotl.integrations.kernels.adapters.qwen3_moe import Qwen3MoeAdapter
 from axolotl.integrations.kernels.plugin import KernelsPlugin
 
 
@@ -33,6 +34,19 @@ def test_gemma4_adapter_matches(monkeypatch):
     assert [type(a) for a in active] == [Gemma4Adapter]
     # requires scattermoe
     assert get_active_adapters(Cfg(use_scattermoe=False)) == []
+
+
+def test_qwen3_moe_adapter_matches(monkeypatch):
+    import axolotl.integrations.kernels.adapters.qwen3_moe as qwen3_moe_mod
+
+    monkeypatch.setattr(qwen3_moe_mod, "is_qwen3_moe_nvfp4_modelopt", lambda cfg: True)
+    # either expert backend activates it
+    active = get_active_adapters(Cfg(use_scattermoe=True))
+    assert Qwen3MoeAdapter in [type(a) for a in active]
+    active = get_active_adapters(Cfg(use_sonicmoe=True))
+    assert [type(a) for a in active] == [Qwen3MoeAdapter]
+    # requires an expert backend
+    assert get_active_adapters(Cfg()) == []
 
 
 def test_gemma4_match_failure_is_swallowed(monkeypatch):

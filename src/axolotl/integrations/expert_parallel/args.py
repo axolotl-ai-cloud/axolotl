@@ -44,6 +44,15 @@ class ExpertParallelArgs(BaseModel):
                 f"Use 1 to disable EP."
             )
 
+        if (
+            self.expert_parallel_token_capacity is not None
+            and self.expert_parallel_token_capacity < 1
+        ):
+            raise ValueError(
+                f"expert_parallel_token_capacity must be >= 1 when set "
+                f"(got {self.expert_parallel_token_capacity!r}). Use None to disable the cap."
+            )
+
         if self.expert_parallel_size > 1 and self.expert_parallel_num_rdma_bytes != 0:
             LOG.warning(
                 "expert_parallel_num_rdma_bytes != 0 — RDMA path requires "
