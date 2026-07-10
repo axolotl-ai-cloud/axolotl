@@ -2,8 +2,152 @@
 DPO prompt strategies for using tokenizer chat templates.
 """
 
+import json
+
+from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
+
+LOG = get_logger(__name__)
+
+
+def _parse_tools(tools):
+    """Parse tools into a list of dicts, decoding JSON-encoded strings."""
+    if tools is None:
+        return None
+
+    if isinstance(tools, str):
+        try:
+            tools = json.loads(tools)
+        except json.JSONDecodeError as e:
+            LOG.error(f"Error parsing tools as JSON. Error: {e}")
+            raise
+
+    if isinstance(tools, list):
+        parsed_tools = []
+        for tool in tools:
+            # some datasets store each tool as a JSON-encoded string
+            if isinstance(tool, str):
+                try:
+                    tool = json.loads(tool)
+                except json.JSONDecodeError as e:
+                    LOG.error(f"Error parsing tool as JSON. Tool: {tool!r}, Error: {e}")
+                    raise
+            if isinstance(tool, dict) and "function" in tool:
+                function = tool["function"]
+                params = function.get("parameters")
+                if isinstance(params, str):
+                    try:
+                        function["parameters"] = json.loads(params)
+                    except json.JSONDecodeError as e:
+                        LOG.error(
+                            f"Error parsing tool parameters as JSON. "
+                            f"Function: {function.get('name', 'unknown')}, "
+                            f"Parameters string: {params!r}, "
+                            f"Error: {e}"
+                        )
+                        raise
+            parsed_tools.append(tool)
+        return parsed_tools
+
+    raise ValueError(
+        "Unknown tools format. Please convert it into a list[dict].\n"
+        f"Current format: {type(tools)}"
+    )
+
+
+def _parse_tool_call_arguments(message):
+    """Decode JSON-encoded tool call arguments so templates receive dicts."""
+    for tool_call in message.get("tool_calls") or []:
+        if "function" in tool_call and "arguments" in tool_call["function"]:
+            args = tool_call["function"]["arguments"]
+            if isinstance(args, str):
+                try:
+                    tool_call["function"]["arguments"] = json.loads(args)
+                except json.JSONDecodeError as e:
+                    LOG.error(
+                        f"Error parsing tool_calls arguments as JSON. "
+                        f"Function: {tool_call.get('function', {}).get('name', 'unknown')}, "
+                        f"Arguments string: {args!r}, "
+                        f"Error: {e}"
+                    )
+                    raise
+
+
+def _build_message_transform(message_property_mappings, role_map):
+    """Build a function that maps a raw dataset message to a chat template message,
+    preserving any extra properties the chat template uses (e.g. tool_calls)."""
+
+    def transform_message(message, msg_variables):
+        transformed = {}
+        for target, source in message_property_mappings.items():
+            value = message.get(source)
+            if value is not None:
+                transformed[target] = value
+
+        if "role" in transformed:
+            transformed["role"] = role_map.get(transformed["role"], transformed["role"])
+
+        mapped_sources = set(message_property_mappings.values())
+        for key in msg_variables - mapped_sources:
+            value = message.get(key)
+            if value is not None:
+                transformed[key] = value
+
+        _parse_tool_call_arguments(transformed)
+        return transformed
+
+    return transform_message
+
+
+# always preserved: template analysis misses properties accessed via
+# `message.get(...)` (e.g. gemma4), so OpenAI message keys are unioned in
+_BASE_MSG_VARIABLES = frozenset(
+    ["tool_calls", "tool_call_id", "name", "reasoning_content", "reasoning"]
+)
+
+
+def _make_msg_variables_getter():
+    """Cache chat template message variable analysis per template string."""
+    cache = {}
+
+    def get_msg_variables(chat_template_string):
+        if chat_template_string not in cache:
+            cache[chat_template_string] = (
+                JinjaTemplateAnalyzer(chat_template_string).get_message_vars("messages")
+                | _BASE_MSG_VARIABLES
+            )
+        return cache[chat_template_string]
+
+    return get_msg_variables
+
+
+DUMMY_USER_MESSAGE_CONTENT = "[[dummy_message]]"
+
+
+def _extract_response(full, prompt_prefix, content):
+    """Strip the rendered dummy-user prompt from a response rendering.
+
+    Strips the longest common prefix rather than requiring an exact prefix
+    match, since a generation prompt can diverge slightly from the completed
+    message rendering (e.g. thinking templates open `<think>` with different
+    whitespace than a rendered `reasoning_content` block).
+    """
+    common = 0
+    for prefix_char, full_char in zip(prompt_prefix, full, strict=False):
+        if prefix_char != full_char:
+            break
+        common += 1
+    response = full[common:]
+    if DUMMY_USER_MESSAGE_CONTENT not in response:
+        return response.rstrip()
+    # Fallback: locate the response content directly
+    if content:
+        strip_index = full.find(content)
+        if strip_index != -1:
+            return full[strip_index:].rstrip()
+    return full.rstrip()
 
 
 def default(cfg, dataset_idx=0, **kwargs):
@@ -16,6 +160,8 @@ def default(cfg, dataset_idx=0, **kwargs):
     field_messages = ds_cfg.get("field_messages", "messages")
     field_chosen = ds_cfg.get("field_chosen", "chosen")
     field_rejected = ds_cfg.get("field_rejected", "rejected")
+    field_tools = ds_cfg.get("field_tools", "tools")
+    chat_template_kwargs = cfg.get("chat_template_kwargs") or {}
     message_property_mappings = ds_cfg.get(
         "message_property_mappings",
         {
@@ -37,12 +183,16 @@ def default(cfg, dataset_idx=0, **kwargs):
         for source in sources:
             role_map[source] = target
 
+    transform_message = _build_message_transform(message_property_mappings, role_map)
+    get_msg_variables = _make_msg_variables_getter()
+
     def transform_fn(sample, tokenizer=None):
         chat_template_string = get_chat_template(
             user_choice=chat_template_choice,
             jinja_template=chat_template_jinja,
             tokenizer=tokenizer,
         )
+        msg_variables = get_msg_variables(chat_template_string)
 
         messages = sample[field_messages]
         if isinstance(messages, str):
@@ -53,13 +203,7 @@ def default(cfg, dataset_idx=0, **kwargs):
                 }
             ]
 
-        messages = [
-            {
-                "role": role_map[m[message_property_mappings["role"]]],
-                "content": m[message_property_mappings["content"]],
-            }
-            for m in messages
-        ]
+        messages = [transform_message(m, msg_variables) for m in messages]
 
         chosen_raw = sample[field_chosen]
         if isinstance(chosen_raw, str):
@@ -71,10 +215,7 @@ def default(cfg, dataset_idx=0, **kwargs):
             chosen_msg = chosen_raw
         else:
             chosen_msg = chosen_raw[-1]
-        chosen = {
-            "role": role_map[chosen_msg[message_property_mappings["role"]]],
-            "content": chosen_msg[message_property_mappings["content"]],
-        }
+        chosen = transform_message(chosen_msg, msg_variables)
 
         rejected_raw = sample[field_rejected]
         if isinstance(rejected_raw, str):
@@ -86,41 +227,53 @@ def default(cfg, dataset_idx=0, **kwargs):
             rejected_msg = rejected_raw
         else:
             rejected_msg = rejected_raw[-1]
-        rejected = {
-            "role": role_map[rejected_msg[message_property_mappings["role"]]],
-            "content": rejected_msg[message_property_mappings["content"]],
+        rejected = transform_message(rejected_msg, msg_variables)
+
+        dummy_user_message = {"role": "user", "content": DUMMY_USER_MESSAGE_CONTENT}
+
+        template_kwargs = {
+            "chat_template": chat_template_string,
+            "tokenize": False,
+            **chat_template_kwargs,
         }
-        dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
+        tools = _parse_tools(sample.get(field_tools))
+        if tools:
+            template_kwargs["tools"] = tools
 
         result = {}
         result["prompt"] = tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
-            chat_template=chat_template_string,
-            tokenize=False,
+            **template_kwargs,
         )
 
-        result["chosen"] = tokenizer.apply_chat_template(
+        dummy_prompt = tokenizer.apply_chat_template(
+            [dummy_user_message],
+            add_generation_prompt=True,
+            **template_kwargs,
+        )
+
+        chosen_full = tokenizer.apply_chat_template(
             [dummy_user_message, chosen],
             add_generation_prompt=False,
-            chat_template=chat_template_string,
-            tokenize=False,
+            **template_kwargs,
         )
-        chosen_strip_index = result["chosen"].find(chosen["content"])
-        result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
+        result["chosen"] = _extract_response(
+            chosen_full, dummy_prompt, chosen.get("content")
+        )
 
-        result["rejected"] = tokenizer.apply_chat_template(
+        rejected_full = tokenizer.apply_chat_template(
             [dummy_user_message, rejected],
             add_generation_prompt=False,
-            chat_template=chat_template_string,
-            tokenize=False,
+            **template_kwargs,
         )
-        rejected_strip_index = result["rejected"].find(rejected["content"])
-        result["rejected"] = result["rejected"][rejected_strip_index:].rstrip()
+        result["rejected"] = _extract_response(
+            rejected_full, dummy_prompt, rejected.get("content")
+        )
 
         return result
 
-    return transform_fn, {"remove_columns": [field_messages]}
+    return transform_fn, {"remove_columns": [field_messages, field_tools]}
 
 
 def argilla_chat(cfg, dataset_idx=0, **kwargs):
@@ -162,6 +315,8 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
     )
     field_chosen = ds_cfg.get("field_chosen", "chosen")
     field_rejected = ds_cfg.get("field_rejected", "rejected")
+    field_tools = ds_cfg.get("field_tools", "tools")
+    chat_template_kwargs = cfg.get("chat_template_kwargs") or {}
     message_property_mappings = ds_cfg.get(
         "message_property_mappings",
         {
@@ -183,62 +338,67 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
         for source in sources:
             role_map[source] = target
 
+    transform_message = _build_message_transform(message_property_mappings, role_map)
+    get_msg_variables = _make_msg_variables_getter()
+
     def transform_fn(sample, tokenizer=None):
         chat_template_string = get_chat_template(
             user_choice=chat_template_choice,
             jinja_template=chat_template_jinja,
             tokenizer=tokenizer,
         )
+        msg_variables = get_msg_variables(chat_template_string)
 
         chosen_raw = sample[field_chosen]
         rejected_raw = sample[field_rejected]
 
         # Extract messages (all but last) and responses (last message)
-        chosen_messages = [
-            {
-                "role": role_map[m[message_property_mappings["role"]]],
-                "content": m[message_property_mappings["content"]],
-            }
-            for m in chosen_raw[:-1]
-        ]
-        chosen_response = {
-            "role": role_map[chosen_raw[-1][message_property_mappings["role"]]],
-            "content": chosen_raw[-1][message_property_mappings["content"]],
-        }
+        chosen_messages = [transform_message(m, msg_variables) for m in chosen_raw[:-1]]
+        chosen_response = transform_message(chosen_raw[-1], msg_variables)
+        rejected_response = transform_message(rejected_raw[-1], msg_variables)
 
-        rejected_response = {
-            "role": role_map[rejected_raw[-1][message_property_mappings["role"]]],
-            "content": rejected_raw[-1][message_property_mappings["content"]],
-        }
+        dummy_user_message = {"role": "user", "content": DUMMY_USER_MESSAGE_CONTENT}
 
-        dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
+        template_kwargs = {
+            "chat_template": chat_template_string,
+            "tokenize": False,
+            **chat_template_kwargs,
+        }
+        tools = _parse_tools(sample.get(field_tools))
+        if tools:
+            template_kwargs["tools"] = tools
 
         result = {}
         result["prompt"] = tokenizer.apply_chat_template(
             chosen_messages,
             add_generation_prompt=True,
-            chat_template=chat_template_string,
-            tokenize=False,
+            **template_kwargs,
         )
 
-        result["chosen"] = tokenizer.apply_chat_template(
+        dummy_prompt = tokenizer.apply_chat_template(
+            [dummy_user_message],
+            add_generation_prompt=True,
+            **template_kwargs,
+        )
+
+        chosen_full = tokenizer.apply_chat_template(
             [dummy_user_message, chosen_response],
             add_generation_prompt=False,
-            chat_template=chat_template_string,
-            tokenize=False,
+            **template_kwargs,
         )
-        chosen_strip_index = result["chosen"].find(chosen_response["content"])
-        result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
+        result["chosen"] = _extract_response(
+            chosen_full, dummy_prompt, chosen_response.get("content")
+        )
 
-        result["rejected"] = tokenizer.apply_chat_template(
+        rejected_full = tokenizer.apply_chat_template(
             [dummy_user_message, rejected_response],
             add_generation_prompt=False,
-            chat_template=chat_template_string,
-            tokenize=False,
+            **template_kwargs,
         )
-        rejected_strip_index = result["rejected"].find(rejected_response["content"])
-        result["rejected"] = result["rejected"][rejected_strip_index:].rstrip()
+        result["rejected"] = _extract_response(
+            rejected_full, dummy_prompt, rejected_response.get("content")
+        )
 
         return result
 
-    return transform_fn, {"remove_columns": [field_chosen, field_rejected]}
+    return transform_fn, {"remove_columns": [field_chosen, field_rejected, field_tools]}
