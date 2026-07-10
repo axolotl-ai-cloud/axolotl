@@ -172,9 +172,23 @@ def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
     safe_idx = torch.where(
         recv_topk_idx >= 0, recv_topk_idx, torch.full_like(recv_topk_idx, E_local)
     )
-    return sonicmoe_experts_forward_with_lora(
+
+    # The kernel's quack autotuner caches per exact tensor shape, and the DeepEP recv count
+    # changes every step/layer, so unpadded calls re-trigger a full compile+benchmark sweep
+    # per MoE call (~100x step time). Pad to power-of-two buckets with all-sentinel rows:
+    # they are dropped from every GEMM range (zero compute), and shapes collapse to a
+    # handful of keys tuned once.
+    num_recv = recv_x.size(0)
+    padded = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
+    if padded != num_recv:
+        pad = padded - num_recv
+        recv_x = F.pad(recv_x, (0, 0, 0, pad))
+        safe_idx = F.pad(safe_idx, (0, 0, 0, pad), value=E_local)
+        recv_topk_weights = F.pad(recv_topk_weights, (0, 0, 0, pad))
+    out = sonicmoe_experts_forward_with_lora(
         experts, recv_x, safe_idx, recv_topk_weights
     )
+    return out[:num_recv] if padded != num_recv else out
 
 
 _LOCAL_KERNELS = {
