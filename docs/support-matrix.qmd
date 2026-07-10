@@ -129,7 +129,7 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 **With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`), as does SonicMoE (`deep_ep_sonicmoe`, bf16 experts only; the NVFP4 path does not support EP).
 
 ::: {.callout-warning}
-**NVFP4 MoE training is narrow today.** It covers **DeepSeek-V4** and **GLM-4.7/5.2** (`glm_moe_dsa`) only, is **LoRA-only** (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base), and the **SonicMoE NVFP4 path is 🚧 WIP** (ScatterMoE is the working path). See [Precision x trainable params](#precision-x-trainable-params).
+**NVFP4 MoE training is LoRA-only** (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base). SonicMoE covers Qwen3-MoE / Qwen3-Next (W4A4, lossless merge via [`nvfp4_merge_aware`](nvfp4_lora.qmd)); ScatterMoE covers **DeepSeek-V4** and **GLM-4.7/5.2** (`glm_moe_dsa`, W4A16). See [Precision x trainable params](#precision-x-trainable-params).
 :::
 
 ### Attention backends
@@ -279,7 +279,7 @@ Works, but flagged unstable:
 ### 🚧 WIP / feature-branch only
 Not in a tagged release yet:
 
-- **SonicMoE + NVFP4** grouped-experts training (ScatterMoE is the working path)
+- *(none currently)*
 
 ### 🔴 Deprecated (still works)
 

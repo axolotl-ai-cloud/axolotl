@@ -4,7 +4,7 @@ base_model: nvidia/Qwen3-30B-A3B-NVFP4
 plugins:
   - axolotl.integrations.kernels.KernelsPlugin
 use_sonicmoe: true
-# lets `merge-lora` bake the adapter into a plain NVFP4 checkpoint losslessly; serve the merged model
+# train an adapter that `merge-lora` can merge back into a plain NVFP4 checkpoint losslessly
 nvfp4_merge_aware: true
 strict: false
 
