@@ -78,13 +78,14 @@ def _resolve_weights_and_lora(experts_module):
 
 @functools.lru_cache(maxsize=1)
 def _sonicmoe_kernel_supported() -> bool:
-    """The kernels-community/sonic-moe CUTLASS GEMM fails to compile on sm_120
-    (Blackwell): its bundled quack ``GemmSm120`` predates the ``concat_layout`` arg
-    the dispatcher passes. Gate it off there so standard-layout models fall back to
-    the vendored scattermoe Triton path. Drop this once a fixed sonic-moe ships."""
+    """The kernels-community/sonic-moe kernel needs SM90+, and its CUTLASS GEMM fails
+    to compile on sm_120 (Blackwell): its bundled quack ``GemmSm120`` predates the
+    ``concat_layout`` arg the dispatcher passes. Gate both off so standard-layout
+    models fall back to the vendored scattermoe Triton path. Drop the sm_120 half
+    once a fixed sonic-moe ships."""
     if not torch.cuda.is_available():
         return True
-    return torch.cuda.get_device_capability()[0] < 12
+    return 9 <= torch.cuda.get_device_capability()[0] < 12
 
 
 def sonicmoe_experts_forward_with_lora(

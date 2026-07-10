@@ -175,7 +175,7 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
 | Your existing config                                | Local kernel under DeepEP |
 |-----------------------------------------------------|---------------------------|
 | `use_scattermoe: true`                              | ScatterMoE (Triton)       |
-| `use_sonicmoe: true`                                | SonicMoE (Gemma4)         |
+| `use_sonicmoe: true`                                | SonicMoE (bf16 experts)   |
 | `experts_implementation: grouped_mm` / `batched_mm` | grouped_mm (transformers) |
 | `experts_implementation: eager`                     | eager Python loop         |
 | (unset)                                             | grouped_mm (default)      |

@@ -4,6 +4,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 from unittest import mock
 
+import pytest
 import torch
 
 from axolotl.integrations.kernels.libs.sonicmoe.ep_backward_patch import (
@@ -98,7 +99,12 @@ class TestFixedDownProjectionBackwardAct:
 class TestApplyPatchGate:
     """Source-signature check and the `_axolotl_patched` idempotency marker."""
 
-    def _fake_kernel(self, tmp_path, bwd_source):
+    @pytest.fixture(autouse=True)
+    def _clean_patch_cache(self):
+        yield
+        apply_sonicmoe_ep_backward_patch.cache_clear()
+
+    def _fake_kernel(self, tmp_path, monkeypatch, bwd_source):
         bwd_path = tmp_path / "backward.py"
         bwd_path.write_text(bwd_source)
         bwd_mod = ModuleType("fake_sonic.functional.backward")
@@ -113,8 +119,8 @@ class TestApplyPatchGate:
         )
         functional_mod.moe_general_routing_inputs.__module__ = "fake_sonic.functional"
 
-        sys.modules["fake_sonic.functional"] = functional_mod
-        sys.modules["fake_sonic.functional.backward"] = bwd_mod
+        monkeypatch.setitem(sys.modules, "fake_sonic.functional", functional_mod)
+        monkeypatch.setitem(sys.modules, "fake_sonic.functional.backward", bwd_mod)
         return SimpleNamespace(
             moe_general_routing_inputs=functional_mod.moe_general_routing_inputs
         ), functional_mod
@@ -127,9 +133,9 @@ class TestApplyPatchGate:
         ):
             return apply_sonicmoe_ep_backward_patch()
 
-    def test_patches_buggy_kernel_once(self, tmp_path):
+    def test_patches_buggy_kernel_once(self, tmp_path, monkeypatch):
         kernel, functional_mod = self._fake_kernel(
-            tmp_path, f"# {_BUG_SIGNATURE}\ndef gemm_dgated():\n    pass\n"
+            tmp_path, monkeypatch, f"# {_BUG_SIGNATURE}\ndef gemm_dgated():\n    pass\n"
         )
         assert self._apply(kernel) is True
         patched = functional_mod.__dict__["_down_projection_backward_act"]
@@ -139,9 +145,9 @@ class TestApplyPatchGate:
         assert self._apply(kernel) is True
         assert functional_mod.__dict__["_down_projection_backward_act"] is patched
 
-    def test_skips_fixed_kernel(self, tmp_path):
+    def test_skips_fixed_kernel(self, tmp_path, monkeypatch):
         kernel, functional_mod = self._fake_kernel(
-            tmp_path, "def gemm_dgated():\n    pass\n"
+            tmp_path, monkeypatch, "def gemm_dgated():\n    pass\n"
         )
         original = functional_mod.__dict__["_down_projection_backward_act"]
         assert self._apply(kernel) is False

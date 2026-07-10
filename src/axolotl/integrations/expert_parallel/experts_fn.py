@@ -155,7 +155,7 @@ def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
         sonicmoe_experts_forward_with_lora,
     )
 
-    # sm_120 (Blackwell): the CUTLASS kernel can't compile there, so standard-layout experts
+    # Pre-Hopper and sm_120 can't run the CUTLASS kernel, so standard-layout experts
     # take the vendored scattermoe EP path (sentinel-skip + fused MXFP4) instead.
     if not _sonicmoe_kernel_supported():
         if scattermoe_supports_layout(experts):
@@ -163,7 +163,8 @@ def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
                 experts, recv_x, recv_topk_idx, recv_topk_weights
             )
         raise NotImplementedError(
-            "Sonicmoe + EP on sm_120 needs a standard expert layout; use use_scattermoe."
+            "Sonicmoe + EP on this GPU (kernel needs SM90+, excluding sm_120) requires "
+            "a standard expert layout for the scattermoe fallback; use use_scattermoe."
         )
 
     # The kernel's own backward emits NaN router grads for sentinel lanes; patch it in
@@ -297,7 +298,8 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     `transformers.RouterParallel`; see DEEP_EP.md §2.4 for why). Dispatch returns
     local expert ids in `[0, E_local)` with `-1` for slots routed to remote experts;
     the `-1` sentinels are passed through to the local kernel, which decides whether
-    to skip them (eager/scattermoe) or mask them (grouped_mm).
+    to skip them (eager/scattermoe), mask them (grouped_mm), or remap them to the
+    kernel's own drop id (sonicmoe: `E_local`).
     """
     if hidden_states.dtype != torch.bfloat16:
         original_dtype = hidden_states.dtype
@@ -353,7 +355,7 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     )
 
     # Pass the raw -1-tagged routing through; each local kernel handles sentinels
-    # its own way (eager/scattermoe skip them, grouped_mm masks internally).
+    # its own way (eager/scattermoe skip, grouped_mm masks, sonicmoe remaps to E_local).
     local_out = _LOCAL_KERNELS[kernel_name](
         self, recv_x, recv_topk_idx, recv_topk_weights
     )

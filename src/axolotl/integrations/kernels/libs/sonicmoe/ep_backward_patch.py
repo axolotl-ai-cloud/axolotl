@@ -6,7 +6,7 @@ only writes the valid rows ``[0, n_valid)`` of ``ds_scattered`` (grouped rows pa
 ``expert_frequency_offset[E]`` sit outside every expert range). Under EP the dropped
 sentinel tail is uninitialized memory and its ``s_scatter_idx`` entries are 0, so
 garbage scatters into ``ds[0]`` and sentinel lanes keep garbage: NaN gradients from
-step 1. Upstream report/patch: worklogs/sonicmoe-ep (kernels-community/sonic-moe).
+step 1.
 
 The replacement routes invalid-tail writes to a trash slot and zeroes them, fully
 on-device, with the drop layout and GEMM shapes untouched. Remove this module once the
@@ -146,7 +146,7 @@ def apply_sonicmoe_ep_backward_patch() -> bool:
     ):
         LOG.warning(
             "sonic-moe EP backward patch: unexpected kernel layout, cannot patch; "
-            "EP training may produce NaN gradients"
+            "verify grad norms stay finite before trusting EP training"
         )
         return False
 

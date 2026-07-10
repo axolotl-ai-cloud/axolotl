@@ -271,15 +271,6 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def check_sonicmoe_ep(cls, data):
-        """SonicMoE + EP routes through the EP-sentinel remap in `_sonicmoe_local`, which also
-        patches the kernel's sentinel backward at runtime (see ep_backward_patch.py) and pads
-        recv batches for shape-stable autotuning. Loss-validated on 4xH100 vs grouped_mm.
-        NVFP4 + EP still raises at runtime; sm_120 falls back to scattermoe."""
-        return cls._canonicalize_expert_backend(data)
-
-    @model_validator(mode="before")
-    @classmethod
     def check_experts_implementation(cls, data):
         """Auto-select impl from kernel flags; reject mismatched/unknown values."""
         data = cls._canonicalize_expert_backend(data)
