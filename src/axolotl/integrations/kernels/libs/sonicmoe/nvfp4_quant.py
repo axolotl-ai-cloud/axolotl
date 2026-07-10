@@ -207,6 +207,28 @@ def _quantize_nvfp4_reuse_grid(
     return packed, sc_out
 
 
+def fake_quant_nvfp4_dispatch(
+    x: torch.Tensor,
+    per_tensor_scale: float | torch.Tensor | None = None,
+    *,
+    inplace: bool = False,
+) -> torch.Tensor:
+    """``fake_quant_nvfp4`` via the fused triton kernel on CUDA (bitwise-equal),
+    torchao reference otherwise. ``AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL=0`` is
+    the kill switch."""
+    import os
+
+    if x.is_cuda and os.environ.get("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL") != "0":
+        from .triton_nvfp4 import fake_quant_nvfp4_triton, triton_available
+
+        if triton_available():
+            pts = per_tensor_scale
+            if pts is not None and not isinstance(pts, torch.Tensor):
+                pts = torch.as_tensor(pts, dtype=torch.float32, device=x.device)
+            return fake_quant_nvfp4_triton(x, pts, inplace=inplace)
+    return fake_quant_nvfp4(x, per_tensor_scale)
+
+
 def fake_quant_nvfp4(
     x: torch.Tensor,
     per_tensor_scale: float | torch.Tensor | None = None,

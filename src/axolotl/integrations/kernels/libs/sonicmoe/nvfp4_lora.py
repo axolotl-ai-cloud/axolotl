@@ -75,8 +75,6 @@ def _merge_aware_wfq(
     fresh W_eff buffer), bitwise the torchao reference it falls back to.
     ``AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL=0`` is the kill switch.
     """
-    import os
-
     E, dim1, dim2 = w_dense.shape
     r = lora_A.shape[0] // E
     A_3d = lora_A.reshape(E, r, dim2).to(w_dense.dtype)
@@ -85,15 +83,9 @@ def _merge_aware_wfq(
     w_eff = w_dense + torch.bmm(B_3d, A_3d * scaling)
     pts_flat = None if pts is None else pts.reshape(-1)
 
-    if w_eff.is_cuda and os.environ.get("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL") != "0":
-        from .triton_nvfp4 import fake_quant_nvfp4_triton, triton_available
+    from .nvfp4_quant import fake_quant_nvfp4_dispatch
 
-        if triton_available():
-            return fake_quant_nvfp4_triton(w_eff, pts_flat, inplace=True)
-
-    from .nvfp4_quant import fake_quant_nvfp4
-
-    return fake_quant_nvfp4(w_eff, pts_flat)
+    return fake_quant_nvfp4_dispatch(w_eff, pts_flat, inplace=True)
 
 
 def _use_grouped_mm(x: torch.Tensor) -> bool:
@@ -767,8 +759,8 @@ def grouped_moe_reference_forward(
     merge_aware = merge_aware_enabled()
     ma1 = merge_aware and lora1 is not None and is_nvfp4_param(w1)
     ma2 = merge_aware and lora2 is not None and is_nvfp4_param(w2)
-    ma_pts1 = w1.per_tensor_scale if ma1 else None
-    ma_pts2 = w2.per_tensor_scale if ma2 else None
+    ma_pts1 = w1.per_tensor_scale if ma1 else None  # type: ignore[attr-defined]
+    ma_pts2 = w2.per_tensor_scale if ma2 else None  # type: ignore[attr-defined]
     if backend == "dequant" or ((ma1 or ma2) and backend == "fp4_cute"):
         w1 = dequantize_expert_weight(w1)
         w2 = dequantize_expert_weight(w2)

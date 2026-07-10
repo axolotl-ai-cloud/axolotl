@@ -2075,6 +2075,40 @@ class TestQuantizedBaseMerge:
         assert torch.equal(fq, nv.dequantize(torch.bfloat16))
         assert torch.equal(fake_quant_nvfp4(fq, pts_e), fq)
 
+    def test_nonexpert_fresh_requant_matches_training_snap(self):
+        """The non-expert (2D linear, e.g. attention) writer path: fresh-mode
+        ``_requant_by_format`` on the merged bf16 weight must reproduce bitwise the
+        grid the merge-aware LoRA-linear forward trained against (same
+        ``quantize_nvfp4_merge`` + frozen base pts)."""
+        pytest.importorskip("torchao")
+        import axolotl.cli.utils.lora_merge as lm
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+            fake_quant_nvfp4,
+            quantize_nvfp4_merge,
+        )
+
+        torch.manual_seed(0)
+        w0 = (torch.randn(32, 64) * 0.02).to(torch.bfloat16)
+        pts = (w0.float().abs().max() / (6.0 * 448.0)).reshape(())
+        base_w = fake_quant_nvfp4(w0, pts)
+        _, base_scale = quantize_nvfp4_merge(base_w, pts, scale_mode="fresh")
+
+        w_eff = base_w + (torch.randn_like(base_w) * 0.002).to(torch.bfloat16)
+        train_packed, train_scale = quantize_nvfp4_merge(w_eff, pts, scale_mode="fresh")
+
+        out = lm._requant_by_format(
+            "nvfp4",
+            w_eff,
+            {"_scale": base_scale, "_scale_2": pts},
+            "cpu",
+            nvfp4_scale_mode="fresh",
+        )
+        assert torch.equal(out[""], train_packed)
+        assert torch.equal(
+            out["_scale"].view(torch.uint8), train_scale.view(torch.uint8)
+        )
+        assert torch.equal(out["_scale_2"], pts)
+
     def test_nvfp4_expert_writer_fresh_mode_matches_training_grid(self):
         """``scale_mode="fresh"``: the expert writer's bytes ARE the training grid.
         Gate/up export UNEQUAL pts on purpose, so the loader's fused-max fold is in

@@ -192,6 +192,20 @@ class KernelsPlugin(BasePlugin):
         for adapter in self._adapters(cfg):
             adapter.post_model_load(cfg, model)
 
+    def post_lora_load(self, cfg, model):
+        if not (cfg.use_sonicmoe and cfg.nvfp4_merge_aware):
+            return
+        from axolotl.integrations.kernels.merge_aware_linear import (
+            install_merge_aware_lora_linears,
+        )
+
+        wrapped = install_merge_aware_lora_linears(model)
+        if wrapped:
+            LOG.info(
+                "merge-aware LoRA forward installed on %d non-expert NVFP4 linears",
+                wrapped,
+            )
+
     def add_callbacks_pre_trainer(self, cfg, model):
         callbacks = []
         if cfg.use_scattermoe:
