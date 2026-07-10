@@ -150,6 +150,11 @@ def apply_sonicmoe_ep_backward_patch() -> bool:
         )
         return False
 
+    if getattr(
+        functional_ns["_down_projection_backward_act"], "_axolotl_patched", False
+    ):
+        return True
+
     try:
         source = inspect.getsource(bwd_mod)
     except (OSError, TypeError):
@@ -162,6 +167,7 @@ def apply_sonicmoe_ep_backward_patch() -> bool:
         return False
 
     fixed = _make_fixed_down_projection_backward_act(bwd_mod)
+    fixed._axolotl_patched = True
     # `_DownProjection.backward` resolves the name from functional/__init__'s globals;
     # rebinding there is sufficient (functional.backward's own copy has no callers).
     functional_ns["_down_projection_backward_act"] = fixed
