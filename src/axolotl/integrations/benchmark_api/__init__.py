@@ -19,6 +19,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import requests
 import torch
@@ -234,6 +235,30 @@ class BenchmarkAPICallback(TrainerCallback):
         )
         return candidate if os.path.isdir(candidate) else args.output_dir
 
+    def _resolve_poll_url(self, poll_url, job_id) -> str:
+        """Trust a runner-supplied poll_url only if it shares the endpoint origin.
+
+        The plugin GETs this URL, so a runner that returns a poll_url pointing at
+        a different scheme/host/port (SSRF) is rejected in favor of the URL built
+        from the configured endpoint.
+        """
+        fallback = f"{self.endpoint.rstrip('/')}/{job_id}"
+        if not poll_url:
+            return fallback
+        endpoint = urlparse(self.endpoint)
+        candidate = urlparse(poll_url)
+        if (candidate.scheme, candidate.hostname, candidate.port) != (
+            endpoint.scheme,
+            endpoint.hostname,
+            endpoint.port,
+        ):
+            LOG.warning(
+                f"Benchmark API: poll_url {poll_url!r} origin differs from the "
+                f"configured endpoint; using {fallback} instead"
+            )
+            return fallback
+        return poll_url
+
     def _benchmark_on_main(self, event, args, state) -> int:
         """Synchronous benchmark: POST and block for the result."""
         try:
@@ -277,7 +302,7 @@ class BenchmarkAPICallback(TrainerCallback):
             return self._process_result(result, event, state.global_step)
         if status in _PENDING_STATUSES:
             job_id = result.get("job_id") or f"{event}-{state.global_step}"
-            poll_url = result.get("poll_url") or f"{self.endpoint.rstrip('/')}/{job_id}"
+            poll_url = self._resolve_poll_url(result.get("poll_url"), job_id)
             self._pending.append(
                 _PendingJob(
                     job_id=job_id,

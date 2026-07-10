@@ -5,7 +5,7 @@ Config schema for the external benchmark API plugin.
 import re
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # alias -> normalized mode
 _MODE_ALIASES = {
@@ -24,6 +24,8 @@ class EarlyStoppingConfig(BaseModel):
     """
     Generic early stopping on a single benchmark metric.
     """
+
+    model_config = ConfigDict(extra="forbid")  # surface typo'd config keys
 
     enabled: bool = False
     metric: Optional[str] = None
@@ -58,6 +60,8 @@ class BenchmarkAPIConfig(BaseModel):
     """
     Settings for the external benchmark runner webhook.
     """
+
+    model_config = ConfigDict(extra="forbid")  # surface typo'd config keys
 
     endpoint: str
     execution_mode: Literal["sync", "async"] = "sync"

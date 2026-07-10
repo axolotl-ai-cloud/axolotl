@@ -92,6 +92,25 @@ def test_negative_timeout_rejected():
         BenchmarkAPIArgs(benchmark_api={"endpoint": "http://x", "timeout_sec": -1})
 
 
+def test_unknown_config_key_rejected():
+    with pytest.raises(ValidationError):
+        BenchmarkAPIArgs(benchmark_api={"endpoint": "http://x", "endpont": "typo"})
+
+
+def test_unknown_early_stopping_key_rejected():
+    with pytest.raises(ValidationError):
+        BenchmarkAPIArgs(
+            benchmark_api={
+                "endpoint": "http://x",
+                "early_stopping": {
+                    "enabled": True,
+                    "metric": "m",
+                    "threshhold": 0.1,  # typo of threshold
+                },
+            }
+        )
+
+
 # --------------------------------------------------------------------------- #
 # scalar metric filtering
 # --------------------------------------------------------------------------- #
@@ -633,6 +652,38 @@ def test_sync_timeout_zero_means_no_http_timeout(monkeypatch, tmp_path):
     )
     callback.on_save(_args(tmp_path), _state(), _control())
     assert posted["timeout"] is None  # 0 -> requests waits indefinitely
+
+
+def test_async_poll_url_foreign_origin_replaced(monkeypatch, tmp_path):
+    # a runner that returns a poll_url on a different host is not trusted; the
+    # plugin falls back to a URL built from the configured endpoint origin
+    runner = _FakeRunner(
+        submit={
+            "status": "queued",
+            "job_id": "job-1",
+            "poll_url": "http://evil.example/steal",
+        }
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench.local:8765/eval"
+    )
+    callback.on_save(_args(tmp_path), _state(step=100), _control())
+    assert callback._pending[0].poll_url == "http://bench.local:8765/eval/job-1"
+
+
+def test_async_poll_url_same_origin_preserved(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={
+            "status": "queued",
+            "job_id": "job-1",
+            "poll_url": "http://bench.local:8765/eval/job-1",
+        }
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench.local:8765/eval"
+    )
+    callback.on_save(_args(tmp_path), _state(step=100), _control())
+    assert callback._pending[0].poll_url == "http://bench.local:8765/eval/job-1"
 
 
 def test_async_timeout_zero_no_deadline(monkeypatch, tmp_path):
