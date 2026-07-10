@@ -139,6 +139,33 @@ Stops when **either** condition is met:
 `mode` accepts `lower`/`min`/`smaller`/`decrease` and
 `higher`/`max`/`larger`/`increase`.
 
+### Record-only (let loss drive early stopping)
+
+The plugin's early stopping is **opt-in**. Omit the `early_stopping` block (or
+set `enabled: false`) and the plugin only records benchmark metrics — it never
+stops training. This is the common case when you want Axolotl's built-in
+loss-based early stopping to govern the run while still logging benchmark
+metrics on every checkpoint:
+
+```yaml
+# loss-based early stopping (Axolotl native — watches eval_loss)
+val_set_size: 0.05
+eval_steps: 50
+save_steps: 50                 # eval_steps must evenly divide save_steps
+early_stopping_patience: 3
+
+benchmark_api:
+  endpoint: http://localhost:8765/eval
+  run_on: [save]
+  # no early_stopping block -> metrics are logged, the plugin never halts training
+```
+
+The two are independent `TrainerCallback`s and do **not** interfere:
+`early_stopping_patience` wires HF's `EarlyStoppingCallback`, which reads only
+`metric_for_best_model` (default `eval_loss`) from the eval results; the
+benchmark metrics are logged separately and never feed that decision. Use one
+mechanism or the other — not both — to avoid two competing stop rules.
+
 ## Scope
 
 Main-process-driven (with stop/error broadcast to all ranks), single
