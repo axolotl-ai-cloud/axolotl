@@ -108,6 +108,19 @@ class KernelsArgs(BaseModel):
                 "nvfp4_merge_aware requires a LoRA adapter (adapter: lora); it snaps "
                 "the LoRA delta to the NVFP4 grid of the frozen base"
             )
+        fused = [
+            k
+            for k in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+            if data.get(k) is True
+        ]
+        if fused:
+            raise ValueError(
+                f"nvfp4_merge_aware is incompatible with {', '.join(fused)}: the fused "
+                "LoRA kernels compute the projections without calling lora.Linear."
+                "forward, so NVFP4 non-expert linears train un-snapped and the merge "
+                "identity is silently void. Remove the lora_*_kernel flags (they are "
+                "not auto-enabled when nvfp4_merge_aware is on)."
+            )
         if start is not None:
             bad = ValueError(
                 "nvfp4_merge_aware_start_step must be an int >= 0 (absolute step) or "

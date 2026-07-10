@@ -250,6 +250,48 @@ def test_nvfp4_merge_aware_start_step_requires_flag():
         )
 
 
+@pytest.mark.parametrize(
+    "kernel", ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
+)
+def test_nvfp4_merge_aware_rejects_fused_lora_kernels(kernel):
+    # fused kernels bypass lora.Linear.forward, silently skipping the fake-quant
+    with pytest.raises(pydantic.ValidationError, match="incompatible"):
+        KernelsArgs.model_validate(
+            {
+                "use_sonicmoe": True,
+                "adapter": "lora",
+                "nvfp4_merge_aware": True,
+                kernel: True,
+            }
+        )
+
+
+def test_nvfp4_merge_aware_skips_lora_kernel_auto_enable():
+    from axolotl.utils.config import validate_config
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault(
+        {
+            "base_model": "dummy_model",
+            "datasets": [{"path": "dummy_dataset", "type": "alpaca"}],
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "learning_rate": 1e-5,
+            "adapter": "lora",
+            "lora_r": 8,
+            "lora_alpha": 16,
+            "lora_target_modules": ["q_proj"],
+            "plugins": ["axolotl.integrations.kernels.KernelsPlugin"],
+            "use_sonicmoe": True,
+            "nvfp4_merge_aware": True,
+        }
+    )
+    result = validate_config(cfg)
+    assert not result["lora_qkv_kernel"]
+    assert not result["lora_o_kernel"]
+    assert not result["lora_mlp_kernel"]
+
+
 @pytest.mark.parametrize("bad", [-1, 1.5, -0.5, True])
 def test_nvfp4_merge_aware_start_step_invalid(bad):
     with pytest.raises(pydantic.ValidationError):

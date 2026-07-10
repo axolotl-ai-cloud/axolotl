@@ -2180,7 +2180,13 @@ def merge_lora_sharded_efficient(
             if key not in merged_tensors:
                 continue
             try:
-                requant = _requant_by_format(fmt, merged_tensors[key], scales, device)
+                requant = _requant_by_format(
+                    fmt,
+                    merged_tensors[key],
+                    scales,
+                    device,
+                    nvfp4_scale_mode=nvfp4_scale_mode,
+                )
             except (
                 Exception
             ) as ex:  # torchao missing etc. -> keep the bf16 merge for this weight
