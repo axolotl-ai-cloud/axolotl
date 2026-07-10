@@ -88,7 +88,7 @@ def test_preprocess_custom_path(cli_runner, tmp_path, valid_test_config):
 def test_preprocess_download_respects_trust_remote_code(trust_remote_code, expected):
     """The --download pre-fetch must honor cfg.trust_remote_code, not hardcode True."""
     cfg = DictDefault(
-        base_model="hf-internal-testing/tiny-random-gpt2",
+        base_model="HuggingFaceTB/SmolLM2-135M",
         dataset_prepared_path="last_run_prepared",
         trust_remote_code=trust_remote_code,
     )
