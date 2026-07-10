@@ -195,9 +195,10 @@ def fuse_nvfp4_experts(projs: list[dict], *, block_size: int = 16, dtype=None):
         {"qd": [E uint8 [N, K/2]], "sc": [E e4m3 [N, K/16]], "pts": [E f32 scalar]}
 
     Returns a torchao ``NVFP4Tensor`` ``[E, ΣN, K/2]``. The fused tensor carries ONE per-expert
-    per-tensor scale (``pts``), so when the projections export different ``pts`` the ratio is
-    folded into the later proj's group scale (dequant = qdata · group_scale · per_tensor_scale, so
-    this is exact up to e4m3 rounding) rather than silently dropping it. Used by both the
+    per-tensor scale (``pts``), so when the projections export different ``pts`` the fused pts is
+    their elementwise max and each proj's ratio (always <= 1, so the e4m3 cast cannot overflow to
+    NaN) is folded into its group scale (dequant = qdata · group_scale · per_tensor_scale, so this
+    is exact up to e4m3 rounding) rather than silently dropping it. Used by both the
     ``WeightConverter`` (modelopt skeleton load) and the post-load scale-attach path so the fusion
     + scale reconciliation live in exactly one place.
     """
@@ -214,28 +215,32 @@ def fuse_nvfp4_experts(projs: list[dict], *, block_size: int = 16, dtype=None):
     # stack/cat below produce correctly-shaped meta tensors regardless.
     is_meta = bool(projs[0]["qd"]) and projs[0]["qd"][0].is_meta
 
-    pts0 = _torch.stack([t.to(_torch.float32) for t in projs[0]["pts"]]).view(-1, 1, 1)
+    pts_all = [
+        _torch.stack([t.to(_torch.float32) for t in p["pts"]]).view(-1, 1, 1)
+        for p in projs
+    ]
+    pts_fused = pts_all[0]
+    for pts_i in pts_all[1:]:
+        pts_fused = _torch.maximum(pts_fused, pts_i)
     qdatas, scales = [], []
     for i, p in enumerate(projs):
         qd = _torch.stack(list(p["qd"]), dim=0)  # [E, N, K/2]
         sc = _torch.stack(list(p["sc"]), dim=0)  # [E, N, K/16]
-        if i > 0 and not is_meta:
-            pts_i = _torch.stack([t.to(_torch.float32) for t in p["pts"]]).view(
-                -1, 1, 1
+        if not is_meta and not _torch.allclose(pts_all[i], pts_fused):
+            sc = (sc.to(_torch.float32) * (pts_all[i] / pts_fused)).to(
+                _torch.float8_e4m3fn
             )
-            if not _torch.allclose(pts_i, pts0):
-                sc = (sc.to(_torch.float32) * (pts_i / pts0)).to(_torch.float8_e4m3fn)
-                LOG.warning(
-                    "fuse_nvfp4_experts: proj #%d per-tensor scale differs from the first; "
-                    "folded the ratio into its group scale (max %.4g)",
-                    i,
-                    (pts_i / pts0).max().item(),
-                )
+            LOG.warning(
+                "fuse_nvfp4_experts: proj #%d per-tensor scale differs from the fused max; "
+                "folded the ratio into its group scale (min %.4g)",
+                i,
+                (pts_all[i] / pts_fused).min().item(),
+            )
         qdatas.append(qd)
         scales.append(sc)
     qdata = qdatas[0] if len(qdatas) == 1 else _torch.cat(qdatas, dim=1)
     scale = scales[0] if len(scales) == 1 else _torch.cat(scales, dim=1)
-    return NVFP4Tensor(qdata, scale, block_size, dtype, per_tensor_scale=pts0)
+    return NVFP4Tensor(qdata, scale, block_size, dtype, per_tensor_scale=pts_fused)
 
 
 def patch_nvfp4_tensor_meta_ops() -> None:
@@ -400,6 +405,46 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
             scheme_name,
         )
     return fixed
+
+
+def patch_skip_missing_expert_init() -> None:
+    """Skip transformers' random init of the fused routed-expert params under direct load.
+
+    With the routed converters skipped (direct-load path), ``experts.gate_up_proj``/``down_proj``
+    are MISSING keys, so ``_initialize_missing_keys`` fills them with CPU ``normal_()`` right
+    before :func:`direct_load_nvfp4_experts` overwrites every byte. At Qwen3-Next-80B scale that
+    is ~155 GB of bf16 randn at a measured 0.11 GB/s: ~23 min of pure waste per launch. Mark the
+    fused 3D expert params ``_is_hf_initialized`` before init runs so ``initialize_weights``
+    skips them. Only call when the direct load WILL fill these params (same contract as skipping
+    the routed converters). Idempotent.
+    """
+    from transformers.modeling_utils import PreTrainedModel
+
+    if getattr(
+        PreTrainedModel._initialize_missing_keys, "_axolotl_skip_expert_init", False
+    ):
+        return
+    orig = PreTrainedModel._initialize_missing_keys
+
+    def patched(self, *args, **kwargs):
+        for mod in self.modules():
+            gup = getattr(mod, "gate_up_proj", None)
+            dn = getattr(mod, "down_proj", None)
+            if (
+                isinstance(gup, torch.Tensor)
+                and isinstance(dn, torch.Tensor)
+                and gup.ndim == 3
+                and dn.ndim == 3
+            ):
+                gup._is_hf_initialized = True
+                dn._is_hf_initialized = True
+        return orig(self, *args, **kwargs)
+
+    patched._axolotl_skip_expert_init = True  # type: ignore[attr-defined]
+    PreTrainedModel._initialize_missing_keys = patched
+    LOG.info(
+        "Patched _initialize_missing_keys to skip fused expert params (direct load fills them)"
+    )
 
 
 def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> int:

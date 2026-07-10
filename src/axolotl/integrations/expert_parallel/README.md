@@ -68,13 +68,14 @@ Notes:
 - Hopper kernels (FP8, TMA, etc.) are preserved; only intranode dispatch/combine is built — appropriate for single-node H100×{4,8}.
 - Patch 1 lets `DISABLE_NVSHMEM=1` skip the NVSHMEM build path, which would otherwise need Mellanox OFED dev headers (`infiniband/mlx5dv.h`).
 - Patch 2 drops `-rdc=true` when NVSHMEM is off; otherwise the device-link step has nothing to link against and import fails with `__cudaRegisterLinkedBinary_*` undefined symbol.
-- The `v1.2.1` pin sidesteps DeepEP HEAD's `csrc/elastic/` (Engram/EPv2, commit `b306af0`), which needs `ncclGinRequest_t` from NCCL 2.29+. On NCCL ≥ 2.29 (torch 2.11+) you can drop `git checkout v1.2.1` and build from HEAD with the same two patches.
+- The `v1.2.1` pin is required: it is the last release whose `setup.py` still carries the `disable_nvshmem` path the two patches edit. DeepEP `main` restructured `setup.py` and removed that path ([DeepEP #664](https://github.com/deepseek-ai/DeepEP/pull/664)), so against HEAD the patches fail with `patch failed: setup.py:19`. The pin also sidesteps DeepEP HEAD's `csrc/elastic/` (Engram/EPv2, commit `b306af0`), which needs `ncclGinRequest_t` from NCCL 2.29+.
 
 **Ampere (sm_80, A100, intranode-only)** — needs two small source patches gated on `DISABLE_NVSHMEM=1`:
 
 ```bash
-git clone --depth 1 https://github.com/deepseek-ai/DeepEP.git
+git clone https://github.com/deepseek-ai/DeepEP.git
 cd DeepEP
+git checkout v1.2.1
 
 # Patch 1: setup.py — honor DISABLE_NVSHMEM=1
 git apply <<'EOF'
