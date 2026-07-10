@@ -203,13 +203,14 @@ Drop-in AdamW replacement that quantizes optimizer state to ≈1 byte/parameter
   (Newton-Schulz), so use it only when you want Muon updates.
 
 ::: {.callout-important}
-Install the fork **from source** — `pip install gefen` pulls *upstream* Gefen,
-which lacks this fork's modern-arch memory fallback, fused kernels, and
-`GefenMuonHybrid`. Fused CUDA kernels JIT-build on first step (needs `nvcc`) and
-fall back to pure-PyTorch if the build fails.
+Install the `gefenx` extra — this pulls the `gefen-x` package. Don't use
+`pip install gefen`: that's *upstream* Gefen, which lacks this fork's
+modern-arch memory fallback, fused kernels, and `GefenMuonHybrid`. Fused CUDA
+kernels JIT-build on first step (needs `nvcc`) and fall back to pure-PyTorch if
+the build fails.
 
 ```bash
-git clone https://github.com/thad0ctor/Gefen-X && cd Gefen-X && pip install -e .
+pip install "axolotl[gefenx]"   # or, standalone: pip install gefen-x
 ```
 :::
 
