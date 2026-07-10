@@ -1,6 +1,7 @@
 """Tests for the external benchmark API plugin."""
 
 import logging
+import math
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -79,6 +80,16 @@ def test_defaults():
 def test_invalid_run_on_event_rejected():
     with pytest.raises(ValidationError):
         BenchmarkAPIArgs(benchmark_api={"endpoint": "http://x", "run_on": ["bogus"]})
+
+
+def test_timeout_zero_allowed():
+    cfg = _make_cfg(endpoint="http://x", timeout_sec=0)
+    assert cfg.benchmark_api.timeout_sec == 0
+
+
+def test_negative_timeout_rejected():
+    with pytest.raises(ValidationError):
+        BenchmarkAPIArgs(benchmark_api={"endpoint": "http://x", "timeout_sec": -1})
 
 
 # --------------------------------------------------------------------------- #
@@ -610,6 +621,33 @@ def test_async_config_defaults_and_validation():
         BenchmarkAPIArgs(
             benchmark_api={"endpoint": "http://x", "poll_interval_steps": 0}
         )
+
+
+def test_sync_timeout_zero_means_no_http_timeout(monkeypatch, tmp_path):
+    callback, _, posted = _callback(
+        monkeypatch,
+        response={"status": "completed", "metrics": {"eval/cer": 0.08}},
+        endpoint="http://bench/eval",
+        run_on=["save"],
+        timeout_sec=0,
+    )
+    callback.on_save(_args(tmp_path), _state(), _control())
+    assert posted["timeout"] is None  # 0 -> requests waits indefinitely
+
+
+def test_async_timeout_zero_no_deadline(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": "http://bench/j/1"}
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", timeout_sec=0
+    )
+    callback.on_save(_args(tmp_path), _state(step=100), _control())
+
+    assert len(callback._pending) == 1
+    assert callback._pending[0].deadline == math.inf  # never expires
+    # submit still uses the short async HTTP timeout so a dead runner can't wedge
+    assert runner.post_calls[0]["timeout"] == 30.0
 
 
 def test_async_drain_metrics_reach_axolotl_log(monkeypatch, tmp_path, caplog):

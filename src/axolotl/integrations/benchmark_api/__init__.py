@@ -86,11 +86,19 @@ class BenchmarkAPICallback(TrainerCallback):
         self.run_on = set(bench.run_on if bench.run_on is not None else ["save"])
         self.timeout_sec = bench.timeout_sec
         self.fail_training_on_error = bench.fail_training_on_error
-        self._http_timeout = (
-            self.timeout_sec
-            if self.mode == "sync"
-            else min(_ASYNC_HTTP_TIMEOUT, self.timeout_sec)
-        )
+        # timeout_sec == 0 disables the timeout: sync calls block indefinitely
+        # (requests uses timeout=None) and async jobs never expire. Async
+        # submit/poll calls still use the short _ASYNC_HTTP_TIMEOUT so a dead
+        # runner can't wedge the training step.
+        no_timeout = self.timeout_sec == 0
+        if self.mode == "sync":
+            self._http_timeout = None if no_timeout else self.timeout_sec
+        else:
+            self._http_timeout = (
+                _ASYNC_HTTP_TIMEOUT
+                if no_timeout
+                else min(_ASYNC_HTTP_TIMEOUT, self.timeout_sec)
+            )
         # async jobs awaiting completion; only ever populated on the main process
         self._pending: list[_PendingJob] = []
 
@@ -275,7 +283,11 @@ class BenchmarkAPICallback(TrainerCallback):
                     job_id=job_id,
                     step=state.global_step,
                     poll_url=poll_url,
-                    deadline=time.monotonic() + self.timeout_sec,
+                    deadline=(
+                        math.inf
+                        if self.timeout_sec == 0
+                        else time.monotonic() + self.timeout_sec
+                    ),
                 )
             )
             LOG.info(

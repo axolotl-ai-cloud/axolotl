@@ -25,7 +25,7 @@ benchmark_api:
   poll_interval_steps: 10  # async only: how often to poll pending jobs
   run_on:
     - save            # save | eval | train_end (default: [save])
-  timeout_sec: 3600   # sync: HTTP read timeout; async: per-job deadline
+  timeout_sec: 3600   # sync: HTTP read timeout; async: per-job deadline (0 = no timeout)
   fail_training_on_error: false
 
   early_stopping:
