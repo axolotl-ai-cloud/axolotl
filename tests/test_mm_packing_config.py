@@ -33,9 +33,55 @@ class TestMultimodalSamplePacking:
             sample_packing=True,
             skip_prepare_dataset=True,
             remove_unused_columns=False,
+            max_steps=100,
         )
         out = validate_config(cfg)
         assert out.remove_unused_columns is False
+
+    def test_skip_prepare_mm_packing_without_max_steps_raises(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            skip_prepare_dataset=True,
+        )
+        with pytest.raises(Exception, match="(?i)max_steps"):
+            validate_config(cfg)
+
+    def test_skip_prepare_mm_packing_with_max_steps_ok(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            skip_prepare_dataset=True,
+            max_steps=50,
+        )
+        out = validate_config(cfg)
+        assert out.max_steps == 50
+
+    def test_skip_prepare_mm_eval_only_packing_no_max_steps_ok(self):
+        # eval-only packing does not route the training set through the buffered
+        # packer, so max_steps is not required.
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            eval_sample_packing=True,
+            skip_prepare_dataset=True,
+        )
+        out = validate_config(cfg)
+        assert out.eval_sample_packing is True
+
+    def test_streaming_mm_packing_still_requires_max_steps(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            streaming=True,
+        )
+        with pytest.raises(Exception, match="(?i)max_steps"):
+            validate_config(cfg)
+
+    def test_non_mm_skip_prepare_packing_no_max_steps_ok(self):
+        # No processor_type / is_multimodal -> not the buffered MM path.
+        cfg = _cfg(sample_packing=True, skip_prepare_dataset=True)
+        out = validate_config(cfg)
+        assert out.sample_packing is True
 
     def test_mm_eval_packing_with_skip_prepare_ok(self):
         cfg = _cfg(
@@ -51,6 +97,7 @@ class TestMultimodalSamplePacking:
             is_multimodal=True,
             sample_packing=True,
             skip_prepare_dataset=True,
+            max_steps=100,
         )
         out = validate_config(cfg)
         assert out.sample_packing is True
@@ -162,6 +209,7 @@ class TestMultimodalPretrainingPacking:
             skip_prepare_dataset=True,
             dataloader_num_workers=4,
             dataloader_prefetch_factor=2,
+            max_steps=100,
         )
         out = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
         assert out.dataloader_num_workers == 0
@@ -172,6 +220,7 @@ class TestMultimodalPretrainingPacking:
             processor_type="AutoProcessor",
             sample_packing=True,
             skip_prepare_dataset=True,
+            max_steps=100,
         )
         out = validate_config(cfg)
         assert out.accelerator_config.dispatch_batches is False

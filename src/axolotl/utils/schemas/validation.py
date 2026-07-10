@@ -1461,6 +1461,26 @@ class PretrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_skip_prepare_mm_packing_w_max_steps(cls, data):
+        # The buffered MM packer yields an unknown number of packs, so epoch length
+        # is unknowable; a length-less IterableDataset reaches HF Trainer and needs
+        # max_steps. streaming/pretraining are covered by their own validators above.
+        if (
+            _is_buffered_mm_packing(data)
+            and data.get("sample_packing")
+            and not data.get("streaming")
+            and not data.get("pretraining_dataset")
+            and not data.get("max_steps")
+        ):
+            raise ValueError(
+                "max_steps must be set when using skip_prepare_dataset with "
+                "multimodal sample_packing. The buffered packer yields an unknown "
+                "number of packs, so the Trainer cannot infer the epoch length."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_streaming_w_multiple_datasets(cls, data):
         if (
             data.get("streaming")

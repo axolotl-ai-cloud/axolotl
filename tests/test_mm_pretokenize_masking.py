@@ -25,8 +25,8 @@ def qwen2vl_processor():
     from transformers import AutoProcessor
 
     try:
-        return AutoProcessor.from_pretrained(MODEL)
-    except Exception as exc:  # pragma: no cover - environment guard
+        return AutoProcessor.from_pretrained(MODEL, local_files_only=True)
+    except OSError as exc:  # pragma: no cover - environment guard
         pytest.skip(f"Could not load cached {MODEL} processor: {exc!r}")
 
 

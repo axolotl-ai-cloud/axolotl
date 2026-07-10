@@ -317,6 +317,40 @@ def test_iter_tokenized_mm_rows_passes_token_type_ids():
         assert row["token_type_ids"].shape[0] == length
 
 
+class _UnknownMediaProcessor(_StubProcessor):
+    def apply_chat_template(self, messages, **kwargs):
+        import torch
+
+        batch = super().apply_chat_template(messages, **kwargs)
+        # an unsupported modality key (e.g. Voxtral audio) the packer can't handle
+        batch["input_features"] = torch.ones(1, 80, 3000)
+        return batch
+
+
+class _UnknownMediaStrategy(_StubStrategy):
+    def __init__(self, lengths):
+        super().__init__(lengths)
+        self.processor = _UnknownMediaProcessor(lengths)
+
+
+def test_iter_tokenized_mm_rows_raises_on_unknown_media_key():
+    import pytest
+
+    strategy = _UnknownMediaStrategy([5])
+    raw = [{"messages": []}]
+    with pytest.raises(ValueError, match="input_features"):
+        list(iter_tokenized_mm_rows(raw, strategy))
+
+
+def test_iter_tokenized_mm_rows_ok_with_only_supported_keys():
+    strategy = _StubStrategy([5, 3])
+    raw = [{"messages": []}, {"messages": []}]
+    rows = list(iter_tokenized_mm_rows(raw, strategy))
+    assert len(rows) == 2
+    for row in rows:
+        assert "pixel_values" in row
+
+
 def test_producer_feeds_buffered_packer_end_to_end():
     strategy = _StubStrategy([5, 4, 6, 3])
     raw = [{"messages": []} for _ in range(4)]

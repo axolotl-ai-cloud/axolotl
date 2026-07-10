@@ -97,6 +97,11 @@ _MEDIA_EXTRA_KEYS = {
 }
 
 
+def _is_tensor_like(value: Any) -> bool:
+    # A real (batched) model input has an array shape; scalar metadata does not.
+    return getattr(value, "ndim", 0) >= 1
+
+
 def iter_tokenized_mm_rows(
     examples: Iterable[dict[str, Any]],
     processing_strategy,
@@ -135,6 +140,15 @@ def iter_tokenized_mm_rows(
                 row[key] = value[0]
             elif key.startswith(_MEDIA_PASSTHROUGH_PREFIX) or key in _MEDIA_EXTRA_KEYS:
                 row[key] = value
+            elif _is_tensor_like(value):
+                # A tensor/array-valued processor output we don't know how to pack
+                # (e.g. audio `input_features`) would be silently dropped otherwise.
+                raise ValueError(
+                    f"Unrecognized processor output {key!r} with a tensor/array value; "
+                    "this modality/model is not supported by multimodal sample packing. "
+                    "Disable `sample_packing`, or add the key to the media handling in "
+                    "iter_tokenized_mm_rows."
+                )
         yield row
 
 
