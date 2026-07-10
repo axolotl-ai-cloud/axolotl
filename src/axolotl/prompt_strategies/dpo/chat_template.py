@@ -150,6 +150,50 @@ def _extract_response(full, prompt_prefix, content):
     return full.rstrip()
 
 
+def _render_dpo_sample(
+    tokenizer,
+    messages,
+    chosen,
+    rejected,
+    chat_template_string,
+    chat_template_kwargs,
+    tools,
+):
+    """Render the prompt and extract the chosen/rejected response strings."""
+    template_kwargs = {
+        "chat_template": chat_template_string,
+        "tokenize": False,
+        **chat_template_kwargs,
+    }
+    if tools:
+        template_kwargs["tools"] = tools
+
+    dummy_user_message = {"role": "user", "content": DUMMY_USER_MESSAGE_CONTENT}
+
+    result = {}
+    result["prompt"] = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        **template_kwargs,
+    )
+
+    dummy_prompt = tokenizer.apply_chat_template(
+        [dummy_user_message],
+        add_generation_prompt=True,
+        **template_kwargs,
+    )
+
+    for key, response in (("chosen", chosen), ("rejected", rejected)):
+        full = tokenizer.apply_chat_template(
+            [dummy_user_message, response],
+            add_generation_prompt=False,
+            **template_kwargs,
+        )
+        result[key] = _extract_response(full, dummy_prompt, response.get("content"))
+
+    return result
+
+
 def default(cfg, dataset_idx=0, **kwargs):
     ds_cfg = cfg["datasets"][dataset_idx]
     ds_cfg = handle_legacy_message_fields_logic(ds_cfg)
@@ -229,49 +273,15 @@ def default(cfg, dataset_idx=0, **kwargs):
             rejected_msg = rejected_raw[-1]
         rejected = transform_message(rejected_msg, msg_variables)
 
-        dummy_user_message = {"role": "user", "content": DUMMY_USER_MESSAGE_CONTENT}
-
-        template_kwargs = {
-            "chat_template": chat_template_string,
-            "tokenize": False,
-            **chat_template_kwargs,
-        }
-        tools = _parse_tools(sample.get(field_tools))
-        if tools:
-            template_kwargs["tools"] = tools
-
-        result = {}
-        result["prompt"] = tokenizer.apply_chat_template(
+        return _render_dpo_sample(
+            tokenizer,
             messages,
-            add_generation_prompt=True,
-            **template_kwargs,
+            chosen,
+            rejected,
+            chat_template_string,
+            chat_template_kwargs,
+            _parse_tools(sample.get(field_tools)),
         )
-
-        dummy_prompt = tokenizer.apply_chat_template(
-            [dummy_user_message],
-            add_generation_prompt=True,
-            **template_kwargs,
-        )
-
-        chosen_full = tokenizer.apply_chat_template(
-            [dummy_user_message, chosen],
-            add_generation_prompt=False,
-            **template_kwargs,
-        )
-        result["chosen"] = _extract_response(
-            chosen_full, dummy_prompt, chosen.get("content")
-        )
-
-        rejected_full = tokenizer.apply_chat_template(
-            [dummy_user_message, rejected],
-            add_generation_prompt=False,
-            **template_kwargs,
-        )
-        result["rejected"] = _extract_response(
-            rejected_full, dummy_prompt, rejected.get("content")
-        )
-
-        return result
 
     return transform_fn, {"remove_columns": [field_messages, field_tools]}
 
@@ -357,48 +367,14 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
         chosen_response = transform_message(chosen_raw[-1], msg_variables)
         rejected_response = transform_message(rejected_raw[-1], msg_variables)
 
-        dummy_user_message = {"role": "user", "content": DUMMY_USER_MESSAGE_CONTENT}
-
-        template_kwargs = {
-            "chat_template": chat_template_string,
-            "tokenize": False,
-            **chat_template_kwargs,
-        }
-        tools = _parse_tools(sample.get(field_tools))
-        if tools:
-            template_kwargs["tools"] = tools
-
-        result = {}
-        result["prompt"] = tokenizer.apply_chat_template(
+        return _render_dpo_sample(
+            tokenizer,
             chosen_messages,
-            add_generation_prompt=True,
-            **template_kwargs,
+            chosen_response,
+            rejected_response,
+            chat_template_string,
+            chat_template_kwargs,
+            _parse_tools(sample.get(field_tools)),
         )
-
-        dummy_prompt = tokenizer.apply_chat_template(
-            [dummy_user_message],
-            add_generation_prompt=True,
-            **template_kwargs,
-        )
-
-        chosen_full = tokenizer.apply_chat_template(
-            [dummy_user_message, chosen_response],
-            add_generation_prompt=False,
-            **template_kwargs,
-        )
-        result["chosen"] = _extract_response(
-            chosen_full, dummy_prompt, chosen_response.get("content")
-        )
-
-        rejected_full = tokenizer.apply_chat_template(
-            [dummy_user_message, rejected_response],
-            add_generation_prompt=False,
-            **template_kwargs,
-        )
-        result["rejected"] = _extract_response(
-            rejected_full, dummy_prompt, rejected_response.get("content")
-        )
-
-        return result
 
     return transform_fn, {"remove_columns": [field_chosen, field_rejected, field_tools]}
