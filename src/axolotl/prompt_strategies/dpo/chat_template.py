@@ -80,6 +80,7 @@ def _build_message_transform(message_property_mappings, role_map):
     preserving any extra properties the chat template uses (e.g. tool_calls)."""
 
     def transform_message(message, msg_variables):
+        """Map a raw dataset message to a chat template message."""
         transformed = {}
         for target, source in message_property_mappings.items():
             value = message.get(source)
@@ -113,6 +114,7 @@ def _make_msg_variables_getter():
     cache = {}
 
     def get_msg_variables(chat_template_string):
+        """Return the message properties used by the chat template."""
         if chat_template_string not in cache:
             cache[chat_template_string] = (
                 JinjaTemplateAnalyzer(chat_template_string).get_message_vars("messages")
@@ -195,6 +197,11 @@ def _render_dpo_sample(
 
 
 def default(cfg, dataset_idx=0, **kwargs):
+    """DPO chat template strategy for OpenAI-format datasets.
+
+    Renders `field_messages` (with tools from `field_tools`) into the prompt
+    and extracts the chosen/rejected response strings via the chat template.
+    """
     ds_cfg = cfg["datasets"][dataset_idx]
     ds_cfg = handle_legacy_message_fields_logic(ds_cfg)
 
@@ -231,6 +238,7 @@ def default(cfg, dataset_idx=0, **kwargs):
     get_msg_variables = _make_msg_variables_getter()
 
     def transform_fn(sample, tokenizer=None):
+        """Map a dataset sample to prompt/chosen/rejected strings."""
         chat_template_string = get_chat_template(
             user_choice=chat_template_choice,
             jinja_template=chat_template_jinja,
@@ -352,6 +360,7 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
     get_msg_variables = _make_msg_variables_getter()
 
     def transform_fn(sample, tokenizer=None):
+        """Map a dataset sample to prompt/chosen/rejected strings."""
         chat_template_string = get_chat_template(
             user_choice=chat_template_choice,
             jinja_template=chat_template_jinja,

@@ -111,6 +111,7 @@ def fixture_argilla_chat_dataset():
 
 @pytest.fixture(name="toolcalling_dpo_dataset")
 def fixture_toolcalling_dpo_dataset():
+    """OpenAI-format tool calling DPO dataset with tools and tool_calls."""
     return Dataset.from_list(
         [
             {
@@ -443,6 +444,7 @@ class TestDPOChatTemplateToolCalling:
     def test_tools_and_tool_calls_rendered(
         self, llama3_tokenizer, toolcalling_dpo_dataset
     ):
+        """tools render into the system prompt and tool_calls are preserved."""
         transform_fn, ds_kwargs = default(
             DictDefault(
                 {
