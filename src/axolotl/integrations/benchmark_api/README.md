@@ -136,8 +136,19 @@ Stops when **either** condition is met:
 - **patience** — the metric fails to improve by at least `min_delta` for
   `patience` consecutive benchmark runs.
 
-`mode` accepts `lower`/`min`/`smaller`/`decrease` and
-`higher`/`max`/`larger`/`increase`.
+`mode` tells the plugin which direction counts as an improvement for your
+metric — i.e. whether "better" means the value goes down or up:
+
+- **`lower`** — a smaller value is better (minimize). Use for error-style
+  metrics like loss, CER, WER, perplexity. Threshold fires when `metric <= threshold`.
+- **`higher`** — a larger value is better (maximize). Use for score-style
+  metrics like accuracy, F1, BLEU. Threshold fires when `metric >= threshold`.
+
+Each direction has interchangeable aliases: `lower`/`min`/`smaller`/`decrease`
+all mean minimize, and `higher`/`max`/`larger`/`increase` all mean maximize
+(they normalize to `min`/`max` internally). For example, with
+`metric: eval/ocr/cer_mean`, `mode: lower` — since lower CER is better —
+patience counts a run as progress only when CER drops by at least `min_delta`.
 
 ### Record-only (let loss drive early stopping)
 
