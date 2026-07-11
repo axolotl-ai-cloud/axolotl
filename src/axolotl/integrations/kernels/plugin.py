@@ -16,8 +16,10 @@ LOG = get_logger(__name__)
 def _check_sonicmoe_gpu_compat():
     """Validate GPU compute capability for SonicMoE and configure env.
 
-    Supported: Hopper (sm_90), Blackwell (sm_100 - sm_103).
-    B300 (sm_103) additionally requires Triton 3.6.0.
+    Supported: Hopper (sm_90) and Blackwell (sm_100-sm_103 datacenter, sm_120+
+    consumer). Consumer Blackwell (sm_120) needs a sonic-moe build bundling
+    quack >= 0.5.0 (earlier prebuilts lack the sm_120 GEMM). B300 (sm_103)
+    additionally requires Triton 3.6.0.
     """
     if not torch.cuda.is_available():
         return
@@ -28,12 +30,6 @@ def _check_sonicmoe_gpu_compat():
         raise RuntimeError(
             f"SonicMoE requires Hopper (sm_90) or Blackwell (sm_100+) GPU, "
             f"but detected sm_{cc[0]}{cc[1]}."
-        )
-
-    if cc > (10, 3):
-        raise RuntimeError(
-            f"SonicMoE does not yet support sm_{cc[0]}{cc[1]}. "
-            f"Supported: Hopper (sm_90) and Blackwell (sm_100 - sm_103)."
         )
 
     if cc >= (10, 0):

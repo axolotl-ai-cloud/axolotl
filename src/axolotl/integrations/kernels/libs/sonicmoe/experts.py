@@ -7,7 +7,6 @@ cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
 
 from __future__ import annotations
 
-import functools
 import os
 
 import torch
@@ -76,17 +75,6 @@ def _resolve_weights_and_lora(experts_module):
     return w1, b1, w2, b2, lora_w1, lora_w2
 
 
-@functools.lru_cache(maxsize=1)
-def _sonicmoe_kernel_supported() -> bool:
-    """The kernels-community/sonic-moe CUTLASS GEMM fails to compile on sm_120
-    (Blackwell): its bundled quack ``GemmSm120`` predates the ``concat_layout`` arg
-    the dispatcher passes. Gate it off there so standard-layout models fall back to
-    the vendored scattermoe Triton path. Drop this once a fixed sonic-moe ships."""
-    if not torch.cuda.is_available():
-        return True
-    return torch.cuda.get_device_capability()[0] < 12
-
-
 def sonicmoe_experts_forward_with_lora(
     self,
     hidden_states: torch.Tensor,
@@ -98,13 +86,7 @@ def sonicmoe_experts_forward_with_lora(
     Dense bf16 experts use the fast sonic-moe CUTLASS kernel (LoRA materialized
     into W_eff first). NVFP4 experts, which the opaque CUTLASS kernel cannot
     read, take the grouped reference path (dequant base + fused low-rank LoRA).
-    On sm_120, where the sonic-moe kernel can't compile, standard-layout dense
-    experts fall back to the vendored scattermoe Triton path.
     """
-    from ..scattermoe_lora.experts import (
-        scattermoe_experts_forward,
-        scattermoe_supports_layout,
-    )
     from .nvfp4 import is_nvfp4_param
 
     if not getattr(self, "has_gate", True):
@@ -138,11 +120,6 @@ def sonicmoe_experts_forward_with_lora(
             b2,
             lora_w1,
             lora_w2,
-        )
-
-    if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(self):
-        return scattermoe_experts_forward(
-            self, hidden_states, top_k_index, top_k_weights
         )
 
     from transformers.integrations.sonicmoe import _sonicmoe_wrapper
