@@ -129,7 +129,7 @@ NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its
 
 ### Blackwell (sm_120) note
 
-`use_sonicmoe` errors at load on consumer Blackwell (sm_120): the published `kernels-community/sonic-moe` prebuilt bundles quack 0.3.11, which lacks sm_120 support (we are waiting for a rebuild against quack >= 0.4.0). Use `use_scattermoe` instead, including for `gpt_oss`.
+`use_sonicmoe` runs on consumer Blackwell (sm_120) when the loaded `sonic-moe` kernel bundles quack >= 0.5.0. The upstream `kernels-community/sonic-moe` prebuilt may still bundle quack 0.3.11 (no sm_120 GEMM) until the rebuild lands; point at a quack >= 0.5.0 build or use `use_scattermoe`. NVFP4 experts on sm_120 take the dequant path (no native W4A4: `fp4_cute` is SM100/SM110-only).
 
 ## Feature comparison
 
