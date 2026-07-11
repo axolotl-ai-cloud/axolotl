@@ -42,7 +42,7 @@ use_sonicmoe: true
 The sonic-moe kernel ships through the HF [`kernels`](https://github.com/huggingface/kernels) package. Transformers v5.8+ auto-fetches a prebuilt kernel from [`kernels-community/sonic-moe`](https://huggingface.co/kernels-community/sonic-moe) on first use:
 
 ```bash
-pip install kernels "nvidia-cutlass-dsl==4.5.2"
+pip install kernels "nvidia-cutlass-dsl==4.6.0"
 ```
 
 **Note:** Blackwell support is in upstream beta. On Blackwell GPUs Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
@@ -88,7 +88,7 @@ Requires:
 Install the pinned quack kernels (other versions untested):
 
 ```bash
-pip install "quack-kernels==0.5.0" "nvidia-cutlass-dsl==4.5.2"
+pip install "quack-kernels==0.6.1" "nvidia-cutlass-dsl==4.6.0"
 ```
 
 `AXOLOTL_SONICMOE_NVFP4_BACKEND` picks the expert GEMM (unset = auto):
@@ -129,7 +129,7 @@ NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its
 
 ### Blackwell (sm_120) note
 
-`use_sonicmoe` runs on consumer Blackwell (sm_120) when the loaded `sonic-moe` kernel bundles quack >= 0.5.0. The upstream `kernels-community/sonic-moe` prebuilt may still bundle quack 0.3.11 (no sm_120 GEMM) until the rebuild lands; point at a quack >= 0.5.0 build or use `use_scattermoe`. NVFP4 experts on sm_120 take the dequant path (no native W4A4: `fp4_cute` is SM100/SM110-only).
+`use_sonicmoe` runs on consumer Blackwell (sm_120) when the loaded `sonic-moe` kernel bundles quack 0.6.1 (on nvidia-cutlass-dsl 4.6.0). The upstream `kernels-community/sonic-moe` prebuilt may still bundle quack 0.3.11 (no sm_120 GEMM) until the rebuild lands; point at a quack 0.6.1 build or use `use_scattermoe`. NVFP4 experts on sm_120 take the dequant path (no native W4A4: `fp4_cute` is SM100/SM110-only).
 
 ## Feature comparison
 

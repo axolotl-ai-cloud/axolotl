@@ -18,8 +18,8 @@ def _check_sonicmoe_gpu_compat():
 
     Supported: Hopper (sm_90) and Blackwell (sm_100-sm_103 datacenter, sm_120+
     consumer). Consumer Blackwell (sm_120) needs a sonic-moe build bundling
-    quack >= 0.5.0 (earlier prebuilts lack the sm_120 GEMM). B300 (sm_103)
-    additionally requires Triton 3.6.0.
+    quack 0.6.1 with nvidia-cutlass-dsl 4.6.0 (earlier prebuilts lack the sm_120
+    GEMM). B300 (sm_103) additionally requires Triton 3.6.0.
     """
     if not torch.cuda.is_available():
         return
@@ -52,8 +52,9 @@ def _check_sonicmoe_gpu_compat():
                 f"B300 (sm_103) requires Triton 3.6.x, but found {triton.__version__}."
             )
 
-    # quack crashes on nvidia-cutlass-dsl >= 4.6 (SM100 MLIR codegen); its own requirement
-    # is open (>=4.5.2), so fail fast on a too-new install instead of the cryptic crash.
+    # quack 0.6.1 pins nvidia-cutlass-dsl==4.6.0: 4.5.x lacks the CuTe API it needs
+    # (ThrMma dropped) and other majors are unvalidated, so fail fast on a mismatch
+    # instead of a cryptic MLIR/import crash.
     from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
     try:
@@ -65,17 +66,20 @@ def _check_sonicmoe_gpu_compat():
             cutlass_mm = tuple(int(x) for x in cutlass_dsl_version.split(".")[:2])
         except ValueError:
             cutlass_mm = None
-        if cutlass_mm is not None and cutlass_mm >= (4, 6):
+        if cutlass_mm is not None and cutlass_mm != (4, 6):
             raise RuntimeError(
-                f"SonicMoE requires nvidia-cutlass-dsl < 4.6 (quack crashes on 4.6+ SM100 "
-                f"MLIR codegen), but found {cutlass_dsl_version}. "
-                f"Install nvidia-cutlass-dsl==4.5.2."
+                f"SonicMoE (quack 0.6.1) requires nvidia-cutlass-dsl==4.6.0, "
+                f"but found {cutlass_dsl_version}. Install nvidia-cutlass-dsl==4.6.0."
             )
 
 
 def _redirect_sonicmoe_kernel_repo():
     """Load the sonic-moe kernel from our org's build (carries fixes not yet upstreamed,
-    incl. quack 0.5.0 for sm_120). No-op if transformers' hub mapping is absent."""
+    incl. quack 0.6.1 on cutlass-dsl 4.6.0). No-op if transformers' hub mapping is absent.
+
+    Pinned to the ``quack-0.6.1`` revision so it stays separable from the sm_120 gate
+    branch's ``main`` (quack 0.5.0) build until one supersedes the other.
+    """
     try:
         from transformers.integrations import hub_kernels
     except ImportError:
@@ -84,7 +88,7 @@ def _redirect_sonicmoe_kernel_repo():
     if isinstance(mapping, dict) and "sonic-moe" in mapping:
         mapping["sonic-moe"] = {
             "repo_id": "axolotl-ai-co/sonic-moe",
-            "revision": "main",
+            "revision": "quack-0.6.1",
         }
 
 
