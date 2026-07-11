@@ -153,8 +153,10 @@ optim_args:
 #### Width transfer (`sinkgd_base_width`) and spectral normalization
 
 Two optional, default-off knobs help the learning rate transfer across model width and
-condition the update. They are **mutually exclusive** — both correct for width, so enabling
-both double-counts (validated and rejected at construction).
+condition the update. `sinkgd_base_width` and `sinkgd_spectral_target: muon` are **mutually
+exclusive** — both correct for width, so enabling both double-counts (validated and rejected
+at construction). Spectral norm at the default `unit` target combines fine with
+`sinkgd_base_width`, since it conditions the update without touching width scaling.
 
 **Width-aware scaling (`sinkgd_base_width`).** SinkGD's update is *Adam-class*: its per-layer
 learning rate should scale as `1/d_in`. Set `sinkgd_base_width` to the hidden size you tuned
@@ -206,7 +208,11 @@ local shards stay fully occupied. Measured on B200: 1.4–1.75x on the optimizer
 single-GPU, 1.0–1.8x on 2-rank FSDP2, all regimes ≥1x with the wide layout. Numerics are
 equivalent at bf16 rounding scale but not byte-identical to the compiled path, so the flag
 is off by default. Falls back to the compiled path for cols-sharded (TP) weights,
-`bf16_stochastic_round`, or when Triton is unavailable.
+`bf16_stochastic_round`, or when Triton is unavailable. Spectral-norm / MD-sphere updates
+that run without a shard group to amortize against (single device, or replicated /
+expert-sharded weights under FSDP2) also fall back when the matrix has fewer than
+`sinkgd_fused_min_numel` elements (default `2^25`) — at those sizes the epilogue's extra
+kernel launches make the compiled path faster.
 
 ```yaml
 optim_args:

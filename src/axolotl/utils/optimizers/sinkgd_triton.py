@@ -405,6 +405,10 @@ def fused_sinkgd_step(
     that already includes ``alpha_eff``; weight decay applies to base/spec (md is on the
     sphere, decay is meaningless there — ignored to match the compiled MD path).
     """
+    if not p.is_contiguous():
+        # kernels address p with dense strides and write it in place; a .contiguous()
+        # copy here would silently drop the update
+        raise ValueError("fused_sinkgd_step requires a contiguous param")
     orig = grad.shape
     g = grad.reshape(-1, *orig[-2:]) if grad.ndim > 2 else grad.unsqueeze(0)
     pw = p.reshape(-1, *orig[-2:]) if p.ndim > 2 else p.unsqueeze(0)

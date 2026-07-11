@@ -84,6 +84,8 @@ def test_sharded_spectral_matches_full(mesh, shard_dim, dim, target_mode):
     m, n = 128, 96
     w_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
     grad_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    dist.broadcast(w_full, 0)
+    dist.broadcast(grad_full, 0)
 
     w = distribute_tensor(w_full.clone(), mesh, [Shard(dim)])
     w = torch.nn.Parameter(w)
@@ -126,11 +128,14 @@ def test_sharded_spectral_matches_full(mesh, shard_dim, dim, target_mode):
 
 @pytest.mark.parametrize("dim", [0, 1])
 def test_dist_md_sphere_matches_full_and_stays_on_sphere(mesh, dim):
-    """DistSinkGDMD (A+B) on a sharded weight keeps the GLOBAL weight on its Frobenius sphere
-    and matches the single-device MD result; sphere radius + power-iter vector round-trip."""
+    """DistSinkGDMD (A+B) on a sharded weight keeps the GLOBAL weight on its enable-time
+    Frobenius sphere across steps; sphere radius + power-iter vector round-trip through the
+    state dict. (Fused-vs-compiled MD equivalence is covered by
+    test_dist_fused_matches_compiled.)"""
     torch.manual_seed(0)
     m, n = 128, 96
     w_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    dist.broadcast(w_full, 0)
     tn0 = w_full.norm().item()
 
     w = torch.nn.Parameter(distribute_tensor(w_full.clone(), mesh, [Shard(dim)]))

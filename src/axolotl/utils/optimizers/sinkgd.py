@@ -343,6 +343,8 @@ class SinkGD(_AdamBase):
             self.sinkgd_fused_kernel
             and fused_available()
             and p.is_cuda
+            # kernels index p with dense strides and update it in place
+            and p.is_contiguous()
             and not (self.bf16_stochastic_round and p.dtype is torch.bfloat16)
         )
 
