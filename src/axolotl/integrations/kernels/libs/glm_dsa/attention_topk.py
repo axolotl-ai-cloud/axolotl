@@ -1,5 +1,9 @@
 """Sparse top-k MLA attention for GLM-5.2 DSA (forward + backward, training-correct).
 
+Not on the live training path: the runtime dispatcher (``dispatch.py``/``patch.py``) uses the
+weight-absorption kernel in ``attention_mla_absorb`` instead. This head-per-program baseline is
+retained only as an autotune/benchmarking reference (see ``autotune_collector``).
+
 The DSA training path (eager/sdpa) scatters the per-query top-k indices into a dense ``[B,S,T]``
 additive mask and runs full attention over all T keys — O(S^2) memory + compute even though only
 ``index_topk`` (2048) keys per query matter. This kernel **gathers** each query's selected keys and

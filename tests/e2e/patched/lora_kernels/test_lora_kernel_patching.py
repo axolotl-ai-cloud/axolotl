@@ -542,6 +542,8 @@ def test_kernel_training_integration_dropout_non_zero(temp_dir):
             "lora_alpha": 16,
             "lora_dropout": 0.1,
             "lora_target_linear": True,
+            "lora_qkv_kernel": True,
+            "lora_o_kernel": True,
             "sequence_len": 1024,
         }
     )
@@ -563,10 +565,11 @@ def test_kernel_training_integration_dropout_non_zero(temp_dir):
     model_loader.patch_manager._apply_self_attention_lora_patch()
     model_loader.patch_manager._apply_lora_kernel_patch(model)
 
-    # Verify patches WERE applied (dropout is now supported by kernels)
+    # Source rewrite must run with dropout > 0
     layers = get_layers(model)
     for layer in layers:
         for self_attn in find_self_attn_in_layer(layer):
+            assert hasattr(type(self_attn), "_original_forward")
             assert hasattr(self_attn, "apply_qkv")
             assert hasattr(self_attn, "apply_o")
 
