@@ -73,6 +73,21 @@ def _check_sonicmoe_gpu_compat():
             )
 
 
+def _redirect_sonicmoe_kernel_repo():
+    """Load the sonic-moe kernel from our org's build (carries fixes not yet upstreamed,
+    incl. quack 0.5.0 for sm_120). No-op if transformers' hub mapping is absent."""
+    try:
+        from transformers.integrations import hub_kernels
+    except ImportError:
+        return
+    mapping = getattr(hub_kernels, "_HUB_KERNEL_MAPPING", None)
+    if isinstance(mapping, dict) and "sonic-moe" in mapping:
+        mapping["sonic-moe"] = {
+            "repo_id": "axolotl-ai-co/sonic-moe",
+            "revision": "main",
+        }
+
+
 class KernelsPlugin(BasePlugin):
     """Thin orchestrator: registers the expert-kernel backend and dispatches model-family
     specifics to ``ModelAdapter`` subclasses (see ``adapters/``)."""
@@ -129,6 +144,7 @@ class KernelsPlugin(BasePlugin):
                     )
         elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
+            _redirect_sonicmoe_kernel_repo()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (
                 register_sonicmoe_experts,
