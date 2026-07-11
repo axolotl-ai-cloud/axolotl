@@ -52,6 +52,26 @@ def _check_sonicmoe_gpu_compat():
                 f"B300 (sm_103) requires Triton 3.6.x, but found {triton.__version__}."
             )
 
+    # quack crashes on nvidia-cutlass-dsl >= 4.6 (SM100 MLIR codegen); its own requirement
+    # is open (>=4.5.2), so fail fast on a too-new install instead of the cryptic crash.
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    try:
+        cutlass_dsl_version = _pkg_version("nvidia-cutlass-dsl")
+    except PackageNotFoundError:
+        cutlass_dsl_version = None
+    if cutlass_dsl_version is not None:
+        try:
+            cutlass_mm = tuple(int(x) for x in cutlass_dsl_version.split(".")[:2])
+        except ValueError:
+            cutlass_mm = None
+        if cutlass_mm is not None and cutlass_mm >= (4, 6):
+            raise RuntimeError(
+                f"SonicMoE requires nvidia-cutlass-dsl < 4.6 (quack crashes on 4.6+ SM100 "
+                f"MLIR codegen), but found {cutlass_dsl_version}. "
+                f"Install nvidia-cutlass-dsl==4.5.2."
+            )
+
 
 class KernelsPlugin(BasePlugin):
     """Thin orchestrator: registers the expert-kernel backend and dispatches model-family
