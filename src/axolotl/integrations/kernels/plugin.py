@@ -75,11 +75,7 @@ def _check_sonicmoe_gpu_compat():
 
 def _redirect_sonicmoe_kernel_repo():
     """Load the sonic-moe kernel from our org's build (carries fixes not yet upstreamed,
-    incl. quack 0.6.1 on cutlass-dsl 4.6.0). No-op if transformers' hub mapping is absent.
-
-    Pinned to the ``quack-0.6.1`` revision so it stays separable from the sm_120 gate
-    branch's ``main`` (quack 0.5.0) build until one supersedes the other.
-    """
+    incl. quack 0.6.1 on cutlass-dsl 4.6.0). No-op if transformers' hub mapping is absent."""
     try:
         from transformers.integrations import hub_kernels
     except ImportError:
@@ -88,7 +84,7 @@ def _redirect_sonicmoe_kernel_repo():
     if isinstance(mapping, dict) and "sonic-moe" in mapping:
         mapping["sonic-moe"] = {
             "repo_id": "axolotl-ai-co/sonic-moe",
-            "revision": "quack-0.6.1",
+            "revision": "main",
         }
 
 
