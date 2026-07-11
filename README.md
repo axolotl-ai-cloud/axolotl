@@ -31,7 +31,7 @@
 ## 🎉 Latest Updates
 
 - 2026/07:
-  - [NVFP4 (4-bit) MoE LoRA training](https://docs.axolotl.ai/docs/nvfp4_lora.html) is now supported via ScatterMoE (W4A16) and SonicMoE (W4A4), including lossless adapter merge back into a plain NVFP4 checkpoint (Qwen3-30B-A3B trains in ~30 GiB, Qwen3-Next-80B-A3B in ~85 GiB, at `sequence_len: 2048`).
+  - [NVFP4 (4-bit) MoE LoRA training](https://docs.axolotl.ai/docs/nvfp4_lora.html) is now supported via ScatterMoE (W4A16) and SonicMoE (W4A4), including lossless adapter merge back into a plain NVFP4 checkpoint.
 - 2026/06:
   - [Expert Parallelism (EP)](https://docs.axolotl.ai/docs/nd_parallelism.html) for distributed MoE training via DeepEP, remote training through [Tinker-compatible APIs](https://github.com/axolotl-ai-cloud/axolotl/pull/3614), [Context Parallelism for hybrid SSM models](https://github.com/axolotl-ai-cloud/axolotl/pull/3572) (Nemotron-H, Falcon-H1, Bamba), [BitNet 1.58-bit](https://github.com/axolotl-ai-cloud/axolotl/pull/3634) fine-tuning, and a [multimodal assistant-only loss-masking fix](https://github.com/axolotl-ai-cloud/axolotl/pull/3625).
 - 2026/04:

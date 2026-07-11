@@ -6,7 +6,9 @@ toc: true
 toc-depth: 3
 ---
 
-ModelOpt NVFP4 checkpoints (e.g. [nvidia/Qwen3-30B-A3B-NVFP4](https://huggingface.co/nvidia/Qwen3-30B-A3B-NVFP4)) store weights as packed 4-bit FP4 with per-block scales. Axolotl trains LoRA adapters directly on these checkpoints: the base stays 4-bit-packed in memory while the LoRA `A`/`B` matrices train in bf16. At `sequence_len: 2048` a 30B-A3B model trains in ~30 GiB and Qwen3-Next-80B-A3B in ~85 GiB (peak, `micro_batch_size: 1` with gradient checkpointing).
+ModelOpt NVFP4 checkpoints (e.g. [nvidia/Qwen3-30B-A3B-NVFP4](https://huggingface.co/nvidia/Qwen3-30B-A3B-NVFP4))
+store weights as packed 4-bit FP4 with per-block scales. Axolotl trains LoRA adapters directly on these
+checkpoints: the base stays 4-bit-packed in memory while the LoRA `A`/`B` matrices train in bf16.
 
 Two expert kernels support the NVFP4 expert path:
 
