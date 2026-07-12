@@ -17,6 +17,7 @@ from transformers.utils.import_utils import (
 from axolotl.integrations.config import merge_input_args
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
+from axolotl.model_support import get_model_support
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -269,8 +270,11 @@ def normalize_config(cfg):
         cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
     )
 
+    model_support = get_model_support(getattr(model_config, "model_type", None))
+
     cfg.is_multimodal = (
-        hasattr(model_config, "model_type")
+        (model_support is not None and model_support.is_multimodal)
+        or hasattr(model_config, "model_type")
         and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
         or any(
             multimodal_name in cfg.base_model.lower()
@@ -286,6 +290,9 @@ def normalize_config(cfg):
         )
 
     cfg.model_config_type = model_config.model_type
+
+    if model_support is not None:
+        model_support.validate_cfg(cfg)
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
     if callable(getattr(model_config, "get_text_config", None)):

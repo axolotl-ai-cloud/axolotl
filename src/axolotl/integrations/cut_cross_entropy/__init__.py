@@ -25,6 +25,7 @@ from functools import partial
 import torch
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.model_support import get_model_support
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
@@ -86,11 +87,13 @@ class CutCrossEntropyPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
         if cfg.cut_cross_entropy:
-            if cfg.model_config_type == "paddleocr_vl":
+            support = get_model_support(cfg.model_config_type)
+            if support is not None and support.supports_cut_cross_entropy is False:
                 raise ValueError(
-                    "cut_cross_entropy is not supported for PaddleOCR-VL because "
-                    "CCE does not patch PaddleOCRVLForConditionalGeneration. "
-                    "Disable cut_cross_entropy for this model."
+                    f"cut_cross_entropy is not supported for model_type="
+                    f"{cfg.model_config_type}."
+                    f"{support.unsupported_reason('cut_cross_entropy')}"
+                    " Disable cut_cross_entropy for this model."
                 )
             self._check_requirements()
             self.patch_llama_like(cfg.model_config_type)

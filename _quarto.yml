@@ -199,7 +199,9 @@ quartodoc:
         - monkeypatch.models.falcon_h1.modeling
         - monkeypatch.models.gemma4_unified.fused_attn
         - monkeypatch.models.granitemoehybrid.modeling
-        - monkeypatch.models.kimi_linear.patch_kimi_linear
+        - model_support.base
+        - model_support.kimi_linear.patch_kimi_linear
+        - model_support.registry
         - monkeypatch.models.llama4.modeling
         - monkeypatch.models.mamba_utils
         - monkeypatch.models.mistral3.mistral_common_tokenizer

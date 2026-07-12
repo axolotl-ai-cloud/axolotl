@@ -47,6 +47,7 @@ from axolotl.loaders.utils import (
     get_module_class_from_name,
     load_model_config,
 )
+from axolotl.model_support import get_model_support
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -561,11 +562,15 @@ class ModelLoader:
         should be set according to the type of the model.
         """
         if self.cfg.is_multimodal:
-            self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
-                self.model_config.model_type, AutoModelForImageTextToText
-            )
-            if isinstance(self.auto_model_loader, str):
-                self.auto_model_loader = AutoModelForImageTextToText
+            support = get_model_support(self.model_config.model_type)
+            auto_model_loader = support.get_auto_model_cls() if support else None
+            if auto_model_loader is None:
+                auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
+                    self.model_config.model_type, AutoModelForImageTextToText
+                )
+            if isinstance(auto_model_loader, str):
+                auto_model_loader = AutoModelForImageTextToText
+            self.auto_model_loader = auto_model_loader
 
     def _set_device_map_config(self):
         """Setup `device_map` according to config"""
