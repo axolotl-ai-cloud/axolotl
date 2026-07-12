@@ -61,7 +61,7 @@ jobs:
       # a broken docs build fails CI; publishing needs the Netlify secrets,
       # which only same-repo branches get
       - name: Netlify Publish
-        uses: nwtgck/actions-netlify@4cbaf4c08f1a7bfa537d6113472ef4424e4eb654 # v3.0.0
+        uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4.0.0
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         id: netlify
         with:
