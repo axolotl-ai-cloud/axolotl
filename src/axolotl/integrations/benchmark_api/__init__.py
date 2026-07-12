@@ -15,6 +15,7 @@ Two modes:
     expensive benchmark runs in the background.
 """
 
+import ipaddress
 import math
 import os
 import time
@@ -47,6 +48,39 @@ _DRAIN_POLL_SLEEP_SEC = 2.0
 
 # runner statuses that mean "not done yet"
 _PENDING_STATUSES = {"queued", "running", "accepted", "pending"}
+
+
+def _is_offline_mode() -> bool:
+    """True when HF offline mode is requested (same convention as cli/checks.py)."""
+    return any(
+        os.getenv(var, "").upper() in ("1", "ON", "YES", "TRUE")
+        for var in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
+    )
+
+
+def _is_local_endpoint(endpoint: str) -> bool:
+    """True for loopback/0.0.0.0 endpoints, which stay on the local machine."""
+    host = urlparse(endpoint).hostname or ""
+    if host in ("localhost", "0.0.0.0"):  # nosec B104 - matching, not binding
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _parse_json_object(response) -> dict:
+    """Validate a runner response: no redirects, 2xx status, JSON object body."""
+    # with allow_redirects=False a 3xx lands here; following it would defeat the origin pin
+    if 300 <= response.status_code < 400:
+        raise ValueError(
+            f"refusing to follow redirect to {response.headers.get('Location')!r}"
+        )
+    response.raise_for_status()
+    result = response.json()
+    if not isinstance(result, dict):
+        raise ValueError(f"expected a JSON object, got {type(result).__name__}")
+    return result
 
 
 def _extract_scalar_metrics(raw_metrics) -> dict:
@@ -87,6 +121,15 @@ class BenchmarkAPICallback(TrainerCallback):
         self.run_on = set(bench.run_on if bench.run_on is not None else ["save"])
         self.timeout_sec = bench.timeout_sec
         self.fail_training_on_error = bench.fail_training_on_error
+        self._headers = None
+        if bench.auth_env:
+            token = os.environ.get(bench.auth_env, "")
+            if not token:
+                raise ValueError(
+                    f"benchmark_api.auth_env names {bench.auth_env!r} but that "
+                    "environment variable is unset or empty"
+                )
+            self._headers = {"Authorization": f"Bearer {token}"}
         # timeout_sec == 0 disables the timeout: sync calls block indefinitely
         # (requests uses timeout=None) and async jobs never expire. Async
         # submit/poll calls still use the short _ASYNC_HTTP_TIMEOUT so a dead
@@ -265,12 +308,11 @@ class BenchmarkAPICallback(TrainerCallback):
             response = requests.post(
                 self.endpoint,
                 json=self._payload(event, args, state),
+                headers=self._headers,
                 timeout=self._http_timeout,
+                allow_redirects=False,
             )
-            response.raise_for_status()
-            result = response.json()
-            if not isinstance(result, dict):
-                raise ValueError(f"expected a JSON object, got {type(result).__name__}")
+            result = _parse_json_object(response)
         except Exception as exc:  # noqa: BLE001
             return self._on_error("call", event, exc)
 
@@ -288,12 +330,11 @@ class BenchmarkAPICallback(TrainerCallback):
             response = requests.post(
                 self.endpoint,
                 json=self._payload(event, args, state),
+                headers=self._headers,
                 timeout=self._http_timeout,
+                allow_redirects=False,
             )
-            response.raise_for_status()
-            result = response.json()
-            if not isinstance(result, dict):
-                raise ValueError(f"expected a JSON object, got {type(result).__name__}")
+            result = _parse_json_object(response)
         except Exception as exc:  # noqa: BLE001
             return self._on_error("submit", event, exc)
 
@@ -332,13 +373,13 @@ class BenchmarkAPICallback(TrainerCallback):
         for job in self._pending:
             timed_out = time.monotonic() > job.deadline
             try:
-                response = requests.get(job.poll_url, timeout=self._http_timeout)
-                response.raise_for_status()
-                result = response.json()
-                if not isinstance(result, dict):
-                    raise ValueError(
-                        f"expected a JSON object, got {type(result).__name__}"
-                    )
+                response = requests.get(
+                    job.poll_url,
+                    headers=self._headers,
+                    timeout=self._http_timeout,
+                    allow_redirects=False,
+                )
+                result = _parse_json_object(response)
             except Exception as exc:  # noqa: BLE001
                 # transient poll error: retry next round unless past the deadline
                 if timed_out:
@@ -433,6 +474,13 @@ class BenchmarkAPIPlugin(BasePlugin):
 
     def add_callbacks_post_trainer(self, cfg, trainer):
         if not cfg.benchmark_api or not cfg.benchmark_api.endpoint:
+            return []
+        if _is_offline_mode() and not _is_local_endpoint(cfg.benchmark_api.endpoint):
+            LOG.warning(
+                "Offline mode is set (HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE) and "
+                f"benchmark_api.endpoint {cfg.benchmark_api.endpoint!r} is not "
+                "local; disabling the benchmark API callback"
+            )
             return []
         LOG.info("Adding Benchmark API callback to the trainer")
         return [BenchmarkAPICallback(cfg, trainer)]

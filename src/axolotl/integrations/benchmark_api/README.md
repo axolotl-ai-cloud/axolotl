@@ -21,6 +21,7 @@ plugins:
 
 benchmark_api:
   endpoint: http://localhost:8765/eval
+  # auth_env: BENCHMARK_API_TOKEN   # env var holding a bearer token (optional)
   execution_mode: sync     # sync (default) | async
   poll_interval_steps: 10  # async only: how often to poll pending jobs
   run_on:
@@ -111,6 +112,15 @@ at the `on_train_end` drain the trainer's printer and reporting callbacks have
 already closed, so `trainer.log` alone would silently drop those final results;
 the explicit log line is what guarantees they are captured. Non-finite values
 (`nan`/`inf`) are dropped before logging.
+
+## Security & offline mode
+
+The plugin only makes network calls when `benchmark_api.endpoint` is explicitly configured — it is fully opt-in, and the endpoint is treated as **user-trusted** (you point it at your own runner; there is no allow-list beyond the `http(s)://` scheme check).
+
+- **Offline mode** — when `HF_HUB_OFFLINE` or `TRANSFORMERS_OFFLINE` is set, the plugin refuses to register for any non-local endpoint and logs a warning. Loopback endpoints (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`) are still allowed, since a local runner never leaves the machine.
+- **SSRF hardening** — a runner-supplied `poll_url` is only trusted if it shares the configured endpoint's scheme/host/port; otherwise the plugin falls back to `<endpoint>/<job_id>`. HTTP redirects are never followed (a redirect response is treated as an error), so the origin pin cannot be bypassed via a 3xx hop.
+- **Authentication** — set `auth_env` to the *name* of an environment variable holding a bearer token; the plugin sends it as `Authorization: Bearer <token>` on every submit and poll request. The token itself never appears in the YAML config or in log output. If `auth_env` is set but the variable is empty/unset, the run fails fast at startup.
+- The checkpoint payload contains local filesystem paths (`checkpoint_dir`, `output_dir`) — only point `endpoint` at a runner you control.
 
 ## Distributed (multi-GPU)
 

@@ -186,13 +186,16 @@ def _callback(monkeypatch, response=None, raise_exc=None, **benchmark_api):
 
     posted = {}
 
-    def fake_post(url, json=None, timeout=None):
+    def fake_post(url, json=None, headers=None, timeout=None, allow_redirects=None):
         posted["url"] = url
         posted["json"] = json
+        posted["headers"] = headers
         posted["timeout"] = timeout
+        posted["allow_redirects"] = allow_redirects
         if raise_exc is not None:
             raise raise_exc
         resp = Mock()
+        resp.status_code = 200
         resp.raise_for_status = Mock()
         resp.json = Mock(return_value=response)
         return resp
@@ -409,18 +412,34 @@ class _FakeRunner:
     @staticmethod
     def _resp(payload):
         resp = Mock()
+        resp.status_code = 200
         resp.raise_for_status = Mock()
         resp.json = Mock(return_value=payload)
         return resp
 
-    def post(self, url, json=None, timeout=None):
-        self.post_calls.append({"url": url, "json": json, "timeout": timeout})
+    def post(self, url, json=None, headers=None, timeout=None, allow_redirects=None):
+        self.post_calls.append(
+            {
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "timeout": timeout,
+                "allow_redirects": allow_redirects,
+            }
+        )
         if self.post_exc is not None:
             raise self.post_exc
         return self._resp(self.submit)
 
-    def get(self, url, timeout=None):
-        self.get_calls.append({"url": url, "timeout": timeout})
+    def get(self, url, headers=None, timeout=None, allow_redirects=None):
+        self.get_calls.append(
+            {
+                "url": url,
+                "headers": headers,
+                "timeout": timeout,
+                "allow_redirects": allow_redirects,
+            }
+        )
         if self.get_exc is not None:
             raise self.get_exc
         # last scripted response repeats
@@ -883,3 +902,122 @@ def test_async_train_end_skips_on_non_main_process(monkeypatch, tmp_path):
     callback.on_train_end(_args(tmp_path), _state(world_zero=False), _control())
     assert runner.post_calls == []  # non-main process does nothing
     trainer.log.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# offline mode / redirects / auth
+# --------------------------------------------------------------------------- #
+
+
+def _plugin_callbacks(endpoint):
+    from axolotl.integrations.benchmark_api import BenchmarkAPIPlugin
+
+    return BenchmarkAPIPlugin().add_callbacks_post_trainer(
+        _make_cfg(endpoint=endpoint), Mock()
+    )
+
+
+def test_offline_mode_disables_remote_endpoint(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    assert _plugin_callbacks("http://bench.example:8765/eval") == []
+
+
+def test_transformers_offline_disables_remote_endpoint(monkeypatch):
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
+    assert _plugin_callbacks("http://bench.example:8765/eval") == []
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://localhost:8765/eval",
+        "http://127.0.0.1:8765/eval",
+        "http://0.0.0.0:8765/eval",
+        "http://[::1]:8765/eval",
+    ],
+)
+def test_offline_mode_allows_local_endpoint(monkeypatch, endpoint):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    assert len(_plugin_callbacks(endpoint)) == 1
+
+
+def test_offline_env_zero_is_not_offline(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    assert len(_plugin_callbacks("http://bench.example/eval")) == 1
+
+
+def test_sync_redirect_rejected_not_followed(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None, allow_redirects=None):
+        calls.append({"url": url, "allow_redirects": allow_redirects})
+        resp = Mock()
+        resp.status_code = 302
+        resp.headers = {"Location": "http://169.254.169.254/latest/meta-data"}
+        return resp
+
+    monkeypatch.setattr("axolotl.integrations.benchmark_api.requests.post", fake_post)
+    cfg = _make_cfg(endpoint="http://bench/eval", fail_training_on_error=True)
+    callback = BenchmarkAPICallback(cfg, Mock())
+    with pytest.raises(RuntimeError):
+        callback.on_save(_args(tmp_path), _state(), _control())
+    assert calls[0]["allow_redirects"] is False
+    assert len(calls) == 1  # the redirect target was never fetched
+
+
+def test_requests_never_follow_redirects(monkeypatch, tmp_path):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "j", "poll_url": "http://bench/j"},
+        polls=[{"status": "running"}],
+    )
+    callback, _ = _async_callback(monkeypatch, runner, endpoint="http://bench/eval")
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+    assert runner.post_calls[0]["allow_redirects"] is False
+    assert runner.get_calls[0]["allow_redirects"] is False
+
+
+def test_auth_env_header_sent(monkeypatch, tmp_path):
+    monkeypatch.setenv("BENCH_TOKEN", "s3cret")
+    callback, _, posted = _callback(
+        monkeypatch,
+        response={"status": "completed", "metrics": {"m": 1.0}},
+        endpoint="http://bench/eval",
+        auth_env="BENCH_TOKEN",
+    )
+    callback.on_save(_args(tmp_path), _state(), _control())
+    assert posted["headers"] == {"Authorization": "Bearer s3cret"}
+
+
+def test_auth_env_header_sent_on_async_poll(monkeypatch, tmp_path):
+    monkeypatch.setenv("BENCH_TOKEN", "s3cret")
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "j", "poll_url": "http://bench/j"},
+        polls=[{"status": "completed", "metrics": {"m": 1.0}}],
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench/eval", auth_env="BENCH_TOKEN"
+    )
+    callback.on_save(_args(tmp_path), _state(step=1), _control())
+    callback.on_step_end(_args(tmp_path), _state(step=2), _control())
+    assert runner.post_calls[0]["headers"] == {"Authorization": "Bearer s3cret"}
+    assert runner.get_calls[0]["headers"] == {"Authorization": "Bearer s3cret"}
+
+
+def test_auth_env_missing_raises(monkeypatch):
+    monkeypatch.delenv("BENCH_TOKEN_MISSING", raising=False)
+    cfg = _make_cfg(endpoint="http://bench/eval", auth_env="BENCH_TOKEN_MISSING")
+    with pytest.raises(ValueError, match="BENCH_TOKEN_MISSING"):
+        BenchmarkAPICallback(cfg, Mock())
+
+
+def test_no_auth_header_by_default(monkeypatch, tmp_path):
+    callback, _, posted = _callback(
+        monkeypatch,
+        response={"status": "completed", "metrics": {}},
+        endpoint="http://bench/eval",
+    )
+    callback.on_save(_args(tmp_path), _state(), _control())
+    assert posted["headers"] is None

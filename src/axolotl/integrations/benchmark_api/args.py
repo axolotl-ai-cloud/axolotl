@@ -64,6 +64,8 @@ class BenchmarkAPIConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")  # surface typo'd config keys
 
     endpoint: str
+    # name of an env var holding a bearer token; sent as an Authorization header
+    auth_env: Optional[str] = None
     execution_mode: Literal["sync", "async"] = "sync"
     poll_interval_steps: int = Field(default=10, gt=0)
     run_on: List[Literal["save", "eval", "train_end"]] = Field(default=["save"])
