@@ -141,6 +141,9 @@ class ParallelLinear(torch.autograd.Function):
             grouped_out = ctx.grouped_out
 
             if gates is not None:
+                # grad_out arrives in the autocast dtype but output_expanded stays fp32; align before the d_gates bmm
+                if grad_out.dtype != output_expanded.dtype:
+                    grad_out = grad_out.to(output_expanded.dtype)
                 # calculate gates gradient
                 # d_gates = torch.bmm(output_expanded, grad_out[:, :, None]).squeeze(-1)
                 d_gates = (output_expanded @ grad_out.unsqueeze(-1)).squeeze(-1)

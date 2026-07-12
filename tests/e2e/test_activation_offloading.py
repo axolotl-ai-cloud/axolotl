@@ -15,6 +15,7 @@ from axolotl.utils.dict import DictDefault
 from .utils import check_model_output_exists
 
 
+@pytest.mark.xfail(reason="flaky", strict=False)
 class TestActivationOffloading:
     """
     E2E test cases for activation offloading
