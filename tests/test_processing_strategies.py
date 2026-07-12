@@ -8,6 +8,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 
+from axolotl.model_support.paddleocr_vl.processing import PaddleOCRVLProcessingStrategy
 from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
     Gemma3ProcessingStrategy,
@@ -19,7 +20,6 @@ from axolotl.processing_strategies import (
     Llama4ProcessingStrategy,
     Mistral3ProcessingStrategy,
     MistralV7TekkenProcessingStrategy,
-    PaddleOCRVLProcessingStrategy,
     PixtralProcessingStrategy,
     ProcessingStrategy,
     Qwen2VLProcessingStrategy,

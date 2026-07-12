@@ -14,6 +14,7 @@ from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
+from axolotl.model_support import get_model_support, get_model_support_for_cfg
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -38,16 +39,9 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        if (
-            hasattr(cfg, "base_model_config")
-            and cfg.base_model_config
-            and "kimi-linear" in cfg.base_model_config.lower()
-        ):
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_config,
-            )
-
-            patch_kimi_config()
+        support = get_model_support_for_cfg(cfg)
+        if support is not None:
+            support.pre_config_load(cfg)
 
     @staticmethod
     def apply_pre_tokenizer_load_patches(cfg: DictDefault):
@@ -59,16 +53,9 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        if (
-            hasattr(cfg, "tokenizer_config")
-            and cfg.tokenizer_config
-            and "kimi-linear" in cfg.tokenizer_config.lower()
-        ):
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_tokenizer,
-            )
-
-            patch_kimi_tokenizer()
+        support = get_model_support_for_cfg(cfg)
+        if support is not None:
+            support.pre_tokenizer_load(cfg)
 
     def __init__(
         self,
@@ -107,6 +94,7 @@ class PatchManager:
         # Must precede fused-RoPE patches: re-parses ``Attention.forward``
         # via ``inspect.getsource``; the QKV regex misses on a patched body.
         self._apply_self_attention_lora_patch()
+        self._apply_model_support_pre_load_hook()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -165,8 +153,16 @@ class PatchManager:
         self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
 
+    def _apply_model_support_pre_load_hook(self):
+        support = get_model_support(self.cfg.model_config_type)
+        if support is not None:
+            support.pre_model_load(self.cfg)
+
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
+        support = get_model_support(self.cfg.model_config_type)
+        if support is not None:
+            support.post_model_load(self.cfg, model)
         self._apply_llama_flash_attn_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
@@ -440,13 +436,6 @@ class PatchManager:
             )
 
             patch_llama4_linearized_modeling()
-
-        if self.cfg.model_config_type == "kimi_linear":
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_model,
-            )
-
-            patch_kimi_model()
 
         ssm_hybrid_patch_needed = (
             self.cfg.sample_packing or self.cfg.context_parallel_size > 1

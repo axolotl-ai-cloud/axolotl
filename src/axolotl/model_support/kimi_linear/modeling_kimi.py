@@ -45,7 +45,7 @@ except ImportError as err:
         "Plese run `pip uninstall fla-core flash-linear-attention -y && pip install git+https://github.com/fla-org/flash-linear-attention@v0.4.0`"
     ) from err
 
-from axolotl.monkeypatch.models.kimi_linear.configuration_kimi import KimiLinearConfig
+from axolotl.model_support.kimi_linear.configuration_kimi import KimiLinearConfig
 
 assert version.parse(transformers.__version__) >= version.parse("4.56.0"), (
     "Please upgrade transformers to >= 4.56.0"
