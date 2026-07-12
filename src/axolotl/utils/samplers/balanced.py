@@ -43,30 +43,25 @@ def balanced_greedy_pack_group(
     available = [(0, idx) for idx in range(min_bins)]
     heapq.heapify(available)
 
+    # Invariant: each non-full bin has exactly one live heap entry, so the
+    # least-used bin is always at the top and entries are never stale.
     for seq_id, raw_length in items:
         length = int(raw_length)
         global_idx = seq_id + group_offset
         placed = False
 
-        while available:
+        if available:
             used, bin_idx = heapq.heappop(available)
-            if used != bin_lengths[bin_idx]:
-                continue
-            if len(bins[bin_idx]) >= bin_size:
-                continue
             if used + length <= bin_capacity:
                 bins[bin_idx].append(global_idx)
                 bin_lengths[bin_idx] += length
                 if len(bins[bin_idx]) < bin_size:
                     heapq.heappush(available, (bin_lengths[bin_idx], bin_idx))
                 placed = True
-                break
-
-            # Bins are popped in increasing `used` order and share one
-            # `bin_capacity`; if the least-used non-full bin can't fit this item,
-            # no other bin can either, so re-push it and stop scanning.
-            heapq.heappush(available, (used, bin_idx))
-            break
+            else:
+                # Bins share one `bin_capacity`; if the least-used bin can't fit
+                # this item, no other bin can either.
+                heapq.heappush(available, (used, bin_idx))
 
         if not placed:
             bins.append([global_idx])

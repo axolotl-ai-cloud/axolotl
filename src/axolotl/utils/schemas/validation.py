@@ -30,19 +30,19 @@ def _is_multimodal_packing(data) -> bool:
     return is_multimodal and packing
 
 
-def _is_streaming_mm_packing(data) -> bool:
-    """True when multimodal sample packing runs through the buffered streaming packer."""
-    return bool(data.get("streaming")) and _is_multimodal_packing(data)
-
-
 def _is_buffered_mm_packing(data) -> bool:
     """True when MM sample packing routes to the buffered (tokenize-on-the-fly) packer.
 
     Both `streaming` and `skip_prepare_dataset` mean the dataset is never prepared
-    with cached `length`/media, so packing runs through the buffered packer.
+    with cached `length`/media, so packing runs through the buffered packer. The
+    buffered packer only serves the train set, so `eval_sample_packing` alone
+    does not qualify.
     """
-    return _is_multimodal_packing(data) and bool(
-        data.get("streaming") or data.get("skip_prepare_dataset")
+    is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
+    return (
+        is_multimodal
+        and bool(data.get("sample_packing"))
+        and bool(data.get("streaming") or data.get("skip_prepare_dataset"))
     )
 
 
@@ -1467,7 +1467,6 @@ class PretrainingValidationMixin:
         # max_steps. streaming/pretraining are covered by their own validators above.
         if (
             _is_buffered_mm_packing(data)
-            and data.get("sample_packing")
             and not data.get("streaming")
             and not data.get("pretraining_dataset")
             and not data.get("max_steps")
@@ -1476,6 +1475,28 @@ class PretrainingValidationMixin:
                 "max_steps must be set when using skip_prepare_dataset with "
                 "multimodal sample_packing. The buffered packer yields an unknown "
                 "number of packs, so the Trainer cannot infer the epoch length."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_skip_prepare_mm_packing_limitations(cls, data):
+        # The skip_prepare buffered route loads only datasets[0] and never splits
+        # a validation set; fail loudly instead of silently dropping data.
+        # (Streaming has its own multi-dataset validator.)
+        if not _is_buffered_mm_packing(data) or data.get("streaming"):
+            return data
+        if data.get("datasets") and len(data.get("datasets")) > 1:
+            raise ValueError(
+                "skip_prepare_dataset with multimodal sample_packing supports a "
+                "single `datasets:` entry; additional datasets would be silently "
+                "ignored. Combine the datasets or drop `skip_prepare_dataset`."
+            )
+        if data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with skip_prepare_dataset "
+                "multimodal sample_packing (the unprepared dataset is never "
+                "split). Use `test_datasets` instead."
             )
         return data
 

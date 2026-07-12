@@ -132,6 +132,8 @@ def _process_group(
         packing_strategy,
     ) = args
     if packing_strategy == BALANCED_GREEDY:
+        # max_bins/safe_mode don't apply: balanced grows bins as needed, and
+        # pack_parallel passes max_bins=len(group), so FFD's cap is a no-op too.
         return balanced_greedy_pack_group(
             group_lengths, start_idx, bin_capacity, bin_size
         )

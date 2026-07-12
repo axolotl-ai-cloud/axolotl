@@ -157,39 +157,47 @@ def test_ragged_pixtral_media_merges_via_shared_helper():
 
 
 def test_packs_batch_through_shared_collator():
-    import torch
-
     from axolotl.utils.collators import MultiModalBatchSamplerDataCollatorForSeq2Seq
 
-    class _Tokenizer:
-        padding_side = "right"
-        pad_token_id = 0
-
-        def pad(self, features, **_kwargs):
-            target = max(len(f["input_ids"]) for f in features)
-            out = {}
-            for key in set().union(*(f.keys() for f in features)):
-                pad_value = -100 if key == "labels" else 0
-                out[key] = torch.tensor(
-                    [
-                        list(f[key]) + [pad_value] * (target - len(f[key]))
-                        for f in features
-                    ]
-                )
-            return out
+    from tests.mm_packing_utils import PadTokenizer
 
     rows = _rows([5, 4, 3, 6])
     packs = list(
         BufferedMultimodalPacker(rows, batch_max_len=12, bin_size=200, buffer_size=100)
     )
     collator = MultiModalBatchSamplerDataCollatorForSeq2Seq(
-        tokenizer=_Tokenizer(), padding=True, return_tensors="pt"
+        tokenizer=PadTokenizer(), padding=True, return_tensors="pt"
     )
     # PackedSample list flows straight into the collator (streaming glue).
     batch = collator(packs)
     assert batch["input_ids"].shape[0] == len(packs)
     total_images = sum(int(p.as_row()["pixel_values"].shape[0]) for p in packs)
     assert batch["pixel_values"].shape[0] == total_images
+
+
+def test_drop_attention_mask_omits_mask_and_keeps_position_ids():
+    rows = _rows([5, 4, 3])
+    packer = BufferedMultimodalPacker(
+        rows, batch_max_len=12, buffer_size=100, drop_attention_mask=True
+    )
+    packs = list(packer)
+    assert packs
+    for pack in packs:
+        row = pack.as_row()
+        # position_ids restarts drive packed-sequence isolation downstream.
+        assert "attention_mask" not in row
+        assert "position_ids" in row
+
+
+def test_build_buffered_mm_packer_wires_drop_attention_mask_from_cfg():
+    from axolotl.utils.data.mm_streaming import build_buffered_mm_packer
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault(sequence_len=128, attn_decontaminates_packing=True)
+    assert build_buffered_mm_packer([], cfg).drop_attention_mask is True
+
+    cfg = DictDefault(sequence_len=128)
+    assert build_buffered_mm_packer([], cfg).drop_attention_mask is False
 
 
 class _StubProcessor:

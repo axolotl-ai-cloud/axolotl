@@ -3,29 +3,15 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
 
 from axolotl.utils.collators import MultiModalBatchSamplerDataCollatorForSeq2Seq
 
-
-class _Tokenizer:
-    padding_side = "right"
-    pad_token_id = 0
-
-    def pad(self, features, **_kwargs):
-        target = max(len(f["input_ids"]) for f in features)
-        out = {}
-        for key in set().union(*(f.keys() for f in features)):
-            pad_value = -100 if key == "labels" else 0
-            out[key] = torch.tensor(
-                [list(f[key]) + [pad_value] * (target - len(f[key])) for f in features]
-            )
-        return out
+from tests.mm_packing_utils import PadTokenizer
 
 
 def _collator():
     return MultiModalBatchSamplerDataCollatorForSeq2Seq(
-        tokenizer=_Tokenizer(), padding=True, return_tensors="pt"
+        tokenizer=PadTokenizer(), padding=True, return_tensors="pt"
     )
 
 

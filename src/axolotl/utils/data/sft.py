@@ -82,7 +82,7 @@ def _prepare_skip_prepare_mm_dataset(
     The dataset is loaded as a materialized map dataset (streaming=False) and packed
     on the fly, so no cached/prepared dataset is required.
     """
-    # TODO(djsaunde): Implement for multiple datasets
+    # Validation enforces a single `datasets:` entry for this route.
     dataset_config = DictDefault(cfg.datasets[0])
     if not hasattr(dataset_config, "split") or not dataset_config.split:
         dataset_config.split = "train"
@@ -177,7 +177,7 @@ def _prepare_streaming_dataset(
         dataset_config = _extract_pretraining_config(cfg)
         train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
     elif cfg.sample_packing:
-        # TODO(djsaunde): Implement for multiple datasets
+        # Validation enforces a single `datasets:` entry for this route.
         dataset_config = DictDefault(cfg.datasets[0])
 
         # Ensure we have a split set - default to 'train' if not specified

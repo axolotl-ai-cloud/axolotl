@@ -83,12 +83,10 @@ def pack_group(group: list[dict[str, Any]]) -> PackedSample:
         if not values:
             continue
         if key == "attention_mask":
+            # Enumerate the filtered values so segment ids stay contiguous even
+            # if a row in the group lacks the mask.
             text_row[key] = np.concatenate(
-                [
-                    (idx + 1) * _as_1d_array(row[key])
-                    for idx, row in enumerate(group)
-                    if key in row and row[key] is not None
-                ]
+                [(idx + 1) * _as_1d_array(value) for idx, value in enumerate(values)]
             )
         elif key in _TEXT_FIELDS:
             text_row[key] = np.concatenate([_as_1d_array(value) for value in values])
@@ -114,6 +112,19 @@ def pack_group(group: list[dict[str, Any]]) -> PackedSample:
                 [np.asarray(value) for value in values], axis=0
             )
         else:
+            # Mirror iter_tokenized_mm_rows: an unrecognized >=2D float field is
+            # a media-like model input (e.g. audio input_features) that the
+            # generic concat below would silently mis-pack.
+            if any(
+                np.asarray(value).ndim >= 2 and np.asarray(value).dtype.kind == "f"
+                for value in values
+            ):
+                raise ValueError(
+                    f"Unrecognized media-like field {key!r} in a packed multimodal "
+                    "sample; this modality/model is not supported by multimodal "
+                    "sample packing. Disable `sample_packing`, or add the key to "
+                    "the media handling in mm_pack_core."
+                )
             extra_row[key] = np.concatenate(
                 [_as_media_array(key, value) for value in values], axis=0
             )
@@ -164,7 +175,8 @@ def batch_packed_samples(
 
 
 def _stack_batched_media(values: list[np.ndarray]) -> torch.Tensor:
-    # Tiled VLMs (Idefics3) drop the all-zero padding images.
+    # Pad image counts with all-zero images; tiled VLMs (Idefics3) skip them
+    # via pixel_attention_mask.
     max_imgs = max(int(value.shape[1]) for value in values)
     padded = []
     for value in values:
@@ -286,6 +298,9 @@ def _as_media_array(key: str, value) -> np.ndarray:
 
 
 def _is_sequence_extra(key: str, values, rows: list[dict[str, Any]]) -> bool:
+    # Heuristic: 2D+ arrays whose leading dim equals the row's token count are
+    # per-token; a non-token field with a coincidentally matching leading dim
+    # would be misclassified and zero-padded.
     if key.startswith("pixel_values"):
         return False
     for value, row in zip(values, rows, strict=False):

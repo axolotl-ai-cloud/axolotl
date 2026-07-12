@@ -2234,7 +2234,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--mm-pack-buffer-size",),
         None,
         None,
-        "Lookahead buffer size (rows) for the buffered multimodal sample packer used on streaming / non-prepared multimodal datasets",
+        "Lookahead buffer size (rows) for the buffered multimodal sample packer used on streaming / non-prepared multimodal datasets. Buffered rows hold decoded media (e.g. pixel_values) in memory, so size this to fit RAM.",
     ),
     (
         ("--xformers-attention/--no-xformers-attention",),
