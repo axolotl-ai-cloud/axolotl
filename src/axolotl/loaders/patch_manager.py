@@ -14,7 +14,11 @@ from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
-from axolotl.model_support import get_model_support, get_model_support_for_cfg
+from axolotl.model_support import (
+    check_capability,
+    get_model_support,
+    get_model_support_for_cfg,
+)
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -678,6 +682,13 @@ class PatchManager:
     def _apply_self_attention_lora_patch(self):
         """Apply self-attention LoRA patches if configured."""
         if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
+            check_capability(
+                get_model_support(self.cfg.model_config_type),
+                "lora_kernels",
+                self.cfg.model_config_type,
+                feature="LoRA QKV/O kernels",
+                hint="Set lora_qkv_kernel: false and lora_o_kernel: false.",
+            )
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)

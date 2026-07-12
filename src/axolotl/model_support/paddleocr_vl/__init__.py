@@ -23,6 +23,9 @@ class PaddleOCRVLSupport(ModelSupport):
             "CCE does not patch PaddleOCRVLForConditionalGeneration."
         ),
         "liger": Unsupported(),
+        "lora_kernels": Unsupported(
+            "The fused QKV/O source rewrite does not match PaddleOCRAttention's forward."
+        ),
     }
 
     def get_auto_model_cls(self) -> type:

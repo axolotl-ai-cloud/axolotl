@@ -1864,6 +1864,29 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data.get("trust_remote_code"):
                 return data
 
+            # Skip architectures that declare the fused kernels unsupported
+            from axolotl.model_support import Unsupported, get_model_support
+
+            model_type = data.get("model_config_type")
+            if not model_type and data.get("base_model"):
+                try:
+                    from transformers import AutoConfig
+
+                    model_type = getattr(
+                        AutoConfig.from_pretrained(
+                            data["base_model"], trust_remote_code=False
+                        ),
+                        "model_type",
+                        None,
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    model_type = None
+            support = get_model_support(model_type)
+            if support is not None and isinstance(
+                support.capabilities.get("lora_kernels"), Unsupported
+            ):
+                return data
+
             # Skip auto-enable for MoE models when native grouped_mm is unavailable
             # (torch < 2.9). The grouped_mm fallback in transformers uses torch.mm
             # with out= which bypasses autocast and fails on mixed dtypes during eval.

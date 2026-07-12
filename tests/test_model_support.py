@@ -167,3 +167,42 @@ class TestPaddleOCRVLSupport:
         cfg.update(flags)
         with pytest.raises(ValueError, match="Liger is not supported"):
             LigerPlugin().pre_model_load(cfg)
+
+    def test_lora_kernels_not_auto_enabled(self):
+        from axolotl.utils.config import validate_config
+
+        cfg = DictDefault(
+            {
+                "base_model": "PaddlePaddle/PaddleOCR-VL-1.6",
+                "model_config_type": "paddleocr_vl",
+                "learning_rate": 0.000001,
+                "datasets": [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "adapter": "qlora",
+                "load_in_4bit": True,
+            }
+        )
+        cfg = validate_config(cfg)
+        assert not any(
+            cfg.get(k)
+            for k in (
+                "lora_mlp_kernel",
+                "lora_qkv_kernel",
+                "lora_o_kernel",
+                "lora_embedding_kernel",
+            )
+        )
+
+    def test_explicit_lora_qkv_kernel_rejected(self):
+        from axolotl.loaders.patch_manager import PatchManager
+
+        cfg = DictDefault(
+            model_config_type="paddleocr_vl",
+            lora_qkv_kernel=True,
+        )
+        patch_manager = PatchManager(cfg, DictDefault())
+        with pytest.raises(
+            ValueError, match="not supported for model_type=paddleocr_vl"
+        ):
+            patch_manager._apply_self_attention_lora_patch()
