@@ -68,6 +68,44 @@ class TestMultimodalSamplePacking:
         out = validate_config(cfg)
         assert out.eval_sample_packing is True
 
+    def test_skip_prepare_mm_eval_only_packing_keeps_num_workers(self):
+        # eval-only packing never uses the buffered packer, so its worker
+        # restrictions must not fire.
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            eval_sample_packing=True,
+            skip_prepare_dataset=True,
+            dataloader_num_workers=4,
+            dataloader_prefetch_factor=2,
+        )
+        out = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+        assert out.dataloader_num_workers == 4
+        assert out.dataloader_prefetch_factor == 2
+
+    def test_skip_prepare_mm_packing_multiple_datasets_raises(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            skip_prepare_dataset=True,
+            max_steps=100,
+        )
+        cfg["datasets"] = cfg["datasets"] + [
+            {"path": "another/dataset", "type": "chat_template"}
+        ]
+        with pytest.raises(Exception, match="(?i)single"):
+            validate_config(cfg)
+
+    def test_skip_prepare_mm_packing_val_set_size_raises(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            skip_prepare_dataset=True,
+            max_steps=100,
+            val_set_size=0.1,
+        )
+        with pytest.raises(Exception, match="(?i)val_set_size"):
+            validate_config(cfg)
+
     def test_streaming_mm_packing_still_requires_max_steps(self):
         cfg = _cfg(
             processor_type="AutoProcessor",

@@ -130,21 +130,10 @@ class TestMultimodalPackingStreaming:
 def test_cross_attention_mask_packing_rejected():
     """mllama-style cross_attention_mask in a multi-sample pack must raise."""
     import numpy as np
-    import pytest
-    import torch
 
     from axolotl.utils.collators import MultiModalBatchSamplerDataCollatorForSeq2Seq
 
-    class _Tok:
-        padding_side = "right"
-        pad_token_id = 0
-
-        def pad(self, feats, **_k):
-            L = max(len(f["input_ids"]) for f in feats)
-            return {
-                k: torch.tensor([list(f[k]) + [0] * (L - len(f[k])) for f in feats])
-                for k in set().union(*(f.keys() for f in feats))
-            }
+    from tests.mm_packing_utils import PadTokenizer
 
     def row(off):
         return {
@@ -157,7 +146,30 @@ def test_cross_attention_mask_packing_rejected():
         }
 
     col = MultiModalBatchSamplerDataCollatorForSeq2Seq(
-        tokenizer=_Tok(), padding=True, return_tensors="pt"
+        tokenizer=PadTokenizer(), padding=True, return_tensors="pt"
     )
     with pytest.raises(ValueError, match="cross-attention"):
         col([[row(10), row(20)]])
+
+
+def test_unknown_media_key_packing_rejected():
+    """An unrecognized float media field (e.g. audio input_features) must raise
+    instead of being silently mis-packed."""
+    import numpy as np
+
+    from axolotl.utils.collators import MultiModalBatchSamplerDataCollatorForSeq2Seq
+
+    from tests.mm_packing_utils import PadTokenizer
+
+    row = {
+        "input_ids": [1, 2],
+        "labels": [1, 2],
+        "attention_mask": [1, 1],
+        "position_ids": [0, 1],
+        "input_features": np.ones((80, 3000), np.float32),
+    }
+    col = MultiModalBatchSamplerDataCollatorForSeq2Seq(
+        tokenizer=PadTokenizer(), padding=True, return_tensors="pt"
+    )
+    with pytest.raises(ValueError, match="input_features"):
+        col([[row]])

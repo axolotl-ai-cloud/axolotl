@@ -29,6 +29,7 @@ class BufferedMultimodalPacker(IterableDataset):
         bin_size: int = 200,
         buffer_size: int = DEFAULT_MM_PACK_BUFFER_SIZE,
         length_key: str = "length",
+        drop_attention_mask: bool = False,
     ):
         if batch_max_len <= 0:
             raise ValueError("batch_max_len must be positive")
@@ -39,6 +40,7 @@ class BufferedMultimodalPacker(IterableDataset):
         self.bin_size = bin_size
         self.buffer_size = buffer_size
         self.length_key = length_key
+        self.drop_attention_mask = drop_attention_mask
         self._overlong_warned = False
 
     # Trainer reads dataset.column_names; None = unknown until iterated.
@@ -60,7 +62,14 @@ class BufferedMultimodalPacker(IterableDataset):
         lengths = np.array([self._row_length(row) for row in buffer], dtype=np.int64)
         bins = balanced_greedy_pack_group(lengths, 0, self.batch_max_len, self.bin_size)
         for bin_indices in bins:
-            yield pack_group([buffer[idx] for idx in bin_indices])
+            sample = pack_group([buffer[idx] for idx in bin_indices])
+            if self.drop_attention_mask:
+                # Mirror the prepared path's dataset-level mask drop (an
+                # IterableDataset has no columns for the trainer to remove):
+                # position_ids restarts drive packed-sequence isolation, while a
+                # segment-id mask reaching an unpatched model would be misread.
+                sample.text.pop("attention_mask", None)
+            yield sample
 
     def __iter__(self) -> Iterator[PackedSample]:
         buffer: list[dict[str, Any]] = []
@@ -163,6 +172,7 @@ def build_buffered_mm_packer(source, cfg) -> BufferedMultimodalPacker:
         buffer_size=(
             buffer_size if buffer_size is not None else DEFAULT_MM_PACK_BUFFER_SIZE
         ),
+        drop_attention_mask=bool(cfg.attn_decontaminates_packing),
     )
 
 
