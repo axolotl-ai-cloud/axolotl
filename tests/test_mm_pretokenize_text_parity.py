@@ -86,3 +86,36 @@ def test_string_and_parts_content_tokenize_identically(smolvlm_processor):
     ids_parts = strategy._tokenize_single_prompt(_conversation("parts"))["input_ids"]
     ids_string = strategy._tokenize_single_prompt(_conversation("string"))["input_ids"]
     assert ids_parts == ids_string
+
+
+def test_image_size_resize_matches_eager(smolvlm_processor):
+    """cfg.image_size must produce the same tokens pre-tokenized as the eager
+    collator path's square-pad resize."""
+    from axolotl.processing_strategies import get_processing_strategy
+    from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+
+    conversation = _conversation("parts")
+    conversation["images"] = [Image.new("RGB", (640, 444), color=(120, 80, 40))]
+
+    strategy = _make_strategy(smolvlm_processor)
+    strategy.image_size = 512
+    resized_ids = strategy._tokenize_single_prompt(dict(conversation))["input_ids"]
+
+    eager = get_processing_strategy(
+        smolvlm_processor, None, "tokenizer_default", image_size=512
+    )
+    collator = MultiModalChatDataCollator(
+        tokenizer=smolvlm_processor.tokenizer, processing_strategy=eager
+    )
+    eager_ids = collator.torch_call([dict(conversation)])["input_ids"][0].tolist()
+
+    strategy_no_resize = _make_strategy(smolvlm_processor)
+    native_ids = strategy_no_resize._tokenize_single_prompt(dict(conversation))[
+        "input_ids"
+    ]
+
+    # A 640x444 source padded to a 512 square hits a larger tile grid than its
+    # native aspect ratio, so resize must change the token count and match the
+    # eager path exactly.
+    assert resized_ids == eager_ids
+    assert len(resized_ids) != len(native_ids)

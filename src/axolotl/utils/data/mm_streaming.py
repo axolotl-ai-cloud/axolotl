@@ -169,7 +169,6 @@ def build_buffered_mm_packer(source, cfg) -> BufferedMultimodalPacker:
 def build_streaming_mm_dataset(
     raw_dataset, cfg, tokenizer, processor
 ) -> BufferedMultimodalPacker:
-    # image_size / image_resize_algorithm are not threaded here yet.
     from axolotl.processing_strategies import get_processing_strategy
     from axolotl.utils.chat_templates import get_chat_template_from_config
 
@@ -207,6 +206,8 @@ def build_streaming_mm_dataset(
         processor,
         chat_template,
         cfg.chat_template,
+        image_size=cfg.image_size,
+        image_resize_algorithm=cfg.image_resize_algorithm,
         train_on_inputs=bool(cfg.train_on_inputs),
         roles_to_train=_ds_get("roles_to_train"),
         train_on_eos=_ds_get("train_on_eos"),

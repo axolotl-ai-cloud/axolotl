@@ -307,6 +307,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         split_thinking: bool | None = False,
         chat_template_type: str | None = None,
         role_boundaries_override: list[dict] | None = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm=None,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.prompter: ChatTemplatePrompter = prompter
@@ -315,6 +317,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.chat_template_type = chat_template_type
         self.role_boundaries_override = role_boundaries_override
         self._mm_processing_strategy = None
+        self.image_size = image_size
+        self.image_resize_algorithm = image_resize_algorithm
 
         self.roles_to_train = []
         if roles_to_train:
@@ -1102,7 +1106,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return transformed_message
 
     def _get_images(self, prompt):
-        return prompt.get(self.images, None)
+        images = prompt.get(self.images, None)
+        if images is None or self.image_size is None:
+            return images
+        # Honor cfg.image_size like the eager collator path does.
+        from transformers.image_utils import load_image
+
+        from axolotl.processing_strategies import resize_image_for_config
+
+        def _resize(image):
+            return resize_image_for_config(
+                load_image(image), self.image_size, self.image_resize_algorithm
+            )
+
+        if isinstance(images, (list, tuple)):
+            return [_resize(image) for image in images]
+        return _resize(images)
 
     def _get_tools(self, prompt) -> list[dict] | None:
         """Get tools from prompt if available."""
@@ -1190,6 +1209,8 @@ class MistralStrategy(ChatTemplateStrategy):
         split_thinking: bool | None = False,
         chat_template_type: str | None = None,
         role_boundaries_override: list[dict] | None = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm=None,
     ):
         # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
 
@@ -1201,6 +1222,8 @@ class MistralStrategy(ChatTemplateStrategy):
         self.chat_template_type = chat_template_type
         self.role_boundaries_override = role_boundaries_override
         self._mm_processing_strategy = None
+        self.image_size = image_size
+        self.image_resize_algorithm = image_resize_algorithm
 
         self.roles_to_train = []
         if roles_to_train:
@@ -1282,6 +1305,9 @@ class StrategyLoader:
             "role_boundaries_override": (
                 list(cfg.role_boundaries) if cfg.get("role_boundaries") else None
             ),
+            # Same image resize the eager collator applies (causal.py builder).
+            "image_size": cfg.get("image_size"),
+            "image_resize_algorithm": cfg.get("image_resize_algorithm"),
         }
 
     def __call__(
