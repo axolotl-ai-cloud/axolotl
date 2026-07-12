@@ -219,7 +219,21 @@ class TrainingValidationMixin:
     @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
-        non_empty_count = sum(1 for field in fields if data.get(field))
+        # This runs in mode="before", so field defaults haven't been applied
+        # yet. Both `micro_batch_size` and `gradient_accumulation_steps` carry a
+        # documented default of 1, so a config that sets only one of them (and
+        # relies on the other's default) is still fully specified. Fall back to
+        # each field's declared default when the key is absent so such configs
+        # are not rejected outright.
+        def is_set(field):
+            value = data.get(field)
+            if value is None:
+                field_info = cls.model_fields.get(field)
+                if field_info is not None:
+                    value = field_info.default
+            return bool(value)
+
+        non_empty_count = sum(1 for field in fields if is_set(field))
 
         if non_empty_count < 2:
             raise ValueError(f"At least two of {', '.join(fields)} must be set")
