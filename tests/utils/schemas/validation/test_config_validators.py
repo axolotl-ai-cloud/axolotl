@@ -252,3 +252,44 @@ class TestGRPOBatchSizeValidator:
         }
         out = self._check(data)
         assert out["gradient_accumulation_steps"] == 8
+
+
+class TestBatchSizeFieldsValidator:
+    """``micro_batch_size`` and ``gradient_accumulation_steps`` both default to
+    1, so a config that sets only one of them (or neither) is still fully
+    specified and must not be rejected by ``check_batch_size_fields``.
+
+    ``check_batch_size_fields`` runs in ``mode="before"`` (before field defaults
+    are applied), so these guard against a regression where relying on the
+    documented defaults raised "At least two of ... must be set".
+    """
+
+    @staticmethod
+    def _base():
+        return DictDefault(
+            base_model="HuggingFaceTB/SmolLM2-135M",
+            learning_rate=1e-3,
+            datasets=[
+                {
+                    "path": "mhenrichsen/alpaca_2k_test",
+                    "type": "alpaca",
+                },
+            ],
+        )
+
+    def test_only_gradient_accumulation_steps_passes(self):
+        cfg = self._base() | DictDefault(gradient_accumulation_steps=4)
+        validated = validate_config(cfg)
+        assert validated.gradient_accumulation_steps == 4
+        assert validated.micro_batch_size == 1
+
+    def test_only_micro_batch_size_passes(self):
+        cfg = self._base() | DictDefault(micro_batch_size=4)
+        validated = validate_config(cfg)
+        assert validated.micro_batch_size == 4
+        assert validated.gradient_accumulation_steps == 1
+
+    def test_neither_set_relies_on_defaults(self):
+        validated = validate_config(self._base())
+        assert validated.micro_batch_size == 1
+        assert validated.gradient_accumulation_steps == 1
