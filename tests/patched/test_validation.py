@@ -1378,6 +1378,27 @@ class TestTorchCompileValidation(BaseValidation):
         )
         assert updated_cfg.torch_compile_options == {"coordinate_descent_tuning": True}
 
+    def test_torch_compile_options_with_auto_resolved_false_warns_and_ignores(
+        self, minimal_cfg, caplog
+    ):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": "auto",
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        env_capabilities = {"torch_version": "2.4.0"}
+        with capture_axolotl_warnings(caplog):
+            updated_cfg = validate_config(
+                cfg, capabilities={"bf16": True}, env_capabilities=env_capabilities
+            )
+        assert updated_cfg.torch_compile is False
+        assert updated_cfg.torch_compile_options is None
+        assert "ignoring torch_compile_options" in caplog.text
+
     def test_cudagraphs_with_sample_packing_warns(self, minimal_cfg, caplog):
         cfg = (
             DictDefault(

@@ -2039,6 +2039,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["torch_compile"] = False
             else:
                 data["torch_compile"] = False
+            if data["torch_compile"] is False and data.get("torch_compile_options"):
+                LOG.warning(
+                    "torch_compile: auto resolved to False on this environment "
+                    "(torch < 2.5.1); ignoring torch_compile_options."
+                )
+                data["torch_compile_options"] = None
         return data
 
     @model_validator(mode="before")
