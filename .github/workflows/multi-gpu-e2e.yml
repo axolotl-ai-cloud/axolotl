@@ -32,18 +32,15 @@ env:
 jobs:
   test-axolotl-multigpu:
     if: >
-      ${{
-        !contains(github.event.head_commit.message, '[skip e2e]') &&
-        github.repository_owner == 'axolotl-ai-cloud' &&
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      (
+        github.event_name != 'pull_request' ||
         (
-          github.event_name != 'pull_request' ||
-          (
-            !github.event.pull_request.draft &&
-            contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
-            (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
-          )
+          !github.event.pull_request.draft &&
+          contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
+          (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
         )
-      }}
+      )
     strategy:
       fail-fast: false
       matrix:

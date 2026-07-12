@@ -95,7 +95,7 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 #### GPU End-to-End Tests
 
-GPU-heavy CI (the `docker-e2e-tests` and multi-GPU e2e workflows) is opt-in on pull requests: it only runs once a maintainer applies the `run-gpu-tests` label. Labeling starts the GPU suites immediately without re-running the CPU checks, and subsequent pushes to a labeled PR re-run them automatically. These suites always run on merges to `main` and on the scheduled runs.
+GPU-heavy CI (the `docker-e2e-tests` and multi-GPU e2e workflows) is opt-in on pull requests: it only runs once a maintainer applies the `run-gpu-tests` label. Labeling starts the GPU suites immediately without re-running the CPU checks, and subsequent pushes to a labeled PR re-run them automatically. Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
 
 ## Style Guidelines
 
