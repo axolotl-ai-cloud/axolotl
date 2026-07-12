@@ -1,0 +1,279 @@
+name: docker-e2e-tests
+on:
+  # GPU e2e runs unconditionally on push/merge to main and in the merge queue.
+  # On PRs the jobs are gated behind the `run-gpu-tests` label (see
+  # gate-skip-e2e below); the `labeled` trigger picks the PR up as soon as a
+  # maintainer applies the label. These jobs live in their own workflow so that
+  # labeling doesn't re-run the CPU jobs in tests.yml.
+  merge_group:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/Dockerfile-uv.jinja"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/Dockerfile-uv.jinja"
+  workflow_dispatch:
+
+# Cancel jobs on the same ref if a new one is triggered. `labeled` events for
+# unrelated labels get their own no-op group so they can't cancel a live run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'run-gpu-tests') && 'label-noop' || 'e2e' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  TRANSFORMERS_IS_CI: "yes"
+  UV_SYSTEM_PYTHON: "1"
+
+jobs:
+  gate-skip-e2e:
+    # Gates the whole matrix: on PRs, require the `run-gpu-tests` label and skip
+    # drafts. A `labeled` event for any other label is a no-op so it doesn't
+    # restart a matrix that is already in flight.
+    if: >
+      github.event_name != 'pull_request' ||
+      (
+        !github.event.pull_request.draft &&
+        contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
+        (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.compute.outputs.skip }}
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        id: compute
+        with:
+          script: |
+            const token = /\[skip-e2e\]/i;
+            let msg = '';
+            if (context.eventName === 'push') {
+              msg = context.payload.head_commit?.message || '';
+            } else if (context.eventName === 'pull_request') {
+              const { owner, repo } = context.repo;
+              const prNumber = context.payload.pull_request.number;
+              const commits = await github.paginate(
+                github.rest.pulls.listCommits,
+                { owner, repo, pull_number: prNumber, per_page: 100 }
+              );
+              msg = commits.at(-1)?.commit?.message || '';
+            }
+            // don't scan the PR body: bots (e.g. CodeRabbit summaries) quote
+            // the token when describing CI, which false-positives the skip
+            const title = context.payload.pull_request?.title || '';
+            const skip = token.test(msg) || token.test(title);
+            core.setOutput('skip', String(skip));
+
+  docker-e2e-tests-1st:
+    # Run this job first as a gate for running the remainder of the test matrix
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      needs.gate-skip-e2e.outputs.skip != 'true'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    needs: [gate-skip-e2e]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.1
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          modal run -m cicd.e2e_tests
+
+  docker-e2e-tests:
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      needs.gate-skip-e2e.outputs.skip != 'true'
+    # this job needs to be run on self-hosted GPU runners...
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    # Only run the remainder of the matrix if the first e2e check passed;
+    # this is to save on wasted compute costs for known failures that get caught in the first run
+    needs: [gate-skip-e2e, docker-e2e-tests-1st]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.11.0
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          modal run -m cicd.e2e_tests
+
+  docker-e2e-kernel-tests:
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      needs.gate-skip-e2e.outputs.skip != 'true'
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 90
+    needs: [gate-skip-e2e, docker-e2e-tests-1st]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.11.0
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.1
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          modal run -m cicd.e2e_cuda_kernels
+
+  docker-e2e-cleanup:
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 90
+    needs: [docker-e2e-tests, docker-e2e-kernel-tests]
+    if: ${{ !github.event.pull_request.draft }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.1
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+      - name: Run tests job on Modal
+        run: |
+          modal run -m cicd.cleanup

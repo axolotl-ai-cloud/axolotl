@@ -276,12 +276,6 @@ def _single_tensor_adopt(
 ):
     assert grad_scale is None and found_inf is None
 
-    if torch.jit.is_scripting():
-        # this assert is due to JIT being dumb and not realizing that the ops below
-        # have overloads to handle both float and Tensor lrs, so we just assert it's
-        # a float since most people using JIT are using floats
-        assert isinstance(lr, float)
-
     for i, param in enumerate(params):
         grad = grads[i] if not maximize else -grads[i]
         exp_avg = exp_avgs[i]
@@ -515,15 +509,10 @@ def adopt(
             "API has changed, `state_steps` argument must contain a list of singleton tensors"
         )
 
-    if foreach and torch.jit.is_scripting():
-        raise RuntimeError("torch.jit.script not supported with foreach optimizers")
-    if fused and torch.jit.is_scripting():
-        raise RuntimeError("torch.jit.script not supported with fused optimizers")
-
-    # if fused and not torch.jit.is_scripting():
+    # if fused:
     #     func = _fused_adopt
-    # elif foreach and not torch.jit.is_scripting():
-    if foreach and not torch.jit.is_scripting():
+    # elif foreach:
+    if foreach:
         func = _multi_tensor_adopt
     else:
         func = _single_tensor_adopt
