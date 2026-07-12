@@ -47,12 +47,11 @@ def _make_strategy(processor, *, train_on_inputs=False):
 
 def _conversation(content_style: str):
     img = Image.new("RGB", (64, 64), color=(120, 80, 40))
+    assistant_content: str | list[dict[str, str]] = ANSWER
+    followup_content: str | list[dict[str, str]] = FOLLOWUP
     if content_style == "parts":
         assistant_content = [{"type": "text", "text": ANSWER}]
         followup_content = [{"type": "text", "text": FOLLOWUP}]
-    else:
-        assistant_content = ANSWER
-        followup_content = FOLLOWUP
     return {
         "messages": [
             {
