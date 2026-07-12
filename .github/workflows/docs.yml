@@ -3,12 +3,15 @@ on:
   push:
     branches:
       - main
+    # src/axolotl is included because quartodoc renders API docs from the
+    # whole package; without it the published API reference goes stale (or
+    # silently breaks) when source modules change
     paths:
       - '**/*.md'
       - '**/*.qmd'
       - '_quarto.yml'
       - 'docs/**'
-      - 'src/axolotl/utils/schemas/**.py'
+      - 'src/axolotl/**.py'
       - '.github/workflows/docs.yml'
 
 permissions:

@@ -1,16 +1,11 @@
 name: Tests Nightly against upstream main
 on:
+  # nightly-only: runs against upstream HF main, so PR triggers just burn GPU
+  # on failures the PR can't cause. Use workflow_dispatch to validate changes
+  # to this file or the cicd/ harness.
   workflow_dispatch:
   schedule:
     - cron: "0 0 * * *" # Runs at 00:00 UTC every day
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - ".github/workflows/tests-nightly.yml"
-      - "cicd/cicd.sh"
-      - "cicd/cicd_cuda_kernels.sh"
-      - "cicd/e2e_tests.py"
-      - "cicd/e2e_cuda_kernels.py"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -58,8 +53,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.12"] # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
-        pytorch_version: ["2.11.0", "2.12.0"]
+        python_version: ["3.12"]
+        pytorch_version: ["2.11.0", "2.12.1", "2.13.0"]
     timeout-minutes: 20
 
     steps:
@@ -162,7 +157,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.0
+            pytorch: 2.12.1
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -208,7 +203,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.0
+            pytorch: 2.12.1
             num_gpus: 2
             axolotl_extras:
             nightly_build: "true"
@@ -261,7 +256,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.0
+            pytorch: 2.12.1
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
