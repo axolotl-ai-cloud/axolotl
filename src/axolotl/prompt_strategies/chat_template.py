@@ -861,15 +861,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return start_idx, end_idx
 
     @staticmethod
-    def _content_has_media_parts(content) -> bool:
-        if not isinstance(content, list):
-            return False
-        return any(
-            isinstance(part, dict) and part.get("type") in {"image", "video", "audio"}
-            for part in content
-        )
-
-    @staticmethod
     def _convert_content_parts(
         content,
     ) -> tuple[str, list[dict] | None] | None:
@@ -985,9 +976,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             # Convert list content/reasoning_content to string + auto-generated
             # training_detail. See _convert_content_parts for whitespace guidance.
-            content = turn.get("content")
-            if not (self.prompter.processor and self._content_has_media_parts(content)):
-                content_result = self._convert_content_parts(content)
+            # Never stringify under a processor: multimodal chat templates iterate
+            # content parts, so a plain string renders as an empty turn.
+            if not self.prompter.processor:
+                content_result = self._convert_content_parts(turn.get("content"))
                 if content_result is not None:
                     turn["content"] = content_result[0]
                     if content_result[1] is not None:
@@ -1006,6 +998,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         if self.prompter.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
+
+        if self.prompter.processor:
+            for turn in turns:
+                if isinstance(turn.get("content"), str):
+                    turn["content"] = [{"type": "text", "text": turn["content"]}]
 
         return turns
 
