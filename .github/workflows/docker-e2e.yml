@@ -73,9 +73,10 @@ jobs:
               );
               msg = commits.at(-1)?.commit?.message || '';
             }
+            // don't scan the PR body: bots (e.g. CodeRabbit summaries) quote
+            // the token when describing CI, which false-positives the skip
             const title = context.payload.pull_request?.title || '';
-            const body  = context.payload.pull_request?.body  || '';
-            const skip = token.test(msg) || token.test(title) || token.test(body);
+            const skip = token.test(msg) || token.test(title);
             core.setOutput('skip', String(skip));
 
   docker-e2e-tests-1st:
