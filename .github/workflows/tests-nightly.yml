@@ -1,16 +1,11 @@
 name: Tests Nightly against upstream main
 on:
+  # nightly-only: runs against upstream HF main, so PR triggers just burn GPU
+  # on failures the PR can't cause. Use workflow_dispatch to validate changes
+  # to this file or the cicd/ harness.
   workflow_dispatch:
   schedule:
     - cron: "0 0 * * *" # Runs at 00:00 UTC every day
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - ".github/workflows/tests-nightly.yml"
-      - "cicd/cicd.sh"
-      - "cicd/cicd_cuda_kernels.sh"
-      - "cicd/e2e_tests.py"
-      - "cicd/e2e_cuda_kernels.py"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
