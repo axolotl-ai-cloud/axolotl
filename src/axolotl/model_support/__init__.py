@@ -6,7 +6,14 @@ model-specific code it needs (processing strategy, patches). Features query
 the registry instead of hardcoding ``model_type`` checks.
 """
 
-from .base import ModelSupport
+from .base import (
+    Capability,
+    Experimental,
+    ModelSupport,
+    Supported,
+    Unsupported,
+    check_capability,
+)
 from .registry import (
     get_model_support,
     get_model_support_for_cfg,
@@ -15,7 +22,12 @@ from .registry import (
 )
 
 __all__ = [
+    "Capability",
+    "Experimental",
     "ModelSupport",
+    "Supported",
+    "Unsupported",
+    "check_capability",
     "get_model_support",
     "get_model_support_for_cfg",
     "get_model_support_for_processor",
