@@ -51,7 +51,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.0
+            pytorch: 2.12.1
             axolotl_extras:
             # axolotl_extras: fbgemm-gpu
             num_gpus: 2
