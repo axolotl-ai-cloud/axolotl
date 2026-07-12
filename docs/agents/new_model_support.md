@@ -4,7 +4,7 @@ Guide for debugging and adding support for new model architectures in axolotl. B
 
 ## Model Support Registry
 
-New architectures are described by a single `ModelSupport` descriptor in `src/axolotl/model_support/<model_type>/` instead of edits scattered across loaders, integrations, and `processing_strategies.py`. The descriptor declares capabilities (tri-state: `True` / `False` / `None` = unknown, use generic fallback) and lifecycle hooks; features query the registry rather than hardcoding `model_type` checks.
+New architectures are described by a single `ModelSupport` descriptor in `src/axolotl/model_support/<model_type>/` instead of edits scattered across loaders, integrations, and `processing_strategies.py`. The descriptor declares per-feature capabilities (`Unsupported(reason)` raises when the feature is enabled, `Experimental(note)` warns, `Supported()` documents verified coverage, and a missing key means unknown — the feature uses its generic fallback) and lifecycle hooks; features query the registry via `check_capability` rather than hardcoding `model_type` checks.
 
 ```python
 # src/axolotl/model_support/my_model/__init__.py
@@ -12,8 +12,11 @@ New architectures are described by a single `ModelSupport` descriptor in `src/ax
 class MyModelSupport(ModelSupport):
     model_types = ("my_model",)
     is_multimodal = True
-    supports_cut_cross_entropy = False   # enabling CCE raises a clear error
-    supports_liger = None                # unknown: liger's generic path applies
+    capabilities = {
+        "cut_cross_entropy": Unsupported("No CCE forward for this arch."),  # raises
+        "sample_packing": Experimental("Verify loss parity vs unpacked."),  # warns
+        # "liger" absent = unknown: liger's generic path applies
+    }
 
     def get_auto_model_cls(self): ...           # AutoModelForImageTextToText etc.
     def get_processing_strategy_cls(self): ...  # multimodal collator strategy

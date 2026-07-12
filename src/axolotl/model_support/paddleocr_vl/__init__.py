@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from axolotl.model_support.base import ModelSupport
+from axolotl.model_support.base import ModelSupport, Unsupported
 from axolotl.model_support.registry import register_model_support
 
 if TYPE_CHECKING:
@@ -18,13 +18,11 @@ class PaddleOCRVLSupport(ModelSupport):
     model_types = ("paddleocr_vl",)
 
     is_multimodal = True
-    supports_cut_cross_entropy = False
-    supports_liger = False
-
-    unsupported_reasons = {
-        "cut_cross_entropy": (
+    capabilities = {
+        "cut_cross_entropy": Unsupported(
             "CCE does not patch PaddleOCRVLForConditionalGeneration."
         ),
+        "liger": Unsupported(),
     }
 
     def get_auto_model_cls(self) -> type:

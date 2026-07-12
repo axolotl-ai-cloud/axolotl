@@ -6,7 +6,7 @@ import inspect
 import sys
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.model_support import get_model_support
+from axolotl.model_support import check_capability, get_model_support
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -32,16 +32,13 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
-        support = get_model_support(cfg.model_config_type)
-        if (
-            support is not None
-            and support.supports_liger is False
-            and any(getattr(cfg, flag, False) for flag in LIGER_FLAGS)
-        ):
-            raise ValueError(
-                f"Liger is not supported for model_type={cfg.model_config_type}."
-                f"{support.unsupported_reason('liger')}"
-                " Disable Liger flags for this model."
+        if any(getattr(cfg, flag, False) for flag in LIGER_FLAGS):
+            check_capability(
+                get_model_support(cfg.model_config_type),
+                "liger",
+                cfg.model_config_type,
+                feature="Liger",
+                hint="Disable Liger flags for this model.",
             )
 
         # shim: liger imports ORPOTrainer from old trl.trainer (now trl.experimental.orpo)

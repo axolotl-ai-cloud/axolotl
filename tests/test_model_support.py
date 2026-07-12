@@ -4,7 +4,10 @@ import pytest
 from transformers import AutoModelForImageTextToText
 
 from axolotl.model_support import (
+    Experimental,
     ModelSupport,
+    Unsupported,
+    check_capability,
     get_model_support,
     get_model_support_for_processor,
     register_model_support,
@@ -33,17 +36,48 @@ class TestRegistry:
     def test_register_custom_descriptor(self):
         class CustomSupport(ModelSupport):
             model_types = ("my_custom_arch",)
-            supports_liger = False
+            capabilities = {"liger": Unsupported()}
 
         try:
             register_model_support(CustomSupport)
             support = get_model_support("my_custom_arch")
             assert isinstance(support, CustomSupport)
-            assert support.supports_liger is False
-            # capability default is tri-state unknown
-            assert support.supports_cut_cross_entropy is None
+            assert isinstance(support.capabilities["liger"], Unsupported)
+            # a missing key means unknown: features use their generic fallback
+            assert support.capabilities.get("cut_cross_entropy") is None
         finally:
             model_support_registry._REGISTRY.pop("my_custom_arch", None)
+
+
+class TestCheckCapability:
+    """Capability enforcement: raise on Unsupported, warn on Experimental."""
+
+    class _Support(ModelSupport):
+        model_types = ("cap_test_arch",)
+        capabilities = {
+            "cut_cross_entropy": Unsupported("No CCE forward implementation."),
+            "sample_packing": Experimental("Verify loss parity vs unpacked."),
+        }
+
+    def test_unsupported_raises_with_reason_and_hint(self):
+        with pytest.raises(ValueError, match="No CCE forward implementation"):
+            check_capability(
+                self._Support(),
+                "cut_cross_entropy",
+                "cap_test_arch",
+                hint="Disable cut_cross_entropy for this model.",
+            )
+
+    def test_experimental_warns_and_does_not_raise(self, caplog):
+        with caplog.at_level("WARNING", logger="axolotl"):
+            check_capability(
+                self._Support(), "sample_packing", "cap_test_arch", feature="packing"
+            )
+        assert any("Verify loss parity" in r.getMessage() for r in caplog.records)
+
+    def test_unknown_capability_and_missing_descriptor_are_noops(self):
+        check_capability(self._Support(), "liger", "cap_test_arch")
+        check_capability(None, "liger", "cap_test_arch")
 
 
 class TestKimiLinearSupport:
