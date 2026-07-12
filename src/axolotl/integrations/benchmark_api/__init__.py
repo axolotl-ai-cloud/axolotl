@@ -135,6 +135,12 @@ class BenchmarkAPICallback(TrainerCallback):
         # submit/poll calls still use the short _ASYNC_HTTP_TIMEOUT so a dead
         # runner can't wedge the training step.
         no_timeout = self.timeout_sec == 0
+        if self.mode == "sync" and no_timeout and int(os.getenv("WORLD_SIZE", "1")) > 1:
+            LOG.warning(
+                "benchmark_api: sync mode with timeout_sec=0 blocks rank 0 "
+                "indefinitely and can exceed the collective watchdog under "
+                "multi-GPU; prefer async or a finite timeout_sec"
+            )
         if self.mode == "sync":
             self._http_timeout = None if no_timeout else self.timeout_sec
         else:

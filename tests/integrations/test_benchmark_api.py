@@ -1013,6 +1013,20 @@ def test_auth_env_missing_raises(monkeypatch):
         BenchmarkAPICallback(cfg, Mock())
 
 
+def test_sync_no_timeout_multigpu_warns(monkeypatch, caplog):
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    with caplog.at_level(logging.WARNING, logger="axolotl.integrations.benchmark_api"):
+        BenchmarkAPICallback(_make_cfg(endpoint="http://x", timeout_sec=0), Mock())
+    assert "collective watchdog" in caplog.text
+
+
+def test_sync_no_timeout_single_process_no_warning(monkeypatch, caplog):
+    monkeypatch.delenv("WORLD_SIZE", raising=False)
+    with caplog.at_level(logging.WARNING, logger="axolotl.integrations.benchmark_api"):
+        BenchmarkAPICallback(_make_cfg(endpoint="http://x", timeout_sec=0), Mock())
+    assert "collective watchdog" not in caplog.text
+
+
 def test_no_auth_header_by_default(monkeypatch, tmp_path):
     callback, _, posted = _callback(
         monkeypatch,
