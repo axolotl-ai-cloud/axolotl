@@ -2,6 +2,10 @@ name: docker-multigpu-tests-biweekly
 
 on:
   pull_request:
+    # on PRs the job is gated behind the `run-gpu-tests` label; `labeled`
+    # picks the PR up when a maintainer applies it. schedule/dispatch runs
+    # are not gated.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - "tests/e2e/multigpu/**.py"
       - "pyproject.toml"
@@ -13,9 +17,10 @@ on:
   schedule:
     - cron: "0 0 * * 1,4" # Runs at 00:00 UTC every monday & thursday
 
-# Cancel jobs on the same ref if a new one is triggered
+# Cancel jobs on the same ref if a new one is triggered. `labeled` events for
+# unrelated labels get their own no-op group so they can't cancel a live run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'run-gpu-tests') && 'label-noop' || 'e2e' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -26,7 +31,19 @@ env:
 
 jobs:
   test-axolotl-multigpu:
-    if: ${{ ! contains(github.event.head_commit.message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: >
+      ${{
+        !contains(github.event.head_commit.message, '[skip e2e]') &&
+        github.repository_owner == 'axolotl-ai-cloud' &&
+        (
+          github.event_name != 'pull_request' ||
+          (
+            !github.event.pull_request.draft &&
+            contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
+            (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
+          )
+        )
+      }}
     strategy:
       fail-fast: false
       matrix:

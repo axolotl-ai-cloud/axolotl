@@ -93,6 +93,10 @@ You can skip certain CI checks by including specific keywords in your commit mes
 - `[skip ci]` or `skip ci` - Skips all CI checks for that commit
 - `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks. You may also include this in the title of your PR to disable end-to-end tests for the entire PR.
 
+#### GPU End-to-End Tests
+
+GPU-heavy CI (the `docker-e2e-tests` and multi-GPU e2e workflows) is opt-in on pull requests: it only runs once a maintainer applies the `run-gpu-tests` label. Labeling starts the GPU suites immediately without re-running the CPU checks, and subsequent pushes to a labeled PR re-run them automatically. These suites always run on merges to `main` and on the scheduled runs.
+
 ## Style Guidelines
 
 ### Code Style
