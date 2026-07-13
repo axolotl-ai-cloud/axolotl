@@ -18,7 +18,9 @@ class PaddleOCRVLProcessingStrategy(ProcessingStrategy):
             return []
 
         boundaries = []
-        user_start = _encode_markers(tok, ["User: "])
+        # The template writes "User: " but the trailing space BPE-merges into
+        # the first content word on text-only turns; match the stable prefix.
+        user_start = _encode_markers(tok, ["User:"])
         if user_start:
             boundaries.append(
                 RoleBoundary(

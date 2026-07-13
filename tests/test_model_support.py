@@ -194,6 +194,43 @@ class TestPaddleOCRVLSupport:
             )
         )
 
+    def test_normalize_config_disables_lora_kernels(self):
+        """model_type is usually unknown when the auto-enable validator runs;
+        normalize_config must turn the kernels back off once it is resolved."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from axolotl.utils.config import normalize_config
+
+        cfg = DictDefault(
+            {
+                "base_model": "PaddlePaddle/PaddleOCR-VL-1.6",
+                "num_epochs": 1,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "adapter": "qlora",
+                "load_in_4bit": True,
+                "lora_mlp_kernel": True,
+                "lora_qkv_kernel": True,
+                "lora_o_kernel": True,
+                "lora_embedding_kernel": True,
+            }
+        )
+        with patch(
+            "axolotl.utils.config.load_model_config",
+            return_value=SimpleNamespace(model_type="paddleocr_vl"),
+        ):
+            normalize_config(cfg)
+        assert not any(
+            cfg[k]
+            for k in (
+                "lora_mlp_kernel",
+                "lora_qkv_kernel",
+                "lora_o_kernel",
+                "lora_embedding_kernel",
+            )
+        )
+
     def test_explicit_lora_qkv_kernel_rejected(self):
         from axolotl.loaders.patch_manager import PatchManager
 

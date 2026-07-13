@@ -17,7 +17,7 @@ from transformers.utils.import_utils import (
 from axolotl.integrations.config import merge_input_args
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
-from axolotl.model_support import get_model_support
+from axolotl.model_support import Unsupported, get_model_support
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -292,6 +292,26 @@ def normalize_config(cfg):
     cfg.model_config_type = model_config.model_type
 
     if model_support is not None:
+        # The auto-enable validator runs before model_type is known; undo it
+        # for archs that declare the fused kernels broken.
+        lora_kernels_cap = model_support.capabilities.get("lora_kernels")
+        kernel_fields = (
+            "lora_mlp_kernel",
+            "lora_qkv_kernel",
+            "lora_o_kernel",
+            "lora_embedding_kernel",
+        )
+        if isinstance(lora_kernels_cap, Unsupported) and any(
+            cfg[k] for k in kernel_fields
+        ):
+            LOG.warning(
+                "Disabling fused LoRA kernels: unsupported for model_type=%s.%s",
+                cfg.model_config_type,
+                f" {lora_kernels_cap.reason}" if lora_kernels_cap.reason else "",
+            )
+            for k in kernel_fields:
+                cfg[k] = False
+
         model_support.validate_cfg(cfg)
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)

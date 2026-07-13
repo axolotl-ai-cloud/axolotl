@@ -1864,24 +1864,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data.get("trust_remote_code"):
                 return data
 
-            # Skip architectures that declare the fused kernels unsupported
+            # Skip architectures that declare the fused kernels unsupported.
+            # model_config_type is usually resolved later (normalize_config),
+            # which disables any kernels auto-enabled here.
             from axolotl.model_support import Unsupported, get_model_support
 
-            model_type = data.get("model_config_type")
-            if not model_type and data.get("base_model"):
-                try:
-                    from transformers import AutoConfig
-
-                    model_type = getattr(
-                        AutoConfig.from_pretrained(
-                            data["base_model"], trust_remote_code=False
-                        ),
-                        "model_type",
-                        None,
-                    )
-                except Exception:  # pylint: disable=broad-exception-caught
-                    model_type = None
-            support = get_model_support(model_type)
+            support = get_model_support(data.get("model_config_type"))
             if support is not None and isinstance(
                 support.capabilities.get("lora_kernels"), Unsupported
             ):
