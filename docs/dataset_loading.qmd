@@ -216,7 +216,6 @@ export AWS_ACCESS_KEY_ID=tid_your_access_key_id
 export AWS_SECRET_ACCESS_KEY=tsec_your_secret_access_key
 ```
 
-Tigris uses a single global endpoint and doesn't charge egress fees. Useful when the same dataset is re-read across epochs or by workers in multiple regions.
 
 #### GCS
 
