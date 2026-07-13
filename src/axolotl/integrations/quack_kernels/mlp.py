@@ -113,12 +113,15 @@ def quack_gated_mlp_forward(
     # Weight is block [gate; up] of shape (2*inter, in); concat_layout=True tells quack
     # the operand is concatenated (it interleaves the two halves internally).
     gate_up = torch.cat([mlp.gate_proj.weight, mlp.up_proj.weight], dim=0)
+    # tuned=False: quack's autotuner selects a numerically-wrong config for small token
+    # counts (M<=~384) on this gated path; the heuristic config is correct at all M.
     out = mlp_func(
         x2d,
         gate_up,
         mlp.down_proj.weight,
         activation=activation,
         concat_layout=True,
+        tuned=False,
     )
     return out.reshape(*orig_shape[:-1], out.shape[-1])
 
