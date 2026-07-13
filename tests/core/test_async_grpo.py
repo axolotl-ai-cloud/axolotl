@@ -94,6 +94,160 @@ class TestGRPOStrategyConflict(unittest.TestCase):
         self.assertIs(cls, AxolotlGRPOTrainer)
 
 
+class TestAdvantageEstimator(unittest.TestCase):
+    """Tests for the pluggable advantage estimator helper."""
+
+    def _f(self):
+        from axolotl.core.trainers.grpo.async_trainer import (
+            compute_advantages_with_estimator,
+        )
+
+        return compute_advantages_with_estimator
+
+    def test_rloo_leave_one_out_baseline(self):
+        f = self._f()
+        rewards = torch.tensor([1.0, 2.0, 3.0, 0.0, 0.0, 6.0])
+        adv, is_std_zero = f("rloo", rewards, num_generations=3)
+        # group [1,2,3]: baseline_j = (sum - r_j) / (n - 1)
+        expected = torch.tensor([1 - 2.5, 2 - 2.0, 3 - 1.5, 0 - 3.0, 0 - 3.0, 6.0])
+        self.assertTrue(torch.allclose(adv, expected))
+        self.assertFalse(is_std_zero.any())
+
+    def test_reinforce_plus_plus_group_mean_batch_std(self):
+        f = self._f()
+        # Group means (2, 20) must differ from the global mean (11), otherwise
+        # group-mean and global-mean centering are indistinguishable.
+        rewards = torch.tensor([1.0, 2.0, 3.0, 10.0, 20.0, 30.0])
+        adv, _ = f("reinforce_plus_plus", rewards, num_generations=3)
+        # REINFORCE++ Baseline: subtract per-prompt group mean, then normalize
+        # by the batch-level std of those centered rewards.
+        g = rewards.view(-1, 3)
+        centered = (g - g.mean(dim=1, keepdim=True)).reshape(-1)
+        expected = centered / (centered.std() + 1e-4)
+        self.assertTrue(torch.allclose(adv, expected))
+        # Differs from both global-mean batch-norm and per-group std-norm.
+        global_norm = (rewards - rewards.mean()) / (rewards.std() + 1e-4)
+        self.assertFalse(torch.allclose(adv, global_norm))
+        group_norm = (
+            centered.view(-1, 3) / (g.std(dim=1, keepdim=True) + 1e-4)
+        ).reshape(-1)
+        self.assertFalse(torch.allclose(adv, group_norm))
+
+    def test_equal_rewards_flag_std_zero_and_zero_advantage(self):
+        f = self._f()
+        rewards = torch.tensor([5.0, 5.0, 5.0, 1.0, 2.0, 3.0])
+        adv, is_std_zero = f("rloo", rewards, num_generations=3)
+        self.assertTrue(torch.allclose(adv[:3], torch.zeros(3)))
+        self.assertTrue(is_std_zero[:3].all())
+        self.assertFalse(is_std_zero[3:].any())
+
+    def test_rloo_single_generation_degrades_to_mean_center(self):
+        f = self._f()
+        # No leave-one-out baseline possible with one sample per group.
+        adv, is_std_zero = f("rloo", torch.tensor([2.0, 4.0]), num_generations=1)
+        self.assertTrue(torch.allclose(adv, torch.zeros(2)))
+        self.assertTrue(is_std_zero.all())
+
+    def test_shape_preserved(self):
+        f = self._f()
+        rewards = torch.randn(12)
+        for est in ("rloo", "reinforce_plus_plus"):
+            adv, is_std_zero = f(est, rewards, num_generations=4)
+            self.assertEqual(adv.shape, rewards.shape)
+            self.assertEqual(is_std_zero.shape, rewards.shape)
+
+
+class TestBaseTrainerAggregateRewards(unittest.TestCase):
+    """Covers the standard (non-SP, non-async) trainer's reward reconstruction.
+
+    The base ``AxolotlGRPOTrainer`` re-derives per-sample rewards from the
+    cached per-function rewards to apply non-default estimators, so this must
+    match TRL's own aggregation.
+    """
+
+    def _stub(self, *, weights, aggregation, num_reward_funcs):
+        from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
+
+        trainer = object.__new__(AxolotlGRPOTrainer)
+        trainer.reward_weights = torch.tensor(weights, dtype=torch.float32)
+        trainer.multi_objective_aggregation = aggregation
+        trainer.reward_funcs = [None] * num_reward_funcs
+        return trainer
+
+    def test_sum_then_normalize_matches_weighted_sum(self):
+        trainer = self._stub(
+            weights=[1.0, 0.5], aggregation="sum_then_normalize", num_reward_funcs=2
+        )
+        rewards_per_func = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [0.0, 6.0], [5.0, 1.0]]
+        )
+        out = trainer._aggregate_rewards(rewards_per_func, num_generations=2)
+        expected = rewards_per_func[:, 0] * 1.0 + rewards_per_func[:, 1] * 0.5
+        self.assertTrue(torch.allclose(out, expected))
+
+    def test_normalize_then_sum_matches_per_group_func_norm(self):
+        trainer = self._stub(
+            weights=[1.0, 1.0], aggregation="normalize_then_sum", num_reward_funcs=2
+        )
+        rewards_per_func = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [0.0, 6.0], [5.0, 1.0]]
+        )
+        out = trainer._aggregate_rewards(rewards_per_func, num_generations=2)
+
+        grouped = rewards_per_func.view(-1, 2, 2)
+        mean_k = grouped.mean(dim=1, keepdim=True)
+        std_k = grouped.std(dim=1, keepdim=True)
+        reward_k = ((grouped - mean_k) / (std_k + 1e-4)).view(-1, 2)
+        expected = reward_k.sum(dim=1)
+        self.assertTrue(torch.allclose(out, expected))
+
+    def test_invalid_aggregation_raises(self):
+        trainer = self._stub(weights=[1.0], aggregation="bogus", num_reward_funcs=1)
+        with self.assertRaises(ValueError):
+            trainer._aggregate_rewards(torch.tensor([[1.0], [2.0]]), num_generations=2)
+
+
+class TestAdvantageEstimatorSchema(unittest.TestCase):
+    """Tests for the advantage_estimator config field wiring."""
+
+    def test_schema_default_none_and_valid_values(self):
+        from axolotl.utils.schemas.trl import TRLConfig
+
+        self.assertIsNone(TRLConfig().advantage_estimator)
+        for v in ("grpo", "rloo", "reinforce_plus_plus"):
+            self.assertEqual(TRLConfig(advantage_estimator=v).advantage_estimator, v)
+
+    def test_schema_rejects_invalid(self):
+        from pydantic import ValidationError
+
+        from axolotl.utils.schemas.trl import TRLConfig
+
+        with self.assertRaises(ValidationError):
+            TRLConfig(advantage_estimator="bogus")
+
+    def test_builder_passes_field_through(self):
+        from axolotl.core.trainers.grpo import GRPOStrategy
+        from axolotl.utils.dict import DictDefault
+
+        cfg = DictDefault(
+            {
+                "context_parallel_size": 1,
+                "vllm": {},
+                "trl": {"advantage_estimator": "rloo"},
+            }
+        )
+        kwargs = GRPOStrategy.set_training_args_kwargs(cfg)
+        self.assertEqual(kwargs.get("advantage_estimator"), "rloo")
+
+        cfg_unset = DictDefault(
+            {"context_parallel_size": 1, "vllm": {}, "trl": {"beta": 0.0}}
+        )
+        self.assertNotIn(
+            "advantage_estimator",
+            GRPOStrategy.set_training_args_kwargs(cfg_unset),
+        )
+
+
 class TestDequantizeFP8TailBlocks(unittest.TestCase):
     """Tests for FP8 dequantization with non-divisible dimensions."""
 

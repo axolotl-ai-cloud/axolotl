@@ -252,6 +252,21 @@ trl:
   multi_objective_aggregation: normalize_then_sum
 ```
 
+### Advantage estimators
+
+After rewards are aggregated into a per-completion scalar, the `advantage_estimator` controls how the group baseline is subtracted to form advantages. This is orthogonal to `loss_type` (which controls the policy-gradient loss formulation, not the baseline).
+
+- `grpo` (default, set via the absence of the field): subtract the group mean and, when `scale_rewards` is on, divide by the group standard deviation.
+- `rloo`: leave-one-out baseline — each completion's advantage is `reward_j - mean(rewards of the other completions in the group)`. Unbiased and avoids a completion being part of its own baseline. Requires `num_generations >= 2`.
+- `reinforce_plus_plus`: global batch-level advantage normalization — `(reward - batch_mean) / (batch_std + eps)` over the whole generation batch rather than per group (REINFORCE++). Any KL penalty should be folded into the reward upstream.
+
+```yaml
+trl:
+  advantage_estimator: rloo
+```
+
+Supported by the standard, async, and sequence-parallel GRPO trainers.
+
 ### Dataset transforms
 
 The dataset transform converts raw HuggingFace dataset rows into chat-format prompts:
@@ -534,6 +549,7 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | `epsilon` | float | `null` | PPO clipping lower bound |
 | `epsilon_high` | float | `null` | PPO clipping upper bound |
 | `loss_type` | str | `null` | Loss formulation: `grpo`, `bnpo`, or `dr_grpo` |
+| `advantage_estimator` | str | `null` | Advantage baseline: `grpo` (group mean/std), `rloo` (leave-one-out), or `reinforce_plus_plus` (global batch mean/std) |
 | `scale_rewards` | bool | `true` | Normalize rewards by standard deviation |
 | `mask_truncated_completions` | bool | `false` | Exclude truncated completions from loss |
 
