@@ -122,7 +122,9 @@ def setup_model_and_tokenizer(
 
 
 def setup_reference_model(
-    cfg: DictDefault, tokenizer: PreTrainedTokenizer
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None = None,
 ) -> PreTrainedModel | None:
     """
     Set up the reference model for RL training if needed.
@@ -130,6 +132,7 @@ def setup_reference_model(
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         tokenizer: The tokenizer to use for the reference model.
+        processor: The processor to use for a multimodal reference model.
 
     Returns:
         Reference model if needed for RL training, `None` otherwise.
@@ -149,7 +152,12 @@ def setup_reference_model(
             ):
                 reference_model = False
             # load the model again for model_ref/baseline
-            model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
+            model_loader = ModelLoader(
+                cfg,
+                tokenizer,
+                processor=processor,
+                reference_model=reference_model,
+            )
             model_ref, _ = model_loader.load()
     return model_ref
 
@@ -574,7 +582,7 @@ def setup_model_and_trainer(
     model, tokenizer, peft_config, processor = setup_model_and_tokenizer(cfg)
 
     # Set up reference model for RL if needed
-    model_ref = setup_reference_model(cfg, tokenizer)
+    model_ref = setup_reference_model(cfg, tokenizer, processor)
 
     # Get datasets from metadata
     train_dataset = dataset_meta.train_dataset

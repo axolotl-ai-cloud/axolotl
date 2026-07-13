@@ -5,6 +5,8 @@ from transformers import AutoModelForImageTextToText
 
 from axolotl.model_support import (
     Experimental,
+    ModelHookContext,
+    ModelHookPhase,
     ModelSupport,
     Unsupported,
     check_capability,
@@ -12,6 +14,8 @@ from axolotl.model_support import (
     get_model_support_for_processor,
     register_model_support,
     registry as model_support_registry,
+    resolve_model_support,
+    run_model_support_hooks,
 )
 from axolotl.utils.dict import DictDefault
 
@@ -83,6 +87,16 @@ class TestCheckCapability:
 class TestKimiLinearSupport:
     """Built-in Kimi-Linear descriptor: cfg-based matching for remote-code patching."""
 
+    @pytest.fixture
+    def restore_dynamic_module_loader(self):
+        import transformers.dynamic_module_utils as dynamic_module_utils
+
+        original = dynamic_module_utils.get_class_in_module
+        try:
+            yield dynamic_module_utils
+        finally:
+            dynamic_module_utils.get_class_in_module = original
+
     def test_matches_cfg_by_model_name(self):
         from axolotl.model_support.registry import get_model_support_for_cfg
 
@@ -97,20 +111,38 @@ class TestKimiLinearSupport:
         cfg = DictDefault(base_model_config="meta-llama/Llama-3.1-8B-Instruct")
         assert get_model_support_for_cfg(cfg) is None
 
-    def test_pre_config_load_patches_dynamic_module_loading(self):
-        from transformers.dynamic_module_utils import get_class_in_module
+    def test_resolves_vanilla_family_and_declared_hooks(self):
+        resolved = resolve_model_support(get_model_support("kimi_linear"))
 
+        assert resolved.family == "vanilla_causal_lm"
+        assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_CONFIG_LOAD)
+        assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_TOKENIZER_LOAD)
+        assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_MODEL_BUILD)
+
+    def test_pre_config_load_patches_dynamic_module_loading(
+        self, restore_dynamic_module_loader
+    ):
         cfg = DictDefault(base_model_config="moonshotai/Kimi-Linear-48B-A3B-Instruct")
-        get_model_support("kimi_linear").pre_config_load(cfg)
-
-        import transformers.dynamic_module_utils
+        support = get_model_support("kimi_linear")
+        context = ModelHookContext(cfg=cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            context,
+        )
+        patched = restore_dynamic_module_loader.get_class_in_module
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            context,
+        )
 
         assert getattr(
-            transformers.dynamic_module_utils.get_class_in_module,
+            restore_dynamic_module_loader.get_class_in_module,
             "_axolotl_patched",
             False,
         )
-        del get_class_in_module  # silence unused; imported pre-patch for clarity
+        assert restore_dynamic_module_loader.get_class_in_module is patched
 
 
 class TestPaddleOCRVLSupport:
@@ -119,7 +151,11 @@ class TestPaddleOCRVLSupport:
     def test_registered_and_multimodal(self):
         support = get_model_support("paddleocr_vl")
         assert support is not None
+        resolved = resolve_model_support(support)
+        assert resolved.is_multimodal is True
+        assert resolved.family == "image_text_to_text"
         assert support.is_multimodal is True
+        assert set(support.capabilities) == {"cut_cross_entropy", "liger"}
 
     def test_auto_model_cls(self):
         support = get_model_support("paddleocr_vl")

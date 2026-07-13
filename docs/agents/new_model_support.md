@@ -4,29 +4,102 @@ Guide for debugging and adding support for new model architectures in axolotl. B
 
 ## Model Support Registry
 
-New architectures are described by a single `ModelSupport` descriptor in `src/axolotl/model_support/<model_type>/` instead of edits scattered across loaders, integrations, and `processing_strategies.py`. The descriptor declares per-feature capabilities (`Unsupported(reason)` raises when the feature is enabled, `Experimental(note)` warns, `Supported()` documents verified coverage, and a missing key means unknown — the feature uses its generic fallback) and lifecycle hooks; features query the registry via `check_capability` rather than hardcoding `model_type` checks.
+New architectures are described by a `ModelSupport` descriptor in `src/axolotl/model_support/<model_type>/`. Its declarative `ModelProfile` starts from a reusable family template, then supplies only the capabilities, component strategies, discovery matchers, and lifecycle hooks where that model differs from the family path. Features query the registry instead of adding new `model_type` branches throughout loaders and integrations.
+
+Use `VANILLA_CAUSAL_LM` for a standard text causal-language-model path and `IMAGE_TEXT_TO_TEXT` for a standard multimodal conditional-generation path. Strategy values are lazy zero-argument providers so optional or heavyweight classes are imported only when the pipeline needs them.
 
 ```python
 # src/axolotl/model_support/my_model/__init__.py
+from axolotl.model_support import (
+    IMAGE_TEXT_TO_TEXT,
+    Experimental,
+    ModelHookContext,
+    ModelHookPhase,
+    ModelHooks,
+    ModelMatchers,
+    ModelProfile,
+    ModelStrategies,
+    ModelSupport,
+    Unsupported,
+    register_model_support,
+)
+
+
+def _processing_strategy_cls():
+    from .processing import MyModelProcessingStrategy
+
+    return MyModelProcessingStrategy
+
+
+def _matches_processor(processor):
+    from transformers import MyModelProcessor
+
+    return isinstance(processor, MyModelProcessor)
+
+
+def _before_model_build(context: ModelHookContext):
+    from .patches import patch_my_model
+
+    patch_my_model(context.cfg)
+
+
 @register_model_support
 class MyModelSupport(ModelSupport):
     model_types = ("my_model",)
-    is_multimodal = True
-    capabilities = {
-        "cut_cross_entropy": Unsupported("No CCE forward for this arch."),  # raises
-        "sample_packing": Experimental("Verify loss parity vs unpacked."),  # warns
-        # "liger" absent = unknown: liger's generic path applies
-    }
-
-    def get_auto_model_cls(self): ...           # AutoModelForImageTextToText etc.
-    def get_processing_strategy_cls(self): ...  # multimodal collator strategy
-    def matches_processor(self, processor): ... # processor-based dispatch
-    def validate_cfg(self, cfg): ...            # model-specific config guards
-    def pre_model_load(self, cfg): ...          # monkeypatches before load
-    def post_model_load(self, cfg, model): ...  # adjust loaded model
+    profile = ModelProfile(
+        family=IMAGE_TEXT_TO_TEXT,
+        capabilities={
+            "cut_cross_entropy": Unsupported("No conditional-generation CCE forward."),
+            "sample_packing": Experimental("Verify loss parity against unpacked batches."),
+        },
+        strategies=ModelStrategies(
+            processing_strategy_cls=_processing_strategy_cls,
+        ),
+        matchers=ModelMatchers(processor=_matches_processor),
+        hooks=ModelHooks(
+            {
+                ModelHookPhase.BEFORE_MODEL_BUILD: (_before_model_build,),
+            }
+        ),
+    )
 ```
 
-Register out-of-tree descriptors by calling `axolotl.model_support.register_model_support` from any imported module (e.g. a plugin). Built-in descriptors are listed in `model_support/registry.py`. See `model_support/paddleocr_vl/` for a complete example. Existing architectures are still wired through the legacy locations below; port them opportunistically.
+A missing capability means unknown and preserves the feature's generic handling. `Unsupported(reason)` raises when the feature is enabled, `Experimental(note)` warns, and `Supported(note)` records verified coverage. A profile capability value of `None` removes an inherited family declaration and restores unknown handling.
+
+### Resolution and precedence
+
+`resolve_model_support()` produces an immutable effective profile. Values resolve in this order:
+
+1. Family-template defaults.
+2. Per-model profile overrides.
+3. Attributes and methods explicitly declared by a legacy `ModelSupport` subclass.
+
+Capabilities merge by key, strategies and matchers override field by field, and hooks are additive in family → profile → legacy order. Inherited defaults on `ModelSupport` do not erase profile values. This keeps existing descriptors compatible while allowing new descriptors to remain declarative.
+
+Use `ModelFamilyTemplate` when several architectures share more than the built-in vanilla paths. Keep the template limited to genuinely shared behavior; model folders should add only their own matcher, strategy, capability differences, and localized patches.
+
+### Hook phases
+
+Hooks receive an immutable `ModelHookContext` containing the run config and the objects available at that phase. The `tokenizer` and `processor` fields are optional because early phases do not construct them and direct `ModelLoader` callers can omit a processor; hooks must handle `None` unless their phase and caller guarantee the object. Register hooks under `ModelHookPhase` rather than relying on an implied ordering.
+
+| Phase | Meaning |
+|-------|---------|
+| `BEFORE_CONFIG_LOAD` | Before `AutoConfig.from_pretrained`; discovery uses the config matcher because the Hugging Face `model_type` may not be known yet. |
+| `CONFIGURE_RUN` | After the model config and exact registry descriptor are known; use for model-specific validation or derived config values. |
+| `BEFORE_TOKENIZER_LOAD` | Before tokenizer construction; discovery uses the config matcher or the already-resolved exact model type. |
+| `BEFORE_MODEL_BUILD` | At the established pre-load patch slot before checkpoint construction; use only for patches that must exist while the model class is imported or instantiated. |
+| `AFTER_BASE_MODEL_BUILD` | Immediately after the raw base model is built and before adapters are applied. |
+| `AFTER_ADAPTER_LOAD` | After adapters and final load setup, before the remaining generic and plugin post-load hooks. |
+
+The hook runner deliberately does not suppress repeated calls. A long-lived process may load multiple models or need per-run reconfiguration, so module-level monkeypatch functions must be idempotent themselves: guard against re-wrapping, preserve the original callable when practical, and leave model-instance hooks safe to run for every model.
+
+### Registration and fallback
+
+Register out-of-tree descriptors by calling `register_model_support()` from an imported plugin module. Built-ins are loaded before an external registration is installed, so a plugin can intentionally override a built-in `model_type`. Config and processor matchers must identify at most one descriptor; ambiguous matches raise instead of depending on import order. Once `cfg.model_config_type` is known, exact registry lookup takes precedence over heuristic matchers.
+
+Descriptors without a profile retain neutral legacy behavior: their resolved family is `None`, no component provider is injected, and explicitly declared legacy attributes and methods are adapted into the resolved result. This preserves the existing generic and hardcoded loader and processing fallbacks, including for legacy multimodal descriptors. Unregistered models, missing capabilities, and unset strategy fields also continue through those fallback paths. Profile resolution does not yet replace trainer selection, optimizer construction, adapter loading, loss adaptation, batch preparation, or every legacy `model_type` branch; add those as typed strategies only when the vanilla staged pipeline has a stable replacement seam.
+
+Built-in descriptors are listed in `model_support/registry.py`. See `model_support/paddleocr_vl/` for a multimodal profile and `model_support/kimi_linear/` for phase-specific idempotent patch hooks.
 
 ## Quick Validation Checklist
 

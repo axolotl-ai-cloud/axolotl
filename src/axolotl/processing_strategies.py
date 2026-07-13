@@ -1463,15 +1463,21 @@ def get_processing_strategy(
     from axolotl.model_support import (
         get_model_support,
         get_model_support_for_processor,
+        resolve_model_support,
     )
 
     support = get_model_support(chat_template_type) or get_model_support_for_processor(
         processor
     )
-    if support is not None:
-        strategy_cls = support.get_processing_strategy_cls()
-        if strategy_cls is not None:
-            return strategy_cls(**processing_kwargs)
+    resolved_support = resolve_model_support(support) if support is not None else None
+    strategy_provider = (
+        resolved_support.strategies.processing_strategy_cls
+        if resolved_support is not None
+        else None
+    )
+    strategy_cls = strategy_provider() if strategy_provider is not None else None
+    if strategy_cls is not None:
+        return strategy_cls(**processing_kwargs)
 
     if chat_template_type == "qwen2_vl":
         return Qwen2VLProcessingStrategy(**processing_kwargs)

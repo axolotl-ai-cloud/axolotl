@@ -17,7 +17,14 @@ from transformers.utils.import_utils import (
 from axolotl.integrations.config import merge_input_args
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
-from axolotl.model_support import Unsupported, get_model_support
+from axolotl.model_support import (
+    ModelHookContext,
+    ModelHookPhase,
+    Unsupported,
+    get_model_support,
+    resolve_model_support,
+    run_model_support_hooks,
+)
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -271,9 +278,14 @@ def normalize_config(cfg):
     )
 
     model_support = get_model_support(getattr(model_config, "model_type", None))
+    resolved_support = (
+        resolve_model_support(model_support) if model_support is not None else None
+    )
+
+    cfg.model_config_type = model_config.model_type
 
     cfg.is_multimodal = (
-        (model_support is not None and model_support.is_multimodal)
+        (resolved_support is not None and resolved_support.is_multimodal)
         or hasattr(model_config, "model_type")
         and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
         or any(
@@ -289,12 +301,10 @@ def normalize_config(cfg):
             cfg.processor_config or cfg.base_model_config or cfg.base_model
         )
 
-    cfg.model_config_type = model_config.model_type
-
-    if model_support is not None:
+    if resolved_support is not None:
         # The auto-enable validator runs before model_type is known; undo it
         # for archs that declare the fused kernels broken.
-        lora_kernels_cap = model_support.capabilities.get("lora_kernels")
+        lora_kernels_cap = resolved_support.capabilities.get("lora_kernels")
         kernel_fields = (
             "lora_mlp_kernel",
             "lora_qkv_kernel",
@@ -312,7 +322,11 @@ def normalize_config(cfg):
             for k in kernel_fields:
                 cfg[k] = False
 
-        model_support.validate_cfg(cfg)
+    run_model_support_hooks(
+        model_support,
+        ModelHookPhase.CONFIGURE_RUN,
+        ModelHookContext(cfg=cfg, model_config=model_config),
+    )
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
     if callable(getattr(model_config, "get_text_config", None)):

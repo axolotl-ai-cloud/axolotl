@@ -3,21 +3,31 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
+from __future__ import annotations
+
 import importlib.util
 import os
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 import addict
 import torch
 import transformers
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import (
+    PretrainedConfig,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+)
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
 from axolotl.model_support import (
+    ModelHookContext,
+    ModelHookPhase,
     check_capability,
     get_model_support,
     get_model_support_for_cfg,
+    run_model_support_hooks,
 )
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -25,6 +35,9 @@ from axolotl.monkeypatch.multipack import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -44,8 +57,11 @@ class PatchManager:
             cfg: Configuration dictionary with model and training settings.
         """
         support = get_model_support_for_cfg(cfg)
-        if support is not None:
-            support.pre_config_load(cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            ModelHookContext(cfg=cfg),
+        )
 
     @staticmethod
     def apply_pre_tokenizer_load_patches(cfg: DictDefault):
@@ -58,14 +74,20 @@ class PatchManager:
             cfg: Configuration dictionary with model and training settings.
         """
         support = get_model_support_for_cfg(cfg)
-        if support is not None:
-            support.pre_tokenizer_load(cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_TOKENIZER_LOAD,
+            ModelHookContext(cfg=cfg),
+        )
 
     def __init__(
         self,
         cfg: DictDefault,
         model_config: PretrainedConfig | addict.Dict,
         inference: bool = False,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        processor: ProcessorMixin | None = None,
+        reference_model: bool = False,
     ):
         """Initialize the `PatchManager`.
 
@@ -77,6 +99,20 @@ class PatchManager:
         self.cfg = cfg
         self.model_config = model_config
         self.inference = inference
+        self.tokenizer = tokenizer
+        self.processor = processor
+        self.reference_model = reference_model
+
+    def _hook_context(self, model: PreTrainedModel | None = None) -> ModelHookContext:
+        return ModelHookContext(
+            cfg=self.cfg,
+            model_config=self.model_config,
+            tokenizer=self.tokenizer,
+            processor=self.processor,
+            model=model,
+            inference=self.inference,
+            reference_model=self.reference_model,
+        )
 
     @cached_property
     def has_flash_attn(self) -> bool:
@@ -139,6 +175,13 @@ class PatchManager:
 
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""
+        support = get_model_support(self.cfg.model_config_type)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.AFTER_BASE_MODEL_BUILD,
+            self._hook_context(model),
+        )
+
         if self.cfg.model_config_type == "nemotron_h":
             # Must run after model build because NemotronHForCausalLM.__init__
             # calls register_nemotron_h_conversion_mapping() with overwrite=True,
@@ -159,14 +202,20 @@ class PatchManager:
 
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
-        if support is not None:
-            support.pre_model_load(self.cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+            self._hook_context(),
+        )
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
         support = get_model_support(self.cfg.model_config_type)
-        if support is not None:
-            support.post_model_load(self.cfg, model)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.AFTER_ADAPTER_LOAD,
+            self._hook_context(model),
+        )
         self._apply_llama_flash_attn_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
