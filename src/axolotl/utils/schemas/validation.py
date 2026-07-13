@@ -221,21 +221,15 @@ class TrainingValidationMixin:
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
         # This runs in mode="before", so field defaults haven't been applied
         # yet. Both `micro_batch_size` and `gradient_accumulation_steps` carry a
-        # documented default of 1, so a config that sets only one of them (and
-        # relies on the other's default) is still fully specified. Fall back to
-        # each field's declared default when the key is absent so such configs
-        # are not rejected outright.
-        def is_set(field):
-            value = data.get(field)
-            if value is None:
-                field_info = cls.model_fields.get(field)
-                if field_info is not None:
-                    value = field_info.default
-            return bool(value)
+        # documented default of 1, so a config that explicitly sets either one
+        # (relying on the other's default) is fully specified and must not be
+        # rejected. The deprecated `batch_size`, however, has to be paired with
+        # an explicit `micro_batch_size` or `gradient_accumulation_steps` so it
+        # can be split -- on its own it is ambiguous.
+        if data.get("micro_batch_size") or data.get("gradient_accumulation_steps"):
+            return data
 
-        non_empty_count = sum(1 for field in fields if is_set(field))
-
-        if non_empty_count < 2:
+        if data.get("batch_size"):
             raise ValueError(f"At least two of {', '.join(fields)} must be set")
         return data
 
@@ -806,7 +800,7 @@ class RLValidationMixin:
         TRL's GRPOTrainer requires that the per-step generation batch size be
         evenly divisible by ``num_generations`` so that every prompt can be
         replicated exactly ``num_generations`` times. The runtime check inside
-        ``GRPOTrainer.__init__`` only fires after the model has been loaded —
+        ``GRPOTrainer.__init__`` only fires after the model has been loaded �
         too late and too cryptic for the user. We replicate the check here so
         the failure is immediate and actionable.
 
@@ -821,7 +815,7 @@ class RLValidationMixin:
         trl_cfg = data.get("trl") or {}
         num_gen = trl_cfg.get("num_generations")
         if num_gen is None:
-            # TRL's own default is 8 — but if the user didn't set it, we
+            # TRL's own default is 8 � but if the user didn't set it, we
             # don't have enough info to validate anything. Let TRL's own
             # init handle the default-vs-batch interaction.
             return data
@@ -1655,7 +1649,7 @@ class ComplexValidationMixin:
                     "hidden-state passing and additive output correction across "
                     "CP ranks. Attention layers use ring attention. This is "
                     "mathematically exact but has not been extensively validated "
-                    "end-to-end — verify loss curves match single-GPU baselines. "
+                    "end-to-end � verify loss curves match single-GPU baselines. "
                     "Recommended: run a short training job and compare loss curves "
                     "against a single-GPU baseline with the same data/seed."
                 )
@@ -1728,7 +1722,7 @@ class EBFTValidationMixin:
     @classmethod
     def check_ebft_torch_compile(cls, data):
         """torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
-        and CheckpointErrors. The flex_attention kernel compiles itself internally —
+        and CheckpointErrors. The flex_attention kernel compiles itself internally �
         whole-model torch.compile is not needed and actively harmful."""
         if (
             data.get("rl") == "ebft"
@@ -1739,11 +1733,11 @@ class EBFTValidationMixin:
                 raise ValueError(
                     "EBFT strided mode: `torch_compile: true` with `gradient_checkpointing: true` "
                     "causes CheckpointError (BlockMask metadata mismatch during recomputation). "
-                    "Remove `torch_compile` — the flex_attention kernel compiles itself internally."
+                    "Remove `torch_compile` � the flex_attention kernel compiles itself internally."
                 )
             LOG.warning(
                 "EBFT strided mode: `torch_compile: true` causes dynamo recompiles from "
-                "variable sequence lengths across steps. Consider removing it — "
+                "variable sequence lengths across steps. Consider removing it � "
                 "flex_attention compiles itself internally."
             )
         return data
@@ -1784,7 +1778,7 @@ class EBFTValidationMixin:
                 "`attn_implementation: flex_attention`. Activation offloading replaces "
                 "gradient checkpointing with FSDP-style wrapping that conflicts with "
                 "flex_attention's reentrant checkpoint requirement. Remove "
-                "`activation_offloading` — the strided trainer uses micro-batched forward "
+                "`activation_offloading` � the strided trainer uses micro-batched forward "
                 "passes for memory efficiency instead."
             )
         return self
@@ -1820,7 +1814,7 @@ class EBFTValidationMixin:
         for ds in datasets or []:
             if isinstance(ds, dict) and ds.get("train_on_split"):
                 LOG.warning(
-                    f"Dataset has `train_on_split: {ds['train_on_split']}` — this field "
+                    f"Dataset has `train_on_split: {ds['train_on_split']}` � this field "
                     f"is not recognized and will be silently ignored. "
                     f"Use `split: {ds['train_on_split']}` instead."
                 )
