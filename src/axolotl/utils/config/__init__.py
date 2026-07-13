@@ -325,7 +325,11 @@ def normalize_config(cfg):
     run_model_support_hooks(
         model_support,
         ModelHookPhase.CONFIGURE_RUN,
-        ModelHookContext(cfg=cfg, model_config=model_config),
+        ModelHookContext(
+            cfg=cfg,
+            model_config=model_config,
+            inference=getattr(cfg, "inference", None),
+        ),
     )
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)

@@ -15,6 +15,8 @@ from .base import (
     check_capability,
 )
 from .profile import (
+    AutoModelClassProvider,
+    ConfigMatcher,
     ModelFamilyTemplate,
     ModelHook,
     ModelHookContext,
@@ -23,6 +25,9 @@ from .profile import (
     ModelMatchers,
     ModelProfile,
     ModelStrategies,
+    ModelStrategyOverrides,
+    ProcessingStrategyClassProvider,
+    ProcessorMatcher,
     ResolvedModelProfile,
     resolve_model_support,
     run_model_support_hooks,
@@ -36,7 +41,9 @@ from .registry import (
 from .templates import IMAGE_TEXT_TO_TEXT, VANILLA_CAUSAL_LM
 
 __all__ = [
+    "AutoModelClassProvider",
     "Capability",
+    "ConfigMatcher",
     "Experimental",
     "ModelSupport",
     "ModelFamilyTemplate",
@@ -46,7 +53,10 @@ __all__ = [
     "ModelHooks",
     "ModelMatchers",
     "ModelProfile",
+    "ModelStrategyOverrides",
     "ModelStrategies",
+    "ProcessingStrategyClassProvider",
+    "ProcessorMatcher",
     "ResolvedModelProfile",
     "Supported",
     "Unsupported",

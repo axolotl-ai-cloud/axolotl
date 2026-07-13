@@ -36,15 +36,22 @@ class ModelHookPhase(str, Enum):
 
 @dataclass(frozen=True)
 class ModelHookContext:
-    """Inputs available to a model hook at its lifecycle phase."""
+    """Phase-specific inputs passed to a model hook.
+
+    The dataclass prevents field reassignment, but the contained config and model
+    objects remain mutable. Config loading phases populate only the fields available
+    at that boundary; model loading phases also provide the tokenizer, optional
+    processor, mode flags, and eventually the model instance. Optional fields and
+    mode flags are ``None`` when the current boundary does not know them.
+    """
 
     cfg: DictDefault
     model_config: PretrainedConfig | Mapping[str, Any] | None = None
     tokenizer: PreTrainedTokenizerBase | None = None
     processor: ProcessorMixin | None = None
     model: PreTrainedModel | PeftModel | None = None
-    inference: bool = False
-    reference_model: bool = False
+    inference: bool | None = None
+    reference_model: bool | None = None
 
 
 ModelHook = Callable[[ModelHookContext], None]
@@ -52,6 +59,16 @@ AutoModelClassProvider = Callable[[], type | None]
 ProcessingStrategyClassProvider = Callable[[], type["ProcessingStrategy"] | None]
 ConfigMatcher = Callable[["DictDefault"], bool]
 ProcessorMatcher = Callable[["ProcessorMixin"], bool]
+
+
+class _InheritStrategy:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "INHERIT"
+
+
+_INHERIT_STRATEGY = _InheritStrategy()
 
 _ACTIVE_LEGACY_HOOK: ContextVar[tuple[int, ModelHookPhase] | None] = ContextVar(
     "model_support_legacy_hook",
@@ -61,29 +78,52 @@ _ACTIVE_LEGACY_HOOK: ContextVar[tuple[int, ModelHookPhase] | None] = ContextVar(
 
 @dataclass(frozen=True)
 class ModelStrategies:
-    """Typed component providers selected by a family or model profile."""
+    """Lazy component providers supplied by a model family.
+
+    Each field is a zero-argument callable that returns a component class or ``None``.
+    Providers should import optional or heavyweight implementations only when called.
+    """
 
     auto_model_cls: AutoModelClassProvider | None = None
     processing_strategy_cls: ProcessingStrategyClassProvider | None = None
 
-    def with_overrides(self, overrides: ModelStrategies) -> ModelStrategies:
+    def with_overrides(self, overrides: ModelStrategyOverrides) -> ModelStrategies:
         return ModelStrategies(
             auto_model_cls=(
-                overrides.auto_model_cls
-                if overrides.auto_model_cls is not None
-                else self.auto_model_cls
+                self.auto_model_cls
+                if isinstance(overrides.auto_model_cls, _InheritStrategy)
+                else overrides.auto_model_cls
             ),
             processing_strategy_cls=(
-                overrides.processing_strategy_cls
-                if overrides.processing_strategy_cls is not None
-                else self.processing_strategy_cls
+                self.processing_strategy_cls
+                if isinstance(overrides.processing_strategy_cls, _InheritStrategy)
+                else overrides.processing_strategy_cls
             ),
         )
 
 
 @dataclass(frozen=True)
+class ModelStrategyOverrides:
+    """Per-model component overrides layered over family strategies.
+
+    An omitted field inherits its family provider. Explicit ``None`` removes the
+    inherited provider and restores the downstream generic fallback.
+    """
+
+    auto_model_cls: AutoModelClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    processing_strategy_cls: (
+        ProcessingStrategyClassProvider | None | _InheritStrategy
+    ) = _INHERIT_STRATEGY
+
+
+@dataclass(frozen=True)
 class ModelMatchers:
-    """Typed discovery functions for pre-config and processor dispatch."""
+    """Discovery predicates used when exact ``model_type`` lookup is unavailable.
+
+    The config matcher runs at pre-config and tokenizer boundaries; the processor
+    matcher runs while selecting multimodal processing. Matchers should be
+    side-effect-free and return a boolean. Multiple matches are rejected as ambiguous.
+    """
 
     cfg: ConfigMatcher | None = None
     processor: ProcessorMatcher | None = None
@@ -101,11 +141,17 @@ class ModelMatchers:
 
 @dataclass(frozen=True)
 class ModelHooks:
-    """Model-specific hooks grouped by explicit lifecycle phase."""
+    """Model-specific hooks grouped by explicit lifecycle phase.
+
+    Hooks append to inherited family hooks unless their phase is included in
+    ``replace_phases``. Replacing a phase with an empty tuple suppresses the family
+    hooks for that phase.
+    """
 
     by_phase: Mapping[ModelHookPhase, tuple[ModelHook, ...]] = field(
         default_factory=dict
     )
+    replace_phases: frozenset[ModelHookPhase] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         hooks = {
@@ -114,15 +160,25 @@ class ModelHooks:
         }
         if any(not isinstance(phase, ModelHookPhase) for phase in hooks):
             raise TypeError("ModelHooks keys must be ModelHookPhase values")
+        if any(not isinstance(phase, ModelHookPhase) for phase in self.replace_phases):
+            raise TypeError(
+                "ModelHooks.replace_phases must contain ModelHookPhase values"
+            )
         object.__setattr__(self, "by_phase", MappingProxyType(hooks))
+        object.__setattr__(self, "replace_phases", frozenset(self.replace_phases))
 
     def with_additions(self, additions: ModelHooks) -> ModelHooks:
         phases = dict.fromkeys((*self.by_phase, *additions.by_phase))
         return ModelHooks(
             {
-                phase: self.for_phase(phase) + additions.for_phase(phase)
+                phase: (
+                    additions.for_phase(phase)
+                    if phase in additions.replace_phases
+                    else self.for_phase(phase) + additions.for_phase(phase)
+                )
                 for phase in phases
-            }
+            },
+            replace_phases=self.replace_phases | additions.replace_phases,
         )
 
     def for_phase(self, phase: ModelHookPhase) -> tuple[ModelHook, ...]:
@@ -153,7 +209,7 @@ class ModelProfile:
     family: ModelFamilyTemplate
     is_multimodal: bool | None = None
     capabilities: Mapping[str, Capability | None] = field(default_factory=dict)
-    strategies: ModelStrategies = field(default_factory=ModelStrategies)
+    strategies: ModelStrategyOverrides = field(default_factory=ModelStrategyOverrides)
     matchers: ModelMatchers = field(default_factory=ModelMatchers)
     hooks: ModelHooks = field(default_factory=ModelHooks)
 
@@ -226,7 +282,7 @@ def _legacy_post_load_hook(
 
 
 def _resolve_declarative_model_support(
-    support: ModelSupport,
+    support: ModelSupport | type[ModelSupport],
 ) -> ResolvedModelProfile:
     profile = support.profile
     if profile is None:
@@ -307,12 +363,14 @@ def resolve_model_support(
     declares_auto_model, _ = _declared_value(support, "get_auto_model_cls")
     if declares_auto_model:
         strategies = strategies.with_overrides(
-            ModelStrategies(auto_model_cls=support.get_auto_model_cls)
+            ModelStrategyOverrides(auto_model_cls=support.get_auto_model_cls)
         )
     declares_processing, _ = _declared_value(support, "get_processing_strategy_cls")
     if declares_processing:
         strategies = strategies.with_overrides(
-            ModelStrategies(processing_strategy_cls=support.get_processing_strategy_cls)
+            ModelStrategyOverrides(
+                processing_strategy_cls=support.get_processing_strategy_cls
+            )
         )
     declares_cfg_matcher, _ = _declared_value(support, "matches_cfg")
     if declares_cfg_matcher:
@@ -361,6 +419,8 @@ def run_model_support_hooks(
 ) -> None:
     """Run the effective hooks for one explicit lifecycle phase."""
     if support is None:
+        return
+    if _ACTIVE_LEGACY_HOOK.get() == (id(support), phase):
         return
     resolved = resolve_model_support(support)
     for hook in resolved.hooks.for_phase(phase):

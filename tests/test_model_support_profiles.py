@@ -16,6 +16,7 @@ from axolotl.model_support import (
     ModelMatchers,
     ModelProfile,
     ModelStrategies,
+    ModelStrategyOverrides,
     ModelSupport,
     Supported,
     Unsupported,
@@ -89,7 +90,9 @@ def test_profile_resolution_precedence_and_fieldwise_strategy_inheritance():
         profile = ModelProfile(
             family=family,
             is_multimodal=True,
-            strategies=ModelStrategies(auto_model_cls=_provider(ProfileAutoModel)),
+            strategies=ModelStrategyOverrides(
+                auto_model_cls=_provider(ProfileAutoModel)
+            ),
             matchers=ModelMatchers(cfg=profile_cfg_matcher),
         )
         is_multimodal = False
@@ -117,6 +120,62 @@ def test_inherited_base_defaults_do_not_shadow_a_profile():
 
     assert resolve_model_support(support).is_multimodal is True
     assert support.is_multimodal is True
+
+
+def test_profile_projections_agree_for_descriptor_class_and_instance():
+    family = ModelFamilyTemplate(
+        name="projection_family",
+        is_multimodal=True,
+        capabilities={"projection": Supported("family")},
+    )
+
+    class ProjectedSupport(ModelSupport):
+        model_types = ("projected_profile_test",)
+        profile = ModelProfile(family=family)
+
+    support = ProjectedSupport()
+
+    assert ProjectedSupport.is_multimodal is support.is_multimodal is True
+    assert ProjectedSupport.capabilities == support.capabilities
+    assert isinstance(ProjectedSupport.capabilities["projection"], Supported)
+
+
+def test_strategy_override_omission_inherits_and_explicit_none_clears():
+    class FamilyAutoModel:
+        pass
+
+    class FamilyProcessingStrategy:
+        pass
+
+    family = ModelFamilyTemplate(
+        name="strategy_clear_family",
+        strategies=ModelStrategies(
+            auto_model_cls=_provider(FamilyAutoModel),
+            processing_strategy_cls=_provider(FamilyProcessingStrategy),
+        ),
+    )
+
+    class InheritingSupport(ModelSupport):
+        model_types = ("inheriting_strategy_test",)
+        profile = ModelProfile(family=family)
+
+    class ClearingSupport(ModelSupport):
+        model_types = ("clearing_strategy_test",)
+        profile = ModelProfile(
+            family=family,
+            strategies=ModelStrategyOverrides(auto_model_cls=None),
+        )
+
+    inherited = resolve_model_support(InheritingSupport()).strategies
+    cleared = resolve_model_support(ClearingSupport()).strategies
+
+    assert inherited.auto_model_cls is not None
+    assert inherited.auto_model_cls() is FamilyAutoModel
+    assert inherited.processing_strategy_cls is not None
+    assert inherited.processing_strategy_cls() is FamilyProcessingStrategy
+    assert cleared.auto_model_cls is None
+    assert cleared.processing_strategy_cls is not None
+    assert cleared.processing_strategy_cls() is FamilyProcessingStrategy
 
 
 def test_unprofiled_legacy_multimodal_support_preserves_loader_fallback():
@@ -326,6 +385,67 @@ def test_hooks_run_in_family_profile_legacy_order_on_every_dispatch():
     assert events[2][1] is cfg
 
 
+def test_profile_hooks_can_replace_or_suppress_family_phases():
+    events = []
+
+    def family_before_hook(_context):
+        events.append("family_before")
+
+    def family_after_hook(_context):
+        events.append("family_after")
+
+    def profile_before_hook(_context):
+        events.append("profile_before")
+
+    family = ModelFamilyTemplate(
+        name="replace_hook_family",
+        hooks=ModelHooks(
+            {
+                ModelHookPhase.BEFORE_MODEL_BUILD: (family_before_hook,),
+                ModelHookPhase.AFTER_BASE_MODEL_BUILD: (family_after_hook,),
+            }
+        ),
+    )
+
+    class ReplacingHookSupport(ModelSupport):
+        model_types = ("replacing_hook_profile_test",)
+        profile = ModelProfile(
+            family=family,
+            hooks=ModelHooks(
+                {
+                    ModelHookPhase.BEFORE_MODEL_BUILD: (profile_before_hook,),
+                },
+                replace_phases=frozenset(
+                    {
+                        ModelHookPhase.BEFORE_MODEL_BUILD,
+                        ModelHookPhase.AFTER_BASE_MODEL_BUILD,
+                    }
+                ),
+            ),
+        )
+
+    support = ReplacingHookSupport()
+    context = ModelHookContext(cfg=DictDefault())
+
+    run_model_support_hooks(
+        support,
+        ModelHookPhase.BEFORE_MODEL_BUILD,
+        context,
+    )
+    run_model_support_hooks(
+        support,
+        ModelHookPhase.AFTER_BASE_MODEL_BUILD,
+        context,
+    )
+
+    assert events == ["profile_before"]
+    resolved = resolve_model_support(support)
+    assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_MODEL_BUILD) == (
+        profile_before_hook,
+    )
+    assert resolved.hooks.for_phase(ModelHookPhase.AFTER_BASE_MODEL_BUILD) == ()
+
+
 def test_profile_hook_is_callable_through_the_legacy_base_method():
     events = []
 
@@ -365,6 +485,37 @@ def test_legacy_hook_calling_super_does_not_duplicate_profile_hook():
     cfg = DictDefault(marker="canonical")
     run_model_support_hooks(
         ProfileAndLegacyHookSupport(),
+        ModelHookPhase.BEFORE_MODEL_BUILD,
+        ModelHookContext(cfg=cfg),
+    )
+
+    assert events == [("profile", cfg), ("legacy", cfg)]
+
+
+def test_legacy_hook_redispatch_through_public_runner_does_not_recurse():
+    events = []
+
+    def profile_hook(context):
+        events.append(("profile", context.cfg))
+
+    class RedispatchingSupport(ModelSupport):
+        model_types = ("legacy_public_redispatch_test",)
+        profile = ModelProfile(
+            family=VANILLA_CAUSAL_LM,
+            hooks=ModelHooks({ModelHookPhase.BEFORE_MODEL_BUILD: (profile_hook,)}),
+        )
+
+        def pre_model_load(self, cfg):
+            events.append(("legacy", cfg))
+            run_model_support_hooks(
+                self,
+                ModelHookPhase.BEFORE_MODEL_BUILD,
+                ModelHookContext(cfg=cfg),
+            )
+
+    cfg = DictDefault(marker="public_redispatch")
+    run_model_support_hooks(
+        RedispatchingSupport(),
         ModelHookPhase.BEFORE_MODEL_BUILD,
         ModelHookContext(cfg=cfg),
     )

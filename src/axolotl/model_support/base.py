@@ -55,12 +55,15 @@ class _ProfileProjection(Generic[_T]):
         instance: ModelSupport | None,
         owner: type[ModelSupport] | None = None,
     ) -> _T:
-        if instance is None:
+        target: ModelSupport | type[ModelSupport] | None = (
+            instance if instance is not None else owner
+        )
+        if target is None:
             return self.default
 
         from .profile import _resolve_declarative_model_support
 
-        resolved = _resolve_declarative_model_support(instance)
+        resolved = _resolve_declarative_model_support(target)
         return cast(_T, getattr(resolved, self.name))
 
 

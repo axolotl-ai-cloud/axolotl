@@ -4,7 +4,7 @@ from axolotl.model_support.base import ModelSupport, Unsupported
 from axolotl.model_support.profile import (
     ModelMatchers,
     ModelProfile,
-    ModelStrategies,
+    ModelStrategyOverrides,
 )
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import IMAGE_TEXT_TO_TEXT
@@ -40,7 +40,7 @@ class PaddleOCRVLSupport(ModelSupport):
                 "The fused QKV/O source rewrite does not match PaddleOCRAttention's forward."
             ),
         },
-        strategies=ModelStrategies(
+        strategies=ModelStrategyOverrides(
             processing_strategy_cls=_get_processing_strategy_cls,
         ),
         matchers=ModelMatchers(processor=_matches_processor),
