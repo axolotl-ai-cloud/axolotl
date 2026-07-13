@@ -20,6 +20,7 @@ from axolotl.monkeypatch.multipack import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.enums import SPARSE_ATTN_IMPLS
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -162,6 +163,7 @@ class PatchManager:
         # cleanly in the same call even though one is instance-scoped
         # and the other is module-scoped.
         self._apply_gemma_hybrid_attention(model)
+        self._apply_sparse_attention_patches(model)
         self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
 
@@ -293,6 +295,20 @@ class PatchManager:
             from axolotl.monkeypatch.attention import register_sage_attn
 
             register_sage_attn()
+
+        if self.cfg.attn_implementation in SPARSE_ATTN_IMPLS:
+            from axolotl.monkeypatch.attention import register_sparse_attn
+
+            register_sparse_attn()
+
+    def _apply_sparse_attention_patches(self, model):
+        """Swap full-attention modules for NSA/FSA on supported MLA models."""
+        if self.cfg.attn_implementation in SPARSE_ATTN_IMPLS:
+            from axolotl.monkeypatch.attention.sparse_attn import (
+                patch_sparse_attention,
+            )
+
+            patch_sparse_attention(model, self.cfg, self.model_config)
 
     def _apply_fp8_attention_patches(self, model):
         """Apply FP8 low-precision attention via torchao."""

@@ -36,6 +36,8 @@ from axolotl.utils.schemas.enums import (
     CANONICAL_ATTN_IMPLS,
     LEGACY_ATTN_FLAG_TO_IMPL,
     SHORT_FORM_ALIAS_TO_CANONICAL,
+    SPARSE_ATTN_IMPLS,
+    SPARSE_ATTN_SUPPORTED_MODELS,
     ChatTemplate,
     RingAttnFunc,
     RLType,
@@ -840,9 +842,10 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
-                "flash_attention_3, flex_attention, xformers, sage, fp8. Hub-kernel "
-                "paths (e.g. kernels-community/flash-attn3) are also accepted and passed "
-                "through to transformers."
+                "flash_attention_3, flex_attention, xformers, sage, fp8, nsa, fsa. "
+                "nsa/fsa are sparse-attention backends for MLA models (DeepSeek, Kimi "
+                "Linear) only. Hub-kernel paths (e.g. kernels-community/flash-attn3) "
+                "are also accepted and passed through to transformers."
             )
         },
     )
@@ -909,6 +912,59 @@ class AxolotlInputConfig(
                 "extra) but currently regresses on sm_86 due to Inductor autotune "
                 "biases — flip them on independently and benchmark."
             )
+        },
+    )
+
+    # --- Sparse attention (attn_implementation: nsa / fsa) ---
+    # Map to the Flash-Sparse-Attention module hyperparameters. Only consumed
+    # when attn_implementation is a sparse backend; ignored otherwise.
+    nsa_block_size: int | None = Field(
+        default=64,
+        gt=0,
+        json_schema_extra={
+            "description": "Sparse-attention KV block granularity (nsa/fsa)."
+        },
+    )
+    nsa_topk: int | None = Field(
+        default=16,
+        gt=0,
+        json_schema_extra={
+            "description": "Number of KV blocks each query attends to (nsa/fsa)."
+        },
+    )
+    nsa_kernel_size: int | None = Field(
+        default=32,
+        gt=0,
+        json_schema_extra={
+            "description": "Compression kernel size for the NSA cmp branch."
+        },
+    )
+    nsa_kernel_stride: int | None = Field(
+        default=16,
+        gt=0,
+        json_schema_extra={
+            "description": "Compression kernel stride for the NSA cmp branch."
+        },
+    )
+    nsa_window_size: int | None = Field(
+        default=512,
+        gt=0,
+        json_schema_extra={
+            "description": "Sliding-window size for the NSA local branch."
+        },
+    )
+    nsa_init_blocks: int | None = Field(
+        default=1,
+        ge=0,
+        json_schema_extra={
+            "description": "Leading KV blocks always selected (nsa/fsa)."
+        },
+    )
+    nsa_local_blocks: int | None = Field(
+        default=2,
+        ge=0,
+        json_schema_extra={
+            "description": "Trailing local KV blocks always selected (nsa/fsa)."
         },
     )
 
@@ -1661,6 +1717,23 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_sparse_attn_requires_mla_model(cls, data):
+        """nsa/fsa swap the full-attention module and only target MLA models."""
+        if not isinstance(data, dict):
+            return data
+        if data.get("attn_implementation") in SPARSE_ATTN_IMPLS:
+            model_type = data.get("model_config_type")
+            if model_type and model_type not in SPARSE_ATTN_SUPPORTED_MODELS:
+                raise ValueError(
+                    f"attn_implementation={data['attn_implementation']!r} is only "
+                    f"supported for MLA models "
+                    f"({', '.join(sorted(SPARSE_ATTN_SUPPORTED_MODELS))}); got "
+                    f"model_config_type={model_type!r}."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_save_strategy_best_requires_metric(cls, data):
         if data.get("save_strategy") == "best" and not data.get(
             "metric_for_best_model"
@@ -1761,6 +1834,22 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "SageAttention supports compute capability between sm_80 and sm_120. "
                 "Please use a different attention implementation."
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_compute_capability_w_sparse_attn(self):
+        """nsa/fsa kernels require Ampere or newer (sm_80+)."""
+        if (
+            self.attn_implementation in SPARSE_ATTN_IMPLS
+            and self.capabilities
+            and self.capabilities.compute_capability
+        ):
+            cc = self.capabilities.compute_capability
+            if not cc.startswith("sm_") or int(cc.split("_", 1)[1]) < 80:
+                raise ValueError(
+                    f"attn_implementation={self.attn_implementation!r} requires "
+                    f"compute capability sm_80 or higher (Ampere+). Detected {cc!r}."
+                )
         return self
 
     @model_validator(mode="after")
