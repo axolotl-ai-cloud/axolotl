@@ -150,6 +150,95 @@ optim_args:
   sinkgd_lr_scale: 0.05  # α scale applied to linear-layer updates
 ```
 
+#### Width transfer (`sinkgd_base_width`) and spectral normalization
+
+Two optional, default-off knobs help the learning rate transfer across model width and
+condition the update. `sinkgd_base_width` and `sinkgd_spectral_target: muon` are **mutually
+exclusive** — both correct for width, so enabling both double-counts (validated and rejected
+at construction). Spectral norm at the default `unit` target combines fine with
+`sinkgd_base_width`, since it conditions the update without touching width scaling.
+
+**Width-aware scaling (`sinkgd_base_width`).** SinkGD's update is *Adam-class*: its per-layer
+learning rate should scale as `1/d_in`. Set `sinkgd_base_width` to the hidden size you tuned
+`sinkgd_lr_scale` on, and each 2D-linear update is scaled by
+`alpha_eff = sinkgd_lr_scale * (base_width / d_in) ** sinkgd_lr_width_exponent`
+(`d_in` is the layer's input dim — the shared input of a fused QKV / gate-up matrix). With
+`sinkgd_base_width` unset, behavior is identical to before (plain scalar `sinkgd_lr_scale`),
+so existing configs are unchanged.
+
+```yaml
+optim_args:
+  sinkgd_lr_scale: 0.05
+  sinkgd_base_width: 2048        # d_in you tuned sinkgd_lr_scale at; enables 1/d_in transfer
+  sinkgd_lr_width_exponent: 1.0  # 1.0 = pure 1/d_in (default); tune only if width varies >10x
+```
+
+**Spectral normalization (`sinkgd_spectral_norm`).** Rescales each update to a target operator
+norm via a cheap warm-started power iteration (~2 matvecs/layer, +1–3% step time, one
+`O(d_in)` state vector per matrix). With `sinkgd_spectral_target: muon` it pins the operator
+norm to `sqrt(d_out/d_in)`, which makes SinkGD *Muon-class* and both transfers across width and
+trained to lower loss than plain `1/d_in` in width sweeps — so use it **instead of**
+`sinkgd_base_width`, not with it. `unit` (the default target) pins a width-independent norm and
+acts as a pure conditioning stabilizer on top of `1/d_in`.
+
+```yaml
+optim_args:
+  sinkgd_lr_scale: 0.05
+  sinkgd_spectral_norm: true
+  sinkgd_spectral_target: muon   # spectral norm owns width transfer (leave sinkgd_base_width unset)
+  sinkgd_spectral_norm_iters: 1  # power-iteration steps per update (warm-started; 1–2 is enough)
+```
+
+Distributed (`fsdp_version: 2`): width-aware scaling and spectral norm both work under FSDP2/TP
+sharding. On replicated / expert-sharded weights everything runs locally with no extra
+communication. On a matrix-dim-sharded weight (the common FSDP2 row-sharded case) the spectral
+norm's power iteration adds **one small vector all-reduce** (length `d_in` or `d_out`) per
+iteration over the `dp_shard` group — the same shape and group as SR-Sinkhorn's existing
+norm-vector reduce, and the matrix itself is never gathered. The persisted power-iteration
+vector round-trips through FSDP2 checkpoints.
+
+#### Fused Triton kernels (`sinkgd_fused_kernel`)
+
+`sinkgd_fused_kernel: true` replaces the compiled update with fused Triton kernels (one
+kernel per SR-Sinkhorn iteration; the column scale, power iteration, and weight update fold
+into the same passes). Works for all SinkGD variants (plain, spectral norm, MD sphere) on
+single-device and FSDP2 rows-sharded weights — same all-reduce count as the compiled path,
+with an automatic tall/wide grid layout so both full matrices and heavily-sharded wide-short
+local shards stay fully occupied. Measured on B200: 1.4–1.75x on the optimizer step
+single-GPU, 1.0–1.8x on 2-rank FSDP2, all regimes ≥1x with the wide layout. Numerics are
+equivalent at bf16 rounding scale but not byte-identical to the compiled path, so the flag
+is off by default. Falls back to the compiled path for cols-sharded (TP) weights,
+`bf16_stochastic_round`, or when Triton is unavailable. Spectral-norm / MD-sphere updates
+that run without a shard group to amortize against (single device, or replicated /
+expert-sharded weights under FSDP2) also fall back when the matrix has fewer than
+`sinkgd_fused_min_numel` elements (default `2^25`) — at those sizes the epilogue's extra
+kernel launches make the compiled path faster.
+
+```yaml
+optim_args:
+  sinkgd_fused_kernel: true
+```
+
+#### Weight-sphere variant (`sinkgd_md_sphere`, experimental)
+
+`sinkgd_md_sphere: true` switches to an experimental magnitude–direction variant: each
+SinkGD-routed 2D weight is held on a fixed Frobenius sphere (`||W||_F` anchored at enable
+time), the SR-Sinkhorn update is spectral-normalized to unit operator norm, applied, and the
+weight is reprojected onto the sphere (no learnable gains — SinkGD's row/column balancing makes
+them redundant). In width/depth sweeps this bounds the deepest-layer activation growth most
+tightly of any variant, but its optimal LR is **width-dependent** (`lr_opt ∝ d_model**-0.6`)
+and its optimum is narrow, so it needs per-scale LR tuning and is **off by default**. Prefer the
+plain spectral-norm path (above) unless you specifically want the tightest activation bound.
+It adds a per-matrix scalar all-reduce (the sphere's global Frobenius norm) on top of the
+spectral all-reduce under FSDP2; the sphere radius and power-iteration vector round-trip.
+
+```yaml
+optim_args:
+  sinkgd_md_sphere: true
+  sinkgd_lr_scale: 0.05
+  # tune learning_rate per width: lr_opt ~ d_model**-0.6 (e.g. ~0.03 at d=2048)
+```
+
 ### q_galore_adamw8bit
 
 Q-GaLore extends [GaLore](https://arxiv.org/abs/2403.03507) with two extra ideas:

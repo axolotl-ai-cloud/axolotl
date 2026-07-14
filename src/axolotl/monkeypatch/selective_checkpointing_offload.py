@@ -24,10 +24,22 @@ from torch.utils.checkpoint import (
     SAC_IGNORED_OPS,
     CheckpointPolicy,
     SelectiveCheckpointContext,
-    _maybe_detach,
     _policy_from_bool,
     _VersionWrapper,
 )
+
+try:
+    # torch <= 2.12
+    from torch.utils.checkpoint import _maybe_detach
+except ImportError:
+    # torch >= 2.13 replaced _maybe_detach with _detach_helper, dropping the
+    # float/alias-info gate to detach any tensor unconditionally
+    from torch.utils.checkpoint import _detach_helper
+
+    def _maybe_detach(x, any_ret_has_alias_info):
+        del any_ret_has_alias_info
+        return _detach_helper(x)
+
 
 from axolotl.monkeypatch.selective_checkpointing import (
     SacPolicyState,
