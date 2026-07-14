@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Callable, Mapping, overload
+from weakref import WeakKeyDictionary
 
 from .base import Capability, ModelSupport
 
@@ -281,7 +282,27 @@ def _legacy_post_load_hook(
     return hook
 
 
+# Declarative resolution depends only on the immutable class-level ``profile`` and
+# ``model_types``, so the result is memoized per descriptor class. Ephemeral classes
+# (e.g. per-test descriptors) are evicted once garbage-collected.
+_DECLARATIVE_CACHE: WeakKeyDictionary[type[ModelSupport], ResolvedModelProfile] = (
+    WeakKeyDictionary()
+)
+
+
 def _resolve_declarative_model_support(
+    support: ModelSupport | type[ModelSupport],
+) -> ResolvedModelProfile:
+    cls = support if isinstance(support, type) else type(support)
+    cached = _DECLARATIVE_CACHE.get(cls)
+    if cached is not None:
+        return cached
+    resolved = _build_declarative_model_support(support)
+    _DECLARATIVE_CACHE[cls] = resolved
+    return resolved
+
+
+def _build_declarative_model_support(
     support: ModelSupport | type[ModelSupport],
 ) -> ResolvedModelProfile:
     profile = support.profile
@@ -340,6 +361,40 @@ def resolve_model_support(support: None) -> None: ...
 def resolve_model_support(support: ModelSupport) -> ResolvedModelProfile: ...
 
 
+_LEGACY_DECLARATION_NAMES = (
+    "is_multimodal",
+    "capabilities",
+    "get_auto_model_cls",
+    "get_processing_strategy_cls",
+    "matches_cfg",
+    "matches_processor",
+    "pre_config_load",
+    "validate_cfg",
+    "pre_tokenizer_load",
+    "pre_model_load",
+    "post_model_load",
+)
+
+_CLASS_HAS_LEGACY_CACHE: WeakKeyDictionary[type[ModelSupport], bool] = (
+    WeakKeyDictionary()
+)
+
+
+def _class_declares_legacy(cls: type[ModelSupport]) -> bool:
+    cached = _CLASS_HAS_LEGACY_CACHE.get(cls)
+    if cached is not None:
+        return cached
+    declares = any(
+        any(
+            name in base.__dict__
+            for base in cls.__mro__[: cls.__mro__.index(ModelSupport)]
+        )
+        for name in _LEGACY_DECLARATION_NAMES
+    )
+    _CLASS_HAS_LEGACY_CACHE[cls] = declares
+    return declares
+
+
 def resolve_model_support(
     support: ModelSupport | None,
 ) -> ResolvedModelProfile | None:
@@ -348,6 +403,11 @@ def resolve_model_support(
         return None
 
     declarative = _resolve_declarative_model_support(support)
+    # No legacy class attrs/methods and no instance-level overrides means the
+    # declarative result is already the effective profile; reuse it directly.
+    if not vars(support) and not _class_declares_legacy(type(support)):
+        return declarative
+
     is_multimodal = declarative.is_multimodal
     capabilities = dict(declarative.capabilities)
     strategies = declarative.strategies

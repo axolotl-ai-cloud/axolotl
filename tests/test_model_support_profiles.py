@@ -571,3 +571,40 @@ def test_nullable_resolution_and_hook_dispatch_preserve_legacy_fallback():
         ModelHookPhase.BEFORE_MODEL_BUILD,
         ModelHookContext(cfg=DictDefault()),
     )
+
+
+def test_declarative_resolution_is_memoized_per_descriptor_class():
+    from axolotl.model_support import profile as profile_module
+
+    class MemoizedSupport(ModelSupport):
+        model_types = ("memoized_profile_test",)
+        profile = ModelProfile(family=VANILLA_CAUSAL_LM)
+
+    support = MemoizedSupport()
+    first = profile_module._resolve_declarative_model_support(support)
+    second = profile_module._resolve_declarative_model_support(support)
+    via_class = profile_module._resolve_declarative_model_support(MemoizedSupport)
+
+    assert first is second
+    assert first is via_class
+    assert profile_module._DECLARATIVE_CACHE[MemoizedSupport] is first
+    # a profile-only descriptor takes the fast path and reuses the cached result
+    assert resolve_model_support(support) is first
+
+
+def test_legacy_descriptor_bypasses_declarative_fast_path():
+    class LegacyFastPathSupport(ModelSupport):
+        model_types = ("legacy_fast_path_test",)
+        profile = ModelProfile(family=VANILLA_CAUSAL_LM)
+
+        def post_model_load(self, cfg, model):  # noqa: D401
+            return None
+
+    support = LegacyFastPathSupport()
+    resolved = resolve_model_support(support)
+
+    from axolotl.model_support import profile as profile_module
+
+    declarative = profile_module._resolve_declarative_model_support(support)
+    assert resolved is not declarative
+    assert resolved.hooks.for_phase(ModelHookPhase.AFTER_ADAPTER_LOAD)
