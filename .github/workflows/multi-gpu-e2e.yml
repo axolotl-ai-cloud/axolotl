@@ -2,6 +2,10 @@ name: docker-multigpu-tests-biweekly
 
 on:
   pull_request:
+    # on PRs the job is gated behind the `run-gpu-tests` label; `labeled`
+    # picks the PR up when a maintainer applies it. schedule/dispatch runs
+    # are not gated.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - "tests/e2e/multigpu/**.py"
       - "pyproject.toml"
@@ -13,9 +17,10 @@ on:
   schedule:
     - cron: "0 0 * * 1,4" # Runs at 00:00 UTC every monday & thursday
 
-# Cancel jobs on the same ref if a new one is triggered
+# Cancel jobs on the same ref if a new one is triggered. `labeled` events for
+# unrelated labels get their own no-op group so they can't cancel a live run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'run-gpu-tests') && 'label-noop' || 'e2e' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -26,7 +31,16 @@ env:
 
 jobs:
   test-axolotl-multigpu:
-    if: ${{ ! contains(github.event.head_commit.message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      (
+        github.event_name != 'pull_request' ||
+        (
+          !github.event.pull_request.draft &&
+          contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
+          (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
+        )
+      )
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +48,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.0
+            pytorch: 2.12.1
             axolotl_extras:
             # axolotl_extras: fbgemm-gpu
             num_gpus: 2
@@ -42,9 +56,11 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Install Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Install Modal

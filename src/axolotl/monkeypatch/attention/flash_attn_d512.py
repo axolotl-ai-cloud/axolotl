@@ -487,6 +487,21 @@ def _(do, q, k, v, o, L, pos, doc_end, causal, varlen, scale):
     return torch.empty_like(q), torch.empty_like(k), torch.empty_like(v)
 
 
+def _compute_doc_end(pos: torch.Tensor) -> torch.Tensor:
+    """Per-row index of the next document start after each position (or N).
+
+    Suffix-min of "j if pos[j]==0 else N" shifted left by one — fully tensorized so
+    torch.compile can trace it (the per-row ``.nonzero()`` loop graph-breaks).
+    """
+    B, N = pos.shape
+    idx = torch.arange(N, device=pos.device, dtype=pos.dtype)
+    starts_or_n = torch.where(pos == 0, idx.expand_as(pos), pos.new_full((), N))
+    shifted = torch.cat([starts_or_n[:, 1:], pos.new_full((B, 1), N)], dim=1)
+    return torch.flip(
+        torch.cummin(torch.flip(shifted, dims=[1]), dim=1).values, dims=[1]
+    )
+
+
 class _FlashD512(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q, k, v, causal, position_ids, scale=None):
@@ -507,15 +522,7 @@ class _FlashD512(torch.autograd.Function):
                 .contiguous()
             )
         if VARLEN:
-            doc_end = torch.empty_like(pos)
-            for b in range(B):
-                starts = (pos[b] == 0).nonzero().flatten()
-                bounds = torch.cat(
-                    [starts, torch.tensor([N], device=pos.device, dtype=starts.dtype)]
-                )
-                doc_end[b] = (
-                    bounds[1:].repeat_interleave(bounds[1:] - bounds[:-1]).to(pos.dtype)
-                )
+            doc_end = _compute_doc_end(pos)
         else:
             doc_end = pos
         scale = D**-0.5 if scale is None else float(scale)

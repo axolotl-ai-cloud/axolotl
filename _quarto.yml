@@ -332,11 +332,8 @@ quartodoc:
         - integrations.liger.models.base
         - integrations.liger.models.deepseekv2
         - integrations.liger.models.jamba
-        - integrations.liger.models.llama4
-        - integrations.liger.models.qwen3
         - integrations.liger.models.qwen3_5
         - integrations.liger.models.qwen3_5_moe
-        - integrations.liger.models.qwen3_moe
         - integrations.llm_compressor.args
         - integrations.llm_compressor.plugin
         - integrations.llm_compressor.utils
@@ -443,6 +440,7 @@ website:
             - docs/choosing_method.qmd
             - docs/installation.qmd
             - docs/inference.qmd
+            - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
                 - docs/models/kimi-linear.qmd
@@ -510,6 +508,7 @@ website:
             - docs/vllm_serving.qmd
             - docs/reward_modelling.qmd
             - docs/lr_groups.qmd
+            - docs/lora.qmd
             - docs/lora_optims.qmd
             - docs/dataset_loading.qmd
             - docs/qat.qmd
