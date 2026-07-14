@@ -37,9 +37,14 @@ def fused_indexer_topk(
     to [B,S,T], the long-context memory win). Forward-only. Under context parallel (``group`` set),
     all-gathers the indexer's keys so local queries score against the GLOBAL keys, and uses the
     global ``position_ids`` for the causal mask. Returns top-k of GLOBAL key positions."""
-    from transformers.models.glm_moe_dsa.modeling_glm_moe_dsa import (
-        apply_rotary_pos_emb,
-    )
+    from transformers.models.glm_moe_dsa import modeling_glm_moe_dsa as hf_glm_dsa
+
+    # transformers <= 5.12 applies non-interleaved rope in the stock indexer; the upstream commit
+    # that switched it to interleaved also removed apply_rotary_pos_emb from the module, so the
+    # symbol's presence selects the formulation matching the installed indexer.
+    rope_fn = getattr(hf_glm_dsa, "apply_rotary_pos_emb", None)
+    if rope_fn is None:
+        rope_fn = hf_glm_dsa.apply_rotary_pos_emb_interleave
 
     B, S, _ = hidden_states.shape
     q = indexer.wq_b(q_resid).view(B, S, indexer.n_heads, indexer.head_dim)
@@ -55,14 +60,14 @@ def fused_indexer_topk(
         dim=-1,
     )
     cos, sin = position_embeddings
-    q_rot, k_rot = apply_rotary_pos_emb(
-        q_rot, k_rot, cos, sin, unsqueeze_dim=2
-    )  # non-interleaved
+    q_rot, k_rot = rope_fn(q_rot, k_rot, cos, sin, unsqueeze_dim=2)
     q = torch.cat([q_rot, q_pass], dim=-1)  # [B,S_local,32,128]
     k = torch.cat([k_rot, k_pass], dim=-1).squeeze(2)  # [B,S_local,128]
+    # fp32 before scaling, as in the stock indexer: bf16 rounding here perturbs near-tied
+    # scores enough to flip top-k selections
     weights = indexer.weights_proj(
         hidden_states.to(indexer.weights_proj.weight.dtype)
-    ) * (indexer.n_heads**-0.5)  # [B,S_local,32]
+    ).float() * (indexer.n_heads**-0.5)  # [B,S_local,32]
     cp = group is not None and dist.is_initialized() and dist.get_world_size(group) > 1
     if cp:
         k = all_gather_seq(
