@@ -1469,7 +1469,7 @@ def get_processing_strategy(
     support = get_model_support(chat_template_type) or get_model_support_for_processor(
         processor
     )
-    resolved_support = resolve_model_support(support) if support is not None else None
+    resolved_support = resolve_model_support(support)
     strategy_provider = (
         resolved_support.strategies.processing_strategy_cls
         if resolved_support is not None

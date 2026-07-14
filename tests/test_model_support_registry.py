@@ -162,7 +162,7 @@ def test_ambiguous_cfg_match_raises_with_support_names(isolated_registry):
     isolated_registry.register_model_support(FirstSupport)
     isolated_registry.register_model_support(SecondSupport)
 
-    with pytest.raises(ValueError, match="FirstSupport.*SecondSupport"):
+    with pytest.raises(ValueError, match=r"FirstSupport.*SecondSupport"):
         isolated_registry.get_model_support_for_cfg(DictDefault())
 
 
@@ -182,5 +182,5 @@ def test_ambiguous_processor_match_raises_with_support_names(isolated_registry):
     isolated_registry.register_model_support(FirstSupport)
     isolated_registry.register_model_support(SecondSupport)
 
-    with pytest.raises(ValueError, match="FirstSupport.*SecondSupport"):
+    with pytest.raises(ValueError, match=r"FirstSupport.*SecondSupport"):
         isolated_registry.get_model_support_for_processor(object())

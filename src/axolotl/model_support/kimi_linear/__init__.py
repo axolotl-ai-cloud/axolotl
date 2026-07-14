@@ -16,23 +16,29 @@ from axolotl.model_support.profile import (
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import VANILLA_CAUSAL_LM
 
+_KIMI_LINEAR_MARKER = "kimi-linear"
+
+
+def _field_matches_kimi(cfg, field: str) -> bool:
+    return _KIMI_LINEAR_MARKER in (getattr(cfg, field, None) or "").lower()
+
 
 def _matches_kimi_cfg(cfg) -> bool:
     return any(
-        "kimi-linear" in (getattr(cfg, field, None) or "").lower()
+        _field_matches_kimi(cfg, field)
         for field in ("base_model_config", "tokenizer_config")
     )
 
 
 def _before_config_load(context: ModelHookContext) -> None:
-    if "kimi-linear" in (getattr(context.cfg, "base_model_config", None) or "").lower():
+    if _field_matches_kimi(context.cfg, "base_model_config"):
         from .patch_kimi_linear import patch_kimi_config
 
         patch_kimi_config()
 
 
 def _before_tokenizer_load(context: ModelHookContext) -> None:
-    if "kimi-linear" in (getattr(context.cfg, "tokenizer_config", None) or "").lower():
+    if _field_matches_kimi(context.cfg, "tokenizer_config"):
         from .patch_kimi_linear import patch_kimi_tokenizer
 
         patch_kimi_tokenizer()
