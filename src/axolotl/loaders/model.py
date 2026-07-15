@@ -625,7 +625,11 @@ class ModelLoader:
             # the device map at bf16 size (before quantization), causing it to offload
             # layers to CPU, which BnB then rejects. Force single-GPU placement to
             # prevent this. Only applies to the non-FSDP, non-ZeRO3 path (DDP/single).
-            if getattr(self.cfg, "quantize_moe_experts", False) and device_map in (
+            if (
+                self.cfg.load_in_4bit
+                or self.cfg.load_in_8bit
+                or getattr(self.cfg, "quantize_moe_experts", False)
+            ) and device_map in (
                 "auto",
                 None,
             ):
