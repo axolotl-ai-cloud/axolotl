@@ -28,6 +28,10 @@ BUILTIN_COMMANDS: dict[str, PluginCommand] = {
         target="axolotl.integrations.lm_eval.cli:lm_eval",
         short_help="use lm eval to evaluate a trained language model",
     ),
+    "sar": PluginCommand(
+        target="axolotl.integrations.sar.cli:sar",
+        short_help="project a trained model's weight delta onto the base model's spectral subspace",
+    ),
 }
 
 
