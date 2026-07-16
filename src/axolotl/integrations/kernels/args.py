@@ -271,18 +271,6 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def check_sonicmoe_ep_unsupported(cls, data):
-        """SonicMoE + EP is not yet implemented (EP `_sonicmoe_local` raises)."""
-        data = cls._canonicalize_expert_backend(data)
-        if data.get("use_sonicmoe") and (data.get("expert_parallel_size") or 1) > 1:
-            raise ValueError(
-                "use_sonicmoe=true is not supported with expert_parallel_size > 1. "
-                "Use use_scattermoe=true under EP, or set expert_parallel_size=1."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_experts_implementation(cls, data):
         """Auto-select impl from kernel flags; reject mismatched/unknown values."""
         data = cls._canonicalize_expert_backend(data)

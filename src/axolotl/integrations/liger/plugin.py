@@ -6,9 +6,21 @@ import inspect
 import sys
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.model_support import check_capability, get_model_support
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+LIGER_FLAGS = (
+    "liger_rope",
+    "liger_rms_norm",
+    "liger_rms_norm_gated",
+    "liger_layer_norm",
+    "liger_glu_activation",
+    "liger_cross_entropy",
+    "liger_fused_linear_cross_entropy",
+    "liger_use_token_scaling",
+)
 
 
 class LigerPlugin(BasePlugin):
@@ -20,6 +32,15 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        if any(getattr(cfg, flag, False) for flag in LIGER_FLAGS):
+            check_capability(
+                get_model_support(cfg.model_config_type),
+                "liger",
+                cfg.model_config_type,
+                feature="Liger",
+                hint="Disable Liger flags for this model.",
+            )
+
         # shim: liger imports ORPOTrainer from old trl.trainer (now trl.experimental.orpo)
         import trl.trainer
         from trl.experimental.orpo import ORPOTrainer
