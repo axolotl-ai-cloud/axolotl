@@ -253,10 +253,33 @@ def _sonicmoe_nvfp4_forward(
     )
 
 
+def redirect_sonicmoe_kernel_repo() -> None:
+    """Point transformers' ``sonic-moe`` hub kernel at our org build (quack 0.6.1 on cutlass-dsl
+    4.6.0); the upstream ``kernels-community/sonic-moe`` prebuilt still bundles an older quack that
+    breaks on cutlass-dsl 4.6.0. No-op if the hub mapping is absent (e.g. CPU / no kernels)."""
+    try:
+        from transformers.integrations import hub_kernels
+    except ImportError:
+        return
+    mapping = getattr(hub_kernels, "_HUB_KERNEL_MAPPING", None)
+    if isinstance(mapping, dict) and "sonic-moe" in mapping:
+        mapping["sonic-moe"] = {
+            "repo_id": "axolotl-ai-co/sonic-moe",
+            "revision": "main",
+        }
+        # Our repo is outside kernels-community, which the lazy expert-kernel load blocks unless
+        # this global is set. The loader's context-managed allow only covers model init, not the
+        # forward-time load, so set it directly (harmless: sonicmoe is an explicit opt-in).
+        hub_kernels.ALLOW_ALL_KERNELS = True
+
+
 def register_sonicmoe_experts() -> None:
     """Register the LoRA-aware ``"sonicmoe"`` forward, overriding upstream. Idempotent."""
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
 
+    # Any caller (plugin, e2e tests) must load our sonic-moe build, not the stale upstream prebuilt;
+    # the kernel loads lazily on first forward, so redirect before that, at registration time.
+    redirect_sonicmoe_kernel_repo()
     ALL_EXPERTS_FUNCTIONS.register("sonicmoe", sonicmoe_experts_forward_with_lora)
 
     # Route PEFT target_parameters expert LoRA past the parametrization merge (which cannot

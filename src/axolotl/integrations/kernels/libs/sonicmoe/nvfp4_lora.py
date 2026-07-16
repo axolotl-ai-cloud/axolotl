@@ -39,6 +39,54 @@ from .nvfp4 import (
     is_nvfp4_param,
 )
 
+_MERGE_AWARE_ENABLED = False
+
+
+def set_merge_aware_enabled(enabled: bool) -> None:
+    """Toggle merge-aware LoRA forwards (the ``nvfp4_merge_aware`` feature).
+
+    Flipped by the trainer callback so ``nvfp4_merge_aware_start_step`` can
+    delay the fake-quant until the adapter has left its near-zero init.
+    """
+    global _MERGE_AWARE_ENABLED  # noqa: PLW0603
+    _MERGE_AWARE_ENABLED = bool(enabled)
+
+
+def merge_aware_enabled() -> bool:
+    return _MERGE_AWARE_ENABLED
+
+
+def _merge_aware_wfq(
+    w_dense: torch.Tensor,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    pts: Optional[torch.Tensor],
+) -> torch.Tensor:
+    """Snapped effective weight ``Q(dequant(base) + scaling * (B @ A))``.
+
+    ``Q`` is the merge-identity quantizer (fresh scales on the base per-expert
+    pts grid), so the forward computes exactly what the merged checkpoint will
+    contain. Runs under the autograd.Function's no-grad forward; the STE
+    gradient (d/dW_eff = identity for ``dA``/``dB``, actual snapped operand for
+    ``dx``) is realized by the hand-written backward.
+
+    On CUDA the roundtrip runs as one fused triton kernel (in place on the
+    fresh W_eff buffer), bitwise the torchao reference it falls back to.
+    ``AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL=0`` is the kill switch.
+    """
+    E, dim1, dim2 = w_dense.shape
+    r = lora_A.shape[0] // E
+    A_3d = lora_A.reshape(E, r, dim2).to(w_dense.dtype)
+    B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1).to(w_dense.dtype)
+    # scaling folded into the small [E, r, dim2] operand, not the full product
+    w_eff = w_dense + torch.bmm(B_3d, A_3d * scaling)
+    pts_flat = None if pts is None else pts.reshape(-1)
+
+    from .nvfp4_quant import fake_quant_nvfp4_dispatch
+
+    return fake_quant_nvfp4_dispatch(w_eff, pts_flat, inplace=True)
+
 
 def _use_grouped_mm(x: torch.Tensor) -> bool:
     """``torch._grouped_mm`` replaces the per-expert Python loops on sm90+.
@@ -119,12 +167,17 @@ def _lora_backward_per_group(
     base_weight: torch.Tensor,
     scaling: float,
     B_c: Optional[torch.Tensor] = None,
+    dx_via_weight_only: bool = False,
 ) -> tuple:
     """Grads for a frozen-base grouped-LoRA linear ``h_e = x_e @ W_eff_e^T``.
 
     ``base_weight`` is ``[E, dim1, dim2]`` (frozen; dense or packed NVFP4,
     dequantized one expert slice at a time), used only for the ``dx`` term.
     ``B_c`` is an optional precomputed ``_b3d_contiguous(lora_B, E, dim1)``.
+    ``dx_via_weight_only`` is the merge-aware case: the forward GEMM ran on the
+    snapped ``Q(W_eff)`` (passed as ``base_weight``, delta already inside), so
+    ``dx = g @ base_weight`` with no separate low-rank term; ``dA``/``dB`` stay
+    the as-if-through-``W_eff`` formulas (the STE gradient).
     Returns ``(dx, d_lora_A, d_lora_B)``.
     """
     E, dim1, dim2 = base_weight.shape
@@ -155,7 +208,8 @@ def _lora_backward_per_group(
 
             w_dense = dequantize_engine_weight(base_weight).to(grad_h.dtype)
             dx = torch._grouped_mm(grad_h, w_dense, offs=offs)
-        dx += torch._grouped_mm(dz, A_3d, offs=offs)
+        if not dx_via_weight_only:
+            dx += torch._grouped_mm(dz, A_3d, offs=offs)
         # dA_e = dz_e^T @ x_e; dB_e = g_e^T @ z_e
         d_A_3d = torch._grouped_mm(dz.transpose(0, 1), x_grouped, offs=offs)
         d_B_3d = torch._grouped_mm(grad_h.transpose(0, 1), z, offs=offs)
@@ -179,7 +233,9 @@ def _lora_backward_per_group(
         # split so W_eff is never materialized and the NVFP4 base dequantizes
         # one expert slice at a time.
         w_e = dequantize_expert_slice(base_weight, e)  # [dim1, dim2]
-        dx[start:end] = g_e @ w_e.to(g_e.dtype) + scaling * ((g_e @ B_3d[e]) @ A_3d[e])
+        dx[start:end] = g_e @ w_e.to(g_e.dtype)
+        if not dx_via_weight_only:
+            dx[start:end] += scaling * ((g_e @ B_3d[e]) @ A_3d[e])
 
         # dW_eff_e = grad_h_e^T @ x_e  ([dim1, dim2], the [E, dim1, dim2] convention)
         dW_e = g_e.transpose(0, 1) @ x_e  # [dim1, dim2]
@@ -202,6 +258,11 @@ class GroupedUpProjLoRA(torch.autograd.Function):
     ``base_up`` is the grouped GEMM ``x_e @ w1[e]^T``. ``w1`` is ``[E, 2I, H]``
     (dim1=2I, dim2=H); ``lora_A1`` is ``[r*E, H]``, ``lora_B1`` is ``[2I, r*E]``.
     Grads route to ``x_grouped``, ``lora_A1``, ``lora_B1`` only (``w1`` frozen).
+
+    Under ``merge_aware`` the forward instead materializes and snaps the
+    effective weight (``h = x_e @ Q(W_eff_e)^T``, see ``_merge_aware_wfq``); the
+    backward is the STE gradient: ``dA``/``dB`` keep the as-if-through-``W_eff``
+    formulas, ``dx`` flows through the snapped operand.
     """
 
     @staticmethod
@@ -215,6 +276,8 @@ class GroupedUpProjLoRA(torch.autograd.Function):
         scaling: float,
         backend: str,
         concat: bool,
+        merge_aware: bool = False,
+        ma_pts: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         E, dim1, dim2 = w1.shape
         B_c = (
@@ -222,6 +285,20 @@ class GroupedUpProjLoRA(torch.autograd.Function):
             if _use_grouped_mm(x_grouped) and lora_A1.dtype == x_grouped.dtype
             else None
         )
+        ctx.merge_aware = merge_aware
+        if merge_aware:
+            w_dense = dequantize_expert_weight(w1)
+            w_fq = _merge_aware_wfq(w_dense, lora_A1, lora_B1, scaling, ma_pts)
+            h = grouped_up_gemm(
+                x_grouped, w_fq, expert_offsets, backend="torch", concat=concat
+            )
+            # the snapped weight is the actual GEMM operand, so dx flows through
+            # it (delta included); saving it replaces the dense base, same footprint
+            ctx.save_for_backward(
+                x_grouped, w_fq, expert_offsets, lora_A1, lora_B1, B_c
+            )
+            ctx.scaling = scaling
+            return h
         delta = _lora_delta_per_group(
             x_grouped, expert_offsets, lora_A1, lora_B1, scaling, E, dim1, dim2, B_c=B_c
         )
@@ -251,8 +328,9 @@ class GroupedUpProjLoRA(torch.autograd.Function):
             w1,
             ctx.scaling,
             B_c=B_c,
+            dx_via_weight_only=ctx.merge_aware,
         )
-        return dx, None, None, dA, dB, None, None, None
+        return dx, None, None, dA, dB, None, None, None, None, None
 
 
 def _fused_up_act_enabled() -> bool:
@@ -342,6 +420,11 @@ class GroupedDownProjLoRA(torch.autograd.Function):
     ``base_down`` is the grouped GEMM ``a_e @ w2[e]^T``. ``w2`` is ``[E, H, I]``
     (dim1=H, dim2=I); ``lora_A2`` is ``[r*E, I]``, ``lora_B2`` is ``[H, r*E]``.
     Grads route to ``a_grouped``, ``lora_A2``, ``lora_B2`` only (``w2`` frozen).
+
+    Under ``merge_aware`` the forward snaps the effective weight instead
+    (``y = a_e @ Q(W_eff_e)^T``); the backward is the STE gradient: ``dA``/``dB``
+    keep the as-if-through-``W_eff`` formulas, ``da`` flows through the snapped
+    operand.
     """
 
     @staticmethod
@@ -354,6 +437,8 @@ class GroupedDownProjLoRA(torch.autograd.Function):
         lora_B2: torch.Tensor,
         scaling: float,
         backend: str,
+        merge_aware: bool = False,
+        ma_pts: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         E, dim1, dim2 = w2.shape
         B_c = (
@@ -361,6 +446,16 @@ class GroupedDownProjLoRA(torch.autograd.Function):
             if _use_grouped_mm(a_grouped) and lora_A2.dtype == a_grouped.dtype
             else None
         )
+        ctx.merge_aware = merge_aware
+        if merge_aware:
+            w_dense = dequantize_expert_weight(w2)
+            w_fq = _merge_aware_wfq(w_dense, lora_A2, lora_B2, scaling, ma_pts)
+            y = grouped_down_gemm(a_grouped, w_fq, expert_offsets, backend="torch")
+            ctx.save_for_backward(
+                a_grouped, w_fq, expert_offsets, lora_A2, lora_B2, B_c
+            )
+            ctx.scaling = scaling
+            return y
         delta = _lora_delta_per_group(
             a_grouped, expert_offsets, lora_A2, lora_B2, scaling, E, dim1, dim2, B_c=B_c
         )
@@ -388,8 +483,9 @@ class GroupedDownProjLoRA(torch.autograd.Function):
             w2,
             ctx.scaling,
             B_c=B_c,
+            dx_via_weight_only=ctx.merge_aware,
         )
-        return da, None, None, dA, dB, None, None
+        return da, None, None, dA, dB, None, None, None, None
 
 
 def _add_expert_bias(
@@ -429,17 +525,26 @@ def grouped_expert_mlp_lora(
     scaling1: float,
     scaling2: float,
     limit: Optional[float] = None,
+    merge_aware1: bool = False,
+    ma_pts1: Optional[torch.Tensor] = None,
+    merge_aware2: bool = False,
+    ma_pts2: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Chain up-LoRA -> gated activation -> down-LoRA over grouped tokens.
 
     ``lora1`` / ``lora2`` are ``(lora_A, lora_B)`` tuples or ``None`` (``None``
     means plain base grouped GEMM, no low-rank path). ``b1`` / ``b2`` are
     optional per-expert biases ``[E, dim]``. ``limit`` is the clamped-SwiGLU
-    bound (e.g. DeepSeek-V4). Returns ``y_grouped`` ``[T, H]``.
+    bound (e.g. DeepSeek-V4). ``merge_aware1`` / ``merge_aware2`` snap the
+    respective effective weight to the merge grid (``ma_pts*`` = the base
+    per-expert pts); the fused up+act epilogue cannot express snapped weights,
+    so merge-aware always takes the unfused path. Returns ``y_grouped``
+    ``[T, H]``.
     """
     if (
         lora1 is not None
         and backend == "fp4_cute"
+        and not merge_aware1
         and b1 is None
         and limit is None
         and concat
@@ -452,7 +557,16 @@ def grouped_expert_mlp_lora(
         if lora1 is not None:
             A1, B1 = lora1
             h = GroupedUpProjLoRA.apply(
-                x_grouped, w1, expert_offsets, A1, B1, scaling1, backend, concat
+                x_grouped,
+                w1,
+                expert_offsets,
+                A1,
+                B1,
+                scaling1,
+                backend,
+                concat,
+                merge_aware1,
+                ma_pts1,
             )
         else:
             h = grouped_up_gemm(
@@ -465,7 +579,9 @@ def grouped_expert_mlp_lora(
 
     if lora2 is not None:
         A2, B2 = lora2
-        y = GroupedDownProjLoRA.apply(a, w2, expert_offsets, A2, B2, scaling2, backend)
+        y = GroupedDownProjLoRA.apply(
+            a, w2, expert_offsets, A2, B2, scaling2, backend, merge_aware2, ma_pts2
+        )
     else:
         y = grouped_down_gemm(a, w2, expert_offsets, backend=backend)
     if b2 is not None:
@@ -634,8 +750,18 @@ def grouped_moe_reference_forward(
     (quantized activations, chunked-dequant dX in backward). ``limit`` is the
     clamped-SwiGLU bound (e.g. DeepSeek-V4). Runs on CPU (dense base) so the
     path is validated without a GPU.
+
+    When merge-aware LoRA is enabled (``set_merge_aware_enabled``), each
+    LoRA-carrying NVFP4 weight snaps its effective weight to the merge grid in
+    the forward; this always rides the dequant path (v1: bf16 grouped GEMM on
+    the snapped weight), so an fp4_cute backend is downgraded here.
     """
-    if backend == "dequant":
+    merge_aware = merge_aware_enabled()
+    ma1 = merge_aware and lora1 is not None and is_nvfp4_param(w1)
+    ma2 = merge_aware and lora2 is not None and is_nvfp4_param(w2)
+    ma_pts1 = w1.per_tensor_scale if ma1 else None  # type: ignore[attr-defined]
+    ma_pts2 = w2.per_tensor_scale if ma2 else None  # type: ignore[attr-defined]
+    if backend == "dequant" or ((ma1 or ma2) and backend == "fp4_cute"):
         w1 = dequantize_expert_weight(w1)
         w2 = dequantize_expert_weight(w2)
         backend = "torch"
@@ -671,6 +797,10 @@ def grouped_moe_reference_forward(
         scaling1=scaling1,
         scaling2=scaling2,
         limit=limit,
+        merge_aware1=ma1,
+        ma_pts1=ma_pts1,
+        merge_aware2=ma2,
+        ma_pts2=ma_pts2,
     )
     return combine_expert_outputs(
         y_grouped, gather_token_idx, weights_grouped, hidden_states.shape[0]
