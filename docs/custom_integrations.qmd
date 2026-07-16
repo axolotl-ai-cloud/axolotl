@@ -119,3 +119,54 @@ It is not necessary to place your integration in the `integrations` folder. It c
 See this repo for an example: [https://github.com/axolotl-ai-cloud/diff-transformer](https://github.com/axolotl-ai-cloud/diff-transformer)
 
 :::
+
+## Adding a CLI command
+
+An integration can contribute its own `axolotl` subcommand. Unlike plugin hooks, which are
+loaded from the `plugins:` list of a config file, a subcommand has to be discoverable before
+any config is read, so it is registered through a packaging entry point instead.
+
+Define a regular `click` command in your package:
+
+```python
+# my_package/cli.py
+import click
+
+@click.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option("--rank-ratio", type=float, default=0.01)
+def my_command(config: str, rank_ratio: float):
+    """one-line summary shown in `axolotl --help`"""
+    from my_package.core import run  # keep heavy imports inside the function
+
+    run(config, rank_ratio=rank_ratio)
+```
+
+and advertise it under the `axolotl.cli_commands` entry point group:
+
+```toml
+# my_package/pyproject.toml
+[project.entry-points."axolotl.cli_commands"]
+my-command = "my_package.cli:my_command"
+```
+
+Installing your package makes `axolotl my-command` available, and it will be listed in
+`axolotl --help`. The entry point name is the subcommand name, and the value is
+`<module>:<attribute>`.
+
+::: {.callout-warning}
+
+Entry points are written into your package metadata at install time, not read from
+`pyproject.toml` at runtime. After adding or renaming one, reinstall the package
+(`pip install -e .`) or the subcommand will not appear.
+
+:::
+
+::: {.callout-note}
+
+Commands shipped with axolotl take precedence, so a plugin cannot shadow `train` or any
+other core command. Integrations bundled in this repo are registered in
+`BUILTIN_COMMANDS` in `src/axolotl/cli/plugins.py` rather than through entry points, so
+that they work from a source checkout without a reinstall.
+
+:::

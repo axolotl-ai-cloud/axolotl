@@ -8,7 +8,10 @@ loader/patch_manager and are intentionally NOT owned here.
 
 from __future__ import annotations
 
-from axolotl.integrations.kernels.adapters import ModelAdapter
+from axolotl.integrations.kernels.adapters import (
+    ModelAdapter,
+    modelopt_nvfp4_model_config,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -17,25 +20,10 @@ LOG = get_logger(__name__)
 def is_gemma4_nvfp4_modelopt(cfg) -> bool:
     """True iff the base model is a Gemma-4 NVFP4-modelopt checkpoint (quant_method=modelopt,
     quant_algo=NVFP4, model_type startswith gemma4). Any failure returns False."""
-    try:
-        from transformers import AutoConfig
-
-        hf_cfg = AutoConfig.from_pretrained(cfg.base_model, trust_remote_code=True)
-    except Exception:
-        return False
-    if not str(getattr(hf_cfg, "model_type", "")).startswith("gemma4"):
-        return False
-    qcfg = getattr(hf_cfg, "quantization_config", None)
-    if qcfg is None:
-        return False
-    if isinstance(qcfg, dict):
-        return (
-            qcfg.get("quant_method") == "modelopt" and qcfg.get("quant_algo") == "NVFP4"
-        )
-    return (
-        getattr(qcfg, "quant_method", None) == "modelopt"
-        and getattr(qcfg, "quant_algo", None) == "NVFP4"
-    )
+    model_config = modelopt_nvfp4_model_config(cfg)
+    return model_config is not None and str(
+        getattr(model_config, "model_type", "")
+    ).startswith("gemma4")
 
 
 def resolve_nonexpert_quantization(cfg) -> str | None:
