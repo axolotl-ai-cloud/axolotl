@@ -1,0 +1,70 @@
+# MiniMax M2 MoE LoRA on the native FP8 checkpoint via ScatterMoE.
+# The checkpoint is pre-quantized (quant_method: fp8), so bitsandbytes QLoRA can't stack on it;
+# train LoRA on the frozen FP8 base instead (ScatterMoE dequantizes the FP8 experts on the fly).
+base_model: MiniMaxAI/MiniMax-M2
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+use_kernels: true
+use_scattermoe: true
+lora_mlp_kernel: true
+strict: false
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:20%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
+val_set_size: 0.0
+output_dir: ./outputs/minimax-m2-lora
+dataset_prepared_path: last_run_prepared
+
+sequence_len: 2048
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+
+# Routed experts are fused 3D nn.Parameter tensors, so target them via lora_target_parameters.
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+gradient_accumulation_steps: 2
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+resume_from_checkpoint:
+logging_steps: 1
+attn_implementation: flash_attention_2
+
+# ~230B FP8 params don't fit on one GPU; shard with FSDP2.
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: MiniMaxM2DecoderLayer
+  reshard_after_forward: true
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:
