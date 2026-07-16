@@ -16,8 +16,10 @@ LOG = get_logger(__name__)
 def _check_sonicmoe_gpu_compat():
     """Validate GPU compute capability for SonicMoE and configure env.
 
-    Supported: Hopper (sm_90), Blackwell (sm_100 - sm_103).
-    B300 (sm_103) additionally requires Triton 3.6.0.
+    Supported: Hopper (sm_90) and Blackwell (sm_100-sm_103 datacenter, sm_120+
+    consumer). Consumer Blackwell (sm_120) needs a sonic-moe build bundling
+    quack 0.6.1 with nvidia-cutlass-dsl 4.6.0 (earlier prebuilts lack the sm_120
+    GEMM). B300 (sm_103) additionally requires Triton 3.6.0.
     """
     if not torch.cuda.is_available():
         return
@@ -28,12 +30,6 @@ def _check_sonicmoe_gpu_compat():
         raise RuntimeError(
             f"SonicMoE requires Hopper (sm_90) or Blackwell (sm_100+) GPU, "
             f"but detected sm_{cc[0]}{cc[1]}."
-        )
-
-    if cc > (10, 3):
-        raise RuntimeError(
-            f"SonicMoE does not yet support sm_{cc[0]}{cc[1]}. "
-            f"Supported: Hopper (sm_90) and Blackwell (sm_100 - sm_103)."
         )
 
     if cc >= (10, 0):
@@ -55,6 +51,41 @@ def _check_sonicmoe_gpu_compat():
             raise RuntimeError(
                 f"B300 (sm_103) requires Triton 3.6.x, but found {triton.__version__}."
             )
+
+    # quack 0.6.1 pins nvidia-cutlass-dsl==4.6.0: 4.5.x lacks the CuTe API it needs
+    # (ThrMma dropped) and other majors are unvalidated, so fail fast on a mismatch
+    # instead of a cryptic MLIR/import crash.
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    try:
+        cutlass_dsl_version = _pkg_version("nvidia-cutlass-dsl")
+    except PackageNotFoundError:
+        cutlass_dsl_version = None
+    if cutlass_dsl_version is not None:
+        try:
+            cutlass_mm = tuple(int(x) for x in cutlass_dsl_version.split(".")[:2])
+        except ValueError:
+            cutlass_mm = None
+        if cutlass_mm is not None and cutlass_mm != (4, 6):
+            raise RuntimeError(
+                f"SonicMoE (quack 0.6.1) requires nvidia-cutlass-dsl==4.6.0, "
+                f"but found {cutlass_dsl_version}. Install nvidia-cutlass-dsl==4.6.0."
+            )
+
+
+def _redirect_sonicmoe_kernel_repo():
+    """Load the sonic-moe kernel from our org's build (carries fixes not yet upstreamed,
+    incl. quack 0.6.1 on cutlass-dsl 4.6.0). No-op if transformers' hub mapping is absent."""
+    try:
+        from transformers.integrations import hub_kernels
+    except ImportError:
+        return
+    mapping = getattr(hub_kernels, "_HUB_KERNEL_MAPPING", None)
+    if isinstance(mapping, dict) and "sonic-moe" in mapping:
+        mapping["sonic-moe"] = {
+            "repo_id": "axolotl-ai-co/sonic-moe",
+            "revision": "main",
+        }
 
 
 class KernelsPlugin(BasePlugin):
@@ -113,6 +144,7 @@ class KernelsPlugin(BasePlugin):
                     )
         elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
+            _redirect_sonicmoe_kernel_repo()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (
                 register_sonicmoe_experts,

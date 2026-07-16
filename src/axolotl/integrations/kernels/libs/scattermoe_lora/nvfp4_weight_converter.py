@@ -371,7 +371,8 @@ class Nvfp4LinearDequantize:
             scale = (
                 sc if sc.dtype == torch.float8_e4m3fn else sc.to(torch.float8_e4m3fn)
             )
-            pts = _one(".weight_scale_2").to(torch.float32).view(1, 1)
+            # rank-3 fp32 pts: keeps NVFP4Tensor's fp32 block-scale promotion, satisfies torchao>=0.18 rank-in-(0,3) assert
+            pts = _one(".weight_scale_2").to(torch.float32).view(1, 1, 1)
 
             weight = NVFP4Tensor(
                 qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts
