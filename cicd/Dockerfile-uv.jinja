@@ -21,7 +21,7 @@ RUN git fetch origin +$GITHUB_REF && \
 
 RUN uv pip install packaging==26.0 setuptools==78.1.1
 RUN uv pip uninstall causal_conv1d
-RUN uv pip install "huggingface_hub>=1.5.0" "httpx<1"
+RUN uv pip install "huggingface_hub>=1.5.0" "httpx<1" "kernels-data"
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
