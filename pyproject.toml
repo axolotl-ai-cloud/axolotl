@@ -239,6 +239,7 @@ norecursedirs = [
 markers = [
     "slow: marks tests as slow",
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
+    "integration: marks tests as integration tests (real model modeling paths)",
 ]
 
 # UV specific configuration
