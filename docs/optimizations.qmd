@@ -94,6 +94,29 @@ Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
 - **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
 - **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration), [NVFP4 MoE LoRA](nvfp4_lora.qmd) for 4-bit checkpoints
 
+### MemFT (Memorization-oriented Fine-Tuning)
+
+Token-weighted cross-entropy that redirects gradient budget toward "sub-threshold"
+tokens — those whose target probability is still below the deterministic recall
+threshold `p = 0.5` (per-token loss above `L_crit = ln(2)`). Useful when LoRA is
+used as a parametric memory unit. Based on [arXiv:2605.30260](https://arxiv.org/abs/2605.30260).
+
+Two weighting variants:
+
+- `ot` (only-threshold): hard-masks tokens already past the recall threshold. No extra hyper-parameters.
+- `sw` (sliding-window): soft threshold modulated by an exponential spatial decay anchored at the first greedy-prediction error.
+
+```yaml
+memft:
+  variant: ot
+  fused: true            # variant 'ot' only — fused linear-CE Triton kernel
+  # fused_chunk_tokens: 2048   # tune the speed/memory frontier (larger = faster, more peak memory)
+```
+
+- **Fused kernel (`ot`):** computes the loss straight from hidden states, never materializing the `[tokens, vocab]` logits. At the Llama-3 vocab this cuts peak loss memory ~2–4× (growing with sequence length) at roughly speed parity. The default chunk (~2048 tokens) sits at the speed-parity knee; raise `fused_chunk_tokens` to trade memory for speed.
+- **Packing-aware:** the loss is computed inside the model forward (llama-like architectures), so the label shift and the MemFT-SW anchor/window stay within each sample under `sample_packing`.
+- **Example:** [`examples/memft/memft-lora.yml`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/memft/memft-lora.yml)
+
 ## Long Context Models
 
 Techniques to train models on sequences longer than their original context window.
