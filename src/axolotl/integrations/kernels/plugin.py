@@ -92,21 +92,6 @@ def _check_sonicmoe_gpu_compat():
             )
 
 
-def _redirect_sonicmoe_kernel_repo():
-    """Load the sonic-moe kernel from our org's build (carries fixes not yet upstreamed,
-    incl. quack 0.6.1 on cutlass-dsl 4.6.0). No-op if transformers' hub mapping is absent."""
-    try:
-        from transformers.integrations import hub_kernels
-    except ImportError:
-        return
-    mapping = getattr(hub_kernels, "_HUB_KERNEL_MAPPING", None)
-    if isinstance(mapping, dict) and "sonic-moe" in mapping:
-        mapping["sonic-moe"] = {
-            "repo_id": "axolotl-ai-co/sonic-moe",
-            "revision": "main",
-        }
-
-
 def _base_is_nvfp4_modelopt(cfg) -> bool:
     """True iff the base is an NVFP4-modelopt checkpoint the sonicmoe path trains (a specialized
     arch or the generic MoE gate). Reads the base config; any failure = False."""
@@ -183,12 +168,12 @@ class KernelsPlugin(BasePlugin):
                     )
         elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
-            _redirect_sonicmoe_kernel_repo()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (
                 register_sonicmoe_experts,
             )
 
+            # register_sonicmoe_experts() redirects the sonic-moe hub kernel to our build.
             register_sonicmoe_experts()
             if not ep_active:
                 cfg.experts_implementation = "sonicmoe"
