@@ -88,6 +88,26 @@ def _redirect_sonicmoe_kernel_repo():
         }
 
 
+def _base_is_nvfp4_modelopt(cfg) -> bool:
+    """True iff the base is an NVFP4-modelopt checkpoint the sonicmoe path trains (a specialized
+    arch or the generic MoE gate). Reads the base config; any failure = False."""
+    from axolotl.integrations.kernels.adapters.gemma4 import is_gemma4_nvfp4_modelopt
+    from axolotl.integrations.kernels.adapters.glm_moe_dsa import (
+        is_glm_moe_dsa_nvfp4_modelopt,
+    )
+    from axolotl.integrations.kernels.adapters.nvfp4_moe import is_moe_nvfp4_modelopt
+    from axolotl.integrations.kernels.adapters.qwen3_moe import (
+        is_qwen3_moe_nvfp4_modelopt,
+    )
+
+    return (
+        is_qwen3_moe_nvfp4_modelopt(cfg)
+        or is_gemma4_nvfp4_modelopt(cfg)
+        or is_glm_moe_dsa_nvfp4_modelopt(cfg)
+        or is_moe_nvfp4_modelopt(cfg)
+    )
+
+
 class KernelsPlugin(BasePlugin):
     """Thin orchestrator: registers the expert-kernel backend and dispatches model-family
     specifics to ``ModelAdapter`` subclasses (see ``adapters/``)."""
@@ -157,6 +177,24 @@ class KernelsPlugin(BasePlugin):
 
             # Same frozen-quantized-base + LoRA pattern as the scattermoe path above.
             relax_quantized_training_guard()
+
+            # NVFP4-ness is only in the downloaded base config, not the YAML, so not a validator.
+            if (
+                cfg.adapter == "lora"
+                and not cfg.nvfp4_merge_aware
+                and _base_is_nvfp4_modelopt(cfg)
+            ):
+                LOG.warning(
+                    "NVFP4 base + sonicmoe LoRA WITHOUT nvfp4_merge_aware: the "
+                    "format-preserving `axolotl merge-lora` snaps dequant(base) + "
+                    "scaling*(B@A) back onto the base NVFP4 grid and ERASES the "
+                    "sub-grid-step LoRA delta, so the merged checkpoint reverts to the "
+                    "base model and this training run is wasted.\n"
+                    "Set `nvfp4_merge_aware: true` to fake-quant the effective weight "
+                    "during training so the format-preserving merge reproduces the "
+                    "trained model, or plan to merge with `--dequant` (bf16 output, "
+                    "loses the NVFP4 format)."
+                )
 
         adapters = self._adapters(cfg)
         self._warn_unclaimed_nonexpert_quantization(cfg, adapters)
