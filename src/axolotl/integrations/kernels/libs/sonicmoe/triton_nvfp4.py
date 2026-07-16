@@ -70,8 +70,9 @@ def _kernels():
         # RNE-round a positive fp32 already clamped to the e4m3 normal range
         # [2**-6, 448] onto e4m3 (3 mantissa bits) and return the dequantized
         # fp32. Bit-identical to torch's `.to(float8_e4m3fn)` on every arch;
-        # the hardware `.to(tl.float8e4nv)` cvt rounds toward zero on sm_89,
-        # which desyncs the block scale from the torchao merge writer.
+        # `.to(tl.float8e4nv)` lowers through an f16 intermediate on sm_89 (no
+        # f32-source fp8 cvt before sm_90), double-rounding scales near e4m3
+        # midpoints and desyncing them from the torchao merge writer.
         b = s.to(tl.int32, bitcast=True)
         mant_odd = (b >> 20) & 1
         b = b + 524287 + mant_odd  # 2**19 - 1 magic adder -> round to nearest even
