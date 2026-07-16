@@ -68,8 +68,27 @@ def _check_sonicmoe_gpu_compat():
             cutlass_mm = None
         if cutlass_mm is not None and cutlass_mm != (4, 6):
             raise RuntimeError(
-                f"SonicMoE (quack 0.6.1) requires nvidia-cutlass-dsl==4.6.0, "
-                f"but found {cutlass_dsl_version}. Install nvidia-cutlass-dsl==4.6.0."
+                f"SonicMoE (quack 0.6.1) requires nvidia-cutlass-dsl==4.6.0, but found "
+                f"{cutlass_dsl_version} (uv pip install 'nvidia-cutlass-dsl==4.6.0')."
+            )
+
+    # apache-tvm-ffi is an UNDECLARED dep of cutlass-dsl 4.6.0 (absent from its Requires-Dist, so
+    # pip won't auto-pull it): <0.1.10 breaks cute.compile, >=0.2 is unvalidated.
+    try:
+        tvm_ffi_version = _pkg_version("apache-tvm-ffi")
+    except PackageNotFoundError:
+        tvm_ffi_version = None
+    if tvm_ffi_version is not None:
+        try:
+            tvm_ffi_v = tuple(int(x) for x in tvm_ffi_version.split(".")[:3])
+        except ValueError:
+            tvm_ffi_v = None
+        if tvm_ffi_v is not None and not (0, 1, 10) <= tvm_ffi_v < (0, 2, 0):
+            raise RuntimeError(
+                f"SonicMoE (quack 0.6.1 on cutlass-dsl 4.6.0) requires "
+                f"apache-tvm-ffi>=0.1.10,<0.2, but found {tvm_ffi_version}. cutlass-dsl "
+                f"does not pull it transitively; install it explicitly "
+                f"(uv pip install 'apache-tvm-ffi>=0.1.10,<0.2')."
             )
 
 
