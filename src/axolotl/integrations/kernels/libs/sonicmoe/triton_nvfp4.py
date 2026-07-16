@@ -66,6 +66,19 @@ def _kernels():
         return val
 
     @triton.jit
+    def _e4m3_rne(s):
+        # RNE-round a positive fp32 already clamped to the e4m3 normal range
+        # [2**-6, 448] onto e4m3 (3 mantissa bits) and return the dequantized
+        # fp32. Bit-identical to torch's `.to(float8_e4m3fn)` on every arch;
+        # the hardware `.to(tl.float8e4nv)` cvt rounds toward zero on sm_89,
+        # which desyncs the block scale from the torchao merge writer.
+        b = s.to(tl.int32, bitcast=True)
+        mant_odd = (b >> 20) & 1
+        b = b + 524287 + mant_odd  # 2**19 - 1 magic adder -> round to nearest even
+        b = (b >> 20) << 20  # keep sign + exponent + 3 mantissa bits
+        return tl.minimum(b.to(tl.float32, bitcast=True), 448.0)
+
+    @triton.jit
     def _dequant_kernel(
         q_ptr,
         s_ptr,
@@ -249,7 +262,7 @@ def _kernels():
             pts = tl.load(pts_ptr + row // rows_per_expert).to(tl.float32)
             bs = tl.math.div_rn(bs, pts)
         s = tl.minimum(tl.maximum(bs, E4M3_EPS), 448.0)
-        sdec = s.to(tl.float8e4nv).to(tl.float32)
+        sdec = _e4m3_rne(s)
         if HAS_PTS:
             # torchao two-level: x * ((1/pts) / scale), NOT a divide
             r = tl.math.div_rn(tl.math.div_rn(1.0, pts), sdec)
