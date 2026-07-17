@@ -558,6 +558,17 @@ class TrainerBuilderBase(abc.ABC):
                 )
             if self.cfg.torch_compile_mode:
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
+            if self.cfg.torch_compile_options:
+                self._apply_torch_compile_options(self.cfg.torch_compile_options)
+
+    @staticmethod
+    def _apply_torch_compile_options(options: dict[str, Any]) -> None:
+        """Apply allowlisted torch._inductor.config flags before torch.compile runs."""
+        # HF Trainer doesn't forward inductor options; mutate global config directly.
+        import torch._inductor.config as inductor_cfg
+
+        for key, value in options.items():
+            setattr(inductor_cfg, key, value)
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
         if self.cfg.accelerator_config:

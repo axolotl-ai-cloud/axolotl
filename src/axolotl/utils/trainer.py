@@ -27,7 +27,6 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 LOG = get_logger(__name__)
 
 
-@torch.jit.script
 def weighted_cross_entropy(
     logits: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor
 ):
@@ -45,34 +44,26 @@ def weighted_cross_entropy(
     return (weights * losses).sum()
 
 
-@torch.jit.script
 def create_weighted_mask(labels: torch.Tensor):
-    # Check if the tensor is 2D. If not, unsqueeze it to make it 2D
+    """Weight each contiguous run of unmasked (!= -100) labels so it sums to 1."""
     if len(labels.shape) == 1:
         labels = labels.unsqueeze(0)
+    batch_size, seq_len = labels.shape
 
-    weights = torch.zeros_like(labels).float()
-    for i in range(labels.shape[0]):
-        mask = labels[i] != -100
+    mask = labels != -100
+    # a group starts at an unmasked position whose predecessor is masked
+    starts = mask.clone()
+    starts[:, 1:] &= ~mask[:, :-1]
 
-        # Create a tensor to track group ids
-        group_ids = torch.zeros_like(labels[i]).int()
-        curr_group_id = 0
+    # 0-based group id per row, only meaningful at unmasked positions
+    group_ids = starts.cumsum(dim=1) - 1
+    max_groups = seq_len // 2 + 1
+    row_offsets = torch.arange(batch_size, device=labels.device).unsqueeze(1)
+    flat_ids = (group_ids + row_offsets * max_groups)[mask]
 
-        for j in range(1, len(labels[i])):
-            if mask[j] and not mask[j - 1]:  # switch from masked to unmasked label
-                curr_group_id += 1  # start new group
-            group_ids[j] = (
-                curr_group_id if mask[j] else 0
-            )  # assign group id if unmasked label
-
-        # Count only unmasked labels in each group
-        group_counts = torch.bincount(group_ids[mask])
-
-        mask_weights = torch.zeros_like(labels[i]).float()
-        mask_weights[mask] = 1.0 / group_counts[group_ids[mask]]
-
-        weights[i] = mask_weights
+    group_counts = torch.bincount(flat_ids, minlength=batch_size * max_groups)
+    weights = torch.zeros_like(labels, dtype=torch.float32)
+    weights[mask] = 1.0 / group_counts[flat_ids].float()
 
     return weights.squeeze()  # squeeze the output to match the input dimension
 
