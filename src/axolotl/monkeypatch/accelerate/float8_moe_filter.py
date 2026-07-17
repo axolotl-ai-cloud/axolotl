@@ -14,20 +14,22 @@ accelerate fp8 helpers are unavailable.
 
 from __future__ import annotations
 
-from functools import partial
+from functools import partial, wraps
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 _PATCHED = False
 
-# Leaf attribute names used for MoE routers across HF architectures. ``gate_proj`` /
-# ``gate_up_proj`` (expert projections we DO want in fp8) don't match — only the exact leaf.
-_ROUTER_LEAF_NAMES = {"gate", "router"}
+# Router/gate module names across HF MoE architectures, matched against every path
+# segment so wrapped routers (DBRX ``ffn.router.layer``, HunYuan ``mlp.gate.wg``,
+# Switch/NLLB ``router.classifier``) are caught too. ``gate_proj`` / ``gate_up_proj``
+# (expert projections we DO want in fp8) don't match — only exact segments.
+_ROUTER_NAMES = {"gate", "router"}
 
 
 def _is_router(fqn: str) -> bool:
-    return fqn.rsplit(".", 1)[-1] in _ROUTER_LEAF_NAMES
+    return not _ROUTER_NAMES.isdisjoint(fqn.split("."))
 
 
 def patch_fp8_exclude_moe_router():
@@ -41,11 +43,16 @@ def patch_fp8_exclude_moe_router():
             find_first_last_linear_layers,
         )
     except ImportError:
+        LOG.warning(
+            "Could not patch accelerate fp8 conversion to exclude MoE routers; "
+            "fp8 full-finetunes of MoE models may diverge to NaN"
+        )
         return
 
     orig = acc.convert_model_to_fp8_ao
 
-    def patched(model, config=None, module_filter_func=None):
+    @wraps(orig)
+    def patched(model, config=None, module_filter_func=None, **kwargs):
         if module_filter_func is None:
             first, last = find_first_last_linear_layers(model)
             inner = partial(filter_linear_layers, layers_to_filter=[first, last])
@@ -54,11 +61,14 @@ def patch_fp8_exclude_moe_router():
 
         def _router_aware_filter(module, fqn, _inner=inner):
             if _is_router(fqn):
+                LOG.debug("fp8: keeping router linear %s in high precision", fqn)
                 return False
             return _inner(module, fqn)
 
-        return orig(model, config=config, module_filter_func=_router_aware_filter)
+        return orig(
+            model, config=config, module_filter_func=_router_aware_filter, **kwargs
+        )
 
     acc.convert_model_to_fp8_ao = patched
     _PATCHED = True
-    LOG.info("Patched accelerate fp8 conversion to keep MoE router (gate) in bf16")
+    LOG.info("Patched accelerate fp8 conversion to skip MoE router/gate linears")
