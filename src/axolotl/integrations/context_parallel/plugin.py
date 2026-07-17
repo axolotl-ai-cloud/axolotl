@@ -13,10 +13,9 @@ ringmaster wrapper (all-to-all around the model's own HF kernel) and installs a
 forward pre-hook that shards each batch along the sequence dim, plus loss
 corrections across the CP group.
 
-This is opt-in via the ``context_parallel:`` config block and is independent of
-the legacy ``context_parallel_size`` ring-flash-attn path. Composition with FSDP2
-uses the accelerate device mesh's ``cp`` dim when present; otherwise a standalone
-CP mesh is built from the world group.
+Setup runs in ``post_trainer_create`` because the accelerate device mesh (the
+``cp`` dim FSDP2 reduces gradients over) only exists once the trainer's
+Accelerator has been constructed.
 """
 
 from __future__ import annotations
@@ -33,25 +32,27 @@ class ContextParallelPlugin(BasePlugin):
     def __init__(self):
         super().__init__()
         self._runtime = None
+        self._cp_ctx = None
         self._hook_handles = []
-        self._grad_accum = 1
+        self._gather_outputs = False
 
     def get_input_args(self) -> str | None:
         return "axolotl.integrations.context_parallel.args.ContextParallelArgs"
 
     def register(self, cfg: dict):
-        # Drive axolotl's native CP mesh from our nested config so accelerate builds
-        # `cp` as a NON-DP mesh dim (FSDP2 reduces grads over it; DDP won't all-reduce
-        # across CP ranks). The legacy ring-flash-attn path is bypassed (see train.py /
-        # validation gates keyed on this plugin being present).
-        cp = cfg.get("context_parallel") if isinstance(cfg, dict) else None
-        size = (
-            (cp or {}).get("size")
-            if isinstance(cp, dict)
-            else getattr(cp, "size", None)
-        )
-        if size and size > 1 and not cfg.get("context_parallel_size"):
+        # cfg is the raw pre-validation dict; keep `context_parallel.size` and the
+        # flat `context_parallel_size` (which drives accelerate's cp mesh dim) in sync.
+        size = (cfg.get("context_parallel") or {}).get("size")
+        flat = cfg.get("context_parallel_size")
+        if size and size > 1:
+            if flat and flat != size:
+                raise ValueError(
+                    f"context_parallel.size ({size}) conflicts with "
+                    f"context_parallel_size ({flat}); set only one"
+                )
             cfg["context_parallel_size"] = size
+        elif flat and flat > 1 and not cfg.get("context_parallel"):
+            cfg["context_parallel"] = {"size": flat}
 
     @staticmethod
     def _cp_cfg(cfg):
@@ -68,20 +69,19 @@ class ContextParallelPlugin(BasePlugin):
 
         require_torch()  # hard gate: torch >= 2.11
 
-    def post_model_build(self, cfg, model):
+    def post_trainer_create(self, cfg, trainer):
         if not self._enabled(cfg):
             return
 
         import ringmaster as rm
 
         cp = self._cp_cfg(cfg)
-        self._grad_accum = int(getattr(cfg, "gradient_accumulation_steps", 1) or 1)
+        from axolotl.utils.schemas.enums import RLType
+
+        rl = getattr(cfg, "rl", None)
         # GRPO/EBFT consume full-sequence logits, so the CP manager must gather the
         # sharded outputs back together (SFT computes loss per-shard and skips this).
-        self._gather_outputs = str(getattr(cfg, "rl", None) or "").lower() in (
-            "grpo",
-            "ebft",
-        )
+        self._gather_outputs = rl in (RLType.GRPO, RLType.EBFT)
 
         rm_cfg = rm.RingmasterConfig(
             size=cp.size,
@@ -93,9 +93,14 @@ class ContextParallelPlugin(BasePlugin):
             ring_impl=rm.RingImpl(cp.ring_impl),
         )
 
+        models = [trainer.model]
+        ref_model = getattr(trainer, "ref_model", None)
+        if ref_model is not None:
+            models.append(ref_model)
+
         inner_attn = self._resolve_inner_attn(cfg)
-        num_kv_heads = self._num_kv_heads(model)
-        device_mesh = self._accelerate_mesh()
+        num_kv_heads = self._num_kv_heads(models[0])
+        device_mesh = getattr(trainer.accelerator, "torch_device_mesh", None)
 
         self._runtime = rm.setup(
             rm_cfg,
@@ -106,56 +111,47 @@ class ContextParallelPlugin(BasePlugin):
         )
 
         LOG.info(
-            "ringmaster CP enabled: size=%d backend=%s ulysses=%d ring=%d inner=%s",
+            "ringmaster CP enabled: size=%d backend=%s ulysses=%d ring=%d inner=%s mesh=%s",
             rm_cfg.size,
             rm_cfg.backend.value,
             rm_cfg.ulysses_size,
             rm_cfg.ring_size,
             inner_attn,
+            "accelerate" if device_mesh is not None else "standalone",
         )
 
-        if self._runtime.attn_implementation:
-            model.set_attn_implementation(self._runtime.attn_implementation)
+        glm_dsa = self._glm_dsa_requires_contiguous(cfg)
+        if self._runtime.attn_implementation and not glm_dsa:
+            for model in models:
+                model.set_attn_implementation(self._runtime.attn_implementation)
 
-        # Bridge ringmaster's CP group to axolotl's mamba-CP machinery (the nemotron_h /
-        # falcon_h1 / granitemoehybrid patches force the unfused chunk-scan path and
-        # apply the SSM state correction keyed on this group).
-        try:
-            from axolotl.monkeypatch.ring_attn import set_ring_attn_group
+        # The mamba/SSM CP corrections and the GRPO trainer resolve the CP group
+        # through this registry.
+        from axolotl.monkeypatch.ring_attn import set_ring_attn_group
 
-            set_ring_attn_group(self._runtime.cp_group)
-        except Exception:  # pragma: no cover
-            pass
+        set_ring_attn_group(self._runtime.cp_group)
 
-        has_recurrent = self._wire_recurrent_layers(model)
-        # Zigzag (head_tail) reorders the sequence non-contiguously, which breaks the
-        # Mamba/GDN state-passing recurrence (it needs contiguous order). Downgrade it
-        # to contiguous for hybrid models; distflash/none keep contiguous tokens so
-        # they're SSM-safe and left as configured.
+        has_recurrent = any(self._wire_recurrent_layers(model) for model in models)
+
+        # Zigzag sharding permutes tokens; anything that needs contiguous per-rank
+        # spans must downgrade to LoadBalance.NONE (contiguous, always correct).
+        contiguity_reason = None
+        if has_recurrent:
+            contiguity_reason = "hybrid SSM recurrence needs contiguous token order"
+        elif glm_dsa:
+            contiguity_reason = "GLM DSA attention assumes q_offset=rank*s_local"
+        elif self._gather_outputs:
+            contiguity_reason = "output gathering reassembles contiguous shards"
         if (
-            has_recurrent
+            contiguity_reason
             and self._runtime.config.load_balance == rm.LoadBalance.HEAD_TAIL
         ):
             LOG.info(
-                "ringmaster: hybrid SSM model — forcing contiguous CP sharding (zigzag permutes tokens, unsafe for the recurrence)"
+                "ringmaster: forcing contiguous CP sharding (%s)", contiguity_reason
             )
             self._runtime.config.load_balance = rm.LoadBalance.NONE
 
-        # GLM-5.2 DSA owns its own CP attention (compressed-KV all-gather + per-rank
-        # q_offset=rank*s_local); ringmaster only shards the batch for it. That kernel
-        # hard-assumes each rank owns a contiguous span [r*L, (r+1)*L), so any zigzag
-        # shard (e.g. an explicit backend: ring) would silently corrupt it. Force
-        # contiguous regardless of the resolved backend.
-        if (
-            self._glm_dsa_requires_contiguous(cfg)
-            and self._runtime.config.load_balance == rm.LoadBalance.HEAD_TAIL
-        ):
-            LOG.info(
-                "ringmaster: use_glm_dsa_kernels — forcing contiguous CP sharding (DSA attention requires contiguous per-rank spans)"
-            )
-            self._runtime.config.load_balance = rm.LoadBalance.NONE
-
-        self._install_hooks(model)
+        self._install_hooks(models, cfg)
 
     @staticmethod
     def _glm_dsa_requires_contiguous(cfg) -> bool:
@@ -165,11 +161,8 @@ class ContextParallelPlugin(BasePlugin):
 
     @staticmethod
     def _wire_recurrent_layers(model):
-        """Apply Mamba2/linear-attention CP state-passing to recurrent mixer layers
-        (Nemotron-H, Qwen3.5/Next, Falcon-H1, Granite-MoE-Hybrid). Delegates to
-        ringmaster's shared helper so the plugin and the trl/raw examples stay in
-        sync; no-op without the mamba-ssm kernel. Returns True if anything was wired.
-        """
+        """Apply Mamba2/linear-attention CP state-passing to recurrent mixer layers.
+        No-op without the mamba-ssm kernel. Returns True if anything was wired."""
         import ringmaster as rm
 
         wiring = rm.wire_recurrent_layers(model)
@@ -185,64 +178,76 @@ class ContextParallelPlugin(BasePlugin):
         for handle in self._hook_handles:
             handle.remove()
         self._hook_handles = []
+        self._cp_ctx = None
+        self._runtime = None
         try:
+            from axolotl.monkeypatch.ring_attn import set_ring_attn_group
+
+            set_ring_attn_group(None)
             import ringmaster as rm
 
             rm.teardown()
-        except Exception:  # pragma: no cover - defensive
+        except ImportError:  # pragma: no cover - defensive
             pass
 
     # ------------------------------------------------------------------ helpers
 
     @staticmethod
     def _resolve_inner_attn(cfg) -> str:
+        # Config validation canonicalizes legacy flags into attn_implementation;
+        # the flash_attention fallback covers raw/unvalidated cfgs. Default to sdpa
+        # rather than silently forcing a flash kernel.
         impl = getattr(cfg, "attn_implementation", None)
-        if impl and impl not in ("eager", "sdpa"):
+        if impl:
             return impl
         if getattr(cfg, "flash_attention", False):
             return "flash_attention_2"
-        if impl:
-            return impl
-        return "flash_attention_2"
+        return "sdpa"
 
     @staticmethod
     def _num_kv_heads(model) -> int | None:
         config = getattr(model, "config", None)
         if config is None:
             return None
-        text_config = getattr(config, "text_config", config)  # multimodal
+        if hasattr(config, "get_text_config"):
+            text_config = config.get_text_config()
+        else:
+            text_config = getattr(config, "text_config", config)
         return getattr(text_config, "num_key_value_heads", None) or getattr(
             text_config, "num_attention_heads", None
         )
 
     @staticmethod
-    def _accelerate_mesh():
-        try:
-            from accelerate.state import AcceleratorState
+    def _strip_logits_to_keep_pre_hook(module, args, kwargs):
+        # ringmaster has no varlen logits_to_keep support: an integer N would make
+        # each rank keep the last N positions of its own shard (wrong global
+        # positions). Dropping it computes full local logits; the gathered output is
+        # re-sliced by the trainer (TRL slices logits[:, -logits_to_keep:]).
+        for key in ("logits_to_keep", "num_logits_to_keep"):
+            value = kwargs.get(key)
+            if isinstance(value, int) and value:
+                kwargs.pop(key)
+        return args, kwargs
 
-            state = AcceleratorState()
-            mesh = getattr(state, "torch_device_mesh", None) or getattr(
-                state, "device_mesh", None
-            )
-            return mesh
-        except Exception:  # pragma: no cover - mesh may not exist (pure CP)
-            return None
-
-    def _install_hooks(self, model):
-        # The per-step CP data orchestration (shape-safe broadcast → contiguous
-        # shard → num_items normalization → eval-loss correction → output gather)
-        # lives in ringmaster so axolotl, trl and standalone scripts share one
-        # implementation. This plugin only wires it to the model + CP group.
+    def _install_hooks(self, models, cfg):
         from ringmaster import ContextParallelContextManager
 
+        grad_accum = int(getattr(cfg, "gradient_accumulation_steps", 1) or 1)
+        if self._gather_outputs:
+            for model in models:
+                self._hook_handles.append(
+                    model.register_forward_pre_hook(
+                        self._strip_logits_to_keep_pre_hook, with_kwargs=True
+                    )
+                )
+
         self._cp_ctx = ContextParallelContextManager(
-            [model],
+            models,
             self._runtime.cp_group,
-            gradient_accumulation_steps=self._grad_accum,
-            gather_outputs=getattr(self, "_gather_outputs", False),
-            # shard_load_balance is the single source of truth: zigzag only for pure
-            # ring; Ulysses/USP/distflash/none stay contiguous (Ulysses/USP gather the
-            # full sequence, so a zigzag shard would scramble the gathered order).
+            gradient_accumulation_steps=grad_accum,
+            gather_outputs=self._gather_outputs,
+            # zigzag only for pure ring; Ulysses/USP gather the full sequence, so a
+            # zigzag shard would scramble the gathered order.
             load_balance=self._runtime.shard_load_balance,
         )
         self._hook_handles.extend(self._cp_ctx.install())

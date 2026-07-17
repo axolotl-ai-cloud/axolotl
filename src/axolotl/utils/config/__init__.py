@@ -500,10 +500,39 @@ def validate_config(
     )
 
 
+def ensure_context_parallel_plugin(cfg):
+    """Auto-enable the ringmaster ContextParallelPlugin (the only CP backend) for
+    configs that request CP without listing it, and keep the nested
+    ``context_parallel`` block and flat ``context_parallel_size`` consistent."""
+    block = cfg.get("context_parallel") or {}
+    block_size = block.get("size") or 0
+    flat_size = (
+        cfg.get("context_parallel_size") or cfg.get("sequence_parallel_degree") or 0
+    )
+    if block_size > 1 and flat_size > 1 and block_size != flat_size:
+        raise ValueError(
+            f"context_parallel.size ({block_size}) conflicts with "
+            f"context_parallel_size ({flat_size}); set only one"
+        )
+    size = max(block_size, flat_size)
+    if size <= 1:
+        return
+
+    plugins = list(cfg.get("plugins") or [])
+    if not any("ContextParallelPlugin" in str(p) for p in plugins):
+        plugins.append("axolotl.integrations.context_parallel.ContextParallelPlugin")
+        cfg["plugins"] = plugins
+    if not cfg.get("context_parallel"):
+        cfg["context_parallel"] = {"size": size}
+    if not cfg.get("context_parallel_size") and not cfg.get("sequence_parallel_degree"):
+        cfg["context_parallel_size"] = size
+
+
 def prepare_plugins(cfg):
     """
     Prepare the plugins for the configuration
     """
+    ensure_context_parallel_plugin(cfg)
 
     if cfg.get("plugins"):
         from axolotl.integrations.base import PluginManager

@@ -1,7 +1,6 @@
 """Module with validation methods for config pydantic model."""
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
@@ -14,7 +13,6 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
-    RingAttnFunc,
     RLType,
 )
 
@@ -1650,57 +1648,39 @@ class ComplexValidationMixin:
                 "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
             )
         elif self.context_parallel_size > 1:
-            # The ringmaster context-parallel plugin provides its own CP attention
-            # (no ring_flash_attn); it only needs axolotl's cp device mesh.
-            if any(
-                "ContextParallelPlugin" in str(p) for p in (self.plugins or [])
+            # ringmaster (via ContextParallelPlugin) is the only CP backend; the
+            # legacy ring_flash_attn path was removed.
+            if not any("ContextParallelPlugin" in str(p) for p in (self.plugins or [])):
+                raise ValueError(
+                    "context_parallel_size > 1 requires the ContextParallelPlugin. "
+                    "The axolotl CLI auto-enables it; for programmatic use add "
+                    "'axolotl.integrations.context_parallel.ContextParallelPlugin' "
+                    "to `plugins:`."
+                )
+            if self.sample_packing:
+                raise ValueError(
+                    "sample_packing is not yet supported with ringmaster context "
+                    "parallelism; disable sample_packing or context parallelism."
+                )
+            if self.attn_implementation == "eager":
+                raise ValueError(
+                    "context parallelism wraps a kernel-backed attention "
+                    "implementation (sdpa/flash/flex); `attn_implementation: eager` "
+                    "is not supported."
+                )
+            cp_block_size = getattr(
+                getattr(self, "context_parallel", None), "size", None
+            )
+            if (
+                cp_block_size
+                and cp_block_size > 1
+                and cp_block_size != self.context_parallel_size
             ):
-                return self
-            if not self.attn_uses_flash_lib:
                 raise ValueError(
-                    "context_parallel_size > 1 requires flash attention "
-                    "(attn_implementation: flash_attention_2 or flash_attention_3)."
+                    f"context_parallel.size ({cp_block_size}) conflicts with "
+                    f"context_parallel_size ({self.context_parallel_size}); "
+                    "set only one"
                 )
-
-            if self.sample_packing and self.micro_batch_size > 1:
-                raise ValueError(
-                    "micro_batch_size must be set to 1 when sample_packing is enabled "
-                    "due to a `ring-flash-attn` requirement"
-                )
-
-            try:
-                import transformers.modeling_flash_attention_utils
-                from transformers.utils import (
-                    is_flash_attn_greater_or_equal,
-                    is_flash_attn_greater_or_equal_2_10,
-                )
-
-                transformers.modeling_flash_attention_utils._flash_supports_window = (
-                    True
-                )
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window_size = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
-                if not hasattr(
-                    transformers.modeling_flash_attention_utils,
-                    "is_flash_attn_greater_or_equal_2_10",
-                ):
-                    transformers.modeling_flash_attention_utils.is_flash_attn_greater_or_equal_2_10 = is_flash_attn_greater_or_equal(
-                        "2.10"
-                    )
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ].is_flash_attn_greater_or_equal_2_10 = (
-                    is_flash_attn_greater_or_equal_2_10
-                )
-            except ImportError:
-                pass
 
             LOG.warning(
                 "Sequence parallelism (SP) is enabled with "
@@ -1733,25 +1713,11 @@ class ComplexValidationMixin:
 
     @model_validator(mode="after")
     def validate_ring_attn_func(self):
-        if getattr(self, "context_parallel_size", 1) == 1:
-            return self
-
-        if self.ring_attn_func is not None:
-            self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
-        elif getattr(self, "use_glm_dsa_kernels", False):
-            # The GLM DSA kernels own attention (including the context-parallel compressed-KV gather),
-            # so leave ring_attn_func None: the SP context manager still shards the sequence by chunking,
-            # but skips the ring_flash_attn substitution (which GLM doesn't use and isn't installed).
-            pass
-        else:
-            # Default ring attention function selection
-            sample_packing = getattr(self, "sample_packing", False)
-            self.ring_attn_func = (
-                RingAttnFunc.VARLEN_LLAMA3
-                if sample_packing
-                else RingAttnFunc.BATCH_RING
+        if self.ring_attn_func is not None or self.heads_k_stride is not None:
+            LOG.warning(
+                "`ring_attn_func` and `heads_k_stride` are deprecated and unused; "
+                "ringmaster context parallelism replaced the ring_flash_attn backend"
             )
-
         return self
 
     def hint_gradient_checkpointing_dpo_lora_ddp(self):

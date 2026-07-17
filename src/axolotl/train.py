@@ -201,10 +201,6 @@ def execute_training(
                 )
             )
 
-        # Context parallelism is owned by the ringmaster ContextParallelPlugin
-        # (auto-enabled for a bare `context_parallel_size`); its hooks are installed
-        # in the plugin's post_model_build, so nothing to wire here.
-
         # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
