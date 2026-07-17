@@ -65,7 +65,14 @@ class ContextParallelPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         if not self._enabled(cfg):
             return
-        from ringmaster.compat import require_torch
+        try:
+            from ringmaster.compat import require_torch
+        except ImportError as exception:
+            raise ImportError(
+                "context parallelism requires the ringmaster package; install it "
+                "with `pip install axolotl[ringmaster]` or "
+                "`pip install axolotl-ringmaster`"
+            ) from exception
 
         require_torch()  # hard gate: torch >= 2.11
 
