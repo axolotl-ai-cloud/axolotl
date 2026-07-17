@@ -25,8 +25,7 @@ LOG = get_logger(__name__)
 
 
 class FlaSm120ShimPlugin(BasePlugin):
-    def get_input_args(self) -> str | None:
-        return None
+    """Disable fla's TileLang warp-spec MMA pass on sm_120 (fla #913)."""
 
     def pre_model_load(self, cfg):
         try:
@@ -43,7 +42,9 @@ class FlaSm120ShimPlugin(BasePlugin):
             )
 
             if prefer_local_mamba_kernels():
-                LOG.info("Preset local mamba-ssm/causal-conv1d kernels (skip kernels-hub)")
+                LOG.info(
+                    "Preset local mamba-ssm/causal-conv1d kernels (skip kernels-hub)"
+                )
             ensure_causal_conv1d_cuda_export()
         except Exception as exc:  # pragma: no cover - defensive
             LOG.warning("mamba kernel preset not applied: %s", exc)

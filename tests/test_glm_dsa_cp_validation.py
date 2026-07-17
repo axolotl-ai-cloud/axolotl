@@ -97,11 +97,11 @@ class TestGlmDsaContextParallelValidation:
         # shards the sequence (register_ring_attn skips the ring_flash_attn import when it is None).
         assert out.ring_attn_func is None
 
-    def test_cp_without_dsa_still_requires_flash(self, monkeypatch):
-        """The exemption is scoped to use_glm_dsa_kernels -- plain CP still demands flash attention."""
+    def test_cp_without_dsa_requires_plugin(self, monkeypatch):
+        """The exemption is scoped to use_glm_dsa_kernels -- plain CP demands the ContextParallelPlugin."""
         monkeypatch.setenv("WORLD_SIZE", "4")
-        cfg = _cfg(context_parallel_size=2)  # no DSA kernels, no flash_attention
-        with pytest.raises(Exception, match="(?i)flash attention"):
+        cfg = _cfg(context_parallel_size=2)  # no DSA kernels, no plugin
+        with pytest.raises(Exception, match="ContextParallelPlugin"):
             validate_config(cfg)
 
     def test_dsa_without_cp_leaves_ring_attn_func_none(self, monkeypatch):
