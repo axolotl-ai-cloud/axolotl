@@ -211,18 +211,9 @@ def prepare_plugins(cfg: DictDefault):
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    # ringmaster is the only context-parallel backend; a bare `context_parallel_size`
-    # (no plugin listed) auto-enables the ContextParallelPlugin so CP keeps working
-    # without the user wiring the plugin manually.
-    if (cfg.get("context_parallel_size") or 1) > 1:
-        plugins = list(cfg.get("plugins") or [])
-        if not any("ContextParallelPlugin" in str(p) for p in plugins):
-            plugins.append(
-                "axolotl.integrations.context_parallel.ContextParallelPlugin"
-            )
-            cfg["plugins"] = plugins
-            if not cfg.get("context_parallel"):
-                cfg["context_parallel"] = {"size": cfg["context_parallel_size"]}
+    from axolotl.utils.config import ensure_context_parallel_plugin
+
+    ensure_context_parallel_plugin(cfg)
 
     if cfg.get("plugins"):
         from axolotl.integrations.base import PluginManager
