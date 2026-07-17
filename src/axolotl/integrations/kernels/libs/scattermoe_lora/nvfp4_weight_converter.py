@@ -380,6 +380,9 @@ class Nvfp4LinearDequantize:
 
         module, param_name = get_module_from_name(model, full_layer_name)
         setattr(module, param_name, nn.Parameter(weight, requires_grad=False))
+        if not weight.is_meta:
+            # merge-aware LoRA needs the original grid's per-tensor scale after dequant
+            module._nvfp4_pts = pts.detach().reshape(()).clone()
         if missing_keys is not None:
             missing_keys.discard(full_layer_name)
         module._is_hf_initialized = True

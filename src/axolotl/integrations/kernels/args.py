@@ -77,6 +77,63 @@ class KernelsArgs(BaseModel):
     # non-expert compute path unsloth uses, for apples-to-apples experts-only LoRA comparison.
     gemma4_nf4_nonexpert: bool | None = None
 
+    # Merge-aware NVFP4 LoRA (sonicmoe experts): the training forward fake-quantizes the
+    # effective expert weight dequant(base) + scaling*(B@A) with the same quantizer merge-lora
+    # writes with, so the format-preserving merge reproduces the trained model instead of
+    # erasing the sub-grid-step LoRA delta. Requires a LoRA adapter on sonicmoe NVFP4 experts.
+    nvfp4_merge_aware: bool | None = None
+    # When to start the fake-quant: int = absolute optimizer step, float in (0, 1) = fraction
+    # of max steps. Default 0 (on from the first step). A short warm-up avoids STE oscillation
+    # while the adapter is near its zero init (standard QAT practice).
+    nvfp4_merge_aware_start_step: int | float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_nvfp4_merge_aware(cls, data):
+        data = cls._canonicalize_expert_backend(data)
+        start = data.get("nvfp4_merge_aware_start_step")
+        if not data.get("nvfp4_merge_aware"):
+            if start is not None:
+                raise ValueError(
+                    "nvfp4_merge_aware_start_step requires nvfp4_merge_aware: true"
+                )
+            return data
+        if not data.get("use_sonicmoe"):
+            raise ValueError(
+                "nvfp4_merge_aware requires the sonicmoe expert backend "
+                "(expert_backend: sonicmoe)"
+            )
+        if data.get("adapter") != "lora":
+            raise ValueError(
+                "nvfp4_merge_aware requires a LoRA adapter (adapter: lora); it snaps "
+                "the LoRA delta to the NVFP4 grid of the frozen base"
+            )
+        fused = [
+            k
+            for k in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+            if data.get(k) is True
+        ]
+        if fused:
+            raise ValueError(
+                f"nvfp4_merge_aware is incompatible with {', '.join(fused)}: the fused "
+                "LoRA kernels compute the projections without calling lora.Linear."
+                "forward, so NVFP4 non-expert linears train un-snapped and the merge "
+                "identity is silently void. Remove the lora_*_kernel flags (they are "
+                "not auto-enabled when nvfp4_merge_aware is on)."
+            )
+        if start is not None:
+            bad = ValueError(
+                "nvfp4_merge_aware_start_step must be an int >= 0 (absolute step) or "
+                f"a float in (0, 1) (fraction of max steps), got {start!r}"
+            )
+            if isinstance(start, bool):
+                raise bad
+            if isinstance(start, float) and not 0 < start < 1:
+                raise bad
+            if isinstance(start, int) and start < 0:
+                raise bad
+        return data
+
     @model_validator(mode="before")
     @classmethod
     def check_dsv4_fp4_grouped_mode(cls, data):

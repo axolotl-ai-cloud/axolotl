@@ -42,8 +42,10 @@ use_sonicmoe: true
 The sonic-moe kernel ships through the HF [`kernels`](https://github.com/huggingface/kernels) package. Transformers v5.8+ auto-fetches a prebuilt kernel from [`kernels-community/sonic-moe`](https://huggingface.co/kernels-community/sonic-moe) on first use:
 
 ```bash
-pip install kernels "nvidia-cutlass-dsl==4.6.0"
+uv pip install kernels "nvidia-cutlass-dsl==4.6.0" "apache-tvm-ffi>=0.1.10,<0.2"
 ```
+
+`apache-tvm-ffi` is an undeclared runtime dependency of `nvidia-cutlass-dsl` 4.6.0 (absent from its `Requires-Dist`, so pip will not pull it); `<0.1.10` breaks `cute.compile`, so pin it explicitly.
 
 **Note:** Blackwell support is in upstream beta. On Blackwell GPUs Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
 
@@ -88,7 +90,7 @@ Requires:
 Install the pinned quack kernels (other versions untested):
 
 ```bash
-pip install "quack-kernels==0.6.1" "nvidia-cutlass-dsl==4.6.0"
+uv pip install "quack-kernels==0.6.1" "nvidia-cutlass-dsl==4.6.0" "apache-tvm-ffi>=0.1.10,<0.2"
 ```
 
 `AXOLOTL_SONICMOE_NVFP4_BACKEND` picks the expert GEMM (unset = auto):
