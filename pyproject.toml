@@ -38,8 +38,8 @@ dependencies = [
     "wandb",
     "einops",
     "colorama",
-    "numba==0.63.1",
-    "numpy==2.3.5",
+    "numba>=0.63.1,<1.0",
+    "numpy>=2.1,<3.0",
     "typer==0.25.1",
 
     # Evaluation & metrics
