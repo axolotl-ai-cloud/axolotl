@@ -117,13 +117,17 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         nf4_double_quant=nf4_double_quant,
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
         dequant=bool(getattr(cfg, "merge_dequant", False)),
+        override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")
 
 
 def do_cli(
-    config: Union[Path, str] = Path("examples/"), dequant: bool = False, **kwargs
+    config: Union[Path, str] = Path("examples/"),
+    dequant: bool = False,
+    override_quantizer: bool = False,
+    **kwargs,
 ) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_merge_lora`. Note that various
@@ -134,6 +138,9 @@ def do_cli(
         config: Path to `axolotl` config YAML file.
         dequant: If set (``--dequant``), dequantize a quantized base to bf16 in the merged
             checkpoint. Default keeps the base's quantized dtypes (fp8/nvfp4) intact.
+        override_quantizer: If set (``--override-quantizer``), merge a merge-aware adapter
+            despite a quantizer-identity mismatch (e.g. different torchao version than the
+            one trained with) instead of hard-erroring.
         kwargs: Additional keyword arguments to override config file values.
 
     Raises:
@@ -165,6 +172,7 @@ def do_cli(
     parsed_cfg._original_adapter = original_adapter
     parsed_cfg._original_quantize_moe_experts = original_quantize_moe_experts
     parsed_cfg.merge_dequant = bool(dequant)
+    parsed_cfg.merge_override_quantizer = bool(override_quantizer)
 
     if not parsed_cfg.lora_model_dir and parsed_cfg.output_dir:
         parsed_cfg.lora_model_dir = parsed_cfg.output_dir

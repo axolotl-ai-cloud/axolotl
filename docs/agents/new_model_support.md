@@ -2,6 +2,32 @@
 
 Guide for debugging and adding support for new model architectures in axolotl. Based on lessons learned from Gemma4, Gemma3, Qwen2-VL, and other multimodal/MoE models.
 
+## Model Support Registry
+
+New architectures are described by a single `ModelSupport` descriptor in `src/axolotl/model_support/<model_type>/` instead of edits scattered across loaders, integrations, and `processing_strategies.py`. The descriptor declares per-feature capabilities (`Unsupported(reason)` raises when the feature is enabled, `Experimental(note)` warns, `Supported()` documents verified coverage, and a missing key means unknown — the feature uses its generic fallback) and lifecycle hooks; features query the registry via `check_capability` rather than hardcoding `model_type` checks.
+
+```python
+# src/axolotl/model_support/my_model/__init__.py
+@register_model_support
+class MyModelSupport(ModelSupport):
+    model_types = ("my_model",)
+    is_multimodal = True
+    capabilities = {
+        "cut_cross_entropy": Unsupported("No CCE forward for this arch."),  # raises
+        "sample_packing": Experimental("Verify loss parity vs unpacked."),  # warns
+        # "liger" absent = unknown: liger's generic path applies
+    }
+
+    def get_auto_model_cls(self): ...           # AutoModelForImageTextToText etc.
+    def get_processing_strategy_cls(self): ...  # multimodal collator strategy
+    def matches_processor(self, processor): ... # processor-based dispatch
+    def validate_cfg(self, cfg): ...            # model-specific config guards
+    def pre_model_load(self, cfg): ...          # monkeypatches before load
+    def post_model_load(self, cfg, model): ...  # adjust loaded model
+```
+
+Register out-of-tree descriptors by calling `axolotl.model_support.register_model_support` from any imported module (e.g. a plugin). Built-in descriptors are listed in `model_support/registry.py`. See `model_support/paddleocr_vl/` for a complete example. Existing architectures are still wired through the legacy locations below; port them opportunistically.
+
 ## Quick Validation Checklist
 
 When testing a new model, run through these checks in order:
@@ -168,6 +194,8 @@ experts_implementation: scattermoe
 
 ## Where to Add Model-Specific Fixes
 
+For a new architecture, start with a `ModelSupport` descriptor in `model_support/<model_type>/` (capabilities, processing strategy, load hooks, config validation). The locations below are for fixes the registry does not cover yet, and for architectures not yet ported to it:
+
 | What | Where | Example |
 |------|-------|---------|
 | Missing forward inputs | `core/trainers/base.py` `compute_loss()` | mm_token_type_ids injection |
@@ -175,7 +203,7 @@ experts_implementation: scattermoe
 | Loss logging fixes | `core/trainers/base.py` `__init__()` | model_accepts_loss_kwargs override |
 | PEFT/LoRA patches | `loaders/adapter.py` | ClippableLinear redirect |
 | Attention patches | `monkeypatch/attention/` | FA4 tuple fix |
-| Model-specific patches | `loaders/patch_manager.py` `_apply_model_specific_patches()` | Llama4, Kimi, NemotronH |
+| Legacy model-specific patches | `loaders/patch_manager.py` `_apply_model_specific_patches()` | Llama4, Kimi, NemotronH |
 | CCE patches | `ml-cross-entropy` repo `transformers/` | Per-model cce_forward |
 | Example configs | `examples/<model>/` | Validated YAML |
-| Config validation | `utils/schemas/validation.py` | Compatibility checks |
+| Config validation (generic) | `utils/schemas/validation.py` | Compatibility checks |

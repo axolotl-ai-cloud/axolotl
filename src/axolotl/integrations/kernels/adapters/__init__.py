@@ -45,13 +45,53 @@ class ModelAdapter:
         """After PEFT wraps the model (dtype policy, fused-LoRA kernel swaps)."""
 
 
+def load_base_model_config(cfg):
+    """The base model's HF config via the canonical ``load_model_config``, or None on any failure.
+
+    Adapter matchers must use this rather than a raw ``AutoConfig.from_pretrained``: it reuses the
+    HF-cached read ``normalize_config`` already did and honors base_model_config / revision /
+    overrides / cfg-gated trust_remote_code, so detection matches how the model actually loads."""
+    from axolotl.loaders.utils import load_model_config
+
+    try:
+        return load_model_config(cfg)
+    except Exception:
+        return None
+
+
+def modelopt_nvfp4_model_config(cfg):
+    """The base model's HF config iff it declares a modelopt-NVFP4 quantization
+    (``quant_method=modelopt`` / ``quant_algo=NVFP4``), else None. Callers narrow by model_type."""
+    model_config = load_base_model_config(cfg)
+    if model_config is None:
+        return None
+    qcfg = getattr(model_config, "quantization_config", None)
+    if isinstance(qcfg, dict):
+        quant_method, quant_algo = qcfg.get("quant_method"), qcfg.get("quant_algo")
+    else:
+        quant_method = getattr(qcfg, "quant_method", None)
+        quant_algo = getattr(qcfg, "quant_algo", None)
+    if quant_method != "modelopt" or quant_algo != "NVFP4":
+        return None
+    return model_config
+
+
 def _all_adapters() -> list[ModelAdapter]:
     from axolotl.integrations.kernels.adapters.dsv4 import DSV4Adapter
     from axolotl.integrations.kernels.adapters.gemma4 import Gemma4Adapter
     from axolotl.integrations.kernels.adapters.glm_moe_dsa import GlmMoeDsaAdapter
+    from axolotl.integrations.kernels.adapters.nvfp4_moe import MoeNvfp4Adapter
     from axolotl.integrations.kernels.adapters.qwen3_moe import Qwen3MoeAdapter
 
-    return [DSV4Adapter(), Gemma4Adapter(), GlmMoeDsaAdapter(), Qwen3MoeAdapter()]
+    # MoeNvfp4Adapter is the generic gate; it excludes model_types the specialized adapters own,
+    # so it never double-matches them. Listed last for a stable active-adapter log order.
+    return [
+        DSV4Adapter(),
+        Gemma4Adapter(),
+        GlmMoeDsaAdapter(),
+        Qwen3MoeAdapter(),
+        MoeNvfp4Adapter(),
+    ]
 
 
 def get_active_adapters(cfg) -> list[ModelAdapter]:

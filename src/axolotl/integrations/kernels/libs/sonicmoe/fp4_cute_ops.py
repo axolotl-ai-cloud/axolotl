@@ -14,10 +14,10 @@ expert-sorted rows) to ``fp4_cute.GroupedNvfp4Gemm``:
   scales, per-tensor scale 1.0) and builds the dQaccum-padded SFA;
 - handles the per-expert weight ``per_tensor_scale`` EXACTLY: the engine keeps
   the stored e4m3 block scales and multiplies the full pts values into the
-  fp32 accumulator in the GEMM epilogue, via a per-row fp32 colvec
+  fp32 GEMM output (post-matmul), via a per-row fp32 colvec
   (``pts`` repeated over each expert's rows, sync-free). Single bf16 rounding
-  at the D store, and it composes with ``add_to_output`` (the multiply runs
-  before the reduce-add). The old lossy scheme (fold the pts_e/pts_ref RATIOS
+  at the cast, and it composes with ``add_to_output`` (the multiply runs
+  before the delta add). The old lossy scheme (fold the pts_e/pts_ref RATIOS
   into SFB, ``alpha = pts_ref``; re-rounds SFB in e4m3) stays reachable via
   ``AXOLOTL_SONICMOE_NVFP4_PTS_FOLD=1`` for A/B numerics debugging;
 - the backward dequant (:func:`dequantize_engine_weight`) therefore uses the
