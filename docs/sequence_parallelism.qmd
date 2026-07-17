@@ -42,20 +42,24 @@ When sequence parallelism is enabled:
 1. Each sequence is divided into equal chunks across the GPUs in a sequence parallel group
 2. The data collator handles the chunking of input_ids, attention_mask, labels, and position_ids
 3. Position IDs are adjusted to maintain proper relative positions
-4. The trainer uses special ring communication patterns for attention operations
+4. Attention runs through ringmaster (Ulysses all-to-all, ring, or USP — auto-selected
+   from the KV-head count and topology), wrapping the model's own attention kernel
 
 ## Requirements
 
 To use sequence parallelism, you need:
 
 - Multiple GPUs (at least 2)
-- The `ring-flash-attn` package. Install with:
-  - `pip install axolotl[ring-flash-attn]` (preferred)
-  - `pip install ring-flash-attn>=0.1.4`
+- torch >= 2.11
+- The `ringmaster` package. Install with:
+  - `pip install axolotl[ringmaster]` (preferred)
+  - `pip install axolotl-ringmaster`
 
 ## Limitations
 
-- Flash attention must be enabled for this to work (`attn_implementation: flash_attention_2` in config YAML)
+- A kernel-backed attention implementation is required (`sdpa`, `flash_attention_2/3`,
+  or `flex_attention`); `eager` attention is not supported
+- `sample_packing` is not yet supported with context parallelism
 - May have a small performance overhead due to communication between GPUs
 
 ### Mamba/SSM Hybrid Models
