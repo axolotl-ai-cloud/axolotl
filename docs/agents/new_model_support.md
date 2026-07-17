@@ -148,7 +148,7 @@ Older models that use `_prepare_4d_causal_attention_mask` (Llama, Mistral, Qwen2
 | Backend | Config | head_dim limit | torch_compile | Notes |
 |---------|--------|---------------|---------------|-------|
 | FA2 | `attn_implementation: flash_attention_2` | 256 | ✅ | Fastest when supported |
-| FA4 | auto with `attn_implementation: flash_attention_2` | 256 (SM90+) | ✅ | Auto-detected on H100+ |
+| FA4 | `attn_implementation: flash_attention_4` (or auto-upgrade from FA2) | 128 (SM90+) | ✅ | Auto-detected on H100+; needs `quack-kernels>=0.6.0` |
 | SDPA | `attn_implementation: sdpa` | None | ✅ | Universal fallback |
 | flex | `attn_implementation: flex_attention` | None | ⚠️ Triton OOM for large head_dim | Good for variable head dims |
 | eager | `attn_implementation: eager` | None | ✅ | Slowest, always works |

@@ -758,11 +758,37 @@ class ModelLoader:
             hf_impl = _LOAD_TIME_OVERRIDE.get(
                 self.cfg.attn_implementation, self.cfg.attn_implementation
             )
+            hf_impl = self._resolve_flash_attention_4(hf_impl)
             self.model_kwargs["attn_implementation"] = hf_impl
             self.model_config._attn_implementation = hf_impl
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def _resolve_flash_attention_4(self, hf_impl):
+        """Prefer native FA4 over the FA2 path when FA4 is installed and usable.
+
+        transformers dispatches ``flash_attention_4`` natively; ``flash_attention_2`` only
+        reaches FA4 when the FA2 library is present, otherwise it resolves to an
+        unregistered hub kernel. Upgrade to the native name so FA4 is actually used.
+        """
+        if hf_impl not in (
+            "flash_attention_2",
+            "flash_attention_3",
+            "flash_attention_4",
+        ):
+            return hf_impl
+
+        from axolotl.monkeypatch.attention.flash_attn_4 import configure_fa4, fa4_usable
+
+        if hf_impl == "flash_attention_4":
+            configure_fa4()
+            return hf_impl
+        if fa4_usable(self.model_config):
+            configure_fa4()
+            LOG.info("Flash Attention 4 enabled (upgraded from %s).", hf_impl)
+            return "flash_attention_4"
+        return hf_impl
 
     def _check_model_requirements(self):
         if self.cfg.model_config_type in ["lfm2-vl", "lfm2"]:
