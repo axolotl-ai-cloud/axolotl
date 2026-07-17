@@ -1,7 +1,7 @@
 # Context Parallel (ringmaster)
 
 Long-context attention via sequence parallelism, backed by the standalone
-`ringmaster` package (`pip install axolotl-ringmaster`). Ulysses / Ring / USP that wrap
+`ringmaster` package (`pip install axolotl[ringmaster]`). Ulysses / Ring / USP that wrap
 existing HF attention kernels (FA2/FA3/FA4, sdpa, flex) — **no `flash_attn` pypi
 dependency**. Opt-in and independent of the legacy `context_parallel_size`
 ring-flash-attn path.
