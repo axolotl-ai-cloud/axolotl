@@ -373,7 +373,9 @@ class MultipackBatchSampler(BatchSampler):
             if not self.sequential:
                 total_slots -= len(dropped_batch) * self.batch_max_len
                 total_used -= sum(
-                    self.lengths[idx] for bin_indices in dropped_batch for idx in bin_indices
+                    self.lengths[idx]
+                    for bin_indices in dropped_batch
+                    for idx in bin_indices
                 )
 
         # Update statistics if requested
