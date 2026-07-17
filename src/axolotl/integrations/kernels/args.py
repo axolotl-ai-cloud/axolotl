@@ -47,6 +47,11 @@ class KernelsArgs(BaseModel):
     use_sonicmoe: bool | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
+    # GLM-5.2 (glm_moe_dsa) DSA fused attention: MLA-absorption head-batched sparse-gather attn
+    # (fwd+bwd) + fused Lightning-Indexer + length-aware dense/sparse dispatch, replacing the dense
+    # [B,S,T]-mask eager/sdpa path. The router is kept fp32. Composes with use_scattermoe (experts)
+    # and context_parallel_size (the attention shards the sequence on the cp axis).
+    use_glm_dsa_kernels: bool | None = None
     # DeepSeek-V4 FP8 non-expert weight storage: "float8tensor" (default, 1-byte torchao
     # Float8Tensor base) or "bf16" (dequantize to bf16 at load).
     dsv4_fp8_nonexpert_mode: str | None = None
@@ -71,6 +76,63 @@ class KernelsArgs(BaseModel):
     # Gemma-4: NF4-quantize non-expert linears (bnb 4-bit, double-quant) after loading, the same
     # non-expert compute path unsloth uses, for apples-to-apples experts-only LoRA comparison.
     gemma4_nf4_nonexpert: bool | None = None
+
+    # Merge-aware NVFP4 LoRA (sonicmoe experts): the training forward fake-quantizes the
+    # effective expert weight dequant(base) + scaling*(B@A) with the same quantizer merge-lora
+    # writes with, so the format-preserving merge reproduces the trained model instead of
+    # erasing the sub-grid-step LoRA delta. Requires a LoRA adapter on sonicmoe NVFP4 experts.
+    nvfp4_merge_aware: bool | None = None
+    # When to start the fake-quant: int = absolute optimizer step, float in (0, 1) = fraction
+    # of max steps. Default 0 (on from the first step). A short warm-up avoids STE oscillation
+    # while the adapter is near its zero init (standard QAT practice).
+    nvfp4_merge_aware_start_step: int | float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_nvfp4_merge_aware(cls, data):
+        data = cls._canonicalize_expert_backend(data)
+        start = data.get("nvfp4_merge_aware_start_step")
+        if not data.get("nvfp4_merge_aware"):
+            if start is not None:
+                raise ValueError(
+                    "nvfp4_merge_aware_start_step requires nvfp4_merge_aware: true"
+                )
+            return data
+        if not data.get("use_sonicmoe"):
+            raise ValueError(
+                "nvfp4_merge_aware requires the sonicmoe expert backend "
+                "(expert_backend: sonicmoe)"
+            )
+        if data.get("adapter") != "lora":
+            raise ValueError(
+                "nvfp4_merge_aware requires a LoRA adapter (adapter: lora); it snaps "
+                "the LoRA delta to the NVFP4 grid of the frozen base"
+            )
+        fused = [
+            k
+            for k in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+            if data.get(k) is True
+        ]
+        if fused:
+            raise ValueError(
+                f"nvfp4_merge_aware is incompatible with {', '.join(fused)}: the fused "
+                "LoRA kernels compute the projections without calling lora.Linear."
+                "forward, so NVFP4 non-expert linears train un-snapped and the merge "
+                "identity is silently void. Remove the lora_*_kernel flags (they are "
+                "not auto-enabled when nvfp4_merge_aware is on)."
+            )
+        if start is not None:
+            bad = ValueError(
+                "nvfp4_merge_aware_start_step must be an int >= 0 (absolute step) or "
+                f"a float in (0, 1) (fraction of max steps), got {start!r}"
+            )
+            if isinstance(start, bool):
+                raise bad
+            if isinstance(start, float) and not 0 < start < 1:
+                raise bad
+            if isinstance(start, int) and start < 0:
+                raise bad
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -263,18 +325,6 @@ class KernelsArgs(BaseModel):
             "experts-only invariant. Either (1) keep LoRA experts-only via lora_target_parameters, "
             "or (2) explicitly exclude the indexer scorer projections via lora_exclude_modules."
         )
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_sonicmoe_ep_unsupported(cls, data):
-        """SonicMoE + EP is not yet implemented (EP `_sonicmoe_local` raises)."""
-        data = cls._canonicalize_expert_backend(data)
-        if data.get("use_sonicmoe") and (data.get("expert_parallel_size") or 1) > 1:
-            raise ValueError(
-                "use_sonicmoe=true is not supported with expert_parallel_size > 1. "
-                "Use use_scattermoe=true under EP, or set expert_parallel_size=1."
-            )
-        return data
 
     @model_validator(mode="before")
     @classmethod

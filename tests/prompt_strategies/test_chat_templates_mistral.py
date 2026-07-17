@@ -308,6 +308,34 @@ def test_mistral_chat_template(
     assert res == ["Hello", ",", " how", " are", " you", "?"]
 
 
+def test_mistral_normalizer_fills_instruct_request_defaults(
+    magistral_tokenizer: "HFMistralTokenizer",
+):
+    from pydantic import BaseModel
+
+    class _MissingDefaults(BaseModel):
+        truncate_at_max_tokens: int
+        continue_final_message: bool
+
+    normalizer = magistral_tokenizer.tokenizer._instruct_request_normalizer
+
+    def broken_from_chat_completion_request(_request):
+        _MissingDefaults()
+
+    normalizer.from_chat_completion_request = broken_from_chat_completion_request
+    normalizer._axolotl_instruct_defaults_patched = False
+    magistral_tokenizer._patch_instruct_request_normalizer()
+
+    input_ids = magistral_tokenizer.apply_chat_template(
+        [{"role": "user", "content": "Hello"}],
+        add_generation_prompt=True,
+        return_dict=False,
+    )
+
+    assert isinstance(input_ids, list)
+    assert input_ids
+
+
 @pytest.mark.skip(reason="TODO, fix for new HF wrapper call")
 def test_magistral_tokenizer_pad_method(magistral_tokenizer: "HFMistralTokenizer"):
     """Test the MistralTokenizer pad method"""

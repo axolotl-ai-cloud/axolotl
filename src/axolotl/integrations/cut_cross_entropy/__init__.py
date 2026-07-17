@@ -25,6 +25,7 @@ from functools import partial
 import torch
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.model_support import check_capability, get_model_support
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
@@ -35,7 +36,7 @@ LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@5effb44"`'
+    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@5f0c7a7"`'
 )
 
 
@@ -86,6 +87,12 @@ class CutCrossEntropyPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
         if cfg.cut_cross_entropy:
+            check_capability(
+                get_model_support(cfg.model_config_type),
+                "cut_cross_entropy",
+                cfg.model_config_type,
+                hint="Disable cut_cross_entropy for this model.",
+            )
             self._check_requirements()
             self.patch_llama_like(cfg.model_config_type)
 

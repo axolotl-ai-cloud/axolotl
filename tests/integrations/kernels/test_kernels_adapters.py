@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 import axolotl.integrations.kernels.adapters as adapters_mod
 import axolotl.integrations.kernels.adapters.gemma4 as gemma4_mod
 import axolotl.integrations.kernels.plugin as plugin_mod
@@ -11,6 +13,7 @@ from axolotl.integrations.kernels.adapters.gemma4 import (
     Gemma4Adapter,
     resolve_nonexpert_quantization,
 )
+from axolotl.integrations.kernels.adapters.qwen3_moe import Qwen3MoeAdapter
 from axolotl.integrations.kernels.plugin import KernelsPlugin
 
 
@@ -33,6 +36,51 @@ def test_gemma4_adapter_matches(monkeypatch):
     assert [type(a) for a in active] == [Gemma4Adapter]
     # requires scattermoe
     assert get_active_adapters(Cfg(use_scattermoe=False)) == []
+
+
+def test_qwen3_moe_adapter_matches(monkeypatch):
+    import axolotl.integrations.kernels.adapters.qwen3_moe as qwen3_moe_mod
+
+    monkeypatch.setattr(qwen3_moe_mod, "is_qwen3_moe_nvfp4_modelopt", lambda cfg: True)
+    # either expert backend activates it
+    active = get_active_adapters(Cfg(use_scattermoe=True))
+    assert Qwen3MoeAdapter in [type(a) for a in active]
+    active = get_active_adapters(Cfg(use_sonicmoe=True))
+    assert [type(a) for a in active] == [Qwen3MoeAdapter]
+    # requires an expert backend
+    assert get_active_adapters(Cfg()) == []
+
+
+def test_moe_nvfp4_generic_adapter_matches(monkeypatch):
+    import axolotl.integrations.kernels.adapters.nvfp4_moe as nvfp4_moe_mod
+    from axolotl.integrations.kernels.adapters.nvfp4_moe import MoeNvfp4Adapter
+
+    monkeypatch.setattr(nvfp4_moe_mod, "is_moe_nvfp4_modelopt", lambda cfg: True)
+    # either expert backend activates the generic gate
+    assert [type(a) for a in get_active_adapters(Cfg(use_sonicmoe=True))] == [
+        MoeNvfp4Adapter
+    ]
+    assert MoeNvfp4Adapter in [
+        type(a) for a in get_active_adapters(Cfg(use_scattermoe=True))
+    ]
+    # requires an expert backend
+    assert get_active_adapters(Cfg()) == []
+
+
+def test_moe_nvfp4_rejects_unsupported_expert_layout():
+    from axolotl.integrations.kernels.adapters.nvfp4_moe import MoeNvfp4Adapter
+
+    adapter = MoeNvfp4Adapter()
+    # Mixtral-style w1/w2/w3 is not fusable by the routed converter -> loud failure
+    with pytest.raises(ValueError, match="unsupported routed NVFP4 expert layout"):
+        adapter._validate_supported_layout(
+            Cfg(), "mixtral", {"routed_projs": ["w1", "w2", "w3"]}
+        )
+    # gate/up/down passes; a non-routed-only checkpoint (no routed projs) also passes
+    adapter._validate_supported_layout(
+        Cfg(), "qwen3_moe", {"routed_projs": ["gate_proj", "up_proj", "down_proj"]}
+    )
+    adapter._validate_supported_layout(Cfg(), "qwen3_moe", {"routed_projs": []})
 
 
 def test_gemma4_match_failure_is_swallowed(monkeypatch):

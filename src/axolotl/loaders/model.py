@@ -47,6 +47,7 @@ from axolotl.loaders.utils import (
     get_module_class_from_name,
     load_model_config,
 )
+from axolotl.model_support import get_model_support
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -251,6 +252,7 @@ class ModelLoader:
             self.model = self.model.merge_and_unload()
 
         self._configure_experts_implementation()
+        self._apply_selective_checkpointing()
         self._apply_activation_checkpointing()
         self._resize_token_embeddings()
         self._reinitialize_classification_head()
@@ -319,12 +321,33 @@ class ModelLoader:
 
         self.model.set_experts_implementation(impl)
 
+    def _apply_selective_checkpointing(self):
+        sac = self.cfg.selective_checkpointing
+        if not sac:
+            return
+
+        from axolotl.monkeypatch.selective_checkpointing import (
+            apply_selective_checkpointing,
+        )
+
+        sac_kwargs = sac if isinstance(sac, dict) else {}
+        apply_selective_checkpointing(
+            self.model,
+            save=sac_kwargs.get("save"),
+            save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
+            recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
+            offload=bool(sac_kwargs.get("offload")),
+        )
+
     def _apply_activation_checkpointing(self):
         ao = self.cfg.activation_offloading
-        # "hidden_states" (ALST-style): HF reentrant gradient checkpointing already
-        # wraps the layers; a checkpoint monkeypatch offloads only the per-layer
-        # input (hidden_states). No manual recompute wrap needed.
         if ao == "hidden_states":
+            use_reentrant = (self.cfg.gradient_checkpointing_kwargs or {}).get(
+                "use_reentrant", False
+            )
+            if not use_reentrant:
+                return
+
             from axolotl.monkeypatch.activation_offload_checkpoint import (
                 patch_hidden_states_offload,
             )
@@ -539,11 +562,15 @@ class ModelLoader:
         should be set according to the type of the model.
         """
         if self.cfg.is_multimodal:
-            self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
-                self.model_config.model_type, AutoModelForImageTextToText
-            )
-            if isinstance(self.auto_model_loader, str):
-                self.auto_model_loader = AutoModelForImageTextToText
+            support = get_model_support(self.model_config.model_type)
+            auto_model_loader = support.get_auto_model_cls() if support else None
+            if auto_model_loader is None:
+                auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
+                    self.model_config.model_type, AutoModelForImageTextToText
+                )
+            if isinstance(auto_model_loader, str):
+                auto_model_loader = AutoModelForImageTextToText
+            self.auto_model_loader = auto_model_loader
 
     def _set_device_map_config(self):
         """Setup `device_map` according to config"""

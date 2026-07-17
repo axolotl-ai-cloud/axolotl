@@ -1,20 +1,23 @@
 """Module for working with config dicts"""
 
+import copy
 import json
 import os
 from typing import Optional
 
 import torch
+from pydantic import ValidationError
+from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
     is_torch_greater_or_equal,
     is_torch_npu_available,
 )
 
-from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
-from axolotl.loaders import MULTIMODAL_AUTO_MODEL_MAPPING
+from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
+from axolotl.model_support import Unsupported, get_model_support
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -30,6 +33,90 @@ from axolotl.utils.schemas.datasets import (
 )
 
 LOG = get_logger(__name__)
+
+_NONE_DEFAULT_FIELDS = {
+    "xformers_attention",
+    "sdp_attention",
+    "flex_attention",
+    "flash_attention",
+    "sage_attention",
+    "eager_attention",
+}
+
+
+def _is_pydantic_undefined(value):
+    return value is PydanticUndefined or isinstance(value, PydanticUndefinedType)
+
+
+def _field_name_for_missing_loc(model_cls, field_loc):
+    fields = getattr(model_cls, "model_fields", None) or {}
+    if field_loc in fields:
+        return field_loc
+
+    for field_name, field in fields.items():
+        if field_loc == getattr(field, "alias", None):
+            return field_name
+
+        validation_alias = getattr(field, "validation_alias", None)
+        if field_loc == validation_alias:
+            return field_name
+
+        for alias in getattr(validation_alias, "choices", ()) or ():
+            if field_loc == alias:
+                return field_name
+
+        alias_path = getattr(validation_alias, "path", None)
+        if alias_path and field_loc == alias_path[0]:
+            return field_name
+
+    return field_loc
+
+
+def _field_default_from_mro(model_cls, field_name):
+    if field_name in _NONE_DEFAULT_FIELDS:
+        return None
+
+    for cls in model_cls.__mro__:
+        fields = getattr(cls, "model_fields", None)
+        if not fields or field_name not in fields:
+            continue
+
+        default = fields[field_name].get_default(call_default_factory=True)
+        if not _is_pydantic_undefined(default):
+            return copy.deepcopy(default)
+
+    return PydanticUndefined
+
+
+def _model_validate_with_field_names(model_cls, data):
+    try:
+        return model_cls.model_validate(data, by_alias=True, by_name=True)
+    except TypeError:
+        return model_cls(**data)
+
+
+def _model_with_inherited_default_fallback(model_cls, data):
+    try:
+        return model_cls(**data)
+    except ValidationError as exc:
+        missing_fields = {
+            _field_name_for_missing_loc(model_cls, err["loc"][0])
+            for err in exc.errors()
+            if err.get("type") == "missing" and len(err.get("loc", ())) == 1
+        }
+        if not missing_fields:
+            raise
+
+        data_with_defaults = dict(data)
+        for field_name in missing_fields:
+            if field_name in data_with_defaults:
+                continue
+            default = _field_default_from_mro(model_cls, field_name)
+            if _is_pydantic_undefined(default):
+                raise
+            data_with_defaults[field_name] = default
+
+        return _model_validate_with_field_names(model_cls, data_with_defaults)
 
 
 def choose_device(cfg):
@@ -183,8 +270,11 @@ def normalize_config(cfg):
         cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
     )
 
+    model_support = get_model_support(getattr(model_config, "model_type", None))
+
     cfg.is_multimodal = (
-        hasattr(model_config, "model_type")
+        (model_support is not None and model_support.is_multimodal)
+        or hasattr(model_config, "model_type")
         and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
         or any(
             multimodal_name in cfg.base_model.lower()
@@ -200,6 +290,29 @@ def normalize_config(cfg):
         )
 
     cfg.model_config_type = model_config.model_type
+
+    if model_support is not None:
+        # The auto-enable validator runs before model_type is known; undo it
+        # for archs that declare the fused kernels broken.
+        lora_kernels_cap = model_support.capabilities.get("lora_kernels")
+        kernel_fields = (
+            "lora_mlp_kernel",
+            "lora_qkv_kernel",
+            "lora_o_kernel",
+            "lora_embedding_kernel",
+        )
+        if isinstance(lora_kernels_cap, Unsupported) and any(
+            cfg[k] for k in kernel_fields
+        ):
+            LOG.warning(
+                "Disabling fused LoRA kernels: unsupported for model_type=%s.%s",
+                cfg.model_config_type,
+                f" {lora_kernels_cap.reason}" if lora_kernels_cap.reason else "",
+            )
+            for k in kernel_fields:
+                cfg[k] = False
+
+        model_support.validate_cfg(cfg)
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
     if callable(getattr(model_config, "get_text_config", None)):
@@ -367,16 +480,23 @@ def validate_config(
 
         return DictDefault(
             dict(
-                AxolotlConfigWCapabilities(
-                    **cfg.to_dict(),
-                    capabilities=capabilities,
-                    env_capabilities=env_capabilities,
+                _model_with_inherited_default_fallback(
+                    AxolotlConfigWCapabilities,
+                    {
+                        **cfg.to_dict(),
+                        "capabilities": capabilities,
+                        "env_capabilities": env_capabilities,
+                    },
                 ).model_dump(exclude_none=True)
             )
         )
 
     return DictDefault(
-        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
+        dict(
+            _model_with_inherited_default_fallback(
+                AxolotlInputConfig, cfg.to_dict()
+            ).model_dump(exclude_none=True)
+        )
     )
 
 
@@ -386,6 +506,8 @@ def prepare_plugins(cfg):
     """
 
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)

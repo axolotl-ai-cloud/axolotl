@@ -42,6 +42,31 @@ pre-commit install
 pytest tests/
 ```
 
+CI tests across a matrix of Python and PyTorch versions — see [tests.yml](workflows/tests.yml) for the current one. Tests default to `-m 'not slow'`. Run the CPU suite locally (GPU e2e runs in separate jobs — see below):
+
+```bash
+pytest -m "not slow" -n4 --dist loadfile --ignore=tests/e2e tests/
+```
+
+### Running e2e (GPU) tests locally
+
+Recommended for larger changes before opening a PR. Needs an NVIDIA GPU. Run in the public Docker image with your checkout mounted ([docs/docker.qmd](../docs/docker.qmd) lists the available tags):
+
+```bash
+docker run --gpus all --rm -it --ipc=host -v "$PWD:/workspace/axolotl" -w /workspace/axolotl \
+  axolotlai/axolotl-uv:main-latest
+```
+
+The runtime image omits test deps, so install them, then run a test:
+
+```bash
+uv pip install --group test                  # tbparse, etc.
+pytest tests/e2e/test_lora_llama.py          # LoRA smoke test
+pytest tests/e2e/multigpu/                    # needs >= 2 GPUs
+```
+
+Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`). `cicd/cicd.sh` and `cicd/multigpu.sh` list CI's exact run order.
+
 ## How to Contribute
 
 ### Reporting Bugs
@@ -59,7 +84,7 @@ We welcome ideas for improvements and new features. To suggest an enhancement, o
 3. Test your changes and ensure that they don't introduce new issues or break existing functionality.
 4. Commit your changes, following the [commit message guidelines](#commit-messages).
 5. Push your branch to your fork on GitHub.
-6. Open a new pull request against the `main` branch of the axolotl repository. Include a clear and concise description of your changes, referencing any related issues.
+6. Open a new pull request against the `main` branch of the axolotl repository. PR formatting is prescribed in the [PR template](PULL_REQUEST_TEMPLATE.md); reference any related issues.
 
 #### Skipping CI Checks
 
@@ -68,16 +93,25 @@ You can skip certain CI checks by including specific keywords in your commit mes
 - `[skip ci]` or `skip ci` - Skips all CI checks for that commit
 - `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks. You may also include this in the title of your PR to disable end-to-end tests for the entire PR.
 
+#### GPU End-to-End Tests
+
+GPU-heavy CI (the `docker-e2e-tests` and multi-GPU e2e workflows) is opt-in on pull requests: it only runs once a maintainer applies the `run-gpu-tests` label. Labeling starts the GPU suites immediately without re-running the CPU checks, and subsequent pushes to a labeled PR re-run them automatically. Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
+
 ## Style Guidelines
 
 ### Code Style
 
 axolotl uses [Ruff](https://docs.astral.sh/ruff/) as its code style guide. Please ensure that your code follows these guidelines.
 
-Use the pre-commit linter to ensure that your code is formatted consistently.
+Use the pre-commit linter to ensure that your code is formatted consistently. It installs and runs the **exact versions CI uses**, so don't rely on a system-installed `ruff`/`mypy`:
 ```bash
+pre-commit install        # one-time
 pre-commit run --all-files
 ```
+
+The exact ruff/mypy/bandit versions are pinned in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) — the same file CI's pre-commit job runs from, so local and CI never drift.
+
+To run ruff outside pre-commit, pin it to the `ruff-pre-commit` rev in that file so output matches CI, e.g. `uvx ruff@<rev> check` / `uvx ruff@<rev> format`.
 
 ### Commit Messages
 

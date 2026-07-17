@@ -14,6 +14,11 @@ from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
+from axolotl.model_support import (
+    check_capability,
+    get_model_support,
+    get_model_support_for_cfg,
+)
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -38,16 +43,9 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        if (
-            hasattr(cfg, "base_model_config")
-            and cfg.base_model_config
-            and "kimi-linear" in cfg.base_model_config.lower()
-        ):
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_config,
-            )
-
-            patch_kimi_config()
+        support = get_model_support_for_cfg(cfg)
+        if support is not None:
+            support.pre_config_load(cfg)
 
     @staticmethod
     def apply_pre_tokenizer_load_patches(cfg: DictDefault):
@@ -59,16 +57,9 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        if (
-            hasattr(cfg, "tokenizer_config")
-            and cfg.tokenizer_config
-            and "kimi-linear" in cfg.tokenizer_config.lower()
-        ):
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_tokenizer,
-            )
-
-            patch_kimi_tokenizer()
+        support = get_model_support_for_cfg(cfg)
+        if support is not None:
+            support.pre_tokenizer_load(cfg)
 
     def __init__(
         self,
@@ -107,6 +98,7 @@ class PatchManager:
         # Must precede fused-RoPE patches: re-parses ``Attention.forward``
         # via ``inspect.getsource``; the QKV regex misses on a patched body.
         self._apply_self_attention_lora_patch()
+        self._apply_model_support_pre_load_hook()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -165,8 +157,16 @@ class PatchManager:
         self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
 
+    def _apply_model_support_pre_load_hook(self):
+        support = get_model_support(self.cfg.model_config_type)
+        if support is not None:
+            support.pre_model_load(self.cfg)
+
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
+        support = get_model_support(self.cfg.model_config_type)
+        if support is not None:
+            support.post_model_load(self.cfg, model)
         self._apply_llama_flash_attn_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
@@ -206,6 +206,7 @@ class PatchManager:
 
         from axolotl.monkeypatch.attention.large_head import (
             resolve_large_head_policy,
+            set_large_head_packed,
             set_large_head_policy,
         )
         from axolotl.monkeypatch.gemma4_hybrid_mask import (
@@ -217,6 +218,7 @@ class PatchManager:
         # Gemma-4 global layers reuse the generic large-head router. Default policy 'sdpa' (flash is
         # opt-in via large_head_attention / the deprecated flash_attn_d512), preserving prior default.
         set_large_head_policy(resolve_large_head_policy(self.cfg))
+        set_large_head_packed(bool(self.cfg.sample_packing))
 
         # Navigate to the module that has 'layers' - varies by model structure:
         # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
@@ -316,6 +318,20 @@ class PatchManager:
             )
 
             patch_initialize_missing_keys_for_fsdp()
+
+            # Only for adapter (frozen-base) runs: this patch leaves non-rank-0 base params on meta
+            # (FSDP broadcasts rank-0's weights into them), which avoids world_size× CPU
+            # materialization of large unrecognized-quantizer (NVFP4-modelopt) checkpoints. Those are
+            # always trained with a frozen base, so no base optimizer state exists. For a FULL
+            # fine-tune the base params DO carry optimizer state, and leaving them on meta deadlocks
+            # the FSDP2 optimizer-state all-gather at checkpoint save (rank-0 real DTensors vs
+            # non-rank-0 meta) — so fall back to the stock materialize-to-cpu path there.
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading and self.cfg.adapter:
+                from axolotl.monkeypatch.accelerate.fsdp2 import (
+                    patch_move_missing_keys_meta_for_fsdp,
+                )
+
+                patch_move_missing_keys_meta_for_fsdp()
 
         if self.cfg.context_parallel_size > 1 or (
             self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
@@ -424,13 +440,6 @@ class PatchManager:
             )
 
             patch_llama4_linearized_modeling()
-
-        if self.cfg.model_config_type == "kimi_linear":
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_model,
-            )
-
-            patch_kimi_model()
 
         ssm_hybrid_patch_needed = (
             self.cfg.sample_packing or self.cfg.context_parallel_size > 1
@@ -618,6 +627,9 @@ class PatchManager:
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
+            from axolotl.monkeypatch.accelerate.float8_moe_filter import (
+                patch_fp8_exclude_moe_router,
+            )
             from axolotl.monkeypatch.trainer_accelerator_args import (
                 patch_create_accelerate_code_for_fp8,
             )
@@ -625,6 +637,7 @@ class PatchManager:
             patch_create_accelerate_code_for_fp8(
                 self.cfg.fp8_enable_fsdp_float8_all_gather
             )
+            patch_fp8_exclude_moe_router()
 
     def _apply_flash_attention_peft_patches(self):
         """Apply patches for Flash Attention with PEFT."""
@@ -673,17 +686,13 @@ class PatchManager:
     def _apply_self_attention_lora_patch(self):
         """Apply self-attention LoRA patches if configured."""
         if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
-            # Only patch if conditions are met
-            can_patch = (
-                self.cfg.lora_dropout == 0
-                if hasattr(self.cfg, "lora_dropout")
-                else True
-            )  # default to True if lora_dropout is not set
-
-            if not can_patch:
-                LOG.warning("Cannot patch self-attention - requires no dropout")
-                return
-
+            check_capability(
+                get_model_support(self.cfg.model_config_type),
+                "lora_kernels",
+                self.cfg.model_config_type,
+                feature="LoRA QKV/O kernels",
+                hint="Set lora_qkv_kernel: false and lora_o_kernel: false.",
+            )
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)
@@ -693,6 +702,7 @@ class PatchManager:
         globals through its own impl, so skip the generic sdpa wrapper there to avoid double-wiring."""
         from axolotl.monkeypatch.attention.large_head import (
             resolve_large_head_policy,
+            set_large_head_packed,
             set_large_head_policy,
             unpatch_sdpa_large_head,
         )
@@ -701,6 +711,7 @@ class PatchManager:
         # Always (re)set the policy global from this run's config so a long-lived process can't
         # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
         set_large_head_policy(policy)
+        set_large_head_packed(bool(self.cfg.sample_packing))
         if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
             unpatch_sdpa_large_head()
             return
@@ -709,10 +720,57 @@ class PatchManager:
         patch_sdpa_large_head(policy)
 
     def _apply_sdpa_varlen_patch(self):
-        """Route packed-row SDPA through cu_seqlens varlen_attn when ``sdpa_varlen`` is set."""
-        if not self.cfg.sdpa_varlen:
+        """Route packed-row SDPA through cu_seqlens ``varlen_attn`` (no 4D mask).
+
+        Auto-enabled for ``sdpa`` + ``sample_packing`` when the varlen kernel can serve
+        the model (torch >= 2.10, head_dim <= 256, no sliding window). Opt in/out
+        explicitly with ``sdpa_varlen``. When varlen is unavailable/unsuitable, stock SDPA
+        stays and packing is still isolated via the dropped-mask block-diagonal path.
+        """
+        # False -> explicit opt-out; True -> explicit opt-in; None -> auto for sdpa packing.
+        if self.cfg.sdpa_varlen is False:
             return
-        from axolotl.monkeypatch.attention.sdpa_varlen import patch_sdpa_varlen
+        explicit = self.cfg.sdpa_varlen is True
+        auto = (
+            self.cfg.sdpa_varlen is None
+            and self.cfg.attn_implementation == "sdpa"
+            and self.cfg.sample_packing
+        )
+        if not (explicit or auto):
+            return
+
+        from axolotl.monkeypatch.attention.sdpa_varlen import (
+            _VARLEN_MAX_HEAD_DIM,
+            patch_sdpa_varlen,
+            varlen_available,
+        )
+
+        if not varlen_available():
+            return  # torch < 2.10; block-diagonal packing path is correct
+
+        def _attr(name):
+            mc = self.model_config
+            return mc.get(name) if isinstance(mc, dict) else getattr(mc, name, None)
+
+        head_dim = _attr("head_dim")
+        if not head_dim and _attr("hidden_size") and _attr("num_attention_heads"):
+            head_dim = _attr("hidden_size") // _attr("num_attention_heads")
+        sliding = _attr("sliding_window")
+        layer_types = _attr("layer_types")
+        uses_sliding = bool(sliding) and (
+            any(lt == "sliding_attention" for lt in layer_types)
+            if layer_types
+            else True
+        )
+
+        if (head_dim and head_dim > _VARLEN_MAX_HEAD_DIM) or uses_sliding:
+            if explicit:
+                LOG.info(
+                    "sdpa_varlen: model has head_dim > %d or a sliding window; keeping "
+                    "stock SDPA (packing still isolated via the block-diagonal mask).",
+                    _VARLEN_MAX_HEAD_DIM,
+                )
+            return
 
         patch_sdpa_varlen()
 

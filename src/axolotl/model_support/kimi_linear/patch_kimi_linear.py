@@ -7,15 +7,15 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-KIMI_PATCH_PACKAGE = "axolotl.monkeypatch.models.kimi_linear"
+KIMI_PATCH_PACKAGE = "axolotl.model_support.kimi_linear"
 
 
-def get_patch_file_path(package_dot_path: str, filename: str) -> Path:
+def get_patch_file_path(package_dot_path: str, filename: str) -> Path | None:
     """
     Gets the absolute path to a patch file using importlib.resources.files.
     """
     try:
-        return importlib.resources.files(package_dot_path) / filename
+        return Path(str(importlib.resources.files(package_dot_path) / filename))
     except ModuleNotFoundError:
         return None
 
@@ -28,6 +28,8 @@ def _load_local_module(module_name: str, filename: str):
     patch_path = get_patch_file_path(KIMI_PATCH_PACKAGE, filename)
     if patch_path and patch_path.exists():
         spec = importlib.util.spec_from_file_location(module_name, patch_path)
+        if spec is None or spec.loader is None:
+            return None
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)

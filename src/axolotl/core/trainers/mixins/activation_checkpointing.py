@@ -4,6 +4,7 @@ Trainer mixin for activation checkpointing w offloading
 
 import contextlib
 
+import torch
 from peft import PeftModel
 from torch import nn
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -22,6 +23,86 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _patch_trl_offload_current_stream() -> None:
+    """Make TRL ``OffloadActivations`` sync its CPU<->GPU copies against the LIVE compute stream
+    instead of the once-captured ``torch.cuda.default_stream()``.
+
+    ``OffloadActivations`` caches ``self.s0 = torch.cuda.default_stream()`` in ``__init__`` and uses
+    it for every ``s0.wait_stream(s1)`` / ``s0.wait_event`` / ``record_stream(s0)``. When the actual
+    forward/backward compute runs on a NON-default stream — FSDP2, the checkpoint recompute, or any
+    custom autograd Function whose backward launches kernels (e.g. the scattermoe NVFP4 MoE) — that
+    sync targets the wrong stream, so a streamed-in activation is read before its H2D copy finishes:
+    garbage saved tensors -> NaN/illegal-memory in the backward (silent, finite forward). Querying
+    ``current_stream()`` at each use site fixes the ordering (xpu/npu already use ``current_stream``).
+    """
+    from trl.models.activation_offloading import OffloadActivations
+
+    if getattr(OffloadActivations, "_axolotl_live_stream", False):
+        return
+
+    def _live_compute_stream(self):
+        t = getattr(self, "accelerator_type", "cuda")
+        if t == "xpu":
+            return torch.xpu.current_stream()
+        if t == "npu":
+            import torch_npu  # noqa: F401
+
+            return torch.npu.current_stream()
+        return torch.cuda.current_stream()
+
+    # property read returns the live stream; the no-op setter swallows __init__'s `self.s0 = ...`.
+    OffloadActivations.s0 = property(_live_compute_stream, lambda self, _v: None)
+    OffloadActivations._axolotl_live_stream = True
+    LOG.info(
+        "Patched TRL OffloadActivations to sync against the live compute stream "
+        "(fixes streamed activation offloading under FSDP2 / custom-Function backward)"
+    )
+
+
+def _patch_trl_offload_compute_stream_clone() -> None:
+    """Clone offset/non-contiguous saved tensors on the COMPUTE stream before TRL's pack hook.
+
+    ``pack_tensor`` clones such tensors inside its ``torch.cuda.stream(s1)`` context, so the
+    stash copy is transfer-stream-pool memory written on s1 but consumed by compute kernels with
+    no ordering edge: the consumer can read the block before s1 executes the clone (stale bytes
+    from a recycled block), and once the stash entry is dropped mid-backward the block returns to
+    the s1 pool and the next H2D restore overwrites it while the compute-stream read is still
+    pending. Cross-entropy's saved ``shift_labels`` (storage_offset=1 from the label shift) hits
+    this every step: garbage targets -> device-side assert in nll_loss backward, corrupted CUDA
+    context. Pre-cloning on the compute stream closes both edges — the write is stream-ordered
+    with all consumers and the block never enters the transfer stream's allocator pool.
+    """
+    from trl.models.activation_offloading import OffloadActivations
+
+    if getattr(OffloadActivations, "_axolotl_compute_stream_clone", False):
+        return
+
+    orig_init = OffloadActivations.__init__
+
+    def patched_init(self, *args, **kwargs):
+        orig_init(self, *args, **kwargs)
+        pack = self.pack_hook
+
+        def pack_contiguous(tensor):
+            if (
+                torch.is_tensor(tensor)
+                and tensor.device.type in ("cuda", "xpu", "npu")
+                and not isinstance(tensor, torch.nn.Parameter)
+                and (not tensor.is_contiguous() or tensor.storage_offset() != 0)
+            ):
+                tensor = tensor.clone(memory_format=torch.contiguous_format)
+            return pack(tensor)
+
+        self.pack_hook = pack_contiguous
+
+    OffloadActivations.__init__ = patched_init
+    OffloadActivations._axolotl_compute_stream_clone = True
+    LOG.info(
+        "Patched TRL OffloadActivations to clone offset/non-contiguous saved tensors "
+        "on the compute stream (fixes cross-stream use-after-free of the pack-time clone)"
+    )
+
+
 class ActivationOffloadingMixin(Trainer):
     """
     Trainer mixin class for activation checkpointing w offloading
@@ -35,7 +116,20 @@ class ActivationOffloadingMixin(Trainer):
             # the stream-overlapped path (True/"disk"); the streams path stashes
             # several activations to overlap copies, inflating peak reserved.
             use_streams = self.args.activation_offloading != "legacy"
-            if isinstance(self.model, PeftModel):
+            if use_streams:
+                _patch_trl_offload_current_stream()
+                _patch_trl_offload_compute_stream_clone()
+            if self.args.activation_offloading == "hidden_states":
+                from axolotl.monkeypatch.checkpoint_activation_offload import (
+                    get_checkpoint_hidden_states_offloading_ctx_manager,
+                )
+
+                self.activation_offload_context = (
+                    get_checkpoint_hidden_states_offloading_ctx_manager(
+                        use_streams=use_streams
+                    )
+                )
+            elif isinstance(self.model, PeftModel):
                 self.activation_offload_context = get_lora_act_offloading_ctx_manager(
                     self.model, use_streams=use_streams
                 )

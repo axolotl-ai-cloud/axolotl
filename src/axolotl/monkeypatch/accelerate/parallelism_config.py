@@ -102,11 +102,15 @@ def _validate_accelerator(self, accelerator):
     if self.total_size == 1:
         self._set_size("dp_replicate", accelerator.num_processes)
 
-    if self.total_size != accelerator.num_processes:
+    # DeepSpeed manages SP process groups globally, so total_size (the local parallelism config)
+    # need not equal num_processes; keep this branch in sync with accelerate's upstream validator.
+    if self.sp_backend == "deepspeed" and self.sp_size > 1:
+        pass
+    elif self.total_size != accelerator.num_processes:
         raise ValueError(
             f"ParallelismConfig total_size ({self.total_size}) does not match "
             f"num_processes ({accelerator.num_processes}). Please adjust dp_replicate_size/ "
-            f"dp_shard_size/tp_size/cp_size/ep_size."
+            f"dp_shard_size/tp_size/cp_size/sp_size/ep_size."
         )
 
     # allow parallelism config when not using fsdp if using pure context parallelism
@@ -132,10 +136,14 @@ def _validate_accelerator(self, accelerator):
     if (
         self.total_size > 1
         and not allow_parallelism_config
-        and not (accelerator.is_fsdp2 or accelerator.multi_device)
+        and not (
+            accelerator.is_fsdp2
+            or accelerator.multi_device
+            or accelerator.distributed_type == DistributedType.DEEPSPEED
+        )
     ):
         raise ValueError(
-            f"ParallelismConfig is only compatible DistributedType.FSDP (version 2) or DistributedType.Multi{{Device}}, but got {accelerator.distributed_type}."
+            f"ParallelismConfig is only compatible with DistributedType.FSDP (version 2), DistributedType.Multi{{Device}}, or DistributedType.DEEPSPEED, but got {accelerator.distributed_type}."
         )
 
     for parallelism, size in self._sizes.items():
@@ -243,8 +251,10 @@ def _ep_aware_clip_grad_norm(parameters, max_norm, norm_type=2.0):
 
 def patch_clip_grad_norm_for_ep():
     """Replace `Accelerator.clip_grad_norm_` with the EP-aware version when
-    the active parallelism includes both `ep` and `dp_shard` (i.e., the
-    FSDP+EP composition produces multi-mesh DTensor grads).
+    the active parallelism composes `ep` with `dp_shard` and/or `cp` (i.e., the
+    FSDP+EP composition produces multi-mesh DTensor grads — the experts shard on
+    the dp_shard/cp subgroup, the non-experts on the flattened dp_shard_cp mesh,
+    so the stock `clip_grad_norm_` can't stack their per-param norms together).
     """
     from accelerate import Accelerator
 
@@ -257,7 +267,10 @@ def patch_clip_grad_norm_for_ep():
         if (
             pc is not None
             and getattr(pc, "ep_enabled", False)
-            and getattr(pc, "dp_shard_enabled", False)
+            and (
+                getattr(pc, "dp_shard_enabled", False)
+                or getattr(pc, "cp_enabled", False)
+            )
         ):
             self.unscale_gradients()
             params = list(parameters)

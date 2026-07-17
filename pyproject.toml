@@ -12,35 +12,35 @@ requires-python = ">=3.10"
 
 dependencies = [
     # Core ML stack
-    "torch>=2.9.1",
+    "torch>=2.11.0,<=2.12.1",
     "packaging==26.0",
-    "huggingface_hub>=1.5.0",
-    "peft>=0.19.1,<0.20.0",
-    "tokenizers>=0.22.1",
-    "transformers==5.10.2",
+    "huggingface_hub==1.17.0",
+    "peft==0.19.1",
+    "tokenizers==0.22.2",
+    "transformers==5.14.1",
     "accelerate==1.13.0",
-    "datasets>=4.8.4,<4.9.0",
-    "trl==1.5.1",
+    "datasets==4.8.4",
+    "trl==1.8.0",
     "hf_xet==1.4.3",
-    "kernels==0.13.0",
-    "trackio>=0.16.1",
-    "typing-extensions>=4.15.0",
+    "kernels==0.15.2",
+    "trackio==0.19.0",
+    "typing-extensions==4.15.0",
     "optimum==1.16.2",
     "hf_transfer",
     "sentencepiece",
-    "gradio>=6.2.0,<7.0",
+    "gradio==6.10.0",
     "modal==1.3.0.post1",
-    "pydantic>=2.10.6",
+    "pydantic==2.12.5",
     "addict",
     "fire",
-    "PyYAML>=6.0",
+    "PyYAML==6.0.3",
     "requests",
     "wandb",
     "einops",
     "colorama",
-    "numba>=0.61.2",
-    "numpy>=2.2.6",
-    "typer<0.26.0",
+    "numba>=0.63.1,<1.0",
+    "numpy>=2.1,<3.0",
+    "typer==0.25.1",
 
     # Evaluation & metrics
     "evaluate==0.4.1",
@@ -51,9 +51,9 @@ dependencies = [
     "python-dotenv==1.0.1",
 
     # Remote filesystems
-    "s3fs>=2024.5.0",
-    "gcsfs>=2025.3.0",
-    "adlfs>=2024.5.0",
+    "s3fs==2025.10.0",
+    "gcsfs==2025.10.0",
+    "adlfs==2026.2.0",
     "ocifs==1.3.2",
 
     "zstandard==0.22.0",
@@ -75,7 +75,7 @@ dependencies = [
     # Telemetry
     "posthog==6.7.11",
 
-    "mistral-common==1.11.0",
+    "mistral-common==1.11.5",
 
     # Platform-specific (Linux only)
     "bitsandbytes==0.49.1 ; sys_platform != 'darwin'",
@@ -174,7 +174,11 @@ Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
 include-package-data = true
 
 [tool.setuptools.package-data]
-axolotl = ["**/*.yaml", "**/*.jinja"]
+axolotl = [
+    "**/*.yaml",
+    "**/*.jinja",
+    "integrations/kernels/libs/scattermoe_lora/metadata.json",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -217,14 +221,29 @@ docstring-code-format = false
 
 [tool.pytest.ini_options]
 addopts = "-m 'not slow'"
+norecursedirs = [
+    ".claude",
+    ".git",
+    ".mypy_cache",
+    ".nox",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".scratch_fp4",
+    ".tox",
+    ".venv",
+    "build",
+    "dist",
+    "outputs",
+    "unsloth_compiled_cache",
+]
 markers = [
     "slow: marks tests as slow",
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
+    "integration: marks tests as integration tests (real model modeling paths)",
 ]
 
 # UV specific configuration
 [tool.uv]
-prerelease = "allow"
 conflicts = [
     [
         { package = "axolotl" },

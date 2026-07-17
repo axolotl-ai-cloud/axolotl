@@ -6,9 +6,21 @@ import inspect
 import sys
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.model_support import check_capability, get_model_support
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+LIGER_FLAGS = (
+    "liger_rope",
+    "liger_rms_norm",
+    "liger_rms_norm_gated",
+    "liger_layer_norm",
+    "liger_glu_activation",
+    "liger_cross_entropy",
+    "liger_fused_linear_cross_entropy",
+    "liger_use_token_scaling",
+)
 
 
 class LigerPlugin(BasePlugin):
@@ -20,6 +32,15 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        if any(getattr(cfg, flag, False) for flag in LIGER_FLAGS):
+            check_capability(
+                get_model_support(cfg.model_config_type),
+                "liger",
+                cfg.model_config_type,
+                feature="Liger",
+                hint="Disable Liger flags for this model.",
+            )
+
         # shim: liger imports ORPOTrainer from old trl.trainer (now trl.experimental.orpo)
         import trl.trainer
         from trl.experimental.orpo import ORPOTrainer
@@ -81,7 +102,8 @@ class LigerPlugin(BasePlugin):
 
             LigerFusedLinearCrossEntropyLoss.__init__ = patched_init
 
-        # liger 0.8.0 natively dispatches these, but axolotl's branches add kernels native lacks
+        # liger natively dispatches these, but axolotl's branches add the fused
+        # gated-RMSNorm kernel (Qwen3.5 linear-attention layers) that native lacks
         axolotl_override_liger_fn = {"qwen3_5", "qwen3_5_moe"}
 
         if (
@@ -169,30 +191,6 @@ class LigerPlugin(BasePlugin):
                 modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
-        elif cfg.model_config_type == "llama4":
-            from axolotl.integrations.liger.models.llama4 import (
-                apply_liger_kernel_to_llama4,
-            )
-
-            apply_liger_kernel_to_llama4(
-                cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
-                glu_activation=cfg.liger_glu_activation,
-                rms_norm=cfg.liger_rms_norm,
-                layer_norm=cfg.liger_layer_norm,
-            )
-        elif cfg.model_config_type == "qwen3":
-            from axolotl.integrations.liger.models.qwen3 import (
-                apply_liger_kernel_to_qwen3,
-            )
-
-            apply_liger_kernel_to_qwen3(
-                cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
-                glu_activation=cfg.liger_glu_activation,
-                rms_norm=cfg.liger_rms_norm,
-                layer_norm=cfg.liger_layer_norm,
-            )
         elif cfg.model_config_type == "qwen3_5":
             from axolotl.integrations.liger.models.qwen3_5 import (
                 apply_liger_kernel_to_qwen3_5,
@@ -204,18 +202,6 @@ class LigerPlugin(BasePlugin):
                 glu_activation=cfg.liger_glu_activation,
                 rms_norm=cfg.liger_rms_norm,
                 rms_norm_gated=getattr(cfg, "liger_rms_norm_gated", False),
-                layer_norm=cfg.liger_layer_norm,
-            )
-        elif cfg.model_config_type == "qwen3_moe":
-            from axolotl.integrations.liger.models.qwen3_moe import (
-                apply_liger_kernel_to_qwen3_moe,
-            )
-
-            apply_liger_kernel_to_qwen3_moe(
-                cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
-                glu_activation=cfg.liger_glu_activation,
-                rms_norm=cfg.liger_rms_norm,
                 layer_norm=cfg.liger_layer_norm,
             )
         elif cfg.model_config_type == "qwen3_5_moe":
