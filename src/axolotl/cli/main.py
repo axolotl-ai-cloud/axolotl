@@ -18,6 +18,7 @@ from axolotl.cli.args import (
 )
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config_options import AXOLOTL_CONFIG_CLI_OPTIONS
+from axolotl.cli.plugins import PluginCommandGroup
 from axolotl.cli.utils import (
     add_options_from_config_options,
     add_options_from_dataclass,
@@ -38,7 +39,7 @@ LAUNCHER_COMMAND_MAPPING = {
 }
 
 
-@click.group()
+@click.group(cls=PluginCommandGroup)
 @click.version_option(version=axolotl.__version__, prog_name="axolotl")
 def cli():
     """Axolotl CLI - Train and fine-tune large language models"""
@@ -287,6 +288,20 @@ def merge_sharded_fsdp_weights(
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--dequant",
+    is_flag=True,
+    default=False,
+    help="Dequantize a quantized base to bf16 in the merged checkpoint instead of "
+    "re-quantizing to the base's format.",
+)
+@click.option(
+    "--override-quantizer",
+    is_flag=True,
+    default=False,
+    help="Merge a merge-aware adapter despite a quantizer-identity mismatch "
+    "(e.g. different torchao version than trained with).",
+)
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
@@ -368,19 +383,6 @@ def generate_cli_config_options(output: Path, check: bool):
     from axolotl.cli.generate_config_options import write_options
 
     write_options(output, check=check)
-
-
-@cli.command("lm-eval")
-@click.argument("config", type=click.Path(exists=True, path_type=str))
-@click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
-@click.pass_context
-def lm_eval(ctx: click.Context, config: str, cloud: Optional[str] = None):
-    """
-    use lm eval to evaluate a trained language model
-    """
-    from axolotl.integrations.lm_eval.cli import lm_eval as _lm_eval
-
-    ctx.invoke(_lm_eval, config=config, cloud=cloud)
 
 
 @cli.command("agent-docs")

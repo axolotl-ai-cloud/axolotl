@@ -173,7 +173,12 @@ axolotl merge-lora config.yml --lora-model-dir="./lora-output/checkpoint-100"
 
 # Merge using CPU (if out of GPU memory)
 CUDA_VISIBLE_DEVICES="" axolotl merge-lora config.yml
+
+# Dequantize a quantized base to bf16 while merging
+axolotl merge-lora config.yml --dequant
 ```
+
+For quantized bases the default merge is format-preserving (the delta is folded and re-quantized back to the same format). `--dequant` writes a bf16 checkpoint instead; it is rejected for merge-aware NVFP4 adapters, where `--override-quantizer` can also be used to proceed past a quantizer-identity mismatch. See [NVFP4 MoE LoRA](nvfp4_lora.qmd).
 
 Configuration options:
 

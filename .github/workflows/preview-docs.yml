@@ -4,13 +4,15 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-    # Run the workflow only when one of these files changes
+    # Run the workflow only when one of these files changes. src/axolotl is
+    # included because quartodoc renders API docs from the whole package —
+    # removing a module it tracks breaks the build (see _quarto.yml sections)
     paths:
       - '**/*.md'      # any Markdown file
       - '**/*.qmd'     # any Quarto file
       - '_quarto.yml'
-      - docs/scripts/generate_config_docs.py
-      - src/axolotl/utils/schemas/**.py
+      - 'docs/**'
+      - 'src/axolotl/**.py'
       - .github/workflows/preview-docs.yml
 
 concurrency:
@@ -31,7 +33,7 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
@@ -55,8 +57,11 @@ jobs:
       - name: Quarto render
         run: quarto render
 
+      # everything above runs credential-free on every PR (including forks) so
+      # a broken docs build fails CI; publishing needs the Netlify secrets,
+      # which only same-repo branches get
       - name: Netlify Publish
-        uses: nwtgck/actions-netlify@4cbaf4c08f1a7bfa537d6113472ef4424e4eb654 # v3.0.0
+        uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4.0.0
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         id: netlify
         with:

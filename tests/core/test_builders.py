@@ -1,12 +1,15 @@
 """Unit tests for axolotl.core.builders SFT and reward-model trainer builders."""
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.schemas.enums import INDUCTOR_COMPILE_OPTIONS_ALLOWLIST
 
 
 def _gradient_checkpointing_kwargs(cfg):
@@ -168,6 +171,77 @@ class TestHFCausalTrainerBuilder:
         # linear weight matrices must be in the stateless SR-Sinkhorn group
         assert any(group.get("use_sinkgd") for group in optim.param_groups)
 
+    def test_sinkgd_optimizer_feature_a_optim_args(self, sft_cfg, model, tokenizer):
+        """The Feature-A optim_args (spectral norm + width-aware 1/d_in) plumb through and
+        construct a live SinkGD with the flags set."""
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {
+            "sinkhorn_iters": 5,
+            "sinkgd_lr_scale": 0.05,
+            "sinkgd_spectral_norm": True,
+            "sinkgd_spectral_norm_iters": 2,
+            "sinkgd_spectral_target": "unit",
+            "sinkgd_base_width": 256,
+        }
+
+        from axolotl.utils.optimizers.sinkgd import SinkGD
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGD)
+        assert optim.sinkgd_spectral_norm is True
+        assert optim.sinkgd_spectral_norm_iters == 2
+        assert optim.sinkgd_spectral_target == "unit"
+        assert optim.sinkgd_base_width == 256
+
+    def test_sinkgd_optimizer_width_double_count_rejected(
+        self, sft_cfg, model, tokenizer
+    ):
+        """base_width + spectral_target='muon' double-count width and must be rejected."""
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {
+            "sinkgd_spectral_norm": True,
+            "sinkgd_spectral_target": "muon",
+            "sinkgd_base_width": 256,
+        }
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+        with pytest.raises(ValueError):
+            trainer.create_optimizer()
+
+    def test_sinkgd_md_sphere_selects_subclass(self, sft_cfg, model, tokenizer):
+        """sinkgd_md_sphere=true builds the SinkGDMD (A+B) subclass; default builds SinkGD."""
+        from axolotl.utils.optimizers.sinkgd import SinkGD, SinkGDMD
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkgd_md_sphere": True}
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGDMD)
+
+        cfg2 = sft_cfg.copy()
+        cfg2["optimizer"] = "sinkgd"
+        cfg2["optim_args"] = {"sinkgd_lr_scale": 0.05}
+        trainer2 = HFCausalTrainerBuilder(cfg2, model, tokenizer).build(100)
+        optim2 = trainer2.create_optimizer()
+        assert isinstance(optim2, SinkGD) and not isinstance(optim2, SinkGDMD)
+
+    def test_sinkgd_fused_kernel_flag(self, sft_cfg, model, tokenizer):
+        """sinkgd_fused_kernel plumbs through optim_args into the optimizer."""
+        from axolotl.utils.optimizers.sinkgd import SinkGD
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkgd_fused_kernel": True}
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGD)
+        assert optim.sinkgd_fused_kernel is True
+
 
 class TestTrainerClsPlugin:
     """
@@ -195,3 +269,85 @@ class TestTrainerClsPlugin:
         except Exception:
             # Another error happens, so we passed trainer_cls to builder
             pass
+
+
+@pytest.fixture(name="inductor_config_snapshot")
+def fixture_inductor_config_snapshot():
+    keys = sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)
+    saved = {k: getattr(_inductor_cfg, k) for k in keys}
+    try:
+        yield saved
+    finally:
+        for k, v in saved.items():
+            setattr(_inductor_cfg, k, v)
+
+
+class TestApplyTorchCompileOptions:
+    # Runtime apply path; schema-layer validation is tested in TestTorchCompileValidation.
+
+    def test_allowlisted_flag_is_applied(self, inductor_config_snapshot):
+        assert _inductor_cfg.coordinate_descent_tuning is False
+        TrainerBuilderBase._apply_torch_compile_options(
+            {"coordinate_descent_tuning": True}
+        )
+        assert _inductor_cfg.coordinate_descent_tuning is True
+
+    def test_all_allowlisted_flags_are_attributes_on_inductor_config(
+        self, inductor_config_snapshot
+    ):
+        for key in INDUCTOR_COMPILE_OPTIONS_ALLOWLIST:
+            assert hasattr(_inductor_cfg, key), (
+                f"torch._inductor.config has no attribute {key!r}; "
+                f"INDUCTOR_COMPILE_OPTIONS_ALLOWLIST needs updating."
+            )
+
+    def test_dotted_flag_is_applied(self, inductor_config_snapshot):
+        # ConfigModule supports dotted setattr natively (no path-walk needed).
+        assert _inductor_cfg.triton.cudagraphs is False
+        TrainerBuilderBase._apply_torch_compile_options({"triton.cudagraphs": True})
+        assert _inductor_cfg.triton.cudagraphs is True
+
+    def test_multiple_flags_are_applied(self, inductor_config_snapshot):
+        TrainerBuilderBase._apply_torch_compile_options(
+            {
+                "coordinate_descent_tuning": True,
+                "shape_padding": False,
+                "epilogue_fusion": False,
+            }
+        )
+        assert _inductor_cfg.coordinate_descent_tuning is True
+        assert _inductor_cfg.shape_padding is False
+        assert _inductor_cfg.epilogue_fusion is False
+
+    def test_empty_dict_does_not_mutate_state(self, inductor_config_snapshot):
+        TrainerBuilderBase._apply_torch_compile_options({})
+        for k, v in inductor_config_snapshot.items():
+            assert getattr(_inductor_cfg, k) == v
+
+    def test_configure_torch_compile_invokes_apply_when_options_set(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = MagicMock()
+        builder.cfg.torch_compile = True
+        builder.cfg.torch_compile_backend = None
+        builder.cfg.torch_compile_mode = None
+        builder.cfg.torch_compile_options = {"coordinate_descent_tuning": True}
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
+
+        builder._apply_torch_compile_options.assert_called_once_with(
+            {"coordinate_descent_tuning": True}
+        )
+
+    def test_configure_torch_compile_skips_apply_when_options_unset(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = MagicMock()
+        builder.cfg.torch_compile = True
+        builder.cfg.torch_compile_backend = None
+        builder.cfg.torch_compile_mode = None
+        builder.cfg.torch_compile_options = None
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
+
+        builder._apply_torch_compile_options.assert_not_called()
