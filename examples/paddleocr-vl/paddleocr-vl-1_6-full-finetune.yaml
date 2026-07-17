@@ -1,0 +1,47 @@
+base_model: PaddlePaddle/PaddleOCR-VL-1.6
+processor_type: AutoProcessor
+
+full_finetune: true
+
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:1%]
+    field_messages: messages
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/paddleocr-vl-1_6-full-finetune
+
+sequence_len: 4096
+pad_to_sequence_len: false
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.00001
+
+bf16: auto
+fp16:
+tf32: true
+
+gradient_checkpointing: true
+logging_steps: 1
+attn_implementation: flash_attention_2
+
+warmup_ratio: 0.1
+evals_per_epoch: 0
+saves_per_epoch: 1
+weight_decay: 0.0

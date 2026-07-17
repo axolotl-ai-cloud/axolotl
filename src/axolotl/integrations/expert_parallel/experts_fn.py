@@ -146,27 +146,32 @@ def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
 
 
 def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    # The sonic-moe CUTLASS kernel can't run on sm_120 (Blackwell); for standard-layout
-    # experts there, use the vendored scattermoe EP path (sentinel-skip + fused MXFP4),
-    # which runs on sm_120 and gives sonicmoe + LoRA + EP. Elsewhere sonicmoe+EP is not
-    # yet wired (needs the upstream EP-sentinel kernel).
-    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
-        scattermoe_experts_forward_ep,
-        scattermoe_supports_layout,
-    )
     from axolotl.integrations.kernels.libs.sonicmoe.experts import (
-        _sonicmoe_kernel_supported,
+        sonicmoe_experts_forward_with_lora,
     )
 
-    if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(experts):
-        return scattermoe_experts_forward_ep(
-            experts, recv_x, recv_topk_idx, recv_topk_weights
-        )
-    raise NotImplementedError(
-        "Sonicmoe + EP is not yet implemented on this device/layout. On sm_120 with a "
-        "standard expert layout it falls back to the scattermoe EP path automatically; "
-        "otherwise use use_scattermoe."
+    # The sonic-moe build treats expert_id == E_local as the EP sentinel (dropped from the
+    # histogram/GEMM and guarded in the router backward); DeepEP tags remote slots -1.
+    E_local = getattr(experts, "num_local_experts", experts.num_experts)
+    safe_idx = torch.where(
+        recv_topk_idx >= 0, recv_topk_idx, torch.full_like(recv_topk_idx, E_local)
     )
+
+    # The quack autotuner caches per exact tensor shape and the DeepEP recv count changes
+    # every step/layer, so unpadded calls re-trigger a full compile+benchmark sweep per MoE
+    # call. Pad to pow2 buckets with all-sentinel rows (zero-compute, dropped from every GEMM
+    # range) so shapes collapse to a handful of keys tuned once.
+    num_recv = recv_x.size(0)
+    padded = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
+    if padded != num_recv:
+        pad = padded - num_recv
+        recv_x = F.pad(recv_x, (0, 0, 0, pad))
+        safe_idx = F.pad(safe_idx, (0, 0, 0, pad), value=E_local)
+        recv_topk_weights = F.pad(recv_topk_weights, (0, 0, 0, pad))
+    out = sonicmoe_experts_forward_with_lora(
+        experts, recv_x, safe_idx, recv_topk_weights
+    )
+    return out[:num_recv] if padded != num_recv else out
 
 
 _LOCAL_KERNELS = {
@@ -267,7 +272,8 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     `transformers.RouterParallel`; see DEEP_EP.md §2.4 for why). Dispatch returns
     local expert ids in `[0, E_local)` with `-1` for slots routed to remote experts;
     the `-1` sentinels are passed through to the local kernel, which decides whether
-    to skip them (eager/scattermoe) or mask them (grouped_mm).
+    to skip them (eager/scattermoe), mask them (grouped_mm), or remap them to the
+    kernel's own drop id (sonicmoe: `E_local`).
     """
     if hidden_states.dtype != torch.bfloat16:
         original_dtype = hidden_states.dtype
@@ -323,7 +329,7 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     )
 
     # Pass the raw -1-tagged routing through; each local kernel handles sentinels
-    # its own way (eager/scattermoe skip them, grouped_mm masks internally).
+    # its own way (eager/scattermoe skip, grouped_mm masks, sonicmoe remaps to E_local).
     local_out = _LOCAL_KERNELS[kernel_name](
         self, recv_x, recv_topk_idx, recv_topk_weights
     )

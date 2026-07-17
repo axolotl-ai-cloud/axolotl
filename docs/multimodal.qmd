@@ -26,6 +26,7 @@ format:
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
 - [Intern-VL](#sec-intern-vl)
+- [PaddleOCR-VL](#sec-paddleocr-vl)
 
 ## Usage
 
@@ -234,6 +235,15 @@ base_model: Qwen/Qwen3.5-9B
 
 chat_template: qwen3_5
 ```
+
+### PaddleOCR-VL {#sec-paddleocr-vl}
+
+```yaml
+base_model: PaddlePaddle/PaddleOCR-VL-1.6
+processor_type: AutoProcessor
+```
+
+Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See the [example configs and tips](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/paddleocr-vl) for details.
 
 ### GLM-4.6V {#sec-glm-4-6v}
 

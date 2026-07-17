@@ -18,7 +18,9 @@ from .nvfp4_lora import (
     combine_expert_outputs,
     grouped_expert_mlp_lora,
     grouped_moe_reference_forward,
+    merge_aware_enabled,
     route_and_group,
+    set_merge_aware_enabled,
 )
 
 __all__ = [
@@ -39,4 +41,6 @@ __all__ = [
     "route_and_group",
     "combine_expert_outputs",
     "grouped_moe_reference_forward",
+    "merge_aware_enabled",
+    "set_merge_aware_enabled",
 ]
