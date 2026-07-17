@@ -2675,6 +2675,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--torch-compile-options",),
+        None,
+        None,
+        "Mapping of allowlisted torch._inductor.config flags to set before torch.compile runs. Only honored when torch_compile is truthy. Allowed keys (see INDUCTOR_COMPILE_OPTIONS_ALLOWLIST in axolotl.utils.schemas.enums): coordinate_descent_tuning, coordinate_descent_check_all_directions, shape_padding, epilogue_fusion, max_autotune_gemm, fx_graph_cache, assume_aligned_inputs, comprehensive_padding, decompose_mem_bound_mm, triton.cudagraphs. Disallowed keys are rejected at config-validation time.",
+    ),
+    (
         ("--max-steps",),
         None,
         None,

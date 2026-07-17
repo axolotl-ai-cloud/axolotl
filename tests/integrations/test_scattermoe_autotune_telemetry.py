@@ -392,10 +392,11 @@ class TestKernelsPluginCallbackRegistration:
             AutotuneReportCallback,
         )
         from axolotl.integrations.kernels.plugin import KernelsPlugin
+        from axolotl.utils.dict import DictDefault
 
         plugin = KernelsPlugin()
-        cfg = MagicMock()
-        cfg.use_scattermoe = True
+        # DictDefault (missing keys -> None) so unrelated plugin flags stay off
+        cfg = DictDefault({"use_scattermoe": True})
         model = MagicMock()
 
         callbacks = plugin.add_callbacks_pre_trainer(cfg, model)
@@ -405,10 +406,10 @@ class TestKernelsPluginCallbackRegistration:
     def test_no_scattermoe_no_callback(self):
         """When ``use_scattermoe=False``, plugin returns empty list."""
         from axolotl.integrations.kernels.plugin import KernelsPlugin
+        from axolotl.utils.dict import DictDefault
 
         plugin = KernelsPlugin()
-        cfg = MagicMock()
-        cfg.use_scattermoe = False
+        cfg = DictDefault({"use_scattermoe": False})
         model = MagicMock()
 
         callbacks = plugin.add_callbacks_pre_trainer(cfg, model)

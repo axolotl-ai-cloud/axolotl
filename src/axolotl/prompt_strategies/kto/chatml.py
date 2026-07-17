@@ -33,7 +33,7 @@ def argilla_chat(
 
     def transform_fn(sample):
         sample["prompt"] = (
-            f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
+            f"<|im_start|>user\n{sample['completion'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
         )
         sample["completion"] = f"{sample['completion'][1]['content']}<|im_end|>"
         return sample
