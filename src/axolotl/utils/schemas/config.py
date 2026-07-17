@@ -34,6 +34,7 @@ from axolotl.utils.schemas.enums import (
     ATTN_IMPLS_USING_FLASH_LIB,
     ATTN_IMPLS_WITHOUT_DTYPE_CAST,
     CANONICAL_ATTN_IMPLS,
+    INDUCTOR_COMPILE_OPTIONS_ALLOWLIST,
     LEGACY_ATTN_FLAG_TO_IMPL,
     SHORT_FORM_ALIAS_TO_CANONICAL,
     ChatTemplate,
@@ -1157,6 +1158,22 @@ class AxolotlInputConfig(
     torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
         None
     )
+    torch_compile_options: dict[str, bool | int | float | str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Mapping of allowlisted torch._inductor.config flags to set before "
+                "torch.compile runs. Only honored when torch_compile is truthy. "
+                "Allowed keys (see INDUCTOR_COMPILE_OPTIONS_ALLOWLIST in "
+                "axolotl.utils.schemas.enums): coordinate_descent_tuning, "
+                "coordinate_descent_check_all_directions, shape_padding, "
+                "epilogue_fusion, max_autotune_gemm, fx_graph_cache, "
+                "assume_aligned_inputs, comprehensive_padding, "
+                "decompose_mem_bound_mm, triton.cudagraphs. Disallowed keys are "
+                "rejected at config-validation time."
+            )
+        },
+    )
 
     max_steps: int | None = Field(
         default=None,
@@ -1597,6 +1614,47 @@ class AxolotlInputConfig(
             f"path containing '/'."
         )
 
+    @field_validator("torch_compile_options")
+    @classmethod
+    def validate_torch_compile_options(cls, value):
+        """Reject torch_compile_options keys not in INDUCTOR_COMPILE_OPTIONS_ALLOWLIST."""
+        if value is None:
+            return None
+        bad = sorted(set(value.keys()) - INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)
+        if bad:
+            raise ValueError(
+                f"torch_compile_options contains disallowed inductor flags: {bad}. "
+                f"Allowed: {sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)}."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def check_torch_compile_options_requires_compile(self):
+        """Require torch_compile enabled when torch_compile_options is set."""
+        if self.torch_compile_options is not None and not self.torch_compile:
+            raise ValueError(
+                "torch_compile_options is set but torch_compile is not enabled. "
+                "Set torch_compile: true (or torch_compile: auto) to use these flags."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_cudagraphs_wo_static_shapes(self):
+        """Warn on triton.cudagraphs + sample_packing: cudagraphs need static shapes, packed seqs are dynamic."""
+        if (
+            self.torch_compile_options
+            and self.torch_compile_options.get("triton.cudagraphs")
+            and self.sample_packing
+        ):
+            LOG.warning(
+                "torch_compile_options has `triton.cudagraphs: true` together with "
+                "`sample_packing: true`. CUDA graphs require static shapes, but "
+                "packed variable-length sequences are dynamic and will trigger graph "
+                "re-capture or fallback. Disable one of them to get the cudagraphs "
+                "speedup."
+            )
+        return self
+
     @model_validator(mode="after")
     def check_fp32_norms(self):
         if self.fp32_norms:
@@ -1845,6 +1903,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("rl"):
             # RL trainers not tested so don't enable kernels by default
             return data
+        if data.get("nvfp4_merge_aware"):
+            # fused LoRA kernels bypass lora.Linear.forward, so NVFP4 non-expert
+            # projections would train un-snapped and the merge identity is void
+            return data
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set or using 8-bit
             kernel_fields = [
@@ -1862,6 +1924,17 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
             # Skip if trust_remote_code is enabled, as lora kernels are not compatible
             if data.get("trust_remote_code"):
+                return data
+
+            # Skip architectures that declare the fused kernels unsupported.
+            # model_config_type is usually resolved later (normalize_config),
+            # which disables any kernels auto-enabled here.
+            from axolotl.model_support import Unsupported, get_model_support
+
+            support = get_model_support(data.get("model_config_type"))
+            if support is not None and isinstance(
+                support.capabilities.get("lora_kernels"), Unsupported
+            ):
                 return data
 
             # Skip auto-enable for MoE models when native grouped_mm is unavailable
@@ -1981,6 +2054,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["torch_compile"] = False
             else:
                 data["torch_compile"] = False
+            if data["torch_compile"] is False and data.get("torch_compile_options"):
+                LOG.warning(
+                    "torch_compile: auto resolved to False on this environment "
+                    "(torch < 2.5.1); ignoring torch_compile_options."
+                )
+                data["torch_compile_options"] = None
         return data
 
     @model_validator(mode="before")

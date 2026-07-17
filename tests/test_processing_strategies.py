@@ -8,6 +8,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 
+from axolotl.model_support.paddleocr_vl.processing import PaddleOCRVLProcessingStrategy
 from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
     Gemma3ProcessingStrategy,
@@ -666,6 +667,75 @@ def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
     # system content masked, [/SYSTEM_PROMPT]=41 kept (include_end=True + all);
     # user + [/INST]=51 masked (include_end=False); assistant 8 + eos 99 kept.
     assert out == [-100, -100, 41, -100, -100, -100, 8, 99]
+
+
+# --------------------------------------------------------------------------- #
+# PaddleOCR-VL
+#
+# Token ids captured from the real PaddlePaddle/PaddleOCR-VL-1.6 tokenizer
+# (ERNIE 4.5). The template writes literal "User: ", but the trailing space
+# only stays a standalone token (93919) when a special token follows (image
+# first); on text-only turns it BPE-merges into the first content word
+# (" hello" = 23013), so the strategy matches the stable "User:" prefix.
+# --------------------------------------------------------------------------- #
+
+_PADDLE_VOCAB = {
+    "User:": [2969, 93963],
+    "Assistant:\n": [92267, 93963, 23],
+    "<|IMAGE_PLACEHOLDER|>": [100295],
+}
+_PADDLE_EOS = 2
+# <bos> User : ␣ <img_start> <img_placeholder> <img_end> O CR : \n Assistant : \n hello ␣world </s>
+_PADDLE_SEQ_IMAGE = [100273, 2969, 93963, 93919, 101305, 100295, 101306]
+_PADDLE_SEQ_IMAGE += [93972, 2497, 93963, 23, 92267, 93963, 23, 18830, 3135, 2]
+# <bos> User : ␣hello ␣there \n Assistant : \n hi </s>
+_PADDLE_SEQ_TEXT = [100273, 2969, 93963, 23013, 883, 23, 92267, 93963, 23, 2488, 2]
+
+
+def _paddleocr_vl_fake_processor():
+    proc = _Processor(_Tokenizer(_PADDLE_VOCAB, pad_id=0, eos_id=_PADDLE_EOS))
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    return proc
+
+
+def test_paddleocr_vl_masks_user_prompt_and_image_tokens():
+    strategy = PaddleOCRVLProcessingStrategy(_paddleocr_vl_fake_processor())
+    labels = strategy.process_labels(torch.tensor([_PADDLE_SEQ_IMAGE])).tolist()[0]
+    # Everything through "Assistant:\n" (bos, user turn, image tokens) is
+    # masked; the assistant response plus eos trains to end of sequence.
+    assert labels == [-100] * 14 + [18830, 3135, 2]
+
+
+def test_paddleocr_vl_user_boundary_matches_text_only_turns():
+    """The trailing space of "User: " merges into text-only content; the
+    boundary must match on the two-token "User:" prefix or train_on_inputs
+    silently masks user turns."""
+    strategy = PaddleOCRVLProcessingStrategy(
+        _paddleocr_vl_fake_processor(), roles_to_train=["user", "assistant"]
+    )
+    user_bounds = [b for b in strategy.role_boundaries if b.role == "user"]
+    assert user_bounds and user_bounds[0].start_tokens == _PADDLE_VOCAB["User:"]
+
+    labels = strategy.process_labels(torch.tensor([_PADDLE_SEQ_TEXT])).tolist()[0]
+    # User content (" hello", " there", "\n") and assistant ("hi", eos) train;
+    # bos and both role markers stay masked.
+    assert labels == [-100, -100, -100, 23013, 883, 23, -100, -100, -100, 2488, 2]
+
+
+def test_dispatch_paddleocr_vl():
+    pytest.importorskip("transformers.models.paddleocr_vl")
+    from transformers.models.paddleocr_vl import PaddleOCRVLProcessor
+
+    proc = MagicMock(spec=PaddleOCRVLProcessor)
+    proc.tokenizer = _Tokenizer(_PADDLE_VOCAB, pad_id=0, eos_id=_PADDLE_EOS)
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
+
+
+def test_dispatch_paddleocr_vl_chat_template_key():
+    s = _dispatch(_paddleocr_vl_fake_processor(), "paddleocr_vl")
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
 
 
 # --------------------------------------------------------------------------- #

@@ -4,7 +4,7 @@
 
 """Triton NVFP4 codecs for the sonicmoe grouped path.
 
-Two memory-bound kernels replacing multi-kernel pure-torch chains:
+Memory-bound kernels replacing multi-kernel pure-torch chains:
 
 - :func:`dequant_nvfp4_triton`: packed E2M1 + e4m3 block scales (+ optional
   per-expert scale) -> bf16, one kernel. torchao's ``NVFP4Tensor.dequantize()``
@@ -15,15 +15,28 @@ Two memory-bound kernels replacing multi-kernel pure-torch chains:
   activation-quant hot path. Same rounding rules as the reference (scale =
   amax/6 clamped to 448, encode against the STORED e4m3 scale, ties at the
   E2M1 midpoints round down), so the fp32 oracle stays valid.
+- :func:`fake_quant_nvfp4_triton`: the merge-aware quantize->dequantize
+  roundtrip in one pass, bitwise ``nvfp4_quant.fake_quant_nvfp4`` (torchao
+  numerics, DIFFERENT rounding than the two kernels above: RNE E2M1 ties and
+  two-level reciprocal-multiply scaling).
 
-Both fall back to the callers' torch paths when triton is unavailable.
+All fall back to the callers' torch paths when triton is unavailable.
 """
 
 from __future__ import annotations
 
 import functools
+from typing import Any, NamedTuple
 
 import torch
+
+
+class _KernelSet(NamedTuple):
+    dequant: Any
+    quant: Any
+    quant_sfa: Any
+    rowscale: Any
+    fake_quant: Any
 
 
 @functools.lru_cache(maxsize=1)
@@ -51,6 +64,20 @@ def _kernels():
         val = tl.where(m == 0, 0.0, val)
         val = tl.where(m == 1, 0.5, val)
         return val
+
+    @triton.jit
+    def _e4m3_rne(s):
+        # RNE-round a positive fp32 already clamped to the e4m3 normal range
+        # [2**-6, 448] onto e4m3 (3 mantissa bits) and return the dequantized
+        # fp32. Bit-identical to torch's `.to(float8_e4m3fn)` on every arch;
+        # `.to(tl.float8e4nv)` lowers through an f16 intermediate on sm_89 (no
+        # f32-source fp8 cvt before sm_90), double-rounding scales near e4m3
+        # midpoints and desyncing them from the torchao merge writer.
+        b = s.to(tl.int32, bitcast=True)
+        mant_odd = (b >> 20) & 1
+        b = b + 524287 + mant_odd  # 2**19 - 1 magic adder -> round to nearest even
+        b = (b >> 20) << 20  # keep sign + exponent + 3 mantissa bits
+        return tl.minimum(b.to(tl.float32, bitcast=True), 448.0)
 
     @triton.jit
     def _dequant_kernel(
@@ -205,6 +232,71 @@ def _kernels():
         tl.store(q_ptr + row * (K // 2) + offs_p, packed, mask=mask_sf[:, None])
 
     @triton.jit
+    def _fake_quant_kernel(
+        x_ptr,
+        out_ptr,
+        pts_ptr,
+        rows_per_expert,
+        K: tl.constexpr,
+        SF_K: tl.constexpr,
+        E4M3_EPS: tl.constexpr,
+        HAS_PTS: tl.constexpr,
+        BLOCK_SF: tl.constexpr,
+    ):
+        # merge-aware fake-quant: BITWISE torchao numerics end to end
+        # (nvfp4_quantize two-level scaling + NVFP4Tensor.dequantize order),
+        # unlike _quant_kernel above which follows quantize_nvfp4_ref.
+        # Every division is div_rn: triton's `/` may lower to
+        # reciprocal-multiply and flip values on rounding boundaries.
+        row = tl.program_id(0)
+        blk = tl.program_id(1)
+        offs_sf = blk * BLOCK_SF + tl.arange(0, BLOCK_SF)
+        mask_sf = offs_sf < SF_K
+        offs_v = offs_sf[:, None] * 16 + tl.arange(0, 16)[None, :]
+        mask_v = mask_sf[:, None]
+        x = tl.load(x_ptr + row * K + offs_v, mask=mask_v, other=0.0).to(tl.float32)
+
+        amax = tl.max(tl.abs(x), axis=1)
+        bs = tl.math.div_rn(amax, 6.0)
+        pts = 1.0
+        if HAS_PTS:
+            pts = tl.load(pts_ptr + row // rows_per_expert).to(tl.float32)
+            bs = tl.math.div_rn(bs, pts)
+        s = tl.minimum(tl.maximum(bs, E4M3_EPS), 448.0)
+        sdec = _e4m3_rne(s)
+        if HAS_PTS:
+            # torchao two-level: x * ((1/pts) / scale), NOT a divide
+            r = tl.math.div_rn(tl.math.div_rn(1.0, pts), sdec)
+            q = x * r[:, None]
+        else:
+            q = tl.math.div_rn(x, tl.broadcast_to(sdec[:, None], x.shape))
+        q = tl.minimum(tl.maximum(q, -6.0), 6.0)
+
+        # round-nearest-even onto the E2M1 grid: at each midpoint the tie goes
+        # to the even-mantissa code, hence the alternating strict/non-strict
+        # boundaries (0.25->0, 0.75->1.0, 1.25->1.0, 1.75->2, 2.5->2, 3.5->4, 5->4)
+        a = tl.abs(q)
+        idx = (
+            (a > 0.25).to(tl.int32)
+            + (a >= 0.75).to(tl.int32)
+            + (a > 1.25).to(tl.int32)
+            + (a >= 1.75).to(tl.int32)
+            + (a > 2.5).to(tl.int32)
+            + (a >= 3.5).to(tl.int32)
+            + (a > 5.0).to(tl.int32)
+        )
+        val = _e2m1_value(idx)
+        val = tl.where(q < 0, -val, val)
+
+        # loader dequant order: hp = pts * scale first, then value * hp
+        if HAS_PTS:
+            hp = pts * sdec
+        else:
+            hp = sdec
+        out = (val * hp[:, None]).to(out_ptr.dtype.element_ty)
+        tl.store(out_ptr + row * K + offs_v, out, mask=mask_v)
+
+    @triton.jit
     def _rowscale_kernel(
         x_ptr,
         pts_ptr,  # fp32 [rows]
@@ -221,7 +313,13 @@ def _kernels():
         p = tl.load(pts_ptr + row)
         tl.store(x_ptr + row * N + offs, (x * p).to(x_ptr.dtype.element_ty), mask=mask)
 
-    return _dequant_kernel, _quant_kernel, _quant_sfa_kernel, _rowscale_kernel
+    return _KernelSet(
+        dequant=_dequant_kernel,
+        quant=_quant_kernel,
+        quant_sfa=_quant_sfa_kernel,
+        rowscale=_rowscale_kernel,
+        fake_quant=_fake_quant_kernel,
+    )
 
 
 @functools.lru_cache(maxsize=1)
@@ -240,7 +338,7 @@ def dequant_nvfp4_triton(
     ``per_tensor_scale``, if given, has one entry per leading-dim slice (the
     ``[E, N, K]`` expert convention: entry ``e`` scales rows of slice ``e``).
     """
-    dequant_kernel, _, _, _ = _get_kernels()
+    dequant_kernel = _get_kernels().dequant
     if qdata.dtype != torch.uint8:
         qdata = qdata.view(torch.uint8)
     k2 = qdata.shape[-1]
@@ -275,7 +373,7 @@ def dequant_nvfp4_triton(
 def rowscale_inplace_triton(x: torch.Tensor, row_scale: torch.Tensor) -> torch.Tensor:
     """In-place ``x[r] = x.dtype(f32(x[r]) * row_scale[r])``; bit-identical to
     ``(x.float() * row_scale[:, None]).to(x.dtype)`` in one pass."""
-    _, _, _, rowscale_kernel = _get_kernels()
+    rowscale_kernel = _get_kernels().rowscale
     assert x.dim() == 2 and x.is_contiguous()
     rows, n = x.shape
     BLOCK_N = 1024
@@ -286,7 +384,7 @@ def rowscale_inplace_triton(x: torch.Tensor, row_scale: torch.Tensor) -> torch.T
 
 def quantize_nvfp4_triton(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """``x [T, K]`` (K % 16 == 0) -> ``(packed u8 [T, K/2], scale e4m3 [T, K/16])``."""
-    _, quant_kernel, _, _ = _get_kernels()
+    quant_kernel = _get_kernels().quant
     assert x.dim() == 2 and x.shape[-1] % 16 == 0
     t, k = x.shape
     sf_k = k // 16
@@ -310,7 +408,7 @@ def quantize_rows_fused_sfa_triton(
     """
     from .sf_layout import SF_TILE_ROWS, varlen_padded_num_row_tiles
 
-    _, _, quant_sfa_kernel, _ = _get_kernels()
+    quant_sfa_kernel = _get_kernels().quant_sfa
     assert x.dim() == 2 and x.shape[-1] % 16 == 0
     t, k = x.shape
     sf_k = k // 16
@@ -338,3 +436,50 @@ def quantize_rows_fused_sfa_triton(
         x, packed, sfa, dest, K=k, SF_K=sf_k, RK=rk, BLOCK_SF=BLOCK_SF
     )
     return packed, sfa.view(torch.float8_e4m3fn)
+
+
+def fake_quant_nvfp4_triton(
+    x: torch.Tensor,
+    per_tensor_scale: torch.Tensor | None = None,
+    inplace: bool = False,
+) -> torch.Tensor:
+    """Fused merge-aware fake-quant: ``x [..., K]`` -> roundtrip values, one kernel.
+
+    BITWISE ``nvfp4_quant.fake_quant_nvfp4`` (torchao two-level quantize +
+    ``NVFP4Tensor.dequantize`` order), which the torchao path realizes in ~15
+    kernels with fp32 temporaries. ``per_tensor_scale``: None or one entry per
+    leading-dim slice (the ``[E, N, K]`` expert convention). ``inplace``
+    overwrites ``x`` (safe when ``x`` is the freshly built W_eff buffer).
+    """
+    fake_quant_kernel = _get_kernels().fake_quant
+    k = x.shape[-1]
+    assert k % 16 == 0
+    x2 = x.reshape(-1, k)
+    if not x2.is_contiguous():
+        assert not inplace, "inplace fake-quant needs a contiguous input"
+        x2 = x2.contiguous()
+    rows = x2.shape[0]
+    rows_per_expert = (
+        rows // per_tensor_scale.numel() if per_tensor_scale is not None else rows
+    )
+    pts = (
+        per_tensor_scale.reshape(-1).float().contiguous()
+        if per_tensor_scale is not None
+        else x2.new_zeros(1, dtype=torch.float32)
+    )
+    out = x2 if inplace else torch.empty_like(x2)
+    BLOCK_SF = 64
+    sf_k = k // 16
+    grid = (rows, (sf_k + BLOCK_SF - 1) // BLOCK_SF)
+    fake_quant_kernel[grid](
+        x2,
+        out,
+        pts,
+        rows_per_expert,
+        K=k,
+        SF_K=sf_k,
+        E4M3_EPS=float(torch.finfo(torch.float8_e4m3fn).tiny),
+        HAS_PTS=per_tensor_scale is not None,
+        BLOCK_SF=BLOCK_SF,
+    )
+    return out.view(x.shape)
