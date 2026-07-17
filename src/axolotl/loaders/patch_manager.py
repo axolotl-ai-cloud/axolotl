@@ -627,6 +627,9 @@ class PatchManager:
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
+            from axolotl.monkeypatch.accelerate.float8_moe_filter import (
+                patch_fp8_exclude_moe_router,
+            )
             from axolotl.monkeypatch.trainer_accelerator_args import (
                 patch_create_accelerate_code_for_fp8,
             )
@@ -634,6 +637,7 @@ class PatchManager:
             patch_create_accelerate_code_for_fp8(
                 self.cfg.fp8_enable_fsdp_float8_all_gather
             )
+            patch_fp8_exclude_moe_router()
 
     def _apply_flash_attention_peft_patches(self):
         """Apply patches for Flash Attention with PEFT."""
