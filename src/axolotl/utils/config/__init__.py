@@ -445,6 +445,7 @@ def validate_config(
     AxolotlInputConfig = AxolotlInputConfigBase
 
     if cfg.plugins:
+        prepare_plugins(cfg)
         (
             AxolotlConfigWCapabilities,
             AxolotlInputConfig,
