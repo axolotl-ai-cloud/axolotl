@@ -353,14 +353,6 @@ def _run_model_profile_hooks(
         hook(context)
 
 
-@overload
-def resolve_model_support(support: None) -> None: ...
-
-
-@overload
-def resolve_model_support(support: ModelSupport) -> ResolvedModelProfile: ...
-
-
 _LEGACY_DECLARATION_NAMES = (
     "is_multimodal",
     "capabilities",
@@ -393,6 +385,14 @@ def _class_declares_legacy(cls: type[ModelSupport]) -> bool:
     )
     _CLASS_HAS_LEGACY_CACHE[cls] = declares
     return declares
+
+
+@overload
+def resolve_model_support(support: None) -> None: ...
+
+
+@overload
+def resolve_model_support(support: ModelSupport) -> ResolvedModelProfile: ...
 
 
 def resolve_model_support(
