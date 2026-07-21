@@ -17,7 +17,13 @@ from __future__ import annotations
 def _is_sonicmoe_experts(module) -> bool:
     cfg = getattr(module, "config", None)
     impl = getattr(cfg, "_experts_implementation", None)
-    return impl == "sonicmoe" and hasattr(module, "gate_up_proj")
+    if impl != "sonicmoe":
+        return False
+    # gated experts, or the non-gated up/down layout (nemotron_h); num_experts guards
+    # against dense-MLP modules that also carry an up_proj attr.
+    return hasattr(module, "gate_up_proj") or (
+        hasattr(module, "up_proj") and hasattr(module, "num_experts")
+    )
 
 
 def patch_paramwrapper_sonicmoe_fastpath() -> None:
