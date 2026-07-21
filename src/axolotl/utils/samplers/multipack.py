@@ -364,12 +364,17 @@ class MultipackBatchSampler(BatchSampler):
             bins[i : i + self.batch_size] for i in range(0, len(bins), self.batch_size)
         ]
 
-        # Drop last batch if requested and it's incomplete
-        if self.drop_last and len(batches[-1]) < self.batch_size:
+        # Drop last batch if requested and it's incomplete.
+        # Capture the dropped batch length *before* re-slicing: after
+        # `batches = batches[:-1]`, `batches[-1]` refers to the previous (full)
+        # batch, so the old adjustment became a no-op and left total_token_slots
+        # inflated. Also guard empty batches to avoid IndexError when packing
+        # yields a single incomplete batch that is then dropped (#3848).
+        if self.drop_last and batches and len(batches[-1]) < self.batch_size:
+            dropped_bins = len(batches[-1])
             batches = batches[:-1]
-            # Adjust total_slots if we dropped a batch
             if not self.sequential:
-                total_slots -= (self.batch_size - len(batches[-1])) * self.batch_max_len
+                total_slots -= dropped_bins * self.batch_max_len
 
         # Update statistics if requested
         if set_stats:
