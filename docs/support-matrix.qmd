@@ -128,8 +128,10 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 
 **With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`), as does SonicMoE (`deep_ep_sonicmoe`, bf16 experts only; the NVFP4 path does not support EP).
 
+**Non-gated (latentmoe) experts:** Nemotron-3 (`nemotron_h`) uses non-gated relu² experts (`up_proj`/`down_proj`, no gate) running in `moe_latent_size` width. Both kernels support this layout — ScatterMoE natively, SonicMoE via a grouped-GEMM path (the fused CUTLASS epilogue lands with the next sonic-moe kernel build). Nemotron-3 NVFP4 checkpoints (modelopt `MIXED_PRECISION`) load with NVFP4 experts + FP8 shared path dequantized to bf16.
+
 ::: {.callout-warning}
-**NVFP4 MoE training is LoRA-only** (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base). SonicMoE covers Qwen3-MoE / Qwen3-Next (W4A4, lossless merge via [`nvfp4_merge_aware`](nvfp4_lora.qmd)); ScatterMoE covers **DeepSeek-V4** and **GLM-4.7/5.2** (`glm_moe_dsa`, W4A16). See [Precision x trainable params](#precision-x-trainable-params).
+**NVFP4 MoE training is LoRA-only** (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base). SonicMoE covers Qwen3-MoE / Qwen3-Next (W4A4, lossless merge via [`nvfp4_merge_aware`](nvfp4_lora.qmd)) and Nemotron-3 (`nemotron_h`, W4A16 grouped dequant); ScatterMoE covers **DeepSeek-V4**, **GLM-4.7/5.2** (`glm_moe_dsa`, W4A16), and **Nemotron-3** (`nemotron_h`, grouped fp4). See [Precision x trainable params](#precision-x-trainable-params).
 :::
 
 ### Attention backends

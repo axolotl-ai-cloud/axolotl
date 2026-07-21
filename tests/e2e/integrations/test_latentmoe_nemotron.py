@@ -181,6 +181,109 @@ except ImportError:
 
 
 @pytest.mark.skipif(NVFP4Tensor is None, reason="torchao required")
+def test_nvfp4_mixed_precision_checkpoint_load(tmp_path):
+    """Synthetic Nemotron-3 NVFP4 checkpoint (modelopt MIXED_PRECISION hub layout:
+    backbone.* keys, per-expert NVFP4 up/down triples, static-FP8 latent projs) loads
+    through the layout-driven converters: experts land as fused NVFP4Tensor, FP8
+    linears dequantize, and the scattermoe forward matches a bf16 reference model."""
+    import json
+
+    from safetensors.torch import save_file
+    from transformers import AutoModelForCausalLM
+
+    from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
+        inspect_nvfp4_layout,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_weight_converter import (
+        register_nvfp4_converters_for_layout,
+    )
+
+    _register_all()
+    torch.manual_seed(0)
+    E, L, IM = 8, 64, 128
+    cfg = _nemotron_cfg(L, n_routed_experts=E, moe_intermediate_size=IM)
+
+    src = AutoModelForCausalLM.from_config(cfg).bfloat16()
+    for p in src.parameters():
+        p.data.normal_(0, 0.05)
+    sd = {k: v.clone() for k, v in src.state_dict().items()}
+
+    ckpt = {}
+    for k, v in sd.items():
+        hub_key = k.replace("model.", "backbone.", 1).replace(
+            "backbone.embeddings.weight", "backbone.embedding.weight"
+        )
+        if ".mixer.experts." in hub_key and hub_key.endswith(("up_proj", "down_proj")):
+            proj = "up_proj" if hub_key.endswith("up_proj") else "down_proj"
+            prefix = hub_key[: hub_key.rfind(".experts.")] + ".experts"
+            for e in range(E):
+                nv = NVFP4Tensor.to_nvfp4(v[e].cuda(), block_size=16)
+                ckpt[f"{prefix}.{e}.{proj}.weight"] = nv.qdata.cpu()
+                ckpt[f"{prefix}.{e}.{proj}.weight_scale"] = nv.scale.cpu()
+                ckpt[f"{prefix}.{e}.{proj}.weight_scale_2"] = torch.tensor(
+                    1.0, dtype=torch.float32
+                )
+                sd[k][e] = nv.dequantize(torch.bfloat16).cpu()
+        elif "latent_proj.weight" in hub_key:
+            scale = (v.abs().amax().float() / 448.0).clamp(min=1e-8)
+            w8 = (v.float() / scale).clamp(-448, 448).to(torch.float8_e4m3fn)
+            ckpt[hub_key] = w8
+            ckpt[hub_key + "_scale"] = scale.reshape(())
+            ckpt[hub_key.replace(".weight", ".input_scale")] = torch.tensor(1.0)
+            sd[k] = (w8.float() * scale).to(torch.bfloat16)
+        else:
+            ckpt[hub_key] = v
+
+    save_file(ckpt, str(tmp_path / "model.safetensors"))
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps(
+            {"metadata": {}, "weight_map": {k: "model.safetensors" for k in ckpt}}
+        )
+    )
+    cfg_dict = cfg.to_dict()
+    cfg_dict["quantization_config"] = {
+        "quant_method": "modelopt",
+        "quant_algo": "MIXED_PRECISION",
+        "ignore": [],
+    }
+    (tmp_path / "config.json").write_text(json.dumps(cfg_dict, default=str))
+
+    layout = inspect_nvfp4_layout(str(tmp_path))
+    assert layout["routed_projs"] == ["down_proj", "up_proj"]
+    assert "mixer.fc1_latent_proj" in layout["fp8_suffixes"]
+    register_nvfp4_converters_for_layout("nemotron_h", layout)
+
+    model = AutoModelForCausalLM.from_pretrained(str(tmp_path), dtype=torch.bfloat16)
+    experts = model.model.layers[1].mixer.experts
+    assert isinstance(experts.up_proj.data, NVFP4Tensor)
+    assert isinstance(experts.down_proj.data, NVFP4Tensor)
+    assert tuple(experts.up_proj.shape) == (E, IM, L)
+    assert tuple(experts.down_proj.shape) == (E, L, IM)
+
+    fc1 = model.model.layers[1].mixer.fc1_latent_proj.weight
+    # materialize casts the f32 weight_scale to bf16 before the converter (≤bf16-eps rounding)
+    assert fc1.dtype == torch.bfloat16 and torch.allclose(
+        fc1.cpu().float(),
+        sd["model.layers.1.mixer.fc1_latent_proj.weight"].float(),
+        rtol=1e-2,
+        atol=1e-4,
+    )
+
+    ref_model = AutoModelForCausalLM.from_config(cfg).bfloat16()
+    ref_model.load_state_dict(sd)
+    ref_model = ref_model.cuda()
+    model = model.cuda()
+
+    input_ids = torch.randint(0, 512, (2, 32), device="cuda")
+    with torch.no_grad():
+        model.config._experts_implementation = "scattermoe"
+        out = model(input_ids).logits.float()
+        ref_model.config._experts_implementation = "eager"
+        ref = ref_model(input_ids).logits.float()
+    assert _rel(out, ref) < 5e-2
+
+
+@pytest.mark.skipif(NVFP4Tensor is None, reason="torchao required")
 @pytest.mark.parametrize("impl", ["scattermoe", "sonicmoe"])
 def test_nvfp4_lora_parity(impl, monkeypatch):
     """NVFP4 base + LoRA matches the same forward on the dequantized base."""
