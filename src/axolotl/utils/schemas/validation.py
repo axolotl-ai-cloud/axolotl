@@ -900,6 +900,14 @@ class OptimizationValidationMixin:
                     raise ValueError(
                         "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
                     )
+        # NorMuon has no distributed implementation yet: single-device only.
+        if data.get("optimizer") == "normuon" and (
+            data.get("deepspeed") or data.get("fsdp") or data.get("fsdp_config")
+        ):
+            raise ValueError(
+                "normuon optimizer currently supports single-device training only "
+                "and is incompatible with DeepSpeed or FSDP."
+            )
         return data
 
     @model_validator(mode="before")

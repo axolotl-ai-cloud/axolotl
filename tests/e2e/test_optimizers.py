@@ -164,6 +164,52 @@ class TestCustomOptimizers(unittest.TestCase):
 
     @with_temp_dir
     @require_torch_2_5_1
+    def test_normuon(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "model_type": "AutoModelForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "val_set_size": 0.02,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 5,
+                "micro_batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "normuon",
+                "lr_scheduler": "cosine",
+                "weight_decay": 0.01,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        assert "NorMuon" in trainer.optimizer.optimizer.__class__.__name__
+
+    @with_temp_dir
+    @require_torch_2_5_1
     def test_sinkgd(self, temp_dir):
         cfg = DictDefault(
             {
