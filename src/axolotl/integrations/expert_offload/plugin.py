@@ -16,12 +16,8 @@ from axolotl.integrations.base import BasePlugin
 class ExpertOffloadPlugin(BasePlugin):
     """Stream frozen 4-bit MoE experts from pinned CPU RAM one block at a time.
 
-    Surgical counterpart to ``layer_offloading``: it moves only the frozen 4-bit experts (the bulk
-    of a MoE's parameters) while attention, router, norms and the trainable LoRA adapters stay
-    GPU-resident — minimizing per-step PCIe traffic for the same peak-VRAM reduction. One GPU per
-    replica (single-GPU or plain DDP; no FSDP / DeepSpeed / expert-parallel); the cross-field
-    config requirements are enforced at config-parse time by the ``ExpertOffloadArgs`` schema
-    validator. See ``offload.py`` for the mechanism and this integration's README.
+    Moves only the experts (the bulk of a MoE's parameters), unlike whole-layer
+    ``layer_offloading``, so per-step PCIe traffic stays small. See the integration README.
     """
 
     def get_input_args(self):
