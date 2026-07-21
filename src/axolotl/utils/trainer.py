@@ -9,7 +9,6 @@ from functools import partial
 from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import torch
@@ -272,11 +271,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # If it's a list, we assume we're dealing with a batch
         if isinstance(labels[0], int):
             # Single example: return a single bool
-            return np.any(labels != IGNORE_INDEX)
+            return any(label != IGNORE_INDEX for label in labels)
 
         # Batched: 'labels' is a list of lists
         # Return a list of booleans, one per sub-list
-        results = [np.any(row_labels != IGNORE_INDEX) for row_labels in labels]
+        results = [any(label != IGNORE_INDEX for label in row) for row in labels]
         return results
 
     try:
