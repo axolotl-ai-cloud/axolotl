@@ -8,6 +8,8 @@ from tqdm import tqdm
 from transformers.modeling_outputs import CausalLMOutput
 from transformers.modeling_utils import PreTrainedModel
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 try:
     from transformers.tokenization_python import PreTrainedTokenizer
 except ImportError:
@@ -65,7 +67,7 @@ class Perplexity:
             trg_len = end_loc - prev_end_loc
             input_ids_slice = input_ids[:, begin_loc:end_loc]
             labels_slice = input_ids_slice.clone()
-            labels_slice[:, :-trg_len] = -100
+            labels_slice[:, :-trg_len] = IGNORE_INDEX
 
             with torch.no_grad():
                 outputs: CausalLMOutput = model(

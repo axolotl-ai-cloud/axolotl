@@ -16,6 +16,8 @@ from torch.nn.utils.rnn import pad_sequence
 from trl.experimental.utils import DPODataCollatorWithPadding
 from trl.trainer.utils import pad
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 def _round_up(length: int, multiple: int) -> int:
     return ((length + multiple - 1) // multiple) * multiple
@@ -64,7 +66,7 @@ class AxolotlDPODataCollatorWithPadding(DPODataCollatorWithPadding):
                         k.startswith(("chosen", "rejected", "completion"))
                         or "decoder" in k
                     ):
-                        padding_value = -100
+                        padding_value = IGNORE_INDEX
                     else:
                         raise ValueError(f"Unexpected key in batch '{k}'")
 
@@ -94,7 +96,7 @@ class AxolotlDPODataCollatorWithPadding(DPODataCollatorWithPadding):
                             )
                         padding_value = self.pad_token_id
                     elif k.endswith("_labels"):
-                        padding_value = -100
+                        padding_value = IGNORE_INDEX
                     elif k.endswith("_attention_mask"):
                         padding_value = 0
                     elif k.endswith("_pixel_values"):

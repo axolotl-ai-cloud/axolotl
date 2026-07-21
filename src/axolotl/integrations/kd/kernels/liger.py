@@ -9,6 +9,7 @@ from liger_kernel.chunked_loss.fused_linear_distillation import (
 )
 
 from axolotl.integrations.kd.utils import normalize_logprobs
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 
 
 class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
@@ -129,7 +130,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         student_bias: torch.Tensor = None,  # This will be one of the grad targets
         # Other params passed via `partial` from `forward`
         distillation_loss_fn=None,
-        ignore_index: int = -100,
+        ignore_index: int = IGNORE_INDEX,
         weight_hard_loss: float = 0.5,
         weight_soft_loss: float = 0.5,
         compute_ce_loss: bool = True,
@@ -189,7 +190,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
         student_lm_head_bias: torch.Tensor = None,
         weight_hard_loss: float = 0.5,
         weight_soft_loss: float = 0.5,
-        ignore_index: int = -100,
+        ignore_index: int = IGNORE_INDEX,
         temperature: float = 1.0,
         beta: float = 0.0,
         compiled: bool = False,
@@ -432,7 +433,7 @@ class LigerFusedLinearKLTopKLogprobLoss(torch.nn.Module):
         weight_soft_loss: float = 0.5,
         temperature: float = 1.0,  # This is the kd_temperature
         beta: float = 1.0,
-        ignore_index: int = -100,
+        ignore_index: int = IGNORE_INDEX,
         compiled: bool = True,
         chunk_size: int = 1024,
         compute_ce_loss: bool = True,

@@ -9,6 +9,7 @@ from datasets import Dataset
 from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -56,7 +57,7 @@ def encode_streaming(
         targets[i] = torch.cat(
             (
                 targets[i],
-                torch.tensor([tokenizer.eos_token_id, -100]),
+                torch.tensor([tokenizer.eos_token_id, IGNORE_INDEX]),
             ),
             dim=0,
         )
@@ -99,7 +100,7 @@ def encode_streaming(
                     buffer_labels,
                     torch.full(
                         (max_tokens - buffer_labels.numel(),),
-                        -100,
+                        IGNORE_INDEX,
                         dtype=torch.long,
                     ),
                 ),
@@ -145,7 +146,7 @@ def encode_streaming(
                     buffer_labels,
                     torch.full(
                         (max_tokens - buffer_labels.numel(),),
-                        -100,
+                        IGNORE_INDEX,
                         dtype=torch.long,
                     ),
                 ),

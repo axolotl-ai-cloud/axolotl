@@ -9,6 +9,8 @@ from typing import Any, Callable, List, Optional, Union
 from pydantic import BaseModel
 from transformers import PreTrainedTokenizer
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 class MessageRoles(str, Enum):
     """
@@ -132,7 +134,7 @@ class Messages(BaseModel):
         return "".join(str(c) for c in self.content)
 
     def tokenized(
-        self, tokenizer: PreTrainedTokenizer, ignore_index=-100
+        self, tokenizer: PreTrainedTokenizer, ignore_index=IGNORE_INDEX
     ) -> dict[str, List[int]]:
         # iterate over the contents, tokenizing the concatenated string values up to the current MessageContents
         # returns a dictionary mapping w input_ids, attention_mask, and labels
@@ -188,7 +190,7 @@ class Chats(BaseModel):
         return "".join(str(c) for c in self.conversation)
 
     def tokenized(
-        self, tokenizer: Callable[[str], dict[str, List[int]]], ignore_index=-100
+        self, tokenizer: Callable[[str], dict[str, List[int]]], ignore_index=IGNORE_INDEX
     ) -> dict[str, List[int]]:
         input_ids = []
         attention_mask = []

@@ -5,6 +5,7 @@ from typing import Any, List, Literal, Optional
 
 import torch
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 from .utils import create_bidirectional_attention_mask, shift_logits_to_input_positions
@@ -145,7 +146,7 @@ def _sample_sequences_from_dataloader(
             max_total = min(seq_len, max_length)
             if labels is not None:
                 labels_i = labels[i][:seq_len]
-                answer_mask = labels_i != -100
+                answer_mask = labels_i != IGNORE_INDEX
                 if not answer_mask.any():
                     # No answer tokens; skip for SFT masking
                     continue
@@ -217,12 +218,12 @@ def generate(
     if (
         labels is not None
         and labels.numel() > 0
-        and (labels == -100).any()
-        and (labels != -100).any()
+        and (labels == IGNORE_INDEX).any()
+        and (labels != IGNORE_INDEX).any()
     ):
-        # SFT case: completely mask all answer tokens (labels != -100)
+        # SFT case: completely mask all answer tokens (labels != IGNORE_INDEX)
         total_tokens = original_sequence.size(1)
-        masked_indices = (labels != -100).to(dtype=torch.bool)
+        masked_indices = (labels != IGNORE_INDEX).to(dtype=torch.bool)
         masked_sequence = original_sequence.clone()
         masked_sequence[masked_indices] = mask_token_id
         masked_tokens = int(masked_indices.sum().item())

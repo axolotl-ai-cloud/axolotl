@@ -20,6 +20,7 @@ import torch.nn as nn
 from typing_extensions import override
 
 from axolotl.core.trainers.base import AxolotlTrainer
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 
 from .kernels.liger import LigerFusedLinearKLTopKLogprobLoss
 
@@ -82,7 +83,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
             raise KeyError(f"KD batch missing required keys: {missing}")
 
         if num_items_in_batch is None and "labels" in inputs:
-            num_items_in_batch = (inputs["labels"] != -100).sum().item()
+            num_items_in_batch = (inputs["labels"] != IGNORE_INDEX).sum().item()
 
         labels = inputs.pop("labels")
         target_token_ids = inputs.pop("target_token_ids")

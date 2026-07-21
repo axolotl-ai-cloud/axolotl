@@ -7,6 +7,8 @@ from typing import List, Optional
 import torch
 import torch.nn.functional as F
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 # copied and modified from torchtune.modules.loss.CEWithChunkedOutputLoss
 class CEWithChunkedOutputLoss(torch.nn.Module):
@@ -16,7 +18,7 @@ class CEWithChunkedOutputLoss(torch.nn.Module):
     For more details, please refer to: https://github.com/pytorch/torchtune/pull/1390
     """
 
-    def __init__(self, num_output_chunks: int = 8, ignore_index: int = -100):
+    def __init__(self, num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX):
         super().__init__()
         self.num_output_chunks = num_output_chunks
         self.ignore_index = ignore_index
@@ -71,7 +73,7 @@ class CEWithChunkedOutputLoss(torch.nn.Module):
         return total_loss / total_elements
 
 
-def _build_chunked_ce_loss_fn(num_output_chunks: int = 8, ignore_index: int = -100):
+def _build_chunked_ce_loss_fn(num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX):
     loss_fn_ce = CEWithChunkedOutputLoss(num_output_chunks, ignore_index)
     loss_fn_ce.compute_cross_entropy = torch.compile(
         loss_fn_ce.compute_cross_entropy, backend="inductor"
@@ -79,14 +81,14 @@ def _build_chunked_ce_loss_fn(num_output_chunks: int = 8, ignore_index: int = -1
     return loss_fn_ce
 
 
-def get_causal_lm_loss(num_output_chunks: int = 8, ignore_index: int = -100):
+def get_causal_lm_loss(num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX):
     loss_fn_ce = _build_chunked_ce_loss_fn(num_output_chunks, ignore_index)
 
     def chunked_fix_cross_entropy(
         source,
         target,
         num_items_in_batch: int = None,
-        ignore_index: int = -100,
+        ignore_index: int = IGNORE_INDEX,
         **kwargs,
     ):
         reduction = "sum" if num_items_in_batch is not None else "mean"
@@ -103,7 +105,7 @@ def get_causal_lm_loss(num_output_chunks: int = 8, ignore_index: int = -100):
         labels,
         vocab_size: int = None,
         num_items_in_batch: Optional[int] = None,
-        ignore_index: int = -100,
+        ignore_index: int = IGNORE_INDEX,
         shift_labels: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -124,7 +126,7 @@ def get_causal_lm_loss(num_output_chunks: int = 8, ignore_index: int = -100):
     return for_causal_lm_chunked_loss
 
 
-def patch_chunked_ce_loss_fn(num_output_chunks: int = 8, ignore_index: int = -100):
+def patch_chunked_ce_loss_fn(num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX):
     import transformers.loss.loss_utils
 
     for_causal_lm_chunked_loss = get_causal_lm_loss(num_output_chunks, ignore_index)

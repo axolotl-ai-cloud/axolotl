@@ -17,7 +17,7 @@ Two variants:
 
 3. `transform_strided` — For strided EBFT:
    Tokenizes the full conversation with thinking traces.
-   Optionally masks thinking tokens from CE loss (labels=-100 for think spans)
+   Optionally masks thinking tokens from CE loss (labels=IGNORE_INDEX for think spans)
    while still placing anchors in thinking regions for feature matching.
 
 All variants work with OpenAI chat format:
@@ -38,6 +38,9 @@ def _extract_thinking(text: str) -> tuple[str, str]:
     if match:
         return match.group(1).strip(), match.group(2).strip()
     return "", text.strip()
+"""
+
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 
 
 def transform(cfg, **kwargs):
@@ -186,7 +189,7 @@ def transform_strided(cfg, **kwargs):
 
     Config options (via cfg):
         - ebft.mask_thinking_ce: bool (default False)
-          If True, set labels=-100 for tokens inside <think>...</think> blocks.
+          If True, set labels=IGNORE_INDEX for tokens inside <think>...</think> blocks.
           Feature matching still uses these positions (anchors are placed everywhere
           in the completion span). Only CE auxiliary loss is affected.
     """
@@ -225,8 +228,8 @@ def transform_strided(cfg, **kwargs):
         )
         input_ids = full_enc["input_ids"]
 
-        # Build labels: -100 for non-assistant tokens
-        labels = [-100] * len(input_ids)
+        # Build labels: IGNORE_INDEX for non-assistant tokens
+        labels = [IGNORE_INDEX] * len(input_ids)
 
         # Find assistant turn boundaries using incremental tokenization.
         # Only the FINAL assistant turn is marked as trainable.
@@ -290,23 +293,23 @@ def transform_strided(cfg, **kwargs):
                         if input_ids[i] == think_open_id:
                             in_think = True
                         if in_think and i >= final_start:
-                            labels[i] = -100
+                            labels[i] = IGNORE_INDEX
                         if input_ids[i] == think_close_id:
                             in_think = False
                             if i >= final_start:
-                                labels[i] = -100
+                                labels[i] = IGNORE_INDEX
 
         # Derive prompt_length
         prompt_length = len(input_ids)
         for i, lbl in enumerate(labels):
-            if lbl != -100:
+            if lbl != IGNORE_INDEX:
                 prompt_length = i
                 break
 
         # Pad
         pad_len = seq_len - len(input_ids)
         attention_mask = [1] * len(input_ids) + [0] * pad_len
-        labels = labels + [-100] * pad_len
+        labels = labels + [IGNORE_INDEX] * pad_len
         input_ids = input_ids + [pad_id] * pad_len
 
         return {

@@ -15,6 +15,7 @@ from transformers.models.internvl import InternVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
 
@@ -373,9 +374,9 @@ class ProcessingStrategy:
         )
 
     def _mask_non_assistant(self, labels: Tensor) -> Tensor:
-        """Mask non-trainable role regions to -100 using ``self.role_boundaries``."""
+        """Mask non-trainable role regions to IGNORE_INDEX using ``self.role_boundaries``."""
         keep = self._mask_non_assistant_keep(labels)
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
     def process_labels(self, input_ids: Tensor) -> Tensor:
@@ -386,7 +387,7 @@ class ProcessingStrategy:
         if self.image_token_id is not None:
             keep = keep & (input_ids != self.image_token_id)
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -492,7 +493,7 @@ def _apply_role_boundaries(
     roles_to_train: set[str],
     train_on_eos: str,
 ) -> Tensor:
-    """Mask tokens outside trainable role spans to -100.
+    """Mask tokens outside trainable role spans to IGNORE_INDEX.
 
     Scan is greedy-left with longest-prefix-wins on start_tokens to disambiguate
     nested markers (e.g. ``<|im_start|>assistant`` vs ``<|im_start|>``).
@@ -503,7 +504,7 @@ def _apply_role_boundaries(
     keep = _compute_role_keep_mask(
         labels, role_boundaries, roles_to_train, train_on_eos
     )
-    labels[~keep] = -100
+    labels[~keep] = IGNORE_INDEX
     return labels
 
 
@@ -678,7 +679,7 @@ def _apply_role_boundaries_vectorized(
     keep = _compute_role_keep_mask_vectorized(
         labels, role_boundaries, roles_to_train, train_on_eos
     )
-    labels[~keep] = -100
+    labels[~keep] = IGNORE_INDEX
     return labels
 
 
@@ -840,7 +841,7 @@ class Qwen3_5ProcessingStrategy(Qwen2VLProcessingStrategy):
         if self.video_token_id is not None:
             keep = keep & (input_ids != self.video_token_id)
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -925,7 +926,7 @@ class Gemma3ProcessingStrategy(_GemmaTurnStrategy):
         else:
             keep = keep & (input_ids != 262144)
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -951,7 +952,7 @@ class Gemma3nProcessingStrategy(_GemmaTurnStrategy):
             if tok_id is not None:
                 keep = keep & (input_ids != tok_id)
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -1023,7 +1024,7 @@ class Gemma4ProcessingStrategy(ProcessingStrategy):
             keep = keep & (input_ids != video_token_id)
 
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -1204,7 +1205,7 @@ class VoxtralProcessingStrategy(ProcessingStrategy):
             keep = keep & (input_ids != self.begin_audio_token)
 
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -1294,7 +1295,7 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
                 keep = keep & (input_ids != tok_id)
 
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -1347,7 +1348,7 @@ class InternVLProcessingStrategy(ProcessingStrategy):
 
         # Video tokens get converted to image patches during media processing; masking may be redundant.
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 
@@ -1425,7 +1426,7 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
                 keep = keep & (input_ids != tok_id)
 
         labels = input_ids.clone()
-        labels[~keep] = -100
+        labels[~keep] = IGNORE_INDEX
         return labels
 
 

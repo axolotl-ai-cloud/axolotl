@@ -7,6 +7,8 @@ import numpy as np
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 @dataclass
 class DataCollatorForSeq2Seq:
@@ -37,8 +39,8 @@ class DataCollatorForSeq2Seq:
 
             This is especially useful to enable the use of Tensor Cores on NVIDIA hardware with compute capability >=
             7.5 (Volta).
-        label_pad_token_id (`int`, *optional*, defaults to -100):
-            The id to use when padding the labels (-100 will be automatically ignored by PyTorch loss functions).
+        label_pad_token_id (`int`, *optional*, defaults to IGNORE_INDEX):
+            The id to use when padding the labels (IGNORE_INDEX will be automatically ignored by PyTorch loss functions).
         return_tensors (`str`):
             The type of Tensor to return. Allowable values are "np", "pt" and "tf".
     """
@@ -48,7 +50,7 @@ class DataCollatorForSeq2Seq:
     padding: bool | str | PaddingStrategy = True
     max_length: int | None = None
     pad_to_multiple_of: int | None = None
-    label_pad_token_id: int = -100
+    label_pad_token_id: int = IGNORE_INDEX
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 

@@ -18,6 +18,7 @@ from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
 from axolotl.utils.environment import check_cuda_p2p_ib_support
@@ -45,12 +46,12 @@ def weighted_cross_entropy(
 
 
 def create_weighted_mask(labels: torch.Tensor):
-    """Weight each contiguous run of unmasked (!= -100) labels so it sums to 1."""
+    """Weight each contiguous run of unmasked (!= IGNORE_INDEX) labels so it sums to 1."""
     if len(labels.shape) == 1:
         labels = labels.unsqueeze(0)
     batch_size, seq_len = labels.shape
 
-    mask = labels != -100
+    mask = labels != IGNORE_INDEX
     # a group starts at an unmasked position whose predecessor is masked
     starts = mask.clone()
     starts[:, 1:] &= ~mask[:, :-1]
@@ -259,7 +260,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
 
     def drop_no_trainable_tokens(sample):
         """
-        Drop samples if all labels are -100 (i.e., zero trainable tokens).
+        Drop samples if all labels are IGNORE_INDEX (i.e., zero trainable tokens).
         Works for both single-example or batched input.
         """
         labels = sample["labels"]
@@ -271,11 +272,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # If it's a list, we assume we're dealing with a batch
         if isinstance(labels[0], int):
             # Single example: return a single bool
-            return np.any(labels != -100)
+            return np.any(labels != IGNORE_INDEX)
 
         # Batched: 'labels' is a list of lists
         # Return a list of booleans, one per sub-list
-        results = [np.any(row_labels != -100) for row_labels in labels]
+        results = [np.any(row_labels != IGNORE_INDEX) for row_labels in labels]
         return results
 
     try:
@@ -436,7 +437,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 flat = labels.flatten().to_numpy(zero_copy_only=False)
             else:
                 flat = labels.to_numpy(zero_copy_only=False)
-            total_supervised_tokens += int((flat != -100).sum())
+            total_supervised_tokens += int((flat != IGNORE_INDEX).sum())
         LOG.debug(f"total_supervised_tokens: {total_supervised_tokens:_}")
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens

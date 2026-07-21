@@ -18,6 +18,8 @@ import contextlib
 import copy
 
 import torch
+
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 import torch.nn.functional as F
 from transformers import Trainer
 
@@ -595,9 +597,9 @@ class AxolotlStridedEBFTTrainer(
             prompt_lengths = inputs["prompt_length"].to(device)  # (B,)
             is_structured = True
         elif "labels" in inputs:
-            # Derive prompt_length from labels: first position where labels != -100
+            # Derive prompt_length from labels: first position where labels != IGNORE_INDEX
             labels = inputs["labels"].to(device)
-            non_masked = labels != -100
+            non_masked = labels != IGNORE_INDEX
             # prompt_length = index of first non-masked token (or seq_len if all masked)
             has_completion = non_masked.any(dim=1)
             prompt_lengths = torch.where(
@@ -793,14 +795,14 @@ class AxolotlStridedEBFTTrainer(
         ).sum() / action_mask.float().sum().clamp(min=1)
 
         # CE loss: For structured data, only compute on completion ground-truth tokens
-        # (labels != -100 in the original input). For unstructured data, compute on
+        # (labels != IGNORE_INDEX in the original input). For unstructured data, compute on
         # all non-action (prompt) tokens as before.
         ce_loss = torch.tensor(0.0, device=device)
         if self.ebft_ce_coef > 0:
             if is_structured and "labels" in inputs:
                 labels = inputs["labels"].to(device)  # (B, seq_len)
                 shifted_labels = labels[:, 1:]  # (B, seq_len - 1)
-                ce_mask_base = shifted_labels != -100  # (B, seq_len - 1)
+                ce_mask_base = shifted_labels != IGNORE_INDEX  # (B, seq_len - 1)
                 ce_mask_repeated = ce_mask_base.repeat_interleave(n_samples, dim=0)
                 ce_mask = torch.zeros(
                     per_token_logps.shape, dtype=torch.bool, device=device

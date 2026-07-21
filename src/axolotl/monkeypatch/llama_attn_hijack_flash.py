@@ -6,6 +6,7 @@ import transformers
 from transformers.models.llama.modeling_llama import LlamaMLP
 
 from axolotl.monkeypatch.utils import set_module_name
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -56,7 +57,7 @@ def patch_fa_llama_cross_entropy():
         source,
         target,
         num_items_in_batch: int = None,
-        ignore_index: int = -100,
+        ignore_index: int = IGNORE_INDEX,
         **kwargs,
     ):
         reduction = "sum" if num_items_in_batch is not None else "mean"
