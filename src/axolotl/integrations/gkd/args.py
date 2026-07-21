@@ -30,13 +30,13 @@ class GKDArgs(BaseModel):
     gkd_trainer: bool | None = None
     gkd_teacher: str | None = None  # HF model id/path; must share the student's vocab
     gkd_teacher_init_kwargs: dict[str, Any] | None = None
-    gkd_lmbda: float | None = 0.5  # fraction of steps trained on student rollouts
+    gkd_lmbda: float | None = 1.0  # fraction of steps trained on student rollouts
     gkd_seq_kd: bool | None = (
         False  # off-policy fraction distills teacher-generated seqs
     )
     gkd_max_new_tokens: int | None = 128
     gkd_top_k: int | None = 0
-    gkd_beta: float | None = 0.5  # 0=forward-KL, 1=reverse-KL, between=JSD
+    gkd_beta: float | None = 1.0  # 0=forward-KL, 1=reverse-KL, between=JSD
     gkd_divergence: str | None = None
     gkd_temperature: float | None = 0.9
 
@@ -45,7 +45,7 @@ class GKDArgs(BaseModel):
         if not self.gkd_trainer:
             return self
         if not self.gkd_teacher:
-            raise ValueError("gkd_trainer requires gkd_teacher to be set.")
+            raise ValueError("gkd_teacher is required when gkd_trainer is set.")
         if self.gkd_beta is not None and not 0.0 <= self.gkd_beta <= 1.0:
             raise ValueError("gkd_beta must be in [0, 1].")
         if self.gkd_lmbda is not None and not 0.0 <= self.gkd_lmbda <= 1.0:
@@ -70,10 +70,10 @@ class GKDTrainingArgsMixin:
 
     gkd_teacher: str | None = None
     gkd_teacher_init_kwargs: dict[str, Any] | None = None
-    gkd_lmbda: float = 0.5
+    gkd_lmbda: float = 1.0
     gkd_seq_kd: bool = False
     gkd_max_new_tokens: int = 128
     gkd_top_k: int = 0
-    gkd_beta: float = 0.5
+    gkd_beta: float = 1.0
     gkd_divergence: str | None = None
     gkd_temperature: float = 0.9

@@ -17,7 +17,7 @@ gkd_trainer: true
 gkd_teacher: meta-llama/Llama-3.1-70B-Instruct   # Axis C: teacher (shared vocab)
 
 gkd_lmbda: 1.0          # Axis B: fraction of steps on student rollouts (1.0 = fully on-policy)
-gkd_beta: 0.5           # Axis A: 0 = forward-KL, 1 = reverse-KL, between = JSD
+gkd_beta: 1.0           # Axis A: 0 = forward-KL, 1 = reverse-KL, between = JSD
 gkd_temperature: 0.9
 gkd_max_new_tokens: 256
 gkd_seq_kd: false       # for the off-policy fraction, distill teacher-generated sequences
