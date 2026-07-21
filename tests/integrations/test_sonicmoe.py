@@ -238,6 +238,31 @@ class TestExpertsClassMetadata:
                     fake_self, hidden, top_k_index, top_k_weights
                 )
 
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+    def test_non_gated_rejects_bias(self):
+        # a down-proj-only bias must fail loudly, not be silently dropped by the
+        # grouped fallback (which takes no bias operands)
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            sonicmoe_experts_forward_with_lora,
+        )
+
+        fake_self = SimpleNamespace(
+            has_gate=False,
+            has_bias=True,
+            num_experts=2,
+            up_proj=torch.zeros(2, 4, 4, device="cuda"),
+            down_proj=torch.zeros(2, 4, 4, device="cuda"),
+            down_proj_bias=torch.zeros(2, 4, device="cuda"),
+            config=SimpleNamespace(mlp_hidden_act="relu2"),
+        )
+        with pytest.raises(NotImplementedError, match="bias"):
+            sonicmoe_experts_forward_with_lora(
+                fake_self,
+                torch.zeros(2, 4, device="cuda"),
+                torch.zeros(2, 1, dtype=torch.long, device="cuda"),
+                torch.ones(2, 1, device="cuda"),
+            )
+
     def test_rejects_non_cuda(self):
         from axolotl.integrations.kernels.libs.sonicmoe.experts import (
             sonicmoe_experts_forward_with_lora,

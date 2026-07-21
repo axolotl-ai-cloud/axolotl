@@ -156,7 +156,7 @@ def sonicmoe_experts_forward_with_lora(
                 f"sonicmoe non-gated experts support only the relu² activation "
                 f"(nemotron_h); got {act_name!r}"
             )
-        if b1 is not None:
+        if b1 is not None or b2 is not None:
             raise NotImplementedError("sonicmoe non-gated experts do not support bias")
         if os.environ.get("AXOLOTL_SONICMOE_NONGATED_FUSED") == "1":
             # relu²(h) == h · relu(h) exactly, so duplicate the up projection into the
