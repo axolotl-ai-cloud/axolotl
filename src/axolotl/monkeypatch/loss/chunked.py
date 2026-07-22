@@ -73,7 +73,9 @@ class CEWithChunkedOutputLoss(torch.nn.Module):
         return total_loss / total_elements
 
 
-def _build_chunked_ce_loss_fn(num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX):
+def _build_chunked_ce_loss_fn(
+    num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX
+):
     loss_fn_ce = CEWithChunkedOutputLoss(num_output_chunks, ignore_index)
     loss_fn_ce.compute_cross_entropy = torch.compile(
         loss_fn_ce.compute_cross_entropy, backend="inductor"
@@ -126,7 +128,9 @@ def get_causal_lm_loss(num_output_chunks: int = 8, ignore_index: int = IGNORE_IN
     return for_causal_lm_chunked_loss
 
 
-def patch_chunked_ce_loss_fn(num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX):
+def patch_chunked_ce_loss_fn(
+    num_output_chunks: int = 8, ignore_index: int = IGNORE_INDEX
+):
     import transformers.loss.loss_utils
 
     for_causal_lm_chunked_loss = get_causal_lm_loss(num_output_chunks, ignore_index)

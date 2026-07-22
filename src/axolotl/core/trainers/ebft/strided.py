@@ -18,8 +18,6 @@ import contextlib
 import copy
 
 import torch
-
-from axolotl.prompt_tokenizers import IGNORE_INDEX
 import torch.nn.functional as F
 from transformers import Trainer
 
@@ -38,6 +36,7 @@ from axolotl.core.trainers.mixins import (
     SchedulerMixin,
 )
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)

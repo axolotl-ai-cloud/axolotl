@@ -35,7 +35,11 @@ def check_example_labels(example, tokenizer, text_only=False):
     for _, (input_id, label_id) in enumerate(zip(input_ids, labels, strict=False)):
         decoded_input_token = tokenizer.decode(input_id)
         # Choose the color based on whether the label has the ignore value or not
-        color = "red" if label_id == IGNORE_INDEX else ("yellow" if label_id == 0 else "green")
+        color = (
+            "red"
+            if label_id == IGNORE_INDEX
+            else ("yellow" if label_id == 0 else "green")
+        )
         colored_token = colored(decoded_input_token, color) + (
             not text_only and colored(f"({label_id}, {input_id})", "white") or ""
         )

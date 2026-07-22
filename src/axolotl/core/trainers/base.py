@@ -481,7 +481,9 @@ class AxolotlTrainer(
         )
 
     @staticmethod
-    def orpo_concatenate_inputs(inputs, label_pad_token=IGNORE_INDEX, pad_token=0, device=None):
+    def orpo_concatenate_inputs(
+        inputs, label_pad_token=IGNORE_INDEX, pad_token=0, device=None
+    ):
         concatenated_batch = {}
 
         max_length = max(inputs["input_ids"].shape[1], inputs["rejected_ids"].shape[1])

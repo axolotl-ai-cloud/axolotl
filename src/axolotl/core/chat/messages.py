@@ -190,7 +190,9 @@ class Chats(BaseModel):
         return "".join(str(c) for c in self.conversation)
 
     def tokenized(
-        self, tokenizer: Callable[[str], dict[str, List[int]]], ignore_index=IGNORE_INDEX
+        self,
+        tokenizer: Callable[[str], dict[str, List[int]]],
+        ignore_index=IGNORE_INDEX,
     ) -> dict[str, List[int]]:
         input_ids = []
         attention_mask = []
