@@ -19,6 +19,24 @@ from axolotl.monkeypatch.ring_attn import (
 from axolotl.utils.schemas.enums import RingAttnFunc
 
 
+def _has_multiple_documents(position_ids: torch.Tensor) -> bool:
+    """Whether any row packs more than one document.
+
+    A document boundary shows up as ``position_ids`` resetting to 0 mid-sequence.
+    Mirrors the boundary detection in ``get_cu_seqlens_from_pos_ids`` (reset to 0
+    starts a new document) after stripping right-side zero padding, so single
+    padded documents are not mistaken for packs.
+    """
+    if position_ids.dim() == 1:
+        position_ids = position_ids.unsqueeze(0)
+    for row in position_ids:
+        padding_length = (row == 0).int().flip(dims=[0]).cumprod(dim=0).sum().item()
+        adjusted_row = row[:-padding_length] if padding_length else row
+        if adjusted_row.numel() > 1 and bool((adjusted_row[1:] == 0).any()):
+            return True
+    return False
+
+
 # TODO(djsaunde): implement zigzag, stripe patterns here (and elsewhere) in this
 # module. Currently, we just focus on batch ring and varlen llama3 for simplicity.
 def apply_sequence_parallelism(
@@ -39,8 +57,9 @@ def apply_sequence_parallelism(
         local_rank: Local rank in the sequence parallel group.
         local_world_size: World size of the sequence parallel group.
         gradient_accumulation_steps: Number of steps to accumulate gradients over.
-        ring_attn_func: Which ring attention function to use. Currently unused, but
-            related to above TODO.
+        ring_attn_func: Which ring attention function to use. ``batch_ring`` does not
+            respect document boundaries and is rejected for pre-packed multi-document
+            sequences.
 
     Returns:
         tuple of:
@@ -52,6 +71,18 @@ def apply_sequence_parallelism(
 
     # Update ring attention params if needed
     if batch.get("position_ids") is not None and batch_size == 1:
+        # batch_ring ignores cu_seqlens: it rotates K/V across position_id resets, so
+        # tokens attend across documents and the loss is silently wrong. Only varlen
+        # respects boundaries within a packed sequence.
+        if ring_attn_func is RingAttnFunc.BATCH_RING and _has_multiple_documents(
+            batch["position_ids"]
+        ):
+            raise ValueError(
+                "ring_attn_func='batch_ring' does not respect document boundaries in a "
+                "packed sequence: it rotates K/V across position_id resets, so queries "
+                "attend across documents and the training loss is silently wrong. Set "
+                "ring_attn_func: varlen_llama3 for pre-packed multi-document data."
+            )
         update_ring_attn_params(position_ids=batch["position_ids"])
     else:
         # If position_ids aren't already in the batch, create them
