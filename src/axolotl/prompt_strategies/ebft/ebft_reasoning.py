@@ -26,6 +26,8 @@ All variants work with OpenAI chat format:
 
 import re
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 def _strip_thinking(text: str) -> str:
     """Remove <think>...</think> blocks from text."""
@@ -38,9 +40,6 @@ def _extract_thinking(text: str) -> tuple[str, str]:
     if match:
         return match.group(1).strip(), match.group(2).strip()
     return "", text.strip()
-"""
-
-from axolotl.prompt_tokenizers import IGNORE_INDEX
 
 
 def transform(cfg, **kwargs):
