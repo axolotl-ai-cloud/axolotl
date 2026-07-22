@@ -3,6 +3,7 @@ HF Chat Templates prompt strategy
 """
 
 import json
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
@@ -166,6 +167,37 @@ class ChatTemplatePrompter(Prompter):
             **chat_template_kwargs,
         )
 
+    def build_prompt_text(
+        self,
+        conversation: list[dict],
+        add_generation_prompt=False,
+        tools=None,
+    ) -> str | None:
+        """Render a conversation to text without tokenizing.
+
+        Returns ``None`` when the render can't be mapped back to token offsets, i.e.
+        a processor is in play (it splices in image/audio tokens that have no
+        counterpart in the text).
+        """
+        if self.processor:
+            return None
+
+        chat_template_kwargs = {
+            "chat_template": self.chat_template,
+            "add_generation_prompt": add_generation_prompt,
+            **self.chat_template_kwargs,
+        }
+
+        if tools:
+            chat_template_kwargs["tools"] = tools
+
+        text = self.tokenizer.apply_chat_template(
+            conversation,
+            tokenize=False,
+            **chat_template_kwargs,
+        )
+        return text if isinstance(text, str) else None
+
     def get_offsets_for_train_detail(
         self, text: str, train_details: List[Dict], mask_untrainable: bool = True
     ) -> List[int]:
@@ -319,9 +351,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.split_thinking = split_thinking
 
         self.images = "images"
-
-        self._fast_spans_disabled = False
-        self._fast_validated_samples = 0
 
         LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
@@ -488,16 +517,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         input_ids = result["input_ids"]
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
-        fast_spans = None
-        if not self._fast_spans_disabled and self._fast_spans_supported():
-            fast_spans = self._fast_content_spans(turns, tools, input_ids)
-            if fast_spans is None:
-                self._fast_spans_disabled = True
-        validating = (
-            fast_spans is not None
-            and self._fast_validated_samples < self._FAST_VALIDATION_SAMPLES
-        )
-        used_fast = False
+        locator = self._build_turn_locator(turns, tools, input_ids)
 
         last_eos_idx = -1
         last_eot_idx = -1
@@ -545,38 +565,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             # (excluding reasoning_content + template separator tokens).
             use_content_only = bool(has_any_detail and has_reasoning)
 
-            fast_span = (
-                fast_spans.get(index)
-                if (
-                    fast_spans is not None
-                    and not use_content_only
-                    and train_detail is None
-                    and reasoning_train_detail is None
-                )
-                else None
+            turn_start_idx, turn_end_idx = self.find_turn(
+                turns=turns,
+                turn_idx=index,
+                tools=tools,
+                content_only=use_content_only,
+                locator=locator,
             )
-            if fast_span is not None and not validating:
-                turn_start_idx, turn_end_idx = fast_span
-                used_fast = True
-            else:
-                turn_start_idx, turn_end_idx = self.find_turn(
-                    turns=turns,
-                    turn_idx=index,
-                    tools=tools,
-                    content_only=use_content_only,
-                )
-                if fast_span is not None:
-                    used_fast = True
-                    if fast_span != (turn_start_idx, turn_end_idx):
-                        # Fast path disagrees with the reference: disable it for the
-                        # whole run and keep the reference result for this turn.
-                        LOG.warning(
-                            "chat_template fast turn-boundary path disagreed with the "
-                            "reference; disabling it for this run and using find_turn."
-                        )
-                        self._fast_spans_disabled = True
-                        fast_spans = None
-                        validating = False
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
@@ -621,6 +616,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     turn_idx=index,
                     tools=tools,
                     reasoning_only=True,
+                    locator=locator,
                 )
 
                 if reasoning_start != -1 and reasoning_end != -1:
@@ -678,10 +674,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         LOG.debug(f"Final labels: {labels}")
 
-        # Bank a clean sample: once enough have agreed with find_turn, trust the fast path.
-        if used_fast and validating and not self._fast_spans_disabled:
-            self._fast_validated_samples += 1
-
         # ``result`` already carries any processor outputs (pixel_values, image
         # grid info, etc.); just set the fields we computed locally.
         result["labels"] = labels
@@ -703,88 +695,194 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 return i
         return -1
 
-    # Number of initial samples whose fast-path spans are cross-checked against the
-    # reference find_turn before the fast path is trusted for the remainder of the run.
-    _FAST_VALIDATION_SAMPLES = 8
+    def _build_turn_locator(
+        self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
+    ) -> tuple[str, list[int], list[int]] | None:
+        """Render and tokenize the conversation once so turns can be located in char space.
 
-    def _fast_spans_supported(self) -> bool:
-        """Fast spans need char->token offsets, so a fast HF tokenizer and no processor."""
-        return self.prompter.processor is None and getattr(
-            self.tokenizer, "is_fast", False
+        Returns ``(rendered_text, token_starts, token_ends)``, or ``None`` when the
+        render can't be trusted to line up with ``input_ids`` and ``find_turn`` has to
+        fall back to diffing tokens.
+        """
+        if not getattr(self.tokenizer, "is_fast", False):
+            return None
+
+        full_text = self.prompter.build_prompt_text(turns, tools=tools)  # type: ignore
+        if not full_text:
+            return None
+
+        encoded = self.tokenizer(
+            full_text, add_special_tokens=False, return_offsets_mapping=True
+        )
+        # Spans are used to index into input_ids, so bail unless re-tokenizing the
+        # render reproduces it exactly.
+        if list(encoded["input_ids"]) != list(input_ids):
+            return None
+
+        offsets = encoded["offset_mapping"]
+        return full_text, [s for s, _ in offsets], [e for _, e in offsets]
+
+    # Chunk size for the char-space diff. Comparing block slices keeps the scan in C;
+    # a per-character Python loop here costs more than the tokenization it saves.
+    _DIFF_BLOCK = 4096
+
+    @classmethod
+    def _common_prefix_len(cls, left: str, right: str, limit: int) -> int:
+        """Length of the shared prefix of ``left`` and ``right``, capped at ``limit``."""
+        matched = 0
+        block = cls._DIFF_BLOCK
+        while (
+            matched + block <= limit
+            and left[matched : matched + block] == right[matched : matched + block]
+        ):
+            matched += block
+
+        lo, hi = matched, limit
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if left[matched:mid] == right[matched:mid]:
+                lo = mid
+            else:
+                hi = mid - 1
+
+        return lo
+
+    @classmethod
+    def _diff_char_span(cls, full_text: str, dummy_text: str) -> tuple[int, int]:
+        """Char span of ``full_text`` that differs from ``dummy_text``.
+
+        The suffix scan is bounded by the prefix match so the two can't overlap when
+        the surrounding template repeats itself.
+        """
+        limit = min(len(full_text), len(dummy_text))
+        start = cls._common_prefix_len(full_text, dummy_text, limit)
+        suffix = cls._common_prefix_len(
+            full_text[::-1], dummy_text[::-1], limit - start
         )
 
-    def _fast_content_spans(
-        self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
-    ) -> dict[int, tuple[int, int]] | None:
-        """Locate every plain-string turn's content token span in a single pass.
+        return start, len(full_text) - suffix
 
-        ``find_turn`` re-renders and re-tokenizes the whole conversation prefix once
-        per turn — O(turns^2) work that makes long multi-turn datasets crawl (#2396).
-        Here we render + tokenize the conversation once, recover char->token offsets,
-        and map each turn's content substring to its token span with a forward cursor.
+    def _find_turn_from_text(
+        self,
+        turns: list[dict],
+        turn_idx: int,
+        dummy_turn: dict,
+        tools: list[dict] | None,
+        locator: tuple[str, list[int], list[int]],
+    ) -> tuple[int, int] | None:
+        """Locate a turn by diffing two full renders in char space.
 
-        Returns ``{turn_idx: (start, end)}`` for the turns it can resolve exactly
-        (turns it can't are omitted, so the caller falls back to ``find_turn`` for
-        them), or ``None`` when the re-tokenization does not reproduce build_prompt's
-        ids.
+        Both renders keep the turn at its original index, so position-dependent
+        template logic (thinking stripped from non-final turns, tool-call collapsing)
+        applies identically to each and cancels out in the diff.
         """
-        tokenizer = self.tokenizer
+        full_text, token_starts, token_ends = locator
 
-        # Mirror build_prompt(turns, tools=tools) exactly so the ids line up with input_ids.
-        chat_template_kwargs = {
-            "chat_template": self.prompter.chat_template,
-            "add_generation_prompt": False,
-            **self.prompter.chat_template_kwargs,
-        }
-        if tools:
-            chat_template_kwargs["tools"] = tools
-        try:
-            text = tokenizer.apply_chat_template(
-                turns, tokenize=False, **chat_template_kwargs
+        dummy_text = self.prompter.build_prompt_text(  # type: ignore
+            turns[:turn_idx] + [dummy_turn] + turns[turn_idx + 1 :], tools=tools
+        )
+        if not dummy_text:
+            return None
+
+        char_start, char_end = self._diff_char_span(full_text, dummy_text)
+        if char_end <= char_start:
+            # The field never made it into the render, so there is nothing to label.
+            return -1, -1
+
+        # Byte-level BPE can split one character across tokens that share a char
+        # offset, so the exclusive end has to come from starts, not ends — bisecting
+        # ends would drop the trailing piece of a multi-token character.
+        start_idx = bisect_right(token_ends, char_start)
+        end_idx = bisect_left(token_starts, char_end)
+        if start_idx >= len(token_ends) or end_idx > len(token_ends):
+            return None
+
+        return start_idx, end_idx
+
+    def _find_turn_from_tokens(
+        self,
+        turns: list[dict],
+        turn_idx: int,
+        dummy_turn: dict,
+        tools: list[dict] | None,
+    ) -> tuple[int, int] | None:
+        """Locate a turn by re-tokenizing the conversation prefix twice.
+
+        Fallback for renders that can't be mapped to char offsets (processors, slow
+        tokenizers). Costs a full tokenization per turn, and because it renders a
+        prefix rather than the whole conversation it can't see position-dependent
+        template logic — prefer ``_find_turn_from_text`` whenever a locator exists.
+        """
+        real_last_index = len(turns) - 1
+
+        dummy_ids = _extract_input_ids(
+            self.prompter.build_prompt(  # type: ignore
+                turns[:turn_idx] + [dummy_turn],
+                tools=tools,
+                real_last_index=real_last_index,
             )
-            enc = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
-        except Exception:  # pragma: no cover - degrade to find_turn
+        )
+        full_ids = _extract_input_ids(
+            self.prompter.build_prompt(  # type: ignore
+                turns[: turn_idx + 1], tools=tools, real_last_index=real_last_index
+            )
+        )
+
+        if not full_ids or not dummy_ids:
+            LOG.warning(f"Empty template generated for turn {turn_idx}")
             return None
 
-        # Spans index into input_ids (from build_prompt); only safe if our render
-        # reproduces it byte-for-byte. If specials are handled differently, bail.
-        if list(enc["input_ids"]) != list(input_ids):
+        start_idx = None
+        min_len = min(len(dummy_ids), len(full_ids))
+        for i in range(min_len):
+            if dummy_ids[i] != full_ids[i]:
+                start_idx = i
+                break
+
+        if start_idx is None:
+            LOG.warning(f"Could not find content start boundary for turn {turn_idx}")
             return None
 
+        end_idx = None
+        for i in range(min_len):
+            dummy_pos = len(dummy_ids) - 1 - i
+            full_pos = len(full_ids) - 1 - i
+            if dummy_ids[dummy_pos] != full_ids[full_pos]:
+                end_idx = full_pos + 1  # Add one to include the last token when slice
+                break
+
+        if end_idx is None:
+            LOG.warning(f"Could not find content end boundary for turn {turn_idx}")
+            return None
+
+        return start_idx, end_idx
+
+    def _build_dummy_turn(
+        self, turn: dict, content_only: bool, reasoning_only: bool
+    ) -> dict:
         thinking_key = self.prompter.template_thinking_key
-        is_mistral = "mistral" in self.tokenizer.name_or_path.lower()
-        offsets = enc["offset_mapping"]
-        n_tok = len(offsets)
-        spans: dict[int, tuple[int, int]] = {}
-        char_cursor = 0
-        tok = 0
-        for idx, turn in enumerate(turns):
-            content = turn.get("content")
-            if not isinstance(content, str) or not content:
-                continue
-            # Skip turns where find_turn applies handling the char-span can't mirror:
-            # reasoning_content (spans content + separator) and mistral's system turn.
-            if thinking_key and turn.get(thinking_key) is not None:
-                continue
-            if idx == 0 and turn.get("role") == "system" and is_mistral:
-                continue
-            pos = text.find(content, char_cursor)
-            if pos == -1:
-                continue
-            c0, c1 = pos, pos + len(content)
-            char_cursor = c1
-            # First token starting exactly at the content start (forward-only cursor).
-            while tok < n_tok and offsets[tok][0] < c0:
-                tok += 1
-            if tok >= n_tok or offsets[tok][0] != c0:
-                continue  # content not token-aligned (template glued it on) -> find_turn
-            start = tok
-            while tok < n_tok and offsets[tok][1] <= c1:
-                tok += 1
-            if tok == start or offsets[tok - 1][1] != c1:
-                continue  # content end not token-aligned -> find_turn
-            spans[idx] = (start, tok)
-        return spans
+
+        if reasoning_only:
+            # Keep content as-is, replace reasoning with dummy
+            dummy_turn = {
+                "role": turn.get("role"),
+                "content": turn.get("content", ""),
+            }
+            if thinking_key and thinking_key in turn:
+                dummy_turn[thinking_key] = "[[dummy_reasoning]]"
+            return dummy_turn
+
+        dummy_turn = {
+            "role": turn.get("role"),
+            "content": "[[dummy_message]]",
+        }
+
+        # When content_only is True, copy reasoning_content to the dummy turn so
+        # the diff only captures the content field (not reasoning + separator).
+        if content_only and thinking_key and thinking_key in turn:
+            dummy_turn[thinking_key] = turn[thinking_key]
+
+        return dummy_turn
 
     def find_turn(
         self,
@@ -793,6 +891,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         tools: list[dict] | None = None,
         content_only: bool = False,
         reasoning_only: bool = False,
+        locator: tuple[str, list[int], list[int]] | None = None,
     ):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
@@ -805,6 +904,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             reasoning_only: If True, preserve content in the dummy turn and replace
                 reasoning_content with a dummy, so the diff only captures the
                 reasoning_content field boundaries.
+            locator: Prepared render from ``_build_turn_locator``. When supplied the
+                boundaries are diffed in char space instead of by re-tokenizing.
         """
 
         if turn_idx >= len(turns):
@@ -818,74 +919,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         ):
             return -1, -1
 
-        thinking_key = self.prompter.template_thinking_key
-
-        if reasoning_only:
-            # Keep content as-is, replace reasoning with dummy
-            empty_turn = {
-                "role": turns[turn_idx].get("role"),
-                "content": turns[turn_idx].get("content", ""),
-            }
-            if thinking_key and thinking_key in turns[turn_idx]:
-                empty_turn[thinking_key] = "[[dummy_reasoning]]"
-        else:
-            empty_turn = {
-                "role": turns[turn_idx].get("role"),
-                "content": "[[dummy_message]]",
-            }
-
-            # When content_only is True, copy reasoning_content to the dummy turn so
-            # the diff only captures the content field (not reasoning + separator).
-            if content_only and thinking_key and thinking_key in turns[turn_idx]:
-                empty_turn[thinking_key] = turns[turn_idx][thinking_key]
-
-        # Create conversation versions
-        turns_with_empty = turns[:turn_idx] + [empty_turn]
-        turns_with_content = turns[: turn_idx + 1]
-
-        real_last_index = len(turns) - 1
-
-        # Generate the conversation up to the turn, with final turn replaced with dummy content
-        dummy_ids = _extract_input_ids(
-            self.prompter.build_prompt(  # type: ignore
-                turns_with_empty, tools=tools, real_last_index=real_last_index
-            )
+        dummy_turn = self._build_dummy_turn(
+            turns[turn_idx], content_only, reasoning_only
         )
 
-        # Generate the conversation up to the turn, with final turn included
-        full_ids = _extract_input_ids(
-            self.prompter.build_prompt(  # type: ignore
-                turns_with_content, tools=tools, real_last_index=real_last_index
+        span = None
+        if locator is not None:
+            span = self._find_turn_from_text(
+                turns, turn_idx, dummy_turn, tools, locator
             )
-        )
-
-        if not full_ids or not dummy_ids:
-            LOG.warning(f"Empty template generated for turn {turn_idx}")
+        if span is None:
+            span = self._find_turn_from_tokens(turns, turn_idx, dummy_turn, tools)
+        if span is None:
             return -1, -1
 
-        # Find first difference (start of content)
-        start_idx = None
-        min_len = min(len(dummy_ids), len(full_ids))
-        for i in range(min_len):
-            if dummy_ids[i] != full_ids[i]:
-                start_idx = i
-                break
-
-        if start_idx is None:
-            LOG.warning(f"Could not find content start boundary for turn {turn_idx}")
-            return -1, -1
-
-        # Find last difference (end of content)
-        end_idx = None
-        for i in range(min_len):
-            dummy_pos = len(dummy_ids) - 1 - i
-            full_pos = len(full_ids) - 1 - i
-            if dummy_ids[dummy_pos] != full_ids[full_pos]:
-                end_idx = full_pos + 1  # Add one to include the last token when slice
-                break
-
-        if end_idx is None:
-            LOG.warning(f"Could not find content end boundary for turn {turn_idx}")
+        start_idx, end_idx = span
+        if start_idx == -1 or end_idx == -1:
             return -1, -1
 
         if end_idx < start_idx:
@@ -901,9 +950,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return -1, -1
 
         LOG.debug(f"Content boundaries: {start_idx}, {end_idx}")
-        LOG.debug(
-            f"Content tokens: {self.tokenizer.convert_ids_to_tokens(full_ids[start_idx:end_idx])}"
-        )
 
         return start_idx, end_idx
 
@@ -1257,9 +1303,6 @@ class MistralStrategy(ChatTemplateStrategy):
         self.split_thinking = split_thinking
 
         self.images = "images"
-
-        self._fast_spans_disabled = False
-        self._fast_validated_samples = 0
 
         LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
