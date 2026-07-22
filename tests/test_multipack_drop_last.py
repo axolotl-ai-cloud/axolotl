@@ -34,6 +34,8 @@ def test_drop_last_subtracts_dropped_bins_from_slots(monkeypatch):
     assert [len(b) for b in batches] == [3, 3]
     # 6 remaining bins each contribute batch_max_len slots; the dropped bin is removed.
     assert sampler.total_token_slots == 6 * batch_max_len
+    # The dropped bin's token is also removed from the used-token total.
+    assert sampler.total_tokens_used == 6
 
 
 def test_drop_last_does_not_crash_on_single_incomplete_batch(monkeypatch):
@@ -47,3 +49,5 @@ def test_drop_last_does_not_crash_on_single_incomplete_batch(monkeypatch):
 
     assert batches == []
     assert sampler.total_token_slots == 0
+    # Dropping the only bin removes its token too, leaving nothing used.
+    assert sampler.total_tokens_used == 0

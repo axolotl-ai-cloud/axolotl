@@ -368,9 +368,13 @@ class MultipackBatchSampler(BatchSampler):
         if self.drop_last and batches and len(batches[-1]) < self.batch_size:
             dropped_batch = batches[-1]
             batches = batches[:-1]
-            # Adjust total_slots for the bins that were dropped along with the batch
-            if not self.sequential:
-                total_slots -= len(dropped_batch) * self.batch_max_len
+            # Adjust the packing stats for the bins that were dropped along with
+            # the batch, so efficiency() is not overstated. Each dropped bin
+            # accounts for batch_max_len slots and its examples' token lengths.
+            total_slots -= len(dropped_batch) * self.batch_max_len
+            total_used -= sum(
+                int(self.lengths[idx]) for bin_ in dropped_batch for idx in bin_
+            )
 
         # Update statistics if requested
         if set_stats:
