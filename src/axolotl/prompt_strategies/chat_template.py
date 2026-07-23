@@ -704,8 +704,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if reason not in seen:
             seen.add(reason)
             LOG.info(
-                "chat_template: locating turns via the slower token-diff path (%s). "
-                "Labels are unaffected.",
+                "chat_template: locating turns via the slower token-diff fallback (%s).",
                 reason,
             )
 
