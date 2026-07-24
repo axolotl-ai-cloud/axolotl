@@ -23,8 +23,9 @@ def encode_streaming(
     max_tokens: int,
     text_column: str = "text",
     concatenate: bool = True,
+    encoder: PreTrainedTokenizerBase | None = None,
 ) -> Dict[str, List]:
-    res = tokenizer(
+    res = (encoder or tokenizer)(
         examples[text_column],
         truncation=True,
         max_length=max_tokens - 2,
@@ -222,6 +223,7 @@ def wrap_streaming_dataset(
             max_tokens=cfg.sequence_len,
             text_column=text_column,
             concatenate=cfg.pretraining_sample_concatenation is True,
+            encoder=getattr(tokenizer, "_gigatoken_encoder", None),
         )
 
     if cfg.shuffle_merged_datasets:
