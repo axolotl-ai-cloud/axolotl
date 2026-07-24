@@ -333,4 +333,6 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     if hasattr(tokenizer, "deprecation_warnings"):
         tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
 
+    tokenizer = PLUGIN_MANAGER.post_tokenizer_load(cfg, tokenizer)
+
     return tokenizer
