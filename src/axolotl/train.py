@@ -33,7 +33,6 @@ from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
-from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except, freeze_mm_modules
@@ -199,23 +198,6 @@ def execute_training(
                     enable_flash=True,
                     enable_math=True,
                     enable_mem_efficient=True,
-                )
-            )
-
-        if cfg.context_parallel_size > 1:
-            models = [trainer.model]
-            if hasattr(trainer, "ref_model") and trainer.ref_model:
-                models.append(trainer.ref_model)
-
-            stack.enter_context(
-                SequenceParallelContextManager(
-                    models=models,
-                    context_parallel_size=cfg.context_parallel_size,
-                    gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-                    ring_attn_func=cfg.ring_attn_func,
-                    heads_k_stride=cfg.heads_k_stride,
-                    gather_outputs=cfg.rl in {RLType.GRPO, RLType.EBFT},
-                    device_mesh=trainer.accelerator.torch_device_mesh,
                 )
             )
 
