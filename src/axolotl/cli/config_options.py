@@ -2294,7 +2294,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--attn-implementation",),
         None,
         None,
-        "Attention backend. Canonical values: eager, sdpa, flash_attention_2, flash_attention_3, flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted and passed through to transformers.",
+        "Attention backend. Canonical values: eager, sdpa, flash_attention_2, flash_attention_3, flash_attention_4, flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted and passed through to transformers.",
     ),
     (
         ("--gemma4-hybrid-attn-impl/--no-gemma4-hybrid-attn-impl",),

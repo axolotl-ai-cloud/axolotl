@@ -107,6 +107,7 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "sdpa",
         "flash_attention_2",
         "flash_attention_3",
+        "flash_attention_4",
         "flex_attention",
         "xformers",
         "sage",
@@ -136,6 +137,7 @@ ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
     {
         "flash_attention_2",
         "flash_attention_3",
+        "flash_attention_4",
         "flex_attention",
         "xformers",
         "sage",

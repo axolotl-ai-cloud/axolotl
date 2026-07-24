@@ -52,6 +52,7 @@ class TestCapabilityTables:
         [
             "flash_attention_2",
             "flash_attention_3",
+            "flash_attention_4",
             "flex_attention",
             "xformers",
             "sage",
@@ -69,7 +70,16 @@ class TestCapabilityTables:
         assert impl in ATTN_IMPLS_USING_FLASH_LIB
 
     @pytest.mark.parametrize(
-        "impl", ["eager", "sdpa", "xformers", "flex_attention", "sage", "fp8"]
+        "impl",
+        [
+            "eager",
+            "sdpa",
+            "xformers",
+            "flex_attention",
+            "sage",
+            "fp8",
+            "flash_attention_4",
+        ],
     )
     def test_does_not_use_flash_lib(self, impl):
         assert impl not in ATTN_IMPLS_USING_FLASH_LIB
