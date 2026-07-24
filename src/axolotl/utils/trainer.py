@@ -271,11 +271,13 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # If it's a list, we assume we're dealing with a batch
         if isinstance(labels[0], int):
             # Single example: return a single bool
-            return np.any(labels != -100)
+            return bool(np.any(np.asarray(labels) != -100))
 
         # Batched: 'labels' is a list of lists
         # Return a list of booleans, one per sub-list
-        results = [np.any(row_labels != -100) for row_labels in labels]
+        results = [
+            bool(np.any(np.asarray(row_labels) != -100)) for row_labels in labels
+        ]
         return results
 
     try:

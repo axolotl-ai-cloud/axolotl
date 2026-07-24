@@ -4,12 +4,16 @@ test module for the axolotl.utils.data module
 
 import unittest
 
+from datasets import Dataset
 from transformers import LlamaTokenizer
 
 from axolotl.prompt_strategies.pretrain import load as load_pretrain
 from axolotl.utils.data import encode_streaming, md5
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.trainer import filter_sequences_by_length
+from axolotl.utils.trainer import (
+    filter_sequences_by_length,
+    process_datasets_for_packing,
+)
 
 from tests.hf_offline_utils import enable_hf_offline
 
@@ -160,6 +164,32 @@ class TestEncodePretraining(unittest.TestCase):
         # This should keep the first but drop the second entry
         dropped = filter_sequences_by_length(data, 15)
         self.assertEqual(dropped, [True, False])
+
+
+class TestDropNoTrainableTokens(unittest.TestCase):
+    """
+    test that process_datasets_for_packing drops samples with no trainable tokens
+    """
+
+    def _process(self, labels):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        dataset = Dataset.from_dict({"labels": labels})
+        train_dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+        return train_dataset
+
+    def test_fully_masked_sample_is_dropped(self):
+        # a sample whose labels are all -100 has zero trainable tokens and must be dropped
+        result = self._process([[-100, -100, -100], [-100, 7, -100]])
+        self.assertEqual(result["labels"], [[-100, 7, -100]])
+
+    def test_all_samples_masked_drops_everything(self):
+        result = self._process([[-100, -100], [-100, -100, -100]])
+        self.assertEqual(len(result), 0)
+
+    def test_samples_with_trainable_tokens_are_kept(self):
+        labels = [[1, 2, 3], [-100, 4, -100]]
+        result = self._process(labels)
+        self.assertEqual(result["labels"], labels)
 
 
 if __name__ == "__main__":
