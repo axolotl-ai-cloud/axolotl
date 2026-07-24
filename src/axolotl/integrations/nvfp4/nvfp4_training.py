@@ -1497,6 +1497,116 @@ def _recipe_quantize_kernel(
     tl.store(q_ptr + q_base + 7, q7, mask=mask7)
 
 
+@triton.jit
+def _recipe_quantize_nohad_kernel(
+    x_ptr,
+    global_scale_ptr,
+    q_ptr,
+    s_ptr,
+    stride_xm,
+    stride_xn,
+    M,
+    N,
+    seed,
+    M_PER_BLOCK: tl.constexpr,
+    USE_MASK: tl.constexpr,
+    STOCHASTIC: tl.constexpr,
+    USE_INT64_INDEXING: tl.constexpr,
+):
+    """No-Hadamard specialization of :func:`_recipe_quantize_kernel`.
+
+    Without the lane butterfly the tile needs no per-lane structure, so the
+    [M_PER_BLOCK, 64] tile is loaded/stored contiguously (the lane kernel does
+    16 column-strided loads and 8 strided stores) and the SR dither draws all
+    four philox outputs per counter via ``tl.rand4x`` (``tl.rand`` discards 3
+    of 4). RTN output is bit-identical to the lane kernel (max/normalize/cvt
+    are order-exact); the SR dither maps counters to elements differently, so
+    a given seed realizes a different (identically distributed, unbiased —
+    validated elementwise over 256 seeds) dither than the lane kernel.
+    """
+    E4M3_EPS = 1.5258789e-05
+    FP8_E4M3_MAX = 448.0
+    FP4_E2M1_MAX = 6.0
+    NUM_ELEM_PER_LAYOUT: tl.constexpr = 128 * 4
+    NUM_N_BLOCKS = tl.cdiv(N, 64)
+
+    pid_m = tl.program_id(1)
+    pid_n = tl.program_id(0)
+
+    if M_PER_BLOCK != 128 and pid_m * M_PER_BLOCK >= M:
+        layout_off = pid_n * NUM_ELEM_PER_LAYOUT
+        offs_m_zero = tl.arange(0, 128)[:, None]
+        scale_offs = layout_off + _recipe_scale_swizzle(offs_m_zero)
+        zero_scales = tl.full([128, 4], 0, dtype=tl.float8e4nv)
+        oob_mask = (offs_m_zero >= M) & tl.full((4,), True, dtype=tl.int1)[None, :]
+        tl.store(s_ptr + scale_offs, zero_scales, mask=oob_mask)
+        return
+
+    offs_m = pid_m * M_PER_BLOCK + tl.arange(0, M_PER_BLOCK)[:, None]
+    group = tl.arange(0, 4)[None, :]
+    if USE_INT64_INDEXING:
+        offs_m = offs_m.to(tl.int64)
+
+    cols = pid_n * 64 + tl.arange(0, 64)[None, :]
+    if USE_INT64_INDEXING:
+        cols = cols.to(tl.int64)
+    if USE_MASK:
+        lmask = (offs_m < M) & (cols < N)
+        x = tl.load(
+            x_ptr + offs_m * stride_xm + cols * stride_xn, mask=lmask, other=0.0
+        )
+    else:
+        x = tl.load(x_ptr + offs_m * stride_xm + cols * stride_xn)
+    x3 = tl.reshape(x.to(tl.float32), (M_PER_BLOCK, 4, 16))
+
+    block_amax = tl.max(tl.abs(x3), axis=2)
+    global_scale = tl.load(global_scale_ptr)
+    scales = tl.clamp(block_amax / FP4_E2M1_MAX * global_scale, E4M3_EPS, FP8_E4M3_MAX)
+    scales = scales.to(tl.float8e4nv)
+
+    if USE_MASK:
+        scale_offs_n = pid_n * 4 + group
+        scale_mask = (offs_m < M) & (scale_offs_n < (N // 16))
+        scales = tl.where(scale_mask, scales, 0.0)
+
+    offs_m_in_layout = (pid_m * M_PER_BLOCK % 128) + tl.arange(0, M_PER_BLOCK)[:, None]
+    layout_off = (
+        (pid_m * M_PER_BLOCK) // 128
+    ) * NUM_N_BLOCKS * NUM_ELEM_PER_LAYOUT + pid_n * NUM_ELEM_PER_LAYOUT
+    scale_offs = layout_off + _recipe_scale_swizzle(offs_m_in_layout)
+    tl.store(s_ptr + scale_offs, scales)
+
+    yn = x3 * (global_scale / scales.to(tl.float32))[:, :, None]
+    if STOCHASTIC:
+        ax = tl.abs(yn)
+        # Same dither-width rule as _recipe_norm_lane.
+        step = tl.where(ax <= 2.0, 0.5, tl.where(ax <= 4.0, 1.0, 2.0))
+        # One philox counter per 4 consecutive columns; rand4x yields the 4
+        # lanes' uniforms from a single call. Counters stay unique per group.
+        cols_g = pid_n * 16 + tl.arange(0, 16)[None, :]
+        goff = offs_m * (N // 4) + cols_g
+        r0, r1, r2, r3 = tl.rand4x(seed, goff)
+        # join/flatten ordering places r0..r3 at columns 4g+0..4g+3.
+        r = tl.reshape(tl.join(tl.join(r0, r2), tl.join(r1, r3)), (M_PER_BLOCK, 4, 16))
+        yn = yn + (r - 0.5) * step
+    yn = tl.clamp(yn, -6.0, 6.0)
+
+    # (lane 2k, lane 2k+1) pairs feed the e2m1x2 cvt, giving byte k of each
+    # 8-byte packed block — contiguous [M_PER_BLOCK, 32] store.
+    ye, yo = tl.split(tl.reshape(yn, (M_PER_BLOCK, 4, 8, 2)))
+    qb = _recipe_fp32_to_fp4_packed((ye, yo))
+    q2 = tl.reshape(qb, (M_PER_BLOCK, 32))
+
+    q_cols = pid_n * 32 + tl.arange(0, 32)[None, :]
+    if USE_INT64_INDEXING:
+        q_cols = q_cols.to(tl.int64)
+    if USE_MASK:
+        qmask = (offs_m < M) & (q_cols < (N // 2))
+        tl.store(q_ptr + offs_m * (N // 2) + q_cols, q2, mask=qmask)
+    else:
+        tl.store(q_ptr + offs_m * (N // 2) + q_cols, q2)
+
+
 def _recipe_m_per_block(m: int) -> int:
     return min(triton.next_power_of_2(m), 128)
 
@@ -1541,22 +1651,47 @@ def _mslk_quantize_recipe_op(
     grid = (triton.cdiv(n, 64), triton.cdiv(m, m_per_block))
     if m_per_block != 128:
         grid = (grid[0], grid[1] + 1)
-    _recipe_quantize_kernel[grid](
-        t,
-        global_scale,
-        q,
-        s,
-        t.stride(0),
-        t.stride(1),
-        m,
-        n,
-        seed,
-        M_PER_BLOCK=m_per_block,
-        USE_MASK=m % m_per_block != 0 or n % 64 != 0,
-        HADAMARD=hadamard,
-        STOCHASTIC=stochastic,
-        USE_INT64_INDEXING=m * n > 2**31 - 1,
-    )
+    if hadamard:
+        _recipe_quantize_kernel[grid](
+            t,
+            global_scale,
+            q,
+            s,
+            t.stride(0),
+            t.stride(1),
+            m,
+            n,
+            seed,
+            M_PER_BLOCK=m_per_block,
+            USE_MASK=m % m_per_block != 0 or n % 64 != 0,
+            HADAMARD=hadamard,
+            STOCHASTIC=stochastic,
+            USE_INT64_INDEXING=m * n > 2**31 - 1,
+            # Swept on sm_120: 16 warps is 1.2-1.4x over the default 4 across
+            # the wgrad shapes (the 16 strided lane loads need the extra ILP);
+            # bit-identical output at any warp count.
+            num_warps=16,
+        )
+    else:
+        # Coalesced tile kernel (no lane butterfly needed): 1.3-1.6x over the
+        # tuned lane kernel on the dgrad shapes. RTN bit-identical; SR dither
+        # equidistributed but realized differently per seed (see kernel doc).
+        _recipe_quantize_nohad_kernel[grid](
+            t,
+            global_scale,
+            q,
+            s,
+            t.stride(0),
+            t.stride(1),
+            m,
+            n,
+            seed,
+            M_PER_BLOCK=m_per_block,
+            USE_MASK=m % m_per_block != 0 or n % 64 != 0,
+            STOCHASTIC=stochastic,
+            USE_INT64_INDEXING=m * n > 2**31 - 1,
+            num_warps=8,
+        )
     return (
         q.view(torch.float4_e2m1fn_x2),
         s.view(torch.float8_e4m3fn),
