@@ -206,19 +206,61 @@ class TestExpertsClassMetadata:
     Verify our forward respects these without an actual CUDA kernel call.
     """
 
-    def test_rejects_non_gated(self):
+    def test_non_gated_requires_relu2(self):
+        # non-gated experts (nemotron_h) are supported, but only with the relu²
+        # activation; any other act on a non-gated module must fail loudly.
         from axolotl.integrations.kernels.libs.sonicmoe.experts import (
             sonicmoe_experts_forward_with_lora,
         )
 
-        fake_self = SimpleNamespace(has_gate=False)
+        fake_self = SimpleNamespace(
+            has_gate=False,
+            num_experts=2,
+            up_proj=torch.zeros(2, 4, 4),
+            down_proj=torch.zeros(2, 4, 4),
+            config=SimpleNamespace(mlp_hidden_act="silu"),
+        )
         hidden = torch.zeros(2, 4)
         top_k_index = torch.zeros(2, 1, dtype=torch.long)
         top_k_weights = torch.ones(2, 1)
 
-        with pytest.raises(ValueError, match="has_gate"):
+        if torch.cuda.is_available():
+            fake_self.up_proj = fake_self.up_proj.cuda()
+            fake_self.down_proj = fake_self.down_proj.cuda()
+            with pytest.raises(NotImplementedError, match="relu"):
+                sonicmoe_experts_forward_with_lora(
+                    fake_self, hidden.cuda(), top_k_index.cuda(), top_k_weights.cuda()
+                )
+        else:
+            # CPU is rejected before the activation check
+            with pytest.raises(ValueError, match="CUDA"):
+                sonicmoe_experts_forward_with_lora(
+                    fake_self, hidden, top_k_index, top_k_weights
+                )
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+    def test_non_gated_rejects_bias(self):
+        # a down-proj-only bias must fail loudly, not be silently dropped by the
+        # grouped fallback (which takes no bias operands)
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            sonicmoe_experts_forward_with_lora,
+        )
+
+        fake_self = SimpleNamespace(
+            has_gate=False,
+            has_bias=True,
+            num_experts=2,
+            up_proj=torch.zeros(2, 4, 4, device="cuda"),
+            down_proj=torch.zeros(2, 4, 4, device="cuda"),
+            down_proj_bias=torch.zeros(2, 4, device="cuda"),
+            config=SimpleNamespace(mlp_hidden_act="relu2"),
+        )
+        with pytest.raises(NotImplementedError, match="bias"):
             sonicmoe_experts_forward_with_lora(
-                fake_self, hidden, top_k_index, top_k_weights
+                fake_self,
+                torch.zeros(2, 4, device="cuda"),
+                torch.zeros(2, 1, dtype=torch.long, device="cuda"),
+                torch.ones(2, 1, device="cuda"),
             )
 
     def test_rejects_non_cuda(self):

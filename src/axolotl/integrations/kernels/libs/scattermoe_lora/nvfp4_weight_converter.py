@@ -236,10 +236,13 @@ class Nvfp4ExpertsDeserialize:
             fuse_nvfp4_experts,
         )
 
-        if full_layer_name is None or "gate_up_proj" not in full_layer_name:
-            proj = "down_proj"
-        else:
+        if full_layer_name is not None and "gate_up_proj" in full_layer_name:
             proj = "gate_up_proj"
+        elif full_layer_name is not None and full_layer_name.endswith("up_proj"):
+            # non-gated (nemotron_h) layout: single up projection, no gate to fuse
+            proj = "up_proj"
+        else:
+            proj = "down_proj"
 
         # cpu_ram_efficient_loading: only local-rank-0 materializes; others stay on meta and get
         # filled by the FSDP broadcast. Drop the mmap'd checkpoint data to meta BEFORE fusing.
@@ -284,11 +287,12 @@ class Nvfp4ExpertsDeserialize:
             }
 
         # gate/up fuse on the N axis (each ships its own per-tensor scale, reconciled in the core);
-        # down is a single projection. Fusion + scale reconciliation live in fuse_nvfp4_experts.
+        # up (non-gated) and down are single projections. Fusion + scale reconciliation live in
+        # fuse_nvfp4_experts.
         if proj == "gate_up_proj":
             projs = [_proj_parts("gate_proj"), _proj_parts("up_proj")]
         else:
-            projs = [_proj_parts("down_proj")]
+            projs = [_proj_parts(proj)]
         nvfp4 = fuse_nvfp4_experts(projs)
 
         module, _ = get_module_from_name(model, full_layer_name)
@@ -395,6 +399,85 @@ class Nvfp4LinearDequantize:
         return _IdentityOp()
 
 
+class Fp8LinearDequantize:
+    """ConversionOps that dequantizes one static-FP8 ``nn.Linear`` weight to bf16 in place.
+
+    modelopt MIXED_PRECISION checkpoints (e.g. Nemotron-3 NVFP4) keep the non-expert linears —
+    latent projections, shared experts, attention, mamba — as static FP8: ``weight`` (e4m3) with a
+    per-tensor ``weight_scale`` (dequant = weight · weight_scale). transformers doesn't recognize
+    ``quant_method: modelopt``, so without this the fp8 weight would load raw (unscaled) into the
+    bf16 skeleton. ``input_scale`` (static activation scale) is claimed and dropped — training
+    activations stay bf16 (W8-dequant), matching how NVFP4 non-expert linears are handled.
+    """
+
+    def convert(
+        self,
+        input_dict: dict[str, Any],
+        source_patterns: list[str] | None = None,
+        target_patterns: list[str] | None = None,
+        full_layer_name: str | None = None,
+        model: nn.Module | None = None,
+        missing_keys: set | None = None,
+        **kwargs,
+    ) -> dict[str, Any]:
+        from transformers.quantizers.quantizers_utils import get_module_from_name
+
+        def _one(pat_suffix: str, required: bool = True):
+            for key, val in input_dict.items():
+                if key.endswith(pat_suffix):
+                    return val[0] if isinstance(val, (list, tuple)) else val
+            if required:
+                raise KeyError(
+                    f"Fp8LinearDequantize: could not find '{pat_suffix}' in "
+                    f"input_dict keys: {list(input_dict.keys())}"
+                )
+            return None
+
+        w = _one(".weight")
+        if _nonrank0_meta_load():
+            weight = torch.empty(w.shape, dtype=torch.bfloat16, device="meta")
+        else:
+            scale = _one(".weight_scale").to(torch.float32).reshape(-1)
+            # per-tensor (scalar) or per-row scales both broadcast over the last dim
+            scale = scale if scale.numel() == 1 else scale.view(-1, 1)
+            weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
+
+        module, param_name = get_module_from_name(model, full_layer_name)
+        setattr(module, param_name, nn.Parameter(weight, requires_grad=False))
+        if missing_keys is not None:
+            missing_keys.discard(full_layer_name)
+        module._is_hf_initialized = True
+        return {}
+
+    @property
+    def reverse_op(self):
+        from transformers.core_model_loading import _IdentityOp
+
+        return _IdentityOp()
+
+
+def fp8_dequant_converters(fp8_suffixes: list[str]) -> list:
+    """Dequant converters for the static-FP8 linears a checkpoint actually quantizes.
+
+    ``fp8_suffixes`` are layer-relative module paths detected from the safetensors headers
+    (e.g. ``"mixer.fc1_latent_proj"``). ``input_scale`` is claimed so it doesn't land
+    UNEXPECTED. Empty list -> no converters."""
+    from transformers.core_model_loading import WeightConverter
+
+    return [
+        WeightConverter(
+            source_patterns=[
+                f"{suf}.weight_scale",
+                f"{suf}.input_scale",
+                f"{suf}.weight",
+            ],
+            target_patterns=f"{suf}.weight",
+            operations=[Fp8LinearDequantize()],
+        )
+        for suf in fp8_suffixes
+    ]
+
+
 def _nvfp4_linear_dequant_converter(target_weight: str):
     """A WeightConverter that dequantizes one NVFP4 linear (``<target_weight>``) to bf16.
 
@@ -428,16 +511,19 @@ def nonrouted_dequant_converters(nonrouted_suffixes: list[str]) -> list:
     ]
 
 
-def nvfp4_experts_weight_converters() -> list:
-    """Return the two WeightConverter instances for gemma4 NVFP4 experts.
+def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> list:
+    """Return the two WeightConverter instances for NVFP4 routed experts.
 
-    These are registered under ``"gemma4_text"`` in the transformers
-    conversion_mapping cache so the loader finds and applies them during
-    ``from_pretrained``.
+    Gated layout (default; gemma4/qwen3/...): per-expert ``gate/up`` fuse into
+    ``experts.gate_up_proj``. When ``routed_projs`` shows an up/down-only layout
+    (non-gated, nemotron_h), the up converter targets ``experts.up_proj`` instead.
+    Registered in the transformers conversion_mapping cache so the loader finds and
+    applies them during ``from_pretrained``.
     """
     from transformers.core_model_loading import WeightConverter
 
     op = Nvfp4ExpertsDeserialize()
+    nongated = routed_projs is not None and "gate_proj" not in set(routed_projs)
 
     # Source patterns MUST be ordered longest-suffix-first. transformers compiles them into a
     # single ``(?P<g0>...)|(?P<g1>...)`` alternation and resolves a key with ``re.search`` +
@@ -445,20 +531,31 @@ def nvfp4_experts_weight_converters() -> list:
     # converter is many-to-one (the ^...$ anchoring only runs for equal-length source/target
     # lists), so ``...weight`` would substring-match inside ``...weight_scale``/``...weight_scale_2``
     # and steal those keys unless the more specific suffixes appear first.
-    gate_up_converter = WeightConverter(
-        source_patterns=[
-            # gate and up each ship their own weight_scale_2 scalar; claim BOTH so neither lands
-            # as an UNEXPECTED key (the op reconciles them — equal in practice, folded if not).
-            "experts.*.gate_proj.weight_scale_2",
-            "experts.*.up_proj.weight_scale_2",
-            "experts.*.gate_proj.weight_scale",
-            "experts.*.up_proj.weight_scale",
-            "experts.*.gate_proj.weight",
-            "experts.*.up_proj.weight",
-        ],
-        target_patterns="experts.gate_up_proj",
-        operations=[op],
-    )
+    if nongated:
+        up_converter = WeightConverter(
+            source_patterns=[
+                "experts.*.up_proj.weight_scale_2",
+                "experts.*.up_proj.weight_scale",
+                "experts.*.up_proj.weight",
+            ],
+            target_patterns="experts.up_proj",
+            operations=[op],
+        )
+    else:
+        up_converter = WeightConverter(
+            source_patterns=[
+                # gate and up each ship their own weight_scale_2 scalar; claim BOTH so neither lands
+                # as an UNEXPECTED key (the op reconciles them — equal in practice, folded if not).
+                "experts.*.gate_proj.weight_scale_2",
+                "experts.*.up_proj.weight_scale_2",
+                "experts.*.gate_proj.weight_scale",
+                "experts.*.up_proj.weight_scale",
+                "experts.*.gate_proj.weight",
+                "experts.*.up_proj.weight",
+            ],
+            target_patterns="experts.gate_up_proj",
+            operations=[op],
+        )
 
     down_converter = WeightConverter(
         source_patterns=[
@@ -470,28 +567,54 @@ def nvfp4_experts_weight_converters() -> list:
         operations=[op],
     )
 
-    return [gate_up_converter, down_converter]
+    return [up_converter, down_converter]
 
 
 def register_nvfp4_expert_converters(
-    model_type: str, include_routed: bool = True, extra: list | None = None
+    model_type: str,
+    include_routed: bool = True,
+    extra: list | None = None,
+    routed_projs: list[str] | None = None,
 ) -> None:
     """Seed the transformers conversion_mapping cache with NVFP4 converters for ``model_type``.
 
     The routed-expert converters (``Nvfp4ExpertsDeserialize`` + the ``experts.*.{proj}.weight*``
-    source patterns) fuse per-expert ``gate/up/down`` into the model's 3D expert params; they are
-    registered when ``include_routed`` (gate this on the checkpoint actually exporting per-expert
-    NVFP4). ``extra`` carries any per-checkpoint non-routed dequant converters (built from the
-    detected index layout). The only per-model knob is which ``model_type`` the loader looks the
-    mapping up under. Safe to call repeatedly (idempotent via overwrite on re-entry).
+    source patterns) fuse per-expert ``gate/up/down`` (or non-gated ``up/down`` when
+    ``routed_projs`` shows no gate) into the model's 3D expert params; they are registered when
+    ``include_routed`` (gate this on the checkpoint actually exporting per-expert NVFP4).
+    ``extra`` carries any per-checkpoint non-routed dequant converters (built from the detected
+    index layout). Non-expert entries of the model's EXISTING mapping (e.g. nemotron_h's
+    ``backbone.`` → ``model.`` renames) are preserved — registration replaces the whole
+    per-model list, so dropping them would break the load. The model's built-in bf16 expert-merge
+    converters are replaced (they'd fight ours for the same source keys). Safe to call repeatedly
+    (our converters are tagged and filtered out of the preserved set on re-entry).
     """
-    from transformers.conversion_mapping import register_checkpoint_conversion_mapping
-
-    converters = (nvfp4_experts_weight_converters() if include_routed else []) + list(
-        extra or []
+    from transformers.conversion_mapping import (
+        get_checkpoint_conversion_mapping,
+        register_checkpoint_conversion_mapping,
     )
+
+    converters = (
+        nvfp4_experts_weight_converters(routed_projs) if include_routed else []
+    ) + list(extra or [])
     if not converters:
         return
+
+    def _targets_experts(conv) -> bool:
+        tp = getattr(conv, "target_patterns", None) or []
+        if isinstance(tp, str):
+            tp = [tp]
+        return any("experts." in t for t in tp)
+
+    def _is_ours(conv) -> bool:
+        ours = (Nvfp4ExpertsDeserialize, Nvfp4LinearDequantize, Fp8LinearDequantize)
+        return any(
+            isinstance(op, ours) for op in (getattr(conv, "operations", None) or [])
+        )
+
+    existing = get_checkpoint_conversion_mapping(model_type) or []
+    keep = [c for c in existing if not _targets_experts(c) and not _is_ours(c)]
+    converters = keep + converters
     try:
         register_checkpoint_conversion_mapping(model_type, converters)
     except ValueError:
@@ -513,9 +636,12 @@ def register_gemma4_nvfp4_converters() -> None:
 def register_nvfp4_converters_for_layout(model_type: str, layout: dict) -> None:
     """Register NVFP4 converters built from a detected checkpoint ``layout`` (see
     :func:`...nvfp4_moe_loading.inspect_nvfp4_layout`): routed experts fused into packed
-    NVFP4Tensor (when present), and each detected non-routed NVFP4 linear dequantized to bf16."""
+    NVFP4Tensor (when present), each detected non-routed NVFP4 linear dequantized to bf16,
+    and each static-FP8 linear (MIXED_PRECISION checkpoints) dequantized to bf16."""
     register_nvfp4_expert_converters(
         model_type,
         include_routed=layout.get("routed_present", False),
-        extra=nonrouted_dequant_converters(layout.get("nonrouted_suffixes", [])),
+        routed_projs=layout.get("routed_projs"),
+        extra=nonrouted_dequant_converters(layout.get("nonrouted_suffixes", []))
+        + fp8_dequant_converters(layout.get("fp8_suffixes", [])),
     )

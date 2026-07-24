@@ -124,8 +124,11 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `hunyuan_v1_moe`  |    Yes    |   Yes    |  -  |  -  |
 | `gemma4_text`     |    Yes    |   Yes    | Yes |  -  |
 | `gpt_oss`         |    Yes    |   Yes    |  -  |  -  |
+| `nemotron_h`      |    Yes    |   Yes¹   | Yes | Yes¹ |
 
 NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its own fused-kernel path), so it is not a row above.
+
+¹ `nemotron_h` covers Nemotron-3 latentmoe: **non-gated** relu² experts (`up_proj`/`down_proj`, no gate), operating in `moe_latent_size` when set (tokens arrive pre-projected by the block's `fc1/fc2_latent_proj`). ScatterMoE handles the non-gated layout natively (the activation runs between the two Triton grouped GEMMs). SonicMoE routes non-gated experts through a single-launch `torch._grouped_mm` MLP with a hand-written backward, because the current sonic-moe op layer only allows gated epilogues — quack itself ships reglu/relu_sq, and `relu²(h) == h·relu(h)` maps exactly onto REGLU with the up projection duplicated into the gate half; `AXOLOTL_SONICMOE_NONGATED_FUSED=1` takes that fused CUTLASS path once the sonic-moe build relaxes its swiglu/geglu assert (validated locally against a patched build). Nemotron-3 NVFP4 checkpoints ship modelopt `MIXED_PRECISION` (NVFP4 routed experts, static-FP8 shared path); the `nemotron_h` adapter fuses the per-expert NVFP4 `up/down` triples into packed 3D NVFP4 params (kept quantized; the grouped train paths read them W4A16) and dequantizes the FP8 linears (incl. the latent projections) to bf16 at load.
 
 `gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a sigmoid-GLU activation with clamping. Both forwards read these flags off `self` and dispatch accordingly: the ScatterMoE forward handles the transposed/interleaved/biased layout and clamped sigmoid-GLU via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM); the SonicMoE forward uses the upstream CUTLASS kernel.
 
