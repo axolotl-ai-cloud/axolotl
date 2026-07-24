@@ -204,6 +204,20 @@ def _quantize(t: torch.Tensor, policy: QuantPolicy):
             per_tensor_scale=inv_gs.to(torch.float32),
             is_swizzled_scales=True,
         )
+    if not policy.hadamard and not policy.stochastic and _recipe_fusion_available(t):
+        # Plain RTN fast path: one triton launch, bit-identical to to_nvfp4
+        # (TORCHAO_SCALE mode mirrors torchao's scale math exactly), replacing
+        # the traced torchao quantizer that dominated the compiled FFT
+        # weight-quant prologue. Swizzled scales; _addmm handles both layouts.
+        q, s, pts = _mslk_quantize_rtn_op(t)
+        return NVFP4Tensor(
+            q,
+            s,
+            _BLOCK_SIZE,
+            t.dtype,
+            per_tensor_scale=pts,
+            is_swizzled_scales=True,
+        )
     if policy.hadamard:
         t = _apply_rht(t).contiguous()
     # Floor amax: an all-zero tile gives per_tensor_scale=0, then SR's
@@ -218,6 +232,21 @@ def _quantize(t: torch.Tensor, policy: QuantPolicy):
             t, block_size=_BLOCK_SIZE, per_tensor_scale=per_tensor_scale
         )
     return _to_nvfp4_chunked(t, per_tensor_scale, None)
+
+
+def _quantize_stored_rtn(t: torch.Tensor):
+    """Plain RTN quant to the row-sliceable NON-swizzled torchao layout.
+
+    For STORED weights (frozen-base buffers): the fused FP4 cross-entropy
+    row-slices the packed store and FSDP shards it by row, both of which the
+    swizzled-scale fast path breaks. Transient per-step operands go through
+    ``_quantize`` (which may return swizzled scales); stored layouts use this.
+    """
+    from torchao.prototype.mx_formats.nvfp4_tensor import per_tensor_amax_to_scale
+
+    t = t.contiguous()
+    pts = per_tensor_amax_to_scale(_abs_amax(t).clamp(min=1e-12))
+    return _to_nvfp4_chunked(t, pts, None)
 
 
 def _fp4_mm(a_hp: torch.Tensor, b_hp: torch.Tensor, a_pol, b_pol) -> torch.Tensor:
@@ -851,9 +880,11 @@ class NVFP4ComputeBaseLinear(nn.Module):
         # Store CONTIGUOUS (non-transposed) layouts (.t() applied at GEMM time):
         # contiguous inner qdata/scale is required for FSDP2 rank-0 broadcast.
         # fprop: stored W ([N,K]) blocked along K; GEMM uses w_fprop.t() ([K,N]).
-        w_fprop = _quantize(w, QuantPolicy())
+        # Stored layouts must stay non-swizzled (fused-CE row slicing + FSDP
+        # row sharding), so bypass _quantize's swizzled fast path.
+        w_fprop = _quantize_stored_rtn(w)
         # dgrad: stored W.T ([K,N]) blocked along N; GEMM uses w_dgrad.t() ([N,K]).
-        w_dgrad = _quantize(w.t().contiguous(), QuantPolicy())
+        w_dgrad = _quantize_stored_rtn(w.t().contiguous())
         # FSDP2 shards each layout by row on its own axis (fprop rows=N, dgrad=K).
         if fsdp:
             w_fprop = _to_fsdp_nvfp4(w_fprop)
@@ -1512,6 +1543,7 @@ def _recipe_quantize_nohad_kernel(
     USE_MASK: tl.constexpr,
     STOCHASTIC: tl.constexpr,
     USE_INT64_INDEXING: tl.constexpr,
+    TORCHAO_SCALE: tl.constexpr,
 ):
     """No-Hadamard specialization of :func:`_recipe_quantize_kernel`.
 
@@ -1523,8 +1555,15 @@ def _recipe_quantize_nohad_kernel(
     are order-exact); the SR dither maps counters to elements differently, so
     a given seed realizes a different (identically distributed, unbiased —
     validated elementwise over 256 seeds) dither than the lane kernel.
+
+    ``TORCHAO_SCALE=True`` mirrors ``torchao.nvfp4_quantize``'s two-level
+    scale math bit-exactly (``global_scale_ptr`` then holds the PER-TENSOR
+    scale ``amax/2688``, block scales are ``(block_amax/6)/pts`` with
+    torchao's 2^-6 clamp floor, normalize is ``x * ((1/pts)/scale)``) so the
+    packed output is bit-identical to ``NVFP4Tensor.to_nvfp4``.
     """
     E4M3_EPS = 1.5258789e-05
+    E4M3_EPS_TORCHAO = 0.015625
     FP8_E4M3_MAX = 448.0
     FP4_E2M1_MAX = 6.0
     NUM_ELEM_PER_LAYOUT: tl.constexpr = 128 * 4
@@ -1561,8 +1600,30 @@ def _recipe_quantize_nohad_kernel(
 
     block_amax = tl.max(tl.abs(x3), axis=2)
     global_scale = tl.load(global_scale_ptr)
-    scales = tl.clamp(block_amax / FP4_E2M1_MAX * global_scale, E4M3_EPS, FP8_E4M3_MAX)
-    scales = scales.to(tl.float8e4nv)
+    if TORCHAO_SCALE:
+        # div_rn: triton's `/` is not correctly rounded for f32; IEEE division
+        # is required to reproduce torchao's torch-side divisions bit-exactly.
+        # torch divides a tensor by a python scalar as mul-by-reciprocal, so
+        # `amax / 6` must be `amax * f32(1/6)`; the /pts step is tensor/tensor
+        # (true IEEE division) hence div_rn.
+        sb = tl.clamp(
+            tl.math.div_rn(block_amax * 0.16666666666666666, global_scale),
+            E4M3_EPS_TORCHAO,
+            FP8_E4M3_MAX,
+        )
+        # Round to the e4m3 grid in f32 bit-math (RNE to 3 mantissa bits):
+        # triton's f32->float8e4nv cast is not round-to-nearest-even, so it
+        # cannot reproduce torch's .to(float8_e4m3fn). The clamp keeps values
+        # in e4m3's normal range, where mantissa-truncation RNE is exact.
+        sbits = sb.to(tl.int32, bitcast=True)
+        sbits = (sbits + 0x7FFFF + ((sbits >> 20) & 1)) & ~0xFFFFF
+        scales_f32 = sbits.to(tl.float32, bitcast=True)
+        scales = scales_f32.to(tl.float8e4nv)
+    else:
+        scales = tl.clamp(
+            block_amax / FP4_E2M1_MAX * global_scale, E4M3_EPS, FP8_E4M3_MAX
+        )
+        scales = scales.to(tl.float8e4nv)
 
     if USE_MASK:
         scale_offs_n = pid_n * 4 + group
@@ -1576,7 +1637,11 @@ def _recipe_quantize_nohad_kernel(
     scale_offs = layout_off + _recipe_scale_swizzle(offs_m_in_layout)
     tl.store(s_ptr + scale_offs, scales)
 
-    yn = x3 * (global_scale / scales.to(tl.float32))[:, :, None]
+    if TORCHAO_SCALE:
+        recip = tl.math.div_rn(tl.math.div_rn(1.0, global_scale), scales_f32)
+        yn = x3 * recip[:, :, None]
+    else:
+        yn = x3 * (global_scale / scales.to(tl.float32))[:, :, None]
     if STOCHASTIC:
         ax = tl.abs(yn)
         # Same dither-width rule as _recipe_norm_lane.
@@ -1690,6 +1755,7 @@ def _mslk_quantize_recipe_op(
             USE_MASK=m % m_per_block != 0 or n % 64 != 0,
             STOCHASTIC=stochastic,
             USE_INT64_INDEXING=m * n > 2**31 - 1,
+            TORCHAO_SCALE=False,
             num_warps=8,
         )
     return (
@@ -1708,6 +1774,65 @@ def _(t, hadamard: bool, stochastic: bool):
         t.new_empty(m, k // 2, dtype=torch.float4_e2m1fn_x2),
         t.new_empty(rm, rk, dtype=torch.float8_e4m3fn),
         t.new_empty((), dtype=t.dtype),
+    )
+
+
+@torch.library.custom_op("axolotl_nvfp4::quantize_two_level_rtn", mutates_args=())
+def _mslk_quantize_rtn_op(
+    t: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Two-level RTN quant, bit-identical to ``NVFP4Tensor.to_nvfp4``.
+
+    One triton launch (coalesced tile kernel in TORCHAO_SCALE mode) replacing
+    the traced torchao quantizer chain (f32 upcast + amax + rshift packing),
+    which dominated the FFT per-step weight-quant prologue under compile.
+    Returns ``(qdata, swizzled_scale, per_tensor_scale)``; the caller wraps
+    them into an ``NVFP4Tensor`` with swizzled scales.
+    """
+    from torchao.prototype.mx_formats.nvfp4_tensor import per_tensor_amax_to_scale
+
+    t = t.contiguous()
+    m, n = t.shape
+    pts = per_tensor_amax_to_scale(_abs_amax(t).clamp(min=1e-12))
+    q = t.new_empty(m, n // 2, dtype=torch.uint8)
+    rm, rk = _swizzled_scale_shape(m, n)
+    s = t.new_empty(rm, rk, dtype=torch.float8_e4m3fn)
+    m_per_block = _recipe_m_per_block(m)
+    grid = (triton.cdiv(n, 64), triton.cdiv(m, m_per_block))
+    if m_per_block != 128:
+        grid = (grid[0], grid[1] + 1)
+    _recipe_quantize_nohad_kernel[grid](
+        t,
+        pts,
+        q,
+        s,
+        t.stride(0),
+        t.stride(1),
+        m,
+        n,
+        0,
+        M_PER_BLOCK=m_per_block,
+        USE_MASK=m % m_per_block != 0 or n % 64 != 0,
+        STOCHASTIC=False,
+        USE_INT64_INDEXING=m * n > 2**31 - 1,
+        TORCHAO_SCALE=True,
+        num_warps=8,
+    )
+    return (
+        q.view(torch.float4_e2m1fn_x2),
+        s.view(torch.float8_e4m3fn),
+        pts,
+    )
+
+
+@_mslk_quantize_rtn_op.register_fake
+def _(t):
+    m, k = t.shape
+    rm, rk = _swizzled_scale_shape(m, k)
+    return (
+        t.new_empty(m, k // 2, dtype=torch.float4_e2m1fn_x2),
+        t.new_empty(rm, rk, dtype=torch.float8_e4m3fn),
+        t.new_empty((), dtype=torch.float32),
     )
 
 
