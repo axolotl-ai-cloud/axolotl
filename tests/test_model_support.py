@@ -155,7 +155,11 @@ class TestPaddleOCRVLSupport:
         assert resolved.is_multimodal is True
         assert resolved.family == "image_text_to_text"
         assert support.is_multimodal is True
-        assert set(support.capabilities) == {"cut_cross_entropy", "liger"}
+        assert set(support.capabilities) == {
+            "cut_cross_entropy",
+            "liger",
+            "lora_kernels",
+        }
 
     def test_auto_model_cls(self):
         support = get_model_support("paddleocr_vl")
