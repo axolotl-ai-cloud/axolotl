@@ -74,7 +74,7 @@ def add_options_from_dataclass(config_class: Type[Any]) -> Callable:
                 function = click.option(
                     option_name,
                     default=field.default,
-                    help=field.metadata.get("description"),
+                    help=field.metadata.get("help"),
                 )(function)
             else:
                 option_name = f"--{field.name.replace('_', '-')}"
@@ -82,7 +82,7 @@ def add_options_from_dataclass(config_class: Type[Any]) -> Callable:
                     option_name,
                     type=field_type,
                     default=field.default,
-                    help=field.metadata.get("description"),
+                    help=field.metadata.get("help"),
                 )(function)
 
         return function
