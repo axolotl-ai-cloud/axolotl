@@ -43,6 +43,13 @@ def _ensure_builtins() -> None:
 
 
 def _validate_model_types(support_cls: type[ModelSupport]) -> tuple[str, ...]:
+    # A non-descriptor class would poison registry-wide matcher scans for
+    # unrelated models, so reject it at registration time.
+    if not (isinstance(support_cls, type) and issubclass(support_cls, ModelSupport)):
+        raise TypeError(
+            f"register_model_support requires a ModelSupport subclass, "
+            f"got {support_cls!r}"
+        )
     model_types = support_cls.model_types
     if not isinstance(model_types, tuple) or not model_types:
         raise ValueError(

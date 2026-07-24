@@ -108,6 +108,17 @@ def test_registration_rejects_invalid_model_types(isolated_registry, model_types
         isolated_registry.register_model_support(invalid_support)
 
 
+def test_registration_rejects_non_model_support_class(isolated_registry):
+    class NotADescriptor:
+        model_types = ("duck_arch",)
+        profile = None
+
+    with pytest.raises(TypeError, match="ModelSupport subclass"):
+        isolated_registry.register_model_support(NotADescriptor)
+
+    assert isolated_registry.get_model_support("duck_arch") is None
+
+
 def test_unhashable_support_registered_under_aliases_matches_once(isolated_registry):
     @dataclass
     class UnhashableSupport(ModelSupport):
