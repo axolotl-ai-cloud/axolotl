@@ -291,6 +291,15 @@ def register_sonicmoe_experts() -> None:
     except (ImportError, AttributeError):
         pass
 
+    # FSDP2 support for NVFP4Tensor (split/view/as_strided + all-gather hooks) so the quantized
+    # expert weights can be sharded across GPUs (torchao ships none).
+    try:
+        from ..scattermoe_lora.nvfp4_fsdp import patch_nvfp4_fsdp
+
+        patch_nvfp4_fsdp()
+    except (ImportError, AttributeError):
+        pass
+
 
 # Re-export utilities for tests / external callers.
 __all__ = [
