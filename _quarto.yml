@@ -200,6 +200,8 @@ quartodoc:
         - monkeypatch.models.gemma4_unified.fused_attn
         - monkeypatch.models.granitemoehybrid.modeling
         - model_support.base
+        - model_support.profile
+        - model_support.templates
         - model_support.kimi_linear.patch_kimi_linear
         - model_support.registry
         - monkeypatch.models.llama4.modeling

@@ -2,12 +2,14 @@
 Model loader class implementation for loading, configuring, and patching various models.
 """
 
+from __future__ import annotations
+
 import gc
 import math
 import os
 from functools import cached_property
 from importlib.util import find_spec
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import peft
 import torch
@@ -47,7 +49,7 @@ from axolotl.loaders.utils import (
     get_module_class_from_name,
     load_model_config,
 )
-from axolotl.model_support import get_model_support
+from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -65,6 +67,9 @@ from axolotl.utils.fp32_norms import (
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
+
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -106,6 +111,7 @@ class ModelLoader:
         cfg: DictDefault,
         tokenizer: PreTrainedTokenizerBase,
         *,
+        processor: ProcessorMixin | None = None,
         inference: bool = False,
         reference_model: bool = False,
         **kwargs,
@@ -124,6 +130,7 @@ class ModelLoader:
         """
         self.cfg = cfg
         self.tokenizer = tokenizer
+        self.processor = processor
         self.inference: bool = inference
         self.reference_model: bool = reference_model
 
@@ -147,6 +154,9 @@ class ModelLoader:
             cfg=cfg,
             model_config=self.model_config,
             inference=inference,
+            tokenizer=tokenizer,
+            processor=self.processor,
+            reference_model=reference_model,
         )
 
     @cached_property
@@ -558,16 +568,27 @@ class ModelLoader:
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
-        (set at `__init__`). When using a multimodal model, `self.auto_model_loader`
-        should be set according to the type of the model.
+        (set at `__init__`). Registered model profiles can select another loader;
+        unregistered multimodal models use the legacy mapping.
         """
-        if self.cfg.is_multimodal:
-            support = get_model_support(self.model_config.model_type)
-            auto_model_loader = support.get_auto_model_cls() if support else None
-            if auto_model_loader is None:
-                auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
-                    self.model_config.model_type, AutoModelForImageTextToText
-                )
+        support = get_model_support(self.model_config.model_type)
+        resolved_support = (
+            resolve_model_support(support) if support is not None else None
+        )
+        auto_model_provider = (
+            resolved_support.strategies.auto_model_cls
+            if resolved_support is not None
+            else None
+        )
+        auto_model_loader = (
+            auto_model_provider() if auto_model_provider is not None else None
+        )
+        if auto_model_loader is not None:
+            self.auto_model_loader = auto_model_loader
+        elif self.cfg.is_multimodal:
+            auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
+                self.model_config.model_type, AutoModelForImageTextToText
+            )
             if isinstance(auto_model_loader, str):
                 auto_model_loader = AutoModelForImageTextToText
             self.auto_model_loader = auto_model_loader
