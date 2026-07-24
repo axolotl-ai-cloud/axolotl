@@ -98,6 +98,8 @@ class CustomSupportedOptimizers(str, Enum):
     flash_sgdw = "flash_sgdw"
     flash_lion = "flash_lion"
     q_galore_adamw8bit = "q_galore_adamw8bit"
+    gefenx = "gefenx"
+    gefenx_muon = "gefenx_muon"
 
 
 # Accepted canonical names; hub-kernel paths (containing "/") bypass this set.
