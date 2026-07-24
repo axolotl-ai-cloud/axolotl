@@ -247,7 +247,7 @@ class TelemetryManager:
             if isinstance(value, dict):
                 return {k: redact_value(v, k) for k, v in value.items()}
             if isinstance(value, list):
-                return [redact_value(item) for item in value]
+                return [redact_value(item, key) for item in value]
 
             return value
 
