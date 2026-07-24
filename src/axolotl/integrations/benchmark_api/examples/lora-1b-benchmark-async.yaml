@@ -1,0 +1,64 @@
+# Async variant: the runner replies immediately and Axolotl polls the job in
+# the background, so training is not blocked by a long benchmark.
+# The benchmark runner (a separate HTTP service you run) owns all
+# benchmark-specific logic; Axolotl just POSTs the checkpoint path and logs the
+# scalar metrics it returns.
+
+base_model: NousResearch/Llama-3.2-1B
+
+plugins:
+  - axolotl.integrations.benchmark_api.BenchmarkAPIPlugin
+
+datasets:
+  - path: teknium/GPT4-LLM-Cleaned
+    type: alpaca
+
+val_set_size: 0.1
+output_dir: ./outputs/lora-benchmark-out
+
+adapter: lora
+sequence_len: 2048
+sample_packing: true
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+  - gate_proj
+  - down_proj
+  - up_proj
+
+gradient_accumulation_steps: 2
+micro_batch_size: 2
+num_epochs: 1
+optimizer: adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+gradient_checkpointing: true
+logging_steps: 1
+warmup_ratio: 0.1
+saves_per_epoch: 4
+
+benchmark_api:
+  endpoint: http://localhost:8765/eval
+  execution_mode: async
+  poll_interval_steps: 10
+  run_on:
+    - save
+    - train_end
+  timeout_sec: 3600
+  fail_training_on_error: false
+
+  early_stopping:
+    enabled: true
+    metric: eval/ocr/cer_mean
+    mode: lower
+    patience: 3
+    min_delta: 0.002
+    threshold: 0.075
