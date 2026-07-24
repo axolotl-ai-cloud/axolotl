@@ -62,7 +62,48 @@ def prepare_datasets(
     """
     if cfg.streaming or cfg.pretraining_dataset:
         return _prepare_streaming_dataset(cfg, tokenizer, processor)
+    if (
+        cfg.skip_prepare_dataset
+        and cfg.sample_packing
+        and processor is not None
+        and (cfg.processor_type or cfg.is_multimodal)
+    ):
+        return _prepare_skip_prepare_mm_dataset(cfg, tokenizer, processor)
     return _prepare_standard_dataset(cfg, tokenizer, processor)
+
+
+def _prepare_skip_prepare_mm_dataset(
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin,
+) -> tuple[IterableDataset, Dataset | None, int, list[Prompter | None]]:
+    """Route `skip_prepare_dataset` MM sample packing to the buffered packer.
+
+    The dataset is loaded as a materialized map dataset (streaming=False) and packed
+    on the fly, so no cached/prepared dataset is required.
+    """
+    # Validation enforces a single `datasets:` entry for this route.
+    dataset_config = DictDefault(cfg.datasets[0])
+    if not hasattr(dataset_config, "split") or not dataset_config.split:
+        dataset_config.split = "train"
+
+    train_dataset = _load_skip_prepare_mm_dataset(
+        dataset_config, cfg, tokenizer, processor
+    )
+
+    eval_dataset = None
+    if cfg.test_datasets:
+        _, eval_dataset, _ = _load_and_prepare_datasets(
+            tokenizer,
+            cfg,
+            split="test",
+            processor=processor,
+            streaming=False,
+        )
+
+    # Pack count is unknown without iterating; mirror the streaming path.
+    total_num_steps = cfg.max_steps if cfg.max_steps else -1
+    return train_dataset, eval_dataset, total_num_steps, []
 
 
 def _prepare_standard_dataset(
@@ -136,13 +177,19 @@ def _prepare_streaming_dataset(
         dataset_config = _extract_pretraining_config(cfg)
         train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
     elif cfg.sample_packing:
-        # TODO(djsaunde): Implement for multiple datasets
+        # Validation enforces a single `datasets:` entry for this route.
         dataset_config = DictDefault(cfg.datasets[0])
 
         # Ensure we have a split set - default to 'train' if not specified
         if not hasattr(dataset_config, "split") or not dataset_config.split:
             dataset_config.split = "train"
-        train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
+
+        if processor is not None and (cfg.processor_type or cfg.is_multimodal):
+            train_dataset = _load_streaming_mm_dataset(
+                dataset_config, cfg, tokenizer, processor
+            )
+        else:
+            train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
     else:
         # Use legacy loading function for non-packed streaming datasets
         train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
@@ -246,6 +293,56 @@ def _load_streaming_dataset(
 
     # Format for PyTorch
     return train_dataset.with_format("torch")
+
+
+def _load_streaming_mm_dataset(
+    dataset_config: DictDefault,
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin,
+) -> IterableDataset:
+    """Buffered multimodal packer for streaming / non-prepared MM sample_packing (see utils/data/mm_streaming.py)."""
+    # Single-process by design (dispatch_batches forced off, num_workers forced to
+    # 0), so — unlike the pretraining loader — no non-main-rank placeholder guard.
+    from axolotl.utils.data.mm_streaming import build_streaming_mm_dataset
+
+    raw_dataset = load_dataset(
+        dataset_config["path"],
+        streaming=True,
+        split=dataset_config["split"],
+        name=dataset_config.get("name"),
+        data_files=dataset_config.get("data_files"),
+    )
+    if isinstance(raw_dataset, (DatasetDict, IterableDatasetDict)):
+        raw_dataset = raw_dataset[dataset_config["split"]]
+
+    return build_streaming_mm_dataset(raw_dataset, cfg, tokenizer, processor)
+
+
+def _load_skip_prepare_mm_dataset(
+    dataset_config: DictDefault,
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin,
+) -> IterableDataset:
+    """Buffered MM packer over a materialized map dataset for `skip_prepare_dataset`.
+
+    Mirrors `_load_streaming_mm_dataset` but loads with `streaming=False`; the packer
+    tokenizes rows on the fly, so a map dataset's rows iterate fine (no caching).
+    """
+    from axolotl.utils.data.mm_streaming import build_streaming_mm_dataset
+
+    raw_dataset = load_dataset(
+        dataset_config["path"],
+        streaming=False,
+        split=dataset_config["split"],
+        name=dataset_config.get("name"),
+        data_files=dataset_config.get("data_files"),
+    )
+    if isinstance(raw_dataset, (DatasetDict, IterableDatasetDict)):
+        raw_dataset = raw_dataset[dataset_config["split"]]
+
+    return build_streaming_mm_dataset(raw_dataset, cfg, tokenizer, processor)
 
 
 def _create_placeholder_dataset() -> IterableDataset:

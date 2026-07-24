@@ -7,6 +7,8 @@ from typing import Literal, Optional
 
 from PIL.Image import Resampling
 
+from axolotl.utils.samplers.balanced import FIRST_FIT_DECREASING, PackingStrategy
+
 
 @dataclass
 class AxolotlTrainingMixins:
@@ -40,6 +42,10 @@ class AxolotlTrainingMixins:
     sample_packing_mp_start_method: str | None = field(
         default=None,
         metadata={"help": "The multiprocessing start method to use."},
+    )
+    sample_packing_strategy: PackingStrategy = field(
+        default=FIRST_FIT_DECREASING,
+        metadata={"help": "The sampler packing algorithm to use."},
     )
     sample_packing_drop_attention_mask: bool = field(
         default=False,

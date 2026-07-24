@@ -23,6 +23,29 @@ LOG = get_logger(__name__)
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 
+def _is_multimodal_packing(data) -> bool:
+    """True when the config is a multimodal run using sample packing."""
+    is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
+    packing = bool(data.get("sample_packing") or data.get("eval_sample_packing"))
+    return is_multimodal and packing
+
+
+def _is_buffered_mm_packing(data) -> bool:
+    """True when MM sample packing routes to the buffered (tokenize-on-the-fly) packer.
+
+    Both `streaming` and `skip_prepare_dataset` mean the dataset is never prepared
+    with cached `length`/media, so packing runs through the buffered packer. The
+    buffered packer only serves the train set, so `eval_sample_packing` alone
+    does not qualify.
+    """
+    is_multimodal = bool(data.get("processor_type") or data.get("is_multimodal"))
+    return (
+        is_multimodal
+        and bool(data.get("sample_packing"))
+        and bool(data.get("streaming") or data.get("skip_prepare_dataset"))
+    )
+
+
 class DatasetValidationMixin:
     """Validation methods related to dataset configuration."""
 
@@ -177,6 +200,44 @@ class DatasetValidationMixin:
                 )
                 data["remove_unused_columns"] = False
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mm_sample_packing(cls, data):
+        if not _is_multimodal_packing(data):
+            return data
+
+        # `streaming` or `skip_prepare_dataset` (no cached `length`/media) routes to
+        # the buffered multimodal packer instead of the materialized
+        # MultipackBatchSampler; both tokenize on the fly.
+
+        if data.get("remove_unused_columns") is None:
+            LOG.info(
+                "setting `remove_unused_columns: false` for multimodal sample packing"
+            )
+            data["remove_unused_columns"] = False
+        elif data.get("remove_unused_columns") is not False:
+            raise ValueError(
+                "Multimodal sample packing requires `remove_unused_columns: false` so "
+                "media columns (e.g. `pixel_values`) survive collation."
+            )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mm_sample_packing_streaming(cls, data):
+        # The buffered MM packer only serves the `streaming: true` path; a
+        # `pretraining_dataset` routes to the text streaming loader, which would
+        # silently drop media.
+        if _is_multimodal_packing(data) and data.get("pretraining_dataset"):
+            raise ValueError(
+                "Multimodal sample packing is not supported with "
+                "`pretraining_dataset` (media would be silently dropped). Use "
+                "`streaming: true` with a `datasets:` entry for streaming "
+                "multimodal packing instead."
+            )
         return data
 
 
@@ -1331,7 +1392,10 @@ class PretrainingValidationMixin:
     @classmethod
     def check_pretraining_split_batches_accelerate(cls, data):
         # alternatively set ACCELERATE_SPLIT_BATCHES=False
-        if data.get("pretraining_dataset"):
+        # Accelerate's default dispatch would slice pixel_values' non-batch leading
+        # dim (patches, not batch), corrupting media; force it off for streaming MM.
+        buffered_mm_packing = _is_buffered_mm_packing(data)
+        if data.get("pretraining_dataset") or buffered_mm_packing:
             accelerator_config = data.get("accelerator_config", {})
             if not accelerator_config:
                 data["accelerator_config"] = {
@@ -1343,6 +1407,26 @@ class PretrainingValidationMixin:
                     data["accelerator_config"]["split_batches"] = False
                 if accelerator_config.get("dispatch_batches") is None:
                     data["accelerator_config"]["dispatch_batches"] = False
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def force_num_workers_zero_for_streaming_mm(cls, data):
+        # The buffered MM packer has no worker sharding, so num_workers > 0 would
+        # re-iterate the source per worker and duplicate rows.
+        if _is_buffered_mm_packing(data):
+            if data.get("dataloader_num_workers") or (
+                data.get("dataloader_prefetch_factor") is not None
+            ):
+                LOG.warning(
+                    "Overriding `dataloader_num_workers` to 0 (and "
+                    "`dataloader_prefetch_factor` to None) for buffered multimodal "
+                    "sample packing; the buffered packer has no worker sharding, so "
+                    "workers > 0 would duplicate rows."
+                )
+            data["dataloader_num_workers"] = 0
+            # prefetch_factor is only valid with workers > 0.
+            data["dataloader_prefetch_factor"] = None
         return data
 
     @model_validator(mode="before")
@@ -1372,6 +1456,47 @@ class PretrainingValidationMixin:
             raise ValueError(
                 "max_steps must be set when using streaming datasets. "
                 "Trainer cannot infer dataset length for iterable datasets."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_skip_prepare_mm_packing_w_max_steps(cls, data):
+        # The buffered MM packer yields an unknown number of packs, so epoch length
+        # is unknowable; a length-less IterableDataset reaches HF Trainer and needs
+        # max_steps. streaming/pretraining are covered by their own validators above.
+        if (
+            _is_buffered_mm_packing(data)
+            and not data.get("streaming")
+            and not data.get("pretraining_dataset")
+            and not data.get("max_steps")
+        ):
+            raise ValueError(
+                "max_steps must be set when using skip_prepare_dataset with "
+                "multimodal sample_packing. The buffered packer yields an unknown "
+                "number of packs, so the Trainer cannot infer the epoch length."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_skip_prepare_mm_packing_limitations(cls, data):
+        # The skip_prepare buffered route loads only datasets[0] and never splits
+        # a validation set; fail loudly instead of silently dropping data.
+        # (Streaming has its own multi-dataset validator.)
+        if not _is_buffered_mm_packing(data) or data.get("streaming"):
+            return data
+        if data.get("datasets") and len(data.get("datasets")) > 1:
+            raise ValueError(
+                "skip_prepare_dataset with multimodal sample_packing supports a "
+                "single `datasets:` entry; additional datasets would be silently "
+                "ignored. Combine the datasets or drop `skip_prepare_dataset`."
+            )
+        if data.get("val_set_size"):
+            raise ValueError(
+                "val_set_size is not supported with skip_prepare_dataset "
+                "multimodal sample_packing (the unprepared dataset is never "
+                "split). Use `test_datasets` instead."
             )
         return data
 

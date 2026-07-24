@@ -43,6 +43,23 @@ class RoleBoundary:
     include_end: bool = True
 
 
+def resize_image_for_config(
+    image,
+    image_size: int | tuple[int, int] | list[int] | None,
+    image_resize_algorithm: Resampling | None = None,
+):
+    """(w, h) -> exact resize; int -> preserve aspect ratio then pad to a black square to avoid distortion."""
+    if image_size is None:
+        return image
+    assert hasattr(image, "resize"), "Image does not have a resize method"
+    algorithm = image_resize_algorithm or Image.Resampling.BILINEAR
+    if isinstance(image_size, (tuple, list)):
+        return image.resize(tuple(image_size), algorithm)
+    return ImageOps.pad(
+        image, (image_size, image_size), method=algorithm, color=(0, 0, 0)
+    )
+
+
 class ProcessingStrategy:
     """Base Processing Strategy class.
 
@@ -280,24 +297,9 @@ class ProcessingStrategy:
 
                 image_value = load_image(image_value)
 
-                if self.image_size is not None:
-                    assert hasattr(image_value, "resize"), (
-                        "Image does not have a resize method"
-                    )
-
-                    if isinstance(self.image_size, tuple):
-                        image_value = image_value.resize(
-                            self.image_size, self.image_resize_algorithm
-                        )
-                    else:
-                        # Int image_size: preserve aspect ratio then pad to square (black) to avoid distortion.
-                        padding_color = (0, 0, 0)
-                        image_value = ImageOps.pad(
-                            image_value,
-                            (self.image_size, self.image_size),
-                            method=self.image_resize_algorithm,
-                            color=padding_color,
-                        )
+                image_value = resize_image_for_config(
+                    image_value, self.image_size, self.image_resize_algorithm
+                )
 
                 msg_ind_to_add = None
                 ind_to_add = None
@@ -700,8 +702,10 @@ def _resolve_role_boundary_override(specs: list[dict], tokenizer) -> list[RoleBo
     """
     out: list[RoleBoundary] = []
     for i, spec in enumerate(specs):
-        if hasattr(spec, "model_dump"):
-            d = spec.model_dump()
+        # DictDefault returns None (not callable) for model_dump; treat as a mapping.
+        model_dump = getattr(spec, "model_dump", None)
+        if callable(model_dump):
+            d = model_dump()
         else:
             d = dict(spec)
 

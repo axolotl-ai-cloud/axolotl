@@ -74,3 +74,32 @@ along with [4d attention masks](https://github.com/huggingface/transformers/pull
 to pack sequences together and avoid cross attention.
 
 <img src="./images/4d-mask.png" alt="axolotl" width="800">
+
+## Multimodal sample packing
+
+Sample packing also works for multimodal (VLM) runs. It packs pre-tokenized VLM rows into full-length sequences at the sampler level and concatenates their tensors (including media such as `pixel_values`) at collation. For multimodal, packing automatically uses the balanced-greedy knapsack strategy rather than first-fit-decreasing, which distributes variable-length image rows more evenly across bins.
+
+There are two multimodal packing paths. The default for a **prepared** (pre-tokenized, cached-to-disk) dataset globally knapsacks rows by their `length` column at the sampler level and reuses the cache — this is the recommended path. For a **streaming or non-prepared** dataset (`streaming: true` or `skip_prepare_dataset: true`) there is no cached `length`/media, so packing instead uses a buffered packer (see below). Multimodal packing with `pretraining_dataset` is **not** supported and raises (media would be silently dropped) — use `streaming: true` with a `datasets:` entry instead. Either way you must set `remove_unused_columns: false` so the media columns survive collation; Axolotl raises a clear error if it is not false.
+
+```yaml
+processor_type: AutoProcessor
+sample_packing: true
+remove_unused_columns: false
+# leave skip_prepare_dataset unset for the default prepared/global-packing path
+```
+
+::: {.callout-warning}
+The prepared path caches the processor-expanded media (e.g. float `pixel_values`) into `dataset_prepared_path`. That is far larger than the source images — tens of MB per high-resolution image row for patch-based processors — so budget disk accordingly or use the buffered path for large image datasets.
+:::
+
+### Buffered multimodal packing (streaming / non-prepared)
+
+When the dataset is streaming or not prepared, multimodal packing runs through a buffered packer: rows are tokenized on the fly into a bounded lookahead buffer (`mm_pack_buffer_size`, default 1000 rows), each full buffer is packed with the same balanced-greedy knapsack, and every bin is emitted as one packed sequence. Buffered rows hold decoded media (`pixel_values`) in memory — at high image resolutions the default buffer can reach several GB of RAM, so lower `mm_pack_buffer_size` if memory is tight (smaller buffers pack slightly less efficiently). This unblocks `streaming: true` and `skip_prepare_dataset: true` for multimodal `sample_packing` (`pretraining_dataset` is not supported for multimodal packing and raises). Two limitations are accepted: packing is **non-deterministic** across runs (bins depend on buffer-boundary arrival order, so it is not reproducible from a seed), and it is **single-process only** (`dataloader_num_workers` is forced to 0 to avoid duplicated rows, since the buffered packer has no worker sharding yet; multi-GPU / cross-rank packing is a follow-up). Prefer the prepared path when you need reproducible, globally-optimal packing.
+
+On the **prepared** path, `excess_length_strategy: truncate` never slices a multimodal row: truncating its input_ids would desync the expanded image tokens from `pixel_values`, so an over-long media row raises instead. Use `excess_length_strategy: drop` (the default) or raise `sequence_len` to handle over-long multimodal rows. The **buffered / streaming** path does not truncate or raise either — it silently **drops** any row longer than `sequence_len` (logging a one-time warning), since such a row can never fit a packed bin.
+
+Cross-attention vision models (e.g. mllama / Llama-3.2-Vision), whose inputs carry a `cross_attention_mask`, are not supported for sample packing: the packed mask would need a block-diagonal layout over the pack's total images that the collator does not yet build, so packing raises a clear error for them — set `sample_packing: false` for those models.
+
+Multimodal packing has been validated end-to-end (real forward/backward) on **Qwen3-VL, InternVL3, Gemma3, and SmolVLM/Idefics3** (single- and multi-GPU), with Qwen2-VL verified at the shape level and Pixtral's variable-resolution `pixel_values` validated against its vision tower. Other decoder-only VLMs that represent images as in-sequence tokens may work through the same collation paths but are **untested** — sample isolation inside a pack depends on the text tower's attention handling, so verify loss parity against an unpacked run before relying on packing for an unlisted architecture. Audio models (e.g. Voxtral) are not supported; packing raises on their processor outputs.
+
+See `examples/qwen2_5-vl/lora-7b-packed.yaml` for a runnable config.

@@ -39,7 +39,7 @@ processor_type: AutoProcessor
 
 skip_prepare_dataset: true
 remove_unused_columns: false  # leave columns in place as they are needed to handle image embeddings during training
-sample_packing: false  # not yet supported with multimodal
+sample_packing: false  # packing is supported; see the note below
 
 chat_template:  # see in next section if specified
 
@@ -68,6 +68,10 @@ Some of our chat_templates have been extended to support broader dataset types. 
 
 ::: {.callout-note}
 As of now, we do not truncate nor drop samples based on `sequence_len` as each arch has different ways to process non-text tokens. We are looking for help on this.
+:::
+
+::: {.callout-note}
+Sample packing is supported for multimodal runs — see [Multipack](multipack.qmd). To pack, set `sample_packing: true` and keep `remove_unused_columns: false`. Leaving `skip_prepare_dataset` unset uses the default prepared path (globally-optimal packing on a cached `length` column and media — recommended); setting `skip_prepare_dataset: true` (or `streaming: true`) instead routes to the buffered packer, which tokenizes and packs on the fly (non-deterministic, single-process). Packing auto-uses the balanced-greedy knapsack for multimodal. Cross-attention models (e.g. mllama) are not supported.
 :::
 
 ### Mllama {#sec-mllama}
