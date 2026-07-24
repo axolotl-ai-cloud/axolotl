@@ -608,3 +608,61 @@ def test_legacy_descriptor_bypasses_declarative_fast_path():
     declarative = profile_module._resolve_declarative_model_support(support)
     assert resolved is not declarative
     assert resolved.hooks.for_phase(ModelHookPhase.AFTER_ADAPTER_LOAD)
+
+
+def test_legacy_method_assigned_after_first_resolution_is_dispatched():
+    events = []
+
+    class LatePatchSupport(ModelSupport):
+        model_types = ("late_patch_test",)
+        profile = ModelProfile(family=VANILLA_CAUSAL_LM)
+
+    support = LatePatchSupport()
+    resolve_model_support(support)
+
+    LatePatchSupport.pre_model_load = lambda self, cfg: events.append(cfg)
+
+    cfg = DictDefault(marker="late_patch")
+    run_model_support_hooks(
+        support,
+        ModelHookPhase.BEFORE_MODEL_BUILD,
+        ModelHookContext(cfg=cfg),
+    )
+
+    assert events == [cfg]
+
+
+def test_nested_dispatch_with_different_cfg_runs_all_hooks():
+    events = []
+
+    def profile_hook(context):
+        events.append(("profile", context.cfg.tag))
+
+    class NestedLoadSupport(ModelSupport):
+        model_types = ("nested_load_test",)
+        profile = ModelProfile(
+            family=VANILLA_CAUSAL_LM,
+            hooks=ModelHooks({ModelHookPhase.BEFORE_MODEL_BUILD: (profile_hook,)}),
+        )
+
+        def pre_model_load(self, cfg):
+            events.append(("legacy", cfg.tag))
+            if cfg.tag == "outer":
+                run_model_support_hooks(
+                    self,
+                    ModelHookPhase.BEFORE_MODEL_BUILD,
+                    ModelHookContext(cfg=DictDefault(tag="inner")),
+                )
+
+    run_model_support_hooks(
+        NestedLoadSupport(),
+        ModelHookPhase.BEFORE_MODEL_BUILD,
+        ModelHookContext(cfg=DictDefault(tag="outer")),
+    )
+
+    assert events == [
+        ("profile", "outer"),
+        ("legacy", "outer"),
+        ("profile", "inner"),
+        ("legacy", "inner"),
+    ]

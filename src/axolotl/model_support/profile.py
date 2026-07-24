@@ -71,7 +71,7 @@ class _InheritStrategy:
 
 _INHERIT_STRATEGY = _InheritStrategy()
 
-_ACTIVE_LEGACY_HOOK: ContextVar[tuple[int, ModelHookPhase] | None] = ContextVar(
+_ACTIVE_LEGACY_HOOK: ContextVar[tuple[int, ModelHookPhase, int] | None] = ContextVar(
     "model_support_legacy_hook",
     default=None,
 )
@@ -255,7 +255,7 @@ def _legacy_cfg_hook(
     method: Callable[[DictDefault], None],
 ) -> ModelHook:
     def hook(context: ModelHookContext) -> None:
-        token = _ACTIVE_LEGACY_HOOK.set((id(support), phase))
+        token = _ACTIVE_LEGACY_HOOK.set((id(support), phase, id(context.cfg)))
         try:
             method(context.cfg)
         finally:
@@ -272,7 +272,7 @@ def _legacy_post_load_hook(
         if context.model is None:
             raise ValueError("AFTER_ADAPTER_LOAD requires a model instance")
         token = _ACTIVE_LEGACY_HOOK.set(
-            (id(support), ModelHookPhase.AFTER_ADAPTER_LOAD)
+            (id(support), ModelHookPhase.AFTER_ADAPTER_LOAD, id(context.cfg))
         )
         try:
             method(context.cfg, context.model)
@@ -346,7 +346,7 @@ def _run_model_profile_hooks(
     phase: ModelHookPhase,
     context: ModelHookContext,
 ) -> None:
-    if _ACTIVE_LEGACY_HOOK.get() == (id(support), phase):
+    if _ACTIVE_LEGACY_HOOK.get() == (id(support), phase, id(context.cfg)):
         return
     resolved = _resolve_declarative_model_support(support)
     for hook in resolved.hooks.for_phase(phase):
@@ -367,24 +367,17 @@ _LEGACY_DECLARATION_NAMES = (
     "post_model_load",
 )
 
-_CLASS_HAS_LEGACY_CACHE: WeakKeyDictionary[type[ModelSupport], bool] = (
-    WeakKeyDictionary()
-)
 
-
+# Deliberately uncached: legacy methods may be assigned onto the class at
+# runtime (test fixtures, plugins) and must be visible to later dispatches.
 def _class_declares_legacy(cls: type[ModelSupport]) -> bool:
-    cached = _CLASS_HAS_LEGACY_CACHE.get(cls)
-    if cached is not None:
-        return cached
-    declares = any(
+    return any(
         any(
             name in base.__dict__
             for base in cls.__mro__[: cls.__mro__.index(ModelSupport)]
         )
         for name in _LEGACY_DECLARATION_NAMES
     )
-    _CLASS_HAS_LEGACY_CACHE[cls] = declares
-    return declares
 
 
 @overload
@@ -480,7 +473,7 @@ def run_model_support_hooks(
     """Run the effective hooks for one explicit lifecycle phase."""
     if support is None:
         return
-    if _ACTIVE_LEGACY_HOOK.get() == (id(support), phase):
+    if _ACTIVE_LEGACY_HOOK.get() == (id(support), phase, id(context.cfg)):
         return
     resolved = resolve_model_support(support)
     for hook in resolved.hooks.for_phase(phase):
