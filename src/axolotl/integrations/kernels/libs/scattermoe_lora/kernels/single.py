@@ -49,7 +49,7 @@ def _single2scatter(
     X_blk_ptrs = X_ptr + in_idx * stride_xm + K_block[:, None] * stride_xk
     W_blk_ptrs = (
         W_ptr
-        + E_idx * stride_we
+        + E_idx.to(tl.int64) * stride_we
         + K_block[:, None] * stride_wk
         + N_block[None, :] * stride_wn
     )
