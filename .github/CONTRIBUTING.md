@@ -13,6 +13,7 @@ First of all, thank you for your interest in contributing to axolotl! We appreci
 - [Style Guidelines](#style-guidelines)
   - [Code Style](#code-style)
   - [Commit Messages](#commit-messages)
+- [Agent Skills](#agent-skills)
 - [Additional Resources](#additional-resources)
 
 ## Code of Conduct
@@ -116,6 +117,14 @@ To run ruff outside pre-commit, pin it to the `ruff-pre-commit` rev in that file
 ### Commit Messages
 
 Write clear and concise commit messages that briefly describe the changes made in each commit. Use the imperative mood and start with a capitalized verb, e.g., "Add new feature" or "Fix bug in function".
+
+## Agent Skills
+
+Axolotl ships **agent skills** — self-contained workflow guides and scripts that AI coding assistants can run for repetitive tasks. They live in [`.agents/skills/`](../.agents/skills/), one directory per skill, each with a `SKILL.md`. See [`AGENTS.md`](../AGENTS.md) for the current list.
+
+There is **nothing to install** — the skills are committed to the repo and available on clone. Skills are **on by default**; run `/skills` to toggle them off/on (Codex, Antigravity, and Claude Code).
+
+**See [`.agents/skills/README.md`](../.agents/skills/README.md)** for full usage (across Claude Code, Codex, Gemini, Antigravity, or by hand), how to add a skill, and authoring requirements. Per-skill flags and workflows live in each skill's `SKILL.md`.
 
 ## Additional Resources
 
