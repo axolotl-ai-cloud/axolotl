@@ -345,6 +345,7 @@ class NVFP4Linear(nn.Module):
         self._wq_version = None
         self._wq_fprop = None
         self._wq_dgrad = None
+        _warm_recipe_gates()
 
     def _quantized_weights(self):
         """(w_fprop, w_dgrad) for the current weight, recomputed only on update.
@@ -608,6 +609,7 @@ class NVFP4FrozenBaseLinear(nn.Module):
         self.recipe = recipe
         self.in_features = w_q.shape[1]
         self.out_features = w_q.shape[0]
+        _warm_recipe_gates()
 
     def forward(self, x):
         out = NVFP4FrozenBaseFunction.apply(x, self.w_q, self.recipe)
@@ -830,6 +832,7 @@ class NVFP4ComputeBaseLinear(nn.Module):
         self.recipe = recipe
         self.in_features = w_fprop.shape[1]
         self.out_features = w_fprop.shape[0]
+        _warm_recipe_gates()
 
     def forward(self, x):
         out = NVFP4ComputeBaseFunction.apply(x, self.w_fprop, self.w_dgrad, self.recipe)
@@ -868,11 +871,15 @@ def _mslk_available() -> bool:
     """Whether the MSLK fused NVFP4 quant kernel is importable (cached); optional,
     callers fall back to the torchao quantizer."""
     global _MSLK_AVAILABLE
-    import os
-
-    if os.environ.get("AXOLOTL_NVFP4_NO_MSLK") == "1":
-        return False
+    # Cache-first: this runs inside every traced dgrad quant, and an os.environ
+    # read is a dynamo graph break — checking it before the cache fragmented the
+    # compiled backward into per-projection graphs.
     if _MSLK_AVAILABLE is None:
+        import os
+
+        # Kill-switch: disable WITHOUT caching, so unsetting it later re-probes.
+        if os.environ.get("AXOLOTL_NVFP4_NO_MSLK") == "1":
+            return False
         try:
             from mslk.quantize.triton.fp4_quantize import (  # noqa: F401
                 triton_quantize_nvfp4,
@@ -898,14 +905,15 @@ def _sm120f_recipe_codegen_verified(device: torch.device) -> bool:
     Default-safe (False on error); ``AXOLOTL_NVFP4_SKIP_SM120F_PROBE=1`` force-disables.
     """
     global _SM120F_RECIPE_VERIFIED
-    import os
-
-    if os.environ.get("AXOLOTL_NVFP4_SKIP_SM120F_PROBE") == "1":
-        return False
-
+    # Cache-first (see _mslk_available): the env read is a dynamo graph break.
     cap = torch.cuda.get_device_capability(device)
     if cap in _SM120F_RECIPE_VERIFIED:
         return _SM120F_RECIPE_VERIFIED[cap]
+    import os
+
+    # Kill-switch: force-disable WITHOUT caching, so unsetting it later re-probes.
+    if os.environ.get("AXOLOTL_NVFP4_SKIP_SM120F_PROBE") == "1":
+        return False
 
     verified = False
     try:
@@ -938,6 +946,23 @@ def _sm120f_recipe_codegen_verified(device: torch.device) -> bool:
 
     _SM120F_RECIPE_VERIFIED[cap] = verified
     return verified
+
+
+def _warm_recipe_gates() -> None:
+    """Resolve the MSLK / sm120-probe gate caches before compile traces them.
+
+    Both gates lazily populate module globals; if the first resolution happens
+    inside a traced autograd.Function (the dgrad quant), dynamo treats the
+    global write as an unsafe HOP side effect and falls back to eager for the
+    whole frame — fragmenting the compiled step into per-projection graphs.
+    Resolving them once at module-construction time makes the traced path a
+    pure global read.
+    """
+    if not _mslk_available() or not torch.cuda.is_available():
+        return
+    device = torch.device("cuda", torch.cuda.current_device())
+    if tuple(torch.cuda.get_device_capability(device)) == (12, 0):
+        _sm120f_recipe_codegen_verified(device)
 
 
 def _recipe_fusion_available(t: torch.Tensor) -> bool:
@@ -1716,6 +1741,7 @@ class NVFP4FastComputeBaseLinear(nn.Module):
         self.out_features = out_features
         # wq_f packs [N, K/2], so K = in_features = 2 * packed cols.
         self.in_features = wq_f.shape[-1] * 2
+        _warm_recipe_gates()
 
     def forward(self, x):
         out = NVFP4FastComputeBaseFunction.apply(
@@ -1807,6 +1833,7 @@ class NVFP4FastFrozenBaseLinear(nn.Module):
         self.recipe = recipe
         self.out_features = out_features
         self.in_features = in_features
+        _warm_recipe_gates()
 
     def forward(self, x):
         out = NVFP4FastFrozenBaseFunction.apply(
