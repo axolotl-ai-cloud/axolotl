@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from axolotl.core.trainers.base import AxolotlTrainer
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 from .callbacks import DiffusionGenerationCallback
@@ -145,7 +146,7 @@ class DiffusionTrainer(AxolotlTrainer):
 
         # For SFT data, only mask answer tokens
         if labels is not None:
-            answer_mask = labels != -100
+            answer_mask = labels != IGNORE_INDEX
             masked_indices = masked_indices & answer_mask
 
         # Create masked input
@@ -229,7 +230,7 @@ class DiffusionTrainer(AxolotlTrainer):
 
             if labels is not None:
                 # For SFT data: normalize by answer token count per sample
-                answer_mask = labels != -100
+                answer_mask = labels != IGNORE_INDEX
                 answer_lengths = answer_mask.sum(dim=1).float()  # [batch_size]
 
                 # Get batch indices for masked tokens
@@ -284,7 +285,7 @@ class DiffusionTrainer(AxolotlTrainer):
         # If doing SFT training, log answer-specific metrics
         if self.axolotl_cfg.datasets is not None:
             with torch.no_grad():
-                answer_mask = labels != -100
+                answer_mask = labels != IGNORE_INDEX
                 answer_lengths = answer_mask.sum(dim=1).float()  # type: ignore
                 total_answer_tokens = answer_mask.sum().item()  # type: ignore
                 total_tokens = labels.numel()  # type: ignore

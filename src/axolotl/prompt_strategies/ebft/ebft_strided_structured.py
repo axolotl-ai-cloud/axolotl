@@ -2,11 +2,13 @@
 Dataset transform for structured (prompt, completion) data with strided EBFT.
 
 Tokenizes prompt and completion separately, concatenates into a single
-input_ids sequence, and marks prompt tokens with labels=-100 so the
+input_ids sequence, and marks prompt tokens with labels=IGNORE_INDEX so the
 strided trainer knows where to place anchors (completion span only).
 
 Works with datasets that have chat-style fields (e.g., nvidia/OpenCodeInstruct).
 """
+
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 
 
 def transform(cfg, **kwargs):
@@ -58,13 +60,13 @@ def transform(cfg, **kwargs):
         input_ids = prompt_ids + completion_ids
         prompt_length = len(prompt_ids)
 
-        # Labels: -100 for prompt tokens, input_ids for completion tokens
-        labels = [-100] * prompt_length + completion_ids
+        # Labels: IGNORE_INDEX for prompt tokens, input_ids for completion tokens
+        labels = [IGNORE_INDEX] * prompt_length + completion_ids
 
         # Pad to seq_len
         pad_len = seq_len - len(input_ids)
         attention_mask = [1] * len(input_ids) + [0] * pad_len
-        labels = labels + [-100] * pad_len
+        labels = labels + [IGNORE_INDEX] * pad_len
         input_ids = input_ids + [pad_id] * pad_len
 
         return {

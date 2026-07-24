@@ -21,6 +21,7 @@ from typing import Any, Dict
 import torch
 
 from axolotl.prompt_strategies.chat_template import ChatTemplateStrategy, StrategyLoader
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -112,7 +113,7 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
             target_mask.append([0] * top_k)
 
         for position in range(input_padding_len, input_seq_len):
-            if sample["labels"][position] == -100:
+            if sample["labels"][position] == IGNORE_INDEX:
                 target_mask.append([0] * top_k)
             else:
                 target_mask.append([1] * top_k)
@@ -243,7 +244,7 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
             target_mask.append([0] * top_k)
 
         for position in range(input_padding_len, input_seq_len):
-            if sample["labels"][position] == -100:
+            if sample["labels"][position] == IGNORE_INDEX:
                 target_mask.append([0] * top_k)
             else:
                 target_mask.append([1] * top_k)

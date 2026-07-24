@@ -25,6 +25,7 @@ import torch
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.collators.batching import DataCollatorForSeq2Seq
 
 
@@ -42,7 +43,7 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     padding: Union[bool, str, PaddingStrategy] = True
     max_length: Optional[int] = None
     pad_to_multiple_of: Optional[int] = None
-    label_pad_token_id: int = -100
+    label_pad_token_id: int = IGNORE_INDEX
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 

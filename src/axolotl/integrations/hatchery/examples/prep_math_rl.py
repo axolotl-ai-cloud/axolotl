@@ -17,6 +17,8 @@ import re
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 def extract_boxed(text: str) -> str:
     match = re.search(r"\\boxed\{", text)
@@ -67,7 +69,7 @@ def main():
         rows.append(
             {
                 "input_ids": prompt_ids,
-                "labels": [-100] * len(prompt_ids),
+                "labels": [IGNORE_INDEX] * len(prompt_ids),
                 "attention_mask": [1] * len(prompt_ids),
             }
         )

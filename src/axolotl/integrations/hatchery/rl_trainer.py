@@ -25,6 +25,7 @@ import torch
 from transformers.trainer_utils import TrainOutput
 
 from axolotl.core.trainers.base import AxolotlTrainer
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 from .args import HatcheryConfig
@@ -276,7 +277,7 @@ class HatcheryRLTrainer(AxolotlTrainer):
                     seq_len = len(full_tokens)
 
                     input_ids = torch.tensor([full_tokens], dtype=torch.long)
-                    labels = torch.full((1, seq_len), -100, dtype=torch.long)
+                    labels = torch.full((1, seq_len), IGNORE_INDEX, dtype=torch.long)
                     labels[0, prompt_len:] = torch.tensor(full_tokens[prompt_len:])
 
                     logprobs_t = torch.zeros(1, seq_len)

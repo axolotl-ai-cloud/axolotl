@@ -2,12 +2,14 @@
 Dataset transform for multi-turn chat data with strided EBFT.
 
 Tokenizes conversations using the model's chat template, producing input_ids
-with labels=-100 for system/user turns and real labels for assistant turns.
+with labels=IGNORE_INDEX for system/user turns and real labels for assistant turns.
 The strided trainer places anchors only within assistant completion spans.
 
 Works with datasets in OpenAI chat format:
   [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
 """
+
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 
 
 def transform(cfg, **kwargs):
@@ -40,9 +42,9 @@ def transform(cfg, **kwargs):
         )
         input_ids = full_enc["input_ids"]
 
-        # Build labels: -100 for everything except assistant turns.
+        # Build labels: IGNORE_INDEX for everything except assistant turns.
         # Strategy: tokenize incrementally to find assistant turn boundaries.
-        labels = [-100] * len(input_ids)
+        labels = [IGNORE_INDEX] * len(input_ids)
 
         # Tokenize prefix up to each assistant turn to find boundaries
         prefix_messages = []
@@ -88,14 +90,14 @@ def transform(cfg, **kwargs):
         # Derive prompt_length as the position of the first non-masked label
         prompt_length = len(input_ids)  # default: all masked
         for i, lbl in enumerate(labels):
-            if lbl != -100:
+            if lbl != IGNORE_INDEX:
                 prompt_length = i
                 break
 
         # Pad to seq_len
         pad_len = seq_len - len(input_ids)
         attention_mask = [1] * len(input_ids) + [0] * pad_len
-        labels = labels + [-100] * pad_len
+        labels = labels + [IGNORE_INDEX] * pad_len
         input_ids = input_ids + [pad_id] * pad_len
 
         return {

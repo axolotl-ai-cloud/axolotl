@@ -20,6 +20,8 @@ from typing import Any
 
 import torch
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 def _tensor_to_wire(t: torch.Tensor) -> dict[str, Any]:
     """Serialize a tensor to the TensorData wire dict."""
@@ -101,8 +103,8 @@ def batch_to_datums_sft(
         shifted_labels = lbl[1:]
 
         target_tokens = shifted_labels.clone()
-        weights = (shifted_labels != -100).float()
-        target_tokens[target_tokens == -100] = 0
+        weights = (shifted_labels != IGNORE_INDEX).float()
+        target_tokens[target_tokens == IGNORE_INDEX] = 0
 
         datums.append(
             _make_datum(
@@ -144,7 +146,7 @@ def batch_to_datums_rl(
         model_tokens = ids[:-1].tolist()
 
         target_tokens = lbl[1:].clone()
-        target_tokens[target_tokens == -100] = 0
+        target_tokens[target_tokens == IGNORE_INDEX] = 0
 
         datums.append(
             _make_datum(

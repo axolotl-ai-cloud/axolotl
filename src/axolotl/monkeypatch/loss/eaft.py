@@ -8,6 +8,8 @@ Reference: https://github.com/ymxyll/LlamaFactory-EAFT/blob/e2ce19e8efcc226450ee
 import torch
 import torch.nn.functional as F
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
+
 
 def eaft_loss(outputs, labels, num_items_in_batch=None, alpha=1.0, k=20):
     """
@@ -29,7 +31,7 @@ def eaft_loss(outputs, labels, num_items_in_batch=None, alpha=1.0, k=20):
     shift_logits_view = shift_logits.view(-1, vocab_size)
     shift_labels_view = shift_labels.view(-1)
 
-    mask = shift_labels_view != -100
+    mask = shift_labels_view != IGNORE_INDEX
 
     with torch.no_grad():
         top_k_logits, _ = torch.topk(

@@ -16,6 +16,7 @@ from axolotl.monkeypatch.ring_attn import (
     register_ring_attn_from_device_mesh,
     update_ring_attn_params,
 )
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.schemas.enums import RingAttnFunc
 
 
@@ -108,7 +109,7 @@ def apply_sequence_parallelism(
                 and batch[key].size(1) == total_seq_len
             ):
                 # Create padding tensor
-                pad_value = -100 if key == "labels" else 0
+                pad_value = IGNORE_INDEX if key == "labels" else 0
                 padding = torch.full(
                     (batch[key].size(0), pad_len, *batch[key].shape[2:]),
                     pad_value,
@@ -151,7 +152,7 @@ def apply_sequence_parallelism(
         if "num_items_in_batch" in batch:
             # Approximation; this needed since num_items_in_batch may be counted across
             # all samples in a gradient accumulated batch, not on a per-step basis.
-            local_valid_tokens = (batch["labels"] != -100).sum()
+            local_valid_tokens = (batch["labels"] != IGNORE_INDEX).sum()
 
             # All-reduce across sequence parallel ranks to get global token count
             cp_group = get_ring_attn_group()
@@ -276,7 +277,7 @@ class SequenceParallelContextManager:
             # Track local valid tokens for eval loss correction
             if "labels" in updated_kwargs and not self.models[0].training:
                 self._local_valid_tokens = (
-                    (updated_kwargs["labels"] != -100).sum().float()
+                    (updated_kwargs["labels"] != IGNORE_INDEX).sum().float()
                 )
                 # Strip num_items_in_batch during eval so the model uses
                 # reduction='mean', allowing the post-hook weighted all-reduce

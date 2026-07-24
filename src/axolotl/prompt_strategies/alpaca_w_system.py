@@ -4,7 +4,7 @@ Prompt strategies loader for alpaca instruction datasets with system prompts
 
 from typing import Generator, Tuple, Union
 
-from axolotl.prompt_tokenizers import PromptTokenizingStrategy
+from axolotl.prompt_tokenizers import IGNORE_INDEX, PromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
 
 
@@ -41,7 +41,7 @@ class InstructionWSystemPromptTokenizingStrategy(PromptTokenizingStrategy):
         if not self.train_on_inputs:
             user_prompt_len = len(tokenized_prompt["input_ids"])
             # TODO this could be sped up using numpy array slicing
-            tokenized_prompt["labels"] = [-100] * user_prompt_len
+            tokenized_prompt["labels"] = [IGNORE_INDEX] * user_prompt_len
         tokenized_res_prompt = self._tokenize(
             response, strip_bos_token=True, add_eos_token=True
         )

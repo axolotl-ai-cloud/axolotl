@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from transformers import ProcessorMixin
 
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
-from axolotl.prompt_tokenizers import PromptTokenizingStrategy
+from axolotl.prompt_tokenizers import IGNORE_INDEX, PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import remove_none_values
@@ -470,7 +470,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     user_prompt_len = len(prompt_ids["input_ids"])
                 else:
                     user_prompt_len = len(prompt_ids)
-                labels = [-100] * user_prompt_len + input_ids[user_prompt_len:]
+                labels = [IGNORE_INDEX] * user_prompt_len + input_ids[user_prompt_len:]
             else:
                 labels = input_ids
 

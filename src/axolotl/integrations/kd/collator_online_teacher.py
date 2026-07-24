@@ -12,6 +12,7 @@ from orjson import orjson
 
 from axolotl.integrations.kd.collator import KDBatchSamplerDataCollatorForSeq2Seq
 from axolotl.integrations.kd.utils import normalize_logprobs
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.data.utils import retry_on_request_exceptions
 from axolotl.utils.logging import get_logger
 
@@ -48,7 +49,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
     Collator for online teacher training.
     """
 
-    DEFAULT_LABEL_PAD_TOKEN_ID: int = -100
+    DEFAULT_LABEL_PAD_TOKEN_ID: int = IGNORE_INDEX
 
     def __init__(
         self,

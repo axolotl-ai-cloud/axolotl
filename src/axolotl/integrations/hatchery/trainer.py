@@ -14,6 +14,7 @@ import torch
 from transformers.trainer_utils import TrainOutput
 
 from axolotl.core.trainers.base import AxolotlTrainer
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 from .args import HatcheryConfig
@@ -128,7 +129,7 @@ class HatcheryTrainer(AxolotlTrainer):
         labels = batch["labels"]
         attention_mask = batch.get("attention_mask")
 
-        n_active = int((labels[:, 1:] != -100).sum().item())
+        n_active = int((labels[:, 1:] != IGNORE_INDEX).sum().item())
         datums = batch_to_datums_sft(input_ids, labels, attention_mask)
 
         tc = self._get_training_client()

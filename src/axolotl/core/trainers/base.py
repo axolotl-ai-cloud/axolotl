@@ -48,6 +48,7 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_tagging,
     trainable_tokens_per_sec_per_gpu,
 )
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -386,7 +387,7 @@ class AxolotlTrainer(
         # track number of tokens for tokens per second calculation
         if self.args.include_tkps and model.training:
             inputs_key = "labels" if "labels" in inputs else "input_ids"
-            trainable_tokens = (inputs[inputs_key] != -100).sum()
+            trainable_tokens = (inputs[inputs_key] != IGNORE_INDEX).sum()
             total_tokens = inputs[inputs_key].numel()
             total_tokens = torch.tensor(total_tokens, device=inputs[inputs_key].device)
 
@@ -480,7 +481,9 @@ class AxolotlTrainer(
         )
 
     @staticmethod
-    def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
+    def orpo_concatenate_inputs(
+        inputs, label_pad_token=IGNORE_INDEX, pad_token=0, device=None
+    ):
         concatenated_batch = {}
 
         max_length = max(inputs["input_ids"].shape[1], inputs["rejected_ids"].shape[1])
@@ -580,7 +583,7 @@ class AxolotlTrainer(
     ):
         concat_inputs = AxolotlTrainer.orpo_concatenate_inputs(
             inputs,
-            label_pad_token=-100,
+            label_pad_token=IGNORE_INDEX,
             pad_token=self.tokenizer.pad_token_id,
             device=self.accelerator.device,
         )

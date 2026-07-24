@@ -2,6 +2,7 @@
 
 from termcolor import colored
 
+from axolotl.prompt_tokenizers import IGNORE_INDEX
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -34,7 +35,11 @@ def check_example_labels(example, tokenizer, text_only=False):
     for _, (input_id, label_id) in enumerate(zip(input_ids, labels, strict=False)):
         decoded_input_token = tokenizer.decode(input_id)
         # Choose the color based on whether the label has the ignore value or not
-        color = "red" if label_id == -100 else ("yellow" if label_id == 0 else "green")
+        color = (
+            "red"
+            if label_id == IGNORE_INDEX
+            else ("yellow" if label_id == 0 else "green")
+        )
         colored_token = colored(decoded_input_token, color) + (
             not text_only and colored(f"({label_id}, {input_id})", "white") or ""
         )
@@ -43,7 +48,7 @@ def check_example_labels(example, tokenizer, text_only=False):
     delimiter = "" if text_only else " "
     LOG.info(delimiter.join(colored_tokens))
     LOG.info("\n\n\n")
-    target_labels_count = sum(label_id != -100 for label_id in labels)
+    target_labels_count = sum(label_id != IGNORE_INDEX for label_id in labels)
     total_len = len(input_ids)
     LOG.info(f"Total input len: {total_len}")
     LOG.info(f"Count of labels: {target_labels_count}")
