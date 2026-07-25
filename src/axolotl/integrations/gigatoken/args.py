@@ -14,26 +14,10 @@
 
 """Module for handling gigatoken input arguments."""
 
-from pydantic import BaseModel, model_validator
-
-from axolotl.utils.logging import get_logger
-
-LOG = get_logger(__name__)
+from pydantic import BaseModel
 
 
 class GigatokenArgs(BaseModel):
     """Input args for gigatoken."""
 
     gigatoken: bool = True
-
-    @model_validator(mode="after")
-    def check_gigatoken_installed(self):
-        if self.gigatoken:
-            try:
-                import gigatoken  # noqa: F401
-            except ImportError as exc:
-                raise ImportError(
-                    "gigatoken is not installed. Please install it with "
-                    "`pip install gigatoken`."
-                ) from exc
-        return self
