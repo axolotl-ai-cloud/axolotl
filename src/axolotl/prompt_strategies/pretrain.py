@@ -5,6 +5,7 @@ from typing import Generator
 from transformers import BatchEncoding
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
+from axolotl.utils.tokenization import get_fast_encoder
 
 
 class PretrainTokenizer:
@@ -27,24 +28,46 @@ class PretrainTokenizationStrategy(PromptTokenizingStrategy):
             self.max_length = max_length
         self.text_column = text_column
 
+    def _encode_fast(self, encoder, prompt, max_length) -> BatchEncoding | None:
+        """Encode with the accelerated encoder, or `None` if it can't be trusted here.
+
+        Accelerated encoders ignore `return_overflowing_tokens`/`stride` instead of
+        rejecting them, so anything long enough to need the strided remainder has to go
+        back to the HF tokenizer rather than lose the overflow chunks.
+        """
+        texts = [prompt] if isinstance(prompt, str) else list(prompt)
+        res = encoder(texts, add_special_tokens=True)
+        if any(len(seq) > max_length for seq in res["input_ids"]):
+            return None
+        return res
+
     def _tokenize(
         self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False
     ) -> BatchEncoding:
+        max_length = self.max_length - 1
         # keep the overlap below the window size so small sequence_len values don't
         # violate the tokenizer's `stride < effective max_length` constraint
-        stride = min(256, (self.max_length - 1) // 2)
-        res = self.tokenizer(
-            prompt,
-            truncation=True,
-            max_length=self.max_length - 1,
-            add_special_tokens=True,
-            return_overflowing_tokens=True,
-            stride=stride,
-        )
+        stride = min(256, max_length // 2)
+
+        res = None
+        encoder = get_fast_encoder(self.tokenizer)
+        if encoder is not None:
+            res = self._encode_fast(encoder, prompt, max_length)
+
+        if res is None:
+            res = self.tokenizer(
+                prompt,
+                truncation=True,
+                max_length=max_length,
+                add_special_tokens=True,
+                return_overflowing_tokens=True,
+                stride=stride,
+            )
+
         res["input_ids"] = [
-            seq + [self.tokenizer.eos_token_id] for seq in res["input_ids"]
+            list(seq) + [self.tokenizer.eos_token_id] for seq in res["input_ids"]
         ]
-        res["attention_mask"] = [seq + [1] for seq in res["attention_mask"]]
+        res["attention_mask"] = [list(seq) + [1] for seq in res["attention_mask"]]
 
         return res
 

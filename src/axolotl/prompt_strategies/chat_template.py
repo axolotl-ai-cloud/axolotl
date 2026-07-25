@@ -737,7 +737,20 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return None
 
         offsets = encoded["offset_mapping"]
-        return full_text, [s for s, _ in offsets], [e for _, e in offsets]
+        token_starts = [s for s, _ in offsets]
+        token_ends = [e for _, e in offsets]
+
+        # Tokens with no source span (added/special tokens) are reported as (0, 0),
+        # which breaks the ordering the bisects below rely on.
+        if not self._is_sorted(token_starts) or not self._is_sorted(token_ends):
+            self._log_fallback_once("offset mapping is not monotonic")
+            return None
+
+        return full_text, token_starts, token_ends
+
+    @staticmethod
+    def _is_sorted(values: list[int]) -> bool:
+        return all(a <= b for a, b in zip(values, values[1:], strict=False))
 
     # Chunk size for the char-space diff. Comparing block slices keeps the scan in C;
     # a per-character Python loop here costs more than the tokenization it saves.

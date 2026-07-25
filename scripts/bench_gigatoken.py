@@ -25,7 +25,7 @@ from transformers import AutoTokenizer
 
 def load_texts(path, limit):
     with open(path, encoding="utf-8") as f:
-        texts = [line for line in (l.strip() for l in f) if line]
+        texts = [line for line in (raw_line.strip() for raw_line in f) if line]
     return texts[:limit] if limit else texts
 
 

@@ -12,6 +12,7 @@ from transformers import PreTrainedTokenizerBase
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.tokenization import get_fast_encoder
 from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
 LOG = get_logger(__name__)
@@ -223,7 +224,7 @@ def wrap_streaming_dataset(
             max_tokens=cfg.sequence_len,
             text_column=text_column,
             concatenate=cfg.pretraining_sample_concatenation is True,
-            encoder=getattr(tokenizer, "_gigatoken_encoder", None),
+            encoder=get_fast_encoder(tokenizer),
         )
 
     if cfg.shuffle_merged_datasets:

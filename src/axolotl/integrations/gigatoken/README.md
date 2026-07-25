@@ -5,8 +5,9 @@ Fast CPU tokenization for the pretraining/completion path, backed by
 is a drop-in for HuggingFace tokenizers.
 
 The plugin attaches a gigatoken-accelerated encoder to the loaded tokenizer via
-the `post_tokenizer_load` hook. Only the streaming pretraining/completion encode
-path (`encode_streaming`) uses it; the tokenizer itself is left untouched, so
+the `post_tokenizer_load` hook. Only the raw-text pretraining/completion encode
+paths use it — `encode_streaming` (unpacked) and `PretrainTokenizationStrategy`
+(`sample_packing: true`). The tokenizer itself is left untouched, so
 chat-template and other prompt strategies keep the full HuggingFace API.
 
 ## Installation
@@ -36,8 +37,15 @@ Set `gigatoken: false` to disable without removing the plugin.
 
 - gigatoken accelerates **tokenization only** (the `axolotl preprocess` / dataset
   encoding phase); it does not affect the training step.
-- Not every tokenizer is supported by gigatoken's byte remapping. If construction
-  fails for your model, the run errors out at tokenizer load rather than silently
-  falling back — verify token parity before relying on it.
+- Only raw-text encoding is accelerated. Chat-template and other prompt strategies
+  keep using the HuggingFace tokenizer.
+- Documents long enough to need HuggingFace's strided overflow chunking
+  (`sequence_len * 64` tokens) fall back to the HuggingFace tokenizer for that
+  batch, since gigatoken ignores `return_overflowing_tokens` rather than rejecting
+  it.
+- Not every tokenizer is supported by gigatoken's byte remapping (SmolLM2, for
+  instance, is not). Tokenizers that can't be wrapped, or that disagree with the
+  HuggingFace tokenizer on a parity check, error out at tokenizer load rather than
+  silently falling back.
 - Benchmark against the `dataset_num_proc` baseline for your corpus with
   `scripts/bench_gigatoken.py`.

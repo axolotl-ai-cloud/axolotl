@@ -23,10 +23,37 @@ chat-template and other prompt strategies are unaffected.
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
+from axolotl.utils.tokenization import set_fast_encoder
 
 from .args import GigatokenArgs as GigatokenArgs
 
 LOG = get_logger(__name__)
+
+_PARITY_SAMPLES = (
+    "The quick brown fox jumps over the lazy dog.",
+    "héllo 世界 🎉 — ünïcode",
+    "  leading and trailing whitespace \t\n",
+    "1234567890 !@#$%^&*()[]{}",
+)
+
+
+def _check_parity(tokenizer, encoder) -> None:
+    """Reject an encoder that disagrees with the tokenizer it claims to replace.
+
+    Divergence here silently corrupts every token the run trains on, and gigatoken
+    ignores unsupported arguments rather than raising, so it can't be caught later.
+    """
+    samples = list(_PARITY_SAMPLES)
+    expected = tokenizer(samples, add_special_tokens=True)["input_ids"]
+    actual = encoder(samples, add_special_tokens=True)["input_ids"]
+
+    for text, want, got in zip(samples, expected, actual, strict=True):
+        if list(want) != list(got):
+            raise RuntimeError(
+                f"gigatoken tokenized {text!r} as {list(got)}, but the HuggingFace "
+                f"tokenizer produced {list(want)}. Set `gigatoken: false` to train "
+                "with the HuggingFace tokenizer instead."
+            )
 
 
 class GigatokenPlugin(BasePlugin):
@@ -41,6 +68,17 @@ class GigatokenPlugin(BasePlugin):
 
         import gigatoken as gt
 
-        tokenizer._gigatoken_encoder = gt.Tokenizer(tokenizer).as_hf()
+        try:
+            encoder = gt.Tokenizer(tokenizer).as_hf()
+        except Exception as exc:
+            raise RuntimeError(
+                "gigatoken could not wrap "
+                f"{getattr(tokenizer, 'name_or_path', tokenizer)!r}: {exc}. Its byte "
+                "remapping does not support every vocabulary; set `gigatoken: false` "
+                "to train with the HuggingFace tokenizer instead."
+            ) from exc
+
+        _check_parity(tokenizer, encoder)
+        set_fast_encoder(tokenizer, encoder)
         LOG.info("gigatoken encoder attached for raw-text tokenization")
         return None

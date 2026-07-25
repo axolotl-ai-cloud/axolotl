@@ -148,7 +148,8 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         return tokenizer
 
     if cfg.tokenizer_use_mistral_common:
-        return _load_mistral_common_tokenizer(cfg)
+        tokenizer = _load_mistral_common_tokenizer(cfg)
+        return PLUGIN_MANAGER.post_tokenizer_load(cfg, tokenizer)
 
     model_config = load_model_config(cfg)
     tokenizer_kwargs = {}

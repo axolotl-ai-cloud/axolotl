@@ -65,6 +65,8 @@ class BasePlugin:
         Plugin methods include:
         - register(cfg): Registers the plugin with the given configuration.
         - load_datasets(cfg): Loads and preprocesses the dataset for training.
+        - post_tokenizer_load(cfg, tokenizer): Performs actions after the tokenizer is
+            loaded, optionally returning a replacement tokenizer.
         - pre_model_load(cfg): Performs actions before the model is loaded.
         - post_model_build(cfg, model): Performs actions after the model is loaded, but
             before LoRA adapters are applied.
