@@ -25,16 +25,11 @@ from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 from axolotl.utils.tokenization import set_fast_encoder
 
-from .args import GigatokenArgs as GigatokenArgs
-
 LOG = get_logger(__name__)
 
 
 class GigatokenPlugin(BasePlugin):
     """Plugin for gigatoken integration with Axolotl."""
-
-    def get_input_args(self):
-        return "axolotl.integrations.gigatoken.GigatokenArgs"
 
     def post_tokenizer_load(self, cfg, tokenizer):
         if not cfg.gigatoken:
