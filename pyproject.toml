@@ -127,7 +127,7 @@ ray = [
     "ray[train]>=2.52.1",
 ]
 vllm = [
-    "vllm>=0.24.0",
+    "vllm>=0.17.0",
 ]
 llmcompressor = [
     "llmcompressor>=0.10.0",
