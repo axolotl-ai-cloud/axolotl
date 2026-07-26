@@ -2,7 +2,7 @@
 DPO prompt strategies for using tokenizer chat templates.
 """
 
-from axolotl.prompt_strategies.chat_template_utils import (
+from axolotl.prompt_strategies.preference_chat_template import (
     build_message_transform,
     make_msg_variables_getter,
     parse_tools,

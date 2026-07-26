@@ -3,7 +3,9 @@ Shared helpers for rendering OpenAI-format preference (chosen/rejected) messages
 via tokenizer chat templates.
 
 Reused across RL prompt strategies (DPO, ORPO, Bradley-Terry) so tool_calls,
-tools, and reasoning_content handling only needs to be implemented once.
+tools, and reasoning_content handling only needs to be implemented once. The
+tools/tool_calls JSON decoding helpers are also reused by the SFT
+`chat_template` strategy for the same reason.
 """
 
 import json
