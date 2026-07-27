@@ -534,6 +534,90 @@ def config_schema(output_format: str, field: Optional[str]):
         click.echo(json.dumps(schema, indent=2))
 
 
+@cli.group()
+def ray():
+    """Manage a Ray cluster for axolotl training (`up`, `down`, `status`)."""
+
+
+@ray.command(name="up")
+@click.option(
+    "--runtime",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Runtime YAML whose ray.cluster block describes the cluster",
+)
+@click.option(
+    "--hostfile",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Hostfile of worker nodes to join over ssh (head is this machine)",
+)
+@click.option("--port", default=None, type=int, help="Ray head port (default 6379)")
+@click.option(
+    "--dashboard-port",
+    default=None,
+    type=int,
+    help="Dashboard/Jobs API port (default 8265)",
+)
+@click.option("--ssh-user", default=None, help="SSH user for worker nodes")
+@click.option(
+    "--ssh-key",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="SSH identity file for worker nodes",
+)
+def ray_up(
+    runtime: str | None,
+    hostfile: str | None,
+    port: int | None,
+    dashboard_port: int | None,
+    ssh_user: str | None,
+    ssh_key: str | None,
+):
+    """Start a Ray head on this machine and join hostfile workers over ssh."""
+    from axolotl.cli.launchers.ray_cluster import cluster_up
+
+    runtime_cfg = None
+    if runtime:
+        from axolotl.utils.schemas.runtime import RuntimeConfig
+
+        runtime_cfg = RuntimeConfig.from_file(runtime)
+    cluster_up(
+        hostfile=hostfile,
+        port=port,
+        dashboard_port=dashboard_port,
+        ssh_user=ssh_user,
+        ssh_key=ssh_key,
+        runtime=runtime_cfg,
+    )
+
+
+@ray.command(name="down")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="pkill Ray daemons by their unique temp-dir tag instead of `ray stop`",
+)
+def ray_down(force: bool):
+    """Stop the cluster started by `axolotl ray up`."""
+    from axolotl.cli.launchers.ray_cluster import cluster_down
+
+    cluster_down(force=force)
+
+
+@ray.command(name="status")
+@click.option(
+    "--address",
+    default=None,
+    help="Ray address to query (defaults to the cluster recorded by `axolotl ray up`)",
+)
+def ray_status(address: str | None):
+    """Show Ray cluster status."""
+    from axolotl.cli.launchers.ray_cluster import cluster_status
+
+    cluster_status(address=address)
+
+
 def main():
     cli()
 
