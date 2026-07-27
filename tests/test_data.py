@@ -173,23 +173,37 @@ class TestDropNoTrainableTokens(unittest.TestCase):
 
     def _process(self, labels):
         cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
-        dataset = Dataset.from_dict({"labels": labels})
-        train_dataset, _ = process_datasets_for_packing(cfg, dataset, None)
-        return train_dataset
+        return process_datasets_for_packing(
+            cfg,
+            Dataset.from_dict({"labels": labels}),
+            Dataset.from_dict({"labels": labels}),
+        )
 
     def test_fully_masked_sample_is_dropped(self):
-        # a sample whose labels are all -100 has zero trainable tokens and must be dropped
-        result = self._process([[-100, -100, -100], [-100, 7, -100]])
-        self.assertEqual(result["labels"], [[-100, 7, -100]])
+        train_dataset, eval_dataset = self._process(
+            [[-100, -100, -100], [-100, 7, -100]]
+        )
+        self.assertEqual(train_dataset["labels"], [[-100, 7, -100]])
+        self.assertEqual(eval_dataset["labels"], [[-100, 7, -100]])
 
-    def test_all_samples_masked_drops_everything(self):
-        result = self._process([[-100, -100], [-100, -100, -100]])
-        self.assertEqual(len(result), 0)
+    def test_all_samples_masked_raises(self):
+        with self.assertRaisesRegex(ValueError, "train dataset has no samples left"):
+            self._process([[-100, -100], [-100, -100, -100]])
+
+    def test_all_eval_samples_masked_raises(self):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        with self.assertRaisesRegex(ValueError, "eval dataset has no samples left"):
+            process_datasets_for_packing(
+                cfg,
+                Dataset.from_dict({"labels": [[1, 2, 3]]}),
+                Dataset.from_dict({"labels": [[-100, -100]]}),
+            )
 
     def test_samples_with_trainable_tokens_are_kept(self):
         labels = [[1, 2, 3], [-100, 4, -100]]
-        result = self._process(labels)
-        self.assertEqual(result["labels"], labels)
+        train_dataset, eval_dataset = self._process(labels)
+        self.assertEqual(train_dataset["labels"], labels)
+        self.assertEqual(eval_dataset["labels"], labels)
 
 
 if __name__ == "__main__":

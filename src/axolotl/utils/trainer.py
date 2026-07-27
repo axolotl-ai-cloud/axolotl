@@ -9,7 +9,6 @@ from functools import partial
 from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import torch
@@ -271,14 +270,19 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # If it's a list, we assume we're dealing with a batch
         if isinstance(labels[0], int):
             # Single example: return a single bool
-            return bool(np.any(np.asarray(labels) != -100))
+            return any(v != -100 for v in labels)
 
-        # Batched: 'labels' is a list of lists
-        # Return a list of booleans, one per sub-list
-        results = [
-            bool(np.any(np.asarray(row_labels) != -100)) for row_labels in labels
-        ]
+        results = [any(v != -100 for v in row_labels) for row_labels in labels]
         return results
+
+    def raise_if_empty(dataset, split):
+        if len(dataset) == 0:
+            raise ValueError(
+                f"The {split} dataset has no samples left after dropping samples with "
+                "no trainable tokens. Every sample had all of its labels masked to "
+                "-100, so there is nothing to train on. Check `train_on_inputs` and "
+                "your prompt strategy / chat template."
+            )
 
     try:
         prior_len = len(train_dataset)
@@ -299,12 +303,13 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         **filter_map_kwargs,
         **drop_long_kwargs,
     )
-    if prior_len:
+    if prior_len is not None:
         dropped = prior_len - len(train_dataset)
         if dropped:
             LOG.warning(
                 f"Dropped {dropped} samples with no trainable tokens from train dataset"
             )
+        raise_if_empty(train_dataset, "train")
 
     if eval_dataset:
         try:
@@ -317,12 +322,13 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             **filter_map_kwargs,
             **drop_long_kwargs,
         )
-        if prior_len:
+        if prior_len is not None:
             dropped = prior_len - len(eval_dataset)
             if dropped:
                 LOG.warning(
                     f"Dropped {dropped} samples with no trainable tokens from eval dataset"
                 )
+            raise_if_empty(eval_dataset, "eval")
 
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
