@@ -90,7 +90,12 @@ def _coerce_value(value: Any, existing: Optional[Any] = None) -> Any:
 
 API_KEY_FIELDS = {"comet_api_key"}
 
-RAY_RUNTIME_KEYS = {"use_ray", "ray_num_workers", "resources_per_worker", "ray_run_name"}
+RAY_RUNTIME_KEYS = {
+    "use_ray",
+    "ray_num_workers",
+    "resources_per_worker",
+    "ray_run_name",
+}
 
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
 

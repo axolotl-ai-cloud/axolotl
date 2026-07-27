@@ -69,7 +69,10 @@ class TestRayLauncherConfig:
             RayLauncherConfig.model_validate({"num_workers": 0})
 
     def test_num_workers_auto(self):
-        assert RayLauncherConfig.model_validate({"num_workers": "auto"}).num_workers == "auto"
+        assert (
+            RayLauncherConfig.model_validate({"num_workers": "auto"}).num_workers
+            == "auto"
+        )
 
     @pytest.mark.parametrize(
         "address,expected",

@@ -181,7 +181,7 @@ def train(
 def evaluate(
     ctx: click.Context,
     config: str,
-    launcher: str | None = None,
+    launcher: Literal["accelerate", "torchrun", "python"] | None = None,
     runtime: str | None = None,
     **kwargs,
 ):
@@ -467,7 +467,13 @@ def agent_docs(topic: Optional[str], list_topics: bool):
     help="Output format (default: json)",
 )
 @click.option("--field", help="Show schema for a specific field only")
-def config_schema(output_format: str, field: Optional[str]):
+@click.option(
+    "--runtime",
+    "runtime_schema",
+    is_flag=True,
+    help="Dump the runtime (--runtime file) schema instead of the training config schema",
+)
+def config_schema(output_format: str, field: Optional[str], runtime_schema: bool):
     """Dump the full config JSON schema.
 
     Useful for AI agents and tooling to discover all available config options,
@@ -478,13 +484,24 @@ def config_schema(output_format: str, field: Optional[str]):
         axolotl config-schema                    # full JSON schema
         axolotl config-schema --format yaml      # YAML format
         axolotl config-schema --field adapter     # single field
+        axolotl config-schema --runtime           # --runtime file schema
     """
     import json
 
-    from axolotl.utils.schemas.config import AxolotlInputConfig
+    from pydantic import BaseModel
+
+    schema_model: type[BaseModel]
+    if runtime_schema:
+        from axolotl.utils.schemas.runtime import RuntimeConfig
+
+        schema_model = RuntimeConfig
+    else:
+        from axolotl.utils.schemas.config import AxolotlInputConfig
+
+        schema_model = AxolotlInputConfig
 
     try:
-        schema = AxolotlInputConfig.model_json_schema()
+        schema = schema_model.model_json_schema()
     except (TypeError, ValueError, AttributeError) as exc:
         # Fallback: dump field names, types, and defaults when full schema
         # generation fails (e.g. torch.dtype not JSON-serializable)
@@ -492,7 +509,7 @@ def config_schema(output_format: str, field: Optional[str]):
             "Full JSON schema generation failed, using simplified fallback: %s", exc
         )
         fields = {}
-        for name, field_info in AxolotlInputConfig.model_fields.items():
+        for name, field_info in schema_model.model_fields.items():
             entry = {}
             if field_info.description:
                 entry["description"] = field_info.description

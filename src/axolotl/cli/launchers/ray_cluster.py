@@ -88,7 +88,11 @@ def cluster_up(
     ssh_key = ssh_key or (cluster_cfg.ssh_key if cluster_cfg else None)
 
     head_ip = _primary_ip()
-    workers = [h for h in parse_hostfile(hostfile) if not _is_local_host(h)] if hostfile else []
+    workers = (
+        [h for h in parse_hostfile(hostfile) if not _is_local_host(h)]
+        if hostfile
+        else []
+    )
 
     if _probe_cluster(f"{head_ip}:{port}"):
         LOG.info("Ray head already running at %s:%s", head_ip, port)
@@ -101,7 +105,9 @@ def cluster_up(
     else:
         temp_dir = TEMP_DIR_ROOT / f"cluster-{str(uuid.uuid4())[:8]}"
         temp_dir.mkdir(parents=True, exist_ok=True)
-        LOG.info("starting Ray head on %s:%s (dashboard :%s)", head_ip, port, dashboard_port)
+        LOG.info(
+            "starting Ray head on %s:%s (dashboard :%s)", head_ip, port, dashboard_port
+        )
         subprocess.run(  # nosec B603 B607
             [
                 "ray",
@@ -146,7 +152,9 @@ def cluster_up(
         else:
             stderr_head = "\n".join(result.stderr.strip().splitlines()[:5])
             failures.append((host, stderr_head))
-            LOG.error("failed to join %s (exit %d):\n%s", host, result.returncode, stderr_head)
+            LOG.error(
+                "failed to join %s (exit %d):\n%s", host, result.returncode, stderr_head
+            )
 
     state.workers = joined
     state.save()
@@ -179,7 +187,9 @@ def cluster_down(force: bool = False) -> None:
     _require_ray_binary()
     state = ClusterState.load()
     if state is None:
-        LOG.warning("no recorded cluster (%s); running local `ray stop` only", STATE_FILE)
+        LOG.warning(
+            "no recorded cluster (%s); running local `ray stop` only", STATE_FILE
+        )
         subprocess.run(["ray", "stop"], check=False)  # nosec B603 B607
         return
 

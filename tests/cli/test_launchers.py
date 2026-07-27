@@ -231,7 +231,10 @@ class TestSubmitRayJob:
     @pytest.fixture
     def fake_job_submission(self, fake_ray, monkeypatch):
         state = SimpleNamespace(
-            submitted=None, stopped=None, status="SUCCEEDED", logs=["line1\n", "line2\n"]
+            submitted=None,
+            stopped=None,
+            status="SUCCEEDED",
+            logs=["line1\n", "line2\n"],
         )
         job_status = SimpleNamespace(SUCCEEDED="SUCCEEDED", FAILED="FAILED")
 

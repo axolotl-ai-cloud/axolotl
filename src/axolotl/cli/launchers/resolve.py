@@ -7,7 +7,7 @@ import yaml
 
 from axolotl.cli.launchers.base import merge_launcher_args, pop_legacy_launcher_kwargs
 from axolotl.utils.logging import get_logger
-from axolotl.utils.schemas.runtime import RuntimeConfig
+from axolotl.utils.schemas.runtime import LauncherChoice, RuntimeConfig
 
 LOG = get_logger(__name__)
 
@@ -29,7 +29,10 @@ _ACCELERATE_FIELDS = (
     "mixed_precision",
 )
 _LEGACY_KWARG_TRANSLATION = {
-    "accelerate": {"num_processes": "num_processes", "main_process_port": "main_process_port"},
+    "accelerate": {
+        "num_processes": "num_processes",
+        "main_process_port": "main_process_port",
+    },
     "torchrun": {"num_processes": "nproc_per_node", "main_process_port": "master_port"},
 }
 
@@ -38,7 +41,7 @@ _LEGACY_KWARG_TRANSLATION = {
 class ResolvedLaunch:
     """Outcome of launcher resolution for a single train/evaluate invocation."""
 
-    launcher: str
+    launcher: LauncherChoice
     launcher_args: list[str]
     env: dict[str, str]
     runtime: RuntimeConfig | None
@@ -127,7 +130,7 @@ def _apply_ray_runtime_kwargs(runtime: RuntimeConfig | None, kwargs: dict) -> No
 def resolve_launch(
     config: str,
     runtime_path: str | None,
-    cli_launcher: str | None,
+    cli_launcher: LauncherChoice | None,
     kwargs: dict,
     passthrough_args: list[str],
     supports_ray: bool = True,

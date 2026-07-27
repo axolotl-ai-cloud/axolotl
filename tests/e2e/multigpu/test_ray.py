@@ -207,3 +207,67 @@ class TestMultiGPURay:
         check_tensorboard(
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
+
+    @require_torch_2_7_0
+    def test_lora_ddp_runtime_file(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 1024,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "val_set_size": 0.05,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 2,
+                "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_8bit",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "use_tensorboard": True,
+                "save_first_step": False,
+            }
+        )
+        runtime = {
+            "launcher": "ray",
+            "ray": {
+                "num_workers": 2,
+                "resources_per_worker": {"GPU": 1},
+            },
+        }
+
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+        with open(Path(temp_dir) / "runtime.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(runtime, Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--runtime",
+                str(Path(temp_dir) / "runtime.yaml"),
+            ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+        )

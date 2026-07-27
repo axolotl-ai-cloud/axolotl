@@ -341,9 +341,7 @@ class TestTrainCommand(BaseCliTest):
             assert result.exit_code == 0
             assert mock_subprocess.call_args.args[0] == "accelerate"
 
-    def test_train_runtime_ray_dispatch(
-        self, cli_runner, tmp_path, valid_test_config
-    ):
+    def test_train_runtime_ray_dispatch(self, cli_runner, tmp_path, valid_test_config):
         """Test that a ray runtime file dispatches to the ray launcher"""
         config_path = tmp_path / "config.yml"
         config_path.write_text(valid_test_config)
@@ -351,9 +349,7 @@ class TestTrainCommand(BaseCliTest):
         runtime_path = tmp_path / "runtime.yml"
         runtime_path.write_text("launcher: ray\nray:\n  num_workers: 2\n")
 
-        with patch(
-            "axolotl.cli.launchers.ray_.launch_ray_training"
-        ) as mock_ray_launch:
+        with patch("axolotl.cli.launchers.ray_.launch_ray_training") as mock_ray_launch:
             result = cli_runner.invoke(
                 cli,
                 ["train", str(config_path), "--runtime", str(runtime_path)],

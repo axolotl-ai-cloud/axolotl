@@ -1,0 +1,16 @@
+# Submit training to a remote Ray cluster via the Jobs API — nothing runs locally:
+#   axolotl train recipe.yaml --runtime examples/runtime/ray-jobs-remote.yaml
+launcher: ray
+ray:
+  address: http://head-node:8265
+  num_workers: auto # derived from total cluster GPUs
+  resources_per_worker:
+    GPU: 1
+  # detach: true    # return after submitting instead of tailing logs
+  runtime_env:
+    working_dir: . # uploaded to the cluster; keep datasets on shared storage
+    excludes:
+      - outputs/
+      - "*.bin"
+    env_vars:
+      HF_HOME: /mnt/shared/hf

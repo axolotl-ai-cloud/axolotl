@@ -147,13 +147,17 @@ class TestRuntimeLauncherArgs:
         assert resolved.launcher_args[-2:] == ["--nproc-per-node", "4"]
 
     def test_foreign_block_produces_no_args(self, tmp_path, train_cfg):
-        runtime = write_runtime(tmp_path, "launcher: accelerate\ntorchrun:\n  nnodes: 2\n")
+        runtime = write_runtime(
+            tmp_path, "launcher: accelerate\ntorchrun:\n  nnodes: 2\n"
+        )
         resolved = resolve_launch(train_cfg, runtime, None, {}, [])
         assert resolved.launcher == "accelerate"
         assert resolved.launcher_args == []
 
     def test_env_block_returned(self, tmp_path, train_cfg):
-        runtime = write_runtime(tmp_path, "launcher: torchrun\nenv:\n  NCCL_DEBUG: WARN\n")
+        runtime = write_runtime(
+            tmp_path, "launcher: torchrun\nenv:\n  NCCL_DEBUG: WARN\n"
+        )
         resolved = resolve_launch(train_cfg, runtime, None, {}, [])
         assert resolved.env == {"NCCL_DEBUG": "WARN"}
 

@@ -47,7 +47,11 @@ def launch_ray_training(
     """Run training through Ray Train (in-process driver) or the Ray Jobs API."""
     ray_rt = runtime.ray if runtime is not None else None
 
-    if ray_rt is not None and ray_rt.is_job_submission:
+    if (
+        runtime is not None
+        and runtime.ray is not None
+        and runtime.ray.is_job_submission
+    ):
         if os.environ.get(RAY_SUBMITTED_ENV) == "1":
             raise RuntimeError(
                 "refusing to submit a Ray job from inside a Ray job; the staged"
@@ -226,7 +230,7 @@ def submit_ray_job(
                 submission_id,
             )
             client.stop_job(submission_id)
-            raise SystemExit(130)  # pylint: disable=raise-missing-from
+            raise SystemExit(130) from None
         if status != JobStatus.SUCCEEDED:
             LOG.error("Ray job %s finished with status %s", submission_id, status)
             raise SystemExit(1)

@@ -1,0 +1,8 @@
+# Run on all GPUs of the local (or already-attached) Ray cluster:
+#   axolotl train recipe.yaml --runtime examples/runtime/ray-single-node.yaml
+launcher: ray
+ray:
+  address: auto # attach to a running cluster, or start a local one
+  num_workers: auto # one worker per available GPU
+  resources_per_worker:
+    GPU: 1

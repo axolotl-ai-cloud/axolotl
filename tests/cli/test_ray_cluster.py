@@ -16,7 +16,9 @@ class TestParseHostfile:
 
     def test_slots_and_comments_ignored(self, tmp_path):
         hostfile = tmp_path / "hostfile"
-        hostfile.write_text("# cluster hosts\nnode1 slots=8\n\nnode2 slots=8  # gpu box\n")
+        hostfile.write_text(
+            "# cluster hosts\nnode1 slots=8\n\nnode2 slots=8  # gpu box\n"
+        )
         assert ray_cluster.parse_hostfile(str(hostfile)) == ["node1", "node2"]
 
     def test_empty_hostfile_raises(self, tmp_path):

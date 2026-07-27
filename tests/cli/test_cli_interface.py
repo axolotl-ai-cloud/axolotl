@@ -45,3 +45,21 @@ def test_required_config_argument(cli_runner):
     result = cli_runner.invoke(cli, ["train"])
     assert result.exit_code != 0
     assert "Missing argument 'CONFIG'" in result.output
+
+
+def test_config_schema_runtime(cli_runner):
+    """Test that config-schema --runtime dumps the runtime file schema"""
+    result = cli_runner.invoke(cli, ["config-schema", "--runtime"])
+
+    assert result.exit_code == 0
+    for key in ("launcher", "ray", "torchrun", "accelerate", "env"):
+        assert f'"{key}"' in result.output
+
+
+def test_ray_group_help(cli_runner):
+    """Test that the ray command group lists its subcommands without ray installed"""
+    result = cli_runner.invoke(cli, ["ray", "--help"])
+
+    assert result.exit_code == 0
+    for subcommand in ("up", "down", "status"):
+        assert subcommand in result.output

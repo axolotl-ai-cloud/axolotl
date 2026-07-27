@@ -508,6 +508,7 @@ website:
             - docs/docker.qmd
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
+            - docs/runtime-config.qmd
             - docs/ray-integration.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
