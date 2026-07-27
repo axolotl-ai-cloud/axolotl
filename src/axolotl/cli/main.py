@@ -18,6 +18,7 @@ from axolotl.cli.args import (
 )
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config_options import AXOLOTL_CONFIG_CLI_OPTIONS
+from axolotl.cli.launchers.resolve import resolve_launch
 from axolotl.cli.plugins import PluginCommandGroup
 from axolotl.cli.utils import (
     add_options_from_config_options,
@@ -82,9 +83,16 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(
     "--launcher",
-    type=click.Choice(["accelerate", "torchrun", "python"]),
-    default="accelerate",
+    type=click.Choice(["accelerate", "torchrun", "ray", "python"]),
+    default=None,
+    show_default="accelerate",
     help="Launcher to use for multi-GPU training",
+)
+@click.option(
+    "--runtime",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Path to a runtime/cluster config YAML (launcher + per-launcher settings)",
 )
 @click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @click.option(
@@ -99,7 +107,8 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
 def train(
     ctx: click.Context,
     config: str,
-    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher: Literal["accelerate", "torchrun", "ray", "python"] | None = None,
+    runtime: str | None = None,
     cloud: str | None = None,
     sweep: str | None = None,
     **kwargs,
@@ -110,7 +119,10 @@ def train(
     Args:
         ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
-        launcher: Launcher to use for multi-GPU training ("accelerate", "torchrun", or "python").
+        launcher: Launcher to use for multi-GPU training ("accelerate", "torchrun",
+            "ray", or "python"). Defaults to "accelerate" unless a --runtime file or
+            the training config selects otherwise.
+        runtime: Path to a runtime/cluster config YAML file.
         cloud: Path to a cloud accelerator configuration file
         sweep: Path to YAML config for sweeping hyperparameters.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
@@ -119,14 +131,22 @@ def train(
     # Extract launcher args from extra args (after --)
     launcher_args = ctx.args if ctx.args else []
 
-    # Handle Ray launcher override
-    _launcher = None if kwargs.get("use_ray") else launcher
+    resolved = resolve_launch(config, runtime, launcher, kwargs, launcher_args)
 
     # Process each configuration
     for cfg_file, is_group in generate_config_files(config, sweep):
         try:
             use_exec = is_group is not True
-            launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args, use_exec)
+            launch_training(
+                cfg_file,
+                resolved.launcher,
+                cloud,
+                kwargs,
+                resolved.launcher_args,
+                use_exec,
+                env=resolved.env,
+                runtime=resolved.runtime,
+            )
         except subprocess.CalledProcessError as exc:
             LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
             if not sweep:
@@ -144,14 +164,27 @@ def train(
 @click.option(
     "--launcher",
     type=click.Choice(["accelerate", "torchrun", "python"]),
-    default="accelerate",
+    default=None,
+    show_default="accelerate",
     help="Launcher to use for multi-GPU evaluation",
+)
+@click.option(
+    "--runtime",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Path to a runtime/cluster config YAML (launcher + per-launcher settings)",
 )
 @add_options_from_dataclass(EvaluateCliArgs)
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 @click.pass_context
-def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
+def evaluate(
+    ctx: click.Context,
+    config: str,
+    launcher: str | None = None,
+    runtime: str | None = None,
+    **kwargs,
+):
     """
     Evaluate a model.
 
@@ -159,22 +192,30 @@ def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
         ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for multi-GPU evaluation ("accelerate", "torchrun", or "python").
+        runtime: Path to a runtime/cluster config YAML file.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
     # Extract launcher args from extra args (after --)
     launcher_args = ctx.args if ctx.args else []
 
-    if launcher in LAUNCHER_COMMAND_MAPPING:
+    resolved = resolve_launch(
+        config, runtime, launcher, kwargs, launcher_args, supports_ray=False
+    )
+
+    if resolved.launcher in LAUNCHER_COMMAND_MAPPING:
         base_cmd = (
-            LAUNCHER_COMMAND_MAPPING[launcher]
-            + launcher_args
+            LAUNCHER_COMMAND_MAPPING[resolved.launcher]
+            + resolved.launcher_args
             + ["-m", "axolotl.cli.evaluate"]
         )
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
+        run_kwargs: dict = {"check": True}
+        if resolved.env:
+            run_kwargs["env"] = {**os.environ, **resolved.env}
+        subprocess.run(cmd, **run_kwargs)  # nosec B603
     else:
         from axolotl.cli.evaluate import do_cli
 

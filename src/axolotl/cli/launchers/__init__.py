@@ -1,7 +1,7 @@
 """Launcher backends for axolotl training (accelerate, torchrun, ray, python)."""
 
 import os
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from axolotl.cli.launchers.accelerate import _launch_accelerate_training
 from axolotl.cli.launchers.base import build_command, run_command
@@ -9,6 +9,9 @@ from axolotl.cli.launchers.torchrun import (
     _add_default_rdzv_args,
     _launch_torchrun_training,
 )
+
+if TYPE_CHECKING:
+    from axolotl.utils.schemas.runtime import RuntimeConfig
 
 LauncherChoice = Literal["accelerate", "torchrun", "ray", "python"]
 
@@ -21,6 +24,7 @@ def launch_training(
     launcher_args: list[str] | None = None,
     use_exec: bool = False,
     env: dict[str, str] | None = None,
+    runtime: "RuntimeConfig | None" = None,
 ) -> None:
     """Execute training with the given configuration."""
     launcher_args = launcher_args or []
@@ -32,10 +36,14 @@ def launch_training(
             _launch_accelerate_training(cfg_file, kwargs, launcher_args, use_exec, env)
         elif launcher == "torchrun":
             _launch_torchrun_training(cfg_file, kwargs, launcher_args, use_exec, env)
+        elif launcher == "ray":
+            from axolotl.cli.launchers.ray_ import launch_ray_training
+
+            launch_ray_training(cfg_file, kwargs, runtime, env=env)
         elif launcher == "python":
             _launch_python_training(cfg_file, kwargs)
     elif launcher is None:
-        # handle ray train launch
+        # legacy programmatic path (pre-runtime-config callers passed None for ray)
         _launch_python_training(cfg_file, kwargs)
 
 

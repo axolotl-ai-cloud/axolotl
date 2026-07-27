@@ -5,6 +5,34 @@ import subprocess  # nosec
 import sys
 from typing import Any
 
+LEGACY_LAUNCHER_KWARGS = ("num_processes", "main_process_port")
+
+
+def pop_legacy_launcher_kwargs(kwargs: dict) -> dict:
+    """Remove legacy launcher kwargs so they never leak into config overrides."""
+    return {key: kwargs.pop(key) for key in LEGACY_LAUNCHER_KWARGS if key in kwargs}
+
+
+def _flag_name(arg: str) -> str | None:
+    if not arg.startswith("--"):
+        return None
+    return arg[2:].split("=", 1)[0].replace("-", "_")
+
+
+def merge_launcher_args(derived: list[str], passthrough: list[str]) -> list[str]:
+    """
+    Merge runtime-file-derived launcher args with explicit `--` passthrough args.
+
+    Passthrough wins: any derived flag whose normalized name also appears in the
+    passthrough list is dropped, and passthrough args come last. `derived` must
+    use single-token `--name=value` form so flags can be dropped independently.
+    """
+    overridden = {name for arg in passthrough if (name := _flag_name(arg))}
+    kept = [
+        arg for arg in derived if (name := _flag_name(arg)) and name not in overridden
+    ]
+    return kept + list(passthrough)
+
 
 def build_command(base_cmd: list[str], options: dict[str, Any]) -> list[str]:
     """
@@ -43,11 +71,13 @@ def run_command(
             otherwise run as a subprocess (sweeps need the loop to continue).
         env: Extra environment variables layered over `os.environ`.
     """
-    full_env = {**os.environ, **env} if env else None
     if use_exec:
         # make sure to flush stdout and stderr before replacing the process
         sys.stdout.flush()
         sys.stderr.flush()
-        os.execvpe(cmd[0], cmd, full_env if full_env is not None else os.environ)  # nosec B606
+        os.execvpe(cmd[0], cmd, {**os.environ, **env} if env else os.environ)  # nosec B606
     else:
-        subprocess.run(cmd, check=True, env=full_env)  # nosec B603
+        run_kwargs: dict = {"check": True}
+        if env:
+            run_kwargs["env"] = {**os.environ, **env}
+        subprocess.run(cmd, **run_kwargs)  # nosec B603

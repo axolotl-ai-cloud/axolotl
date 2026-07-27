@@ -249,3 +249,119 @@ class TestTrainCommand(BaseCliTest):
             call_kwargs = mock_cloud_train.call_args.kwargs
             assert call_kwargs["launcher"] == "torchrun"
             assert call_kwargs["launcher_args"] == ["--nproc_per_node=4", "--nnodes=2"]
+
+    def test_train_with_runtime_file_torchrun(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test train with a --runtime file selecting torchrun and deriving args"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        runtime_path = tmp_path / "runtime.yml"
+        runtime_path.write_text(
+            "launcher: torchrun\n"
+            "torchrun:\n"
+            "  nnodes: 2\n"
+            "  nproc_per_node: 8\n"
+            "env:\n"
+            "  NCCL_DEBUG: WARN\n"
+        )
+
+        with patch("os.execvpe") as mock_subprocess:
+            result = cli_runner.invoke(
+                cli,
+                ["train", str(config_path), "--runtime", str(runtime_path)],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            mock_subprocess.assert_called_once()
+
+            called_cmd = mock_subprocess.call_args.args[1]
+            assert called_cmd[0] == "torchrun"
+            assert "--nnodes=2" in called_cmd
+            assert "--nproc_per_node=8" in called_cmd
+
+            called_env = mock_subprocess.call_args.args[2]
+            assert called_env["NCCL_DEBUG"] == "WARN"
+
+    def test_train_runtime_passthrough_overrides(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test that `--` passthrough args win over runtime file values"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        runtime_path = tmp_path / "runtime.yml"
+        runtime_path.write_text("launcher: torchrun\ntorchrun:\n  nproc_per_node: 8\n")
+
+        with patch("os.execvpe") as mock_subprocess:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "train",
+                    str(config_path),
+                    "--runtime",
+                    str(runtime_path),
+                    "--",
+                    "--nproc_per_node=4",
+                ],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            called_cmd = mock_subprocess.call_args.args[1]
+            assert "--nproc_per_node=4" in called_cmd
+            assert "--nproc_per_node=8" not in called_cmd
+
+    def test_train_cli_launcher_overrides_runtime_file(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test that an explicit --launcher beats the runtime file"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        runtime_path = tmp_path / "runtime.yml"
+        runtime_path.write_text("launcher: torchrun\n")
+
+        with patch("os.execvpe") as mock_subprocess:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "train",
+                    str(config_path),
+                    "--runtime",
+                    str(runtime_path),
+                    "--launcher",
+                    "accelerate",
+                ],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            assert mock_subprocess.call_args.args[0] == "accelerate"
+
+    def test_train_runtime_ray_dispatch(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test that a ray runtime file dispatches to the ray launcher"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        runtime_path = tmp_path / "runtime.yml"
+        runtime_path.write_text("launcher: ray\nray:\n  num_workers: 2\n")
+
+        with patch(
+            "axolotl.cli.launchers.ray_.launch_ray_training"
+        ) as mock_ray_launch:
+            result = cli_runner.invoke(
+                cli,
+                ["train", str(config_path), "--runtime", str(runtime_path)],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            mock_ray_launch.assert_called_once()
+            passed_kwargs = mock_ray_launch.call_args.args[1]
+            assert passed_kwargs["use_ray"] is True
+            assert passed_kwargs["ray_num_workers"] == 2
