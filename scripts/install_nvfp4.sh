@@ -91,8 +91,33 @@ PIP(){ if [[ "$TOOL" == "uv" ]] && command -v uv >/dev/null 2>&1; then uv pip "$
 
 # --- 1. torch (cu130) ----------------------------------------------------------
 if [[ "$WITH_TORCH" == "1" ]]; then
-  say "Installing PyTorch (cu130) from $TORCH_INDEX"
-  PIP install torch torchvision torchaudio --index-url "$TORCH_INDEX"
+  # Pin to pyproject's torch range: the cu130 index serves newer torch than the
+  # cap, and the later `-e .[nvfp4]` would then downgrade-swap torch to a PyPI
+  # (non-cu130) wheel, breaking mslk's dlopen ABI match.
+  TORCH_RANGE="$(python - "$REPO_ROOT/pyproject.toml" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+try:
+    import tomllib
+
+    with open(path, "rb") as f:
+        deps = tomllib.load(f)["project"]["dependencies"]
+except ModuleNotFoundError:  # python < 3.11
+    with open(path, encoding="utf-8") as f:
+        deps = re.findall(r'^\s*"(torch[^"]*)",?\s*$', f.read(), re.M)
+
+for dep in deps:
+    m = re.fullmatch(r"torch(?:\[[^\]]*\])?\s*([<>=!~][^;]*)?(?:;.*)?", dep.strip())
+    if m:
+        print((m.group(1) or "").strip())
+        sys.exit(0)
+sys.exit(1)
+PY
+)" || { echo "ERROR: could not read the torch version range from pyproject.toml" >&2; exit 1; }
+  say "Installing PyTorch (cu130) from $TORCH_INDEX (torch${TORCH_RANGE})"
+  PIP install "torch${TORCH_RANGE}" torchvision torchaudio --index-url "$TORCH_INDEX"
 fi
 
 # --- 2. transformers -----------------------------------------------------------

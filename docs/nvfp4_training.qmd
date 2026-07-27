@@ -70,10 +70,10 @@ The mode is selected by the `adapter:` setting plus `nvfp4_training.base` (adapt
 |------|-----------|--------|------------------|--------|------|
 | Full fine-tune | *(none)* | n/a | all eligible base GEMMs (fprop+dgrad+wgrad) | - | FP4 GEMM win |
 | LoRA FP4-compute (default) | `lora` | `compute` | frozen base fprop+dgrad, pre-quantized once; adapters bf16 | ~1.75× weight | **~1.5× (9B) / ~1.7× (VL-8B)** |
-| NVFP4-QLoRA (FP4 storage) | `lora`/`qlora` | `storage` | frozen base GEMMs, base stored packed in FP4 | ~3.5× weight | slower than `compute` |
+| NVFP4-QLoRA (FP4 storage) | `lora` | `storage` | frozen base GEMMs, base stored packed in FP4 | ~3.5× weight | slower than `compute` |
 | LoRA HP base | `lora` | `hp` | frozen base GEMMs, base kept bf16, re-quantized each step | none | re-quants each step |
 
-`base: compute` (the default LoRA path) pre-quantizes the frozen base ONCE at load into two NVFP4 layouts, so the base GEMMs run pure FP4 with no per-step quant prologue — the fastest LoRA path. `adapter: qlora` (or `base: storage`) selects FP4 storage for maximum memory savings. `base: hp` keeps the frozen base in bf16 and re-quantizes it to FP4 every step: no memory win and an extra per-step cost, so it is a diagnostic/fallback (isolating FP4-compute effects from FP4-storage effects, or for a base that can't be packed) rather than a routine choice — prefer `compute` or `storage`.
+`base: compute` (the default LoRA path) pre-quantizes the frozen base ONCE at load into two NVFP4 layouts, so the base GEMMs run pure FP4 with no per-step quant prologue — the fastest LoRA path. `base: storage` selects FP4 storage for maximum memory savings (always with `adapter: lora` — `adapter: qlora` forces bitsandbytes `load_in_4bit`, which cannot pair with FP4 storage). `base: hp` keeps the frozen base in bf16 and re-quantizes it to FP4 every step: no memory win and an extra per-step cost, so it is a diagnostic/fallback (isolating FP4-compute effects from FP4-storage effects, or for a base that can't be packed) rather than a routine choice — prefer `compute` or `storage`.
 
 ### Mode 1 — Full fine-tune (FFT)
 
@@ -119,7 +119,7 @@ nvfp4_training:
 
 ### Mode 3 — NVFP4-QLoRA (FP4 storage)
 
-The frozen base weight is **stored packed in FP4** with no high-precision master copy — **~3.5× weight memory savings** plus FP4 compute. This replaces bitsandbytes NF4 as the 4-bit QLoRA storage format. `adapter: qlora` implies `base: storage`.
+The frozen base weight is **stored packed in FP4** with no high-precision master copy — **~3.5× weight memory savings** plus FP4 compute: the QLoRA memory profile, with NVFP4 replacing bitsandbytes NF4 as the 4-bit storage format. Select it with `adapter: lora` + `base: storage` — not `adapter: qlora`, which forces bitsandbytes `load_in_4bit` and therefore cannot pair with FP4 storage.
 
 ```yaml
 base_model: Qwen/Qwen2.5-7B
@@ -127,7 +127,7 @@ base_model: Qwen/Qwen2.5-7B
 plugins:
   - axolotl.integrations.nvfp4.NVFP4Plugin
 
-adapter: qlora
+adapter: lora
 lora_r: 16
 lora_alpha: 32
 lora_target_modules: [q_proj, k_proj, v_proj, o_proj]
@@ -142,8 +142,10 @@ nvfp4_training:
 ```
 
 ::: {.callout-important}
-Do **not** combine `load_in_4bit: true` (bitsandbytes NF4) with NVFP4 base quantization — NVFP4-QLoRA *is* the 4-bit storage path; the two are mutually exclusive.
+Do **not** combine `load_in_4bit: true` (bitsandbytes NF4) with NVFP4 base quantization — NVFP4-QLoRA *is* the 4-bit storage path; the two are mutually exclusive, and the plugin rejects the combination with a clear error before the model loads. This is also why `adapter: qlora` cannot be used here: core config validation requires `load_in_4bit` for `qlora`.
 :::
+
+Shipped example: [examples/nvfp4/qwen-nvfp4-qlora.yaml](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/nvfp4/qwen-nvfp4-qlora.yaml).
 
 ## Throughput recipe (fastest measured path)
 
@@ -174,6 +176,8 @@ micro_batch_size: 4                        # the FP4 advantage grows with batch
 ::: {.callout-note}
 **Qwen3-VL** uses the same recipe but **drop `liger_swiglu`** (`qwen3_vl` has no gated SwiGLU); keep the other Liger flags.
 :::
+
+Shipped examples: [examples/nvfp4/qwen35-9b-lora-fastest.yaml](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/nvfp4/qwen35-9b-lora-fastest.yaml) (this recipe), [examples/nvfp4/qwen-nvfp4-training.yaml](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/nvfp4/qwen-nvfp4-training.yaml) (full fine-tune).
 
 NVFP4 tracks bf16 on these models — final loss within ~0.02–0.09 of bf16, finite grad_norm throughout, no NaN. Full fine-tune has the most validation coverage; the LoRA and NVFP4-QLoRA paths share the same FP4 GEMM machinery but have less standalone validation, so sanity-check your loss curve before a long run.
 
@@ -247,9 +251,9 @@ The `nvfp4_training:` block (schema: `src/axolotl/integrations/nvfp4/args.py`, `
 - **Sub-3B / hidden < ~1024 regress.** The per-GEMM quant prologue dominates — don't use NVFP4 there.
 - **`quantize: [lm_head]` + `cut_cross_entropy` is rejected** (CCE reads the head weight directly, bypassing the NVFP4 forward). The exception is `cross_entropy.mode: fp4`/`auto`, which reads the packed head and takes over the loss. Otherwise disable one.
 - **A *trainable* tied embedding is rejected** with `quantize: [lm_head]` (no bf16 master for the gradient); a frozen tied weight is fine.
-- **Do not combine `load_in_4bit`/`load_in_8bit` with NVFP4 base quantization** — NVFP4-QLoRA is the 4-bit storage path; the validator rejects the combination.
-- **fp16 is rejected** — the NVFP4 quantizer requires bf16/fp32. Use `bf16: true`.
-- **No DeepSpeed.** There is no ZeRO path for the FP4-GEMM swap; the validator rejects `deepspeed`. Use DDP, FSDP2, or single-GPU. (Tensor/context parallelism are not validated.)
+- **Do not combine `load_in_4bit`/`load_in_8bit` with NVFP4** — NVFP4-QLoRA is the 4-bit storage path; the plugin rejects the combination with a clear error before the model loads.
+- **fp16 is rejected** with a clear error before the model loads — the NVFP4 quantizer requires bf16/fp32. Use `bf16: true`.
+- **No DeepSpeed.** There is no ZeRO path for the FP4-GEMM swap; the plugin rejects `deepspeed` with a clear error before the model loads. Use DDP, FSDP2, or single-GPU. (Tensor/context parallelism are not validated.)
 
 ### Multi-GPU
 
