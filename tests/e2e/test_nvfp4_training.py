@@ -866,6 +866,61 @@ class TestNVFP4Training:
         # SR is unbiased: its averaged error collapses far below RTN's fixed bias
         assert sr_bias < 0.25 * rtn_bias, (rtn_bias, sr_bias)
 
+    def test_sr_dither_steps_at_e2m1_grid(self, monkeypatch):
+        """SR dither width must be the e2m1 grid step 2^(e-1) per band, not 2^e.
+
+        With ``rand_like`` pinned to 1.0 the dither is exactly +step/2, so the
+        step is recoverable as 2*(dithered - x); checked in the normalized
+        domain against the band rule (0.5 / 1.0 / 2.0, sub-1 clamped to 0.5)."""
+        from torchao.prototype.mx_formats.constants import F4_E2M1_MAX, F8E4M3_MAX
+        from torchao.prototype.mx_formats.nvfp4_tensor import per_tensor_amax_to_scale
+
+        from axolotl.integrations.nvfp4.nvfp4_training import _abs_amax, _sr_dither
+
+        monkeypatch.setattr(torch, "rand_like", lambda v: torch.ones_like(v))
+        # One 16-elem block spanning all bands with >10% margin to the 2/4 band
+        # edges (the e4m3 block-scale rounding shifts v by up to ~6%).
+        pattern = torch.tensor(
+            [6.0, -4.8, 3.0, -2.4, 1.6, -1.2, 0.9, -0.7]
+            + [0.45, -0.3, 0.2, -0.12, 0.08, -0.05, 0.02, -0.01],
+            device="cuda",
+            dtype=torch.float32,
+        )
+        gains = torch.tensor([0.5, 1.0, 2.0, 4.0], device="cuda")
+        t = (
+            (pattern.view(1, 1, 16) * gains.view(1, 4, 1))
+            .repeat(4, 1, 1)
+            .reshape(4, 64)
+        )
+        pts = per_tensor_amax_to_scale(_abs_amax(t).clamp(min=1e-12))
+        d = _sr_dither(t, pts)
+
+        # Mirror the function's two-level scaling into the normalized domain.
+        eps = torch.finfo(torch.float8_e4m3fn).tiny
+        x = t.reshape(4, -1, 16)
+        block_scale = torch.amax(torch.abs(x), dim=-1) / F4_E2M1_MAX
+        sbf8 = (
+            (block_scale / pts)
+            .clamp(min=eps, max=F8E4M3_MAX)
+            .to(torch.float8_e4m3fn)
+            .to(torch.float32)
+        )
+        recip = (1.0 / pts) / sbf8
+        v = x * recip.unsqueeze(-1)
+
+        absv = v.abs()
+        # All three bands present, no value on a band edge.
+        assert (absv < 2).any() and ((absv >= 2) & (absv < 4)).any()
+        assert (absv >= 4).any()
+        assert not ((absv == 2) | (absv == 4)).any()
+
+        recovered = 2.0 * (d.reshape(4, -1, 16) - x) * recip.unsqueeze(-1)
+        expected = torch.where(absv >= 4, 2.0, torch.where(absv >= 2, 1.0, 0.5))
+        assert torch.allclose(recovered, expected, rtol=1e-3, atol=1e-4), (
+            recovered,
+            expected,
+        )
+
     def test_rht_cancels(self):
         """With FP4 quant bypassed, the Hadamard rotation applied to both wgrad
         operands cancels in the product (orthonormal H^T H = I)."""
@@ -1284,6 +1339,79 @@ class TestNVFP4Adapters:
         assert torch.equal(fresh.layer.w_q.qdata, model.layer.w_q.qdata)
         assert torch.equal(fresh.layer(x), ref)  # frozen FP4 => bit-exact
 
+    def test_sidecar_downcasts_fsdp_subclass(self, tmp_path):
+        """A sidecar written from FSDP-wrapped buffers must hold plain
+        NVFP4Tensor: the FSDPNVFP4Tensor subclass exists only in processes that
+        built it, so a subprocess that never creates it must weights_only-load
+        the sidecar and see bit-identical qdata."""
+        import os
+        import subprocess
+        import sys
+        import textwrap
+        from pathlib import Path
+
+        import axolotl.integrations.nvfp4.nvfp4_training as nvmod
+        from axolotl.integrations.nvfp4.nvfp4_training import (
+            NVFP4FrozenBaseLinear,
+            NVFP4Recipe,
+            _to_fsdp_nvfp4,
+            save_nvfp4_packed,
+        )
+
+        class Wrap(nn.Module):
+            def __init__(self, m):
+                super().__init__()
+                self.layer = m
+
+        torch.manual_seed(0)
+        lin = nn.Linear(512, 256, bias=False).cuda().bfloat16()
+        model = Wrap(NVFP4FrozenBaseLinear.from_linear(lin, NVFP4Recipe()))
+        ref_qdata = model.layer.w_q.qdata.view(torch.uint8).cpu().clone()
+        model.layer.w_q = _to_fsdp_nvfp4(model.layer.w_q)
+        assert hasattr(model.layer.w_q, "fsdp_pre_all_gather")
+        assert save_nvfp4_packed(model, tmp_path) == 1
+        torch.save(ref_qdata, tmp_path / "ref_qdata.pt")
+
+        script = textwrap.dedent(
+            """
+            import sys
+
+            import torch
+
+            import axolotl.integrations.nvfp4.nvfp4_training as nvmod
+
+            assert not hasattr(nvmod, "FSDPNVFP4Tensor"), "import built the subclass"
+            from torchao.prototype.mx_formats.nvfp4_tensor import (
+                NVFP4Tensor,
+                QuantizeTensorToNVFP4Kwargs,
+            )
+
+            torch.serialization.add_safe_globals(
+                [NVFP4Tensor, QuantizeTensorToNVFP4Kwargs]
+            )
+            packed = torch.load(
+                sys.argv[1] + "/nvfp4_packed.pt", weights_only=True, map_location="cpu"
+            )
+            for key, val in packed.items():
+                assert type(val) is NVFP4Tensor, (key, type(val))
+            ref = torch.load(sys.argv[1] + "/ref_qdata.pt", weights_only=True)
+            assert torch.equal(packed["layer.w_q"].qdata.view(torch.uint8), ref)
+            print("SIDECAR_OK")
+            """
+        )
+        src_root = Path(nvmod.__file__).resolve().parents[3]
+        res = subprocess.run(
+            [sys.executable, "-c", script, str(tmp_path)],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, PYTHONPATH=str(src_root)),
+            timeout=300,
+            check=False,
+        )
+        assert res.returncode == 0 and "SIDECAR_OK" in res.stdout, (
+            res.stdout + res.stderr
+        )
+
     def test_save_nvfp4_fft_lossy_roundtrip(self, tmp_path):
         """save_nvfp4 for an FFT NVFP4Linear (bf16 master): packs the weight to
         FP4 (lossy), ~3x smaller, load-back forward within FP4 tolerance."""
@@ -1428,6 +1556,77 @@ class TestNVFP4Sm120Gate:
         )
         assert nvmod._recipe_fusion_available(t_cuda) is True
 
+    def test_probe_comparison_bit_exact_across_seeds(self):
+        """The probe's RTN-op-vs-torchao comparison must be stably bit-exact on
+        healthy hardware (the TORCHAO_SCALE=False comparison it replaced failed
+        most seeds, closing the gate spuriously)."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        if torch.cuda.get_device_capability()[0] not in (10, 12):
+            pytest.skip("requires Blackwell (sm_100 / sm_12x)")
+        import axolotl.integrations.nvfp4.nvfp4_training as nvmod
+
+        if not nvmod._mslk_available():
+            pytest.skip("MSLK not available")
+        from torchao.prototype.mx_formats.nvfp4_tensor import (
+            NVFP4Tensor,
+            per_tensor_amax_to_scale,
+        )
+
+        for seed in range(10):
+            for shape in ((256, 256), (128, 1024)):
+                gen = torch.Generator(device="cuda").manual_seed(seed)
+                t = torch.randn(
+                    *shape, device="cuda", dtype=torch.bfloat16, generator=gen
+                )
+                q, _s, _pts = nvmod._mslk_quantize_rtn_op(t)
+                pts = per_tensor_amax_to_scale(nvmod._abs_amax(t).clamp(min=1e-12))
+                ref = NVFP4Tensor.to_nvfp4(
+                    t.contiguous(),
+                    block_size=nvmod._BLOCK_SIZE,
+                    per_tensor_scale=pts,
+                )
+                assert torch.equal(q.view(torch.uint8), ref.qdata.view(torch.uint8)), (
+                    seed,
+                    shape,
+                )
+
+    def test_gate_close_warns(self, monkeypatch, caplog):
+        """A failed probe must close the gate AND log a warning (not silently
+        degrade to the slow path)."""
+        import logging as pylogging
+
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        nvmod = self._reset_probe_cache()
+        monkeypatch.delenv("AXOLOTL_NVFP4_SKIP_SM120F_PROBE", raising=False)
+        monkeypatch.setattr(
+            torch.cuda, "get_device_capability", lambda *a, **k: (12, 0)
+        )
+        monkeypatch.setattr(nvmod, "_mslk_available", lambda: True)
+
+        def bad_rtn(t):
+            m, n = t.shape
+            q = torch.zeros(m, n // 2, dtype=torch.uint8, device=t.device)
+            rm, rk = nvmod._swizzled_scale_shape(m, n)
+            s = torch.zeros(rm, rk, dtype=torch.float8_e4m3fn, device=t.device)
+            return (
+                q.view(torch.float4_e2m1fn_x2),
+                s,
+                torch.zeros((), dtype=torch.float32, device=t.device),
+            )
+
+        monkeypatch.setattr(nvmod, "_mslk_quantize_rtn_op", bad_rtn)
+        nvmod.LOG.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(pylogging.WARNING, logger=nvmod.LOG.name):
+                result = nvmod._sm120f_recipe_codegen_verified(torch.device("cuda"))
+        finally:
+            nvmod.LOG.removeHandler(caplog.handler)
+            nvmod._SM120F_RECIPE_VERIFIED = {}
+        assert result is False
+        assert "probe did not verify" in caplog.text
+
     @pytest.mark.skipif(not _is_sm_120(), reason="requires sm_120 (consumer Blackwell)")
     @require_torch_2_8_0
     def test_probe_verifies_and_gate_opens_on_real_sm120(self):
@@ -1473,3 +1672,40 @@ class TestNVFP4Sm120Gate:
             t.contiguous(), block_size=_BLOCK_SIZE, per_tensor_scale=pts
         )
         assert torch.equal(q.view(torch.uint8).cpu(), ref.qdata.view(torch.uint8).cpu())
+
+
+class TestNVFP4RecipeFallback:
+    """F6: with recipe fusion unavailable, SR/RHT must fall back eagerly — never
+    silently shed to plain RTN on gradient operands."""
+
+    def test_recipe_not_shed_without_fusion(self, monkeypatch):
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        import axolotl.integrations.nvfp4.nvfp4_training as nvmod
+        from axolotl.integrations.nvfp4.nvfp4_training import (
+            QuantPolicy,
+            _apply_rht,
+            _mslk_quantize,
+            _mslk_quantize_recipe,
+        )
+
+        if not nvmod._mslk_available():
+            pytest.skip("MSLK not available")
+
+        monkeypatch.setattr(nvmod, "_recipe_fusion_available", lambda t: False)
+        torch.manual_seed(0)
+        t = torch.randn(128, 256, device="cuda", dtype=torch.bfloat16)
+        plain_q = _mslk_quantize(t)[0].view(torch.uint8)
+
+        # SR requested: the output must differ from plain RTN (dither applied).
+        sr_q = _mslk_quantize_recipe(t, QuantPolicy(stochastic=True))[0]
+        assert not torch.equal(sr_q.view(torch.uint8), plain_q)
+
+        # No recipe: bitwise-identical to plain RTN.
+        rtn_q = _mslk_quantize_recipe(t, QuantPolicy())[0]
+        assert torch.equal(rtn_q.view(torch.uint8), plain_q)
+
+        # RHT requested: bitwise-identical to quantizing the rotated tensor.
+        rht_q = _mslk_quantize_recipe(t, QuantPolicy(hadamard=True))[0]
+        ref_q = _mslk_quantize(_apply_rht(t).contiguous())[0]
+        assert torch.equal(rht_q.view(torch.uint8), ref_q.view(torch.uint8))
