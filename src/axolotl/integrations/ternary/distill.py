@@ -1,0 +1,625 @@
+"""In-process distillation: a frozen FP teacher beside the ternary student."""
+
+from __future__ import annotations
+
+import inspect
+from dataclasses import dataclass
+from typing import Any
+
+import torch
+import torch.nn.functional as F
+from torch import nn
+from torch.utils.checkpoint import checkpoint
+from transformers import PreTrainedModel
+from typing_extensions import override
+
+from axolotl.core.trainers import AxolotlTrainer
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
+IGNORE_INDEX: int = -100
+
+# one logits chunk is capped at this many elements, so a 256k vocab still fits
+CHUNK_ELEMENT_BUDGET: int = 1 << 23
+MIN_CHUNK_TOKENS: int = 32
+MAX_CHUNK_TOKENS: int = 1024
+
+TEACHER_INPUT_KEYS: tuple[str, ...] = ("input_ids", "attention_mask", "position_ids")
+ATTN_PROJECTIONS: tuple[str, ...] = ("q_proj", "k_proj", "v_proj")
+
+_FORWARD_PARAMETERS: dict[type, frozenset[str]] = {}
+
+
+@dataclass
+class TernaryDistillTrainingArgsMixin:
+    """Distillation knobs carried onto `TrainingArguments` by the plugin."""
+
+    ternary_distill_teacher_model: str | None = None
+    ternary_distill_logits_weight: float | None = None
+    ternary_distill_logits_temperature: float | None = None
+    ternary_distill_hidden_weight: float | None = None
+    ternary_distill_attn_relation_layer: int | None = None
+    ternary_distill_teacher_device_map: str | None = None
+
+
+class TernaryDistillTrainer(AxolotlTrainer):
+    """Trains the ternary student against a frozen in-process copy of the FP base.
+
+    Loss is `(1 - α)·CE + α·τ²·KL(teacher/τ ‖ student/τ)` computed in token chunks so
+    large vocabularies never materialize a full `(T, V)` logits pair, plus optional
+    cosine hidden-state KD and single-layer attention-relation KD. The teacher runs
+    in eval mode under `no_grad`.
+    """
+
+    def __init__(self, *args, teacher_model: PreTrainedModel | None = None, **kwargs):
+        """Args: teacher_model: preloaded frozen teacher; loaded from the training args when `None`."""
+        super().__init__(*args, **kwargs)
+        # the distillation loss is a plain token mean, so let the Trainer normalize it
+        self.model_accepts_loss_kwargs = False
+        self._init_distill_state(teacher_model)
+
+    def _init_distill_state(self, teacher_model: PreTrainedModel | None = None) -> None:
+        """Read the distillation knobs off `self.args` and reset the teacher state."""
+        args = self.args
+        weight = _arg(args, "ternary_distill_logits_weight", 1.0)
+        if not 0.0 <= weight <= 1.0:
+            LOG.warning(
+                f"ternary: distill.logits_weight {weight} is outside [0, 1]; clamping "
+                "(it is the KD/CE mixing coefficient, not a free multiplier)"
+            )
+            weight = min(max(weight, 0.0), 1.0)
+        self.logits_weight = weight
+        self.logits_temperature = _arg(args, "ternary_distill_logits_temperature", 2.0)
+        self.hidden_weight = _arg(args, "ternary_distill_hidden_weight", 0.0)
+        self.attn_relation_layer = getattr(
+            args, "ternary_distill_attn_relation_layer", None
+        )
+        self.teacher_model_name = getattr(args, "ternary_distill_teacher_model", None)
+        self.teacher_device_map = getattr(
+            args, "ternary_distill_teacher_device_map", None
+        )
+
+        self._teacher: PreTrainedModel | None = teacher_model
+        self._teacher_ready = False
+        self._hook_handles: list[Any] = []
+        self._captured: dict[str, torch.Tensor] = {}
+        self._head_dim: int | None = None
+
+    @override
+    def compute_loss(
+        self,
+        model: PreTrainedModel,
+        inputs: dict[str, torch.Tensor],
+        return_outputs: bool = False,
+        num_items_in_batch: int | None = None,
+    ):
+        """Return the combined CE + distillation loss (and outputs when requested).
+
+        The student's own `(T, V)` logits are never computed: the forward keeps a
+        single position (`logits_to_keep=1`) and every loss term is derived from the
+        final hidden states.
+        """
+        inputs = dict(inputs)
+        inputs.pop("num_items_in_batch", None)
+        # the axolotl-specific input fixups the replaced `compute_loss` would skip
+        self.prepare_loss_inputs(model, inputs)
+        labels = inputs.pop("labels", None)
+        if labels is None:
+            raise KeyError("ternary in-process distillation requires batch `labels`")
+
+        student = self._unwrap(model)
+        teacher = self._ensure_teacher(student)
+        self._captured.clear()
+        if self.attn_relation_layer is not None:
+            self._register_relation_hooks(student, teacher)
+        try:
+            return self._distill_loss(
+                model, student, teacher, inputs, labels, return_outputs
+            )
+        finally:
+            # the captures pin a (batch, seq, heads*dim) tensor per projection
+            self._captured.clear()
+            self._release_hooks()
+
+    def _distill_loss(
+        self,
+        model: PreTrainedModel,
+        student: nn.Module,
+        teacher: PreTrainedModel,
+        inputs: dict[str, torch.Tensor],
+        labels: torch.Tensor,
+        return_outputs: bool,
+    ):
+        outputs = model(**_forward_inputs(inputs, student))
+        student_hidden = _last_hidden(outputs, model)
+
+        teacher_device = next(teacher.parameters()).device
+        teacher_inputs = {
+            key: value.to(teacher_device)
+            for key, value in inputs.items()
+            if key in TEACHER_INPUT_KEYS
+        }
+        with torch.no_grad():
+            teacher_outputs = teacher(**_forward_inputs(teacher_inputs, teacher))
+        # left on the teacher's device: the chunked KD runs the teacher head there and
+        # ships only per-chunk log-probs back, never a (vocab, hidden) head copy
+        teacher_hidden = _last_hidden(teacher_outputs, teacher)
+
+        student_head = _resolve_lm_head(student)
+        teacher_head = _resolve_lm_head(teacher)
+
+        shifted = labels[..., 1:]
+        supervised = shifted != IGNORE_INDEX
+        teacher_supervised = supervised.to(teacher_hidden.device)
+        chunk_size = _chunk_size(student_head.weight.shape[0])
+        ce, kd = _chunked_ce_kd(
+            student_hidden[..., :-1, :][supervised],
+            teacher_hidden[..., :-1, :][teacher_supervised],
+            student_head.weight,
+            getattr(student_head, "bias", None),
+            teacher_head.weight,
+            getattr(teacher_head, "bias", None),
+            shifted[supervised],
+            self.logits_temperature,
+            chunk_size,
+        )
+
+        alpha = self.logits_weight
+        loss = (1.0 - alpha) * ce + alpha * self.logits_temperature**2 * kd
+        metrics = {
+            "ternary/ce": ce.detach().item(),
+            "ternary/kd_logits": kd.detach().item(),
+        }
+
+        mask = inputs.get("attention_mask")
+        if mask is not None and mask.dim() != 2:
+            mask = None
+        if self.hidden_weight:
+            hidden = self.hidden_cosine_kd(
+                student_hidden,
+                teacher_hidden.to(
+                    device=student_hidden.device, dtype=student_hidden.dtype
+                ),
+                mask=mask,
+            )
+            loss = loss + self.hidden_weight * hidden
+            metrics["ternary/kd_hidden"] = hidden.detach().item()
+        if self.attn_relation_layer is not None:
+            relation = self._attn_relation_term(mask)
+            loss = loss + relation
+            metrics["ternary/kd_attn"] = relation.detach().item()
+
+        self.store_metrics(metrics, train_eval="train" if model.training else "eval")
+        return (loss, outputs) if return_outputs else loss
+
+    def chunked_logits_kd(
+        self,
+        student_hidden: torch.Tensor,
+        teacher_hidden: torch.Tensor,
+        lm_head: torch.nn.Module,
+        temperature: float,
+        chunk_size: int = 1024,
+        teacher_lm_head: torch.nn.Module | None = None,
+    ) -> torch.Tensor:
+        """KL between teacher and student logits, accumulated over token chunks.
+
+        Args:
+            student_hidden: Hidden states feeding the student head, `(..., d)`.
+            teacher_hidden: The teacher's hidden states, same shape.
+            lm_head: The student's output head.
+            temperature: Softmax temperature applied to both models' logits.
+            chunk_size: Tokens per chunk; the peak logits buffer is `chunk_size x V`.
+            teacher_lm_head: The teacher's (frozen) head; `lm_head` is used for both
+                when omitted.
+
+        Returns:
+            Mean KL per token.
+        """
+        head = teacher_lm_head if teacher_lm_head is not None else lm_head
+        _, kd = _chunked_ce_kd(
+            student_hidden.reshape(-1, student_hidden.shape[-1]),
+            teacher_hidden.reshape(-1, teacher_hidden.shape[-1]),
+            lm_head.weight,
+            getattr(lm_head, "bias", None),
+            head.weight,
+            getattr(head, "bias", None),
+            None,
+            temperature,
+            chunk_size,
+        )
+        return kd
+
+    def hidden_cosine_kd(
+        self,
+        student_hidden: torch.Tensor,
+        teacher_hidden: torch.Tensor,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Mean `1 - cos(student, teacher)` over the final hidden states.
+
+        Args:
+            student_hidden: Student hidden states `(batch, seq, d)`.
+            teacher_hidden: Teacher hidden states, same shape.
+            mask: Attention mask; padded positions are excluded when given.
+        """
+        distance = 1.0 - F.cosine_similarity(
+            student_hidden.float(), teacher_hidden.float(), dim=-1
+        )
+        return _masked_mean(distance, mask)
+
+    def attn_relation_kd(
+        self,
+        student_attn: torch.Tensor,
+        teacher_attn: torch.Tensor,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """MiniLM-style relation KD between one student/teacher attention projection.
+
+        Experimental: relation KD on a single late layer is sensitive to the layer
+        choice and can destabilize a run that is otherwise healing.
+
+        Args:
+            student_attn: Student projection output split per head,
+                `(batch, heads, seq, head_dim)`.
+            teacher_attn: The teacher's, same shape.
+            mask: Attention mask; padded rows and columns are excluded when given.
+
+        Returns:
+            Mean KL between the teacher's and the student's scaled self-relation
+            distributions.
+        """
+        batch, heads, seq, head_dim = student_attn.shape
+        keep = None if mask is None else mask.to(torch.bool)[:, None, None, :]
+        rows = batch * seq if keep is None else int(keep.sum())
+        if not rows:
+            return student_attn.sum() * 0.0
+
+        recompute = torch.is_grad_enabled() and student_attn.requires_grad
+        chunk = _head_chunk(seq)
+        total: torch.Tensor | None = None
+        for start in range(0, heads, chunk):
+            arguments = (
+                student_attn[:, start : start + chunk],
+                teacher_attn[:, start : start + chunk],
+                keep,
+                head_dim**-0.5,
+            )
+            if recompute:
+                value = checkpoint(_relation_kl_sum, *arguments, use_reentrant=False)
+            else:
+                value = _relation_kl_sum(*arguments)
+            total = value if total is None else total + value
+        return total / (heads * rows)  # type: ignore[operator]
+
+    def _unwrap(self, model: nn.Module) -> nn.Module:
+        accelerator = getattr(self, "accelerator", None)
+        return model if accelerator is None else accelerator.unwrap_model(model)
+
+    @override
+    def train(self, *args, **kwargs):
+        """Load the teacher before the training loop opens any ZeRO-3 init scope."""
+        self._ensure_teacher(self._unwrap(self.model))
+        try:
+            return super().train(*args, **kwargs)
+        finally:
+            self._release_hooks()
+
+    def _ensure_teacher(self, student: PreTrainedModel) -> PreTrainedModel:
+        """Load the frozen teacher, once."""
+        if self._teacher_ready:
+            return self._teacher  # type: ignore[return-value]
+        teacher = self._teacher
+        if teacher is None:
+            teacher = self._load_teacher(student)
+        teacher.eval()
+        teacher.requires_grad_(False)
+        self._teacher = teacher
+        self._teacher_ready = True
+        if self.attn_relation_layer is not None:
+            self._head_dim = _head_dim(student)
+        return teacher
+
+    def _release_hooks(self) -> None:
+        """Drop the relation-KD forward hooks so they cannot outlive the step."""
+        while self._hook_handles:
+            self._hook_handles.pop().remove()
+
+    def _load_teacher(self, student: PreTrainedModel) -> PreTrainedModel:
+        if not self.teacher_model_name:
+            raise ValueError(
+                "ternary.distill.mode: inprocess needs a teacher; set "
+                "ternary.distill.teacher_model or base_model"
+            )
+        from transformers import AutoModelForCausalLM
+
+        param = next(student.parameters())
+        kwargs: dict[str, Any] = {"dtype": param.dtype}
+        attn_implementation = getattr(
+            getattr(student, "config", None), "_attn_implementation", None
+        )
+        if attn_implementation:
+            kwargs["attn_implementation"] = attn_implementation
+        cfg = getattr(self, "axolotl_cfg", None)
+        if cfg is not None and getattr(cfg, "trust_remote_code", False):
+            kwargs["trust_remote_code"] = True
+        if self.teacher_device_map:
+            kwargs["device_map"] = self.teacher_device_map
+
+        LOG.info(
+            f"ternary: loading frozen in-process teacher {self.teacher_model_name} "
+            f"({param.dtype}, device_map={self.teacher_device_map or 'student device'})"
+        )
+        teacher = AutoModelForCausalLM.from_pretrained(
+            self.teacher_model_name, **kwargs
+        )
+        if not self.teacher_device_map:
+            teacher = teacher.to(param.device)
+        return teacher
+
+    def _register_relation_hooks(
+        self, student: PreTrainedModel, teacher: PreTrainedModel
+    ) -> None:
+        for tag, model in (("student", student), ("teacher", teacher)):
+            attention = _attention_module(model, self.attn_relation_layer)
+            for projection in ATTN_PROJECTIONS:
+                module = getattr(attention, projection, None)
+                if module is None:
+                    raise ValueError(
+                        f"ternary.distill.attn_relation_layer needs separate "
+                        f"{'/'.join(ATTN_PROJECTIONS)} modules; layer "
+                        f"{self.attn_relation_layer} of the {tag} has none"
+                    )
+                self._hook_handles.append(
+                    module.register_forward_hook(self._capture(f"{tag}.{projection}"))
+                )
+
+    def _capture(self, key: str):
+        def hook(_module, _args, output):
+            self._captured[key] = output
+
+        return hook
+
+    def _attn_relation_term(self, mask: torch.Tensor | None) -> torch.Tensor:
+        total: torch.Tensor | None = None
+        for projection in ATTN_PROJECTIONS:
+            student = self._captured.get(f"student.{projection}")
+            teacher = self._captured.get(f"teacher.{projection}")
+            if student is None or teacher is None:
+                raise RuntimeError(
+                    f"ternary: attention-relation KD captured no {projection} output; "
+                    "the configured layer did not run"
+                )
+            student = _split_heads(student, self._head_dim)
+            teacher = _split_heads(teacher.to(student.device), self._head_dim)
+            value = self.attn_relation_kd(student, teacher.to(student.dtype), mask=mask)
+            total = value if total is None else total + value
+        return total / len(ATTN_PROJECTIONS)  # type: ignore[operator]
+
+
+def _arg(args: Any, name: str, default: float) -> float:
+    value = getattr(args, name, None)
+    return default if value is None else float(value)
+
+
+def _forward_accepts(model: nn.Module, name: str) -> bool:
+    model_cls = type(model)
+    parameters = _FORWARD_PARAMETERS.get(model_cls)
+    if parameters is None:
+        try:
+            parameters = frozenset(inspect.signature(model_cls.forward).parameters)
+        except (TypeError, ValueError):
+            parameters = frozenset()
+        _FORWARD_PARAMETERS[model_cls] = parameters
+    return name in parameters
+
+
+def _forward_inputs(inputs: dict[str, torch.Tensor], model: nn.Module) -> dict:
+    """Return `inputs` plus the flags that expose hidden states without full logits."""
+    forward = dict(inputs)
+    forward["output_hidden_states"] = True
+    forward["return_dict"] = True
+    if _forward_accepts(model, "logits_to_keep"):
+        forward["logits_to_keep"] = 1
+    return forward
+
+
+def _last_hidden(outputs: Any, model: nn.Module) -> torch.Tensor:
+    hidden_states = getattr(outputs, "hidden_states", None)
+    if not hidden_states:
+        raise RuntimeError(
+            f"{type(model).__name__}.forward returned no hidden_states; in-process "
+            "distillation needs them to compute the chunked losses"
+        )
+    return hidden_states[-1]
+
+
+def _resolve_lm_head(model: nn.Module) -> nn.Module:
+    """Return the output head of a causal LM, looking through common wrappers."""
+    base = model
+    if hasattr(base, "get_base_model"):
+        base = base.get_base_model()
+    if hasattr(base, "language_model") and hasattr(base.language_model, "lm_head"):
+        return base.language_model.lm_head
+    if hasattr(base, "lm_head"):
+        return base.lm_head
+    raise AttributeError(f"could not find lm_head on {type(model).__name__}")
+
+
+def _decoder_layers(model: nn.Module) -> nn.ModuleList:
+    """Return the decoder layer list of a causal LM."""
+    base = model
+    if hasattr(base, "get_base_model"):
+        base = base.get_base_model()
+    for path in ("model.layers", "model.model.layers", "language_model.layers"):
+        current: Any = base
+        for attribute in path.split("."):
+            current = getattr(current, attribute, None)
+            if current is None:
+                break
+        if isinstance(current, nn.ModuleList):
+            return current
+    raise AttributeError(f"could not find decoder layers on {type(model).__name__}")
+
+
+def _attention_module(model: nn.Module, layer_index: int | None) -> nn.Module:
+    layers = _decoder_layers(model)
+    if layer_index is None or not -len(layers) <= layer_index < len(layers):
+        raise ValueError(
+            f"ternary.distill.attn_relation_layer {layer_index} is out of range for "
+            f"{len(layers)} layers"
+        )
+    layer = layers[layer_index]
+    return getattr(layer, "self_attn", layer)
+
+
+def _head_dim(model: nn.Module) -> int:
+    config = getattr(model, "config", None)
+    dim = getattr(config, "head_dim", None)
+    if dim:
+        return int(dim)
+    hidden = getattr(config, "hidden_size", None)
+    heads = getattr(config, "num_attention_heads", None)
+    if not hidden or not heads:
+        raise ValueError(
+            "ternary: attention-relation KD needs head_dim (or hidden_size and "
+            f"num_attention_heads) on the {type(model).__name__} config"
+        )
+    return int(hidden) // int(heads)
+
+
+def _split_heads(tensor: torch.Tensor, head_dim: int | None) -> torch.Tensor:
+    """Reshape a `(batch, seq, heads * head_dim)` projection output to per-head."""
+    if not head_dim or tensor.shape[-1] % head_dim:
+        raise ValueError(
+            f"projection width {tensor.shape[-1]} is not a multiple of head_dim {head_dim}"
+        )
+    batch, seq, width = tensor.shape
+    return tensor.view(batch, seq, width // head_dim, head_dim).transpose(1, 2)
+
+
+def _masked_mean(values: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
+    """Mean of `values` over the positions `mask` keeps."""
+    if mask is None:
+        return values.mean()
+    weights = mask.to(values.dtype).expand_as(values)
+    total = weights.sum()
+    if not total:
+        return values.sum() * 0.0
+    return (values * weights).sum() / total
+
+
+def _chunk_size(vocab_size: int) -> int:
+    """Tokens per logits chunk for `vocab_size`, bounded by the element budget."""
+    tokens = CHUNK_ELEMENT_BUDGET // max(vocab_size, 1)
+    return max(MIN_CHUNK_TOKENS, min(MAX_CHUNK_TOKENS, tokens))
+
+
+def _head_chunk(seq: int) -> int:
+    """Heads per relation chunk; each holds a `(chunk, seq, seq)` relation matrix."""
+    return max(1, CHUNK_ELEMENT_BUDGET // max(seq * seq, 1))
+
+
+def _relation_kl_sum(
+    student_attn: torch.Tensor,
+    teacher_attn: torch.Tensor,
+    keep: torch.Tensor | None,
+    scaling: float,
+) -> torch.Tensor:
+    """Summed per-row relation KL for one head chunk; the only place `(T, T)` exists."""
+    student = student_attn.float()
+    teacher = teacher_attn.float()
+    student_rel = torch.matmul(student, student.transpose(-1, -2)) * scaling
+    teacher_rel = torch.matmul(teacher, teacher.transpose(-1, -2)) * scaling
+    if keep is not None:
+        student_rel = student_rel.masked_fill(~keep, float("-inf"))
+        teacher_rel = teacher_rel.masked_fill(~keep, float("-inf"))
+
+    student_logprobs = F.log_softmax(student_rel, dim=-1)
+    teacher_logprobs = F.log_softmax(teacher_rel, dim=-1)
+    difference = teacher_logprobs - student_logprobs
+    if keep is not None:
+        # -inf - -inf on the masked columns is NaN, and its weight is 0 anyway
+        difference = difference.masked_fill(~keep, 0.0)
+    per_row = (teacher_logprobs.exp() * difference).sum(-1)
+    if keep is not None:
+        per_row = per_row * keep[:, :, 0, :].to(per_row.dtype)
+    return per_row.sum()
+
+
+def _chunk_terms(
+    student_hidden: torch.Tensor,
+    teacher_hidden: torch.Tensor,
+    student_weight: torch.Tensor,
+    student_bias: torch.Tensor | None,
+    teacher_weight: torch.Tensor,
+    teacher_bias: torch.Tensor | None,
+    targets: torch.Tensor | None,
+    temperature: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Summed CE and KL for one token chunk; the only place logits exist."""
+    student_logits = F.linear(student_hidden, student_weight, student_bias).float()
+    with torch.no_grad():
+        # the teacher head stays wherever the teacher lives; only this chunk's
+        # log-probs cross the device boundary
+        teacher_logits = F.linear(teacher_hidden, teacher_weight, teacher_bias).float()
+        teacher_logprobs = F.log_softmax(teacher_logits / temperature, dim=-1).to(
+            student_logits.device
+        )
+
+    if targets is None:
+        ce = student_logits.new_zeros(())
+    else:
+        ce = F.cross_entropy(student_logits, targets, reduction="sum")
+
+    student_logprobs = F.log_softmax(student_logits / temperature, dim=-1)
+    kd = F.kl_div(student_logprobs, teacher_logprobs, reduction="sum", log_target=True)
+    return ce, kd
+
+
+def _chunked_ce_kd(
+    student_hidden: torch.Tensor,
+    teacher_hidden: torch.Tensor,
+    student_weight: torch.Tensor,
+    student_bias: torch.Tensor | None,
+    teacher_weight: torch.Tensor,
+    teacher_bias: torch.Tensor | None,
+    targets: torch.Tensor | None,
+    temperature: float,
+    chunk_size: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Mean CE and mean KL over `(tokens, d)` hidden states, one chunk at a time.
+
+    Each chunk is recomputed in the backward pass, so peak memory holds a single
+    `(chunk_size, vocab)` logits pair instead of the full `(tokens, vocab)` one.
+    """
+    tokens = student_hidden.shape[0]
+    if not tokens:
+        zero = (student_hidden.sum() + student_weight.sum()) * 0.0
+        return zero, zero
+
+    recompute = torch.is_grad_enabled() and (
+        student_hidden.requires_grad or student_weight.requires_grad
+    )
+    ce_total: torch.Tensor | None = None
+    kd_total: torch.Tensor | None = None
+    for start in range(0, tokens, max(chunk_size, 1)):
+        stop = min(start + max(chunk_size, 1), tokens)
+        arguments = (
+            student_hidden[start:stop],
+            teacher_hidden[start:stop],
+            student_weight,
+            student_bias,
+            teacher_weight,
+            teacher_bias,
+            None if targets is None else targets[start:stop],
+            temperature,
+        )
+        if recompute:
+            ce, kd = checkpoint(_chunk_terms, *arguments, use_reentrant=False)
+        else:
+            ce, kd = _chunk_terms(*arguments)
+        ce_total = ce if ce_total is None else ce_total + ce
+        kd_total = kd if kd_total is None else kd_total + kd
+
+    return ce_total / tokens, kd_total / tokens  # type: ignore[operator]
