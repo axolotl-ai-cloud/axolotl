@@ -3,7 +3,8 @@ base class for cloud platforms from cli
 """
 
 from abc import ABC, abstractmethod
-from typing import Literal
+
+from axolotl.utils.schemas.runtime import LauncherChoice
 
 
 class Cloud(ABC):
@@ -19,9 +20,10 @@ class Cloud(ABC):
     def train(
         self,
         config_yaml: str,
-        launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+        launcher: LauncherChoice = "accelerate",
         launcher_args: list[str] | None = None,
         local_dirs: dict[str, str] | None = None,
+        runtime_yaml: str | None = None,
         **kwargs,
     ):
         pass

@@ -365,3 +365,35 @@ class TestTrainCommand(BaseCliTest):
             passed_kwargs = mock_ray_launch.call_args.args[1]
             assert passed_kwargs["use_ray"] is True
             assert passed_kwargs["ray_num_workers"] == 2
+
+    def test_train_cloud_with_runtime_file(
+        self, cli_runner, tmp_path, valid_test_config
+    ):
+        """Test that the runtime file is re-serialized and forwarded to the cloud"""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        cloud_path = tmp_path / "cloud.yml"
+        cloud_path.write_text("provider: modal\ngpu: a100")
+
+        runtime_path = tmp_path / "runtime.yml"
+        runtime_path.write_text("launcher: torchrun\ntorchrun:\n  nnodes: 2\n")
+
+        with patch("axolotl.cli.cloud.do_cli_train") as mock_cloud_train:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "train",
+                    str(config_path),
+                    "--cloud",
+                    str(cloud_path),
+                    "--runtime",
+                    str(runtime_path),
+                ],
+                catch_exceptions=False,
+            )
+
+            assert result.exit_code == 0
+            call_kwargs = mock_cloud_train.call_args.kwargs
+            assert call_kwargs["launcher"] == "torchrun"
+            assert "nnodes: 2" in call_kwargs["runtime_yaml"]

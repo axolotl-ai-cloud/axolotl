@@ -8,11 +8,11 @@ import os
 import subprocess  # nosec B404
 from pathlib import Path
 from random import randint
-from typing import Literal
 
 import modal
 
 from axolotl.cli.cloud.base import Cloud
+from axolotl.utils.schemas.runtime import LauncherChoice
 
 
 def run_cmd(cmd: str, run_folder: str, volumes=None):
@@ -228,9 +228,10 @@ class ModalCloud(Cloud):
     def train(
         self,
         config_yaml: str,
-        launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+        launcher: LauncherChoice = "accelerate",
         launcher_args: list[str] | None = None,
         local_dirs: dict[str, str] | None = None,
+        runtime_yaml: str | None = None,
         **kwargs,
     ):
         modal_fn = self.get_train_env(local_dirs)(_train)
@@ -240,6 +241,7 @@ class ModalCloud(Cloud):
                     config_yaml,
                     launcher=launcher,
                     launcher_args=launcher_args,
+                    runtime_yaml=runtime_yaml,
                     volumes={k: v[0] for k, v in self.volumes.items()},
                     **kwargs,
                 )
@@ -272,8 +274,9 @@ def _preprocess(config_yaml: str, volumes=None):
 
 def _train(
     config_yaml: str,
-    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher: LauncherChoice = "accelerate",
     launcher_args: list[str] | None = None,
+    runtime_yaml: str | None = None,
     volumes=None,
     **kwargs,
 ):
@@ -284,24 +287,24 @@ def _train(
 
     launcher_args = launcher_args or []
 
-    # Build the base command
-    if launcher == "accelerate":
-        launcher_arg = "--launcher accelerate"
-    elif launcher == "torchrun":
-        launcher_arg = "--launcher torchrun"
-    else:
-        launcher_arg = "--launcher python"
+    launcher_arg = f"--launcher {launcher}"
+
+    runtime_arg = ""
+    if runtime_yaml:
+        with open("/workspace/mounts/runtime.yaml", "w", encoding="utf-8") as f_out:
+            f_out.write(runtime_yaml)
+        runtime_arg = "--runtime /workspace/mounts/runtime.yaml"
 
     # Build launcher args string
     launcher_args_str = ""
     if launcher_args:
         launcher_args_str = "-- " + " ".join(launcher_args)
 
-    run_cmd(
-        f"axolotl train {launcher_arg} /workspace/mounts/config.yaml {launcher_args_str}".strip(),
-        run_folder,
-        volumes,
+    cmd = (
+        f"axolotl train {launcher_arg} {runtime_arg} /workspace/mounts/config.yaml"
+        f" {launcher_args_str}"
     )
+    run_cmd(" ".join(cmd.split()), run_folder, volumes)
 
 
 def _lm_eval(config_yaml: str, volumes=None):

@@ -4,11 +4,12 @@ import shutil
 import subprocess  # nosec B404
 import tempfile
 from os.path import dirname
-from typing import Literal
 
+import click
 import yaml
 
 from axolotl.cli.cloud.base import Cloud
+from axolotl.utils.schemas.runtime import LauncherChoice
 
 
 class BasetenCloud(Cloud):
@@ -26,11 +27,16 @@ class BasetenCloud(Cloud):
     def train(
         self,
         config_yaml: str,
-        launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+        launcher: LauncherChoice = "accelerate",
         launcher_args: list[str] | None = None,
         local_dirs: dict[str, str] | None = None,  # pylint: disable=unused-argument
+        runtime_yaml: str | None = None,
         **kwargs,
     ):
+        if runtime_yaml:
+            raise click.UsageError(
+                "--runtime is not yet supported with the baseten cloud provider"
+            )
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = self.config.copy()
             config["launcher"] = launcher
