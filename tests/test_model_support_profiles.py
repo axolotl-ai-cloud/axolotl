@@ -587,7 +587,12 @@ def test_declarative_resolution_is_memoized_per_descriptor_class():
 
     assert first is second
     assert first is via_class
-    assert profile_module._DECLARATIVE_CACHE[MemoizedSupport] is first
+    cached_profile, cached_model_types, cached_resolved = (
+        profile_module._DECLARATIVE_CACHE[MemoizedSupport]
+    )
+    assert cached_profile is MemoizedSupport.profile
+    assert cached_model_types == MemoizedSupport.model_types
+    assert cached_resolved is first
     # a profile-only descriptor takes the fast path and reuses the cached result
     assert resolve_model_support(support) is first
 
@@ -666,3 +671,18 @@ def test_nested_dispatch_with_different_cfg_runs_all_hooks():
         ("profile", "inner"),
         ("legacy", "inner"),
     ]
+
+
+def test_profile_reassignment_at_runtime_invalidates_memoized_resolution():
+    class MutableProfileSupport(ModelSupport):
+        model_types = ("cache_invalidation_test",)
+        profile = ModelProfile(family=VANILLA_CAUSAL_LM)
+
+    support = MutableProfileSupport()
+    assert resolve_model_support(support).is_multimodal is False
+
+    MutableProfileSupport.profile = ModelProfile(family=IMAGE_TEXT_TO_TEXT)
+
+    resolved = resolve_model_support(support)
+    assert resolved.is_multimodal is True
+    assert resolved.family == "image_text_to_text"

@@ -124,6 +124,9 @@ class ModelMatchers:
     The config matcher runs at pre-config and tokenizer boundaries; the processor
     matcher runs while selecting multimodal processing. Matchers should be
     side-effect-free and return a boolean. Multiple matches are rejected as ambiguous.
+
+    Unlike `ModelStrategyOverrides`, ``None`` here always means inherit —
+    matchers have no removal form, only overriding with a narrower predicate.
     """
 
     cfg: ConfigMatcher | None = None
@@ -282,23 +285,27 @@ def _legacy_post_load_hook(
     return hook
 
 
-# Declarative resolution depends only on the immutable class-level ``profile`` and
-# ``model_types``, so the result is memoized per descriptor class. Ephemeral classes
-# (e.g. per-test descriptors) are evicted once garbage-collected.
-_DECLARATIVE_CACHE: WeakKeyDictionary[type[ModelSupport], ResolvedModelProfile] = (
-    WeakKeyDictionary()
-)
+# Memoized per descriptor class; entries record the (frozen) profile and
+# model_types they resolved from, so runtime reassignment recomputes.
+_DECLARATIVE_CACHE: WeakKeyDictionary[
+    type[ModelSupport],
+    tuple[ModelProfile | None, tuple[str, ...], ResolvedModelProfile],
+] = WeakKeyDictionary()
 
 
 def _resolve_declarative_model_support(
     support: ModelSupport | type[ModelSupport],
 ) -> ResolvedModelProfile:
     cls = support if isinstance(support, type) else type(support)
+    profile = support.profile
+    model_types = support.model_types
     cached = _DECLARATIVE_CACHE.get(cls)
     if cached is not None:
-        return cached
+        cached_profile, cached_model_types, resolved = cached
+        if cached_profile is profile and cached_model_types == model_types:
+            return resolved
     resolved = _build_declarative_model_support(support)
-    _DECLARATIVE_CACHE[cls] = resolved
+    _DECLARATIVE_CACHE[cls] = (profile, model_types, resolved)
     return resolved
 
 

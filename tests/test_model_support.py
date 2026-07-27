@@ -19,6 +19,8 @@ from axolotl.model_support import (
 )
 from axolotl.utils.dict import DictDefault
 
+from tests.conftest import capture_axolotl_warnings
+
 
 class TestRegistry:
     """Registration and lookup semantics."""
@@ -73,7 +75,8 @@ class TestCheckCapability:
             )
 
     def test_experimental_warns_and_does_not_raise(self, caplog):
-        with caplog.at_level("WARNING", logger="axolotl"):
+        # an earlier configure_logging() sets propagate=False, blinding caplog
+        with capture_axolotl_warnings(caplog):
             check_capability(
                 self._Support(), "sample_packing", "cap_test_arch", feature="packing"
             )
@@ -223,7 +226,13 @@ class TestPaddleOCRVLSupport:
                 "load_in_4bit": True,
             }
         )
-        cfg = validate_config(cfg)
+        # the auto-enable validator lives on AxolotlConfigWCapabilities; a bare
+        # validate_config(cfg) never runs it
+        cfg = validate_config(
+            cfg,
+            capabilities={"n_gpu": 1, "bf16": True, "compute_capability": None},
+            env_capabilities={"torch_version": "2.9.0"},
+        )
         assert not any(
             cfg.get(k)
             for k in (
@@ -233,6 +242,52 @@ class TestPaddleOCRVLSupport:
                 "lora_embedding_kernel",
             )
         )
+
+    def test_lora_kernels_validator_sees_profile_capabilities_of_hybrid_descriptor(
+        self,
+    ):
+        """A legacy class-level ``capabilities`` shadows the profile projection."""
+        from axolotl.model_support import VANILLA_CAUSAL_LM, ModelProfile
+        from axolotl.utils.config import validate_config
+
+        class HybridSupport(ModelSupport):
+            model_types = ("hybrid_caps_arch",)
+            profile = ModelProfile(
+                family=VANILLA_CAUSAL_LM,
+                capabilities={"lora_kernels": Unsupported("No fused-QKV rewrite.")},
+            )
+            capabilities = {"cut_cross_entropy": Unsupported()}
+
+        cfg = DictDefault(
+            {
+                "base_model": "fake/hybrid-caps-model",
+                "model_config_type": "hybrid_caps_arch",
+                "learning_rate": 0.000001,
+                "datasets": [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "adapter": "qlora",
+                "load_in_4bit": True,
+            }
+        )
+        try:
+            register_model_support(HybridSupport)
+            cfg = validate_config(
+                cfg,
+                capabilities={"n_gpu": 1, "bf16": True, "compute_capability": None},
+                env_capabilities={"torch_version": "2.9.0"},
+            )
+            assert not any(
+                cfg.get(k)
+                for k in (
+                    "lora_mlp_kernel",
+                    "lora_qkv_kernel",
+                    "lora_o_kernel",
+                    "lora_embedding_kernel",
+                )
+            )
+        finally:
+            model_support_registry._REGISTRY.pop("hybrid_caps_arch", None)
 
     def test_normalize_config_disables_lora_kernels(self):
         """model_type is usually unknown when the auto-enable validator runs;

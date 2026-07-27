@@ -195,3 +195,48 @@ def test_ambiguous_processor_match_raises_with_support_names(isolated_registry):
 
     with pytest.raises(ValueError, match=r"FirstSupport.*SecondSupport"):
         isolated_registry.get_model_support_for_processor(object())
+
+
+def test_registration_normalizes_list_model_types_to_tuple(isolated_registry):
+    class ListDeclaredSupport(ModelSupport):
+        model_types = ["list_declared_arch"]  # type: ignore[assignment]
+
+    isolated_registry.register_model_support(ListDeclaredSupport)
+
+    assert ListDeclaredSupport.model_types == ("list_declared_arch",)
+    assert isinstance(
+        isolated_registry.get_model_support("list_declared_arch"),
+        ListDeclaredSupport,
+    )
+
+
+def test_builtin_import_does_not_hold_registry_lock(monkeypatch):
+    """A registry lookup during a concurrent builtin import must not deadlock."""
+    import threading
+
+    monkeypatch.setattr(support_registry, "_REGISTRY", {})
+    monkeypatch.setattr(support_registry, "_builtins_loaded", False)
+    monkeypatch.setattr(support_registry, "_loading_builtins", False)
+    monkeypatch.setattr(support_registry, "_BUILTIN_MODULES", ("slow_builtin",))
+
+    lookup_finished = threading.Event()
+
+    def concurrent_lookup():
+        support_registry.get_model_support("unrelated_arch")
+        lookup_finished.set()
+
+    def import_builtin(_module_name):
+        lookup_thread = threading.Thread(target=concurrent_lookup)
+        lookup_thread.start()
+        finished = lookup_finished.wait(timeout=5)
+        lookup_thread.join(timeout=5)
+        assert finished, "registry lookup deadlocked during builtin import"
+
+        class SlowBuiltinSupport(ModelSupport):
+            model_types = ("slow_builtin_arch",)
+
+        support_registry.register_model_support(SlowBuiltinSupport)
+
+    monkeypatch.setattr(support_registry.importlib, "import_module", import_builtin)
+
+    assert support_registry.get_model_support("slow_builtin_arch") is not None

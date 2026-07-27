@@ -328,7 +328,7 @@ def normalize_config(cfg):
         ModelHookContext(
             cfg=cfg,
             model_config=model_config,
-            inference=getattr(cfg, "inference", None),
+            inference=cfg.inference,
         ),
     )
 

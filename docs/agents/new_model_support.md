@@ -6,7 +6,7 @@ Guide for debugging and adding support for new model architectures in axolotl. B
 
 New architectures are described by a `ModelSupport` descriptor in `src/axolotl/model_support/<model_type>/`. Its declarative `ModelProfile` starts from a reusable family template, then supplies only the capabilities, component strategies, discovery matchers, and lifecycle hooks where that model differs from the family path. Features query the registry instead of adding new `model_type` branches throughout loaders and integrations.
 
-Use `VANILLA_CAUSAL_LM` for a standard text causal-language-model path and `IMAGE_TEXT_TO_TEXT` for a standard multimodal conditional-generation path. Strategy values are lazy zero-argument providers so optional or heavyweight classes are imported only when the pipeline needs them.
+Use `VANILLA_CAUSAL_LM` for a standard text causal-language-model path and `IMAGE_TEXT_TO_TEXT` for a standard multimodal conditional-generation path. If a run resolves as multimodal but the matched profile is not, the profile's auto-model class is ignored (with a warning) in favor of the multimodal mapping. Strategy values are lazy zero-argument providers so optional or heavyweight classes are imported only when the pipeline needs them.
 
 ```python
 # src/axolotl/model_support/my_model/__init__.py
@@ -86,7 +86,7 @@ assert type(support).__name__ == "MyModelSupport"
 
 Capabilities merge by key, strategies and matchers override field by field, and hooks run in family → profile → legacy order. Inherited defaults on `ModelSupport` do not erase profile values. This keeps existing descriptors compatible while allowing new descriptors to remain declarative.
 
-`ModelStrategyOverrides` distinguishes omission from removal: an omitted field inherits its family provider, while explicit `None` removes that provider and restores the downstream generic fallback. Profile hooks append by default; include a phase in `ModelHooks.replace_phases` to replace its inherited family hooks, using an empty tuple to suppress them entirely. Legacy method hooks remain additive after the declarative result.
+`ModelStrategyOverrides` distinguishes omission from removal: an omitted field inherits its family provider, while explicit `None` removes that provider and restores the downstream generic fallback. `ModelMatchers` fields differ: `None` always means inherit — matchers have no removal form. Profile hooks append by default; include a phase in `ModelHooks.replace_phases` to replace its inherited family hooks, using an empty tuple to suppress them entirely. Legacy method hooks remain additive after the declarative result.
 
 Use `ModelFamilyTemplate` when several architectures share more than the built-in vanilla paths. Keep the template limited to genuinely shared behavior; model folders should add only their own matcher, strategy, capability differences, and localized patches.
 
@@ -124,10 +124,10 @@ The context fields available at each phase are:
 
 | Phase | `model_config` | `tokenizer` | `processor` | `model` | `inference` / `reference_model` |
 |-------|----------------|-------------|-------------|---------|---------------------------------|
-| `BEFORE_CONFIG_LOAD` | — | — | — | — | `inference` from `cfg` when set; `reference_model` unavailable |
-| `CONFIGURE_RUN` | Available | — | — | — | `inference` from `cfg` when set; `reference_model` unavailable |
-| `BEFORE_TOKENIZER_LOAD` | — | — | — | — | `inference` from `cfg` when set; `reference_model` unavailable |
-| `BEFORE_MODEL_BUILD` | Available | Available | Optional | — | Available |
+| `BEFORE_CONFIG_LOAD` | - | - | - | - | `inference` from `cfg` when set; `reference_model` unavailable |
+| `CONFIGURE_RUN` | Available | - | - | - | `inference` from `cfg` when set; `reference_model` unavailable |
+| `BEFORE_TOKENIZER_LOAD` | - | - | - | - | `inference` from `cfg` when set; `reference_model` unavailable |
+| `BEFORE_MODEL_BUILD` | Available | Available | Optional | - | Available |
 | `AFTER_BASE_MODEL_BUILD` | Available | Available | Optional | Raw base model | Available |
 | `AFTER_ADAPTER_LOAD` | Available | Available | Optional | Final loaded model | Available |
 

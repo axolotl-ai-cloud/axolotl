@@ -117,6 +117,9 @@ class ModelSupport:
     falls back to its generic handling (e.g. CCE's llama-like patch). Features
     consume the mapping via `check_capability`.
 
+    A legacy class-level ``capabilities``/``is_multimodal`` shadows the profile
+    projections below; consumers read `resolve_model_support` for the merged view.
+
     Profile hooks are exposed through the legacy methods for compatibility.
     Keep imperative patches localized to the model-support package.
     """

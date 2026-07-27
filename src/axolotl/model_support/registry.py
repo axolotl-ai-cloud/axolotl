@@ -25,21 +25,25 @@ _builtins_lock = threading.RLock()
 
 def _ensure_builtins() -> None:
     global _builtins_loaded, _loading_builtins  # pylint: disable=global-statement
+    # Import outside the lock: holding it across imports deadlocks against a
+    # thread mid-import of a builtin that re-enters via @register_model_support.
     with _builtins_lock:
         if _builtins_loaded or _loading_builtins:
             return
-
         _loading_builtins = True
-        try:
-            for module in _BUILTIN_MODULES:
-                importlib.import_module(module)
-        except Exception:
-            # Leave partial registrations intact so the failed import can be retried.
-            raise
-        else:
-            _builtins_loaded = True
-        finally:
+
+    try:
+        for module in _BUILTIN_MODULES:
+            importlib.import_module(module)
+    except Exception:
+        # Leave partial registrations intact so the failed import can be retried.
+        with _builtins_lock:
             _loading_builtins = False
+        raise
+
+    with _builtins_lock:
+        _builtins_loaded = True
+        _loading_builtins = False
 
 
 def _validate_model_types(support_cls: type[ModelSupport]) -> tuple[str, ...]:
@@ -50,11 +54,13 @@ def _validate_model_types(support_cls: type[ModelSupport]) -> tuple[str, ...]:
             f"register_model_support requires a ModelSupport subclass, "
             f"got {support_cls!r}"
         )
-    model_types = support_cls.model_types
-    if not isinstance(model_types, tuple) or not model_types:
+    # normalize legacy list declarations to the documented tuple
+    raw_model_types = support_cls.model_types
+    if not isinstance(raw_model_types, (list, tuple)) or not raw_model_types:
         raise ValueError(
             f"{support_cls.__name__}.model_types must be a non-empty tuple"
         )
+    model_types = tuple(raw_model_types)
     if any(
         not isinstance(model_type, str) or not model_type.strip()
         for model_type in model_types
@@ -64,6 +70,7 @@ def _validate_model_types(support_cls: type[ModelSupport]) -> tuple[str, ...]:
         )
     if len(set(model_types)) != len(model_types):
         raise ValueError(f"{support_cls.__name__}.model_types must be unique")
+    support_cls.model_types = model_types
     return model_types
 
 
@@ -85,7 +92,11 @@ def _one_match(matches: list[ModelSupport], subject: str) -> ModelSupport | None
     if len(matches) == 1:
         return matches[0]
     names = ", ".join(type(support).__name__ for support in matches)
-    raise ValueError(f"Ambiguous model support for {subject}: {names}")
+    raise ValueError(
+        f"Ambiguous model support for {subject}: {names}. Narrow the "
+        f"overlapping matchers, or register under an exact model_type "
+        f"(exact lookup bypasses matcher discovery)."
+    )
 
 
 def register_model_support(support_cls: type[ModelSupport]) -> type[ModelSupport]:
@@ -140,7 +151,7 @@ def get_model_support_for_cfg(cfg) -> ModelSupport | None:
     An exact resolved ``model_config_type`` wins. Before that is available,
     descriptors can match on config fields such as the model name.
     """
-    model_type = getattr(cfg, "model_config_type", None)
+    model_type = cfg.model_config_type
     if model_type:
         support = get_model_support(model_type)
         if support is not None:

@@ -48,6 +48,8 @@ def test_model_loader_uses_profile_auto_model_strategy(monkeypatch, is_multimoda
         profile = ModelProfile(
             family=ModelFamilyTemplate(
                 name="profile_loader_family",
+                # the provider only wins when profile and run modality agree
+                is_multimodal=is_multimodal,
                 strategies=ModelStrategies(
                     auto_model_cls=lambda: _ProfileAutoModel,
                 ),
@@ -74,6 +76,61 @@ def test_model_loader_uses_profile_auto_model_strategy(monkeypatch, is_multimoda
     loader._set_auto_model_loader()
 
     assert loader.auto_model_loader is _ProfileAutoModel
+
+
+def test_model_loader_prefers_multimodal_mapping_over_causal_profile(monkeypatch):
+    from axolotl.loaders import model as model_loader_module
+
+    class CausalProfileSupport(ModelSupport):
+        model_types = ("causal_on_multimodal_test",)
+        profile = ModelProfile(
+            family=ModelFamilyTemplate(
+                name="causal_on_multimodal_family",
+                strategies=ModelStrategies(auto_model_cls=lambda: _ProfileAutoModel),
+            )
+        )
+
+    support = CausalProfileSupport()
+    loader = _bare_model_loader(
+        model_loader_module.ModelLoader,
+        "causal_on_multimodal_test",
+        is_multimodal=True,
+    )
+    monkeypatch.setattr(model_loader_module, "get_model_support", lambda _type: support)
+    monkeypatch.setattr(
+        model_loader_module,
+        "MULTIMODAL_AUTO_MODEL_MAPPING",
+        {"causal_on_multimodal_test": _MappedMultimodalAutoModel},
+    )
+
+    loader._set_auto_model_loader()
+
+    assert loader.auto_model_loader is _MappedMultimodalAutoModel
+
+
+def test_model_loader_resolves_string_multimodal_mapping_to_generic_loader(
+    monkeypatch,
+):
+    from transformers import AutoModelForImageTextToText
+
+    from axolotl.loaders import model as model_loader_module
+
+    loader = _bare_model_loader(
+        model_loader_module.ModelLoader,
+        "string_mapping_test",
+        is_multimodal=True,
+    )
+    monkeypatch.setattr(model_loader_module, "get_model_support", lambda _type: None)
+    # The transformers names mapping stores class names as strings.
+    monkeypatch.setattr(
+        model_loader_module,
+        "MULTIMODAL_AUTO_MODEL_MAPPING",
+        {"string_mapping_test": "StringMappingForConditionalGeneration"},
+    )
+
+    loader._set_auto_model_loader()
+
+    assert loader.auto_model_loader is AutoModelForImageTextToText
 
 
 def test_model_loader_preserves_multimodal_fallback_for_nullable_strategy(

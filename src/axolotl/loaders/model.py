@@ -583,12 +583,28 @@ class ModelLoader:
         auto_model_loader = (
             auto_model_provider() if auto_model_provider is not None else None
         )
+        profile_conflicts_with_multimodal_run = (
+            auto_model_loader is not None
+            and self.cfg.is_multimodal
+            and resolved_support is not None
+            and not resolved_support.is_multimodal
+        )
+        if profile_conflicts_with_multimodal_run:
+            LOG.warning(
+                "Model support for %s is not multimodal but this run is; "
+                "ignoring its auto-model class %s in favor of the multimodal "
+                "mapping.",
+                self.model_config.model_type,
+                auto_model_loader.__name__,
+            )
+            auto_model_loader = None
         if auto_model_loader is not None:
             self.auto_model_loader = auto_model_loader
         elif self.cfg.is_multimodal:
             auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForImageTextToText
             )
+            # transformers' names mapping stores class names as strings
             if isinstance(auto_model_loader, str):
                 auto_model_loader = AutoModelForImageTextToText
             self.auto_model_loader = auto_model_loader
