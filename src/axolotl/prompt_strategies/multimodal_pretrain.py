@@ -118,9 +118,8 @@ class ImageTokenSpec:
     image_token: str
     image_token_id: int
     image_family_token_ids: set[int]
-    # Flanking markers the model expects around each placeholder but the
-    # processor does NOT insert (Qwen-VL's <|vision_start|>/<|vision_end|>).
-    # The encoder wraps bare placeholders with these when set.
+    # Markers the model expects around each placeholder but the processor
+    # doesn't insert (Qwen's vision_start/end); encoder wraps when set.
     marker_prefix: str | None = None
     marker_suffix: str | None = None
 
@@ -157,9 +156,8 @@ def build_image_token_spec(
         getattr(tokenizer, "additional_special_tokens", None) or []
     )
 
-    # Surfaces flagged special=True only — get_added_vocab() also returns plain
-    # added tokens, and keyword-masking those would silently -100 real text
-    # (e.g. a user-added "imagery" token).
+    # special=True surfaces only — keyword-masking plain added tokens from
+    # get_added_vocab() (e.g. a user-added "imagery") would -100 real text.
     special_surfaces: set[str] = set(
         getattr(tokenizer, "all_special_tokens", None) or []
     )
@@ -240,19 +238,16 @@ def build_image_token_spec(
         tid = resolve_id(cand)
         if tid is not None:
             family.add(tid)
-    # Dynamically mask processor-inserted layout tokens (tile/grid/global
-    # markers) that vary by model and aren't in the static candidate list.
-    # Restricted to special=True tokens, so bos/eos/pad, real text, and plain
-    # added tokens are never masked.
+    # Mask model-specific layout tokens (tile/grid/global markers) missing
+    # from the static candidate list; special=True only, so text is safe.
     for special in special_surfaces:
         if not _is_image_structural_token(special):
             continue
         tid = resolve_id(special)
         if tid is not None:
             family.add(tid)
-    # Qwen-VL expects <|vision_start|>/<|vision_end|> around each placeholder
-    # but its processor does not insert them; without them mrope treats image
-    # pads as plain text. The encoder wraps bare placeholders when set.
+    # Qwen's processor doesn't insert vision_start/end, but mrope needs them
+    # to locate image spans — the encoder wraps bare placeholders.
     marker_prefix = marker_suffix = None
     if image_token == "<|image_pad|>":  # nosec B105
         if (

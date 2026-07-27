@@ -58,9 +58,8 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
         self._image_family_token_ids = set(self.image_token_spec.image_family_token_ids)
 
     def _resolve_image_source(self, src: Any) -> Any:
-        # image_base_dir is a sandbox: every string path — relative or absolute —
-        # must resolve inside it (realpath also collapses symlink escapes).
-        # Non-path sources (PIL images, base64, URLs) pass through to load_image.
+        # image_base_dir is a sandbox: every path, relative or absolute, must
+        # realpath-resolve inside it. Non-path sources pass through.
         if self.image_base_dir and isinstance(src, str) and "://" not in src:
             joined = (
                 src if os.path.isabs(src) else os.path.join(self.image_base_dir, src)
@@ -162,11 +161,8 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
     def _locate_processor_offender(
         self, texts: list[str], images: list[list[Image.Image]], exc: Exception
     ) -> tuple[Optional[int], bool]:
-        """Retry rows one at a time to find which one broke the processor.
-
-        Returns (batch position of the offender or None, whether the retry was
-        conclusive).
-        """
+        """Retry rows individually; returns (offender batch position or None,
+        retry conclusive)."""
         LOG.warning(
             "MultiModalPretrainDataCollator: processor failed on a batch "
             "of %d rows (%s); retrying each row individually to locate "

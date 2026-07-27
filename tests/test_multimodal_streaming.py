@@ -692,11 +692,8 @@ def test_encode_no_crash_when_tokenizer_lacks_eos():
 
 
 def test_encode_length_gate_accounts_for_collator_eos():
-    """The length gate budgets +1 for the EOS the collator appends (M2).
-
-    3 raw tokens + the collator's EOS = 4 > max_tokens=3 must reject; a
-    tokenizer that already appends EOS emits 4 ids and gets no extra +1.
-    """
+    """The length gate budgets +1 for the collator's EOS — and only when the
+    tokenizer didn't already append one."""
     with pytest.raises(ValueError, match="exceeds sequence_len"):
         encode_streaming_multimodal(
             {"text": ["hello"], "images": [[]]},
@@ -1014,8 +1011,7 @@ def test_collator_processor_failure_reports_original_row_index(
         logger.removeHandler(caplog.handler)
     assert batch["input_ids"].shape[0] == 1
     msgs = [r.getMessage() for r in caplog.records]
-    # Row 0 dropped at image-load; row 2 (original index, not filtered pos 1)
-    # dropped at processor stage.
+    # "Row 2" is the original index; the filtered position would be 1.
     assert any("Row 2" in m and "processor failed" in m for m in msgs), msgs
 
 

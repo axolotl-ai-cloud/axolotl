@@ -6,10 +6,7 @@ from typing import Any
 
 
 def is_mm_cpt_entry(entry: Any) -> bool:
-    """True when a dataset entry opts into multimodal CPT.
-
-    Accepts dicts, DictDefault, and pydantic models.
-    """
+    """True when a dataset entry (dict or pydantic) opts into multimodal CPT."""
     if entry is None:
         return False
     if isinstance(entry, dict):

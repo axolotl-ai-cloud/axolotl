@@ -279,10 +279,8 @@ def _load_streaming_dataset(
     else:
         ds_type = pretraining_config.get("ds_type")
         path = pretraining_config.get("path")
-        # ds_type routes to a packaged loader (e.g. 'json') with `path` as the
-        # data_files glob — but only for local paths. Hub repos keep the
-        # historical path-first load (`ds_type` was previously ignored here),
-        # matching load_dataset_with_config's Hub-first semantics.
+        # ds_type routes to a packaged loader only for local paths; Hub repo
+        # paths keep the historical path-first load (ds_type was ignored here).
         path_is_local = bool(path) and (os.path.exists(path) or bool(glob.glob(path)))
         if ds_type and (not path or path_is_local):
             iter_dataset = load_dataset(

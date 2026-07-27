@@ -194,10 +194,8 @@ def encode_streaming_multimodal(
     texts: List[str] = examples[text_column]
     imgs_list: List[List[str]] = examples[image_column]
 
-    # Wrap bare placeholders with the model's flanking markers (Qwen-VL's
-    # <|vision_start|>/<|vision_end|>) — the processor won't add them, and
-    # without them mrope treats image pads as plain text. Already-wrapped
-    # occurrences are left alone.
+    # Wrap bare placeholders with the model's flanking markers (Qwen's
+    # vision_start/end); already-wrapped occurrences are left alone.
     bare_placeholder = None
     if marker_prefix and marker_suffix:
         bare_placeholder = re.compile(
@@ -249,15 +247,11 @@ def encode_streaming_multimodal(
             text = bare_placeholder.sub(
                 f"{marker_prefix}{image_token}{marker_suffix}", text
             )
-        # Validation-only tokenization: the collator's processor call is the
-        # one that produces the model's input_ids. No truncation here —
-        # counting on truncated ids while the collator re-tokenizes the full
-        # text would silently produce oversize batches and confusing
-        # placeholder/image-count mismatches.
+        # Validation-only tokenize (the collator's processor call produces the
+        # model's input_ids); no truncation, or trailing placeholders vanish.
         enc = tokenizer(text, add_special_tokens=True)
         ids = list(enc["input_ids"])
-        # The collator appends an EOS the tokenizer didn't emit; account for it
-        # in the length gate.
+        # Budget the EOS the collator will append.
         eos_id = tokenizer.eos_token_id
         n_tokens = len(ids)
         if eos_id is not None and (not ids or ids[-1] != eos_id):
@@ -288,8 +282,8 @@ def encode_streaming_multimodal(
         keep_images.append(list(imgs))
         keep_text.append(text)
 
-    # Only what the collator consumes ships through the stream; token columns
-    # would be dead weight (the processor re-tokenizes) and ~3x the payload.
+    # Only what the collator consumes; token columns would be dead weight
+    # (the processor re-tokenizes) at ~3x the payload.
     return {
         "images": keep_images,
         "_mm_text": keep_text,
