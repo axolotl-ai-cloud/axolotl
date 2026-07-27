@@ -1,0 +1,393 @@
+---
+title: "Ternary (1.58-bit) Conversion"
+back-to-top-navigation: true
+toc: true
+toc-expand: 2
+toc-depth: 4
+---
+
+## Overview
+
+The `ternary` plugin converts a full-precision checkpoint into a **ternary** model — every
+transformer-block weight becomes one of `{-1, 0, +1}` times a per-tensor scale, about
+1.58 bits per weight — and heals the damage with continued training. The result is
+exported to formats that run today: a bf16 "master" checkpoint, transformers' packed
+BitNet layout, GGUF `TQ2_0`/`TQ1_0` for llama.cpp, and `I2_S` for bitnet.cpp.
+
+This is the *conversion* path. If you already have a prequantized BitNet checkpoint (the
+Falcon-E series) and only want to fine-tune it, see
+[1.58-bit Finetuning](1_58bit_finetuning.qmd) instead — the two are mutually exclusive.
+
+::: {.callout-important}
+Conversion is a full fine-tune. Adapters (`adapter: lora`/`qlora`) and every other
+quantization path (`use_onebitllms`, `qat:`, `quantization:`, `load_in_8bit`,
+`load_in_4bit`) are rejected: the latent weights need dense gradients, and the ternary
+quantizer owns the weight representation for the whole run.
+:::
+
+## How it works
+
+**1. Swap.** After the model is built and weights are loaded — but before any FSDP or
+DeepSpeed wrapping — each targeted `nn.Linear` is replaced by a `TernaryLinear`. Matching
+is by regex against `named_modules()` names, and it is *strict*: every `nn.Linear` in the
+model must fullmatch exactly one of `target_modules` or `keep_fp_modules`. An unmatched or
+doubly-matched module is a hard error, not a warning. This is what stops an unanchored
+`.*gate.*` pattern from quietly ternarizing a MoE router.
+
+Embeddings, `lm_head` and all norms are never ternarized, regardless of what your regexes
+say. Quantizing them destroys the model and no deployment format expects it.
+
+**2. Heal.** `TernaryLinear` does fake quantization on every forward: weights are rounded
+to codes against a per-tensor absmean scale, activations to per-token int8, and a
+straight-through estimator sends gradients back into the bf16 latent weights. Quantization
+is faded in with a λ warmup
+
+$$w_\text{eff} = w + \lambda \cdot (w_q - w), \qquad \lambda = \min(\text{step} / \text{warmup}, 1)$$
+
+so the model is never shocked into ternary. Weight decay is annealed to zero partway
+through the run, because decay keeps flipping ternary code assignments and prevents them
+from settling.
+
+**3. Bake and export.** At save time the latents are replaced in place by exact
+`{-s, 0, +s}` bf16 values — the "master" checkpoint — and the packers re-derive codes from
+it. The dequantized value uses the scale *rounded through fp16*, which is what makes the
+master re-quantize to identical codes in every downstream packer instead of drifting by a
+code here and there.
+
+## Quickstart
+
+```yaml
+base_model: meta-llama/Llama-3.2-1B
+
+plugins:
+  - axolotl.integrations.ternary.TernaryPlugin
+
+ternary:
+  lambda_warmup_steps: 1000
+  export:
+    formats: [master_bf16, hf_bitnet]
+
+pretraining_dataset:
+  - path: HuggingFaceFW/fineweb-edu
+    name: sample-10BT
+    type: pretrain
+    split: train
+streaming: true
+
+sequence_len: 2048
+sample_packing: true
+max_steps: 20000
+
+learning_rate: 1e-4
+lr_scheduler: cosine
+weight_decay: 0.01
+save_only_model: true
+bf16: true
+```
+
+```bash
+axolotl train config.yaml
+```
+
+Healing is continued pretraining, so feed it raw text (`pretraining_dataset` or packed
+completion data), not instruction data with masked prompts. A learning rate around `1e-4`
+with cosine decay is the documented starting point.
+
+::: {.callout-tip}
+`save_only_model: true` is recommended. Optimizer state for a run that is being baked to a
+ternary master is dead weight in every checkpoint.
+:::
+
+## Token budget expectations
+
+Conversion is not free. The published evidence is consistent about what a given budget
+buys:
+
+| Budget | Outcome |
+|---|---|
+| ~0 (PTQ only) | ~90% retention at 27B+; weak below 8B |
+| ~1B tokens | demo quality |
+| ~10B tokens | usable model; task-parity with distillation at ≤4B |
+| ~30B+ tokens | good general model |
+| ~100B tokens | approaches, but does not match, the FP16 base at 8B without a teacher |
+
+Budget the run before starting it. A 1B-token heal of an 8B model produces something that
+talks, not something you ship.
+
+## Configuration reference
+
+All options live under the `ternary:` key.
+
+### Module selection
+
+| Option | Default | Description |
+|---|---|---|
+| `target_modules` | preset | Regexes fullmatched against module names; each match becomes a `TernaryLinear`. Defaults to the architecture preset. |
+| `keep_fp_modules` | preset | Regexes for Linears that stay full precision. |
+| `strict_enumeration` | `true` | Require every `nn.Linear` to fullmatch exactly one list. `false` downgrades unmatched/double-matched modules to a warning and keeps them FP. |
+
+Presets exist for `llama` and `qwen3` dense architectures and target
+`.*\.self_attn\.(q|k|v|o)_proj` plus `.*\.mlp\.(gate|up|down)_proj`. Other architectures
+need explicit `target_modules`.
+
+### Quantizer
+
+| Option | Default | Description |
+|---|---|---|
+| `weight_scale` | `absmean` | `absmean` (per-tensor, the only mode every deployment format can represent), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly). |
+| `group_size` | `null` | Block size for `weight_scale: group`, at least 32 (128 or 256 are the usual values). Required with it, rejected without it. |
+| `activation_bits` | `8` | `8` for per-token int8 activation quantization, `null` for weight-only QAT. |
+| `init` | `absmean` | Latent initialization for the swapped modules. Only `absmean` is implemented; `ptq_itf` and `svid` are planned. |
+| `smoothing` | `false` | *Planned.* Fold a SmoothQuant-style norm→linear rescale into the weights before the swap. |
+| `subln` | `false` | *Planned.* Insert BitDistill-style sub-norms before `o_proj`/`down_proj`. Changes the architecture; not representable in GGUF/I2_S exports. |
+
+::: {.callout-note}
+The schema accepts `init: ptq_itf`, `init: svid`, `smoothing: true` and `subln: true`, but
+nothing implements them yet, so the plugin raises `NotImplementedError` at swap time rather
+than training a model that silently ignored them.
+:::
+
+::: {.callout-warning}
+`weight_scale: group` cannot be exported to `hf_bitnet`, `gguf_tq2_0`, `gguf_tq1_0` or
+`i2_s` — those formats carry a single per-tensor scale. Group scales are `master_bf16`
+only, and the config validator will tell you so up front rather than at export time.
+:::
+
+### Schedules
+
+| Option | Default | Description |
+|---|---|---|
+| `lambda_schedule` | `linear` | How λ ramps 0 → 1: `linear`, `sigmoid`, or `none` (quantize at full strength from step 0). |
+| `lambda_warmup_steps` | `1000` | λ warmup length. The **type** decides: an int is an absolute step count, a float in `(0, 1]` is a fraction of `max_steps` — so `1` means one step and `1.0` means the whole run. |
+| `weight_decay_zero_at` | `0.5` | Fraction of training after which weight decay is annealed to 0. `1.0` keeps decay for the whole run. |
+
+`linear` is the default because it is the only schedule with clear published evidence
+behind it; discrete jumps to λ=1 fail.
+
+### Performance
+
+| Option | Default | Description |
+|---|---|---|
+| `int8_forward` | `auto` | Use the int8 tensor-core W2A8 forward once λ reaches 1. `auto` enables it when shapes and hardware qualify, and falls back silently otherwise. |
+| `fused_fake_quant` | `true` | Use the fused Triton fake-quant kernels instead of the eager reference implementation. |
+| `share_act_quant` | `false` | Quantize a shared input once for every linear that consumes it (`q`/`k`/`v`, `gate`/`up`) instead of once per linear. |
+
+### Monitoring
+
+| Option | Default | Description |
+|---|---|---|
+| `log_code_flip_every` | `100` | Log ternary code-flip rate and zero fraction every N steps; `0` disables monitoring and its packed-code snapshot buffers. |
+
+Two metrics per module family (`q_proj`, `down_proj`, …) land in your trainer logs. They
+go through the trainer's metric store, so they reach the trackers (W&B, TensorBoard, MLflow)
+and `state.log_history`, not just the console. Under FSDP2 each rank measures its own shard,
+so the numbers are per-rank:
+
+- `ternary/flip_rate/<family>` — fraction of codes that changed since the last snapshot.
+  Near zero means the codes are frozen (LR too low, or the run is done); sustained high
+  means thrashing (LR too high).
+- `ternary/zero_frac/<family>` — fraction of codes that are `0`. A family collapsing toward
+  all-zero is a dead layer.
+
+### Distillation
+
+Under `ternary.distill`:
+
+| Option | Default | Description |
+|---|---|---|
+| `mode` | `null` | `null` (pure QAT), `kd_plugin` (compose with the KD integration), `inprocess` (frozen teacher loaded beside the student). |
+| `teacher_model` | `base_model` | Teacher checkpoint. Defaults to the unquantized base you are converting. |
+| `teacher_device_map` | `null` | `device_map` for the `inprocess` teacher (e.g. `auto`, `cpu`) so a teacher that does not fit beside the student can be offloaded. |
+| `logits_weight` | `1.0` | Mixing coefficient between CE and logits-KD: `(1 - w)·CE + w·τ²·KL`. Must be in `[0, 1]`. |
+| `logits_temperature` | `2.0` | Softmax temperature for the logits-KD term. |
+| `hidden_weight` | `0.0` | Cosine hidden-state feature-KD weight. `inprocess` only; `0` disables. |
+| `attn_relation_layer` | `null` | *Experimental.* Layer index for single-layer attention-relation KD. `inprocess` only; negative indexes count from the last layer. Results are sensitive to the layer choice. |
+
+### Export
+
+Under `ternary.export`:
+
+| Option | Default | Description |
+|---|---|---|
+| `formats` | `[master_bf16, hf_bitnet]` | Artifacts written after training completes. |
+| `run_parity_gate` | `true` | Verify each packed export against the baked master and fail the export when it does not match. |
+
+## Teacher options
+
+**No teacher (`distill.mode: null`).** Pure QAT on next-token loss. Simplest, cheapest per
+step, and the recipe the token-budget table above is calibrated for. Start here.
+
+**`distill.mode: kd_plugin`.** Compose with axolotl's existing
+[KD integration](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/kd):
+serve the FP base with [`axolotl vllm-serve`](vllm_serving.qmd) or precompute an offline
+top-k logprob dataset, and run the KD trainer against the swapped model. This is the
+memory-cheap path and the recommendation for teachers at 7B and above, since the teacher
+never has to sit in the training process.
+
+**`distill.mode: inprocess`.** A frozen copy of `teacher_model` is loaded beside the
+student and runs under `no_grad` in eval mode. The loss is cross-entropy plus a chunked
+logits-KD term (computed per vocab-chunk so a 128k+ vocabulary does not blow up memory),
+optionally plus cosine hidden-state KD and single-layer attention-relation KD. Use it for
+teachers up to ~4B, or on boxes with GPUs to spare.
+
+```yaml
+ternary:
+  distill:
+    mode: inprocess
+    logits_weight: 1.0
+    logits_temperature: 2.0
+    hidden_weight: 0.1
+```
+
+## Export formats
+
+Exports listed in `ternary.export.formats` are written automatically when training
+finishes. You can also produce them later from a saved master:
+
+```bash
+axolotl ternary export config.yaml --format gguf_tq2_0 --format i2_s
+axolotl ternary export config.yaml --format hf_bitnet --output-dir ./exports
+```
+
+`--format` is repeatable and defaults to `ternary.export.formats`; `--output-dir` defaults
+to the config's `output_dir`, which is also where the baked master is read from.
+
+| Format | Bits/weight | Runtime |
+|---|---|---|
+| `master_bf16` | 16 | transformers, and any axolotl run — this is the refinetunable interchange artifact |
+| `hf_bitnet` | 2.0 | transformers `BitNetForCausalLM` |
+| `gguf_tq2_0` | 2.0625 | llama.cpp |
+| `gguf_tq1_0` | 1.6875 | llama.cpp |
+| `i2_s` | 2.0 | bitnet.cpp |
+
+::: {.callout-note}
+GGUF exports (`gguf_tq2_0`, `gguf_tq1_0`, `i2_s`) require the optional `gguf` package:
+`uv pip install gguf`.
+:::
+
+### master_bf16
+
+A normal bf16 checkpoint whose weight values happen to be exactly `{-s, 0, +s}`. Loads
+with `AutoModelForCausalLM.from_pretrained` and can be fine-tuned further — every packed
+format is derived from it, so nothing is lost by keeping it around.
+
+Loading one back through the plugin is a fixed point: the swap detects that the weights
+are already on the ternary grid and recovers `s` from their `amax`, so the reloaded model
+computes exactly what the saved one did. (Re-running the absmean quantizer on ternary
+values would shrink every weight by the non-zero code fraction.)
+
+### hf_bitnet
+
+Packs four ternary codes per `uint8` (`code + 1` at bit shifts `[0, 2, 4, 6]`, tensor shape
+`(out_features / 4, in_features)`), stores a scalar `weight_scale` per tensor, and stamps
+`quantization_config: {quant_method: bitnet}` into `config.json`:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model = AutoModelForCausalLM.from_pretrained("./outputs/ternary-out/hf_bitnet")
+tokenizer = AutoTokenizer.from_pretrained("./outputs/ternary-out/hf_bitnet")
+```
+
+### gguf_tq2_0 / gguf_tq1_0
+
+Upstream llama.cpp ternary block types. `TQ2_0` is the faster of the two and the one to
+reach for first; `TQ1_0` trades speed for ~0.4 bits per weight. Embeddings and the output
+head are written as Q6_K/F16.
+
+```bash
+llama-cli -m ./outputs/ternary-out/model-tq2_0.gguf -p "Hello"
+```
+
+::: {.callout-note}
+You cannot `llama-quantize` a normal FP model into `TQ2_0`/`TQ1_0`. The source has to
+already be ternary-with-scale — which is exactly what the baked master is.
+:::
+
+### i2_s
+
+The GGUF variant bitnet.cpp's CPU runtime consumes:
+
+```bash
+python setup_env.py -md ./outputs/ternary-out -q i2_s
+python run_inference.py -m ./outputs/ternary-out/ggml-model-i2_s.gguf -p "Hello"
+```
+
+### Parity gates
+
+With `run_parity_gate: true` (the default), every export is checked against the master
+before it is accepted:
+
+1. **Exact code equality** — the codes recovered from the artifact must match the codes
+   re-derived from the master, with zero mismatches. This is achievable because the master
+   dequantizes with an fp16-rounded scale, so every packer's block scale reproduces it.
+2. **Dequant error bound** — the maximum absolute difference must stay within the fp16
+   rounding error of the scale.
+3. **Smoke eval** — fixed-prompt logits from the artifact, decoded and run through the
+   activation quantizer its *runtime* uses, compared against the master run as training
+   ran it. For `hf_bitnet` that measures the real training-vs-deployment mismatch
+   (BitLinear floors `amax` where training floors the scale), not just the packing.
+
+`master_bf16` and `hf_bitnet` are re-read from disk. The GGUF/I2_S containers have no
+in-tree reader, so they are gated *as they are packed*: each tensor's serialized byte
+string is decoded again with our own unpacker and compared to the master's codes and
+`s16` before the container writer sees it, and the digests land in
+`ternary_block_gate.json` beside the file. A format with neither gate is refused rather
+than written unverified.
+
+A failing gate raises rather than writing a broken artifact.
+
+## Relationship to `use_onebitllms`
+
+| | `ternary` plugin | `use_onebitllms` |
+|---|---|---|
+| Input | any supported FP checkpoint | an already-prequantized BitNet checkpoint (Falcon-E) |
+| Job | convert FP → ternary, then heal | fine-tune weights that are already ternary |
+| Cost | billions of tokens of continued training | an ordinary fine-tune |
+| Export | built in (`axolotl ternary export`) | external `onebitllms` CLI |
+
+They cannot be combined; the config validator rejects it. Pick conversion if you have an
+FP model you want to shrink, and `use_onebitllms` if someone already did the shrinking.
+
+## FAQ
+
+**Why is LoRA / QLoRA not supported?**
+Ternary conversion moves roughly 40% of the weights — that is the entire point of the
+"reconstruction" regime. A low-rank update cannot express that, and there is nothing for
+an adapter to wrap: the quantized weight is a function of the latent weight, which has to
+be trainable. Full fine-tuning is not an implementation shortcut here, it is the method.
+
+**Why do `lm_head` and the embeddings stay full precision?**
+They are the most quantization-sensitive tensors in the model and ternarizing them
+collapses output quality, which is why every deployment format keeps them at higher
+precision (GGUF uses Q6_K/F16). They are also a small fraction of a multi-billion-parameter
+model's weights, so the compression you give up is minor.
+
+**Why is there no ternary backward pass?**
+Straight-through estimation means gradients and optimizer state live on the full-precision
+latent weights. The forward is ternary; the backward is dense bf16 by design. A ternary
+backward would have nothing to accumulate into.
+
+**Can I skip the λ warmup?**
+`lambda_schedule: none` quantizes at full strength from step 0. It is available, and for
+very small models it makes little difference, but on pretrained models of meaningful size
+a hard jump to λ=1 causes catastrophic forgetting the run never recovers from.
+
+**Does `int8_forward` change the numerics?**
+It is gated on λ == 1, where the effective weights are exactly `code · s`, and is verified
+against the eager reference implementation. It is a speed path, not a different quantizer;
+`auto` falls back to the fake-quant path whenever shapes or hardware do not qualify.
+
+**Which architectures work?**
+Presets ship for `llama` and `qwen3` dense models, and the export writers target those
+families first. Other architectures can be converted by supplying `target_modules`
+explicitly, but the GGUF/bitnet.cpp writers need per-architecture tensor-name mapping and
+will tell you when they do not have it. Fused 3D MoE expert stacks are detected and
+rejected with a clear error rather than silently mishandled.
+
+## Example configurations
+
+See `examples/ternary/`:
+
+- `llama-3.2-1b-qat.yaml` — pure QAT heal on streamed pretraining text.
+- `qwen3-4b-distill.yaml` — the same heal with an in-process frozen FP teacher.

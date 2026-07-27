@@ -1,0 +1,68 @@
+base_model: Qwen/Qwen3-4B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+plugins:
+  - axolotl.integrations.ternary.TernaryPlugin
+
+ternary:
+  lambda_schedule: linear
+  lambda_warmup_steps: 0.05
+  weight_decay_zero_at: 0.5
+  log_code_flip_every: 100
+  distill:
+    # a frozen FP copy of `teacher_model` is loaded beside the student, so this needs
+    # room for both; use `mode: kd_plugin` with a vllm-served teacher for larger ones
+    mode: inprocess
+    teacher_model: Qwen/Qwen3-4B
+    logits_weight: 1.0
+    logits_temperature: 2.0
+    hidden_weight: 0.1
+  export:
+    formats:
+      - master_bf16
+      - hf_bitnet
+      - gguf_tq2_0
+
+pretraining_dataset:
+  - path: HuggingFaceFW/fineweb-edu
+    name: sample-10BT
+    type: pretrain
+    split: train
+streaming: true
+
+output_dir: ./outputs/ternary-qwen3-4b
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+gradient_accumulation_steps: 16
+micro_batch_size: 4
+max_steps: 20000
+
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1e-4
+warmup_steps: 100
+weight_decay: 0.01
+
+bf16: true
+tf32: true
+gradient_checkpointing: true
+attn_implementation: flash_attention_2
+
+logging_steps: 1
+save_strategy: steps
+save_steps: 1000
+save_only_model: true
+
+deepspeed: deepspeed_configs/zero2.json
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

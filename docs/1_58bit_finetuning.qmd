@@ -16,6 +16,12 @@ Axolotl supports 1.58-bit finetuning via the [`onebitllms`](https://github.com/t
 LoRA is not supported for BitNet models
 :::
 
+::: {.callout-note}
+This page covers finetuning checkpoints that are *already* ternary. To convert a
+full-precision model to 1.58-bit yourself, see
+[Ternary Conversion](ternary_conversion.qmd) — the two paths are mutually exclusive.
+:::
+
 ## Installation
 
 Install the `onebitllms` package before using this feature:

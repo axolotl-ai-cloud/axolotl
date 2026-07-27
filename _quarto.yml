@@ -517,6 +517,7 @@ website:
             - docs/quantize.qmd
             - docs/nvfp4_lora.qmd
             - docs/1_58bit_finetuning.qmd
+            - docs/ternary_conversion.qmd
             - docs/optimizations.qmd
 
         - section: "Core Concepts"

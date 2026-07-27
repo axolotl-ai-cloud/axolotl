@@ -28,6 +28,10 @@ BUILTIN_COMMANDS: dict[str, PluginCommand] = {
         target="axolotl.integrations.lm_eval.cli:lm_eval",
         short_help="use lm eval to evaluate a trained language model",
     ),
+    "ternary": PluginCommand(
+        target="axolotl.integrations.ternary.cli:ternary",
+        short_help="convert and export ternary (1.58-bit) models",
+    ),
 }
 
 
