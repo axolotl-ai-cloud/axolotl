@@ -164,10 +164,22 @@ def fused_fp4_cross_entropy(
     if getattr(lm_head, "bias", None) is not None:
         return None  # bias-folding not implemented
 
+    store = _nvfp4_lm_head_store(lm_head)
+    if store is None:
+        return None
+
     if shift:
         labels = nn.functional.pad(labels, (0, 1), value=ignore_index)[..., 1:]
     hidden2d = hidden.reshape(-1, hidden.shape[-1]).contiguous()
     labels1d = labels.reshape(-1).to(hidden.device)
+
+    vocab_size = store.shape[0]
+    oob = (labels1d != ignore_index) & ((labels1d < 0) | (labels1d >= vocab_size))
+    if oob.any():
+        raise ValueError(
+            f"fused_fp4_cross_entropy: {int(oob.sum())} label(s) out of range "
+            f"for vocab size {vocab_size} (and != ignore_index {ignore_index})"
+        )
 
     valid = labels1d != ignore_index
     if num_items_in_batch is not None:
@@ -181,10 +193,6 @@ def fused_fp4_cross_entropy(
     else:
         grad_scale = 1.0 / valid.sum().clamp(min=1).float()
 
-    store = _nvfp4_lm_head_store(lm_head)
-    if store is None:
-        return None
-
     return _FusedFP4CrossEntropy.apply(
         hidden2d, store, labels1d, ignore_index, logit_scale, grad_scale
     )
@@ -197,6 +205,10 @@ def fused_fp4_cross_entropy(
 
 import functools  # noqa: E402
 import logging  # noqa: E402
+
+from axolotl.integrations.nvfp4.kernels.bf16_fused_ce import (  # noqa: E402
+    _config_logit_scale,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -220,7 +232,13 @@ def _make_fused_forward(orig_forward):
             or kwargs.get("logits_to_keep")
             or kwargs.get("return_dict") is False
             or not has_fp4_ce
+            or kwargs.get("output_router_logits")
+            or getattr(self.config, "output_router_logits", False)
         ):
+            return orig_forward(self, *args, **kwargs)
+
+        logit_scale = _config_logit_scale(self.config)
+        if logit_scale is None:
             return orig_forward(self, *args, **kwargs)
 
         labels = kwargs.pop("labels")
@@ -240,6 +258,7 @@ def _make_fused_forward(orig_forward):
             labels,
             num_items_in_batch=num_items_in_batch,
             shift=True,
+            logit_scale=logit_scale,
         )
         if loss is None:  # store became non-tileable mid-run
             kwargs["labels"] = labels
@@ -284,6 +303,12 @@ def patch_model_fused_fp4_ce(
         LOG.warning(
             "fused_fp4_cross_entropy: lm_head is not a row-sliceable NVFP4 store; "
             "keeping the materialized CE path."
+        )
+        return False
+    if _config_logit_scale(getattr(causal, "config", None)) is None:
+        LOG.warning(
+            "fused_fp4_cross_entropy: final_logit_softcapping is set on this "
+            "architecture; fused CE is disabled (keeping the materialized CE path)."
         )
         return False
 

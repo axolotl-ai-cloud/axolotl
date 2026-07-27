@@ -38,6 +38,19 @@ def _set_vocab_block(vocab_block: int | None) -> None:
 _PATCHED_FORWARDS: set[type] = set()
 
 
+def _config_logit_scale(config) -> float | None:
+    """Per-arch logit multiplier from the model config; None means unsupported."""
+    if getattr(config, "final_logit_softcapping", None) is not None:
+        return None  # tanh capping is not expressible in the streaming kernel
+    logit_scale = getattr(config, "logit_scale", None)
+    if logit_scale is not None:
+        return float(logit_scale)
+    logits_scaling = getattr(config, "logits_scaling", None)
+    if logits_scaling:
+        return 1.0 / float(logits_scaling)
+    return 1.0
+
+
 class _BF16FusedCrossEntropy(torch.autograd.Function):
     """Tiled bf16 lm_head -> fp32 logsumexp/gather -> CE, no ``[M, V]`` logits.
 
@@ -110,7 +123,7 @@ class _BF16FusedCrossEntropy(torch.autograd.Function):
             cols = (safe_labels - lo).clamp(0, hi - lo - 1)
             sm[rows, cols] -= in_tile.float()
 
-            grad_hidden += (sm * coef) @ weight[lo:hi].float()
+            grad_hidden += ((sm * coef).to(hidden.dtype) @ weight[lo:hi]).float()
 
         return grad_hidden.to(hidden.dtype), None, None, None, None, None
 
@@ -142,6 +155,14 @@ def bf16_lm_head_cross_entropy(
     hidden2d = hidden.reshape(-1, hidden.shape[-1]).contiguous()
     labels1d = labels.reshape(-1).to(hidden.device)
 
+    vocab_size = lm_head.weight.shape[0]
+    oob = (labels1d != ignore_index) & ((labels1d < 0) | (labels1d >= vocab_size))
+    if oob.any():
+        raise ValueError(
+            f"bf16_lm_head_cross_entropy: {int(oob.sum())} label(s) out of range "
+            f"for vocab size {vocab_size} (and != ignore_index {ignore_index})"
+        )
+
     valid = labels1d != ignore_index
     if num_items_in_batch is not None:
         if torch.is_tensor(num_items_in_batch):
@@ -172,7 +193,13 @@ def _make_fused_forward(orig_forward):
             or not self.training
             or kwargs.get("logits_to_keep")
             or kwargs.get("return_dict") is False
+            or kwargs.get("output_router_logits")
+            or getattr(self.config, "output_router_logits", False)
         ):
+            return orig_forward(self, *args, **kwargs)
+
+        logit_scale = _config_logit_scale(self.config)
+        if logit_scale is None:
             return orig_forward(self, *args, **kwargs)
 
         lm_head = self.get_output_embeddings()
@@ -192,6 +219,7 @@ def _make_fused_forward(orig_forward):
             labels,
             num_items_in_batch=num_items_in_batch,
             shift=True,
+            logit_scale=logit_scale,
         )
         if loss is None:  # head became non-plain mid-run
             kwargs["labels"] = labels
@@ -244,6 +272,12 @@ def patch_model_bf16_lm_head_cross_entropy(
         LOG.warning(
             "bf16_lm_head_cross_entropy: requires a frozen bias-free lm_head; "
             "keeping the materialized CE path."
+        )
+        return False
+    if _config_logit_scale(getattr(causal, "config", None)) is None:
+        LOG.warning(
+            "bf16_lm_head_cross_entropy: final_logit_softcapping is set on this "
+            "architecture; fused CE is disabled (keeping the materialized CE path)."
         )
         return False
 
