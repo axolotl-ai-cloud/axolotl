@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from axolotl.integrations.context_parallel import (
     ContextParallelConfig,
@@ -40,7 +41,7 @@ def test_enabled_flag():
 
 
 def test_config_degree_product_validation():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         ContextParallelConfig(size=8, ulysses_size=4, ring_size=4)
     ContextParallelConfig(size=8, ulysses_size=2, ring_size=4)  # ok
 
