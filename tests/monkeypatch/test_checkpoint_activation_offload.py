@@ -53,3 +53,28 @@ def test_checkpoint_offload_ignores_unmarked_saved_tensors():
     assert offload.stats.saved_tensors_seen > 0
     assert offload.stats.marked_tensors == 0
     assert offload.stats.offloaded_tensors == 0
+
+
+def test_checkpoint_offload_restores_view_with_storage_offset():
+    def fn(x):
+        return x.sin().square()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    base = torch.randn(6, 8, device=device)
+    x_base = base[2:].detach().clone().requires_grad_(True)
+    fn(checkpoint(fn, x_base, use_reentrant=False)).sum().backward()
+
+    x = base[2:].detach().requires_grad_(True)
+    assert x.storage_offset() > 0
+    offload = CheckpointHiddenStatesOffload(use_streams=False, min_offload_size=0)
+    with offload:
+        offload.mark(x)
+        loss = fn(checkpoint(fn, x, use_reentrant=False)).sum()
+        loss.backward()
+
+    if device == "cuda":
+        assert offload.stats.offloaded_tensors == 1
+        assert offload.stats.restored_tensors == 1
+    else:
+        assert offload.stats.skipped_marked_tensors == 1
+    assert torch.allclose(x.grad, x_base.grad)
