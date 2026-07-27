@@ -1,8 +1,9 @@
 """Module for testing streaming dataset sequence packing"""
 
+import numpy as np
 import pytest
 from datasets import concatenate_datasets
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import AutoTokenizer
 
 from axolotl.datasets import TokenizedPromptDataset
@@ -118,3 +119,49 @@ class TestBatchedSamplerPacking:
         finally:
             # Clean up: remove the patch after the test
             remove_multipack_dataloader_patch()
+
+
+class TestMultipackDropLastStats:
+    """
+    Regression tests for drop_last efficiency accounting (#3848)
+    """
+
+    @pytest.mark.parametrize("sequential", [True, False])
+    @pytest.mark.parametrize(
+        "lengths, expected_batches",
+        [
+            # incomplete tail batch gets dropped
+            ([9] * 13, 2),
+            # dropped bins are the only non-full ones, so efficiency is exactly 1.0
+            ([10] * 10 + [2] * 3, 2),
+            # the only batch is incomplete (used to raise IndexError)
+            ([9] * 3, 0),
+            # divides evenly, nothing dropped
+            ([9] * 10, 2),
+        ],
+    )
+    def test_stats_track_kept_bins(self, lengths, expected_batches, sequential):
+        batch_size = 5
+        batch_max_len = 10
+        lengths = np.array(lengths, dtype=np.int32)
+        sampler = MultipackBatchSampler(
+            sampler=SequentialSampler(range(len(lengths))),
+            batch_size=batch_size,
+            batch_max_len=batch_max_len,
+            lengths=lengths,
+            bin_size=batch_max_len,
+            drop_last=True,
+            sequential=sequential,
+            num_processes=1,
+        )
+
+        batches = sampler.generate_batches(set_stats=True)
+        kept_bins = [bin_ for batch in batches for bin_ in batch]
+
+        assert len(batches) == expected_batches
+        assert all(len(batch) == batch_size for batch in batches)
+        assert sampler.total_token_slots == len(kept_bins) * batch_max_len
+        assert sampler.total_tokens_used == sum(
+            int(lengths[idx]) for bin_ in kept_bins for idx in bin_
+        )
+        assert 0.0 <= sampler.efficiency() <= 1.0
