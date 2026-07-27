@@ -323,10 +323,20 @@ before it is accepted:
    dequantizes with an fp16-rounded scale, so every packer's block scale reproduces it.
 2. **Dequant error bound** — the maximum absolute difference must stay within the fp16
    rounding error of the scale.
-3. **Smoke eval** — fixed-prompt logits from the artifact, decoded and run through the
-   activation quantizer its *runtime* uses, compared against the master run as training
-   ran it. For `hf_bitnet` that measures the real training-vs-deployment mismatch
-   (BitLinear floors `amax` where training floors the scale), not just the packing.
+3. **Weight-path smoke eval** — fixed-prompt logits from the artifact's decoded weights
+   against the master's, with the *same* activation quantizer on both sides. That makes it
+   a deterministic graph fed bit-identical weights, so the delta is 0 and a layout
+   transpose or an inverted scale blows it up.
+4. **Runtime-quantizer equivalence** — the deployment activation quantizer (for
+   `hf_bitnet`, BitLinear's: it floors `amax` where training floors the scale) is compared
+   to the training one *directly*, on the real pre-linear activations captured from the
+   reference forward: the fraction of int8 codes that disagree, the largest disagreement
+   in scale steps, and the extreme codes both reach.
+
+The end-to-end logit delta between the two quantizers is logged but **not** gated. A
+swapped model is chaotic: after ~30 layers, two quantizers that agree to the last
+representable code still move the max logit by O(1), so that number cannot separate a
+real fault from arithmetic ordering.
 
 `master_bf16` and `hf_bitnet` are re-read from disk. The GGUF/I2_S containers have no
 in-tree reader, so they are gated *as they are packed*: each tensor's serialized byte

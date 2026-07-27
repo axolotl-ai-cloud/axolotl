@@ -22,6 +22,19 @@ LOG = get_logger(__name__)
 CONFIG_FILENAME: str = "config.json"
 QUANTIZER_METADATA_KEY: str = "ternary_quantizer"
 
+SAFETENSORS_DTYPES: dict[str, torch.dtype] = {
+    "F64": torch.float64,
+    "F32": torch.float32,
+    "F16": torch.float16,
+    "BF16": torch.bfloat16,
+    "I64": torch.int64,
+    "I32": torch.int32,
+    "I16": torch.int16,
+    "I8": torch.int8,
+    "U8": torch.uint8,
+    "BOOL": torch.bool,
+}
+
 SAFETENSORS_NAME: str = "model.safetensors"
 SAFETENSORS_INDEX_NAME: str = "model.safetensors.index.json"
 TORCH_WEIGHTS_NAME: str = "pytorch_model.bin"
@@ -122,6 +135,25 @@ def shard_paths(model_dir: str | Path) -> list[Path]:
         if (directory / single_name).is_file():
             return [directory / single_name]
     raise FileNotFoundError(f"no model weights found in {model_dir}")
+
+
+def tensor_dtypes(model_dir: str | Path) -> dict[str, torch.dtype]:
+    """Return each tensor's storage dtype, read from the shard headers only.
+
+    A checkpoint mixes dtypes — the ternary masters are saved in their module's dtype
+    while norms and embeddings stay fp32 — so `config.dtype` cannot answer this.
+    Non-safetensors shards are skipped rather than loaded.
+    """
+    dtypes: dict[str, torch.dtype] = {}
+    for path in shard_paths(model_dir):
+        if path.suffix != ".safetensors":
+            continue
+        with safe_open(path, framework="pt") as shard:
+            for key in shard.keys():  # noqa: SIM118 — safetensors handle, not a mapping
+                resolved = SAFETENSORS_DTYPES.get(shard.get_slice(key).get_dtype())
+                if resolved is not None:
+                    dtypes[key] = resolved
+    return dtypes
 
 
 def load_shard(path: str | Path) -> tuple[dict[str, torch.Tensor], dict[str, str]]:
@@ -251,6 +283,7 @@ def write_quantizer_metadata(
 __all__ = [
     "CONFIG_FILENAME",
     "QUANTIZER_METADATA_KEY",
+    "SAFETENSORS_DTYPES",
     "SAFETENSORS_INDEX_NAME",
     "SAFETENSORS_NAME",
     "bake_directory",
@@ -263,5 +296,6 @@ __all__ = [
     "load_tensors",
     "save_shard",
     "shard_paths",
+    "tensor_dtypes",
     "write_quantizer_metadata",
 ]

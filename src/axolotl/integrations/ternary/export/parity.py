@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,7 +23,28 @@ LOG = get_logger(__name__)
 F16_HALF_ULP: float = 2.0**-11
 
 SMOKE_TOKENS: int = 16
-SMOKE_LOGIT_TOL: float = 1e-2
+
+# The weight path is a deterministic fp32 graph fed bit-identical weights, so its
+# logit delta is 0 in practice; the bound only absorbs kernel-selection noise.
+WEIGHT_PATH_LOGIT_TOL: float = 1e-5
+
+# Runtime-quantizer equivalence, checked on the activations themselves rather than
+# through the network: a swapped ternary net is chaotic, so an ulp-level per-layer
+# difference between two numerically-equivalent quantizers amplifies to O(1) logits
+# after ~30 layers. End-to-end logit deltas cannot separate that from a real bug.
+#
+# - codes may differ only where `x / s` lands on a rounding tie, which is O(ulp) of
+#   the elements in practice; a systematic fault (inverted scale, wrong qmax) flips
+#   most of the tensor, so 0.5% sits orders of magnitude above the noise and far
+#   below any real fault,
+# - a tie moves one code, hence one scale step; 1.5 steps leaves headroom for the
+#   scale's own rounding without admitting a two-step drift,
+# - the reachable code range must match exactly: a clamp-range fault ([-127, 126])
+#   moves too few elements to register as a fraction, but it always truncates the
+#   extreme code that per-token absmax scaling is guaranteed to produce.
+RUNTIME_CODE_MISMATCH_TOL: float = 5e-3
+RUNTIME_DEQUANT_STEP_TOL: float = 1.5
+RUNTIME_PROBE_TENSORS: int = 128
 
 # format -> (artifact path, manifest) -> {module name: (int8 codes, fp32 scale)}
 CodeExtractor = Callable[
@@ -98,6 +120,83 @@ def gate_block_bytes(
 
 
 @dataclass
+class SmokeReport:
+    """Outcome of the forward-path gates; see `run_smoke_eval`.
+
+    Attributes:
+        weight_path_logit_delta: Max logit delta with the *same* activation quantizer
+            on both sides — gated, and 0 for a correct packer.
+        runtime_code_mismatch: Largest fraction of int8 activation codes on which the
+            deployment and training quantizers disagree — gated.
+        runtime_dequant_steps: Largest dequantized disagreement between them, in
+            units of the training per-token scale — gated.
+        runtime_code_range_matches: Whether both quantizers reach the same extreme
+            codes — gated.
+        cross_quantizer_logit_delta: Max logit delta between the two quantizers
+            end-to-end. **Reported only**: a deep swapped model amplifies their
+            ulp-level disagreement to O(1), so it bounds nothing.
+        probes_compared: How many captured activation tensors the runtime gate saw.
+    """
+
+    format: str
+    weight_path_logit_delta: float | None = None
+    runtime_code_mismatch: float | None = None
+    runtime_dequant_steps: float | None = None
+    runtime_code_range_matches: bool | None = None
+    cross_quantizer_logit_delta: float | None = None
+    probes_compared: int = 0
+    failures: list[str] = field(default_factory=list)
+
+    @property
+    def passed(self) -> bool:
+        """Whether both forward-path gates held."""
+        return not self.failures
+
+    def gate_weight_path(self) -> None:
+        """Fail when substituting the artifact's weights moved the logits at all."""
+        delta = self.weight_path_logit_delta
+        if delta is not None and delta > WEIGHT_PATH_LOGIT_TOL:
+            self.failures.append(
+                f"weight path: max logit delta {delta:.3e} exceeds "
+                f"{WEIGHT_PATH_LOGIT_TOL:.3e} with the training activation quantizer "
+                "on both sides — the artifact does not decode to the master's weights"
+            )
+
+    def gate_runtime_quantizer(self, activations) -> None:
+        """Fail when the deployment activation quantizer is not the training one."""
+        mismatch = steps = 0.0
+        same_range = True
+        for tensor in activations:
+            tensor_mismatch, tensor_steps, tensor_range = compare_act_quantizers(tensor)
+            mismatch = max(mismatch, tensor_mismatch)
+            steps = max(steps, tensor_steps)
+            same_range = same_range and tensor_range
+            self.probes_compared += 1
+        if not self.probes_compared:
+            return
+
+        self.runtime_code_mismatch = mismatch
+        self.runtime_dequant_steps = steps
+        self.runtime_code_range_matches = same_range
+        if mismatch > RUNTIME_CODE_MISMATCH_TOL:
+            self.failures.append(
+                f"runtime quantizer: {mismatch:.3%} of activation codes differ from "
+                f"the training quantizer, over the {RUNTIME_CODE_MISMATCH_TOL:.3%} "
+                "rounding-tie allowance"
+            )
+        if steps > RUNTIME_DEQUANT_STEP_TOL:
+            self.failures.append(
+                f"runtime quantizer: activations drift {steps:.2f} scale steps from "
+                f"the training quantizer, over the {RUNTIME_DEQUANT_STEP_TOL} allowed"
+            )
+        if not same_range:
+            self.failures.append(
+                "runtime quantizer: it does not reach the same extreme activation "
+                "codes as the training quantizer (a clamp-range mismatch)"
+            )
+
+
+@dataclass
 class ParityReport:
     """Outcome of gating one exported artifact against the baked master."""
 
@@ -106,7 +205,7 @@ class ParityReport:
     code_mismatches: int = 0
     max_dequant_error: float = 0.0
     dequant_error_bound: float = 0.0
-    smoke_max_logit_delta: float | None = None
+    smoke: SmokeReport | None = None
     failures: list[str] = field(default_factory=list)
 
     @property
@@ -147,50 +246,115 @@ def check_dequant_error(
     return float(error), float(master.abs().amax()) * F16_HALF_ULP
 
 
-def bitlinear_act_quant(x: torch.Tensor) -> torch.Tensor:
+def bitlinear_act_quant_int8(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Per-token activation quantization as `BitNetForCausalLM`'s BitLinear runs it.
 
-    Deliberately not `quant.act_quant`: the runtime scales by `127 / amax` (flooring
-    `amax`, not the scale) and clamps to `[-128, 127]`, where training divides by
-    `amax / 127` (flooring the scale) and clamps symmetrically. Reproducing it is the
-    whole point of the smoke eval — it is the one gate that sees the deployment
-    numerics rather than the packing.
+    Deliberately not `quant.act_quant_int8`: the runtime multiplies by `127 / amax`
+    (flooring `amax`, not the scale) and clamps to `[-128, 127]`, where training
+    divides by `amax / 127` (flooring the scale) and clamps symmetrically.
+
+    Returns:
+        `(codes, scale)` with the runtime's own orientation — `scale` is the
+        *multiplier*, so dequantization divides by it.
     """
     scale = quant.ACT_QMAX / x.float().abs().amax(dim=-1, keepdim=True).clamp_min(
         quant.SCALE_EPS
     )
     codes = (x.float() * scale).round().clamp_(-quant.ACT_QMAX - 1, quant.ACT_QMAX)
-    return (codes / scale).to(x.dtype)
+    return codes.to(torch.int8), scale
+
+
+def bitlinear_act_quant(x: torch.Tensor) -> torch.Tensor:
+    """Dequantized BitLinear activations, in `x`'s dtype."""
+    codes, scale = bitlinear_act_quant_int8(x)
+    return (codes.float() / scale).to(x.dtype)
+
+
+def training_act_quant(x: torch.Tensor) -> torch.Tensor:
+    """The activation quantizer the swapped model trained and evaluated with."""
+    return quant.act_quant(x, 1.0)
 
 
 # format -> the activation quantizer its runtime applies before each ternary linear
 RUNTIME_ACT_QUANT: dict[str, Callable[[torch.Tensor], torch.Tensor]] = {
-    "master_bf16": lambda x: quant.act_quant(x, 1.0),
+    "master_bf16": training_act_quant,
     "hf_bitnet": bitlinear_act_quant,
 }
 
 
+def compare_act_quantizers(x: torch.Tensor) -> tuple[float, float, bool]:
+    """Compare the deployment activation quantizer against the training one on `x`.
+
+    Args:
+        x: A real pre-linear activation tensor, `(..., in_features)`.
+
+    Returns:
+        `(code_mismatch_fraction, max_dequant_steps, code_range_matches)` — the
+        fraction of int8 codes that differ, the largest dequantized deviation in
+        units of the training per-token scale, and whether both quantizers reach the
+        same extreme codes.
+    """
+    train_codes, train_scale = quant.act_quant_int8(x)
+    runtime_codes, runtime_scale = bitlinear_act_quant_int8(x)
+    if not train_codes.numel():
+        return 0.0, 0.0, True
+
+    mismatch = float((train_codes != runtime_codes).to(torch.float32).mean())
+    deviation = (
+        train_codes.to(torch.float32) * train_scale
+        - runtime_codes.to(torch.float32) / runtime_scale
+    ).abs()
+    steps = float((deviation / train_scale).amax())
+    same_range = int(train_codes.amin()) == int(runtime_codes.amin()) and int(
+        train_codes.amax()
+    ) == int(runtime_codes.amax())
+    return mismatch, steps, same_range
+
+
 def _install_act_quant(
-    model: torch.nn.Module, names: list[str], fn: Callable[[torch.Tensor], torch.Tensor]
+    model: torch.nn.Module,
+    names: list[str],
+    fn: Callable[[torch.Tensor], torch.Tensor] | None,
+    captured: dict[str, torch.Tensor] | None = None,
 ) -> list[torch.utils.hooks.RemovableHandle]:
-    def pre_hook(_module, args):
-        return (fn(args[0]),) + tuple(args[1:])
+    """Quantize (and optionally record) the input of every named linear."""
+
+    def make_hook(name: str):
+        def pre_hook(_module, args):
+            if captured is not None and name not in captured:
+                captured[name] = args[0].detach().to(torch.float32).cpu()
+            if fn is None:
+                return None
+            return (fn(args[0]),) + tuple(args[1:])
+
+        return pre_hook
 
     return [
-        model.get_submodule(name).register_forward_pre_hook(pre_hook) for name in names
+        model.get_submodule(name).register_forward_pre_hook(make_hook(name))
+        for name in names
     ]
 
 
 def run_smoke_eval(
     master_dir: str | Path, artifact: str | Path, fmt: ExportFormat
-) -> float | None:
-    """Return the max logit delta between the master and the artifact on fixed prompts.
+) -> "SmokeReport | None":
+    """Run the artifact's forward-path gates against the baked master.
 
-    The reference is the baked master run the way training ran it (λ=1, per-token
-    activation quantization); the comparison side substitutes the weights decoded
-    from the artifact *and* the activation quantization the artifact's own runtime
-    performs. The delta is therefore the deployment mismatch, not a re-run of the
-    code-parity check.
+    Two orthogonal checks, because one end-to-end number cannot serve both:
+
+    1. **Weight path** — both sides run the *same* (training) activation quantizer,
+       so the only variable is the weights decoded from the artifact. Those are
+       bit-identical to the master's when the packer is correct, making this a
+       deterministic fp32 graph fed identical inputs: the logit delta is 0, and a
+       layout transpose or an inverted scale blows it up by orders of magnitude.
+    2. **Runtime quantizer** — the deployment activation quantizer is compared to the
+       training one *directly*, on the real pre-linear activations captured from the
+       reference forward. Running that comparison through the network instead would
+       measure chaos amplification, not equivalence.
+
+    The end-to-end delta between the two quantizers is still measured and reported,
+    but it is not a bound: on a deep swapped model it is O(1) even when the two
+    quantizers agree to the last representable code.
 
     Returns `None` when the format has no in-process runtime available.
     """
@@ -209,33 +373,60 @@ def run_smoke_eval(
 
     codes = extractor(Path(artifact), manifest)
     names = [entry.name for entry in manifest.entries if entry.name in codes]
+    storage = bake.tensor_dtypes(master_dir)
     model.eval()
     input_ids = (torch.arange(SMOKE_TOKENS) % model.config.vocab_size).unsqueeze(0)
-    quantize_acts = manifest.activation_bits == 8
+    act_quant = training_act_quant if manifest.activation_bits == 8 else None
+    stride = max(1, -(-len(names) // RUNTIME_PROBE_TENSORS))
+    probes = set(names[::stride][:RUNTIME_PROBE_TENSORS])
+    captured: dict[str, torch.Tensor] = {}
+
+    report = SmokeReport(format=fmt)
     with torch.no_grad():
-        handles = (
-            _install_act_quant(model, names, RUNTIME_ACT_QUANT["master_bf16"])
-            if quantize_acts
-            else []
-        )
-        try:
+        with _hooks(
+            [
+                *_install_act_quant(model, sorted(probes), act_quant, captured),
+                *_install_act_quant(
+                    model, [n for n in names if n not in probes], act_quant
+                ),
+            ]
+        ):
             reference = model(input_ids=input_ids).logits.float()
-        finally:
-            for handle in handles:
-                handle.remove()
 
         for name, (module_codes, scale) in codes.items():
             weight = model.get_parameter(f"{name}.weight")
-            weight.data = quant.dequantize_codes(module_codes, scale, weight.dtype)
-        handles = (
-            _install_act_quant(model, names, runtime_act_quant) if quantize_acts else []
+            key = f"{name}.weight"
+            # through the checkpoint's own storage dtype: reconstructing a bf16
+            # master in fp32 lands an ulp off (the export stores a reciprocal
+            # scale), and a deep swapped net amplifies that to O(1) logits
+            weight.data = quant.dequantize_codes(
+                module_codes, scale, storage.get(key, weight.dtype)
+            ).to(weight.dtype)
+
+        with _hooks(_install_act_quant(model, names, act_quant)):
+            same_quantizer = model(input_ids=input_ids).logits.float()
+        report.weight_path_logit_delta = float(
+            (reference - same_quantizer).abs().amax()
         )
-        try:
-            roundtrip = model(input_ids=input_ids).logits.float()
-        finally:
-            for handle in handles:
-                handle.remove()
-    return float((reference - roundtrip).abs().amax())
+
+        if act_quant is not None and runtime_act_quant is not training_act_quant:
+            with _hooks(_install_act_quant(model, names, runtime_act_quant)):
+                cross = model(input_ids=input_ids).logits.float()
+            report.cross_quantizer_logit_delta = float((reference - cross).abs().amax())
+
+    report.gate_weight_path()
+    if act_quant is not None and runtime_act_quant is not training_act_quant:
+        report.gate_runtime_quantizer(captured.values())
+    return report
+
+
+@contextmanager
+def _hooks(handles: list[torch.utils.hooks.RemovableHandle]):
+    try:
+        yield
+    finally:
+        for handle in handles:
+            handle.remove()
 
 
 def run_parity_gate(
@@ -295,12 +486,9 @@ def run_parity_gate(
             )
 
     if run_smoke and not report.failures:
-        delta = run_smoke_eval(master_dir, artifact, fmt)
-        report.smoke_max_logit_delta = delta
-        if delta is not None and delta > SMOKE_LOGIT_TOL:
-            report.failures.append(
-                f"smoke eval: max logit delta {delta:.3e} exceeds {SMOKE_LOGIT_TOL:.3e}"
-            )
+        report.smoke = run_smoke_eval(master_dir, artifact, fmt)
+        if report.smoke is not None:
+            report.failures.extend(report.smoke.failures)
     return report
 
 
@@ -373,14 +561,20 @@ __all__ = [
     "BLOCK_GATED_FORMATS",
     "EXTRACTORS",
     "F16_HALF_ULP",
-    "SMOKE_LOGIT_TOL",
+    "RUNTIME_CODE_MISMATCH_TOL",
+    "RUNTIME_DEQUANT_STEP_TOL",
+    "WEIGHT_PATH_LOGIT_TOL",
     "ParityReport",
-    "check_code_parity",
+    "SmokeReport",
     "bitlinear_act_quant",
+    "bitlinear_act_quant_int8",
+    "check_code_parity",
     "check_dequant_error",
+    "compare_act_quantizers",
     "gate_block_bytes",
     "register_block_decoder",
     "register_extractor",
     "run_parity_gate",
     "run_smoke_eval",
+    "training_act_quant",
 ]

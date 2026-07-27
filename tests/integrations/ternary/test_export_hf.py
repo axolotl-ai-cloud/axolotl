@@ -3,6 +3,7 @@
 import copy
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 import torch
@@ -461,25 +462,41 @@ def test_parity_gate_passes_end_to_end(packed, master):
     assert report.tensors_checked == len(manifest.entries)
     assert report.code_mismatches == 0
     assert report.max_dequant_error == 0.0
-    # the smoke eval runs BitLinear's own activation quantizer against the master's,
-    # so it measures the deployment mismatch rather than re-checking the codes
-    assert 0.0 < report.smoke_max_logit_delta <= parity.SMOKE_LOGIT_TOL
+    # the weight path is a deterministic graph fed bit-identical weights
+    assert report.smoke.weight_path_logit_delta == 0.0
+    # the deployment quantizer is compared to the training one on the activations
+    # themselves, and its end-to-end effect is reported without being gated
+    assert report.smoke.runtime_code_mismatch <= parity.RUNTIME_CODE_MISMATCH_TOL
+    assert report.smoke.runtime_dequant_steps <= parity.RUNTIME_DEQUANT_STEP_TOL
+    assert report.smoke.runtime_code_range_matches
+    assert report.smoke.cross_quantizer_logit_delta is not None
+    assert report.smoke.probes_compared == len(manifest.entries)
 
 
-def test_smoke_eval_measures_the_runtime_activation_quantizer(packed, master):
-    """Substituting the same codes through the same dequant can never fail; this can."""
+def test_smoke_eval_separates_the_weight_path_from_the_runtime_quantizer(
+    packed, master
+):
+    """One end-to-end number cannot gate both; the weight path must stay exact."""
     artifact, manifest = packed
 
-    delta = parity.run_smoke_eval(master[0], artifact, "hf_bitnet")
+    smoke = parity.run_smoke_eval(master[0], artifact, "hf_bitnet")
 
-    assert delta > 0.0
-    manifest_without_acts = copy.deepcopy(manifest)
-    manifest_without_acts.activation_bits = None
-    manifest_without_acts.save(master[0])
+    assert smoke.passed
+    assert smoke.weight_path_logit_delta == 0.0
+    assert smoke.cross_quantizer_logit_delta > smoke.weight_path_logit_delta
+
+    without_acts = copy.deepcopy(manifest)
+    without_acts.activation_bits = None
+    without_acts.save(master[0])
     try:
-        assert parity.run_smoke_eval(master[0], artifact, "hf_bitnet") == 0.0
+        weight_only = parity.run_smoke_eval(master[0], artifact, "hf_bitnet")
     finally:
         manifest.save(master[0])
+    assert weight_only.passed
+    assert weight_only.weight_path_logit_delta == 0.0
+    # no activation quantizer runs at all, so there is nothing to compare
+    assert weight_only.cross_quantizer_logit_delta is None
+    assert weight_only.runtime_code_mismatch is None
 
 
 def test_bitlinear_activation_quant_is_not_the_training_one():
@@ -650,3 +667,156 @@ def test_transformers_loads_the_packed_checkpoint(packed, master):
     assert type(quantized.lm_head).__name__ == "Linear"
     # BitLinear additionally quantizes activations to int8, so parity is statistical
     assert float((expected - actual).abs().max() / expected.abs().max()) < 0.05
+
+
+# ------------------------------------------- deep model + injected packer faults
+
+
+def _deep_master(directory, layers: int = 10, hidden: int = 256) -> SwapManifest:
+    """A deep swapped model: chaotic enough that ulp-level drift reaches O(1) logits."""
+    torch.manual_seed(0)
+    config = LlamaConfig(
+        vocab_size=256,
+        hidden_size=hidden,
+        intermediate_size=hidden * 2,
+        num_hidden_layers=layers,
+        num_attention_heads=8,
+        num_key_value_heads=4,
+        max_position_embeddings=64,
+        tie_word_embeddings=False,
+    )
+    model = LlamaForCausalLM(config).to(torch.bfloat16)
+    manifest = convert_model(
+        model, DictDefault({"output_dir": str(directory), "ternary": {}})
+    )
+    for name, module in iter_ternary_modules(model):
+        module._post_training(model, name)
+    model.save_pretrained(directory)
+    manifest.save(directory)
+    bake.write_quantizer_metadata(directory, manifest)
+    return manifest
+
+
+@pytest.fixture(name="deep", scope="module")
+def fixture_deep(tmp_path_factory):
+    directory = tmp_path_factory.mktemp("deep_master")
+    manifest = _deep_master(directory)
+    artifact = hf_bitnet.export_hf_bitnet(
+        directory, tmp_path_factory.mktemp("deep_packed") / "hf_bitnet", manifest
+    )
+    return directory, artifact, manifest
+
+
+def _repack(artifact: Path, destination: Path, transform) -> Path:
+    """Copy a packed artifact, rewriting each ternary tensor with `transform`."""
+    shutil.copytree(artifact, destination)
+    tensors = bake.load_tensors(destination)
+    for key in list(tensors):
+        if key.endswith(f".{hf_bitnet.WEIGHT_SCALE_SUFFIX}"):
+            transform(tensors, key[: -len(hf_bitnet.WEIGHT_SCALE_SUFFIX) - 1])
+    bake.save_shard(tensors, destination / bake.SAFETENSORS_NAME)
+    return destination
+
+
+def test_deep_model_passes_both_gates(deep):
+    """A correct packer must clear the gates however deep and damaged the model is."""
+    master_dir, artifact, manifest = deep
+
+    report = parity.run_parity_gate(master_dir, artifact, "hf_bitnet", manifest)
+
+    assert report.passed, report.failures
+    assert report.smoke.weight_path_logit_delta == 0.0
+    assert report.smoke.runtime_code_range_matches
+    assert report.smoke.runtime_code_mismatch <= parity.RUNTIME_CODE_MISMATCH_TOL
+    # the cross-quantizer delta is the chaos this gate deliberately does not bound
+    assert report.smoke.cross_quantizer_logit_delta > parity.WEIGHT_PATH_LOGIT_TOL
+
+
+def test_a_transposed_packing_fails_the_weight_path_gate(deep, tmp_path):
+    master_dir, artifact, _ = deep
+
+    def flip_rows(tensors, name):
+        packed = tensors[f"{name}.weight"]
+        tensors[f"{name}.weight"] = packed.flip(0).contiguous()
+
+    corrupted = _repack(artifact, tmp_path / "transposed", flip_rows)
+    smoke = parity.run_smoke_eval(master_dir, corrupted, "hf_bitnet")
+
+    assert not smoke.passed
+    assert "weight path" in smoke.failures[0]
+    assert smoke.weight_path_logit_delta > parity.WEIGHT_PATH_LOGIT_TOL
+
+
+def test_an_inverted_weight_scale_fails_the_weight_path_gate(deep, tmp_path):
+    """`hf_bitnet` stores `1 / s`; writing `s` leaves the codes right and the model wrong."""
+    master_dir, artifact, _ = deep
+
+    def uninvert(tensors, name):
+        key = f"{name}.{hf_bitnet.WEIGHT_SCALE_SUFFIX}"
+        tensors[key] = tensors[key].reciprocal()
+
+    corrupted = _repack(artifact, tmp_path / "inverted", uninvert)
+    smoke = parity.run_smoke_eval(master_dir, corrupted, "hf_bitnet")
+
+    assert not smoke.passed
+    assert "weight path" in smoke.failures[0]
+
+
+def test_a_wrong_clamp_range_fails_the_runtime_gate(monkeypatch):
+    """[-127, 126] moves too few codes to show as a fraction; it truncates the extreme."""
+    torch.manual_seed(0)
+    activations = [torch.randn(4, 512) for _ in range(3)]
+    monkeypatch.setattr(
+        parity,
+        "bitlinear_act_quant_int8",
+        lambda x: _act_quant_int8_with(x, low=-127, high=126),
+    )
+    report = parity.SmokeReport(format="hf_bitnet")
+
+    report.gate_runtime_quantizer(activations)
+
+    assert not report.passed
+    assert any("clamp-range" in failure for failure in report.failures)
+    assert report.runtime_code_range_matches is False
+    # the fraction alone would have waved it through
+    assert report.runtime_code_mismatch <= parity.RUNTIME_CODE_MISMATCH_TOL
+
+
+def test_an_inverted_activation_scale_fails_the_runtime_gate(monkeypatch):
+    torch.manual_seed(0)
+    activations = [torch.randn(4, 512) for _ in range(3)]
+    monkeypatch.setattr(
+        parity,
+        "bitlinear_act_quant_int8",
+        lambda x: _act_quant_int8_with(x, inverted=True),
+    )
+    report = parity.SmokeReport(format="hf_bitnet")
+
+    report.gate_runtime_quantizer(activations)
+
+    assert not report.passed
+    assert report.runtime_code_mismatch > parity.RUNTIME_CODE_MISMATCH_TOL
+
+
+def test_the_real_runtime_quantizer_clears_the_gate_on_the_same_activations():
+    torch.manual_seed(0)
+    activations = [torch.randn(4, 512) for _ in range(3)]
+    report = parity.SmokeReport(format="hf_bitnet")
+
+    report.gate_runtime_quantizer(activations)
+
+    assert report.passed, report.failures
+    assert report.probes_compared == 3
+
+
+def _act_quant_int8_with(
+    x: torch.Tensor,
+    low: int = -128,
+    high: int = quant.ACT_QMAX,
+    inverted: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """`bitlinear_act_quant_int8` with a deliberately wrong clamp range or scale."""
+    amax = x.float().abs().amax(dim=-1, keepdim=True).clamp_min(quant.SCALE_EPS)
+    scale = amax / quant.ACT_QMAX if inverted else quant.ACT_QMAX / amax
+    codes = (x.float() * scale).round().clamp_(low, high)
+    return codes.to(torch.int8), scale

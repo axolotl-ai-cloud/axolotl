@@ -138,6 +138,16 @@ def _gate_artifact(
         f"ternary: {fmt} parity gate passed ({report.tensors_checked} tensors, "
         f"max dequant error {report.max_dequant_error:.3e})"
     )
+    smoke = report.smoke
+    if smoke is not None and smoke.cross_quantizer_logit_delta is not None:
+        # reported, never gated: a deep swapped model amplifies the ulp-level
+        # disagreement between two equivalent quantizers to O(1) logits
+        LOG.info(
+            f"ternary: {fmt} deployment activation quantizer differs from the "
+            f"training one on {smoke.runtime_code_mismatch:.4%} of codes "
+            f"({smoke.probes_compared} probes), shifting fixed-prompt logits by up "
+            f"to {smoke.cross_quantizer_logit_delta:.3e}"
+        )
 
 
 __all__ = ["run_export"]
