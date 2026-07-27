@@ -212,9 +212,6 @@ def encode_streaming_multimodal(
             f"but image column has {len(imgs_list)}"
         )
 
-    input_ids: List[List[int]] = []
-    labels: List[List[int]] = []
-    attention_mask: List[List[int]] = []
     keep_images: List[List[str]] = []
     keep_text: List[str] = []
 
@@ -252,18 +249,19 @@ def encode_streaming_multimodal(
             text = bare_placeholder.sub(
                 f"{marker_prefix}{image_token}{marker_suffix}", text
             )
-        # No truncation: counting on truncated ids and storing untruncated text
-        # (which the collator re-tokenizes without truncation) silently produces
-        # oversize batches and confusing placeholder/image-count mismatches.
+        # Validation-only tokenization: the collator's processor call is the
+        # one that produces the model's input_ids. No truncation here —
+        # counting on truncated ids while the collator re-tokenizes the full
+        # text would silently produce oversize batches and confusing
+        # placeholder/image-count mismatches.
         enc = tokenizer(text, add_special_tokens=True)
         ids = list(enc["input_ids"])
-        mask = list(enc["attention_mask"])
-        # Append EOS unless the tokenizer already did (avoids a double EOS on
-        # add_eos_token tokenizers) or has none (avoids appending a None id).
+        # The collator appends an EOS the tokenizer didn't emit; account for it
+        # in the length gate.
         eos_id = tokenizer.eos_token_id
+        n_tokens = len(ids)
         if eos_id is not None and (not ids or ids[-1] != eos_id):
-            ids.append(eos_id)
-            mask.append(1)
+            n_tokens += 1
         # Count by id — `text.count` substring-matches `<image>` in `<image_soft_token>`.
         n_placeholders = sum(1 for t in ids if t == image_token_id)
         if n_placeholders != len(imgs):
@@ -276,9 +274,9 @@ def encode_streaming_multimodal(
                 LOG.warning("%s — dropping row.", msg)
                 continue
             raise ValueError(msg)
-        if len(ids) > max_tokens:
+        if n_tokens > max_tokens:
             msg = (
-                f"Multimodal CPT row tokenizes to {len(ids)} tokens which "
+                f"Multimodal CPT row tokenizes to {n_tokens} tokens which "
                 f"exceeds sequence_len={max_tokens}. Pre-chunk your text or "
                 f"raise sequence_len (image patch expansion at the processor "
                 f"may push the final length even higher)."
@@ -287,17 +285,12 @@ def encode_streaming_multimodal(
                 LOG.warning("%s — dropping row.", msg)
                 continue
             raise ValueError(msg)
-        # Labels = ids; collator masks image-family ids after re-tokenization.
-        input_ids.append(ids)
-        labels.append(list(ids))
-        attention_mask.append(mask)
         keep_images.append(list(imgs))
         keep_text.append(text)
 
+    # Only what the collator consumes ships through the stream; token columns
+    # would be dead weight (the processor re-tokenizes) and ~3x the payload.
     return {
-        "input_ids": input_ids,
-        "labels": labels,
-        "attention_mask": attention_mask,
         "images": keep_images,
         "_mm_text": keep_text,
     }

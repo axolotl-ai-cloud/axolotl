@@ -62,15 +62,13 @@ def test_encode_preserves_images_and_text(smolvlm_processor, two_tiny_images):
         image_token=spec.image_token,
         image_token_id=spec.image_token_id,
     )
-    assert set(out) >= {"input_ids", "labels", "attention_mask", "images", "_mm_text"}
-    assert len(out["input_ids"]) == 2
+    # Only what the collator consumes ships through the stream.
+    assert set(out) == {"images", "_mm_text"}
     assert out["images"] == [[str(two_tiny_images[0])], [str(two_tiny_images[1])]]
-    # EOS appended -> input_ids len equals attention_mask len and > text
-    for ids, mask in zip(out["input_ids"], out["attention_mask"], strict=True):
-        assert len(ids) == len(mask) and len(ids) > 0
-    # CPT: labels == input_ids pre-masking.
-    for ids, lbls in zip(out["input_ids"], out["labels"], strict=True):
-        assert ids == lbls
+    assert out["_mm_text"] == [
+        f"{spec.image_token}\nrow one",
+        f"{spec.image_token}\nrow two slightly longer",
+    ]
 
 
 def test_encode_rejects_mismatch(smolvlm_processor, two_tiny_images):
@@ -122,11 +120,9 @@ def test_encode_counts_placeholders_on_full_text(smolvlm_processor, two_tiny_ima
         image_token=spec.image_token,
         image_token_id=spec.image_token_id,
     )
-    ids = out["input_ids"][0]
-    # Sanity: the input is genuinely long, so a truncating regression would
-    # have to cut into it to drop the last placeholder.
-    assert len(ids) > 2000
-    assert sum(1 for t in ids if t == spec.image_token_id) == 3
+    # A truncating regression would drop the trailing placeholder, trip the
+    # placeholder/image-count check, and reject this row.
+    assert out["_mm_text"] == [text]
 
 
 def test_encode_rejects_row_exceeding_max_tokens(smolvlm_processor, two_tiny_images):
@@ -393,13 +389,7 @@ def test_collator_builds_batch_and_masks_labels(smolvlm_processor, two_tiny_imag
         image_token=spec.image_token,
         image_token_id=spec.image_token_id,
     )
-    rows = [
-        {
-            k: encoded[k][i]
-            for k in ("input_ids", "labels", "attention_mask", "images", "_mm_text")
-        }
-        for i in range(2)
-    ]
+    rows = [{k: encoded[k][i] for k in ("images", "_mm_text")} for i in range(2)]
     collator = MultiModalPretrainDataCollator(
         tokenizer=smolvlm_processor.tokenizer,
         processor=smolvlm_processor,
@@ -595,13 +585,7 @@ def test_collator_mixed_batch_still_succeeds(smolvlm_processor, two_tiny_images)
         image_token=spec.image_token,
         image_token_id=spec.image_token_id,
     )
-    rows = [
-        {
-            k: encoded[k][i]
-            for k in ("input_ids", "labels", "attention_mask", "images", "_mm_text")
-        }
-        for i in range(2)
-    ]
+    rows = [{k: encoded[k][i] for k in ("images", "_mm_text")} for i in range(2)]
     collator = MultiModalPretrainDataCollator(
         tokenizer=smolvlm_processor.tokenizer,
         processor=smolvlm_processor,
@@ -695,33 +679,40 @@ class _FakeEncTok:
         return {"input_ids": ids, "attention_mask": [1] * len(ids)}
 
 
-def test_encode_no_none_when_tokenizer_lacks_eos():
-    """A tokenizer with eos_token_id=None must not append a None id (L1)."""
+def test_encode_no_crash_when_tokenizer_lacks_eos():
+    """A tokenizer with eos_token_id=None must not break the length gate (L1)."""
     out = encode_streaming_multimodal(
         {"text": ["hello"], "images": [[]]},
         tokenizer=_FakeEncTok(eos_id=None),
-        max_tokens=64,
+        max_tokens=3,  # exactly the 3 raw tokens; no phantom EOS is counted
         image_token="<image>",
         image_token_id=999,
     )
-    ids = out["input_ids"][0]
-    assert None not in ids
-    assert ids == [5, 6, 7]
-    assert len(out["attention_mask"][0]) == len(ids)
+    assert out["_mm_text"] == ["hello"]
 
 
-def test_encode_no_double_eos_when_tokenizer_appends_eos():
-    """When the tokenizer already appends EOS, the encoder must not add another (M2)."""
+def test_encode_length_gate_accounts_for_collator_eos():
+    """The length gate budgets +1 for the EOS the collator appends (M2).
+
+    3 raw tokens + the collator's EOS = 4 > max_tokens=3 must reject; a
+    tokenizer that already appends EOS emits 4 ids and gets no extra +1.
+    """
+    with pytest.raises(ValueError, match="exceeds sequence_len"):
+        encode_streaming_multimodal(
+            {"text": ["hello"], "images": [[]]},
+            tokenizer=_FakeEncTok(eos_id=9),
+            max_tokens=3,
+            image_token="<image>",
+            image_token_id=999,
+        )
     out = encode_streaming_multimodal(
         {"text": ["hello"], "images": [[]]},
         tokenizer=_FakeEncTok(eos_id=9, already_appends=True),
-        max_tokens=64,
+        max_tokens=4,
         image_token="<image>",
         image_token_id=999,
     )
-    ids = out["input_ids"][0]
-    assert ids == [5, 6, 7, 9]
-    assert ids.count(9) == 1
+    assert out["_mm_text"] == ["hello"]
 
 
 def test_encode_skip_bad_rows_drops_mismatch_and_oversize(smolvlm_processor):
@@ -795,12 +786,7 @@ def test_collator_masks_structural_image_tokens(smolvlm_processor, two_tiny_imag
         image_token=spec.image_token,
         image_token_id=spec.image_token_id,
     )
-    rows = [
-        {
-            k: encoded[k][0]
-            for k in ("input_ids", "labels", "attention_mask", "images", "_mm_text")
-        }
-    ]
+    rows = [{k: encoded[k][0] for k in ("images", "_mm_text")}]
     collator = MultiModalPretrainDataCollator(
         tokenizer=tok, processor=smolvlm_processor, image_token_spec=spec
     )
