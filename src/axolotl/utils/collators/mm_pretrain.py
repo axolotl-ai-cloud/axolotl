@@ -58,16 +58,13 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
         self._image_family_token_ids = set(self.image_token_spec.image_family_token_ids)
 
     def _resolve_image_source(self, src: Any) -> Any:
-        # Only join base_dir for relative string paths; pass everything else
-        # (PIL images, base64, absolute paths) through to load_image.
-        if (
-            self.image_base_dir
-            and isinstance(src, str)
-            and not os.path.isabs(src)
-            and "://" not in src
-        ):
-            joined = os.path.join(self.image_base_dir, src)
-            # Reject relative paths that escape image_base_dir (e.g. `../../etc`).
+        # image_base_dir is a sandbox: every string path — relative or absolute —
+        # must resolve inside it (realpath also collapses symlink escapes).
+        # Non-path sources (PIL images, base64, URLs) pass through to load_image.
+        if self.image_base_dir and isinstance(src, str) and "://" not in src:
+            joined = (
+                src if os.path.isabs(src) else os.path.join(self.image_base_dir, src)
+            )
             base = os.path.realpath(self.image_base_dir)
             full = os.path.realpath(joined)
             if full != base and os.path.commonpath([base, full]) != base:
@@ -145,6 +142,59 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
             labels[labels == tid] = -100
         return labels
 
+    def _tokenize_text_batch(self, texts: list[str]) -> dict[str, Any]:
+        LOG.debug(
+            "MultiModalPretrainDataCollator: all-text batch (%d rows); "
+            "using tokenizer-only fallback (no pixel_values).",
+            len(texts),
+        )
+        tok_kwargs: dict[str, Any] = {
+            "text": texts,
+            "return_tensors": self.return_tensors,
+            "padding": self.padding,
+        }
+        if self.pad_to_multiple_of is not None:
+            tok_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
+        batch = self.tokenizer(**tok_kwargs)
+        batch["labels"] = self._build_labels(batch)
+        return batch
+
+    def _locate_processor_offender(
+        self, texts: list[str], images: list[list[Image.Image]], exc: Exception
+    ) -> tuple[Optional[int], bool]:
+        """Retry rows one at a time to find which one broke the processor.
+
+        Returns (batch position of the offender or None, whether the retry was
+        conclusive).
+        """
+        LOG.warning(
+            "MultiModalPretrainDataCollator: processor failed on a batch "
+            "of %d rows (%s); retrying each row individually to locate "
+            "the offender. This adds up to %d extra processor calls.",
+            len(texts),
+            type(exc).__name__,
+            len(texts),
+        )
+        retry_kwargs: dict[str, Any] = {
+            "return_tensors": self.return_tensors,
+            "padding": self.padding,
+        }
+        if self.pad_to_multiple_of is not None:
+            retry_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
+        for i, (t, imgs) in enumerate(zip(texts, images, strict=True)):
+            try:
+                if len(imgs) == 0:
+                    # Some processors reject `images=[[]]` — would mislabel
+                    # text-only rows as the offender.
+                    self.tokenizer(text=[t], **retry_kwargs)
+                else:
+                    self.processor(text=[t], images=[imgs], **retry_kwargs)
+            except Exception as retry_exc:
+                if isinstance(retry_exc, type(exc)) or isinstance(exc, type(retry_exc)):
+                    return i, True
+                return None, False
+        return None, True
+
     def torch_call(self, examples: list[dict]) -> dict[str, Any]:
         if not examples:
             raise ValueError("Empty batch passed to MultiModalPretrainDataCollator.")
@@ -155,6 +205,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
 
         texts: list[str] = []
         images: list[list[Image.Image]] = []
+        row_indices: list[int] = []
         for i, ex in enumerate(examples):
             if "_mm_text" not in ex or "images" not in ex:
                 raise KeyError(
@@ -200,6 +251,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 texts.pop()
                 continue
             images.append(loaded)
+            row_indices.append(i)
 
         if not texts:
             raise RuntimeError(
@@ -209,83 +261,62 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
 
         # All-text batch: bypass the processor and tokenize directly.
         if all(len(im) == 0 for im in images):
-            LOG.debug(
-                "MultiModalPretrainDataCollator: all-text batch (%d rows); "
-                "using tokenizer-only fallback (no pixel_values).",
-                len(texts),
-            )
-            tok_kwargs: dict[str, Any] = {
-                "text": texts,
-                "return_tensors": self.return_tensors,
-                "padding": self.padding,
-            }
-            if self.pad_to_multiple_of is not None:
-                tok_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
-            batch = self.tokenizer(**tok_kwargs)
-            batch["labels"] = self._build_labels(batch)
-            return batch
+            return self._tokenize_text_batch(texts)
 
         # No truncation: it chops input_ids mid-placeholder while pixel_values
         # keep every image — silent text/pixel mismatch. We warn post-hoc instead.
-        proc_kwargs: dict[str, Any] = {
-            "text": texts,
-            "images": images,
-            "return_tensors": self.return_tensors,
-            "padding": self.padding,
-        }
-        if self.pad_to_multiple_of is not None:
-            proc_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
-        try:
-            batch = self.processor(**proc_kwargs)
-        except Exception as exc:
-            # Pinpoint the bad row; bail to "inconclusive" if retry raises a different class.
-            LOG.warning(
-                "MultiModalPretrainDataCollator: processor failed on a batch "
-                "of %d rows (%s); retrying each row individually to locate "
-                "the offender. This adds up to %d extra processor calls.",
-                len(texts),
-                type(exc).__name__,
-                len(texts),
-            )
-            offender_idx: Optional[int] = None
-            retry_ok = True
-            retry_kwargs: dict[str, Any] = {
+        while True:
+            proc_kwargs: dict[str, Any] = {
+                "text": texts,
+                "images": images,
                 "return_tensors": self.return_tensors,
                 "padding": self.padding,
             }
             if self.pad_to_multiple_of is not None:
-                retry_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
-            for i, (t, imgs) in enumerate(zip(texts, images, strict=True)):
-                try:
-                    if len(imgs) == 0:
-                        # Some processors reject `images=[[]]` — would mislabel
-                        # text-only rows as the offender.
-                        self.tokenizer(text=[t], **retry_kwargs)
-                    else:
-                        self.processor(text=[t], images=[imgs], **retry_kwargs)
-                except Exception as retry_exc:
-                    if isinstance(retry_exc, type(exc)) or isinstance(
-                        exc, type(retry_exc)
-                    ):
-                        offender_idx = i
-                    else:
-                        retry_ok = False
-                    break
-            if offender_idx is not None:
-                location = f"row {offender_idx}"
-            elif retry_ok:
-                location = (
-                    f"batch of {len(texts)} rows "
-                    f"(individual rows all succeed; see __cause__ for details)"
+                proc_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
+            try:
+                batch = self.processor(**proc_kwargs)
+                break
+            except Exception as exc:
+                offender_pos, retry_ok = self._locate_processor_offender(
+                    texts, images, exc
                 )
-            else:
-                location = f"batch of {len(texts)} rows (retry inconclusive)"
-            raise RuntimeError(
-                f"MultiModalPretrainDataCollator: processor call failed on "
-                f"{location} ({type(exc).__name__}: {exc}). Common causes: "
-                f"placeholder token absent from the row's text, image count "
-                f"mismatch, or an unsupported processor class."
-            ) from exc
+                # A row can load fine yet crash preprocessing (e.g. extreme
+                # aspect ratios on Qwen) — skip_bad_images covers that too.
+                if offender_pos is not None and self.skip_bad_images:
+                    LOG.warning(
+                        "Row %d: processor failed on this row (%s: %s) — dropping row.",
+                        row_indices[offender_pos],
+                        type(exc).__name__,
+                        exc,
+                    )
+                    del texts[offender_pos]
+                    del images[offender_pos]
+                    del row_indices[offender_pos]
+                    if not texts:
+                        raise RuntimeError(
+                            "All rows in the batch were dropped due to "
+                            "processor failures. Check dataset integrity."
+                        ) from exc
+                    if all(len(im) == 0 for im in images):
+                        return self._tokenize_text_batch(texts)
+                    continue
+                if offender_pos is not None:
+                    location = f"row {row_indices[offender_pos]}"
+                elif retry_ok:
+                    location = (
+                        f"batch of {len(texts)} rows "
+                        f"(individual rows all succeed; see __cause__ for details)"
+                    )
+                else:
+                    location = f"batch of {len(texts)} rows (retry inconclusive)"
+                raise RuntimeError(
+                    f"MultiModalPretrainDataCollator: processor call failed on "
+                    f"{location} ({type(exc).__name__}: {exc}). Common causes: "
+                    f"placeholder token absent from the row's text, image count "
+                    f"mismatch, or an unsupported processor class. Set "
+                    f"`skip_bad_images: true` to drop such rows instead."
+                ) from exc
 
         input_ids_len = batch["input_ids"].shape[-1]
         if self.max_length is not None and input_ids_len > self.max_length:

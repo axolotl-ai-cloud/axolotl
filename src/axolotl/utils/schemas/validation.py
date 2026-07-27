@@ -12,6 +12,7 @@ from pydantic import (
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mm_cpt import is_mm_cpt_entry
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RingAttnFunc,
@@ -1392,14 +1393,7 @@ class PretrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_multimodal_cpt(cls, data):
-        def _entry_is_mm(entry) -> bool:
-            if isinstance(entry, dict):
-                ds_type_ = entry.get("type")
-                mm_flag_ = entry.get("multimodal")
-            else:
-                ds_type_ = getattr(entry, "type", None)
-                mm_flag_ = getattr(entry, "multimodal", None)
-            return ds_type_ == "multimodal_pretrain" or bool(mm_flag_)
+        _entry_is_mm = is_mm_cpt_entry
 
         pd = data.get("pretraining_dataset")
         pd_list = pd if isinstance(pd, list) else ([pd] if pd else [])
@@ -1451,6 +1445,13 @@ class PretrainingValidationMixin:
         if not train_is_mm:
             return data
 
+        if not first.get("path"):
+            raise ValueError(
+                "Multimodal CPT `pretraining_dataset` entry requires `path` "
+                "(a local file/glob or Hub repo). Without it loading fails "
+                "late with an unhelpful traceback."
+            )
+
         if not data.get("processor_type"):
             raise ValueError(
                 "Multimodal CPT (type: multimodal_pretrain) requires "
@@ -1485,17 +1486,37 @@ class PretrainingValidationMixin:
 
         test_datasets = data.get("test_datasets") or []
         mm_test = [t for t in test_datasets if isinstance(t, dict) and _entry_is_mm(t)]
+        for idx, entry in enumerate(mm_test):
+            if not entry.get("path"):
+                raise ValueError(
+                    f"Multimodal CPT eval entry {idx} in `test_datasets` "
+                    f"requires `path`. Without it loading fails late with an "
+                    f"unhelpful traceback."
+                )
+            if not entry.get("split"):
+                raise ValueError(
+                    f"Multimodal CPT eval entry {idx} in `test_datasets` "
+                    f"requires an explicit `split` (e.g. 'validation' or "
+                    f"'test'). Defaulting would silently evaluate on the "
+                    f"'train' split."
+                )
         if len(mm_test) > 1:
-            for key in ("image_base_dir", "image_token"):
+            # The eval collator resolves these once from entry[0]; heterogeneous
+            # values would silently miscollate (or mis-police) later entries.
+            for key in (
+                "image_base_dir",
+                "image_token",
+                "skip_bad_images",
+                "allow_remote_images",
+            ):
                 values = {t.get(key) for t in mm_test}
                 if len(values) > 1:
                     raise ValueError(
                         f"Multimodal CPT eval requires `{key}` to be either "
                         f"unset on all `test_datasets` entries or identical "
-                        f"across them. The eval collator resolves "
-                        f"`image_base_dir` and `image_token` once from the "
-                        f"first entry, so heterogeneous values would silently "
-                        f"miscollate later entries. Got: {sorted(map(str, values))}."
+                        f"across them; it is resolved once from the first "
+                        f"entry for the merged eval stream. "
+                        f"Got: {sorted(map(str, values))}."
                     )
 
         return data

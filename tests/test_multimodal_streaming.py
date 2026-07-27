@@ -884,3 +884,312 @@ def test_collator_double_eos_guard_respects_add_eos_token(
     )
     batch = collator.torch_call([{"_mm_text": "no eos please", "images": []}])
     assert int((batch["input_ids"] == tok.eos_token_id).sum().item()) == 1
+
+
+# ---- image_base_dir sandbox (absolute paths) -------------------------------
+
+
+def test_collator_rejects_absolute_path_outside_base_dir(smolvlm_processor, tmp_path):
+    """With image_base_dir set, an absolute path outside it is rejected."""
+    spec = build_image_token_spec(smolvlm_processor)
+    base = tmp_path / "imgs"
+    base.mkdir()
+    outside = tmp_path / "outside.png"
+    Image.fromarray(np.zeros((8, 8, 3), dtype="uint8")).save(outside)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+        image_base_dir=str(base),
+    )
+    with pytest.raises(RuntimeError, match="escapes image_base_dir"):
+        collator._load_images_for_row([str(outside)], row_index=0)
+
+
+def test_collator_allows_absolute_path_inside_base_dir(smolvlm_processor, tmp_path):
+    """An absolute path resolving inside image_base_dir still loads."""
+    spec = build_image_token_spec(smolvlm_processor)
+    base = tmp_path / "imgs"
+    base.mkdir()
+    inside = base / "ok.png"
+    Image.fromarray(np.zeros((8, 8, 3), dtype="uint8")).save(inside)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+        image_base_dir=str(base),
+    )
+    out = collator._load_images_for_row([str(inside)], row_index=0)
+    assert len(out) == 1
+
+
+# ---- processor-stage failures under skip_bad_images ------------------------
+
+
+class _FlakyProcessor:
+    """Wraps a real processor; raises on rows whose text contains a poison marker."""
+
+    def __init__(self, inner, poison="POISON"):
+        self.inner = inner
+        self.tokenizer = inner.tokenizer
+        self.poison = poison
+
+    def __call__(self, text=None, images=None, **kwargs):
+        if any(self.poison in t for t in text):
+            raise ValueError("synthetic preprocessing failure")
+        return self.inner(text=text, images=images, **kwargs)
+
+
+def test_collator_processor_failure_skipped_with_skip_bad_images(
+    smolvlm_processor, two_tiny_images, caplog
+):
+    """A row that loads but crashes the processor is dropped under skip_bad_images."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=_FlakyProcessor(smolvlm_processor),
+        image_token_spec=spec,
+        skip_bad_images=True,
+    )
+    rows = [
+        {
+            "_mm_text": f"{spec.image_token}\ngood row",
+            "images": [str(two_tiny_images[0])],
+        },
+        {
+            "_mm_text": f"{spec.image_token}\nPOISON row",
+            "images": [str(two_tiny_images[1])],
+        },
+    ]
+    batch = collator.torch_call(rows)
+    assert batch["input_ids"].shape[0] == 1
+    assert "pixel_values" in batch
+
+
+def test_collator_processor_failure_raises_without_skip(
+    smolvlm_processor, two_tiny_images
+):
+    """Without skip_bad_images a processor-stage failure still aborts loudly."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=_FlakyProcessor(smolvlm_processor),
+        image_token_spec=spec,
+    )
+    rows = [
+        {
+            "_mm_text": f"{spec.image_token}\ngood row",
+            "images": [str(two_tiny_images[0])],
+        },
+        {
+            "_mm_text": f"{spec.image_token}\nPOISON row",
+            "images": [str(two_tiny_images[1])],
+        },
+    ]
+    with pytest.raises(RuntimeError, match="row 1"):
+        collator.torch_call(rows)
+
+
+def test_collator_processor_failure_reports_original_row_index(
+    smolvlm_processor, two_tiny_images, tmp_path, caplog
+):
+    """Offender indices refer to the original batch, not post-drop positions."""
+    import logging
+
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=_FlakyProcessor(smolvlm_processor),
+        image_token_spec=spec,
+        skip_bad_images=True,
+    )
+    rows = [
+        {
+            "_mm_text": f"{spec.image_token}\nbad image row",
+            "images": [str(tmp_path / "missing.png")],
+        },
+        {
+            "_mm_text": f"{spec.image_token}\ngood row",
+            "images": [str(two_tiny_images[0])],
+        },
+        {
+            "_mm_text": f"{spec.image_token}\nPOISON row",
+            "images": [str(two_tiny_images[1])],
+        },
+    ]
+    logger = logging.getLogger("axolotl.utils.collators.mm_pretrain")
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(
+            logging.WARNING, logger="axolotl.utils.collators.mm_pretrain"
+        ):
+            batch = collator.torch_call(rows)
+    finally:
+        logger.removeHandler(caplog.handler)
+    assert batch["input_ids"].shape[0] == 1
+    msgs = [r.getMessage() for r in caplog.records]
+    # Row 0 dropped at image-load; row 2 (original index, not filtered pos 1)
+    # dropped at processor stage.
+    assert any("Row 2" in m and "processor failed" in m for m in msgs), msgs
+
+
+def test_collator_processor_failure_drop_falls_back_to_text_batch(
+    smolvlm_processor, two_tiny_images
+):
+    """If the only image row is dropped at processor stage, survivors tokenize as text."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=_FlakyProcessor(smolvlm_processor),
+        image_token_spec=spec,
+        skip_bad_images=True,
+    )
+    rows = [
+        {"_mm_text": "text-only survivor", "images": []},
+        {
+            "_mm_text": f"{spec.image_token}\nPOISON row",
+            "images": [str(two_tiny_images[0])],
+        },
+    ]
+    batch = collator.torch_call(rows)
+    assert batch["input_ids"].shape[0] == 1
+    assert "pixel_values" not in batch
+
+
+# ---- Qwen vision-marker wrapping ------------------------------------------
+
+
+class _RecordingTok:
+    """Counts placeholder occurrences in the text it receives."""
+
+    eos_token_id = 9
+
+    def __init__(self, image_token="<|image_pad|>", image_id=7):
+        self.image_token = image_token
+        self.image_id = image_id
+        self.seen_texts: list[str] = []
+
+    def __call__(self, text, add_special_tokens=True):
+        self.seen_texts.append(text)
+        n = text.count(self.image_token)
+        ids = [self.image_id] * n + [1, 2]
+        return {"input_ids": ids, "attention_mask": [1] * len(ids)}
+
+
+def test_encode_wraps_bare_qwen_placeholder_with_vision_markers():
+    tok = _RecordingTok()
+    out = encode_streaming_multimodal(
+        {"text": ["<|image_pad|>\nhello"], "images": [["img.png"]]},
+        tokenizer=tok,
+        max_tokens=64,
+        image_token="<|image_pad|>",
+        image_token_id=7,
+        marker_prefix="<|vision_start|>",
+        marker_suffix="<|vision_end|>",
+    )
+    assert out["_mm_text"][0] == "<|vision_start|><|image_pad|><|vision_end|>\nhello"
+
+
+def test_encode_leaves_already_wrapped_placeholder_alone():
+    tok = _RecordingTok()
+    wrapped = "<|vision_start|><|image_pad|><|vision_end|>\nhello"
+    out = encode_streaming_multimodal(
+        {"text": [wrapped], "images": [["img.png"]]},
+        tokenizer=tok,
+        max_tokens=64,
+        image_token="<|image_pad|>",
+        image_token_id=7,
+        marker_prefix="<|vision_start|>",
+        marker_suffix="<|vision_end|>",
+    )
+    assert out["_mm_text"][0] == wrapped
+
+
+def test_spec_detects_qwen_marker_wrap():
+    tok = _StubTokenizer(
+        {"<|image_pad|>": 5, "<|vision_start|>": 6, "<|vision_end|>": 7}
+    )
+    proc = _StubProcessor(tok, image_token="<|image_pad|>")
+    spec = build_image_token_spec(proc)
+    assert spec.marker_prefix == "<|vision_start|>"
+    assert spec.marker_suffix == "<|vision_end|>"
+
+
+def test_spec_no_marker_wrap_for_non_qwen(smolvlm_processor):
+    spec = build_image_token_spec(smolvlm_processor)
+    assert spec.marker_prefix is None
+    assert spec.marker_suffix is None
+
+
+# ---- max_images_per_row ----------------------------------------------------
+
+
+def test_encode_rejects_row_over_max_images_per_row(smolvlm_processor, two_tiny_images):
+    spec = build_image_token_spec(smolvlm_processor)
+    imgs = [str(two_tiny_images[0])] * 3
+    examples = {
+        "text": [f"{spec.image_token} {spec.image_token} {spec.image_token}\nrow"],
+        "images": [imgs],
+    }
+    with pytest.raises(ValueError, match="max_images_per_row"):
+        encode_streaming_multimodal(
+            examples,
+            tokenizer=smolvlm_processor.tokenizer,
+            max_tokens=2048,
+            image_token=spec.image_token,
+            image_token_id=spec.image_token_id,
+            max_images_per_row=2,
+        )
+
+
+def test_encode_drops_row_over_max_images_per_row_with_skip(
+    smolvlm_processor, two_tiny_images
+):
+    spec = build_image_token_spec(smolvlm_processor)
+    examples = {
+        "text": [
+            f"{spec.image_token} {spec.image_token} {spec.image_token}\nrow",
+            f"{spec.image_token}\nkept row",
+        ],
+        "images": [[str(two_tiny_images[0])] * 3, [str(two_tiny_images[1])]],
+    }
+    out = encode_streaming_multimodal(
+        examples,
+        tokenizer=smolvlm_processor.tokenizer,
+        max_tokens=2048,
+        image_token=spec.image_token,
+        image_token_id=spec.image_token_id,
+        skip_bad_rows=True,
+        max_images_per_row=2,
+    )
+    assert len(out["_mm_text"]) == 1
+    assert "kept row" in out["_mm_text"][0]
+
+
+# ---- structural masking limited to special tokens --------------------------
+
+
+class _AddedToken:
+    def __init__(self, surface, special):
+        self.surface = surface
+        self.special = special
+
+    def __str__(self):
+        return self.surface
+
+
+def test_spec_does_not_mask_non_special_added_tokens():
+    """A plain (special=False) added token containing 'image' must not be masked."""
+    vocab = {"<image>": 5, "imagery": 6, "<img_tile>": 7}
+    tok = _StubTokenizer(vocab)
+    # all_special_tokens defaults to every vocab key in the stub; narrow it.
+    tok.all_special_tokens = ["<image>"]
+    tok.added_tokens_decoder = {
+        5: _AddedToken("<image>", special=True),
+        6: _AddedToken("imagery", special=False),
+        7: _AddedToken("<img_tile>", special=True),
+    }
+    proc = _StubProcessor(tok, image_token="<image>")
+    spec = build_image_token_spec(proc)
+    assert 6 not in spec.image_family_token_ids  # plain added token survives
+    assert 7 in spec.image_family_token_ids  # special structural token masked

@@ -47,40 +47,34 @@ from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.collators.mm_pretrain import MultiModalPretrainDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mm_cpt import is_mm_cpt_entry
 
 LOG = get_logger(__name__)
 
 _MM_NUM_WORKERS_WARNED: set = set()
 
 
-def _warn_if_num_workers_zero_for_mm(cfg, log) -> None:
+def _warn_if_num_workers_zero_for_mm(cfg, log, check_train_on_inputs=True) -> None:
     if not getattr(cfg, "processor_type", None):
         return
     if getattr(cfg, "dataloader_num_workers", None) not in (None, 0):
         return
-    if getattr(cfg, "train_on_inputs", False):
+    if check_train_on_inputs and getattr(cfg, "train_on_inputs", False):
         return
     if "mm_num_workers_zero" in _MM_NUM_WORKERS_WARNED:
         return
     _MM_NUM_WORKERS_WARNED.add("mm_num_workers_zero")
     log.warning(
-        "Increase dataloader_num_workers to speed up multimodal training with assistant-only loss masking (currently dataloader_num_workers=0)."
+        "Increase dataloader_num_workers to speed up multimodal training — "
+        "image decoding and processor runs happen in the dataloader "
+        "(currently dataloader_num_workers=0)."
     )
 
 
 def _is_multimodal_cpt(cfg) -> bool:
     if not getattr(cfg, "pretraining_dataset", None):
         return False
-    ds_first = cfg.pretraining_dataset[0]
-    ds_type = None
-    mm_flag = None
-    if hasattr(ds_first, "type"):
-        ds_type = getattr(ds_first, "type", None)
-        mm_flag = getattr(ds_first, "multimodal", None)
-    elif isinstance(ds_first, dict):
-        ds_type = ds_first.get("type")
-        mm_flag = ds_first.get("multimodal")
-    return (ds_type == "multimodal_pretrain") or bool(mm_flag)
+    return is_mm_cpt_entry(cfg.pretraining_dataset[0])
 
 
 def _mm_cpt_get(pt_cfg, key, default=None):
@@ -531,6 +525,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 and self.processor
                 and _is_multimodal_cpt(self.cfg)
             ):
+                if not is_eval:
+                    _warn_if_num_workers_zero_for_mm(
+                        self.cfg, LOG, check_train_on_inputs=False
+                    )
                 return self._build_mm_pretrain_collator(
                     pad_to_multiple_of=kwargs.get("pad_to_multiple_of"),
                     is_eval=is_eval,
@@ -596,15 +594,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
-            if (
-                self.cfg.processor_type
-                and self.processor
-                and _is_multimodal_cpt(self.cfg)
-            ):
-                return self._build_mm_pretrain_collator(
-                    pad_to_multiple_of=kwargs.get("pad_to_multiple_of"),
-                    is_eval=is_eval,
-                )
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
                 # Mirror ChatTemplateStrategy: per-dataset masking knobs from first MM dataset, else global cfg.

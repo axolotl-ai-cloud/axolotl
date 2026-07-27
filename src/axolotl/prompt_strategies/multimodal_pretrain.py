@@ -118,6 +118,11 @@ class ImageTokenSpec:
     image_token: str
     image_token_id: int
     image_family_token_ids: set[int]
+    # Flanking markers the model expects around each placeholder but the
+    # processor does NOT insert (Qwen-VL's <|vision_start|>/<|vision_end|>).
+    # The encoder wraps bare placeholders with these when set.
+    marker_prefix: str | None = None
+    marker_suffix: str | None = None
 
 
 def build_image_token_spec(
@@ -151,6 +156,28 @@ def build_image_token_spec(
     known_special_tokens |= set(
         getattr(tokenizer, "additional_special_tokens", None) or []
     )
+
+    # Surfaces flagged special=True only — get_added_vocab() also returns plain
+    # added tokens, and keyword-masking those would silently -100 real text
+    # (e.g. a user-added "imagery" token).
+    special_surfaces: set[str] = set(
+        getattr(tokenizer, "all_special_tokens", None) or []
+    )
+    special_surfaces |= set(getattr(tokenizer, "additional_special_tokens", None) or [])
+    added_decoder = getattr(tokenizer, "added_tokens_decoder", None)
+    if added_decoder:
+        try:
+            special_surfaces |= {
+                str(tok)
+                for tok in added_decoder.values()
+                if getattr(tok, "special", False)
+            }
+        except Exception as exc:  # noqa: BLE001
+            LOG.debug(
+                "tokenizer.added_tokens_decoder unusable on %s: %s",
+                type(tokenizer).__name__,
+                exc,
+            )
 
     image_token: str | None = None
     image_token_id: int | None = None
@@ -215,18 +242,31 @@ def build_image_token_spec(
             family.add(tid)
     # Dynamically mask processor-inserted layout tokens (tile/grid/global
     # markers) that vary by model and aren't in the static candidate list.
-    # Restricted to registered special tokens, so bos/eos/pad and real text
-    # are never masked.
-    for special in known_special_tokens:
+    # Restricted to special=True tokens, so bos/eos/pad, real text, and plain
+    # added tokens are never masked.
+    for special in special_surfaces:
         if not _is_image_structural_token(special):
             continue
         tid = resolve_id(special)
         if tid is not None:
             family.add(tid)
+    # Qwen-VL expects <|vision_start|>/<|vision_end|> around each placeholder
+    # but its processor does not insert them; without them mrope treats image
+    # pads as plain text. The encoder wraps bare placeholders when set.
+    marker_prefix = marker_suffix = None
+    if image_token == "<|image_pad|>":  # nosec B105
+        if (
+            resolve_id("<|vision_start|>") is not None
+            and resolve_id("<|vision_end|>") is not None
+        ):
+            marker_prefix = "<|vision_start|>"
+            marker_suffix = "<|vision_end|>"
     return ImageTokenSpec(
         image_token=image_token,
         image_token_id=image_token_id,  # type: ignore[arg-type]
         image_family_token_ids=family,
+        marker_prefix=marker_prefix,
+        marker_suffix=marker_suffix,
     )
 
 

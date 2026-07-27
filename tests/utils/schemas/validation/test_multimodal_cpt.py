@@ -128,6 +128,7 @@ class TestMultimodalCPTGates:
             test_datasets=[
                 {
                     "path": "eval/ds",
+                    "split": "test",
                     "type": "multimodal_pretrain",
                     "text_column": "eval_text",
                     "image_column": "eval_imgs",
@@ -150,6 +151,7 @@ class TestMultimodalCPTGates:
             test_datasets=[
                 {
                     "path": "eval/ds",
+                    "split": "test",
                     "multimodal": True,
                     "image_column": "imgs2",
                 }
@@ -185,11 +187,13 @@ class TestMultimodalCPTGates:
             test_datasets=[
                 {
                     "path": "eval/a",
+                    "split": "test",
                     "type": "multimodal_pretrain",
                     "image_base_dir": "/images/a",
                 },
                 {
                     "path": "eval/b",
+                    "split": "test",
                     "type": "multimodal_pretrain",
                     "image_base_dir": "/images/b",
                 },
@@ -205,11 +209,13 @@ class TestMultimodalCPTGates:
             test_datasets=[
                 {
                     "path": "eval/a",
+                    "split": "test",
                     "type": "multimodal_pretrain",
                     "image_token": "<img_a>",
                 },
                 {
                     "path": "eval/b",
+                    "split": "test",
                     "type": "multimodal_pretrain",
                     "image_token": "<img_b>",
                 },
@@ -225,11 +231,13 @@ class TestMultimodalCPTGates:
             test_datasets=[
                 {
                     "path": "eval/a",
+                    "split": "test",
                     "type": "multimodal_pretrain",
                     "image_base_dir": "/images/shared",
                 },
                 {
                     "path": "eval/b",
+                    "split": "test",
                     "type": "multimodal_pretrain",
                     "image_base_dir": "/images/shared",
                 },
@@ -243,8 +251,8 @@ class TestMultimodalCPTGates:
         cfg = _mm_cpt_cfg(
             min_base_cfg,
             test_datasets=[
-                {"path": "eval/a", "type": "multimodal_pretrain"},
-                {"path": "eval/b", "type": "multimodal_pretrain"},
+                {"path": "eval/a", "split": "test", "type": "multimodal_pretrain"},
+                {"path": "eval/b", "split": "test", "type": "multimodal_pretrain"},
             ],
         )
         validated = validate_config(cfg)
@@ -344,3 +352,70 @@ class TestMultimodalCPTGates:
             "Auto-set" in r.getMessage() and "remove_unused_columns" in r.getMessage()
             for r in caplog.records
         )
+
+
+class TestMultimodalCPTEvalRequirements:
+    """path + explicit split requirements and extended homogeneity keys."""
+
+    def test_mm_eval_missing_split_rejected(self, min_base_cfg):
+        cfg = _mm_cpt_cfg(
+            min_base_cfg,
+            test_datasets=[{"path": "eval/ds", "type": "multimodal_pretrain"}],
+        )
+        with pytest.raises(ValueError, match="explicit `split`"):
+            validate_config(cfg)
+
+    def test_mm_eval_missing_path_rejected(self, min_base_cfg):
+        cfg = _mm_cpt_cfg(
+            min_base_cfg,
+            test_datasets=[{"split": "test", "type": "multimodal_pretrain"}],
+        )
+        with pytest.raises(ValueError, match="requires `path`"):
+            validate_config(cfg)
+
+    def test_mm_train_missing_path_rejected(self, min_base_cfg):
+        cfg = _mm_cpt_cfg(min_base_cfg)
+        cfg.pretraining_dataset[0].pop("path")
+        with pytest.raises(ValueError, match="requires `path`"):
+            validate_config(cfg)
+
+    def test_mm_eval_rejects_mismatched_skip_bad_images(self, min_base_cfg):
+        cfg = _mm_cpt_cfg(
+            min_base_cfg,
+            test_datasets=[
+                {
+                    "path": "eval/a",
+                    "split": "test",
+                    "type": "multimodal_pretrain",
+                    "skip_bad_images": True,
+                },
+                {
+                    "path": "eval/b",
+                    "split": "test",
+                    "type": "multimodal_pretrain",
+                    "skip_bad_images": False,
+                },
+            ],
+        )
+        with pytest.raises(ValueError, match="skip_bad_images"):
+            validate_config(cfg)
+
+    def test_mm_eval_rejects_mismatched_allow_remote_images(self, min_base_cfg):
+        cfg = _mm_cpt_cfg(
+            min_base_cfg,
+            test_datasets=[
+                {
+                    "path": "eval/a",
+                    "split": "test",
+                    "type": "multimodal_pretrain",
+                    "allow_remote_images": True,
+                },
+                {
+                    "path": "eval/b",
+                    "split": "test",
+                    "type": "multimodal_pretrain",
+                },
+            ],
+        )
+        with pytest.raises(ValueError, match="allow_remote_images"):
+            validate_config(cfg)

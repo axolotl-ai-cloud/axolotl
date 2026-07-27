@@ -416,9 +416,9 @@ Notes:
 |---|---|---|
 | LLaVA-1.5 / 1.6 | `<image>` | |
 | SmolVLM / SmolVLM2 / Idefics3 | `<image>` | Processor expands to 1088 tokens (17 tiles × 64) |
-| Qwen2-VL / Qwen2.5-VL / Qwen3-VL | `<\|image_pad\|>` | Processor autowraps with `<\|vision_start\|>` / `<\|vision_end\|>` |
+| Qwen2-VL / Qwen2.5-VL / Qwen3-VL | `<\|image_pad\|>` | Axolotl wraps bare placeholders with `<\|vision_start\|>` / `<\|vision_end\|>` at encode time (the processor does **not** add them, and mrope needs them) |
 | Gemma-3 | `<start_of_image>` | Processor expands to 256 `<image_soft_token>` |
-| Gemma-4 | `<\|image\|>` | Processor expands to 256 `<\|image\|>` |
+| Gemma-4 | `<\|image\|>` | Processor expands to 280 image tokens (flanked by boi/eoi markers) |
 
 Axolotl autodetects the placeholder from the loaded processor. If autodetection
 fails, supply `image_token: <your token>` on the dataset entry.
@@ -439,6 +439,7 @@ pretraining_dataset:
     # image_token: "<image>"           # optional override; autodetect by default
     # skip_bad_images: false           # drop malformed/unloadable rows instead of aborting
     # allow_remote_images: false       # permit http(s)/URL image sources (off = SSRF-safe)
+    # max_images_per_row: 32           # reject/drop rows with more images (0 = unlimited)
 
 streaming: true
 sequence_len: 2048
@@ -452,12 +453,7 @@ gradient_accumulation_steps: 8
 
 ### Eval datasets
 
-`test_datasets` accepts multimodal entries (`type: multimodal_pretrain` or
-`multimodal: true`). Per-entry `text_column` and `image_column` are honored
-independently. When more than one multimodal entry is provided,
-`image_base_dir` and `image_token` must be either unset on every entry or
-identical across them, because the eval collator resolves both once for the
-merged eval stream.
+`test_datasets` accepts multimodal entries (`type: multimodal_pretrain` or `multimodal: true`). Every multimodal eval entry requires `path` and an explicit `split` — omitting `split` would silently evaluate on the train split. Per-entry `text_column` and `image_column` are honored independently. When more than one multimodal entry is provided, `image_base_dir`, `image_token`, `skip_bad_images`, and `allow_remote_images` must be either unset on every entry or identical across them, because the eval collator resolves them once for the merged eval stream.
 
 ### Mixed image / text-only batches
 
@@ -467,15 +463,11 @@ handed to the processor as-is.
 
 ### Bad rows and image sources
 
-By default a row that fails validation (placeholder/image-count mismatch,
-over-length, or an image that won't load) aborts the run — failures are loud,
-not silent. Set `skip_bad_images: true` on the dataset entry to warn-and-drop
-those rows instead, which is useful for large, noisy corpora.
+By default a row that fails validation (placeholder/image-count mismatch, over-length, too many images, an image that won't load, or an image that loads but crashes the processor — e.g. extreme aspect ratios on Qwen) aborts the run — failures are loud, not silent. Set `skip_bad_images: true` on the dataset entry to warn-and-drop those rows instead, which is useful for large, noisy corpora.
 
-Image sources with a URL scheme (`http://`, `https://`, …) are **rejected by
-default** — a training collator fetching arbitrary URLs from dataset shards is
-an SSRF vector. Set `allow_remote_images: true` to opt in. Relative paths that
-escape `image_base_dir` (e.g. `../../etc/passwd`) are always rejected.
+Rows carrying more than `max_images_per_row` images (default 32) are rejected (or dropped with `skip_bad_images`) — each image expands to a large pixel tensor at the collator, so an unbounded count is an OOM vector. Set `max_images_per_row: 0` to disable the cap.
+
+Image sources with a URL scheme (`http://`, `https://`, …) are **rejected by default** — a training collator fetching arbitrary URLs from dataset shards is an SSRF vector. Set `allow_remote_images: true` to opt in. When `image_base_dir` is set it acts as a sandbox: any path — relative or absolute, including via symlinks — that resolves outside it is rejected.
 
 Verified VLM families:
 

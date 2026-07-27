@@ -52,17 +52,27 @@ def test_placeholder_mm_honors_custom_columns():
     assert row["imgs"] == []
 
 
-def test_pretraining_config_from_entry_preserves_trust_remote_code():
-    """trust_remote_code on the dataset entry survives normalization."""
+def test_pretraining_config_from_entry_drops_trust_remote_code():
+    """trust_remote_code is dead in datasets>=4.x — it must not be forwarded."""
     from axolotl.utils.data.sft import _pretraining_config_from_entry
 
     cfg = _pretraining_config_from_entry(
         {"path": "ds", "type": "multimodal_pretrain", "trust_remote_code": True}
     )
-    assert cfg["trust_remote_code"] is True
+    assert "trust_remote_code" not in cfg
+
+
+def test_pretraining_config_from_entry_preserves_max_images_per_row():
+    """max_images_per_row on the dataset entry survives normalization (default 32)."""
+    from axolotl.utils.data.sft import _pretraining_config_from_entry
+
+    cfg = _pretraining_config_from_entry(
+        {"path": "ds", "type": "multimodal_pretrain", "max_images_per_row": 8}
+    )
+    assert cfg["max_images_per_row"] == 8
 
     cfg = _pretraining_config_from_entry({"path": "ds", "type": "multimodal_pretrain"})
-    assert cfg["trust_remote_code"] is False
+    assert cfg["max_images_per_row"] == 32
 
 
 def test_pretraining_config_from_entry_preserves_ds_type():
@@ -78,11 +88,7 @@ def test_pretraining_config_from_entry_preserves_ds_type():
     assert cfg["ds_type"] is None
 
 
-def test_load_streaming_dataset_routes_ds_type_to_loader(monkeypatch):
-    """When ds_type is set, load_dataset is called with the loader name and
-    path becomes data_files."""
-    from axolotl.utils.data.sft import _load_streaming_dataset
-
+def _capture_load_dataset(monkeypatch):
     captured = {}
 
     def fake_load_dataset(*args, **kwargs):
@@ -95,9 +101,6 @@ def test_load_streaming_dataset_routes_ds_type_to_loader(monkeypatch):
 
         return _Stub()
 
-    def fake_wrap(ds, *_a, **_kw):
-        return ds
-
     class _StubFormat:
         def with_format(self, *_a, **_kw):
             return self
@@ -107,31 +110,78 @@ def test_load_streaming_dataset_routes_ds_type_to_loader(monkeypatch):
         "axolotl.utils.data.sft.wrap_streaming_dataset",
         lambda *a, **kw: _StubFormat(),
     )
+    return captured
 
-    pretraining_config = DictDefault(
-        {
-            "path": "/data/shards/*.jsonl",
-            "name": None,
-            "skip": 0,
-            "split": "train",
-            "data_files": None,
-            "ds_type": "json",
-            "type": "multimodal_pretrain",
-            "text_column": "text",
-            "multimodal": True,
-            "image_column": "images",
-            "image_base_dir": None,
-            "image_token": None,
-            "trust_remote_code": False,
-        }
-    )
+
+def _streaming_pretraining_config(**overrides):
+    base = {
+        "path": None,
+        "name": None,
+        "skip": 0,
+        "split": "train",
+        "data_files": None,
+        "ds_type": None,
+        "type": "multimodal_pretrain",
+        "text_column": "text",
+        "multimodal": True,
+        "image_column": "images",
+        "image_base_dir": None,
+        "image_token": None,
+    }
+    base.update(overrides)
+    return DictDefault(base)
+
+
+def test_load_streaming_dataset_routes_ds_type_to_loader(monkeypatch, tmp_path):
+    """ds_type + a local glob path routes to the packaged loader with path as
+    data_files."""
+    from axolotl.utils.data.sft import _load_streaming_dataset
+
+    captured = _capture_load_dataset(monkeypatch)
+    shard = tmp_path / "shard-0000.jsonl"
+    shard.write_text('{"text": "x", "images": []}\n')
+    glob_path = str(tmp_path / "*.jsonl")
+
+    pretraining_config = _streaming_pretraining_config(path=glob_path, ds_type="json")
     cfg = DictDefault({"sequence_len": 2048, "accelerator_config": None})
 
     _load_streaming_dataset(pretraining_config, cfg, tokenizer=None, processor=None)
 
     assert captured["args"] == ("json",)
-    assert captured["kwargs"]["data_files"] == "/data/shards/*.jsonl"
+    assert captured["kwargs"]["data_files"] == glob_path
     assert captured["kwargs"]["split"] == "train"
+
+
+def test_load_streaming_dataset_hub_path_keeps_path_first_load(monkeypatch):
+    """A Hub repo path with ds_type + data_files keeps the historical path-first
+    load — ds_type must not redirect it to the local-file loader."""
+    from axolotl.utils.data.sft import _load_streaming_dataset
+
+    captured = _capture_load_dataset(monkeypatch)
+    pretraining_config = _streaming_pretraining_config(
+        path="someorg/some-hub-repo",
+        ds_type="json",
+        data_files=["data/train-00000.jsonl"],
+    )
+    cfg = DictDefault({"sequence_len": 2048, "accelerator_config": None})
+
+    _load_streaming_dataset(pretraining_config, cfg, tokenizer=None, processor=None)
+
+    assert captured["args"] == ("someorg/some-hub-repo",)
+    assert captured["kwargs"]["data_files"] == ["data/train-00000.jsonl"]
+
+
+def test_load_streaming_dataset_never_forwards_trust_remote_code(monkeypatch, tmp_path):
+    """datasets>=4.x logs an alarming error on trust_remote_code — never forward it."""
+    from axolotl.utils.data.sft import _load_streaming_dataset
+
+    captured = _capture_load_dataset(monkeypatch)
+    pretraining_config = _streaming_pretraining_config(path="someorg/some-hub-repo")
+    cfg = DictDefault({"sequence_len": 2048, "accelerator_config": None})
+
+    _load_streaming_dataset(pretraining_config, cfg, tokenizer=None, processor=None)
+
+    assert "trust_remote_code" not in captured["kwargs"]
 
 
 # ---- multiple MM eval datasets are loaded --------------------------------

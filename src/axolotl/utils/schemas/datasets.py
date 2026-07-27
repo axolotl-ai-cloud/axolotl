@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from axolotl.utils.mm_cpt import is_mm_cpt_entry
 from axolotl.utils.schemas.enums import ChatTemplate
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
 
@@ -288,6 +289,12 @@ class PretrainingDataset(BaseModel):
             "description": "Permit fetching image sources with a URL scheme (http(s)/etc.). Off by default to avoid SSRF from untrusted shards."
         },
     )
+    max_images_per_row: int | None = Field(
+        default=32,
+        json_schema_extra={
+            "description": "Reject (or drop, with skip_bad_images) rows carrying more images than this — each image expands to a large pixel tensor at the collator. Set 0 or null to disable."
+        },
+    )
 
 
 class MultiModalEvalDataset(PretrainingDataset):
@@ -307,7 +314,7 @@ class MultiModalEvalDataset(PretrainingDataset):
             data = data.model_dump()
         if not isinstance(data, dict):
             return data
-        if data.get("type") != "multimodal_pretrain" and not data.get("multimodal"):
+        if not is_mm_cpt_entry(data):
             raise ValueError(
                 "MultiModalEvalDataset requires type='multimodal_pretrain' "
                 "or multimodal=True"

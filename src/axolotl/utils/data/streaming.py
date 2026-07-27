@@ -1,6 +1,7 @@
 """Data handling specific to streaming datasets."""
 
 import functools
+import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
@@ -11,6 +12,7 @@ from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mm_cpt import is_mm_cpt_entry
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
@@ -185,9 +187,24 @@ def encode_streaming_multimodal(
     text_column: str = "text",
     image_column: str = "images",
     skip_bad_rows: bool = False,
+    marker_prefix: Optional[str] = None,
+    marker_suffix: Optional[str] = None,
+    max_images_per_row: Optional[int] = None,
 ) -> Dict[str, List]:
     texts: List[str] = examples[text_column]
     imgs_list: List[List[str]] = examples[image_column]
+
+    # Wrap bare placeholders with the model's flanking markers (Qwen-VL's
+    # <|vision_start|>/<|vision_end|>) — the processor won't add them, and
+    # without them mrope treats image pads as plain text. Already-wrapped
+    # occurrences are left alone.
+    bare_placeholder = None
+    if marker_prefix and marker_suffix:
+        bare_placeholder = re.compile(
+            rf"(?<!{re.escape(marker_prefix)})"
+            rf"{re.escape(image_token)}"
+            rf"(?!{re.escape(marker_suffix)})"
+        )
 
     if len(texts) != len(imgs_list):
         raise ValueError(
@@ -220,6 +237,21 @@ def encode_streaming_multimodal(
                     f"encode_streaming_multimodal: image {j} in row must be "
                     f"str, got {type(ip).__name__}."
                 )
+        if max_images_per_row and len(imgs) > max_images_per_row:
+            msg = (
+                f"Multimodal CPT row has {len(imgs)} images, exceeding "
+                f"max_images_per_row={max_images_per_row}. Each image expands "
+                f"to a large pixel tensor at the processor; raise the cap "
+                f"deliberately if your rows legitimately carry this many."
+            )
+            if skip_bad_rows:
+                LOG.warning("%s — dropping row.", msg)
+                continue
+            raise ValueError(msg)
+        if bare_placeholder is not None:
+            text = bare_placeholder.sub(
+                f"{marker_prefix}{image_token}{marker_suffix}", text
+            )
         # No truncation: counting on truncated ids and storing untruncated text
         # (which the collator re-tokenizes without truncation) silently produces
         # oversize batches and confusing placeholder/image-count mismatches.
@@ -332,12 +364,8 @@ def wrap_streaming_dataset(
             else lambda key, default=None: getattr(ds_first, key, default)
         )
         text_column = get_ds_value("text_column", "text") or "text"
-        ds_type = (get_ds_value("type", None) or "").strip()
-        is_mm_cpt = ds_type == "multimodal_pretrain" or bool(
-            get_ds_value("multimodal", False)
-        )
 
-        if is_mm_cpt:
+        if is_mm_cpt_entry(ds_first):
             if processor is None:
                 raise ValueError(
                     "Multimodal CPT (type: multimodal_pretrain) requires a "
@@ -356,6 +384,7 @@ def wrap_streaming_dataset(
             )
             image_column = get_ds_value("image_column", None) or "images"
             skip_bad_rows = bool(get_ds_value("skip_bad_images", False))
+            max_images_per_row = get_ds_value("max_images_per_row", 32)
             LOG.info(
                 f"multimodal streaming CPT: placeholder={spec.image_token!r} "
                 f"(id={spec.image_token_id})"
@@ -369,6 +398,9 @@ def wrap_streaming_dataset(
                 text_column=text_column,
                 image_column=image_column,
                 skip_bad_rows=skip_bad_rows,
+                marker_prefix=spec.marker_prefix,
+                marker_suffix=spec.marker_suffix,
+                max_images_per_row=max_images_per_row,
             )
         else:
             encode = functools.partial(
