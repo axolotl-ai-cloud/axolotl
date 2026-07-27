@@ -27,6 +27,8 @@ import torch
 import torch.distributed as dist
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+from urllib3.exceptions import LocationParseError
+from urllib3.util import parse_url
 
 from axolotl.utils.logging import get_logger
 
@@ -67,6 +69,50 @@ def _is_local_endpoint(endpoint: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _default_port(scheme):
+    return {"http": 80, "https": 443}.get((scheme or "").lower())
+
+
+def _same_origin(url: str, endpoint: str) -> bool:
+    """True when ``url`` has the same scheme/host/port as ``endpoint``.
+
+    Origins are compared with urllib3's parser because that is what ``requests``
+    resolves the connection host with; ``urllib.parse`` disagrees with it on some
+    authorities (a backslash before ``@`` is userinfo to one and a host separator
+    to the other), which would otherwise let a runner-supplied poll_url pass this
+    check and then connect elsewhere. Both parsers must agree, so any future
+    divergence fails closed rather than silently trusting the wrong host.
+    """
+    try:
+        candidate = parse_url(url)
+        target = parse_url(endpoint)
+    except LocationParseError:
+        return False
+
+    # embedded credentials would make requests derive a Basic-auth header that
+    # replaces the configured bearer token
+    if candidate.auth:
+        return False
+
+    stdlib_candidate = urlparse(url)
+    stdlib_target = urlparse(endpoint)
+    if (candidate.host, candidate.scheme) != (
+        stdlib_candidate.hostname,
+        stdlib_candidate.scheme,
+    ):
+        return False
+
+    def origin(scheme, host, port):
+        scheme = (scheme or "").lower()
+        return (scheme, (host or "").lower(), port or _default_port(scheme))
+
+    return origin(candidate.scheme, candidate.host, candidate.port) == origin(
+        target.scheme, target.host, target.port
+    ) and origin(
+        stdlib_candidate.scheme, stdlib_candidate.hostname, stdlib_candidate.port
+    ) == origin(stdlib_target.scheme, stdlib_target.hostname, stdlib_target.port)
 
 
 def _parse_json_object(response) -> dict:
@@ -294,13 +340,7 @@ class BenchmarkAPICallback(TrainerCallback):
         fallback = f"{self.endpoint.rstrip('/')}/{job_id}"
         if not poll_url:
             return fallback
-        endpoint = urlparse(self.endpoint)
-        candidate = urlparse(poll_url)
-        if (candidate.scheme, candidate.hostname, candidate.port) != (
-            endpoint.scheme,
-            endpoint.hostname,
-            endpoint.port,
-        ):
+        if not _same_origin(poll_url, self.endpoint):
             LOG.warning(
                 f"Benchmark API: poll_url {poll_url!r} origin differs from the "
                 f"configured endpoint; using {fallback} instead"

@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+import requests
 from pydantic import ValidationError
+from urllib3.util import parse_url
 
 from axolotl.integrations.benchmark_api import (
     BenchmarkAPICallback,
@@ -703,6 +705,68 @@ def test_async_poll_url_same_origin_preserved(monkeypatch, tmp_path):
     )
     callback.on_save(_args(tmp_path), _state(step=100), _control())
     assert callback._pending[0].poll_url == "http://bench.local:8765/eval/job-1"
+
+
+@pytest.mark.parametrize(
+    "poll_url",
+    [
+        # urllib.parse reads the backslash as userinfo (host bench.local) while
+        # urllib3 — the parser requests connects with — reads it as a path
+        # separator (host evil.example); trusting the former sends the bearer
+        # token to evil.example
+        "http://evil.example\\@bench.local:8765/eval/job-1",
+        "http://evil.example\\\\@bench.local:8765/eval/job-1",
+        "http://evil.example#@bench.local:8765/eval/job-1",
+        "http://evil.example?@bench.local:8765/eval/job-1",
+        "http://bench.local:8765\\@evil.example/eval/job-1",
+        # credentials would make requests replace the bearer token with basic auth
+        "http://user:pass@bench.local:8765/eval/job-1",
+        "http://evil.example/eval/job-1",
+        "https://bench.local:8765/eval/job-1",
+        "http://bench.local:9999/eval/job-1",
+        "http://bench.local.evil.example/eval/job-1",
+        "//evil.example/eval/job-1",
+        "file:///etc/passwd",
+        "http://bench.local:99999999/eval/job-1",
+    ],
+)
+def test_async_poll_url_untrusted_origin_replaced(monkeypatch, tmp_path, poll_url):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": poll_url}
+    )
+    callback, _ = _async_callback(
+        monkeypatch, runner, endpoint="http://bench.local:8765/eval"
+    )
+    callback.on_save(_args(tmp_path), _state(step=100), _control())
+
+    resolved = callback._pending[0].poll_url
+    assert resolved == "http://bench.local:8765/eval/job-1"
+    # whatever survives must also resolve to the endpoint host under the parser
+    # requests actually connects with
+    assert parse_url(requests.Request("GET", resolved).prepare().url).host == (
+        "bench.local"
+    )
+
+
+@pytest.mark.parametrize(
+    "endpoint, poll_url",
+    [
+        ("http://bench.local:8765/eval", "http://bench.local:8765/eval/job-1"),
+        ("http://bench.local:8765/eval", "http://BENCH.LOCAL:8765/eval/job-1"),
+        # default ports normalize, so an explicit one is still the same origin
+        ("https://bench.local/eval", "https://bench.local:443/eval/job-1"),
+        ("http://bench.local:80/eval", "http://bench.local/eval/job-1"),
+    ],
+)
+def test_async_poll_url_same_origin_forms_preserved(
+    monkeypatch, tmp_path, endpoint, poll_url
+):
+    runner = _FakeRunner(
+        submit={"status": "queued", "job_id": "job-1", "poll_url": poll_url}
+    )
+    callback, _ = _async_callback(monkeypatch, runner, endpoint=endpoint)
+    callback.on_save(_args(tmp_path), _state(step=100), _control())
+    assert callback._pending[0].poll_url == poll_url
 
 
 def test_async_timeout_zero_no_deadline(monkeypatch, tmp_path):

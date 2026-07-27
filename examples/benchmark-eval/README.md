@@ -5,7 +5,8 @@ Example configs for the [Benchmark API plugin](../../src/axolotl/integrations/be
 benchmark/eval runner on each checkpoint and log the returned scalar metrics
 back into training, with optional early stopping.
 
-The YAMLs here are symlinks to the canonical copies under the plugin package:
+These are the canonical copies; the plugin package links to them so the wheel
+ships the same configs.
 
 | Example | Mode |
 |---------|------|
