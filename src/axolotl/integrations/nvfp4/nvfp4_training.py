@@ -2830,6 +2830,25 @@ def save_nvfp4_packed(model: nn.Module, output_dir) -> int:
     return len(packed)
 
 
+def _resolve_sidecar_module(model: nn.Module, mod_name: str):
+    """Sidecars saved from an adapter-wrapped model carry PEFT path segments
+    (``base_model.model.`` prefix, ``.base_layer`` leaf); restore runs on the
+    bare model, so try progressively unwrapped paths."""
+    names = [mod_name]
+    stripped = mod_name.removeprefix("base_model.model.")
+    if stripped != mod_name:
+        names.append(stripped)
+    for name in list(names):
+        if name.endswith(".base_layer"):
+            names.append(name.removesuffix(".base_layer"))
+    for name in names:
+        try:
+            return model.get_submodule(name)
+        except AttributeError:
+            continue
+    return None
+
+
 def load_nvfp4_packed(model: nn.Module, model_dir) -> int:
     """Restore FP4-packed weights from a sidecar into the converted ``model``.
 
@@ -2864,10 +2883,11 @@ def load_nvfp4_packed(model: nn.Module, model_dir) -> int:
         by_module.setdefault(mod_name, {})[buf_name] = tensor
 
     restored = 0
+    unmatched = 0
     for mod_name, buffers in by_module.items():
-        try:
-            module = model.get_submodule(mod_name)
-        except AttributeError:
+        module = _resolve_sidecar_module(model, mod_name)
+        if module is None:
+            unmatched += len(buffers)
             continue
         device = next(
             (b.device for b in module.buffers()),
@@ -2882,6 +2902,7 @@ def load_nvfp4_packed(model: nn.Module, model_dir) -> int:
             continue
         for bname, tensor in buffers.items():
             if not hasattr(module, bname):
+                unmatched += 1
                 continue
             tensor = tensor.to(device)
             existing = getattr(module, bname)
@@ -2891,5 +2912,18 @@ def load_nvfp4_packed(model: nn.Module, model_dir) -> int:
             else:
                 module.register_buffer(bname, tensor)
             restored += 1
+    if unmatched:
+        # The frozen-store layout differs per environment (FSDP vs single-GPU,
+        # mslk fast classes vs NVFP4Tensor buffers). Both quantize the same base
+        # weights with the same RTN math, so a skipped restore is bit-equivalent
+        # unless the base weights on disk changed since the sidecar was saved.
+        LOG.warning(
+            "NVFP4 save_nvfp4: %d sidecar tensor(s) did not match the active "
+            "module layout and were skipped; the frozen FP4 stores were "
+            "re-quantized from the base weights instead. If the base weights "
+            "changed since this sidecar was saved, the restored model will not "
+            "match the checkpoint.",
+            unmatched,
+        )
     LOG.info("NVFP4 save_nvfp4: restored %d packed tensor(s) from %s", restored, path)
     return restored

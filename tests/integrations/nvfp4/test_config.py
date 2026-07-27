@@ -326,3 +326,24 @@ def test_pre_model_load_disabled_skips_validation():
     from axolotl.utils.dict import DictDefault
 
     NVFP4Plugin().pre_model_load(DictDefault({"load_in_4bit": True}))
+
+
+def test_resolve_sidecar_module_unwraps_peft_paths():
+    import torch.nn as tnn
+
+    from axolotl.integrations.nvfp4.nvfp4_training import _resolve_sidecar_module
+
+    model = tnn.Module()
+    layers = tnn.Module()
+    q_proj = tnn.Linear(4, 4)
+    layers.q_proj = q_proj
+    model.layers = layers
+
+    assert _resolve_sidecar_module(model, "layers.q_proj") is q_proj
+    assert (
+        _resolve_sidecar_module(model, "base_model.model.layers.q_proj.base_layer")
+        is q_proj
+    )
+    assert _resolve_sidecar_module(model, "layers.q_proj.base_layer") is q_proj
+    assert _resolve_sidecar_module(model, "base_model.model.layers.q_proj") is q_proj
+    assert _resolve_sidecar_module(model, "layers.missing") is None
