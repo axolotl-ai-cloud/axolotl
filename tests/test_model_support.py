@@ -122,6 +122,17 @@ class TestKimiLinearSupport:
         assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_TOKENIZER_LOAD)
         assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_MODEL_BUILD)
 
+    def test_dynamic_module_redirect_requires_exact_module_stem(self):
+        from axolotl.model_support.kimi_linear.patch_kimi_linear import (
+            _kimi_module_entry,
+        )
+
+        assert _kimi_module_entry("transformers_modules/x/repo/modeling_kimi.py")
+        assert _kimi_module_entry("transformers_modules.x.repo.modeling_kimi")
+        assert _kimi_module_entry("tokenization_kimi.py")
+        assert _kimi_module_entry("transformers_modules/x/modeling_kimi_vl.py") is None
+        assert _kimi_module_entry("modeling_kimi_vl") is None
+
     def test_pre_config_load_patches_dynamic_module_loading(
         self, restore_dynamic_module_loader
     ):
