@@ -12,7 +12,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists
+from .utils import check_model_output_exists, requires_flash_attn
 
 
 @pytest.mark.xfail(reason="flaky", strict=False)
@@ -21,6 +21,7 @@ class TestActivationOffloading:
     E2E test cases for activation offloading
     """
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "adapter",
         ["lora", "qlora", None],
@@ -82,6 +83,7 @@ class TestActivationOffloading:
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "offload_mode,expect_streams",
         [(True, True), ("legacy", False), ("disk", True)],
@@ -145,6 +147,7 @@ class TestActivationOffloading:
         )
         assert ctx.use_streams is expect_streams
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "adapter,expect_recompute_wrap",
         [("lora", False), (None, True)],
@@ -204,6 +207,7 @@ class TestActivationOffloading:
 
         assert captured.get("wrapped") is expect_recompute_wrap
 
+    @requires_flash_attn
     @pytest.mark.parametrize("use_reentrant", [False, True])
     def test_hidden_states_offload_full_param(
         self, temp_dir, monkeypatch, use_reentrant
@@ -328,6 +332,7 @@ class TestActivationOffloading:
             f"grad diverged: max|d|={(grad_ref - grad_off).abs().max().item()}"
         )
 
+    @requires_flash_attn
     def test_no_vram_leak_regression(self, temp_dir, monkeypatch):
         """#3638 regression — fail on linear VRAM growth across training steps.
 
