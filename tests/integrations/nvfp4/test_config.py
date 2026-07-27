@@ -288,3 +288,41 @@ def test_resolve_keep_hp_counts_paper_preset():
     assert first == 1 and last == round(0.13 * 32)  # == 4
     b = NVFP4Args(keep_hp_blocks={"first": 2, "last": 3})
     assert swap._resolve_keep_hp_counts(b, model) == (2, 3)
+
+
+# ----------------------------- cfg validators --------------------------------
+def _enabled_cfg(**overrides):
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault({"nvfp4_training": {"enabled": True, "quantize": ["all"]}})
+    cfg.update(overrides)
+    return cfg
+
+
+def test_pre_model_load_rejects_bnb_quant():
+    with pytest.raises(ValueError, match="load_in_4bit"):
+        NVFP4Plugin().pre_model_load(_enabled_cfg(load_in_4bit=True))
+    with pytest.raises(ValueError, match="load_in_8bit"):
+        NVFP4Plugin().pre_model_load(_enabled_cfg(load_in_8bit=True))
+
+
+def test_pre_model_load_rejects_deepspeed():
+    with pytest.raises(ValueError, match="DeepSpeed"):
+        NVFP4Plugin().pre_model_load(
+            _enabled_cfg(deepspeed="deepspeed_configs/zero2.json")
+        )
+
+
+def test_pre_model_load_rejects_fp16():
+    with pytest.raises(ValueError, match="bf16"):
+        NVFP4Plugin().pre_model_load(_enabled_cfg(fp16=True))
+
+
+def test_validate_cfg_clean_config_passes():
+    NVFP4Plugin._validate_cfg(_enabled_cfg())
+
+
+def test_pre_model_load_disabled_skips_validation():
+    from axolotl.utils.dict import DictDefault
+
+    NVFP4Plugin().pre_model_load(DictDefault({"load_in_4bit": True}))

@@ -21,13 +21,37 @@ class NVFP4Plugin(BasePlugin):
             return bool(nvfp4.get("enabled"))
         return bool(getattr(nvfp4, "enabled", False))
 
+    @staticmethod
+    def _validate_cfg(cfg):
+        if cfg.load_in_4bit or cfg.load_in_8bit:
+            raise ValueError(
+                "nvfp4_training is incompatible with load_in_4bit/load_in_8bit "
+                "(bitsandbytes replaces the Linear modules, so the NVFP4 swap "
+                "matches zero layers and silently does nothing). NVFP4-QLoRA is "
+                "the 4-bit storage path: drop load_in_*bit and use adapter: lora "
+                "with nvfp4_training.base: storage."
+            )
+        if cfg.deepspeed:
+            raise ValueError(
+                "nvfp4_training does not support DeepSpeed (there is no ZeRO "
+                "path for the FP4-GEMM module swap). Remove `deepspeed` and use "
+                "DDP, FSDP2, or single-GPU."
+            )
+        if cfg.fp16:
+            raise ValueError(
+                "nvfp4_training requires bf16 — the NVFP4 quantizer does not "
+                "support fp16. Set bf16: true instead of fp16."
+            )
+
     def pre_model_load(self, cfg):
-        """Requirements check + dynamo tuning before the model is built."""
+        """Config validation + requirements check + dynamo tuning before the
+        model is built."""
         if not self._enabled(cfg):
             return
         from .nvfp4_training import nvfp4_supported
         from .patches import configure_dynamo_for_nvfp4, warn_unfilled_gemms
 
+        self._validate_cfg(cfg)
         ok, reason = nvfp4_supported()
         if not ok:
             raise RuntimeError(f"nvfp4_training enabled but unsupported: {reason}")

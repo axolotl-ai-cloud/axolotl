@@ -193,7 +193,15 @@ def _load_packed_sidecar(cfg, model: PreTrainedModel) -> None:
     """Restore FP4-packed weights from a save_packed sidecar, if one exists."""
     from .nvfp4_training import NVFP4_PACKED_SIDECAR, load_nvfp4_packed
 
-    for cand in (cfg.resume_from_checkpoint, cfg.base_model):
+    resume = cfg.resume_from_checkpoint
+    if not resume and cfg.auto_resume_from_checkpoints:
+        # auto_resume resolves cfg.resume_from_checkpoint only after
+        # post_model_load, so peek at the last checkpoint without mutating cfg.
+        from axolotl.utils.train import determine_last_checkpoint
+
+        resume = determine_last_checkpoint(cfg, update=False)
+
+    for cand in (resume, cfg.base_model):
         if not cand or not isinstance(cand, str):
             continue
         if os.path.isfile(os.path.join(cand, NVFP4_PACKED_SIDECAR)):

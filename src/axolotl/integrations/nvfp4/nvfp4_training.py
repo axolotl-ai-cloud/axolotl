@@ -19,10 +19,6 @@ from triton import language as tl
 
 LOG = logging.getLogger(__name__)
 
-# FP4 tensor cores exist on both Blackwell families; do NOT gate on sm_100 only
-# (sm_120 = consumer RTX 50xx / RTX PRO 6000 gets silently dropped otherwise).
-_MIN_FP4_CAPABILITIES = ((10, 0), (12, 0))
-
 _BLOCK_SIZE = 16  # NVFP4 is fixed at block_size 16
 # _scaled_mm packs 2 FP4/byte and needs packed contraction (=logical/2) %16, so
 # logical contraction must be %32. The token dim (M) is padded to this.
@@ -54,7 +50,10 @@ def nvfp4_supported() -> tuple[bool, str]:
             per_tensor_amax_to_scale,
         )
     except ImportError as exc:
-        return False, f"NVFP4 training requires torchao >= 0.18 ({exc})"
+        return (
+            False,
+            f"NVFP4 training requires torchao (pinned: torchao==0.17.0) ({exc})",
+        )
     from packaging import version as _v
 
     # parse() not string compare: "2.12" < "2.8" lexicographically (wrong for >=2.10)
@@ -105,8 +104,8 @@ def _sr_dither(t: torch.Tensor, per_tensor_scale: torch.Tensor) -> torch.Tensor:
     """Uniform dither of width = one FP4 step so the subsequent RTN is unbiased SR.
 
     The step is computed in the original domain by mirroring torchao's two-level
-    scaling: scale to ``v``, take the FP4 half-step ``2^floor(log2|v|)`` (e clamped
-    to the E2M1 normal range), then de-scale.
+    scaling: scale to ``v``, take the e2m1 grid step ``2^(e-1)`` for binade
+    ``e = floor(log2|v|)`` (clamped to the E2M1 normal range), then de-scale.
     """
     from torchao.prototype.mx_formats.constants import (
         F4_E2M1_MAX,
@@ -125,7 +124,7 @@ def _sr_dither(t: torch.Tensor, per_tensor_scale: torch.Tensor) -> torch.Tensor:
     recip = (1.0 / per_tensor_scale) / sbf8  # original -> fp4-grid multiplier
     v = x * recip.unsqueeze(-1)
     e = torch.floor(torch.log2(v.abs().clamp(min=eps))).clamp(_FP4_EXP_LO, _FP4_EXP_HI)
-    step_orig = (2.0**e) / recip.unsqueeze(-1)  # one FP4 step in original domain
+    step_orig = 2.0 ** (e - 1) / recip.unsqueeze(-1)  # one FP4 step in original domain
     u = (torch.rand_like(v) - 0.5) * step_orig
     return (x + u).reshape(t.shape).to(t.dtype)
 
@@ -410,22 +409,6 @@ class NVFP4Linear(nn.Module):
         return cls(linear.weight, linear.bias, recipe)
 
 
-def _clone_nvfp4_data(w_q):
-    """Plain NVFP4Tensor with cloned packed storage, independent of FSDP's
-    all-gather buffer, for the frozen-base backward dgrad."""
-    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
-
-    pts = w_q.per_tensor_scale
-    inner = {
-        "qdata": w_q.qdata.clone(),
-        "scale": w_q.scale.clone(),
-        "per_tensor_scale": None if pts is None else pts.clone(),
-    }
-    return NVFP4Tensor.__tensor_unflatten__(
-        inner, w_q.__tensor_flatten__()[1], None, None
-    )
-
-
 class NVFP4FrozenBaseFunction(torch.autograd.Function):
     """Forward GEMM against a pre-quantized FROZEN weight; dgrad only.
 
@@ -445,13 +428,9 @@ class NVFP4FrozenBaseFunction(torch.autograd.Function):
         out = _addmm_nvfp4_dispatch(
             _quantize(x2d_p, QuantPolicy()), w_q.t(), torch.ops.aten.mm.default
         )[:m]
-        # FSDP2 frees the all-gathered weight after forward and won't re-gather the
-        # FROZEN base, so a saved reference reads freed memory (-> NaN). Snapshot
-        # the packed FP4 data; the plain single-GPU path keeps the zero-copy ref.
-        if hasattr(w_q, "fsdp_pre_all_gather"):
-            ctx.w_q = _clone_nvfp4_data(w_q)
-        else:
-            ctx.w_q = w_q
+        # FSDP2 never shards buffers, so the FP4 store outlives forward and the
+        # zero-copy reference is safe to save.
+        ctx.w_q = w_q
         ctx.recipe = recipe
         ctx.x_shape = orig_shape
         return out.reshape(*orig_shape[:-1], w_q.shape[0])
@@ -770,9 +749,9 @@ class NVFP4TiedLMHead(nn.Module):
 
     def __init__(self, embedding: NVFP4Embedding, bias, recipe: NVFP4Recipe):
         super().__init__()
-        # Reference the embedding's buffer directly so both roles read the same
-        # FP4 store (the embedding owns it in the state_dict).
-        self._embedding = embedding
+        # Plain attribute, NOT a registered submodule: the embedding owns the FP4
+        # store in the state_dict; registering it here would duplicate its keys.
+        object.__setattr__(self, "_embedding", embedding)
         self.bias = bias
         self.recipe = recipe
         self.in_features = embedding.w_q.shape[1]
@@ -811,14 +790,9 @@ class NVFP4ComputeBaseFunction(torch.autograd.Function):
         out = _addmm_nvfp4_dispatch(
             _quantize(x2d_p, QuantPolicy()), w_fprop.t(), torch.ops.aten.mm.default
         )[:m]
-        # FSDP2 frees the all-gathered weight after forward and won't re-gather the
-        # FROZEN base, so a saved reference reads freed storage (-> NaN). Snapshot
-        # the packed FP4 dgrad layout; the plain path keeps the zero-copy ref.
-        ctx.w_dgrad = (
-            _clone_nvfp4_data(w_dgrad)
-            if hasattr(w_dgrad, "fsdp_pre_all_gather")
-            else w_dgrad
-        )
+        # FSDP2 never shards buffers, so the FP4 store outlives forward and the
+        # zero-copy reference is safe to save.
+        ctx.w_dgrad = w_dgrad
         ctx.recipe = recipe
         ctx.x_shape = orig_shape
         ctx.out_features = w_fprop.shape[0]
@@ -928,12 +902,13 @@ _SM120F_RECIPE_VERIFIED: dict[tuple[int, int], bool] = {}
 
 
 def _sm120f_recipe_codegen_verified(device: torch.device) -> bool:
-    """Whether the fused recipe e2m1 cvt assembles correctly on sm_120 (cached).
+    """Whether the fused recipe e2m1 cvt assembles correctly on sm_12x (cached).
 
     CUTLASS #3096: ``cvt.rn.satfinite.e2m1x2.f32`` mis-assembles under a plain
-    sm_120 target. Bit-compares the RTN-quant codes against torchao (RTN-only so
-    the cvt ops are the only numerics and bit-exact is achievable), per ``device``.
-    Default-safe (False on error); ``AXOLOTL_NVFP4_SKIP_SM120F_PROBE=1`` force-disables.
+    sm_12x target. Bit-compares the TORCHAO_SCALE RTN quant (same inline cvt asm,
+    documented bit-identical to ``NVFP4Tensor.to_nvfp4``) against torchao, per
+    ``device``. Default-safe (False on error);
+    ``AXOLOTL_NVFP4_SKIP_SM120F_PROBE=1`` force-disables.
     """
     global _SM120F_RECIPE_VERIFIED
     # Cache-first (see _mslk_available): the env read is a dynamo graph break.
@@ -953,17 +928,18 @@ def _sm120f_recipe_codegen_verified(device: torch.device) -> bool:
             per_tensor_amax_to_scale,
         )
 
-        # Only sm_120 hits #3096; an sm_100 probe must never bless sm_120. Gate
+        # Only sm_12x hits #3096; an sm_100 probe must never bless sm_12x. Gate
         # must not open without MSLK (the dispatcher falls back to it).
-        if torch.cuda.is_available() and _mslk_available() and cap == (12, 0):
+        if torch.cuda.is_available() and _mslk_available() and cap[0] == 12:
             # 256x256 hits the common kernel path (no mask): K %16 and %64,
             # M a full 128-row block.
             gen = torch.Generator(device=device).manual_seed(0)
             t = torch.randn(
                 256, 256, device=device, dtype=torch.bfloat16, generator=gen
             )
-            # Pure RTN (no RHT, no SR) isolates the e4m3/e2m1 cvt ops.
-            q, _s, _inv_gs = _mslk_quantize_recipe_op(t, False, False)
+            # TORCHAO_SCALE RTN exercises the same cvt asm and is bit-exact vs
+            # torchao by construction, so any mismatch is mis-assembly.
+            q, _s, _pts = _mslk_quantize_rtn_op(t)
             pts = per_tensor_amax_to_scale(_abs_amax(t).clamp(min=1e-12))
             ref = NVFP4Tensor.to_nvfp4(
                 t.contiguous(), block_size=_BLOCK_SIZE, per_tensor_scale=pts
@@ -975,6 +951,15 @@ def _sm120f_recipe_codegen_verified(device: torch.device) -> bool:
     except Exception:  # noqa: BLE001 — any failure must default the gate closed
         verified = False
 
+    if not verified:
+        LOG.warning(
+            "NVFP4: sm_12x e2m1 cvt codegen probe did not verify on %s "
+            "(cap %d.%d); the fused recipe kernels are disabled on this device "
+            "and quantization falls back to the slower verified path.",
+            device,
+            cap[0],
+            cap[1],
+        )
     _SM120F_RECIPE_VERIFIED[cap] = verified
     return verified
 
@@ -992,7 +977,7 @@ def _warm_recipe_gates() -> None:
     if not _mslk_available() or not torch.cuda.is_available():
         return
     device = torch.device("cuda", torch.cuda.current_device())
-    if tuple(torch.cuda.get_device_capability(device)) == (12, 0):
+    if torch.cuda.get_device_capability(device)[0] == 12:
         _sm120f_recipe_codegen_verified(device)
 
 
@@ -1005,9 +990,7 @@ def _recipe_fusion_available(t: torch.Tensor) -> bool:
     ):
         return False
     cap = torch.cuda.get_device_capability(t.device)
-    return cap[0] == 10 or (
-        tuple(cap) == (12, 0) and _sm120f_recipe_codegen_verified(t.device)
-    )
+    return cap[0] == 10 or (cap[0] == 12 and _sm120f_recipe_codegen_verified(t.device))
 
 
 def _swizzled_scale_shape(m: int, k: int) -> tuple[int, int]:
@@ -1896,9 +1879,28 @@ def _mslk_quantize(t: torch.Tensor):
 
 
 def _mslk_quantize_recipe(t: torch.Tensor, policy: QuantPolicy):
-    if not (policy.hadamard or policy.stochastic) or not _recipe_fusion_available(t):
+    if not (policy.hadamard or policy.stochastic):
         return _mslk_quantize(t)
-    return _mslk_quantize_recipe_op(t, bool(policy.hadamard), bool(policy.stochastic))
+    if _recipe_fusion_available(t):
+        return _mslk_quantize_recipe_op(
+            t, bool(policy.hadamard), bool(policy.stochastic)
+        )
+    return _mslk_quantize_recipe_eager(t, policy)
+
+
+def _mslk_quantize_recipe_eager(t: torch.Tensor, policy: QuantPolicy):
+    """RHT/SR applied eagerly (as in :func:`_quantize`'s slow path) before the
+    plain fused quant, for when the fused recipe kernel is unavailable — the
+    recipe must not be silently shed from gradient operands."""
+    from torchao.prototype.mx_formats.nvfp4_tensor import per_tensor_amax_to_scale
+
+    t = t.contiguous()
+    if policy.hadamard:
+        t = _apply_rht(t).contiguous()
+    if policy.stochastic:
+        pts = per_tensor_amax_to_scale(_abs_amax(t).clamp(min=1e-12))
+        t = _sr_dither(t, pts).contiguous()
+    return _mslk_quantize(t)
 
 
 def _mslk_dequant(qdata, scale, inv_gs, shape, dtype=torch.bfloat16) -> torch.Tensor:
@@ -2479,6 +2481,9 @@ def swap_frozen_embedding_to_nvfp4(
     new_module = _stream_quantize_swap(
         model, name, module, lambda src: NVFP4Embedding.from_embedding(src)
     )
+    # Compiled graphs full-dequantize the [vocab, hidden] table every forward;
+    # eager keeps the row-gather path.
+    _dynamo_disable_forward(new_module)
     LOG.info("NVFP4 training: swapped frozen embedding %s", name)
     return new_module
 
@@ -2521,6 +2526,9 @@ def swap_tied_embedding_and_lm_head_to_nvfp4(
     new_embed = _stream_quantize_swap(
         model, embed_name, embed, lambda src: NVFP4Embedding.from_embedding(src)
     )
+    # Compiled graphs full-dequantize the [vocab, hidden] table every forward;
+    # eager keeps the row-gather path.
+    _dynamo_disable_forward(new_embed)
     tied_head = NVFP4TiedLMHead(new_embed, lm_head_bias, recipe)
     _set_submodule(model, lm_head_name, tied_head)
     _dynamo_disable_forward(tied_head)
@@ -2745,6 +2753,26 @@ def _all_nvfp4_modules(model: nn.Module):
             yield name, module
 
 
+def _as_plain_nvfp4(t):
+    """Downcast an NVFP4Tensor subclass (the lazily created ``FSDPNVFP4Tensor``)
+    to the plain class: the subclass only exists in processes that built it, so
+    pickling it into the sidecar breaks loading everywhere else."""
+    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+    if not isinstance(t, NVFP4Tensor) or type(t) is NVFP4Tensor:
+        return t
+    return NVFP4Tensor.__tensor_unflatten__(
+        {
+            "qdata": t.qdata,
+            "scale": t.scale,
+            "per_tensor_scale": t.per_tensor_scale,
+        },
+        t.__tensor_flatten__()[1],
+        None,
+        None,
+    )
+
+
 def collect_nvfp4_packed_state(model: nn.Module) -> tuple[dict, set[str]]:
     """Build the FP4-packed sidecar dict and the set of bf16 keys it supersedes.
 
@@ -2773,7 +2801,7 @@ def collect_nvfp4_packed_state(model: nn.Module) -> tuple[dict, set[str]]:
         else:
             # Frozen modules: the FP4 buffers ARE the stored form (bit-exact).
             for bname, buf in module.named_buffers(recurse=False):
-                packed[f"{prefix}{bname}"] = buf
+                packed[f"{prefix}{bname}"] = _as_plain_nvfp4(buf)
                 drop.add(f"{prefix}{bname}")
     return packed, drop
 
