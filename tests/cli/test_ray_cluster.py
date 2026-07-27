@@ -69,12 +69,21 @@ class TestSshCmd:
 class TestMissingRayBinary:
     """Friendly error when the ray CLI is absent."""
 
-    def test_up_without_ray_binary(self, monkeypatch):
+    @pytest.fixture
+    def no_ray_binary(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ray_cluster.shutil, "which", lambda _: None)
+        monkeypatch.setattr(ray_cluster.sys, "executable", str(tmp_path / "python"))
+
+    def test_up_without_ray_binary(self, no_ray_binary):
         with pytest.raises(click.UsageError, match="axolotl\\[ray\\]"):
             ray_cluster.cluster_up()
 
-    def test_status_without_ray_binary(self, monkeypatch):
-        monkeypatch.setattr(ray_cluster.shutil, "which", lambda _: None)
+    def test_status_without_ray_binary(self, no_ray_binary):
         with pytest.raises(click.UsageError, match="axolotl\\[ray\\]"):
             ray_cluster.cluster_status()
+
+    def test_sibling_venv_ray_found(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(ray_cluster.shutil, "which", lambda _: None)
+        (tmp_path / "ray").touch()
+        monkeypatch.setattr(ray_cluster.sys, "executable", str(tmp_path / "python"))
+        assert ray_cluster._ray_binary() == str(tmp_path / "ray")

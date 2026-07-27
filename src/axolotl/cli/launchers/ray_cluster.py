@@ -11,6 +11,8 @@ import json
 import shutil
 import socket
 import subprocess  # nosec
+import sys
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -23,7 +25,8 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 STATE_FILE = Path.home() / ".cache" / "axolotl" / "ray-cluster.json"
-TEMP_DIR_ROOT = Path.home() / ".cache" / "axolotl" / "ray"
+# must stay short: ray puts AF_UNIX sockets under it, capped at 107 bytes total
+TEMP_DIR_ROOT = Path(tempfile.gettempdir()) / "axolotl-ray"
 _SSH_BASE = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]
 
 
@@ -76,10 +79,13 @@ def cluster_up(
     runtime=None,
 ) -> None:
     """Start a Ray head on this node and join hostfile workers over ssh."""
-    _require_ray_binary()
+    ray_bin = _ray_binary()
 
     cluster_cfg = runtime.ray.cluster if runtime and runtime.ray else None
     hostfile = hostfile or (cluster_cfg.hostfile if cluster_cfg else None)
+    explicit_port = port is not None or bool(
+        cluster_cfg and "head_port" in cluster_cfg.model_fields_set
+    )
     port = port or (cluster_cfg.head_port if cluster_cfg else 6379)
     dashboard_port = dashboard_port or (
         cluster_cfg.dashboard_port if cluster_cfg else 8265
@@ -94,7 +100,7 @@ def cluster_up(
         else []
     )
 
-    if _probe_cluster(f"{head_ip}:{port}"):
+    if _probe_cluster(ray_bin, f"{head_ip}:{port}"):
         LOG.info("Ray head already running at %s:%s", head_ip, port)
         state = ClusterState.load() or ClusterState(
             head_ip=head_ip,
@@ -103,24 +109,42 @@ def cluster_up(
             temp_dir=str(TEMP_DIR_ROOT / "existing"),
         )
     else:
+        if _port_in_use(port):
+            if explicit_port:
+                raise click.ClickException(
+                    f"port {port} is already in use by another service; pick a"
+                    " different --port"
+                )
+            free = _free_port()
+            LOG.warning(
+                "port %d is in use by another service (redis?); using free port %d",
+                port,
+                free,
+            )
+            port = free
         temp_dir = TEMP_DIR_ROOT / f"cluster-{str(uuid.uuid4())[:8]}"
         temp_dir.mkdir(parents=True, exist_ok=True)
         LOG.info(
             "starting Ray head on %s:%s (dashboard :%s)", head_ip, port, dashboard_port
         )
-        subprocess.run(  # nosec B603 B607
-            [
-                "ray",
-                "start",
-                "--head",
-                f"--port={port}",
-                f"--dashboard-port={dashboard_port}",
-                "--dashboard-host=0.0.0.0",
-                f"--temp-dir={temp_dir}",
-                "--disable-usage-stats",
-            ],
-            check=True,
-        )
+        try:
+            subprocess.run(  # nosec B603
+                [
+                    ray_bin,
+                    "start",
+                    "--head",
+                    f"--port={port}",
+                    f"--dashboard-port={dashboard_port}",
+                    "--dashboard-host=0.0.0.0",
+                    f"--temp-dir={temp_dir}",
+                    "--disable-usage-stats",
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError as err:
+            raise click.ClickException(
+                "`ray start --head` failed; see the output above"
+            ) from err
         state = ClusterState(
             head_ip=head_ip,
             port=port,
@@ -160,7 +184,7 @@ def cluster_up(
     state.save()
 
     expected_nodes = 1 + len(joined)
-    _wait_for_nodes(state.address, expected_nodes)
+    _wait_for_nodes(ray_bin, state.address, expected_nodes)
 
     if failures:
         for host, _ in failures:
@@ -184,13 +208,13 @@ def cluster_up(
 
 def cluster_down(force: bool = False) -> None:
     """Stop the recorded cluster (`ray stop` per node; --force pkills by temp-dir)."""
-    _require_ray_binary()
+    ray_bin = _ray_binary()
     state = ClusterState.load()
     if state is None:
         LOG.warning(
             "no recorded cluster (%s); running local `ray stop` only", STATE_FILE
         )
-        subprocess.run(["ray", "stop"], check=False)  # nosec B603 B607
+        subprocess.run([ray_bin, "stop"], check=False)  # nosec B603
         return
 
     for host in state.workers:
@@ -208,7 +232,7 @@ def cluster_down(force: bool = False) -> None:
             ["pkill", "-9", "-f", Path(state.temp_dir).name], check=False
         )
     else:
-        subprocess.run(["ray", "stop"], check=False)  # nosec B603 B607
+        subprocess.run([ray_bin, "stop"], check=False)  # nosec B603
 
     STATE_FILE.unlink(missing_ok=True)
     shutil.rmtree(state.temp_dir, ignore_errors=True)
@@ -217,13 +241,13 @@ def cluster_down(force: bool = False) -> None:
 
 def cluster_status(address: str | None = None) -> None:
     """Show `ray status` for the recorded (or given) cluster."""
-    _require_ray_binary()
+    ray_bin = _ray_binary()
     state = ClusterState.load()
     address = address or (state.address if state else None)
-    cmd = ["ray", "status"]
+    cmd = [ray_bin, "status"]
     if address:
         cmd.append(f"--address={address}")
-    result = subprocess.run(cmd, check=False)  # nosec B603 B607
+    result = subprocess.run(cmd, check=False)  # nosec B603
     if result.returncode != 0 and address:
         raise click.ClickException(
             f"no Ray cluster reachable at {address}; start one with `axolotl ray up`"
@@ -234,11 +258,13 @@ def cluster_status(address: str | None = None) -> None:
         )
 
 
-def _wait_for_nodes(address: str, expected: int, timeout: int = 60) -> None:
+def _wait_for_nodes(
+    ray_bin: str, address: str, expected: int, timeout: int = 60
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = subprocess.run(  # nosec B603 B607
-            ["ray", "status", f"--address={address}"],
+        result = subprocess.run(  # nosec B603
+            [ray_bin, "status", f"--address={address}"],
             capture_output=True,
             text=True,
             check=False,
@@ -253,9 +279,9 @@ def _wait_for_nodes(address: str, expected: int, timeout: int = 60) -> None:
     )
 
 
-def _probe_cluster(address: str) -> bool:
-    result = subprocess.run(  # nosec B603 B607
-        ["ray", "status", f"--address={address}"],
+def _probe_cluster(ray_bin: str, address: str) -> bool:
+    result = subprocess.run(  # nosec B603
+        [ray_bin, "status", f"--address={address}"],
         capture_output=True,
         check=False,
     )
@@ -279,6 +305,18 @@ def _is_local_host(host: str) -> bool:
         return False
 
 
+def _port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("", 0))
+        return sock.getsockname()[1]
+
+
 def _primary_ip() -> str:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         try:
@@ -288,8 +326,14 @@ def _primary_ip() -> str:
             return "127.0.0.1"
 
 
-def _require_ray_binary() -> None:
-    if shutil.which("ray") is None:
-        raise click.UsageError(
-            "the `ray` CLI is not on PATH; install with `pip install axolotl[ray]`"
-        )
+def _ray_binary() -> str:
+    found = shutil.which("ray")
+    if found:
+        return found
+    # venv-installed ray next to the python that runs axolotl, without activation
+    sibling = Path(sys.executable).parent / "ray"
+    if sibling.exists():
+        return str(sibling)
+    raise click.UsageError(
+        "the `ray` CLI is not on PATH; install with `pip install axolotl[ray]`"
+    )
