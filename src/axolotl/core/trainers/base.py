@@ -383,6 +383,30 @@ class AxolotlTrainer(
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
 
+        self.prepare_loss_inputs(model, inputs)
+
+        if self.args.orpo_alpha:
+            return self.orpo_compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+
+        return super().compute_loss(
+            model,
+            inputs,
+            return_outputs=return_outputs,
+            num_items_in_batch=num_items_in_batch,
+        )
+
+    def prepare_loss_inputs(self, model, inputs: dict) -> dict:
+        """Apply the axolotl-specific fixups every loss path needs, in place.
+
+        Token accounting for tokens/sec, the Gemma4 `mm_token_type_ids` injection and
+        the Gemma3/4 packed-sequence attention-mask removal. Subclasses that replace
+        `compute_loss` outright must call this so the fixups do not drop out.
+        """
         # track number of tokens for tokens per second calculation
         if self.args.include_tkps and model.training:
             inputs_key = "labels" if "labels" in inputs else "input_ids"
@@ -435,20 +459,7 @@ class AxolotlTrainer(
         ):
             del inputs["attention_mask"]
 
-        if self.args.orpo_alpha:
-            return self.orpo_compute_loss(
-                model,
-                inputs,
-                return_outputs=return_outputs,
-                num_items_in_batch=num_items_in_batch,
-            )
-
-        return super().compute_loss(
-            model,
-            inputs,
-            return_outputs=return_outputs,
-            num_items_in_batch=num_items_in_batch,
-        )
+        return inputs
 
     @override
     def _prepare_context_parallel_inputs(self, model, inputs):
