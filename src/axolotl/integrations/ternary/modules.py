@@ -532,6 +532,23 @@ class TernaryLinear(nn.Module):
             torch.maximum(low, high).clamp_min(quant.SCALE_EPS),
         )
 
+    def quantization_scale(self) -> torch.Tensor:
+        """Return the fp32 scale one code step spans, broadcastable over the weight.
+
+        The two-plane grids report the *finer* of their pair: it is the step that
+        separates neighbouring states, so anything measured against it (init jitter,
+        for one) stays proportional to the grid rather than to the coarse plane.
+        """
+        weight = as_local(self.weight.detach())
+        if self.weight_scale == "trit_planes":
+            return self._trit_plane_scales(weight)[1]
+        if self.weight_scale == "dual":
+            return self._dual_scales(weight)[0]
+        scale = self._scale()
+        if scale is None:
+            return quant.absmean_scale(weight, self._scale_group_size())
+        return scale
+
     def _trit_plane_scales(
         self, weight: torch.Tensor, gathered: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:

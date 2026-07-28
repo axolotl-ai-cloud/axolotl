@@ -139,6 +139,7 @@ need explicit `target_modules`.
 | `group_size` | `null` | Block size for `weight_scale: group`, at least 32 (128 or 256 are the usual values). Required with it, rejected with every other mode. |
 | `activation_bits` | `8` | `8` for per-token int8 activation quantization, `null` for weight-only QAT. |
 | `init` | `absmean` | Latent initialization for the swapped modules: `absmean` (leave the FP weights alone), `ternary_fit` (data-free alternating scale/state solve), `ternary_fit_calibrated` (activation-aware refit plus error compensation over `init_calibration` sequences). `svid` is planned. Everything but `absmean` requires a scale-keeping `weight_scale` — see [Initialization](#initialization). |
+| `init_jitter` | `0.0` | Gaussian noise added to the latent after a fitting init, as a multiple of the module's quantization step (the finer of the pair under `dual`/`trit_planes`). Requires a fitting init; deterministic from `seed` and the module name. |
 | `smoothing` | `false` | *Planned.* Fold a SmoothQuant-style norm→linear rescale into the weights before the swap. |
 | `subln` | `false` | Insert BitDistill-style sub-norms before `o_proj`/`down_proj`. Changes the architecture: the norms are saved into the bf16 master, which then only reloads through this plugin, and no packed format has a tensor slot for them — `hf_bitnet` included, so `export.formats` has to be `master_bf16` (optionally with `mask_sign`). |
 
@@ -175,6 +176,16 @@ will tell you so up front rather than at export time.
 :::
 
 ### Initialization {#initialization}
+
+A fit writes the solver's own reconstruction into the latent, which leaves every weight
+at a cell centre — half a quantization step from the nearest assignment boundary. No
+optimizer step small enough to be stable moves a weight that far, so the codes stay frozen
+at the solver's output for the whole heal and the run trains only scales and norms;
+`ternary/flip_rate` reads a flat zero, which is the symptom to watch for.
+`init_jitter: 0.25` restores the distance-to-boundary spread the fit removed, so use it
+whenever a fitting init is paired with a conservative learning rate. It also gives the
+merge/ensemble recipe something to average: two seeds jitter differently, so their heals
+explore different assignments rather than converging on the one the solver picked.
 
 `init: absmean` starts the heal from the original FP weights and lets the quantizer round
 them at step 0. The fitting modes instead rewrite each latent so that its *quantized* form

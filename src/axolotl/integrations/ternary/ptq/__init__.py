@@ -24,6 +24,7 @@ first optimizer step.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -42,6 +43,11 @@ if TYPE_CHECKING:
     from ..swap import SwapEntry, SwapManifest
 
 LOG = get_logger(__name__)
+
+# odd multiplier and a 63-bit modulus so the seed and the name digest both reach every
+# bit of the generator seed
+_SEED_MIX: int = 0x9E3779B97F4A7C15
+_SEED_MODULUS: int = 2**63
 
 
 def initialize_model_latents(
@@ -90,6 +96,7 @@ def initialize_model_latents(
         from .calibrate import calibrate_model_latents
 
         calibrate_model_latents(model, manifest, cfg)
+        apply_init_jitter(model, manifest, cfg)
         return
 
     fitted = 0
@@ -98,6 +105,7 @@ def initialize_model_latents(
             continue
         fit_module_latent(module, entry)
         fitted += 1
+    apply_init_jitter(model, manifest, cfg)
     LOG.info(
         f"ternary: fitted {fitted} of {len(manifest.entries)} latents with "
         f"init: {ternary_cfg.init}"
@@ -154,7 +162,68 @@ def write_latent(
     module.refresh_scale_from_weight()
 
 
+def apply_init_jitter(
+    model: "PreTrainedModel", manifest: "SwapManifest", cfg: DictDefault
+) -> int:
+    """Perturb every fitted latent by `ternary.init_jitter` scale-relative gaussians.
+
+    A fit writes the solver's own reconstruction, so every latent lands exactly at a
+    cell centre — half a quantization step from the nearest assignment boundary. No
+    optimizer step small enough to be stable moves a weight that far, so the codes
+    stay frozen at the solver's output for the whole heal and only the scales and the
+    norms train. Jitter reintroduces the distance-to-boundary spread the fit removed.
+
+    The noise is drawn per module from the run's `seed` mixed with the module's name,
+    on the CPU, so a rerun of the same config reproduces it exactly whatever the
+    device placement, and a different `seed` gives a different draw.
+
+    Args:
+        model: The converted model, already initialized.
+        manifest: The swap manifest for `model`.
+        cfg: The axolotl config; supplies `ternary.init_jitter` and `seed`.
+
+    Returns:
+        The number of modules perturbed.
+    """
+    jitter = resolve_ternary_config(cfg).init_jitter
+    if not jitter:
+        return 0
+    seed = cfg.get("seed") if hasattr(cfg, "get") else None
+
+    perturbed = 0
+    for entry, module in iter_swapped(model, manifest):
+        weight = module.weight
+        if weight.device.type == "meta" or not weight.numel():
+            continue
+        with torch.no_grad():
+            noise = torch.randn(
+                weight.shape,
+                generator=_module_generator(entry.name, seed),
+                dtype=torch.float32,
+            )
+            step = module.quantization_scale().detach().to(torch.float32).cpu()
+            weight.add_((noise * step * jitter).to(weight.dtype).to(weight.device))
+        # the latent is deliberately off-grid now, so the module must stop claiming
+        # to be baked or the forward would skip the quantizer it exists to exercise
+        module._detect_baked()  # pylint: disable=protected-access
+        perturbed += 1
+
+    LOG.info(
+        f"ternary: jittered {perturbed} fitted latents by {jitter:g} of their "
+        f"quantization step (seed {seed})"
+    )
+    return perturbed
+
+
+def _module_generator(name: str, seed: int | None) -> torch.Generator:
+    """Return a CPU generator seeded from the run seed and the module's name."""
+    digest = hashlib.blake2b(name.encode("utf-8"), digest_size=8).digest()
+    mixed = (int(seed or 0) * _SEED_MIX + int.from_bytes(digest, "big")) % _SEED_MODULUS
+    return torch.Generator().manual_seed(mixed)
+
+
 __all__ = [
+    "apply_init_jitter",
     "fit_module_latent",
     "has_meta_latents",
     "initialize_model_latents",

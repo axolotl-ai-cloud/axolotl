@@ -427,6 +427,34 @@ class TernaryConfig(BaseModel):
             )
         return self
 
+    init_jitter: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Gaussian noise added to the latent after a fitting init, as a multiple of "
+            "the module's quantization scale (the finer of the two under 'dual' and "
+            "'trit_planes'). A fit writes the solver's own reconstruction, so every "
+            "latent sits at a cell centre — half a scale from any assignment boundary "
+            "— and the codes cannot flip: the heal trains scales and norms while the "
+            "assignment stays frozen at the solver's output. 0.25 puts a meaningful "
+            "fraction of weights within reach of a boundary; 0 keeps the exact "
+            "reconstruction."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_init_jitter(self) -> "TernaryConfig":
+        if self.init_jitter and self.init not in FITTING_INIT_MODES:
+            raise ValueError(
+                f"ternary.init_jitter perturbs the latent a fit wrote, but "
+                f"ternary.init: {self.init} leaves the full-precision weights in place "
+                "— the noise would corrupt real information rather than unfreeze a "
+                "solved assignment. Set a fitting init "
+                f"({', '.join(sorted(FITTING_INIT_MODES))}) or drop init_jitter"
+            )
+        return self
+
     @model_validator(mode="after")
     def _validate_init_scale_mode(self) -> "TernaryConfig":
         if self.init not in FITTING_INIT_MODES:
