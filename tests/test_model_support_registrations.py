@@ -1,7 +1,5 @@
 """Offline contracts for declarative transformers-registry payloads."""
 
-import logging
-
 from torch import nn
 from transformers.conversion_mapping import get_checkpoint_conversion_mapping
 from transformers.core_model_loading import (
@@ -22,6 +20,8 @@ from axolotl.model_support import (
     resolve_model_support,
 )
 from axolotl.utils.dict import DictDefault
+
+from tests.conftest import capture_axolotl_warnings
 
 
 class _Replacement(nn.Module):
@@ -147,7 +147,7 @@ def test_irreversible_weight_conversions_warn_at_registration(monkeypatch, caplo
         monkeypatch, WarningSupport(), "registrations_warn_test"
     )
     try:
-        with caplog.at_level(logging.WARNING):
+        with capture_axolotl_warnings(caplog):
             manager._apply_model_support_registrations()
     finally:
         register_checkpoint_conversion_mapping(
