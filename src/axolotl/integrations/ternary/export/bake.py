@@ -15,6 +15,7 @@ import axolotl
 from axolotl.utils.logging import get_logger
 
 from .. import quant
+from ..args import LEARNABLE_SCALE_MODES
 from ..swap import SwapManifest
 
 LOG = get_logger(__name__)
@@ -53,16 +54,36 @@ def bake_weight(
     non-zero fraction) and shift every magnitude, so the tensor is returned as is.
     Reading a per-row or five-value master through the per-tensor grid is the same
     corruption, so `weight_scale` selects the grid the tensor is read on.
+
+    Raises:
+        ValueError: If the tensor is still a latent under a learned scale mode. The
+            grid then lives in a `.scale` parameter that only the module has, so
+            falling back to the absmean statistic here would quantize the checkpoint
+            onto a scale the model never trained with.
     """
     if weight_scale == "dual":
         if quant.baked_dual_codes_and_scales(weight) is not None:
             return weight
+        _reject_unbakeable_latent(weight, weight_scale)
         low, high = quant.dual_absmean_scales(weight)
         return quant.fake_quant_weight_dual(weight.detach(), 1.0, low, high)
     group_size = _grid_group_size(weight, group_size, weight_scale)
     if quant.baked_codes_and_scale(weight, group_size) is not None:
         return weight
+    _reject_unbakeable_latent(weight, weight_scale)
     return quant.fake_quant_weight(weight.detach(), 1.0, group_size)
+
+
+def _reject_unbakeable_latent(weight: torch.Tensor, weight_scale: str) -> None:
+    if weight_scale not in LEARNABLE_SCALE_MODES:
+        return
+    raise ValueError(
+        f"a {tuple(weight.shape)} weight_scale: {weight_scale} tensor reached the "
+        "export baker as a latent, not on its grid. Its scale is a trained parameter "
+        "that the checkpoint alone cannot supply, so baking it here would invent an "
+        "absmean grid the model never used. The module hook `_post_training` bakes "
+        "these at save time — a master missing that bake is the bug to chase"
+    )
 
 
 def _grid_group_size(

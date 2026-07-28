@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Iterator
 from types import ModuleType
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 import torch
 import torch.nn.functional as F
@@ -221,6 +221,7 @@ class TernaryLinear(nn.Module):
         self.lambda_ = 1.0
         self._int8_warned = False
         self._baked_version: int | None = None
+        self._baked_grad_hook: Any = None
 
         self.add_module(SUBLN_ATTR, None)
         self.weight = nn.Parameter(
@@ -323,10 +324,15 @@ class TernaryLinear(nn.Module):
         self.lambda_ = float(min(max(value, 0.0), 1.0))
 
     def is_baked(self) -> bool:
-        """Whether `weight` still holds the exact ternary values it was baked to.
+        """Whether `weight` still holds the exact quantized values it was baked to.
 
-        An optimizer step (or any other in-place write) bumps the parameter's version
-        counter, which lapses the flag so the quantizer takes over again.
+        Training the latent lapses the flag, so the quantizer takes over again. Two
+        independent signals invalidate it, because neither covers the other: the
+        weight's autograd version counter catches any in-place write, and a gradient
+        landing on the weight catches the fused optimizers (`adamw_torch_fused` and
+        friends) that update through `torch._fused_adamw_` without touching the
+        version — those would otherwise keep a fit-initialized module "baked" for a
+        whole run, so it would never bake at save time.
         """
         return self.baked and self.weight._version == self._baked_version
 
@@ -406,20 +412,23 @@ class TernaryLinear(nn.Module):
             RuntimeError: If the write did not land — a silently unbaked parameter
                 would be saved as an ordinary FP checkpoint labelled as a master.
         """
-        if self.is_baked():
-            return
         self._record_final_lambda(model, name)
-        baked = self.baked_weight()
-        with torch.no_grad():
-            # write through the parameter: rebinding `.data` is a silent no-op on a
-            # DTensor, which would leave FP latents behind a `baked` flag
-            self.weight.copy_(baked)
-        if not bool(torch.equal(as_local(self.weight.detach()), as_local(baked))):
-            raise RuntimeError(
-                f"ternary: baking {name} did not land in its weight; the checkpoint "
-                "would hold latent values under a ternary manifest"
-            )
-        self._mark_baked()
+        # re-derive from the values rather than trusting the flag: this runs once per
+        # module, and a stale flag here writes the trained latents into the master
+        if not self._detect_baked():
+            baked = self.baked_weight()
+            with torch.no_grad():
+                # write through the parameter: rebinding `.data` is a silent no-op on
+                # a DTensor, which would leave FP latents behind a `baked` flag
+                self.weight.copy_(baked)
+            if not bool(torch.equal(as_local(self.weight.detach()), as_local(baked))):
+                raise RuntimeError(
+                    f"ternary: baking {name} did not land in its weight; the checkpoint "
+                    "would hold latent values under a ternary manifest"
+                )
+            self._mark_baked()
+        # unconditional: a module already on its grid still carries the parameters,
+        # and a master that ships them reloads into a different function
         for attr in SCALE_ATTRS:
             if getattr(self, attr) is not None:
                 setattr(self, attr, None)
@@ -558,12 +567,28 @@ class TernaryLinear(nn.Module):
                 quant.baked_codes_and_scale(weight, self._scale_group_size())
                 is not None
             )
-        self._baked_version = self.weight._version if self.baked else None
+        if self.baked:
+            self._mark_baked()
+        else:
+            self._clear_baked()
         return self.baked
 
     def _mark_baked(self) -> None:
+        """Flag the latent as holding exact quantized values, and arm the invalidators."""
         self.baked = True
         self._baked_version = self.weight._version
+        if self._baked_grad_hook is None and self.weight.requires_grad:
+            self._baked_grad_hook = self.weight.register_post_accumulate_grad_hook(
+                lambda _param: self._clear_baked()
+            )
+
+    def _clear_baked(self) -> None:
+        """A trained latent is no longer on the grid, whatever the optimizer did."""
+        self.baked = False
+        self._baked_version = None
+        if self._baked_grad_hook is not None:
+            self._baked_grad_hook.remove()
+            self._baked_grad_hook = None
 
     def _record_final_lambda(self, model: PreTrainedModel | None, name: str) -> None:
         """Note the λ the bake happened at, and warn when the schedule never finished."""
