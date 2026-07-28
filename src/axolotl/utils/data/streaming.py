@@ -24,9 +24,10 @@ def encode_streaming(
     max_tokens: int,
     text_column: str = "text",
     concatenate: bool = True,
-    encoder: PreTrainedTokenizerBase | None = None,
 ) -> Dict[str, List]:
-    res = (encoder or tokenizer)(
+    # None unless a plugin opted this tokenizer into an accelerated encoder
+    encoder = get_fast_encoder(tokenizer) or tokenizer
+    res = encoder(
         examples[text_column],
         truncation=True,
         max_length=max_tokens - 2,
@@ -224,7 +225,6 @@ def wrap_streaming_dataset(
             max_tokens=cfg.sequence_len,
             text_column=text_column,
             concatenate=cfg.pretraining_sample_concatenation is True,
-            encoder=get_fast_encoder(tokenizer),
         )
 
     if cfg.shuffle_merged_datasets:

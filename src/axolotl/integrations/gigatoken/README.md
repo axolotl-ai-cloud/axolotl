@@ -11,7 +11,7 @@ is left untouched, so chat-template and other prompt strategies are unaffected.
 ## Installation
 
 ```bash
-pip install gigatoken
+pip install axolotl[gigatoken]
 ```
 
 ## Usage

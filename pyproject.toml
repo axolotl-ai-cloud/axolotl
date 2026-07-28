@@ -132,6 +132,9 @@ vllm = [
 llmcompressor = [
     "llmcompressor>=0.10.0",
 ]
+gigatoken = [
+    "gigatoken>=0.10.0",
+]
 fbgemm-gpu = ["fbgemm-gpu-genai>=1.3.0"]
 opentelemetry = [
     "opentelemetry-api",

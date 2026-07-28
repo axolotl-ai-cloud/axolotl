@@ -55,12 +55,6 @@ class ModelInputConfig(BaseModel):
             "description": "Whether to use mistral-common tokenizer. If set to True, it will use the mistral-common tokenizer."
         },
     )
-    gigatoken: bool = Field(
-        default=True,
-        json_schema_extra={
-            "description": "When the gigatoken plugin is enabled, attach a gigatoken encoder to accelerate raw-text tokenization in the pretraining/completion path. Requires `pip install gigatoken`."
-        },
-    )
     tokenizer_type: str | None = Field(
         default=None,
         json_schema_extra={

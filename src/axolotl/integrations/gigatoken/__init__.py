@@ -25,17 +25,30 @@ from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 from axolotl.utils.tokenization import set_fast_encoder
 
+from .args import GigatokenArgs as GigatokenArgs
+
 LOG = get_logger(__name__)
+
+_GIGATOKEN_INSTALL_MESSAGE = (
+    "gigatoken is not installed. Install it with `pip install axolotl[gigatoken]`, "
+    "or set `gigatoken: false` to use the HuggingFace tokenizer."
+)
 
 
 class GigatokenPlugin(BasePlugin):
     """Plugin for gigatoken integration with Axolotl."""
 
+    def get_input_args(self):
+        return "axolotl.integrations.gigatoken.GigatokenArgs"
+
     def post_tokenizer_load(self, cfg, tokenizer):
         if not cfg.gigatoken:
             return None
 
-        import gigatoken as gt
+        try:
+            import gigatoken as gt
+        except ImportError as exc:
+            raise ImportError(_GIGATOKEN_INSTALL_MESSAGE) from exc
 
         try:
             encoder = gt.Tokenizer(tokenizer).as_hf()
