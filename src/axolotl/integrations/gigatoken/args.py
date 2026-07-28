@@ -12,25 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Module for handling gigatoken input arguments.
-"""
+"""Module for handling gigatoken input arguments."""
 
 from pydantic import BaseModel, Field
 
 
 class GigatokenArgs(BaseModel):
-    """
-    Input args for gigatoken.
-    """
+    """Input args for gigatoken."""
 
     gigatoken: bool = Field(
         default=True,
         json_schema_extra={
-            "description": (
-                "Attach a gigatoken encoder to accelerate raw-text tokenization in "
-                "the pretraining/completion path. Requires `pip install "
-                "axolotl[gigatoken]`."
-            )
+            "description": "Accelerate raw-text tokenization in the pretraining/completion path with gigatoken. Requires `pip install axolotl[gigatoken]`."
         },
     )

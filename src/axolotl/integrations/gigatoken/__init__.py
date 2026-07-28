@@ -15,10 +15,8 @@
 """
 Plugin for gigatoken integration with Axolotl.
 
-gigatoken is a fast CPU tokenizer. This plugin attaches a gigatoken-accelerated,
-HF-compatible encoder to the tokenizer, which the pretraining/completion path
-uses to speed up raw-text tokenization. It does not replace the tokenizer, so
-chat-template and other prompt strategies are unaffected.
+Attaches a gigatoken-accelerated, HF-compatible encoder alongside the tokenizer
+rather than replacing it, so only raw-text encoding is affected.
 """
 
 from axolotl.integrations.base import BasePlugin
@@ -28,11 +26,6 @@ from axolotl.utils.tokenization import set_fast_encoder
 from .args import GigatokenArgs as GigatokenArgs
 
 LOG = get_logger(__name__)
-
-_GIGATOKEN_INSTALL_MESSAGE = (
-    "gigatoken is not installed. Install it with `pip install axolotl[gigatoken]`, "
-    "or set `gigatoken: false` to use the HuggingFace tokenizer."
-)
 
 
 class GigatokenPlugin(BasePlugin):
@@ -48,7 +41,10 @@ class GigatokenPlugin(BasePlugin):
         try:
             import gigatoken as gt
         except ImportError as exc:
-            raise ImportError(_GIGATOKEN_INSTALL_MESSAGE) from exc
+            raise ImportError(
+                "gigatoken is not installed. Run `pip install axolotl[gigatoken]`, "
+                "or set `gigatoken: false`."
+            ) from exc
 
         try:
             encoder = gt.Tokenizer(tokenizer).as_hf()

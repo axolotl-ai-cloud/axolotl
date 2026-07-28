@@ -25,7 +25,6 @@ def encode_streaming(
     text_column: str = "text",
     concatenate: bool = True,
 ) -> Dict[str, List]:
-    # None unless a plugin opted this tokenizer into an accelerated encoder
     encoder = get_fast_encoder(tokenizer) or tokenizer
     res = encoder(
         examples[text_column],
