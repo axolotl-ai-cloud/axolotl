@@ -61,6 +61,12 @@ def bake_weight(
             falling back to the absmean statistic here would quantize the checkpoint
             onto a scale the model never trained with.
     """
+    if weight_scale == "trit_planes":
+        if quant.baked_trit_plane_codes_and_scales(weight) is not None:
+            return weight
+        _reject_unbakeable_latent(weight, weight_scale)
+        first, second = quant.trit_plane_absmean_scales(weight)
+        return quant.fake_quant_weight_trit_planes(weight.detach(), 1.0, first, second)
     if weight_scale == "dual":
         if quant.baked_dual_codes_and_scales(weight) is not None:
             return weight
@@ -136,12 +142,22 @@ def derive_codes_and_scale(
         `(codes, scale)` — int8 codes shaped like `weight`, and the fp32 `s16` scale
         (0-dim per tensor, or one per group / row). Under `dual` the codes are the
         five-state `{-2..2}` grid and the scale is `(out_features, 2)` holding
-        `(s_lo, s_hi)` per row. An all-zero tensor yields zero codes and the
+        `(s_lo, s_hi)` per row; under `trit_planes` the codes are the two trit planes
+        and the scale holds `(s1, s2)` per row. An all-zero tensor yields zero codes and the
         `SCALE_EPS` floor so downstream reciprocals stay finite.
 
     Raises:
         ValueError: If `weight` is not baked on `weight_scale`'s grid.
     """
+    if weight_scale == "trit_planes":
+        free_sum = quant.baked_trit_plane_codes_and_scales(weight)
+        if free_sum is None:
+            raise ValueError(
+                f"tensor of shape {tuple(weight.shape)} is not baked: no per-row "
+                "(s1, s2) reproduces its values on the nine-value free-sum grid"
+            )
+        planes, first, second = free_sum
+        return planes, torch.cat([first, second], dim=-1)
     if weight_scale == "dual":
         dual = quant.baked_dual_codes_and_scales(weight)
         if dual is None:
@@ -169,6 +185,10 @@ def dequantize_derived(
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """Reconstruct the weight a `derive_codes_and_scale` pair stands for."""
+    if weight_scale == "trit_planes":
+        return quant.dequantize_trit_plane_codes(
+            codes, scale[:, :1], scale[:, 1:], dtype
+        )
     if weight_scale == "dual":
         return quant.dequantize_dual_codes(codes, scale[:, :1], scale[:, 1:], dtype)
     return quant.dequantize_codes(codes, scale, dtype)

@@ -135,7 +135,7 @@ need explicit `target_modules`.
 
 | Option | Default | Description |
 |---|---|---|
-| `weight_scale` | `absmean` | `absmean` (per-tensor statistic), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly), `learnable_row` (one trained scale per output channel), `dual` (five values `{0, ±s_lo, ±s_hi}` from two trained per-row scales). `absmean` and `learnable` are per-tensor and export everywhere; the rest are `master_bf16` only. |
+| `weight_scale` | `absmean` | `absmean` (per-tensor statistic), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly), `learnable_row` (one trained scale per output channel), `dual` (five values `{0, ±s_lo, ±s_hi}` from two trained per-row scales), `trit_planes` (PTQTP-style free sum of two trit planes — per row two scales `s1 >= s2` and per weight two trits, `w = t1·s1 + t2·s2`, spanning up to nine values `{0, ±s2, ±(s1−s2), ±s1, ±(s1+s2)}`). `absmean` and `learnable` are per-tensor and export everywhere; the rest are `master_bf16` only. |
 | `group_size` | `null` | Block size for `weight_scale: group`, at least 32 (128 or 256 are the usual values). Required with it, rejected with every other mode. |
 | `activation_bits` | `8` | `8` for per-token int8 activation quantization, `null` for weight-only QAT. |
 | `init` | `absmean` | Latent initialization for the swapped modules: `absmean` (leave the FP weights alone), `ternary_fit` (data-free alternating scale/state solve), `ternary_fit_calibrated` (activation-aware refit plus error compensation over `init_calibration` sequences). `svid` is planned. Everything but `absmean` requires a scale-keeping `weight_scale` — see [Initialization](#initialization). |
@@ -154,13 +154,21 @@ Setting the block under any other `init` is a config error rather than a silentl
 knob.
 
 ::: {.callout-note}
+`trit_planes` stores ~4.25 bpw against the single plane's ~1.58, which puts it in the
+research/ablation tier rather than the deployment one: two planes are what buys the extra
+levels, and no packed format has a slot for the second. It is master-only by validation,
+and its scales round through the master's dtype rather than f16 — a *sum* of two scales
+only lands back on the stored value if both are already exact there.
+:::
+
+::: {.callout-note}
 The schema accepts `init: svid` and `smoothing: true`, but nothing implements them yet, so
 the plugin raises `NotImplementedError` rather than training a model that silently ignored
 them.
 :::
 
 ::: {.callout-warning}
-`weight_scale: group`, `learnable_row` and `dual` cannot be exported to `hf_bitnet`,
+`weight_scale: group`, `learnable_row`, `dual` and `trit_planes` cannot be exported to `hf_bitnet`,
 `gguf_tq2_0`, `gguf_tq1_0`, `i2_s` or `mask_sign` — those formats carry a single per-tensor
 scale and a single trit plane. Those modes are `master_bf16` only, and the config validator
 will tell you so up front rather than at export time.

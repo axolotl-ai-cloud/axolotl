@@ -19,7 +19,7 @@ from axolotl.integrations.ternary import TernaryPlugin
 from axolotl.integrations.ternary.modules import iter_ternary_modules
 from axolotl.utils.dict import DictDefault
 
-LEARNED_SCALE_MODES = ("learnable", "learnable_row", "dual")
+LEARNED_SCALE_MODES = ("learnable", "learnable_row", "dual", "trit_planes")
 STEPS = 8
 
 

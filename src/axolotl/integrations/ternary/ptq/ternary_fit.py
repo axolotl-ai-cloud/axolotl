@@ -32,7 +32,7 @@ from typing import get_args
 import torch
 
 from .. import quant
-from ..args import WeightScaleMode
+from ..args import TWO_PLANE_SCALE_MODES, WeightScaleMode
 
 # TWN threshold rule: codes start nonzero where |w| exceeds this fraction of mean|w|
 TWN_THRESHOLD: float = 0.75
@@ -96,8 +96,8 @@ def fit_ternary(
     """
     _validate(weight, scale_mode, group_size)
     dense = weight.detach().to(torch.float32)
-    if scale_mode == "dual":
-        return _fit_dual(dense, max_iters, tol, ridge_lambda)
+    if scale_mode in TWO_PLANE_SCALE_MODES:
+        return _fit_two_plane(dense, scale_mode, max_iters, tol, ridge_lambda)
 
     view, scale_shape = _unit_view(dense, scale_mode, group_size)
     fallback = view.abs().mean(-1).clamp_min(quant.SCALE_EPS)
@@ -166,7 +166,7 @@ def solve_scale(
     """
     _validate(weight, scale_mode, group_size)
     dense = weight.detach().to(torch.float32)
-    if scale_mode == "dual":
+    if scale_mode in TWO_PLANE_SCALE_MODES:
         return _solve_dual(dense, codes.to(torch.float32), ridge_lambda)
     view, scale_shape = _unit_view(dense, scale_mode, group_size)
     code_view, _ = _unit_view(codes.detach().to(torch.float32), scale_mode, group_size)
@@ -175,15 +175,33 @@ def solve_scale(
 
 
 def dequantize_fit(
-    codes: torch.Tensor, scale: torch.Tensor, dtype: torch.dtype = torch.float32
+    codes: torch.Tensor,
+    scale: torch.Tensor,
+    dtype: torch.dtype = torch.float32,
+    scale_mode: str = "dual",
 ) -> torch.Tensor:
-    """Return the reconstruction `codes · f16(scale)` a fit stands for, in `dtype`."""
-    scale_f16 = quant.f16_round_scale(scale.detach().to(torch.float32))
+    """Return the reconstruction `codes · scale` a fit stands for, in `dtype`.
+
+    Args:
+        codes: Codes shaped like the weight, or `(2, ...)` planes.
+        scale: fp32 scales in the fit's layout.
+        dtype: Reconstruction dtype.
+        scale_mode: Only distinguishes the two-plane grids: `trit_planes` sums both
+            planes, so its scales round through `dtype` rather than f16 — see
+            `quant.trit_plane_grid_scales`.
+    """
+    dense = scale.detach().to(torch.float32)
     if codes.ndim == 3:
+        # positional, as documented on `solve_scale`: scale column k belongs to plane k
+        rounded = (
+            dense.to(dtype).to(torch.float32)
+            if scale_mode == "trit_planes"
+            else quant.f16_round_scale(dense)
+        )
         planes = codes.to(torch.float32)
-        values = planes[0] * scale_f16[:, :1] + planes[1] * scale_f16[:, 1:]
+        values = planes[0] * rounded[:, :1] + planes[1] * rounded[:, 1:]
         return values.to(dtype)
-    return quant.dequantize_codes(codes, scale_f16, dtype)
+    return quant.dequantize_codes(codes, quant.f16_round_scale(dense), dtype)
 
 
 def _validate(weight: torch.Tensor, scale_mode: str, group_size: int | None) -> None:
@@ -249,23 +267,37 @@ def _objective(
     return (residual * residual).sum(-1)
 
 
-def _fit_dual(
-    weight: torch.Tensor, max_iters: int, tol: float, ridge_lambda: float
+def _fit_two_plane(
+    weight: torch.Tensor,
+    scale_mode: str,
+    max_iters: int,
+    tol: float,
+    ridge_lambda: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Alternate the 2x2 ridge solve with the mode's assignment until it stops paying.
+
+    `dual` and `trit_planes` share every step but the assignment: the five-value grid
+    admits one non-zero plane per weight, the free sum admits both. The normal
+    equations are the same because both read the planes as the two columns of a
+    least-squares system.
+    """
+    assign = _assign_trit_planes if scale_mode == "trit_planes" else _assign_dual
     _, row_scale = fit_ternary(weight, "learnable_row", max_iters=max_iters, tol=tol)
     high = row_scale.reshape(-1)
     # seeding s_lo at half s_hi makes the five-value grid a refinement of the
     # single-plane solution, so the first assignment can only reduce its error
     scales = torch.stack([0.5 * high, high], dim=-1).clamp_min(quant.SCALE_EPS)
-    planes = _assign_dual(weight, scales)
-    objective = _objective_dual(weight, planes, scales)
+    planes = assign(weight, scales)
+    objective = _objective_two_plane(weight, planes, scales, scale_mode)
 
     for _ in range(max_iters):
         next_scales = torch.sort(
             _solve_dual(weight, planes, ridge_lambda), dim=-1
         ).values
-        next_planes = _assign_dual(weight, next_scales)
-        next_objective = _objective_dual(weight, next_planes, next_scales)
+        next_planes = assign(weight, next_scales)
+        next_objective = _objective_two_plane(
+            weight, next_planes, next_scales, scale_mode
+        )
         better = next_objective < objective
         if not bool(better.any()):
             break
@@ -300,10 +332,21 @@ def _assign_dual(weight: torch.Tensor, scales: torch.Tensor) -> torch.Tensor:
     )
 
 
-def _objective_dual(
-    weight: torch.Tensor, planes: torch.Tensor, scales: torch.Tensor
+def _assign_trit_planes(weight: torch.Tensor, scales: torch.Tensor) -> torch.Tensor:
+    """Assign every weight the nearest of the nine free sums `t1·s1 + t2·s2`.
+
+    Positional, like `_assign_dual`: plane 0 carries `scales[:, 0]`, so the quantizer's
+    `(s1, s2)` ordering is applied on the way in and undone on the way out.
+    """
+    first, second = scales[:, 1:], scales[:, :1]
+    planes = quant.trit_plane_codes(weight, first, second)
+    return torch.stack([planes[1], planes[0]]).to(torch.float32)
+
+
+def _objective_two_plane(
+    weight: torch.Tensor, planes: torch.Tensor, scales: torch.Tensor, scale_mode: str
 ) -> torch.Tensor:
-    residual = weight - dequantize_fit(planes, scales)
+    residual = weight - dequantize_fit(planes, scales, scale_mode=scale_mode)
     return (residual * residual).sum(-1)
 
 

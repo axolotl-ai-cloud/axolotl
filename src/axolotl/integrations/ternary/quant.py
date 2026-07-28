@@ -31,6 +31,15 @@ CODES_PER_BYTE: int = 4
 # a five-value code is snapshot as two ternary planes, sign and level
 DUAL_PLANES: int = 2
 
+# non-zero magnitudes a free-sum row can hold: s2, s1 - s2, s1, s1 + s2
+TRIT_PLANE_MAGNITUDES: int = 4
+
+# the non-negative half of the free-sum codebook as `(t1, t2)` pairs, ordered by the
+# magnitude each selects in `trit_plane_values`
+TRIT_PLANE_STATES: torch.Tensor = torch.tensor(
+    [[0, 0], [0, 1], [1, -1], [1, 0], [1, 1]], dtype=torch.int8
+)
+
 # elements the baked-weight probe inspects before committing to a full-tensor check
 BAKED_PROBE_ELEMENTS: int = 1024
 
@@ -315,6 +324,248 @@ def baked_dual_codes_and_scales(
     return codes, low, high
 
 
+def _ordered_trit_scales(
+    scale_hi: torch.Tensor, scale_lo: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the free-sum pair as `(s1, s2)` with `s1 >= s2 >= 0`, floored."""
+    first = scale_hi.to(torch.float32).clamp_min(SCALE_EPS)
+    second = scale_lo.to(torch.float32).clamp_min(SCALE_EPS)
+    return torch.maximum(first, second), torch.minimum(first, second)
+
+
+def trit_plane_values(
+    scale_1: torch.Tensor, scale_2: torch.Tensor
+) -> tuple[torch.Tensor, ...]:
+    """Return the non-negative half of the free-sum codebook, in state order.
+
+    The grid is symmetric, so a magnitude only has to choose among
+    `(0, s2, s1 - s2, s1, s1 + s2)` and the sign flips both trits at once.
+
+    Args:
+        scale_1: fp32 `(rows, 1)` larger scale.
+        scale_2: fp32 `(rows, 1)` smaller scale.
+
+    Returns:
+        Five broadcastable magnitudes, aligned with `TRIT_PLANE_STATES`.
+    """
+    zero = torch.zeros_like(scale_1)
+    return (zero, scale_2, scale_1 - scale_2, scale_1, scale_1 + scale_2)
+
+
+def trit_plane_codes(
+    weight: torch.Tensor, scale_1: torch.Tensor, scale_2: torch.Tensor
+) -> torch.Tensor:
+    """Assign every weight the nearest of the nine free-sum values `t1·s1 + t2·s2`.
+
+    Ties go to the smaller magnitude, the same discipline `round_half_even` gives the
+    single-plane grid at `0.5·s` and `dual_codes` gives the five-value one.
+
+    Args:
+        weight: Latent weight of shape `(rows, cols)`.
+        scale_1: fp32 larger scale, broadcastable to `weight` (per row: `(rows, 1)`).
+        scale_2: fp32 smaller scale, same shape as `scale_1`.
+
+    Returns:
+        int8 planes of shape `(DUAL_PLANES, rows, cols)`, every entry in `{-1, 0, 1}`.
+    """
+    first, second = _ordered_trit_scales(scale_1, scale_2)
+    values = weight.to(torch.float32)
+    magnitude = values.abs()
+
+    candidates = trit_plane_values(first, second)
+    best_state = torch.zeros_like(magnitude, dtype=torch.int8)
+    best_distance = (magnitude - candidates[0]).abs()
+    best_magnitude = candidates[0].expand_as(magnitude).clone()
+    for state, candidate in enumerate(candidates[1:], start=1):
+        distance = (magnitude - candidate).abs()
+        closer = (distance < best_distance) | (
+            (distance == best_distance) & (candidate < best_magnitude)
+        )
+        best_state = torch.where(closer, state, best_state.to(torch.int64)).to(
+            torch.int8
+        )
+        best_magnitude = torch.where(
+            closer, candidate.expand_as(magnitude), best_magnitude
+        )
+        best_distance = torch.minimum(best_distance, distance)
+
+    sign = torch.sign(values).to(torch.int8)
+    trits = TRIT_PLANE_STATES.to(weight.device)[best_state.to(torch.int64)]
+    return (trits.permute(2, 0, 1) * sign).contiguous()
+
+
+def dequantize_trit_plane_codes(
+    planes: torch.Tensor,
+    scale_1_f16: torch.Tensor,
+    scale_2_f16: torch.Tensor,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Return `t1·s1 + t2·s2` for the assigned trits — the baked values."""
+    first = planes[0].to(torch.float32) * scale_1_f16.to(torch.float32)
+    second = planes[1].to(torch.float32) * scale_2_f16.to(torch.float32)
+    return (first + second).to(dtype)
+
+
+def trit_plane_absmean_scales(
+    weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the fp32 per-row `(s1, s2)` the free-sum grid starts from.
+
+    The five-value seed already partitions each row into a coarse and a fine level;
+    the free sum reads them as the two planes directly, which makes the nine-value
+    grid a refinement of the five-value one rather than a fresh guess.
+    """
+    low, high = dual_absmean_scales(weight)
+    return high, torch.minimum(low, high)
+
+
+def trit_plane_grid_scales(
+    scale_1: torch.Tensor, scale_2: torch.Tensor, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the ordered pair rounded through `dtype` — the grid the master stores.
+
+    The single-plane master rounds its scale through f16 because every value is one
+    scale times a trit, so storage rounding cannot move it off the grid. A free-sum
+    value is a *sum* of two scales, and `store(s1 + s2)` is not `store(s1) + store(s2)`:
+    unless both scales are already exact in the master's dtype, reloading the master
+    and re-deriving the pair from its magnitudes lands an ulp away and the fixed point
+    is lost. Rounding here, before the assignment, keeps the codebook and the stored
+    values the same set. The mode is master-only, so no packer needs the f16 scale.
+    """
+    first, second = _ordered_trit_scales(scale_1, scale_2)
+    return first.to(dtype).to(torch.float32), second.to(dtype).to(torch.float32)
+
+
+def baked_trit_plane_codes_and_scales(
+    weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None:
+    """Recover `(planes, s1, s2)` from a baked free-sum weight, or `None` if latent.
+
+    A baked row holds values drawn from `{0, ±s2, ±(s1-s2), ±s1, ±(s1+s2)}`, so at
+    most four distinct non-zero magnitudes survive and the pair is over-determined by
+    any two of them. Which two, though, depends on the states the row actually used —
+    a row that never takes the same-sign `(±1, ±1)` state has `s1` as its largest
+    magnitude, not `s1 + s2`. Rather than infer the roles, this enumerates the closed
+    forms for every plausible pairing and keeps, per row, the first whose grid
+    reproduces the row *exactly*; degenerate rows (`s2 = 0`, `s1 = s2`, unused states)
+    fall out of the same list.
+
+    Args:
+        weight: Candidate baked weight of shape `(rows, cols)`.
+
+    Returns:
+        `(planes, s1, s2)` — int8 `(DUAL_PLANES, rows, cols)` planes and two fp32
+        `(rows, 1)` scales — or `None` when some row is not on any free-sum grid.
+    """
+    stored = weight.detach()
+    values = stored.to(torch.float32)
+    if values.ndim != 2:
+        return None
+    if _too_many_magnitudes(values):
+        return None
+
+    top = _top_magnitudes(values)
+    resolved_1 = torch.zeros_like(top[0])
+    resolved_2 = torch.zeros_like(top[0])
+    settled = torch.zeros_like(top[0], dtype=torch.bool)
+    for scale_1, scale_2 in _trit_plane_hypotheses(top):
+        if bool(settled.all()):
+            break
+        first, second = trit_plane_grid_scales(
+            scale_1.clamp_min(SCALE_EPS), scale_2.clamp_min(SCALE_EPS), stored.dtype
+        )
+        planes = trit_plane_codes(values, first, second)
+        # in the master's own dtype: a recovered scale is a sum or difference of
+        # stored magnitudes, so `s1 + s2` only lands back on the stored value once
+        # it is rounded the way the bake rounded it
+        recovered = dequantize_trit_plane_codes(planes, first, second, stored.dtype).to(
+            torch.float32
+        )
+        exact = (recovered == values).all(dim=-1, keepdim=True)
+        take = exact & ~settled
+        resolved_1 = torch.where(take, first, resolved_1)
+        resolved_2 = torch.where(take, second, resolved_2)
+        settled = settled | take
+    if not bool(settled.all()):
+        return None
+
+    return trit_plane_codes(values, resolved_1, resolved_2), resolved_1, resolved_2
+
+
+def _too_many_magnitudes(values: torch.Tensor) -> bool:
+    """Cheap negative probe: a baked free-sum row holds at most four magnitudes."""
+    row = values[0].abs()
+    return bool(torch.unique(row).numel() > TRIT_PLANE_MAGNITUDES + 1)
+
+
+def _top_magnitudes(values: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    """Return the `TRIT_PLANE_MAGNITUDES` largest distinct magnitudes per row, zero-padded."""
+    magnitude = values.abs()
+    top = [magnitude.amax(dim=-1, keepdim=True)]
+    for _ in range(TRIT_PLANE_MAGNITUDES - 1):
+        # the next magnitude strictly below the one already taken
+        lower = torch.where(magnitude < top[-1], magnitude, torch.zeros_like(magnitude))
+        top.append(lower.amax(dim=-1, keepdim=True))
+    return tuple(top)
+
+
+def _trit_plane_hypotheses(
+    top: tuple[torch.Tensor, ...],
+) -> tuple[tuple[torch.Tensor, torch.Tensor], ...]:
+    """Candidate `(s1, s2)` readings of a baked row's magnitudes, exact ones first.
+
+    A row that uses the `(±1, 0)` and `(0, ±1)` states stores `s1` and `s2` verbatim,
+    so every pairing of two observed magnitudes is tried before any pairing derived by
+    arithmetic — those reconstruct a scale the master never stored and can land an ulp
+    off. The arithmetic readings then cover the rows that leave a single-plane state
+    unused, and the degenerate `s2 = 0` / `s1 = s2` collapses close the list.
+    """
+    first, second, third, fourth = top
+    pairs = [
+        (top[i], top[j])
+        for i in range(TRIT_PLANE_MAGNITUDES)
+        for j in range(i + 1, TRIT_PLANE_MAGNITUDES)
+    ]
+    zero = torch.zeros_like(first)
+    return tuple(pairs) + (
+        (second, first - second),  # m1 = s1 + s2, m2 = s1
+        (first - second, second),  # m1 = s1 + s2, m2 = s2
+        (first - third, third),  # m1 = s1 + s2, m3 = s2
+        (0.5 * (first + second), 0.5 * (first - second)),  # m2 = s1 - s2
+        (first, first - second),  # m1 = s1, m2 = s1 - s2
+        (first, zero),  # a single plane carries the row
+        (0.5 * first, 0.5 * first),  # s1 == s2, the sum is the only larger state
+    )
+
+
+def fake_quant_weight_trit_planes(
+    weight: torch.Tensor,
+    lambda_: float = 1.0,
+    scale_1: torch.Tensor | None = None,
+    scale_2: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Return `w + λ · (free-sum(w) - w)` in the weight dtype (no autograd wiring).
+
+    Args:
+        weight: Latent weight.
+        lambda_: Quantization strength in `[0, 1]`.
+        scale_1: fp32 larger scale per row; derived by `trit_plane_absmean_scales`
+            when `None`.
+        scale_2: fp32 smaller scale per row, ordered defensively against `scale_1`.
+
+    Returns:
+        Effective weight, same shape and dtype as `weight`.
+    """
+    if lambda_ <= 0.0:
+        return weight
+    if scale_1 is None or scale_2 is None:
+        scale_1, scale_2 = trit_plane_absmean_scales(weight)
+    first, second = trit_plane_grid_scales(scale_1, scale_2, weight.dtype)
+    planes = trit_plane_codes(weight, first, second)
+    quantized = dequantize_trit_plane_codes(planes, first, second, weight.dtype)
+    return _interp(weight, quantized, lambda_)
+
+
 def fake_quant_weight_dual(
     weight: torch.Tensor,
     lambda_: float = 1.0,
@@ -530,6 +781,51 @@ class FakeQuantWeightDualSTE(torch.autograd.Function):
         return grad_output, None, grad_lo, grad_hi
 
 
+class FakeQuantWeightTritPlanesSTE(torch.autograd.Function):
+    """Straight-through estimator for the nine-value free-sum weight path.
+
+    Forward applies `fake_quant_weight_trit_planes`; backward is the identity into the
+    latent weight plus, for each scale, the true gradient of the plane it multiplies —
+    the effective weight is linear in both scales, so each plane's trit *is* the local
+    derivative.
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        weight: torch.Tensor,
+        lambda_: float,
+        scale_1: torch.Tensor,
+        scale_2: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return the effective weight; see `fake_quant_weight_trit_planes`."""
+        ctx.lambda_ = lambda_
+        if lambda_ > 0.0 and (scale_1.requires_grad or scale_2.requires_grad):
+            first, second = trit_plane_grid_scales(scale_1, scale_2, weight.dtype)
+            ctx.save_for_backward(
+                trit_plane_codes(weight, first, second),
+                scale_1,
+                scale_2,
+                # the forward reads the pair as (max, min); where that swapped the two,
+                # each argument drove the other's plane and takes its gradient
+                scale_1.to(torch.float32) < scale_2.to(torch.float32),
+            )
+        return fake_quant_weight_trit_planes(weight, lambda_, scale_1, scale_2)
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
+        """Pass the incoming gradient through, splitting the scale grad by plane."""
+        if not ctx.saved_tensors:
+            return grad_output, None, None, None
+        planes, scale_1, scale_2, swapped = ctx.saved_tensors
+        grad = grad_output.to(torch.float32) * ctx.lambda_
+        first = grad * planes[0].to(torch.float32)
+        second = grad * planes[1].to(torch.float32)
+        grad_1 = _reduce_to(torch.where(swapped, second, first), scale_1)
+        grad_2 = _reduce_to(torch.where(swapped, first, second), scale_2)
+        return grad_output, None, grad_1, grad_2
+
+
 class ActQuantSTE(torch.autograd.Function):
     """Straight-through estimator for the per-token activation fake-quant path."""
 
@@ -564,6 +860,18 @@ def fake_quant_weight_dual_ste(
     if scale_lo is None or scale_hi is None:
         scale_lo, scale_hi = dual_absmean_scales(weight.detach())
     return FakeQuantWeightDualSTE.apply(weight, lambda_, scale_lo, scale_hi)
+
+
+def fake_quant_weight_trit_planes_ste(
+    weight: torch.Tensor,
+    lambda_: float = 1.0,
+    scale_1: torch.Tensor | None = None,
+    scale_2: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Autograd-wired `fake_quant_weight_trit_planes` (STE backward)."""
+    if scale_1 is None or scale_2 is None:
+        scale_1, scale_2 = trit_plane_absmean_scales(weight.detach())
+    return FakeQuantWeightTritPlanesSTE.apply(weight, lambda_, scale_1, scale_2)
 
 
 def act_quant_ste(x: torch.Tensor, lambda_: float = 1.0) -> torch.Tensor:

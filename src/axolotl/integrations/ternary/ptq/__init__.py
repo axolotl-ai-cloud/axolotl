@@ -143,7 +143,11 @@ def write_latent(
         scale: fp32 scales from `fit_ternary`, in that function's layout.
     """
     with torch.no_grad():
-        module.weight.copy_(dequantize_fit(codes, scale, module.weight.dtype))
+        module.weight.copy_(
+            dequantize_fit(
+                codes, scale, module.weight.dtype, scale_mode=module.weight_scale
+            )
+        )
     module._detect_baked()  # pylint: disable=protected-access
     # the reconstruction is on the fit's own grid, so the module re-derives exactly
     # the fit's scales from it — in every layout, including the dual pair

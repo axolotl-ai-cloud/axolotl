@@ -16,7 +16,7 @@ from transformers import PreTrainedModel
 from axolotl.utils.logging import get_logger
 
 from . import quant
-from .args import LEARNABLE_SCALE_MODES, WeightScaleMode
+from .args import LEARNABLE_SCALE_MODES, TWO_PLANE_SCALE_MODES, WeightScaleMode
 
 LOG = get_logger(__name__)
 
@@ -29,7 +29,7 @@ SCALE_MODES: frozenset[str] = frozenset(get_args(WeightScaleMode))
 UNIMPLEMENTED_SCALE_MODES: frozenset[str] = frozenset()
 
 # scale modes carrying one scale per output channel, shaped `(out_features, 1)`
-ROW_SCALE_MODES: frozenset[str] = frozenset({"learnable_row", "dual"})
+ROW_SCALE_MODES: frozenset[str] = frozenset({"learnable_row", "dual", "trit_planes"})
 
 # the grids the fused Triton kernels and the W2A8 int8 forward implement; everything
 # else runs the eager oracle until a kernel for its scale layout lands
@@ -238,7 +238,7 @@ class TernaryLinear(nn.Module):
             )
         else:
             self.register_parameter("scale", None)
-        if weight_scale == "dual":
+        if weight_scale in TWO_PLANE_SCALE_MODES:
             self.scale_lo = nn.Parameter(
                 torch.zeros(out_features, 1, device=device, dtype=torch.float32)
             )
@@ -359,7 +359,10 @@ class TernaryLinear(nn.Module):
         """
         with torch.no_grad():
             weight = as_local(self.weight.detach())
-            if self.weight_scale == "dual":
+            if self.weight_scale == "trit_planes":
+                first, second = self._trit_plane_scales(weight)
+                codes = quant.trit_plane_codes(weight, first, second)
+            elif self.weight_scale == "dual":
                 low, high = self._dual_scales(weight)
                 codes = quant.dual_state_planes(quant.dual_codes(weight, low, high))
             else:
@@ -375,7 +378,8 @@ class TernaryLinear(nn.Module):
     def code_count(self) -> int:
         """Number of codes `code_snapshot` covers — the local shard under FSDP2."""
         count = as_local(self.weight.detach()).numel()
-        return count * quant.DUAL_PLANES if self.weight_scale == "dual" else count
+        two_plane = self.weight_scale in TWO_PLANE_SCALE_MODES
+        return count * quant.DUAL_PLANES if two_plane else count
 
     def refresh_scale_from_weight(self) -> None:
         """Re-seed the learnable scale(s) from the current latent weight.
@@ -392,6 +396,11 @@ class TernaryLinear(nn.Module):
             or not weight.numel()
             or as_dtensor(weight) is not None
         ):
+            return
+        if self.weight_scale == "trit_planes":
+            first, second = self._initial_trit_plane_scales()
+            self.scale_lo = nn.Parameter(second.log().to(weight.device))
+            self.scale = nn.Parameter(first.log().to(weight.device))
             return
         if self.weight_scale == "dual":
             low, high = self._initial_dual_scales()
@@ -485,7 +494,7 @@ class TernaryLinear(nn.Module):
         `None` in the statistic modes, and under `dual` — that grid carries a pair,
         see `_dual_scales`.
         """
-        if self.scale is None or self.weight_scale == "dual":
+        if self.scale is None or self.weight_scale in TWO_PLANE_SCALE_MODES:
             return None
         # a (1,) scale sharded over N ranks leaves most of them an empty local
         scale = _gathered(self.scale) if gathered else self.scale
@@ -523,8 +532,34 @@ class TernaryLinear(nn.Module):
             torch.maximum(low, high).clamp_min(quant.SCALE_EPS),
         )
 
+    def _trit_plane_scales(
+        self, weight: torch.Tensor, gathered: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the ordered fp32 per-row `(s1, s2)` pair aligned with `weight`.
+
+        Falls back to the statistic once `_post_training` has folded the parameters
+        into the values and dropped them.
+        """
+        if self.scale_lo is None or self.scale is None:
+            return quant.trit_plane_absmean_scales(weight)
+        second: torch.Tensor = self.scale_lo
+        first: torch.Tensor = self.scale
+        if gathered:
+            first, second = _gathered(first), _gathered(second)
+        elif as_dtensor(weight) is None:
+            # per-row scales shard the way the rows do, so the local halves match
+            first, second = as_local(first), as_local(second)
+        first, second = first.float().exp(), second.float().exp()
+        return (
+            torch.maximum(first, second).clamp_min(quant.SCALE_EPS),
+            torch.minimum(first, second).clamp_min(quant.SCALE_EPS),
+        )
+
     def _bake(self, weight: torch.Tensor, gathered: bool) -> torch.Tensor:
         """Return `weight` on the module's quantization grid, exactly."""
+        if self.weight_scale == "trit_planes":
+            first, second = self._trit_plane_scales(weight, gathered=gathered)
+            return quant.fake_quant_weight_trit_planes(weight, 1.0, first, second)
         if self.weight_scale == "dual":
             low, high = self._dual_scales(weight, gathered=gathered)
             return quant.fake_quant_weight_dual(weight, 1.0, low, high)
@@ -549,6 +584,14 @@ class TernaryLinear(nn.Module):
             return recovered[1], recovered[2]
         return quant.dual_absmean_scales(weight)
 
+    def _initial_trit_plane_scales(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the fp32 `(s1, s2)` pair the learnable free-sum scales start from."""
+        weight = as_local(self.weight.detach())
+        recovered = quant.baked_trit_plane_codes_and_scales(weight)
+        if recovered is not None:
+            return recovered[1], recovered[2]
+        return quant.trit_plane_absmean_scales(weight)
+
     def _detect_baked(self) -> bool:
         """Flag the module when its weight already holds exactly the quantized values.
 
@@ -560,7 +603,9 @@ class TernaryLinear(nn.Module):
         weight = as_local(self.weight.detach())
         if weight.device.type == "meta" or not weight.numel():
             return False
-        if self.weight_scale == "dual":
+        if self.weight_scale == "trit_planes":
+            self.baked = quant.baked_trit_plane_codes_and_scales(weight) is not None
+        elif self.weight_scale == "dual":
             self.baked = quant.baked_dual_codes_and_scales(weight) is not None
         else:
             self.baked = (
@@ -620,6 +665,11 @@ class TernaryLinear(nn.Module):
             self.refresh_scale_from_weight()
 
     def _quant_weight(self, lambda_: float) -> torch.Tensor:
+        if self.weight_scale == "trit_planes":
+            first, second = self._trit_plane_scales(self.weight)
+            return quant.fake_quant_weight_trit_planes_ste(
+                self.weight, lambda_, first, second
+            )
         if self.weight_scale == "dual":
             low, high = self._dual_scales(self.weight)
             return quant.fake_quant_weight_dual_ste(self.weight, lambda_, low, high)

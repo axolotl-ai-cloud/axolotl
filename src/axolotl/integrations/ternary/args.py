@@ -17,7 +17,9 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-WeightScaleMode = Literal["absmean", "group", "learnable", "learnable_row", "dual"]
+WeightScaleMode = Literal[
+    "absmean", "group", "learnable", "learnable_row", "dual", "trit_planes"
+]
 LambdaSchedule = Literal["linear", "sigmoid", "none"]
 InitMode = Literal["absmean", "ternary_fit", "ternary_fit_calibrated", "svid"]
 DistillMode = Literal["kd_plugin", "inprocess"]
@@ -42,12 +44,15 @@ SUBLN_UNSUPPORTED_FORMATS: frozenset[str] = GGUF_FORMATS | {"hf_bitnet"}
 # scale modes no packed format can carry: more than one scale per tensor ('group',
 # 'learnable_row') or more than one plane ('dual')
 NON_PER_TENSOR_SCALE_MODES: frozenset[str] = frozenset(
-    {"group", "learnable_row", "dual"}
+    {"group", "learnable_row", "dual", "trit_planes"}
 )
 # scale modes whose scale is an optimizer-visible parameter rather than a statistic
 LEARNABLE_SCALE_MODES: frozenset[str] = frozenset(
-    {"learnable", "learnable_row", "dual"}
+    {"learnable", "learnable_row", "dual", "trit_planes"}
 )
+
+# scale modes carrying two trit planes per weight rather than one
+TWO_PLANE_SCALE_MODES: frozenset[str] = frozenset({"dual", "trit_planes"})
 # init modes that consume `ternary.init_calibration`
 CALIBRATED_INIT_MODES: frozenset[str] = frozenset({"ternary_fit_calibrated"})
 # init modes that solve a scale and write the solution into the latent
@@ -287,6 +292,8 @@ class TernaryConfig(BaseModel):
         description=(
             "Weight scale mode: 'absmean' (per-tensor statistic), 'group' (per "
             "group_size block), 'learnable' (per-tensor scale trained jointly), "
+            "'trit_planes' (PTQTP-style free sum of two trit planes, nine values per "
+            "row, ~4.25 bpw, research tier: master_bf16 only), "
             "'learnable_row' (one trained scale per output channel), 'dual' (five "
             "values {0, ±s_lo, ±s_hi} from two trained per-row scales). 'absmean' and "
             "'learnable' are per-tensor and export everywhere; the rest export to "
