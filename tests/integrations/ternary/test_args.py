@@ -29,7 +29,7 @@ def test_defaults_match_design():
     assert cfg.fused_fake_quant is True
     assert cfg.log_code_flip_every == 100
     assert cfg.distill.mode is None
-    assert cfg.distill.logits_weight == 1.0
+    assert cfg.distill.logits_weight == 0.5
     assert cfg.distill.logits_temperature == 2.0
     assert cfg.distill.hidden_weight == 0.0
     assert cfg.distill.attn_relation_layer is None

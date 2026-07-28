@@ -198,7 +198,7 @@ Under `ternary.distill`:
 | `mode` | `null` | `null` (pure QAT), `kd_plugin` (compose with the KD integration), `inprocess` (frozen teacher loaded beside the student). |
 | `teacher_model` | `base_model` | Teacher checkpoint. Defaults to the unquantized base you are converting. |
 | `teacher_device_map` | `null` | `device_map` for the `inprocess` teacher (e.g. `auto`, `cpu`) so a teacher that does not fit beside the student can be offloaded. |
-| `logits_weight` | `1.0` | Mixing coefficient between CE and logits-KD: `(1 - w)·CE + w·τ²·KL`. Must be in `[0, 1]`. |
+| `logits_weight` | `0.5` | Mixing coefficient between CE and logits-KD: `(1 - w)·CE + w·τ²·KL`. Must be in `[0, 1]`. Pure KD (`1.0`) matches the teacher's temperature-flattened tails at the expense of head sharpness — on short heals it measures better on teacher-KL but worse on perplexity than the CE blend, so reserve it for long OneBit-style distillation runs. |
 | `logits_temperature` | `2.0` | Softmax temperature for the logits-KD term. |
 | `hidden_weight` | `0.0` | Cosine hidden-state feature-KD weight. `inprocess` only; `0` disables. |
 | `attn_relation_layer` | `null` | *Experimental.* Layer index for single-layer attention-relation KD. `inprocess` only; negative indexes count from the last layer. Results are sensitive to the layer choice. |
@@ -234,7 +234,7 @@ teachers up to ~4B, or on boxes with GPUs to spare.
 ternary:
   distill:
     mode: inprocess
-    logits_weight: 1.0
+    logits_weight: 0.5
     logits_temperature: 2.0
     hidden_weight: 0.1
 ```

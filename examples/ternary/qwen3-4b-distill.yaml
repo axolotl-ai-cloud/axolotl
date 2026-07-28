@@ -15,7 +15,7 @@ ternary:
     # room for both; use `mode: kd_plugin` with a vllm-served teacher for larger ones
     mode: inprocess
     teacher_model: Qwen/Qwen3-4B
-    logits_weight: 1.0
+    logits_weight: 0.5
     logits_temperature: 2.0
     hidden_weight: 0.1
   export:

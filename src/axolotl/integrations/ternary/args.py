@@ -72,11 +72,14 @@ class TernaryDistillConfig(BaseModel):
         ),
     )
     logits_weight: float = Field(
-        default=1.0,
+        default=0.5,
         ge=0.0,
         le=1.0,
         description=(
-            "Mixing coefficient between CE and logits-KD: `(1 - w)·CE + w·τ²·KL`."
+            "Mixing coefficient between CE and logits-KD: `(1 - w)·CE + w·τ²·KL`. "
+            "Pure KD (1.0) matches the teacher's temperature-flattened tails at the "
+            "expense of head sharpness and measures worse on perplexity for short "
+            "heals; keep the CE blend unless running a long OneBit-style distill."
         ),
     )
     logits_temperature: float = Field(
