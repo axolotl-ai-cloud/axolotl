@@ -280,8 +280,8 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             raise ValueError(
                 f"The {split} dataset has no samples left after dropping samples with "
                 "no trainable tokens. Every sample had all of its labels masked to "
-                "-100, so there is nothing to train on. Check `train_on_inputs` and "
-                "your prompt strategy / chat template."
+                "-100, so there is nothing to train on. Check `train_on_inputs`, "
+                "`roles_to_train`, and your prompt strategy / chat template."
             )
 
     try:
