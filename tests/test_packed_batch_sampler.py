@@ -126,6 +126,10 @@ class TestMultipackDropLastStats:
     Regression tests for drop_last efficiency accounting (#3848)
     """
 
+    # RandomSampler is what the training code actually uses; SequentialSampler
+    # keeps the cases deterministic. The assertions below only depend on bin/batch
+    # counts and aggregate token stats, which are invariant to sampling order here.
+    @pytest.mark.parametrize("sampler_cls", [SequentialSampler, RandomSampler])
     @pytest.mark.parametrize("sequential", [True, False])
     @pytest.mark.parametrize(
         "lengths, expected_batches",
@@ -140,12 +144,14 @@ class TestMultipackDropLastStats:
             ([9] * 10, 2),
         ],
     )
-    def test_stats_track_kept_bins(self, lengths, expected_batches, sequential):
+    def test_stats_track_kept_bins(
+        self, lengths, expected_batches, sequential, sampler_cls
+    ):
         batch_size = 5
         batch_max_len = 10
         lengths = np.array(lengths, dtype=np.int32)
         sampler = MultipackBatchSampler(
-            sampler=SequentialSampler(range(len(lengths))),
+            sampler=sampler_cls(range(len(lengths))),
             batch_size=batch_size,
             batch_max_len=batch_max_len,
             lengths=lengths,
