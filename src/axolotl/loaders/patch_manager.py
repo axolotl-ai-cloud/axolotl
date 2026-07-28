@@ -44,29 +44,6 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
-def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
-    """``save_pretrained(save_original_format=True)`` reverses registered
-    conversions; surface irreversible entries at registration instead of at
-    save time."""
-    for transform in transforms:
-        problems = []
-        if getattr(transform, "quantization_operation", None) is not None:
-            problems.append("a quantization operation")
-        for operation in getattr(transform, "operations", None) or ():
-            try:
-                _ = operation.reverse_op
-            except Exception:  # pylint: disable=broad-exception-caught
-                problems.append(f"no reverse for {type(operation).__name__}")
-        if problems:
-            LOG.warning(
-                "Weight conversion registered for %s cannot be reversed at save "
-                "time (%s); saving will fail or emit the converted (non-original) "
-                "checkpoint layout.",
-                key,
-                "; ".join(problems),
-            )
-
-
 class PatchManager:
     """Manages the application of patches during the model loading process."""
 
@@ -243,7 +220,7 @@ class PatchManager:
             for key, entries in conversions.items():
                 entries = list(entries)
                 register_checkpoint_conversion_mapping(key, entries, overwrite=True)
-                _warn_irreversible_weight_transforms(key, entries)
+                self._warn_irreversible_weight_transforms(key, entries)
 
         patch_provider = registrations.patch_mappings
         patch_mapping = patch_provider() if patch_provider is not None else None
@@ -251,6 +228,29 @@ class PatchManager:
             from transformers.monkey_patching import register_patch_mapping
 
             register_patch_mapping(dict(patch_mapping), overwrite=True)
+
+    @staticmethod
+    def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
+        """``save_pretrained(save_original_format=True)`` reverses registered
+        conversions; surface irreversible entries at registration instead of at
+        save time."""
+        for transform in transforms:
+            problems = []
+            if getattr(transform, "quantization_operation", None) is not None:
+                problems.append("a quantization operation")
+            for operation in getattr(transform, "operations", None) or ():
+                try:
+                    _ = operation.reverse_op
+                except Exception:  # pylint: disable=broad-exception-caught
+                    problems.append(f"no reverse for {type(operation).__name__}")
+            if problems:
+                LOG.warning(
+                    "Weight conversion registered for %s cannot be reversed at save "
+                    "time (%s); saving will fail or emit the converted (non-original) "
+                    "checkpoint layout.",
+                    key,
+                    "; ".join(problems),
+                )
 
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
