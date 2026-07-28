@@ -351,7 +351,7 @@ def _load_raw_datasets(
         if (split == "train" and cfg.sample_packing) or (
             split == "test" and cfg.eval_sample_packing
         ):
-            dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+            dataset, _ = process_datasets_for_packing(cfg, dataset, None, split=split)
 
         # Deduplicate before saving so the saved dataset is already de-duplicated
         if cfg.dataset_exact_deduplication:
