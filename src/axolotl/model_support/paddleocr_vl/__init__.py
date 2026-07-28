@@ -1,14 +1,27 @@
 """PaddleOCR-VL model support (ERNIE-4.5 decoder + NaViT vision encoder)."""
 
-from typing import TYPE_CHECKING
-
 from axolotl.model_support.base import ModelSupport, Unsupported
+from axolotl.model_support.profile import (
+    ModelMatchers,
+    ModelProfile,
+    ModelStrategyOverrides,
+)
 from axolotl.model_support.registry import register_model_support
+from axolotl.model_support.templates import IMAGE_TEXT_TO_TEXT
 
-if TYPE_CHECKING:
-    from transformers import ProcessorMixin
 
-    from axolotl.processing_strategies import ProcessingStrategy
+def _get_processing_strategy_cls() -> type:
+    from .processing import PaddleOCRVLProcessingStrategy
+
+    return PaddleOCRVLProcessingStrategy
+
+
+def _matches_processor(processor) -> bool:
+    try:
+        from transformers.models.paddleocr_vl import PaddleOCRVLProcessor
+    except ImportError:
+        return False
+    return isinstance(processor, PaddleOCRVLProcessor)
 
 
 @register_model_support
@@ -16,31 +29,19 @@ class PaddleOCRVLSupport(ModelSupport):
     """Descriptor for PaddleOCR-VL."""
 
     model_types = ("paddleocr_vl",)
-
-    is_multimodal = True
-    capabilities = {
-        "cut_cross_entropy": Unsupported(
-            "CCE does not patch PaddleOCRVLForConditionalGeneration."
+    profile = ModelProfile(
+        family=IMAGE_TEXT_TO_TEXT,
+        capabilities={
+            "cut_cross_entropy": Unsupported(
+                "CCE does not patch PaddleOCRVLForConditionalGeneration."
+            ),
+            "liger": Unsupported(),
+            "lora_kernels": Unsupported(
+                "The fused QKV/O source rewrite does not match PaddleOCRAttention's forward."
+            ),
+        },
+        strategies=ModelStrategyOverrides(
+            processing_strategy_cls=_get_processing_strategy_cls,
         ),
-        "liger": Unsupported(),
-        "lora_kernels": Unsupported(
-            "The fused QKV/O source rewrite does not match PaddleOCRAttention's forward."
-        ),
-    }
-
-    def get_auto_model_cls(self) -> type:
-        from transformers import AutoModelForImageTextToText
-
-        return AutoModelForImageTextToText
-
-    def get_processing_strategy_cls(self) -> type["ProcessingStrategy"]:
-        from .processing import PaddleOCRVLProcessingStrategy
-
-        return PaddleOCRVLProcessingStrategy
-
-    def matches_processor(self, processor: "ProcessorMixin") -> bool:
-        try:
-            from transformers.models.paddleocr_vl import PaddleOCRVLProcessor
-        except ImportError:
-            return False
-        return isinstance(processor, PaddleOCRVLProcessor)
+        matchers=ModelMatchers(processor=_matches_processor),
+    )
