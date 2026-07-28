@@ -1929,11 +1929,16 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # Skip architectures that declare the fused kernels unsupported.
             # model_config_type is usually resolved later (normalize_config),
             # which disables any kernels auto-enabled here.
-            from axolotl.model_support import Unsupported, get_model_support
+            from axolotl.model_support import (
+                Unsupported,
+                get_model_support,
+                resolve_model_support,
+            )
 
             support = get_model_support(data.get("model_config_type"))
             if support is not None and isinstance(
-                support.capabilities.get("lora_kernels"), Unsupported
+                resolve_model_support(support).capabilities.get("lora_kernels"),
+                Unsupported,
             ):
                 return data
 
