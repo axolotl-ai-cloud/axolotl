@@ -63,7 +63,7 @@ def min_cfg(temp_dir):
             "pad_token": "<|end_of_text|>",
             "eos_token": "<|eot_id|>",
         },
-        "max_steps": 5,
+        "max_steps": 10,
         "output_dir": temp_dir,
         "use_tensorboard": True,
         "save_first_step": False,
