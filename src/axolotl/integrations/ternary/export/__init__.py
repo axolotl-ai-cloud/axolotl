@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
-from ..args import ExportFormat, resolve_ternary_config
+from ..args import EmbeddingDtype, ExportFormat, resolve_ternary_config
 from ..swap import SwapManifest
 from . import bake, parity
 
@@ -81,14 +81,21 @@ def run_export(
 
     artifacts: dict[str, Path] = {}
     for fmt in requested:
-        artifacts[fmt] = _write_artifact(fmt, master, output, manifest, gate)
+        artifacts[fmt] = _write_artifact(
+            fmt, master, output, manifest, gate, ternary_cfg.export.embedding_dtype
+        )
         if gate:
             _gate_artifact(fmt, master, artifacts[fmt], manifest)
     return artifacts
 
 
 def _write_artifact(
-    fmt: ExportFormat, master: Path, output: Path, manifest: SwapManifest, gate: bool
+    fmt: ExportFormat,
+    master: Path,
+    output: Path,
+    manifest: SwapManifest,
+    gate: bool,
+    embedding_dtype: EmbeddingDtype = "bf16",
 ) -> Path:
     if fmt == "master_bf16":
         if output.resolve() == master.resolve():
@@ -102,12 +109,19 @@ def _write_artifact(
         from . import gguf_tq
 
         return gguf_tq.export_gguf_tq(
-            master, output / fmt, manifest, GGUF_QUANT_TYPES[fmt], gate=gate
+            master,
+            output / fmt,
+            manifest,
+            GGUF_QUANT_TYPES[fmt],
+            gate=gate,
+            embedding_dtype=embedding_dtype,
         )
     if fmt == "i2_s":
         from . import i2s
 
-        return i2s.export_i2s(master, output / fmt, manifest, gate=gate)
+        return i2s.export_i2s(
+            master, output / fmt, manifest, gate=gate, embedding_dtype=embedding_dtype
+        )
     raise ValueError(f"unknown ternary export format {fmt!r}")
 
 

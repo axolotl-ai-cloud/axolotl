@@ -22,6 +22,7 @@ LambdaSchedule = Literal["linear", "sigmoid", "none"]
 InitMode = Literal["absmean", "ptq_itf", "svid"]
 DistillMode = Literal["kd_plugin", "inprocess"]
 ExportFormat = Literal["master_bf16", "hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s"]
+EmbeddingDtype = Literal["bf16", "int8"]
 
 PER_TENSOR_SCALE_FORMATS: frozenset[str] = frozenset(
     {"hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s"}
@@ -138,6 +139,16 @@ class TernaryExportConfig(BaseModel):
             "plus a dequant-error bound) and fail the export when it does not match."
         ),
     )
+    embedding_dtype: EmbeddingDtype = Field(
+        default="bf16",
+        description=(
+            "Weight dtype for the token embeddings and the output head (one tensor "
+            "when they are tied). 'int8' packs them as Q8_0, which roughly halves the "
+            "unembedding DRAM traffic that dominates decode. GGUF formats only: the "
+            "bf16 master always keeps full-precision embeddings because it is the "
+            "re-finetunable artifact, and hf_bitnet has no scheme for quantized ones."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_formats(self) -> "TernaryExportConfig":
@@ -145,6 +156,27 @@ class TernaryExportConfig(BaseModel):
         if duplicates:
             raise ValueError(
                 f"duplicate ternary.export.formats entries: {sorted(duplicates)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_embedding_dtype(self) -> "TernaryExportConfig":
+        if self.embedding_dtype == "bf16":
+            return self
+        honoring = [fmt for fmt in self.formats if fmt in GGUF_FORMATS]
+        if not honoring:
+            raise ValueError(
+                "ternary.export.embedding_dtype: int8 is only representable in the "
+                f"GGUF formats {sorted(GGUF_FORMATS)}; master_bf16 always keeps "
+                "full-precision embeddings (it is the re-finetunable artifact) and "
+                "hf_bitnet has no quantized-embedding scheme. Add a GGUF format or "
+                "drop embedding_dtype."
+            )
+        exempt = [fmt for fmt in self.formats if fmt not in GGUF_FORMATS]
+        if exempt:
+            LOG.warning(
+                f"ternary: embedding_dtype: int8 applies to {sorted(honoring)}; "
+                f"{sorted(exempt)} keep full-precision embeddings and the output head"
             )
         return self
 

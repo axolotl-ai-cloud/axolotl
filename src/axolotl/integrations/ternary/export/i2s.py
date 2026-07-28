@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from ..args import EmbeddingDtype
 from ..swap import SwapEntry, SwapManifest
 from .gguf_tq import _scale_bytes, _ternary_to_unsigned, require_gguf, write_gguf
 
@@ -84,6 +85,7 @@ def export_i2s(
     output_dir: str | Path,
     manifest: SwapManifest,
     gate: bool = True,
+    embedding_dtype: EmbeddingDtype = "bf16",
 ) -> Path:
     """Write a bitnet.cpp-compatible I2_S GGUF file and return its path.
 
@@ -93,6 +95,7 @@ def export_i2s(
         manifest: The swap manifest naming the ternary tensors.
         gate: Round-trip every packed tensor's bytes back to codes before they reach
             the container writer.
+        embedding_dtype: `int8` packs the token embeddings and output head as Q8_0.
 
     Raises:
         ImportError: If the `gguf` package is not installed.
@@ -119,6 +122,7 @@ def export_i2s(
         ggml_type=ggml_type,
         filename="ggml-model-i2_s.gguf",
         gate_format="i2_s" if gate else None,
+        embedding_dtype=embedding_dtype,
     )
 
 

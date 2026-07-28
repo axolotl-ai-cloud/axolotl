@@ -10,21 +10,32 @@ Correctness is established three ways, none of which trusts the packer:
 import importlib.util
 import math
 import struct
+from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
+from axolotl.integrations.ternary import quant
+from axolotl.integrations.ternary.export import parity
 from axolotl.integrations.ternary.export.gguf_tq import (
+    Q8_0_BLOCK_BYTES,
+    Q8_0_BLOCK_SIZE,
+    Q8_0_QMAX,
     QK_K,
     TQ1_0_BLOCK_BYTES,
     TQ1_0_QH_BYTES,
     TQ1_0_QS_BYTES,
     TQ2_0_BLOCK_BYTES,
     TQ2_0_QS_BYTES,
+    decode_q8_0,
+    dequantize_q8_0,
     export_gguf_tq,
     gguf_available,
+    pack_q8_0,
     pack_tq1_0,
     pack_tq2_0,
+    quantize_q8_0,
     unpack_tq1_0,
     unpack_tq2_0,
 )
@@ -600,3 +611,323 @@ def test_write_gate_record_lists_every_gated_tensor(tmp_path):
         "artifact": "ggml-model-i2_s.gguf",
         "tensors": {"q_proj": "abc"},
     }
+
+
+# ------------------------------------------------------------- Q8_0 embeddings
+
+
+def test_q8_0_micro_fixture_matches_hand_computed_bytes():
+    """One 32-weight block, arithmetic spelled out: d = 63.5/127 = 0.5, f16 0x3800."""
+    weight = torch.zeros(1, Q8_0_BLOCK_SIZE)
+    weight[0, 0] = 63.5  # amax, so q = +127
+    weight[0, 1] = -63.5  # q = -127
+    weight[0, 2] = 0.25  # 0.25/0.5 = 0.5 -> round-half-even -> 0
+    weight[0, 3] = 0.75  # 0.75/0.5 = 1.5 -> round-half-even -> 2
+    weight[0, 4] = 1.0  # 1.0/0.5  = 2.0 -> 2
+
+    codes, scales = quantize_q8_0(weight)
+    packed = pack_q8_0(codes, scales)
+
+    assert float(scales[0, 0]) == 0.5
+    assert codes[0, :5].tolist() == [127, -127, 0, 2, 2]
+    expected = [0x00, 0x38, 0x7F, 0x81, 0x00, 0x02, 0x02] + [0x00] * 27
+    assert packed.numel() == Q8_0_BLOCK_BYTES == 34
+    assert packed.tolist() == expected
+
+
+@pytest.mark.parametrize("shape", [(1, 32), (4, 64), (7, 256), (3, 32 * 11)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_q8_0_roundtrip(shape, dtype):
+    torch.manual_seed(shape[0] * shape[1])
+    weight = (torch.randn(*shape) * 0.05).to(dtype)
+
+    codes, scales = quantize_q8_0(weight)
+    packed = pack_q8_0(codes, scales)
+    decoded_codes, decoded_scales = decode_q8_0(packed, shape)
+
+    assert packed.numel() == shape[0] * (shape[1] // Q8_0_BLOCK_SIZE) * Q8_0_BLOCK_BYTES
+    assert torch.equal(decoded_codes, codes)
+    assert torch.equal(decoded_scales, scales)
+    # every element lands within half a quantization step of the master
+    step = decoded_scales.repeat_interleave(Q8_0_BLOCK_SIZE, dim=1)
+    error = (
+        weight.to(torch.float32) - dequantize_q8_0(decoded_codes, decoded_scales)
+    ).abs()
+    assert bool((error <= 0.5 * step).all())
+
+
+def test_q8_0_codes_stay_in_the_symmetric_int8_range():
+    torch.manual_seed(0)
+    weight = torch.randn(16, 128) * 3.0
+
+    codes, _ = quantize_q8_0(weight)
+
+    assert int(codes.amin()) >= -Q8_0_QMAX
+    assert int(codes.amax()) <= Q8_0_QMAX
+
+
+def test_q8_0_handles_an_all_zero_block():
+    weight = torch.zeros(2, Q8_0_BLOCK_SIZE)
+
+    codes, scales = quantize_q8_0(weight)
+
+    assert not int(codes.abs().sum())
+    assert not float(scales.abs().sum())
+    assert torch.equal(decode_q8_0(pack_q8_0(codes, scales), (2, 32))[0], codes)
+
+
+def test_q8_0_survives_a_scale_that_underflows_f16():
+    """2e-6 / 127 = 1.6e-8 rounds to an f16 zero, which would kill the whole block."""
+    weight = torch.full((1, Q8_0_BLOCK_SIZE), 2e-6)
+
+    assert float(quant.f16_round_scale(torch.tensor(2e-6 / Q8_0_QMAX))) == 0.0
+    codes, scales = quantize_q8_0(weight)
+
+    assert float(scales[0, 0]) == pytest.approx(2.0**-24)
+    assert int(codes[0, 0]) == 34
+    step = scales.repeat_interleave(Q8_0_BLOCK_SIZE, dim=1)
+    error = (weight - dequantize_q8_0(codes, scales)).abs()
+    assert bool((error <= 0.5 * step).all())
+
+
+@pytest.mark.parametrize("cols", [33, 31, 100])
+def test_q8_0_rejects_a_row_length_that_is_not_a_multiple_of_32(cols):
+    """llama.cpp cannot load a padded row, so this has to fail before the write."""
+    weight = torch.randn(2, cols)
+
+    with pytest.raises(ValueError, match="multiple of 32"):
+        quantize_q8_0(weight)
+    with pytest.raises(ValueError, match="multiple of 32"):
+        decode_q8_0(torch.zeros(68, dtype=torch.uint8), (2, cols))
+
+
+def test_q8_0_rejects_mismatched_scales():
+    codes, scales = quantize_q8_0(torch.randn(4, 64))
+
+    with pytest.raises(ValueError, match="block scales"):
+        pack_q8_0(codes, scales[:, :1])
+
+
+def test_q8_0_gate_accepts_a_faithful_pack_and_catches_a_flipped_byte():
+    torch.manual_seed(0)
+    weight = (torch.randn(8, 128) * 0.05).to(torch.bfloat16)
+    packed = pack_q8_0(*quantize_q8_0(weight))
+
+    assert parity.gate_q8_0_bytes(packed, weight) == []
+
+    corrupted = packed.clone()
+    corrupted[5] ^= 0xFF
+    assert "codes differ" in parity.gate_q8_0_bytes(corrupted, weight)[0]
+
+    rescaled = packed.clone()
+    rescaled[0] ^= 0x0F
+    assert "block scale drifted" in parity.gate_q8_0_bytes(rescaled, weight)[0]
+
+
+# ------------------------------------------- GGUF writer path (stubbed container)
+
+
+class _StubWriter:
+    """Records what `write_gguf` hands the container, so the writer path is testable.
+
+    The `gguf` package is optional and absent in CI; only the container belongs to
+    it, and the tensor selection, naming and packing above it are ours.
+    """
+
+    def __init__(self, path, arch_name):
+        self.path = Path(path)
+        self.arch_name = arch_name
+        self.tensors: dict[str, tuple] = {}
+        self.closed = False
+
+    def add_tensor(self, name, data, raw_shape=None, raw_dtype=None):
+        self.tensors[name] = (data, raw_shape, raw_dtype)
+
+    def write_header_to_file(self):
+        self.path.write_bytes(b"GGUF")
+
+    def write_kv_data_to_file(self):
+        pass
+
+    def write_tensors_to_file(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+    def __getattr__(self, name):  # add_name, add_block_count, ...
+        if name.startswith("add_"):
+            return lambda *args, **kwargs: None
+        raise AttributeError(name)
+
+
+class _StubNameMap:
+    _SUFFIXES = {
+        "self_attn.q_proj": "attn_q",
+        "self_attn.k_proj": "attn_k",
+        "self_attn.v_proj": "attn_v",
+        "self_attn.o_proj": "attn_output",
+        "mlp.gate_proj": "ffn_gate",
+        "mlp.up_proj": "ffn_up",
+        "mlp.down_proj": "ffn_down",
+        "input_layernorm": "attn_norm",
+        "post_attention_layernorm": "ffn_norm",
+    }
+
+    def get_name(self, key, try_suffixes=()):
+        stem = key.removesuffix(".weight")
+        if stem == "model.embed_tokens":
+            return "token_embd.weight"
+        if stem in ("lm_head", "model.norm"):
+            return ("output" if stem == "lm_head" else "output_norm") + ".weight"
+        if stem.startswith("model.layers."):
+            _, _, index, rest = stem.split(".", 3)
+            mapped = self._SUFFIXES.get(rest)
+            return f"blk.{index}.{mapped}.weight" if mapped else None
+        return None
+
+
+def _stub_gguf(latest_writer: list):
+    from types import SimpleNamespace
+
+    def make_writer(path, arch_name):
+        writer = _StubWriter(path, arch_name)
+        latest_writer.append(writer)
+        return writer
+
+    return SimpleNamespace(
+        MODEL_ARCH=SimpleNamespace(LLAMA="llama"),
+        MODEL_ARCH_NAMES={"llama": "llama"},
+        GGMLQuantizationType=SimpleNamespace(TQ2_0="TQ2_0", TQ1_0="TQ1_0", Q8_0="Q8_0"),
+        LlamaFileType=SimpleNamespace(MOSTLY_TQ2_0="MOSTLY_TQ2_0"),
+        get_tensor_name_map=lambda arch, layers: _StubNameMap(),
+        GGUFWriter=make_writer,
+    )
+
+
+def _swapped_master(directory, tie_word_embeddings: bool):
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    from axolotl.integrations.ternary.export import bake
+    from axolotl.integrations.ternary.modules import iter_ternary_modules
+    from axolotl.integrations.ternary.swap import convert_model
+    from axolotl.utils.dict import DictDefault
+
+    torch.manual_seed(0)
+    config = LlamaConfig(
+        vocab_size=64,
+        hidden_size=QK_K,
+        intermediate_size=QK_K * 2,
+        num_hidden_layers=1,
+        num_attention_heads=8,
+        num_key_value_heads=4,
+        max_position_embeddings=64,
+        tie_word_embeddings=tie_word_embeddings,
+    )
+    model = LlamaForCausalLM(config).to(torch.bfloat16)
+    manifest = convert_model(
+        model, DictDefault({"output_dir": str(directory), "ternary": {}})
+    )
+    for name, module in iter_ternary_modules(model):
+        module._post_training(model, name)
+    model.save_pretrained(directory)
+    manifest.save(directory)
+    bake.write_quantizer_metadata(directory, manifest)
+    return manifest
+
+
+@pytest.fixture(name="stub_gguf")
+def fixture_stub_gguf(monkeypatch):
+    from axolotl.integrations.ternary.export import gguf_tq
+
+    writers: list[_StubWriter] = []
+    monkeypatch.setattr(gguf_tq, "require_gguf", lambda: _stub_gguf(writers))
+    return writers
+
+
+def test_int8_embeddings_are_written_as_q8_0(tmp_path, stub_gguf):
+    manifest = _swapped_master(tmp_path / "master", tie_word_embeddings=False)
+
+    export_gguf_tq(
+        tmp_path / "master", tmp_path / "out", manifest, embedding_dtype="int8"
+    )
+
+    tensors = stub_gguf[-1].tensors
+    for name in ("token_embd.weight", "output.weight"):
+        data, raw_shape, raw_dtype = tensors[name]
+        assert raw_dtype == "Q8_0"
+        assert raw_shape == (64, QK_K)
+        assert data.dtype == np.uint8
+        assert data.size == 64 * (QK_K // Q8_0_BLOCK_SIZE) * Q8_0_BLOCK_BYTES
+    # the ternary tensors are untouched by the embedding dtype
+    assert tensors["blk.0.attn_q.weight"][2] == "TQ2_0"
+    assert tensors["blk.0.attn_norm.weight"][0].dtype == np.float32
+
+
+def test_tied_embeddings_emit_one_quantized_tensor(tmp_path, stub_gguf):
+    """llama.cpp derives `output.weight` from `token_embd.weight` when they are tied."""
+    manifest = _swapped_master(tmp_path / "master", tie_word_embeddings=True)
+
+    export_gguf_tq(
+        tmp_path / "master", tmp_path / "out", manifest, embedding_dtype="int8"
+    )
+
+    tensors = stub_gguf[-1].tensors
+    assert "token_embd.weight" in tensors
+    assert "output.weight" not in tensors
+    assert tensors["token_embd.weight"][2] == "Q8_0"
+
+
+def test_default_embedding_dtype_keeps_f16_embeddings(tmp_path, stub_gguf):
+    manifest = _swapped_master(tmp_path / "master", tie_word_embeddings=False)
+
+    export_gguf_tq(tmp_path / "master", tmp_path / "out", manifest)
+
+    tensors = stub_gguf[-1].tensors
+    for name in ("token_embd.weight", "output.weight"):
+        data, _, raw_dtype = tensors[name]
+        assert raw_dtype is None
+        assert data.dtype == np.float16
+
+
+def test_quantized_embeddings_are_gated_and_digested(tmp_path, stub_gguf):
+    import json
+
+    from axolotl.integrations.ternary.export.gguf_tq import GATE_RECORD_FILENAME
+
+    manifest = _swapped_master(tmp_path / "master", tie_word_embeddings=False)
+
+    export_gguf_tq(
+        tmp_path / "master",
+        tmp_path / "out",
+        manifest,
+        gate=True,
+        embedding_dtype="int8",
+    )
+
+    record = json.loads((tmp_path / "out" / GATE_RECORD_FILENAME).read_text())
+    assert {"token_embd.weight", "output.weight"} <= set(record["tensors"])
+    assert len(record["tensors"]) == len(manifest.entries) + 2
+
+
+def test_a_corrupted_embedding_block_fails_the_gate(tmp_path, stub_gguf, monkeypatch):
+    from axolotl.integrations.ternary.export import gguf_tq
+
+    manifest = _swapped_master(tmp_path / "master", tie_word_embeddings=False)
+    original = gguf_tq.pack_q8_0
+
+    def corrupt(codes, scales):
+        packed = original(codes, scales)
+        packed[7] ^= 0xFF
+        return packed
+
+    monkeypatch.setattr(gguf_tq, "pack_q8_0", corrupt)
+
+    with pytest.raises(RuntimeError, match="q8_0 block gate rejected"):
+        export_gguf_tq(
+            tmp_path / "master",
+            tmp_path / "out",
+            manifest,
+            gate=True,
+            embedding_dtype="int8",
+        )

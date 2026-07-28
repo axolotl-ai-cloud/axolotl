@@ -20,7 +20,10 @@ from transformers import (
 
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.ternary import TernaryPlugin
-from axolotl.integrations.ternary.args import resolve_ternary_config
+from axolotl.integrations.ternary.args import (
+    TernaryDistillConfig,
+    resolve_ternary_config,
+)
 from axolotl.integrations.ternary.callbacks import (
     LambdaScheduleCallback,
     TernaryMonitorCallback,
@@ -630,7 +633,8 @@ def test_inprocess_distillation_selects_the_trainer_and_args():
     assert plugin.get_trainer_cls(cfg) is TernaryDistillTrainer
     assert plugin.get_training_args(cfg) == {
         "ternary_distill_teacher_model": "meta-llama/Llama-3.2-1B",
-        "ternary_distill_logits_weight": 1.0,
+        # the schema default, not a constant this test should pin
+        "ternary_distill_logits_weight": TernaryDistillConfig().logits_weight,
         "ternary_distill_logits_temperature": 2.0,
         "ternary_distill_hidden_weight": 0.5,
         "ternary_distill_attn_relation_layer": None,

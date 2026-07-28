@@ -211,6 +211,14 @@ Under `ternary.export`:
 |---|---|---|
 | `formats` | `[master_bf16, hf_bitnet]` | Artifacts written after training completes. |
 | `run_parity_gate` | `true` | Verify each packed export against the baked master and fail the export when it does not match. |
+| `embedding_dtype` | `bf16` | Weight dtype for the token embeddings and the output head (one tensor when tied). `int8` packs them as Q8_0 — 32 weights per block with an f16 scale, ~8.5 bpw against 16. Unembedding is 40%+ of decode DRAM traffic on a ternary model, where every other weight is already ~2 bpw, and int8 weight-only embeddings are near-lossless. |
+
+::: {.callout-note}
+`embedding_dtype: int8` is a GGUF-only option. `master_bf16` always keeps full-precision
+embeddings — it is the re-finetunable interchange artifact — and `hf_bitnet` has no scheme
+for quantized ones. Setting it with no GGUF format in `formats` is a config error; with a
+mix, the GGUF artifacts get int8 embeddings and the others are logged as exempt.
+:::
 
 ## Teacher options
 

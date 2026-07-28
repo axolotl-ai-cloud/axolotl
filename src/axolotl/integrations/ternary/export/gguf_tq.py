@@ -32,6 +32,8 @@ import torch
 
 from axolotl.utils.logging import get_logger
 
+from .. import quant
+from ..args import EmbeddingDtype
 from ..swap import SwapEntry, SwapManifest
 from .bake import derive_codes_and_scale, load_master
 
@@ -40,6 +42,20 @@ LOG = get_logger(__name__)
 GGUFTernaryType = Literal["tq2_0", "tq1_0"]
 
 GATE_RECORD_FILENAME: str = "ternary_block_gate.json"
+
+# Q8_0 (llama.cpp): 32 weights per block, an f16 scale then 32 int8 codes
+Q8_0_BLOCK_SIZE: int = 32
+Q8_0_BLOCK_BYTES: int = Q8_0_BLOCK_SIZE + 2
+Q8_0_QMAX: int = 127
+
+# smallest positive f16 subnormal, the floor a Q8_0 block scale can be stored at
+F16_MIN_POSITIVE: float = 2.0**-24
+
+# GGUF tensor names the embedding dtype applies to; with tied embeddings only the
+# first exists and llama.cpp derives the output head from it
+EMBEDDING_TENSOR_NAMES: frozenset[str] = frozenset(
+    {"token_embd.weight", "output.weight"}
+)
 
 QK_K: int = 256
 
@@ -111,6 +127,113 @@ def unpack_tq2_0(packed: torch.Tensor, shape: tuple[int, int]) -> torch.Tensor:
     return (lanes.reshape(rows, cols) - 1).to(torch.int8)
 
 
+def quantize_q8_0(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Derive the Q8_0 codes and per-block scales of a weight — the packer's oracle.
+
+    Per 32-weight block: `d = f16_round(amax / 127)` and `q = round_half_even(w / d)`
+    clipped to `[-127, 127]`, so `w ≈ q · d` with a half-step bound. The scale is
+    rounded through f16 *before* the codes are derived, which is what makes `q · d`
+    reproducible from the stored bytes with no drift.
+
+    Args:
+        weight: Embedding or head weight of shape `(rows, cols)`.
+
+    Returns:
+        `(codes, scales)` — int8 codes shaped like `weight`, and fp32 scales of shape
+        `(rows, cols // Q8_0_BLOCK_SIZE)`. An all-zero block yields a zero scale.
+
+    Raises:
+        ValueError: If `weight` is not 2-D or its row length is not a multiple of 32.
+    """
+    blocks = _q8_0_blocks(weight)
+    amax = blocks.abs().amax(dim=-1)
+    scale = quant.f16_round_scale(amax / Q8_0_QMAX)
+    # an f16-subnormal scale would underflow to zero and take the whole block with it
+    scale = torch.where(amax > 0, scale.clamp_min(F16_MIN_POSITIVE), scale)
+    divisor = torch.where(scale > 0, scale, torch.ones_like(scale)).unsqueeze(-1)
+    codes = torch.round(blocks / divisor).clamp_(-Q8_0_QMAX, Q8_0_QMAX)
+    return codes.to(torch.int8).reshape(weight.shape), scale
+
+
+def pack_q8_0(codes: torch.Tensor, scales: torch.Tensor) -> torch.Tensor:
+    """Pack Q8_0 codes and block scales into llama.cpp's 34-byte blocks.
+
+    Each block is the f16 scale (little-endian) followed by its 32 int8 codes.
+
+    Args:
+        codes: int8 codes of shape `(rows, cols)`.
+        scales: fp32 scales of shape `(rows, cols // Q8_0_BLOCK_SIZE)`.
+
+    Returns:
+        Flat uint8 tensor of `rows * n_blocks * Q8_0_BLOCK_BYTES` bytes.
+
+    Raises:
+        ValueError: If the shapes disagree or the row length is not a multiple of 32.
+    """
+    blocks = _q8_0_blocks(codes)
+    rows, n_blocks = blocks.shape[0], blocks.shape[1]
+    if tuple(scales.shape) != (rows, n_blocks):
+        raise ValueError(
+            f"expected {(rows, n_blocks)} block scales for {tuple(codes.shape)} codes, "
+            f"got {tuple(scales.shape)}"
+        )
+    scale_bytes = (
+        torch.from_numpy(
+            scales.detach().to(torch.float32).cpu().numpy().astype("<f2").view(np.uint8)
+        )
+        .to(codes.device)
+        .reshape(rows, n_blocks, 2)
+    )
+    payload = blocks.to(torch.uint8).reshape(rows, n_blocks, Q8_0_BLOCK_SIZE)
+    return torch.cat([scale_bytes, payload], dim=-1).reshape(-1)
+
+
+def decode_q8_0(
+    packed: torch.Tensor, shape: tuple[int, int]
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Inverse of `pack_q8_0`: return `(int8 codes, fp32 block scales)`.
+
+    Raises:
+        ValueError: If the byte count does not match `shape`.
+    """
+    rows, cols = shape
+    _check_q8_0_cols(cols)
+    n_blocks = cols // Q8_0_BLOCK_SIZE
+    expected = rows * n_blocks * Q8_0_BLOCK_BYTES
+    if packed.numel() != expected:
+        raise ValueError(
+            f"packed tensor has {packed.numel()} bytes, expected {expected} for {shape}"
+        )
+    blocks = packed.reshape(rows * n_blocks, Q8_0_BLOCK_BYTES)
+    scales = _decode_f16(blocks[:, :2]).reshape(rows, n_blocks)
+    codes = blocks[:, 2:].reshape(rows, cols).view(torch.int8)
+    return codes, scales
+
+
+def dequantize_q8_0(codes: torch.Tensor, scales: torch.Tensor) -> torch.Tensor:
+    """Return `codes * scales` in fp32, broadcasting each scale over its block."""
+    blocks = _q8_0_blocks(codes).to(torch.float32)
+    return (blocks * scales.to(torch.float32).unsqueeze(-1)).reshape(codes.shape)
+
+
+def _q8_0_blocks(tensor: torch.Tensor) -> torch.Tensor:
+    if tensor.ndim != 2:
+        raise ValueError(
+            f"expected a 2D (rows, cols) tensor, got shape {tuple(tensor.shape)}"
+        )
+    rows, cols = tensor.shape
+    _check_q8_0_cols(cols)
+    return tensor.reshape(rows, cols // Q8_0_BLOCK_SIZE, Q8_0_BLOCK_SIZE)
+
+
+def _check_q8_0_cols(cols: int) -> None:
+    if cols % Q8_0_BLOCK_SIZE:
+        raise ValueError(
+            f"Q8_0 needs a row length that is a multiple of {Q8_0_BLOCK_SIZE}, got "
+            f"{cols}; llama.cpp cannot load a padded row"
+        )
+
+
 def decode_tq2_0(
     packed: torch.Tensor, shape: tuple[int, int]
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -172,6 +295,7 @@ def export_gguf_tq(
     manifest: SwapManifest,
     quant_type: GGUFTernaryType = "tq2_0",
     gate: bool = True,
+    embedding_dtype: EmbeddingDtype = "bf16",
 ) -> Path:
     """Write a GGUF file whose ternary tensors use TQ2_0/TQ1_0 and return its path.
 
@@ -184,6 +308,7 @@ def export_gguf_tq(
         quant_type: `tq2_0` or `tq1_0`.
         gate: Round-trip every packed tensor's bytes back to codes before they reach
             the container writer.
+        embedding_dtype: `int8` packs the token embeddings and output head as Q8_0.
 
     Raises:
         ImportError: If the `gguf` package is not installed.
@@ -218,6 +343,7 @@ def export_gguf_tq(
         filename=f"ggml-model-{quant_type}.gguf",
         file_type=getattr(gguf.LlamaFileType, f"MOSTLY_{quant_type.upper()}", None),
         gate_format=f"gguf_{quant_type}" if gate else None,
+        embedding_dtype=embedding_dtype,
     )
 
 
@@ -245,6 +371,7 @@ def write_gguf(
     filename: str,
     file_type: Any = None,
     gate_format: str | None = None,
+    embedding_dtype: EmbeddingDtype = "bf16",
 ) -> Path:
     """Write one GGUF file from a baked master, packing ternary tensors with `pack_entry`.
 
@@ -255,6 +382,9 @@ def write_gguf(
         gate_format: Parity format name; when set, every packed tensor's serialized
             bytes are decoded again and gated on the master before the container
             writer sees them, and their digests are recorded beside the file.
+        embedding_dtype: `int8` packs the token embeddings and the output head as
+            Q8_0 instead of F16; with tied embeddings only one tensor exists and
+            llama.cpp derives the head from it.
 
     Raises:
         ValueError: If the manifest scale mode or architecture is unsupported, or a
@@ -295,6 +425,17 @@ def write_gguf(
                 )
             entry = ternary.get(key)
             if entry is None:
+                if embedding_dtype == "int8" and name in EMBEDDING_TENSOR_NAMES:
+                    data = pack_q8_0(*quantize_q8_0(tensor)).numpy()
+                    if gate_format is not None:
+                        digests[name] = gate_packed_bytes("q8_0", data, tensor)
+                    writer.add_tensor(
+                        name,
+                        data,
+                        raw_shape=tuple(tensor.shape),
+                        raw_dtype=gguf.GGMLQuantizationType.Q8_0,
+                    )
+                    continue
                 # 1-D tensors are norms; llama.cpp keeps them f32
                 dtype = torch.float32 if tensor.ndim == 1 else torch.float16
                 writer.add_tensor(name, tensor.to(dtype).contiguous().numpy())
@@ -321,7 +462,7 @@ def gate_packed_bytes(fmt: str, data: np.ndarray, master_weight: torch.Tensor) -
     """Gate exactly the byte string the container writer will serialize.
 
     Args:
-        fmt: Parity format name.
+        fmt: Parity format name, or `q8_0` for a quantized embedding tensor.
         data: The array handed to `GGUFWriter.add_tensor`.
         master_weight: The baked master tensor it was packed from.
 
@@ -335,7 +476,10 @@ def gate_packed_bytes(fmt: str, data: np.ndarray, master_weight: torch.Tensor) -
 
     payload = np.ascontiguousarray(data).tobytes()
     verified = torch.frombuffer(bytearray(payload), dtype=torch.uint8)
-    failures = parity.gate_block_bytes(fmt, verified, master_weight)
+    if fmt == "q8_0":
+        failures = parity.gate_q8_0_bytes(verified, master_weight)
+    else:
+        failures = parity.gate_block_bytes(fmt, verified, master_weight)
     if failures:
         raise RuntimeError(
             f"ternary: the {fmt} block gate rejected a "
@@ -511,17 +655,27 @@ def _add_vocab(writer: Any, config: dict, master_dir: Path) -> None:
 
 
 __all__ = [
+    "EMBEDDING_TENSOR_NAMES",
+    "GATE_RECORD_FILENAME",
     "GGUFTernaryType",
     "QK_K",
+    "Q8_0_BLOCK_BYTES",
+    "Q8_0_BLOCK_SIZE",
+    "Q8_0_QMAX",
     "TQ1_0_BLOCK_BYTES",
     "TQ1_0_QH_BYTES",
     "TQ1_0_QS_BYTES",
     "TQ2_0_BLOCK_BYTES",
     "TQ2_0_QS_BYTES",
+    "decode_q8_0",
+    "dequantize_q8_0",
     "export_gguf_tq",
+    "gate_packed_bytes",
     "gguf_available",
+    "pack_q8_0",
     "pack_tq1_0",
     "pack_tq2_0",
+    "quantize_q8_0",
     "require_gguf",
     "unpack_tq1_0",
     "unpack_tq2_0",

@@ -46,6 +46,9 @@ RUNTIME_CODE_MISMATCH_TOL: float = 5e-3
 RUNTIME_DEQUANT_STEP_TOL: float = 1.5
 RUNTIME_PROBE_TENSORS: int = 128
 
+# a Q8_0 code is `round(w / d)`, so dequantization lands within half a block scale
+Q8_0_STEP_TOL: float = 0.5
+
 # format -> (artifact path, manifest) -> {module name: (int8 codes, fp32 scale)}
 CodeExtractor = Callable[
     [Path, SwapManifest], dict[str, tuple[torch.Tensor, torch.Tensor]]
@@ -116,6 +119,59 @@ def gate_block_bytes(
             f"block scale drifted {drift:.3e} from the master's s16 {reference:.3e}, "
             f"beyond the f16 rounding bound {reference * F16_HALF_ULP:.3e}"
         )
+    return failures
+
+
+def gate_q8_0_bytes(packed: torch.Tensor, master_weight: torch.Tensor) -> list[str]:
+    """Round-trip a Q8_0 embedding tensor's packed bytes and gate them on the master.
+
+    Same contract as `gate_block_bytes`, with the bound a per-block int8 quantizer
+    admits instead of a ternary one: exact code equality, block scales within f16
+    rounding, and a dequantization error of at most half a quantization step.
+
+    Args:
+        packed: The uint8 byte string handed to the container writer.
+        master_weight: The embedding or head weight it was packed from.
+
+    Returns:
+        A list of failure descriptions; empty when the bytes round-trip exactly.
+    """
+    from .gguf_tq import decode_q8_0, dequantize_q8_0, quantize_q8_0
+
+    shape = (int(master_weight.shape[0]), int(master_weight.shape[1]))
+    try:
+        codes, scales = quantize_q8_0(master_weight)
+        unpacked, block_scales = decode_q8_0(packed, shape)
+    except ValueError as exc:
+        return [f"could not unpack the q8_0 blocks: {exc}"]
+
+    failures: list[str] = []
+    mismatches = int((codes != unpacked).sum())
+    if mismatches:
+        failures.append(
+            f"{mismatches} of {codes.numel()} codes differ from the master after a "
+            "q8_0 block round-trip"
+        )
+    drift = (block_scales - scales).abs()
+    bound = scales.abs() * F16_HALF_ULP
+    if bool((drift > bound).any()):
+        failures.append(
+            f"q8_0 block scale drifted {float(drift.amax()):.3e} from the master's, "
+            f"beyond the f16 rounding bound {float(bound.amax()):.3e}"
+        )
+    if not failures:
+        error = (
+            master_weight.to(torch.float32) - dequantize_q8_0(unpacked, block_scales)
+        ).abs()
+        step = block_scales.repeat_interleave(
+            master_weight.shape[-1] // block_scales.shape[-1], dim=-1
+        )
+        if bool((error > step * Q8_0_STEP_TOL).any()):
+            failures.append(
+                f"q8_0 dequantization is off by up to "
+                f"{float((error / step.clamp_min(torch.finfo(torch.float32).tiny)).amax()):.3f} "
+                f"block scales, over the {Q8_0_STEP_TOL} half-step bound"
+            )
     return failures
 
 
@@ -561,6 +617,7 @@ __all__ = [
     "BLOCK_GATED_FORMATS",
     "EXTRACTORS",
     "F16_HALF_ULP",
+    "Q8_0_STEP_TOL",
     "RUNTIME_CODE_MISMATCH_TOL",
     "RUNTIME_DEQUANT_STEP_TOL",
     "WEIGHT_PATH_LOGIT_TOL",
@@ -572,6 +629,7 @@ __all__ = [
     "check_dequant_error",
     "compare_act_quantizers",
     "gate_block_bytes",
+    "gate_q8_0_bytes",
     "register_block_decoder",
     "register_extractor",
     "run_parity_gate",

@@ -314,3 +314,52 @@ def test_resolve_ternary_config_from_dumped_axolotl_cfg(merged_config_cls):
     cfg = merged_config_cls(**MINIMAL_CONFIG, ternary={"weight_scale": "learnable"})
     dumped = DictDefault(cfg.model_dump(exclude_none=True))
     assert resolve_ternary_config(dumped).weight_scale == "learnable"
+
+
+# --------------------------------------------------------------- embedding dtype
+
+
+def test_embedding_dtype_defaults_to_bf16():
+    assert TernaryConfig().export.embedding_dtype == "bf16"
+
+
+@pytest.mark.parametrize("fmt", ["gguf_tq2_0", "gguf_tq1_0", "i2_s"])
+def test_int8_embeddings_accepted_for_gguf_formats(fmt):
+    cfg = TernaryConfig(export={"formats": [fmt], "embedding_dtype": "int8"})
+
+    assert cfg.export.embedding_dtype == "int8"
+
+
+@pytest.mark.parametrize(
+    "formats", [["hf_bitnet"], ["master_bf16"], ["master_bf16", "hf_bitnet"]]
+)
+def test_int8_embeddings_rejected_without_a_gguf_format(formats):
+    """Neither the master nor hf_bitnet can carry quantized embeddings."""
+    with pytest.raises(pydantic.ValidationError, match="only representable in the"):
+        TernaryConfig(export={"formats": formats, "embedding_dtype": "int8"})
+
+
+def test_int8_embeddings_warn_about_the_exempt_formats(caplog):
+    with caplog.at_level("WARNING"):
+        cfg = TernaryConfig(
+            export={
+                "formats": ["master_bf16", "hf_bitnet", "gguf_tq2_0"],
+                "embedding_dtype": "int8",
+            }
+        )
+
+    assert cfg.export.embedding_dtype == "int8"
+    assert "keep full-precision embeddings" in caplog.text
+    assert "'hf_bitnet'" in caplog.text and "'master_bf16'" in caplog.text
+
+
+def test_bf16_embeddings_never_warn(caplog):
+    with caplog.at_level("WARNING"):
+        TernaryConfig(export={"formats": ["master_bf16", "hf_bitnet"]})
+
+    assert "embeddings" not in caplog.text
+
+
+def test_unknown_embedding_dtype_is_rejected():
+    with pytest.raises(pydantic.ValidationError):
+        TernaryConfig(export={"formats": ["gguf_tq2_0"], "embedding_dtype": "int4"})
