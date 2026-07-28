@@ -30,8 +30,8 @@ node — or submit from anywhere with the Jobs API:
 # cluster.yaml
 launcher: ray
 ray:
-  address: auto      # or http://head:8265 to submit remotely
   num_workers: auto  # every GPU in the cluster
+  # address: http://head:8265   # to submit remotely via the Ray Jobs API
 ```
 
 ```bash

@@ -31,7 +31,10 @@ env:                 # env vars applied to the launch (any launcher)
   NCCL_DEBUG: WARN
 
 ray:
-  address: auto            # auto/ray://… attach in-process; http(s)://host:8265 submits a Ray Job
+  address: null            # omit: use an `axolotl ray up`/`ray start` cluster if running,
+                           #   else an isolated local instance (concurrent runs stay independent)
+                           # auto/ray://…: attach to a running cluster
+                           # http(s)://host:8265: submit via the Ray Jobs API
   num_workers: auto        # or an int; auto = derived from total cluster resources
   resources_per_worker:
     GPU: 1
@@ -96,10 +99,12 @@ matching flag derived from the runtime file.
 axolotl train recipe.yaml --runtime examples/runtime/ray-single-node.yaml
 ```
 
-With `address: auto`, axolotl attaches to a running Ray cluster or starts a
-local one; `num_workers: auto` uses every GPU that satisfies
-`resources_per_worker`. No ranks, no host lists — adding nodes to the Ray
-cluster is all it takes to scale.
+With no `address`, axolotl uses the cluster brought up by `axolotl ray up` (or
+any `ray start` cluster) when one is running, and an isolated local Ray
+instance otherwise — concurrent trainings on one machine never interfere.
+`num_workers: auto` uses every GPU that satisfies `resources_per_worker`. No
+ranks, no host lists — adding nodes to the Ray cluster is all it takes to
+scale.
 
 **Ray Jobs submission** — run from anywhere, no SSH to the head node:
 

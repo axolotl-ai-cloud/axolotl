@@ -83,9 +83,12 @@ class RayLauncherConfig(BaseModel):
     address: str | None = Field(
         default=None,
         json_schema_extra={
-            "help": "Ray address. None/'auto'/'ray://…' attaches (or starts a local"
-            " cluster) and runs the driver in-process; 'http(s)://host:8265' submits"
-            " the run to a remote cluster via the Ray Jobs API."
+            "help": "Ray address. Omit to use an `axolotl ray up`/`ray start`"
+            " cluster if one is running, else an isolated local instance"
+            " (concurrent runs on one machine stay independent). 'auto' or"
+            " 'ray://…' attaches to a running cluster (auto falls back to a"
+            " local instance); 'http(s)://host:8265' submits the run to a"
+            " remote cluster via the Ray Jobs API."
         },
     )
     num_workers: int | Literal["auto"] = Field(

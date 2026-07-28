@@ -108,7 +108,28 @@ def ensure_ray_initialized(
         init_kwargs["runtime_env"] = runtime_env
 
     address = ray_rt.address if ray_rt is not None else None
-    if address and address != "auto":
+
+    if address in (None, "auto"):
+        recorded = _recorded_cluster_address()
+        if recorded:
+            # `axolotl ray up` starts the head under a unique --temp-dir, which
+            # hides it from ray's own discovery; use the recorded address.
+            LOG.info(
+                "attaching to the Ray cluster recorded by `axolotl ray up` at %s",
+                recorded,
+            )
+            ray.init(address=recorded, **init_kwargs)
+            return
+
+    if address is None:
+        # Ray's default resolution: attaches to a `ray start` cluster if one
+        # exists, else starts a private local instance. Unlike address="auto",
+        # this never attaches to another driver's embedded instance, so
+        # concurrent trainings on one machine stay isolated.
+        ray.init(**init_kwargs)
+        return
+
+    if address != "auto":
         ray.init(address=address, **init_kwargs)
         return
 
@@ -331,6 +352,23 @@ def _warn_large_staging(staging_dir: Path) -> None:
             " trim it with ray.runtime_env.excludes",
             total / (1024 * 1024),
         )
+
+
+def _recorded_cluster_address() -> "str | None":
+    """Address of a live cluster recorded by `axolotl ray up`, if any."""
+    import socket
+
+    from axolotl.cli.launchers.ray_cluster import ClusterState
+
+    state = ClusterState.load()
+    if state is None:
+        return None
+    # cheap TCP probe so a stale state file can't hang or misdirect ray.init
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1.0)
+        if sock.connect_ex((state.head_ip, state.port)) != 0:
+            return None
+    return state.address
 
 
 def _peek_yaml_key(config_path: str, key: str):

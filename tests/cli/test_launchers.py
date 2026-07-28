@@ -8,13 +8,15 @@ import click
 import pytest
 import yaml
 
-from axolotl.cli.launchers import ray_ as ray_launcher
+from axolotl.cli.launchers import ray_ as ray_launcher, ray_cluster
 from axolotl.utils.schemas.runtime import RuntimeConfig
 
 
 @pytest.fixture
-def fake_ray(monkeypatch):
+def fake_ray(monkeypatch, tmp_path):
     """Install a minimal fake `ray` module and record init calls."""
+    # keep tests independent of any cluster recorded by `axolotl ray up`
+    monkeypatch.setattr(ray_cluster, "STATE_FILE", tmp_path / "no-cluster.json")
     state = SimpleNamespace(
         init_calls=[],
         shutdown_called=False,
@@ -71,20 +73,63 @@ class TestEnsureRayInitialized:
         assert runtime_env["env_vars"] == {"NCCL_DEBUG": "WARN", "HF_HOME": "/mnt/hf"}
         assert runtime_env["pip"] == ["peft"]
 
+    def test_no_address_uses_plain_init(self, fake_ray):
+        # no address must never probe address="auto": auto attaches to other
+        # drivers' embedded instances, coupling concurrent runs (CI regression)
+        ray_launcher.ensure_ray_initialized(None)
+        assert len(fake_ray.init_calls) == 1
+        assert "address" not in fake_ray.init_calls[0]
+
+    def test_explicit_auto_attaches(self, fake_ray):
+        ray_rt = RuntimeConfig.model_validate({"ray": {"address": "auto"}}).ray
+        ray_launcher.ensure_ray_initialized(ray_rt)
+        assert fake_ray.init_calls[0]["address"] == "auto"
+
     def test_auto_attach_falls_back_to_local(self, fake_ray):
         fake_ray.auto_raises = True
-        ray_launcher.ensure_ray_initialized(None)
+        ray_rt = RuntimeConfig.model_validate({"ray": {"address": "auto"}}).ray
+        ray_launcher.ensure_ray_initialized(ray_rt)
         assert len(fake_ray.init_calls) == 1
         assert "address" not in fake_ray.init_calls[0]
 
     def test_gpuless_cluster_restarts_local(self, fake_ray, monkeypatch):
         fake_ray.cluster_resources = {"CPU": 8.0}
         monkeypatch.setattr(ray_launcher, "_local_gpu_count", lambda: 4)
-        ray_launcher.ensure_ray_initialized(None)
+        ray_rt = RuntimeConfig.model_validate({"ray": {"address": "auto"}}).ray
+        ray_launcher.ensure_ray_initialized(ray_rt)
         assert fake_ray.shutdown_called
         # first init attached with address=auto, second init started local
         assert fake_ray.init_calls[0]["address"] == "auto"
         assert "address" not in fake_ray.init_calls[1]
+
+    def test_recorded_cluster_preferred(self, fake_ray):
+        import socket
+
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            ray_cluster.ClusterState(
+                head_ip="127.0.0.1", port=port, dashboard_port=8265, temp_dir="/tmp/x"
+            ).save()
+            ray_launcher.ensure_ray_initialized(None)
+            assert fake_ray.init_calls[0]["address"] == f"127.0.0.1:{port}"
+        finally:
+            listener.close()
+
+    def test_stale_recorded_cluster_ignored(self, fake_ray):
+        import socket
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        dead_port = sock.getsockname()[1]
+        sock.close()
+        ray_cluster.ClusterState(
+            head_ip="127.0.0.1", port=dead_port, dashboard_port=8265, temp_dir="/tmp/x"
+        ).save()
+        ray_launcher.ensure_ray_initialized(None)
+        assert "address" not in fake_ray.init_calls[0]
 
 
 class TestResolveNumWorkers:

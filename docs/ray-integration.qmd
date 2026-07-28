@@ -22,11 +22,16 @@ launcher:
 # cluster.yaml
 launcher: ray
 ray:
-  address: auto        # attach to a running cluster, or start a local one
   num_workers: auto    # one worker per available GPU
   resources_per_worker:
     GPU: 1
 ```
+
+With no `address` set, axolotl uses the cluster brought up by `axolotl ray up`
+(or any `ray start` cluster) when one is running, and an isolated local Ray
+instance otherwise. Set `address: auto` to require attaching to the most
+recently started local cluster, `ray://host:10001` for a specific one, or an
+`http(s)://` address for remote Jobs submission (below).
 
 ```bash
 axolotl train recipe.yaml --runtime cluster.yaml
