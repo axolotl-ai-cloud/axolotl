@@ -46,7 +46,7 @@ PLUGIN_MANAGER = PluginManager.get_instance()
 
 def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
     """``save_pretrained(save_original_format=True)`` reverses registered
-    conversions; surface unreversible entries at registration instead of at
+    conversions; surface irreversible entries at registration instead of at
     save time."""
     for transform in transforms:
         problems = []

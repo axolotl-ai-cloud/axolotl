@@ -18,9 +18,11 @@ from axolotl.model_support import (
     ModelHooks,
     ModelMatchers,
     ModelProfile,
+    ModelRegistrationOverrides,
     ModelStrategyOverrides,
     ModelSupport,
     Unsupported,
+    VANILLA_CAUSAL_LM,
     register_model_support,
 )
 
@@ -169,12 +171,12 @@ profile = ModelProfile(
 )
 ```
 
-- `weight_conversions` maps a `model_type` or model class name to `WeightTransform` entries (`WeightConverter`, `WeightRenaming`, ...) passed to `transformers.conversion_mapping.register_checkpoint_conversion_mapping`. Class-name keys take priority over `model_type` keys inside transformers. Remote-code models receive only conversion mappings registered this way — transformers skips its built-in table for custom code.
+- `weight_conversions` maps a `model_type` or model class name to `WeightTransform` entries (`WeightConverter`, `WeightRenaming`, ...) passed to `transformers.conversion_mapping.register_checkpoint_conversion_mapping`. Class-name keys take priority over `model_type` keys inside transformers. Remote-code models receive only conversion mappings registered this way; transformers skips its built-in table for custom code.
 - `patch_mappings` maps class names (or regex patterns) to replacement `nn.Module` subclasses passed to `transformers.monkey_patching.register_patch_mapping`; transformers swaps the classes during `from_pretrained`/`from_config` module construction. Prefer exact class names: the registry is process-global, and a broad pattern such as `.*Attention` also patches every other architecture loaded later in the same process.
 
-These registries are two halves of one operation: a patch mapping that changes a module's checkpoint layout must ship matching `weight_conversions`, or loading breaks — transformers' own kernel-fusion machinery always registers them as a pair.
+These registries are two halves of one operation: a patch mapping that changes a module's checkpoint layout must ship matching `weight_conversions`, or loading breaks; transformers' own kernel-fusion machinery always registers them as a pair.
 
-Saving reverses conversions. `save_pretrained(save_original_format=True)` — the default — applies each registered transform's reverse to emit the original checkpoint layout, so every `ConversionOps` in a registered `WeightConverter` must implement `reverse_op`, and transforms carrying a quantization operation cannot round-trip; axolotl warns for both at registration time. The reverse pass is skipped while a PEFT config is loaded, so merged and full-parameter saves are the affected path.
+Saving reverses conversions. `save_pretrained(save_original_format=True)` (the default) applies each registered transform's reverse to emit the original checkpoint layout, so every `ConversionOps` in a registered `WeightConverter` must implement `reverse_op`. Axolotl warns at registration for any op missing a `reverse_op`; a transform carrying a quantization operation also cannot round-trip, though that only surfaces at save time. The reverse pass is skipped while a PEFT config is loaded, so merged and full-parameter saves are the affected path.
 
 Registrations resolve family → profile like strategies (an omitted field inherits, explicit `None` clears); there is no legacy-method equivalent.
 
