@@ -126,9 +126,7 @@ class TestMultipackDropLastStats:
     Regression tests for drop_last efficiency accounting (#3848)
     """
 
-    # RandomSampler is what the training code actually uses; SequentialSampler
-    # keeps the cases deterministic. The assertions below only depend on bin/batch
-    # counts and aggregate token stats, which are invariant to sampling order here.
+    # RandomSampler is what training uses, and it catches sampler-order index mixups
     @pytest.mark.parametrize("sampler_cls", [SequentialSampler, RandomSampler])
     @pytest.mark.parametrize("sequential", [True, False])
     @pytest.mark.parametrize(
