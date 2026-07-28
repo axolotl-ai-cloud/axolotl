@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from transformers import LlamaConfig, LlamaForCausalLM
 
+from axolotl.integrations.ternary import subln as subln_module, swap as swap_module
 from axolotl.integrations.ternary.modules import TernaryLinear, iter_ternary_modules
 from axolotl.integrations.ternary.swap import (
     MANIFEST_FILENAME,
@@ -287,6 +288,51 @@ def test_swap_config_flows_into_modules():
     assert module.int8_forward is False
     assert module.weight_scale == "absmean"
     assert module.group_size is None
+
+
+def test_manifest_records_the_init_and_subln_settings():
+    model = _tiny_llama()
+
+    manifest = convert_model(model, _cfg())
+
+    assert manifest.init == "absmean"
+    assert manifest.subln is False
+    assert manifest.subln_modules == []
+    assert {entry.weight_scale for entry in manifest.entries} == {"absmean"}
+
+
+def test_convert_hands_the_swapped_model_to_the_init_pass(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        swap_module,
+        "initialize_model_latents",
+        lambda model, manifest, cfg: calls.append((model, manifest)),
+    )
+    model = _tiny_llama()
+
+    manifest = convert_model(model, _cfg())
+
+    assert calls == [(model, manifest)]
+
+
+def test_subln_is_inserted_on_the_linears_before_they_are_swapped(monkeypatch):
+    seen: dict[str, object] = {}
+
+    def _insert(model, cfg, target_names):
+        names = list(target_names)
+        seen["kinds"] = {type(model.get_submodule(name)).__name__ for name in names}
+        return [f"{name}.sub_norm" for name in names]
+
+    monkeypatch.setattr(subln_module, "insert_subln", _insert)
+    model = _tiny_llama()
+
+    manifest = convert_model(
+        model, _cfg(subln=True, export={"formats": ["master_bf16"]})
+    )
+
+    assert seen["kinds"] == {"Linear"}
+    assert manifest.subln is True
+    assert len(manifest.subln_modules) == LAYERS * LINEARS_PER_LAYER
 
 
 def test_swap_defaults_int8_forward_to_auto():

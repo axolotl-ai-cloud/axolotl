@@ -517,9 +517,7 @@ def test_register_recommends_save_only_model(caplog):
 @pytest.mark.parametrize(
     "override,match",
     [
-        ({"init": "ptq_itf"}, "init: ptq_itf"),
         ({"smoothing": True}, "smoothing"),
-        ({"subln": True, "export": {"formats": ["master_bf16"]}}, "subln"),
     ],
 )
 def test_post_model_build_rejects_unimplemented_options(tmp_path, override, match):
@@ -530,6 +528,16 @@ def test_post_model_build_rejects_unimplemented_options(tmp_path, override, matc
         TernaryPlugin().post_model_build(cfg, model)
 
     assert not list(iter_ternary_modules(model))
+
+
+@pytest.mark.parametrize("init", ["svid"])
+def test_post_model_build_rejects_an_unimplemented_init(tmp_path, init):
+    """The init pass runs on the swapped modules, so this one fails after the surgery."""
+    model = _tiny_llama()
+    cfg = _plugin_cfg(tmp_path, init=init, weight_scale="learnable")
+
+    with pytest.raises(NotImplementedError, match=init):
+        TernaryPlugin().post_model_build(cfg, model)
 
 
 def test_post_model_build_starts_at_lambda_one(tmp_path):
@@ -639,6 +647,8 @@ def test_inprocess_distillation_selects_the_trainer_and_args():
         "ternary_distill_hidden_weight": 0.5,
         "ternary_distill_attn_relation_layer": None,
         "ternary_distill_teacher_device_map": None,
+        "ternary_distill_schedule": "constant",
+        "ternary_distill_anchor_start": TernaryDistillConfig().anchor_start,
     }
 
 

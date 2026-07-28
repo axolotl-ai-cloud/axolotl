@@ -437,6 +437,44 @@ def test_learnable_scale_is_trained_and_folded_at_bake():
     assert torch.equal(module.weight.data, baked)
 
 
+class _ScaleNorm(nn.Module):
+    """Stand-in for a sub-norm: a per-input-feature gain with a persisted weight."""
+
+    def __init__(self, factor: float = 2.0):
+        super().__init__()
+        self.weight = nn.Parameter(torch.full((IN_FEATURES,), factor))
+
+    def forward(self, x):
+        return x * self.weight
+
+
+def test_no_sub_norm_without_subln():
+    module = TernaryLinear.from_linear(_linear())
+
+    assert module.sub_norm is None
+    assert not any("sub_norm" in key for key in module.state_dict())
+
+
+def test_sub_norm_is_adopted_from_the_source_linear_and_runs_first():
+    linear = _linear()
+    linear.sub_norm = _ScaleNorm()
+    module = TernaryLinear.from_linear(linear)
+    module.set_lambda(0.0)
+    x = torch.randn(3, IN_FEATURES)
+
+    torch.testing.assert_close(module(x), F.linear(2.0 * x, module.weight))
+    assert "sub_norm.weight" in module.state_dict()
+
+
+@pytest.mark.parametrize("mode", ["learnable_row", "dual"])
+def test_the_row_scale_modes_carry_one_scale_per_output_channel(mode):
+    """Their numerics live in `test_scale_modes.py`; this is the wiring."""
+    module = TernaryLinear(IN_FEATURES, OUT_FEATURES, weight_scale=mode)
+
+    assert module.scale.shape == (OUT_FEATURES, 1)
+    assert (module.scale_lo is not None) is (mode == "dual")
+
+
 def test_extra_repr_reports_the_quantizer():
     module = TernaryLinear(
         IN_FEATURES, OUT_FEATURES, weight_scale="group", group_size=8

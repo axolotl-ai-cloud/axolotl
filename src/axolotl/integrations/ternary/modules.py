@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Iterator
 from types import ModuleType
-from typing import Literal
+from typing import Literal, get_args
 
 import torch
 import torch.nn.functional as F
@@ -16,12 +16,32 @@ from transformers import PreTrainedModel
 from axolotl.utils.logging import get_logger
 
 from . import quant
-from .args import WeightScaleMode
+from .args import LEARNABLE_SCALE_MODES, WeightScaleMode
 
 LOG = get_logger(__name__)
 
 # quantized activations shared by the linears that consume one tensor (q/k/v, gate/up)
 _ACT_MEMO: WeakTensorKeyDictionary = WeakTensorKeyDictionary()
+
+SCALE_MODES: frozenset[str] = frozenset(get_args(WeightScaleMode))
+
+# schema-accepted scale modes whose quantizer has not landed yet
+UNIMPLEMENTED_SCALE_MODES: frozenset[str] = frozenset()
+
+# scale modes carrying one scale per output channel, shaped `(out_features, 1)`
+ROW_SCALE_MODES: frozenset[str] = frozenset({"learnable_row", "dual"})
+
+# the grids the fused Triton kernels and the W2A8 int8 forward implement; everything
+# else runs the eager oracle until a kernel for its scale layout lands
+FUSED_SCALE_MODES: frozenset[str] = frozenset({"absmean", "group"})
+INT8_FORWARD_SCALE_MODES: frozenset[str] = frozenset({"absmean", "learnable"})
+
+# state-dict entries holding a learnable scale, in `__init__` order
+SCALE_ATTRS: tuple[str, ...] = ("scale", "scale_lo")
+
+# where `subln.insert_subln` parks the norm on the source Linear, and the attribute
+# the ternary module adopts it into — so it serializes as `<linear>.sub_norm.weight`
+SUBLN_ATTR: str = "sub_norm"
 
 
 @functools.lru_cache(maxsize=1)
@@ -54,6 +74,12 @@ def as_local(tensor: torch.Tensor) -> torch.Tensor:
     """Return the rank-local shard of a DTensor, or `tensor` itself when it is plain."""
     sharded = as_dtensor(tensor)
     return tensor if sharded is None else sharded.to_local()
+
+
+def _gathered(tensor: torch.Tensor) -> torch.Tensor:
+    """Return the full tensor behind a DTensor, or `tensor` itself when it is plain."""
+    sharded = as_dtensor(tensor)
+    return tensor if sharded is None else sharded.full_tensor()
 
 
 def _redistribute(reference: torch.Tensor, full: torch.Tensor) -> torch.Tensor:
@@ -95,20 +121,32 @@ class TernaryLinear(nn.Module):
     full-precision parameter that receives dense gradients, and the ternary values
     only exist inside the forward. Biases are unsupported.
 
+    `weight_scale: dual` widens the grid to the five values `{0, ±s_lo, ±s_hi}` per
+    row, carried by two learnable scale vectors; the pair is kept ordered by reading
+    them as `(min, max)`, so both keep receiving gradient however they move.
+
     Attributes:
         weight: Latent `nn.Parameter` of shape `(out_features, in_features)`.
-        scale: `nn.Parameter` holding `log_s` in `weight_scale: learnable` mode,
-            `None` otherwise.
+        scale: `nn.Parameter` holding `log_s`, shape `(1,)` in `weight_scale:
+            learnable` and `(out_features, 1)` in the per-row modes (`log_s_hi` under
+            `dual`); `None` otherwise.
+        scale_lo: `nn.Parameter` holding `log_s_lo`, shape `(out_features, 1)`, in
+            `weight_scale: dual`; `None` otherwise.
+        sub_norm: RMSNorm over the input, applied before quantization, when
+            `ternary.subln` inserted one for this family; `None` otherwise.
         lambda_: Current quantization strength in `[0, 1]`, driven by
             `LambdaScheduleCallback`; 1.0 means fully ternary.
         weight_scale: Scale mode this module was built with.
         group_size: Group size in group-scale mode, `None` for per tensor.
         activation_bits: 8 for per-token int8 activation quantization, `None` for
             weight-only QAT.
-        fused: Whether the fused Triton path is used instead of the eager oracle.
+        fused: Whether the fused Triton path is used instead of the eager oracle. Only
+            the per-tensor and per-group grids have kernels, so the per-row modes run
+            the eager oracle whatever this says.
         int8_forward: Whether the W2A8 int8 GEMM replaces the fake-quant forward once
             λ reaches 1; `"auto"` and `True` both fall back whenever the shapes,
-            device or quantizer options do not qualify.
+            device or quantizer options do not qualify — including every scale mode
+            whose grid the one-scalar epilogue cannot express.
         baked: Whether `weight` currently holds the exact ternary values, in which
             case the forward stops re-quantizing it. Set by `_post_training` and by
             the structural probe that runs whenever a baked master is loaded; it
@@ -119,6 +157,8 @@ class TernaryLinear(nn.Module):
 
     weight: nn.Parameter
     scale: nn.Parameter | None
+    scale_lo: nn.Parameter | None
+    sub_norm: nn.Module | None
     lambda_: float
 
     def __init__(
@@ -138,10 +178,17 @@ class TernaryLinear(nn.Module):
         Raises:
             ValueError: If `group_size` does not divide `in_features`, or the scale
                 mode and `group_size` disagree.
+            NotImplementedError: For a scale mode the schema accepts but the
+                quantizer does not implement yet.
         """
         super().__init__()
-        if weight_scale not in ("absmean", "group", "learnable"):
+        if weight_scale not in SCALE_MODES:
             raise ValueError(f"unknown ternary weight_scale mode: {weight_scale!r}")
+        if weight_scale in UNIMPLEMENTED_SCALE_MODES:
+            raise NotImplementedError(
+                f"ternary.weight_scale: {weight_scale} is accepted by the schema but "
+                "its quantizer is not implemented yet"
+            )
         if weight_scale == "group":
             if group_size is None:
                 raise ValueError("weight_scale='group' requires a group_size")
@@ -175,6 +222,7 @@ class TernaryLinear(nn.Module):
         self._int8_warned = False
         self._baked_version: int | None = None
 
+        self.add_module(SUBLN_ATTR, None)
         self.weight = nn.Parameter(
             torch.empty(out_features, in_features, device=device, dtype=dtype)
         )
@@ -183,8 +231,18 @@ class TernaryLinear(nn.Module):
             self.scale = nn.Parameter(
                 torch.zeros(1, device=device, dtype=torch.float32)
             )
+        elif weight_scale in ROW_SCALE_MODES:
+            self.scale = nn.Parameter(
+                torch.zeros(out_features, 1, device=device, dtype=torch.float32)
+            )
         else:
             self.register_parameter("scale", None)
+        if weight_scale == "dual":
+            self.scale_lo = nn.Parameter(
+                torch.zeros(out_features, 1, device=device, dtype=torch.float32)
+            )
+        else:
+            self.register_parameter("scale_lo", None)
 
     @classmethod
     def from_linear(
@@ -197,6 +255,9 @@ class TernaryLinear(nn.Module):
         int8_forward: Literal["auto"] | bool = False,
     ) -> "TernaryLinear":
         """Build a `TernaryLinear` that adopts `linear`'s weight as its latent weight.
+
+        A sub-norm parked on the source module by `subln.insert_subln` is adopted with
+        it, so it serializes and reloads as a child of the ternary module.
 
         Args:
             linear: Source module; its weight is moved (not copied) where possible so
@@ -234,14 +295,17 @@ class TernaryLinear(nn.Module):
         module.weight = (
             weight if isinstance(weight, nn.Parameter) else nn.Parameter(weight)
         )
+        sub_norm = getattr(linear, SUBLN_ATTR, None)
+        if sub_norm is not None:
+            setattr(module, SUBLN_ATTR, sub_norm)
         module._detect_baked()
-        if module.scale is not None:
-            scale = module._initial_scale()
-            module.scale = nn.Parameter(scale.reshape(1).log().to(weight.device))
+        module.refresh_scale_from_weight()
         return module
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Fake-quantize the weight (and activations when `activation_bits == 8`), then GEMM."""
+        if self.sub_norm is not None:
+            x = self.sub_norm(x)
         lambda_ = self.lambda_
         if lambda_ <= 0.0:
             return F.linear(x, self.weight)
@@ -274,28 +338,29 @@ class TernaryLinear(nn.Module):
                 return weight.clone()
             sharded = as_dtensor(weight)
             if sharded is None:
-                return quant.fake_quant_weight(
-                    weight, 1.0, self.group_size, self._scale()
-                )
-            # the per-tensor scale is global, so bake off the gathered tensor and
+                return self._bake(weight, gathered=False)
+            # a per-tensor scale is global, so bake off the gathered tensor and
             # redistribute; every rank runs the same all-gather
-            baked = quant.fake_quant_weight(
-                sharded.full_tensor(), 1.0, self.group_size, self._scale(gathered=True)
-            )
+            baked = self._bake(sharded.full_tensor(), gathered=True)
             return _redistribute(sharded, baked)
 
     def code_snapshot(self) -> torch.Tensor:
         """Return the current codes packed 4-per-byte, for flip-rate monitoring.
 
         Under FSDP2 the weight is a DTensor, so the snapshot covers this rank's shard
-        only and the statistics derived from it are per-rank.
+        only and the statistics derived from it are per-rank. A five-value module
+        snapshots two ternary planes per weight (see `quant.dual_state_planes`).
         """
         with torch.no_grad():
             weight = as_local(self.weight.detach())
-            scale = self._scale(gathered=True)
-            if scale is None:
-                scale = quant.absmean_scale(weight, self.group_size)
-            codes = quant.ternary_codes(weight, scale)
+            if self.weight_scale == "dual":
+                low, high = self._dual_scales(weight)
+                codes = quant.dual_state_planes(quant.dual_codes(weight, low, high))
+            else:
+                scale = self._snapshot_scale()
+                if scale is None:
+                    scale = quant.absmean_scale(weight, self._scale_group_size())
+                codes = quant.ternary_codes(weight, scale)
         ops = self._ops(codes)
         if ops is not None:
             return ops.pack_codes(codes)
@@ -303,7 +368,33 @@ class TernaryLinear(nn.Module):
 
     def code_count(self) -> int:
         """Number of codes `code_snapshot` covers — the local shard under FSDP2."""
-        return as_local(self.weight.detach()).numel()
+        count = as_local(self.weight.detach()).numel()
+        return count * quant.DUAL_PLANES if self.weight_scale == "dual" else count
+
+    def refresh_scale_from_weight(self) -> None:
+        """Re-seed the learnable scale(s) from the current latent weight.
+
+        The swap seeds them, but a PTQ initializer rewrites the latents afterwards, so
+        a scale left over from the pre-fit tensor would code the fitted one wrong.
+        Rebinds the parameters, so it only runs before any parallelism wrapping.
+        """
+        if self.weight_scale not in LEARNABLE_SCALE_MODES:
+            return
+        weight = self.weight
+        if (
+            weight.device.type == "meta"
+            or not weight.numel()
+            or as_dtensor(weight) is not None
+        ):
+            return
+        if self.weight_scale == "dual":
+            low, high = self._initial_dual_scales()
+            self.scale_lo = nn.Parameter(low.log().to(weight.device))
+            self.scale = nn.Parameter(high.log().to(weight.device))
+            return
+        shape = (self.out_features, 1) if self.weight_scale == "learnable_row" else (1,)
+        scale = self._initial_scale().reshape(shape)
+        self.scale = nn.Parameter(scale.log().to(weight.device))
 
     def _post_training(self, model: PreTrainedModel, name: str) -> None:
         """Bake the latent weight to `codes * s16` in place so every save path emits the master.
@@ -329,8 +420,9 @@ class TernaryLinear(nn.Module):
                 "would hold latent values under a ternary manifest"
             )
         self._mark_baked()
-        if self.scale is not None:
-            self.scale = None
+        for attr in SCALE_ATTRS:
+            if getattr(self, attr) is not None:
+                setattr(self, attr, None)
 
     def extra_repr(self) -> str:
         """Return the shape, scale mode and activation bits for `repr(model)`."""
@@ -354,8 +446,15 @@ class TernaryLinear(nn.Module):
             return None
         return _fused_ops()
 
+    def _weight_ops(self, tensor: torch.Tensor) -> ModuleType | None:
+        """`_ops`, restricted to the scale layouts the fused weight kernels cover."""
+        if self.weight_scale not in FUSED_SCALE_MODES:
+            return None
+        return self._ops(tensor)
+
     def _int8_linear(self, x: torch.Tensor) -> torch.Tensor | None:
-        ops = _int8_ops()
+        # the W2A8 epilogue rescales by one scalar per tensor
+        ops = _int8_ops() if self.weight_scale in INT8_FORWARD_SCALE_MODES else None
         out = None if ops is None else ops.int8_linear_forward(self, x)
         if out is None and self.int8_forward is True and not self._int8_warned:
             self._int8_warned = True
@@ -365,36 +464,100 @@ class TernaryLinear(nn.Module):
             )
         return out
 
+    def _scale_group_size(self) -> int | None:
+        """Group size the quantizer sees: a per-row scale is one group of `in_features`."""
+        if self.weight_scale == "learnable_row":
+            return self.in_features
+        return self.group_size
+
     def _scale(self, gathered: bool = False) -> torch.Tensor | None:
-        """Return the fp32 per-tensor scale, floored; `gathered` unshards it first."""
-        if self.scale is None:
+        """Return the fp32 scale, floored; `gathered` unshards it first.
+
+        `None` in the statistic modes, and under `dual` — that grid carries a pair,
+        see `_dual_scales`.
+        """
+        if self.scale is None or self.weight_scale == "dual":
             return None
-        scale = self.scale
+        # a (1,) scale sharded over N ranks leaves most of them an empty local
+        scale = _gathered(self.scale) if gathered else self.scale
+        shape = (self.out_features, 1) if self.weight_scale == "learnable_row" else ()
+        return scale.float().exp().reshape(shape).clamp_min(quant.SCALE_EPS)
+
+    def _snapshot_scale(self) -> torch.Tensor | None:
+        """Return the scale paired with the rank-local weight shard."""
+        if self.weight_scale != "learnable_row":
+            return self._scale(gathered=True)
+        scale = self._scale()
+        # per-row scales shard the way the rows do, so the local halves already match
+        return None if scale is None else as_local(scale)
+
+    def _dual_scales(
+        self, weight: torch.Tensor, gathered: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the ordered fp32 per-row `(s_lo, s_hi)` pair aligned with `weight`.
+
+        Falls back to the statistic once `_post_training` has folded the parameters
+        into the values and dropped them.
+        """
+        if self.scale_lo is None or self.scale is None:
+            return quant.dual_absmean_scales(weight)
+        low: torch.Tensor = self.scale_lo
+        high: torch.Tensor = self.scale
         if gathered:
-            # a (1,) scale sharded over N ranks leaves most of them an empty local
-            sharded = as_dtensor(scale)
-            scale = scale if sharded is None else sharded.full_tensor()
-        return scale.float().exp().reshape(()).clamp_min(quant.SCALE_EPS)
+            low, high = _gathered(low), _gathered(high)
+        elif as_dtensor(weight) is None:
+            # per-row scales shard the way the rows do, so the local halves match
+            low, high = as_local(low), as_local(high)
+        low, high = low.float().exp(), high.float().exp()
+        return (
+            torch.minimum(low, high).clamp_min(quant.SCALE_EPS),
+            torch.maximum(low, high).clamp_min(quant.SCALE_EPS),
+        )
+
+    def _bake(self, weight: torch.Tensor, gathered: bool) -> torch.Tensor:
+        """Return `weight` on the module's quantization grid, exactly."""
+        if self.weight_scale == "dual":
+            low, high = self._dual_scales(weight, gathered=gathered)
+            return quant.fake_quant_weight_dual(weight, 1.0, low, high)
+        return quant.fake_quant_weight(
+            weight, 1.0, self._scale_group_size(), self._scale(gathered=gathered)
+        )
 
     def _initial_scale(self) -> torch.Tensor:
         """Return the fp32 scale a learnable `log_s` starts from."""
         weight = as_local(self.weight.detach())
-        recovered = quant.baked_codes_and_scale(weight, self.group_size)
+        group_size = self._scale_group_size()
+        recovered = quant.baked_codes_and_scale(weight, group_size)
         if recovered is not None:
             return recovered[1]
-        return quant.absmean_scale(weight, self.group_size)
+        return quant.absmean_scale(weight, group_size)
+
+    def _initial_dual_scales(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the fp32 `(s_lo, s_hi)` pair the learnable dual scales start from."""
+        weight = as_local(self.weight.detach())
+        recovered = quant.baked_dual_codes_and_scales(weight)
+        if recovered is not None:
+            return recovered[1], recovered[2]
+        return quant.dual_absmean_scales(weight)
 
     def _detect_baked(self) -> bool:
-        """Flag the module when its weight already holds exactly `{-s16, 0, +s16}`.
+        """Flag the module when its weight already holds exactly the quantized values.
 
         A baked master is the interchange artifact, so it is what gets loaded back;
         re-deriving an absmean scale from ternary values would shrink every magnitude
-        by the non-zero code fraction.
+        by the non-zero code fraction, and a per-row grid read per tensor would lose
+        the rows entirely.
         """
         weight = as_local(self.weight.detach())
         if weight.device.type == "meta" or not weight.numel():
             return False
-        self.baked = quant.baked_codes_and_scale(weight, self.group_size) is not None
+        if self.weight_scale == "dual":
+            self.baked = quant.baked_dual_codes_and_scales(weight) is not None
+        else:
+            self.baked = (
+                quant.baked_codes_and_scale(weight, self._scale_group_size())
+                is not None
+            )
         self._baked_version = self.weight._version if self.baked else None
         return self.baked
 
@@ -421,19 +584,30 @@ class TernaryLinear(nn.Module):
             )
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
-        """Re-run the baked probe after `load_state_dict` replaces the weight."""
+        """Re-run the baked probe after `load_state_dict` replaces the weight.
+
+        A master baked at save time ships no scales — they were folded into its values
+        — so a learnable mode re-seeds them from the reloaded weight.
+        """
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
         self._detect_baked()
+        if not any(f"{prefix}{attr}" in state_dict for attr in SCALE_ATTRS):
+            self.refresh_scale_from_weight()
 
     def _quant_weight(self, lambda_: float) -> torch.Tensor:
+        if self.weight_scale == "dual":
+            low, high = self._dual_scales(self.weight)
+            return quant.fake_quant_weight_dual_ste(self.weight, lambda_, low, high)
         scale = self._scale()
         # fused kernels carry no gradient for a learnable scale
-        ops = self._ops(self.weight) if scale is None else None
+        ops = self._weight_ops(self.weight) if scale is None else None
         if ops is not None:
             return _FusedQuantSTE.apply(
                 self.weight, ops.fake_quant_weight, lambda_, self.group_size, None
             )
-        return quant.fake_quant_weight_ste(self.weight, lambda_, self.group_size, scale)
+        return quant.fake_quant_weight_ste(
+            self.weight, lambda_, self._scale_group_size(), scale
+        )
 
     def _quant_act(self, x: torch.Tensor, lambda_: float) -> torch.Tensor:
         if not self.share_act_quant:

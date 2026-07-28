@@ -9,6 +9,15 @@ Pinned numerics (see design.md):
 - activations use a per-token scale `s_x = max(|x|) / 127` (clamped to `SCALE_EPS`)
   with codes clipped to `[-ACT_QMAX, ACT_QMAX]`,
 - λ-interpolation on both paths: `y = v + λ · (quant(v) - v)`.
+
+A scale of shape `(out_features, 1)` is a per-row scale — one group spanning every
+input feature — so the group machinery below covers it unchanged.
+
+The five-value dual-scale grid (`weight_scale: dual`) is the one departure from the
+single-plane rule: each row carries an `(s_lo, s_hi)` pair and every weight takes the
+nearest of `{0, ±s_lo, ±s_hi}`, coded as `{-2, -1, 0, +1, +2}`. Everything else — the
+fp32 accumulation, the `SCALE_EPS` floor, the `f16`-rounded dequant scale and the
+λ-interpolation — is identical, so a baked five-value master re-quantizes to itself.
 """
 
 from __future__ import annotations
@@ -18,6 +27,9 @@ import torch
 SCALE_EPS: float = 1e-5
 ACT_QMAX: int = 127
 CODES_PER_BYTE: int = 4
+
+# a five-value code is snapshot as two ternary planes, sign and level
+DUAL_PLANES: int = 2
 
 # elements the baked-weight probe inspects before committing to a full-tensor check
 BAKED_PROBE_ELEMENTS: int = 1024
@@ -175,6 +187,164 @@ def fake_quant_weight(
     return _interp(weight, quantized, lambda_)
 
 
+def _conditional_mean(
+    values: torch.Tensor, mask: torch.Tensor, fallback: torch.Tensor
+) -> torch.Tensor:
+    """Per-row mean of `values` over `mask`, falling back where a row selects nothing."""
+    count = mask.sum(dim=-1, keepdim=True)
+    total = (values * mask).sum(dim=-1, keepdim=True)
+    return torch.where(count > 0, total / count.clamp_min(1), fallback)
+
+
+def _ordered_dual_scales(
+    scale_lo: torch.Tensor, scale_hi: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    low = scale_lo.to(torch.float32).clamp_min(SCALE_EPS)
+    high = scale_hi.to(torch.float32).clamp_min(SCALE_EPS)
+    return torch.minimum(low, high), torch.maximum(low, high)
+
+
+def dual_absmean_scales(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the fp32 per-row `(s_lo, s_hi)` the five-value grid starts from.
+
+    One conditional-mean refinement of the ternary partition: the weights a per-row
+    absmean rounds to `±1` set `s_lo`, the ones it clips down from `±2` set `s_hi`.
+
+    Args:
+        weight: Latent weight of shape `(out_features, in_features)`.
+
+    Returns:
+        Two fp32 `(out_features, 1)` tensors with `s_lo <= s_hi`, both clamped to
+        `SCALE_EPS`.
+    """
+    magnitude = weight.to(torch.float32).abs()
+    centre = magnitude.mean(dim=-1, keepdim=True).clamp_min(SCALE_EPS)
+    high_mask = magnitude > 1.5 * centre
+    low_mask = (magnitude > 0.5 * centre) & ~high_mask
+    scale_lo = _conditional_mean(magnitude, low_mask, centre).clamp_min(SCALE_EPS)
+    scale_hi = _conditional_mean(magnitude, high_mask, scale_lo).clamp_min(SCALE_EPS)
+    return scale_lo, torch.maximum(scale_hi, scale_lo)
+
+
+def dual_codes(
+    weight: torch.Tensor, scale_lo: torch.Tensor, scale_hi: torch.Tensor
+) -> torch.Tensor:
+    """Return the five-state codes `{-2, -1, 0, +1, +2}` nearest to `weight`.
+
+    `±1` selects `s_lo` and `±2` selects `s_hi`. A magnitude sitting exactly on a
+    boundary takes the smaller state, which is where `round_half_even` puts the
+    ternary tie at `0.5·s`.
+
+    Args:
+        weight: Latent weight.
+        scale_lo: fp32 low scale, broadcastable to `weight` (per row: `(out, 1)`).
+        scale_hi: fp32 high scale, same shape as `scale_lo`.
+
+    Returns:
+        int8 codes shaped like `weight`.
+    """
+    low, high = _ordered_dual_scales(scale_lo, scale_hi)
+    values = weight.to(torch.float32)
+    magnitude = values.abs()
+    level = (magnitude > 0.5 * low).to(torch.int8) + (
+        magnitude > 0.5 * (low + high)
+    ).to(torch.int8)
+    return level * torch.sign(values).to(torch.int8)
+
+
+def dequantize_dual_codes(
+    codes: torch.Tensor,
+    scale_lo_f16: torch.Tensor,
+    scale_hi_f16: torch.Tensor,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Return `sign(codes) · s16` for the level each code selects — the baked values."""
+    magnitude = torch.where(
+        codes.abs() > 1, scale_hi_f16.to(torch.float32), scale_lo_f16.to(torch.float32)
+    )
+    return (torch.sign(codes.to(torch.float32)) * magnitude).to(dtype)
+
+
+def dual_state_planes(codes: torch.Tensor) -> torch.Tensor:
+    """Split five-state codes into the two ternary planes the snapshot buffer packs.
+
+    Plane 0 is the sign, plane 1 the level (`-1` for `s_lo`, `+1` for `s_hi`), so both
+    lanes of a weight are zero exactly when its state is — which keeps
+    `zero_fraction` over the pair the true fraction of zeroed weights.
+
+    Args:
+        codes: int8 five-state codes.
+
+    Returns:
+        int8 tensor of shape `(DUAL_PLANES, *codes.shape)`, every entry in `{-1, 0, 1}`.
+    """
+    nonzero = (codes != 0).to(torch.int8)
+    level = torch.where(codes.abs() > 1, 1, -1).to(torch.int8) * nonzero
+    return torch.stack((torch.sign(codes).to(torch.int8), level))
+
+
+def baked_dual_codes_and_scales(
+    weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None:
+    """Recover `(codes, s_lo, s_hi)` from a baked five-value weight, or `None` if latent.
+
+    A baked row holds exactly `{0, ±s_lo, ±s_hi}`, so its `amax` *is* `s_hi` and its
+    smallest non-zero magnitude *is* `s_lo`; the statistic would instead shrink both.
+    Rows where the two coincide (one magnitude, or none at all) recover a degenerate
+    pair, which quantizes and dequantizes to the same values either way.
+
+    Args:
+        weight: Candidate baked weight of shape `(out_features, in_features)`.
+
+    Returns:
+        `(codes, s_lo, s_hi)` — int8 codes shaped like `weight` and two fp32
+        `(out_features, 1)` scales — or `None` when the rows are not exactly on a
+        five-value grid.
+    """
+    values = weight.detach().to(torch.float32)
+    magnitude = values.abs()
+    high = magnitude.amax(dim=-1, keepdim=True)
+    low = magnitude.masked_fill(magnitude == 0, float("inf")).amin(dim=-1, keepdim=True)
+    low = torch.where(torch.isinf(low), high, low).clamp_min(SCALE_EPS)
+    high = high.clamp_min(SCALE_EPS)
+    codes = dual_codes(values, low, high)
+    if not bool(
+        torch.equal(dequantize_dual_codes(codes, low, high, values.dtype), values)
+    ):
+        return None
+    return codes, low, high
+
+
+def fake_quant_weight_dual(
+    weight: torch.Tensor,
+    lambda_: float = 1.0,
+    scale_lo: torch.Tensor | None = None,
+    scale_hi: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Return `w + λ · (five-value(w) - w)` in the weight dtype (no autograd wiring).
+
+    Args:
+        weight: Latent weight.
+        lambda_: Quantization strength in `[0, 1]`.
+        scale_lo: fp32 low scale per row; derived by `dual_absmean_scales` when `None`.
+        scale_hi: fp32 high scale per row; must be `>= scale_lo` for the gradients to
+            be attributed to the right one, and is ordered defensively here.
+
+    Returns:
+        Effective weight, same shape and dtype as `weight`.
+    """
+    if lambda_ <= 0.0:
+        return weight
+    if scale_lo is None or scale_hi is None:
+        scale_lo, scale_hi = dual_absmean_scales(weight)
+    low, high = _ordered_dual_scales(scale_lo, scale_hi)
+    codes = dual_codes(weight, low, high)
+    quantized = dequantize_dual_codes(
+        codes, f16_round_scale(low), f16_round_scale(high), weight.dtype
+    )
+    return _interp(weight, quantized, lambda_)
+
+
 def act_scale(x: torch.Tensor) -> torch.Tensor:
     """Return the per-token activation scale `max(|x|) / ACT_QMAX`, clamped to `SCALE_EPS`.
 
@@ -305,6 +475,61 @@ class FakeQuantWeightSTE(torch.autograd.Function):
         return grad_output, None, None, grad_scale
 
 
+def _reduce_to(grad: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Sum `grad` down to the shape and dtype `target` broadcast from."""
+    while grad.ndim > target.ndim:
+        grad = grad.sum(0)
+    for dim, size in enumerate(target.shape):
+        if size == 1:
+            grad = grad.sum(dim, keepdim=True)
+    return grad.reshape(target.shape).to(target.dtype)
+
+
+class FakeQuantWeightDualSTE(torch.autograd.Function):
+    """Straight-through estimator for the five-value dual-scale weight path.
+
+    Forward applies `fake_quant_weight_dual`; backward is the identity into the latent
+    weight plus the true gradient of whichever scale each weight was assigned to.
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        weight: torch.Tensor,
+        lambda_: float,
+        scale_lo: torch.Tensor,
+        scale_hi: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return the effective weight; see `fake_quant_weight_dual`."""
+        ctx.lambda_ = lambda_
+        if lambda_ > 0.0 and (scale_lo.requires_grad or scale_hi.requires_grad):
+            ctx.save_for_backward(
+                dual_codes(weight, scale_lo, scale_hi),
+                scale_lo,
+                scale_hi,
+                # the forward reads the pair as (min, max); where that swapped the two,
+                # each argument drove the other's level and takes the other's gradient
+                scale_lo.to(torch.float32) > scale_hi.to(torch.float32),
+            )
+        return fake_quant_weight_dual(weight, lambda_, scale_lo, scale_hi)
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
+        """Pass the incoming gradient through, splitting the scale grad by state."""
+        if not ctx.saved_tensors:
+            return grad_output, None, None, None
+        codes, scale_lo, scale_hi, swapped = ctx.saved_tensors
+        grad = (
+            grad_output.to(torch.float32)
+            * torch.sign(codes.to(torch.float32))
+            * ctx.lambda_
+        )
+        low_level, high_level = grad * (codes.abs() == 1), grad * (codes.abs() > 1)
+        grad_lo = _reduce_to(torch.where(swapped, high_level, low_level), scale_lo)
+        grad_hi = _reduce_to(torch.where(swapped, low_level, high_level), scale_hi)
+        return grad_output, None, grad_lo, grad_hi
+
+
 class ActQuantSTE(torch.autograd.Function):
     """Straight-through estimator for the per-token activation fake-quant path."""
 
@@ -327,6 +552,18 @@ def fake_quant_weight_ste(
 ) -> torch.Tensor:
     """Autograd-wired `fake_quant_weight` (STE backward)."""
     return FakeQuantWeightSTE.apply(weight, lambda_, group_size, scale)
+
+
+def fake_quant_weight_dual_ste(
+    weight: torch.Tensor,
+    lambda_: float = 1.0,
+    scale_lo: torch.Tensor | None = None,
+    scale_hi: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Autograd-wired `fake_quant_weight_dual` (STE backward)."""
+    if scale_lo is None or scale_hi is None:
+        scale_lo, scale_hi = dual_absmean_scales(weight.detach())
+    return FakeQuantWeightDualSTE.apply(weight, lambda_, scale_lo, scale_hi)
 
 
 def act_quant_ste(x: torch.Tensor, lambda_: float = 1.0) -> torch.Tensor:

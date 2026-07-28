@@ -1,9 +1,10 @@
-"""Training callbacks: λ warmup, weight-decay anneal, ternary code monitoring."""
+"""Training callbacks: λ warmup, KD anchor, weight-decay anneal, code monitoring."""
 
 from __future__ import annotations
 
 import math
 from collections import defaultdict
+from typing import Any
 
 import torch
 from torch import nn
@@ -25,6 +26,9 @@ LOG = get_logger(__name__)
 
 # steepness of the normalized sigmoid ramp; ~0 and ~1 at the window edges
 SIGMOID_STEEPNESS: float = 12.0
+
+# width of the KD anchor ramp, as a fraction of max_steps
+ANCHOR_RAMP_FRACTION: float = 0.02
 
 
 def _sigmoid(value: float) -> float:
@@ -112,6 +116,102 @@ class LambdaScheduleCallback(TrainerCallback):
         **kwargs,
     ) -> None:
         """Set λ on every ternary module for this step."""
+        self._apply(state)
+
+
+class DistillAnchorCallback(TrainerCallback):
+    """Holds the distillation terms at 0 until the LR-decay tail, then ramps them in.
+
+    `distill.schedule: anchored` spends the bulk of the heal on pure CE and anchors the
+    student to the teacher only over the last `1 - anchor_start` of the steps, where the
+    LR has already decayed. The switch is a short linear ramp rather than a step: an
+    abrupt change in loss composition shocks the optimizer's moment estimates, the same
+    failure mode that made discrete λ jumps unusable in the BitNet warmup ablations.
+    A multiplier of exactly 0 also keeps the teacher out of memory: the trainer skips
+    the teacher forward — and its load — on those steps.
+    """
+
+    def __init__(
+        self,
+        trainer: Any = None,
+        anchor_start: float = 0.9,
+        ramp_fraction: float = ANCHOR_RAMP_FRACTION,
+    ) -> None:
+        """Store the trainer the multiplier is pushed onto and the ramp geometry.
+
+        Args:
+            trainer: The trainer exposing `set_distill_multiplier`.
+            anchor_start: Fraction of `max_steps` after which the KD terms turn on.
+            ramp_fraction: Width of the linear ramp, as a fraction of `max_steps`.
+        """
+        self.trainer = trainer
+        self.anchor_start = anchor_start
+        self.ramp_fraction = ramp_fraction
+        self.multiplier: float = -1.0
+        self.warned = False
+
+    @staticmethod
+    def multiplier_at(
+        step: int,
+        max_steps: int,
+        anchor_start: float,
+        ramp_fraction: float = ANCHOR_RAMP_FRACTION,
+    ) -> float:
+        """Return the KD multiplier in `[0, 1]` for a global step.
+
+        An unknown horizon (`max_steps <= 0`) has no anchor to resolve against and
+        falls back to the constant blend.
+        """
+        if max_steps <= 0:
+            return 1.0
+        ramp = max(1, round(ramp_fraction * max_steps))
+        # the anchor is pulled in far enough for the ramp to finish before the last
+        # step, so a short run still gets its KD phase at full weight; steps are
+        # 0-based, so the anchor is the first KD step rather than the last CE one
+        anchor = min(int(anchor_start * max_steps), max(max_steps - ramp, 0))
+        if step < anchor:
+            return 0.0
+        return min((step - anchor + 1) / ramp, 1.0)
+
+    def _apply(self, state: TrainerState) -> None:
+        if state.max_steps <= 0 and not self.warned:
+            LOG.warning(
+                "ternary: distill.schedule: anchored needs a known max_steps; the KD "
+                "terms stay on for the whole run"
+            )
+            self.warned = True
+        value = self.multiplier_at(
+            state.global_step, state.max_steps, self.anchor_start, self.ramp_fraction
+        )
+        if value == self.multiplier:
+            return
+        setter = getattr(self.trainer, "set_distill_multiplier", None)
+        if setter is not None:
+            setter(value)
+        if self.multiplier <= 0.0 < value:
+            LOG.info("ternary: KD anchor ramp opened at step %d", state.global_step)
+        if value >= 1.0 > self.multiplier:
+            LOG.info("ternary: KD anchor at full weight at step %d", state.global_step)
+        self.multiplier = value
+
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ) -> None:
+        """Set the initial multiplier, resolving the anchor against `state.max_steps`."""
+        self._apply(state)
+
+    def on_step_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ) -> None:
+        """Push this step's multiplier onto the trainer."""
         self._apply(state)
 
 

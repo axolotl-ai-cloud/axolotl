@@ -16,6 +16,9 @@ from typing_extensions import override
 from axolotl.core.trainers import AxolotlTrainer
 from axolotl.utils.logging import get_logger
 
+from .args import DistillSchedule
+from .callbacks import DistillAnchorCallback
+
 LOG = get_logger(__name__)
 
 IGNORE_INDEX: int = -100
@@ -41,6 +44,8 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_hidden_weight: float | None = None
     ternary_distill_attn_relation_layer: int | None = None
     ternary_distill_teacher_device_map: str | None = None
+    ternary_distill_schedule: DistillSchedule | None = None
+    ternary_distill_anchor_start: float | None = None
 
 
 class TernaryDistillTrainer(AxolotlTrainer):
@@ -50,6 +55,11 @@ class TernaryDistillTrainer(AxolotlTrainer):
     large vocabularies never materialize a full `(T, V)` logits pair, plus optional
     cosine hidden-state KD and single-layer attention-relation KD. The teacher runs
     in eval mode under `no_grad`.
+
+    Every KD term is scaled by a schedule multiplier `DistillAnchorCallback` pushes in
+    at each step. Under `schedule: anchored` it is 0 for the CE-dominant bulk of the
+    run, which makes those steps pure-CE *and* teacher-free: nothing loads the teacher
+    until the anchor ramp starts.
     """
 
     def __init__(self, *args, teacher_model: PreTrainedModel | None = None, **kwargs):
@@ -58,6 +68,10 @@ class TernaryDistillTrainer(AxolotlTrainer):
         # the distillation loss is a plain token mean, so let the Trainer normalize it
         self.model_accepts_loss_kwargs = False
         self._init_distill_state(teacher_model)
+        if self.distill_schedule == "anchored":
+            self.add_callback(
+                DistillAnchorCallback(trainer=self, anchor_start=self.anchor_start)
+            )
 
     def _init_distill_state(self, teacher_model: PreTrainedModel | None = None) -> None:
         """Read the distillation knobs off `self.args` and reset the teacher state."""
@@ -79,6 +93,12 @@ class TernaryDistillTrainer(AxolotlTrainer):
         self.teacher_device_map = getattr(
             args, "ternary_distill_teacher_device_map", None
         )
+        schedule = getattr(args, "ternary_distill_schedule", None) or "constant"
+        self.distill_schedule = schedule
+        self.anchor_start = _arg(args, "ternary_distill_anchor_start", 0.9)
+        # anchored runs start teacher-free, so a step taken before the callback has
+        # pushed a multiplier cannot pull the teacher into memory
+        self.distill_multiplier = 0.0 if schedule == "anchored" else 1.0
 
         self._teacher: PreTrainedModel | None = teacher_model
         self._teacher_ready = False
@@ -109,18 +129,52 @@ class TernaryDistillTrainer(AxolotlTrainer):
             raise KeyError("ternary in-process distillation requires batch `labels`")
 
         student = self._unwrap(model)
+        multiplier = self.distill_multiplier
+        if multiplier <= 0.0:
+            return self._ce_loss(model, student, inputs, labels, return_outputs)
+
         teacher = self._ensure_teacher(student)
         self._captured.clear()
         if self.attn_relation_layer is not None:
             self._register_relation_hooks(student, teacher)
         try:
             return self._distill_loss(
-                model, student, teacher, inputs, labels, return_outputs
+                model, student, teacher, inputs, labels, return_outputs, multiplier
             )
         finally:
             # the captures pin a (batch, seq, heads*dim) tensor per projection
             self._captured.clear()
             self._release_hooks()
+
+    def _ce_loss(
+        self,
+        model: PreTrainedModel,
+        student: nn.Module,
+        inputs: dict[str, torch.Tensor],
+        labels: torch.Tensor,
+        return_outputs: bool,
+    ):
+        """Chunked CE alone: the schedule holds every KD term at 0, so no teacher runs."""
+        outputs = model(**_forward_inputs(inputs, student))
+        student_hidden = _last_hidden(outputs, model)
+        student_head = _resolve_lm_head(student)
+
+        shifted = labels[..., 1:]
+        supervised = shifted != IGNORE_INDEX
+        ce, _ = _chunked_ce_kd(
+            student_hidden[..., :-1, :][supervised],
+            None,
+            student_head.weight,
+            getattr(student_head, "bias", None),
+            None,
+            None,
+            shifted[supervised],
+            self.logits_temperature,
+            _chunk_size(student_head.weight.shape[0]),
+        )
+
+        self._store_metrics({"ternary/ce": ce.detach().item()}, 0.0, model.training)
+        return (ce, outputs) if return_outputs else ce
 
     def _distill_loss(
         self,
@@ -130,6 +184,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
         inputs: dict[str, torch.Tensor],
         labels: torch.Tensor,
         return_outputs: bool,
+        multiplier: float = 1.0,
     ):
         outputs = model(**_forward_inputs(inputs, student))
         student_hidden = _last_hidden(outputs, model)
@@ -165,7 +220,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
             chunk_size,
         )
 
-        alpha = self.logits_weight
+        alpha = multiplier * self.logits_weight
         loss = (1.0 - alpha) * ce + alpha * self.logits_temperature**2 * kd
         metrics = {
             "ternary/ce": ce.detach().item(),
@@ -183,15 +238,26 @@ class TernaryDistillTrainer(AxolotlTrainer):
                 ),
                 mask=mask,
             )
-            loss = loss + self.hidden_weight * hidden
+            loss = loss + multiplier * self.hidden_weight * hidden
             metrics["ternary/kd_hidden"] = hidden.detach().item()
         if self.attn_relation_layer is not None:
             relation = self._attn_relation_term(mask)
-            loss = loss + relation
+            loss = loss + multiplier * relation
             metrics["ternary/kd_attn"] = relation.detach().item()
 
-        self.store_metrics(metrics, train_eval="train" if model.training else "eval")
+        self._store_metrics(metrics, multiplier, model.training)
         return (loss, outputs) if return_outputs else loss
+
+    def _store_metrics(
+        self, metrics: dict[str, float], multiplier: float, training: bool
+    ) -> None:
+        if self.distill_schedule != "constant":
+            metrics["ternary/distill_weight"] = multiplier
+        self.store_metrics(metrics, train_eval="train" if training else "eval")
+
+    def set_distill_multiplier(self, value: float) -> None:
+        """Scale every KD term by `value` from this step on; 0 makes the step pure CE."""
+        self.distill_multiplier = float(value)
 
     def chunked_logits_kd(
         self,
@@ -299,11 +365,29 @@ class TernaryDistillTrainer(AxolotlTrainer):
     @override
     def train(self, *args, **kwargs):
         """Load the teacher before the training loop opens any ZeRO-3 init scope."""
-        self._ensure_teacher(self._unwrap(self.model))
+        if not self._defers_teacher():
+            self._ensure_teacher(self._unwrap(self.model))
         try:
             return super().train(*args, **kwargs)
         finally:
             self._release_hooks()
+
+    def _defers_teacher(self) -> bool:
+        """Whether the anchored schedule may hold the teacher back until the KD tail."""
+        if self.distill_schedule != "anchored" or self._teacher is not None:
+            return False
+        if getattr(self, "is_deepspeed_enabled", False):
+            # a mid-run from_pretrained is partitioned by the live ZeRO-3 config
+            LOG.warning(
+                "ternary: distill.schedule: anchored keeps the teacher loaded for the "
+                "whole run under DeepSpeed; the CE-phase memory win needs FSDP or DDP"
+            )
+            return False
+        LOG.info(
+            "ternary: distill.schedule: anchored defers the teacher load to the KD tail "
+            f"(anchor_start {self.anchor_start})"
+        )
+        return True
 
     def _ensure_teacher(self, student: PreTrainedModel) -> PreTrainedModel:
         """Load the frozen teacher, once."""
@@ -434,7 +518,7 @@ def _last_hidden(outputs: Any, model: nn.Module) -> torch.Tensor:
     return hidden_states[-1]
 
 
-def _resolve_lm_head(model: nn.Module) -> nn.Module:
+def _resolve_lm_head(model: nn.Module) -> nn.Linear:
     """Return the output head of a causal LM, looking through common wrappers."""
     base = model
     if hasattr(base, "get_base_model"):
@@ -549,16 +633,22 @@ def _relation_kl_sum(
 
 def _chunk_terms(
     student_hidden: torch.Tensor,
-    teacher_hidden: torch.Tensor,
+    teacher_hidden: torch.Tensor | None,
     student_weight: torch.Tensor,
     student_bias: torch.Tensor | None,
-    teacher_weight: torch.Tensor,
+    teacher_weight: torch.Tensor | None,
     teacher_bias: torch.Tensor | None,
     targets: torch.Tensor | None,
     temperature: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Summed CE and KL for one token chunk; the only place logits exist."""
     student_logits = F.linear(student_hidden, student_weight, student_bias).float()
+    if teacher_hidden is None or teacher_weight is None:
+        if targets is None:
+            return student_logits.new_zeros(()), student_logits.new_zeros(())
+        ce = F.cross_entropy(student_logits, targets, reduction="sum")
+        return ce, student_logits.new_zeros(())
+
     with torch.no_grad():
         # the teacher head stays wherever the teacher lives; only this chunk's
         # log-probs cross the device boundary
@@ -579,10 +669,10 @@ def _chunk_terms(
 
 def _chunked_ce_kd(
     student_hidden: torch.Tensor,
-    teacher_hidden: torch.Tensor,
+    teacher_hidden: torch.Tensor | None,
     student_weight: torch.Tensor,
     student_bias: torch.Tensor | None,
-    teacher_weight: torch.Tensor,
+    teacher_weight: torch.Tensor | None,
     teacher_bias: torch.Tensor | None,
     targets: torch.Tensor | None,
     temperature: float,
@@ -592,6 +682,7 @@ def _chunked_ce_kd(
 
     Each chunk is recomputed in the backward pass, so peak memory holds a single
     `(chunk_size, vocab)` logits pair instead of the full `(tokens, vocab)` one.
+    A `None` teacher drops the KL term (and the teacher head) entirely.
     """
     tokens = student_hidden.shape[0]
     if not tokens:
@@ -607,7 +698,7 @@ def _chunked_ce_kd(
         stop = min(start + max(chunk_size, 1), tokens)
         arguments = (
             student_hidden[start:stop],
-            teacher_hidden[start:stop],
+            None if teacher_hidden is None else teacher_hidden[start:stop],
             student_weight,
             student_bias,
             teacher_weight,

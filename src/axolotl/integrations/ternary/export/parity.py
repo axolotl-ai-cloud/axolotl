@@ -521,8 +521,12 @@ def run_parity_gate(
             continue
         codes, scale = extracted[entry.name]
         try:
-            mismatches = _code_mismatches(master[key], codes, entry.group_size)
-            dequantized = quant.dequantize_codes(codes, scale, torch.float32)
+            mismatches = _code_mismatches(
+                master[key], codes, entry.group_size, entry.weight_scale
+            )
+            dequantized = bake.dequantize_derived(
+                codes, scale, entry.weight_scale, torch.float32
+            )
             error, bound = check_dequant_error(master[key], dequantized)
         except ValueError as exc:
             report.failures.append(f"{entry.name}: {exc}")
@@ -549,9 +553,12 @@ def run_parity_gate(
 
 
 def _code_mismatches(
-    master_weight: torch.Tensor, unpacked_codes: torch.Tensor, group_size: int | None
+    master_weight: torch.Tensor,
+    unpacked_codes: torch.Tensor,
+    group_size: int | None,
+    weight_scale: str = "absmean",
 ) -> int:
-    codes, _ = bake.derive_codes_and_scale(master_weight, group_size)
+    codes, _ = bake.derive_codes_and_scale(master_weight, group_size, weight_scale)
     if codes.shape != unpacked_codes.shape:
         raise ValueError(
             f"shape mismatch: master codes {tuple(codes.shape)} vs unpacked "
@@ -569,7 +576,7 @@ def _extract_master_bf16(
         weight = tensors.get(f"{entry.name}.weight")
         if weight is not None:
             extracted[entry.name] = bake.derive_codes_and_scale(
-                weight, entry.group_size
+                weight, entry.group_size, entry.weight_scale
             )
     return extracted
 
@@ -592,12 +599,33 @@ def _extract_hf_bitnet(
     return extracted
 
 
+def _extract_mask_sign(
+    artifact: Path, manifest: SwapManifest
+) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+    from . import mask_sign
+
+    tensors = bake.load_tensors(artifact)
+    extracted: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+    for entry in manifest.entries:
+        packed = tensors.get(f"{entry.name}.{mask_sign.PACKED_SUFFIX}")
+        if packed is None:
+            continue
+        extracted[entry.name] = mask_sign.decode_mask_sign(
+            packed, (entry.out_features, entry.in_features)
+        )
+    return extracted
+
+
 def _decode_block(fmt: str):
     def decode(packed: torch.Tensor, shape: tuple[int, int]):
         if fmt == "i2_s":
             from . import i2s
 
             return i2s.decode_i2s(packed, shape)
+        if fmt == "mask_sign":
+            from . import mask_sign
+
+            return mask_sign.decode_mask_sign(packed, shape)
         from . import gguf_tq
 
         decoder = gguf_tq.decode_tq2_0 if fmt == "gguf_tq2_0" else gguf_tq.decode_tq1_0
@@ -608,7 +636,10 @@ def _decode_block(fmt: str):
 
 register_extractor("master_bf16", _extract_master_bf16)
 register_extractor("hf_bitnet", _extract_hf_bitnet)
-for _fmt in BLOCK_GATED_FORMATS:
+register_extractor("mask_sign", _extract_mask_sign)
+# mask_sign is re-read from disk like the other extractor formats, but its bytes are
+# also gated as they are packed, so a corrupt write never reaches the container
+for _fmt in (*BLOCK_GATED_FORMATS, "mask_sign"):
     register_block_decoder(_fmt, _decode_block(_fmt))
 
 

@@ -54,9 +54,21 @@ axolotl ternary export config.yaml --format gguf_tq2_0 --output-dir ./exports
 | `hf_bitnet` | transformers `BitNetForCausalLM` |
 | `gguf_tq2_0` / `gguf_tq1_0` | llama.cpp (needs the optional `gguf` package) |
 | `i2_s` | bitnet.cpp (needs the optional `gguf` package) |
+| `mask_sign` | archival; zero bitmap + sign plane, `2 - zero_fraction` bits per weight |
 
 Every packed export is gated against the master: exact code equality, an fp16-bounded
 dequant error, and a smoke eval.
+
+## Damage map
+
+```bash
+axolotl ternary damage-map config.yaml --num-sequences 64 --sequence-len 1024
+```
+
+Eval-only passes on a swapped but untrained model — ternary weights, int8 activations,
+both, then one row per module family — reported as perplexity deltas against the FP
+baseline. It says which part of the quantizer to spend the recipe on before a step is
+trained.
 
 ## Layout
 
@@ -68,9 +80,11 @@ dequant error, and a smoke eval.
 | `swap.py` | strict regex-enumerated module surgery + swap manifest |
 | `callbacks.py` | λ schedule, weight-decay anneal, code-flip/zero-fraction monitoring |
 | `distill.py` | in-process frozen-teacher trainer |
+| `subln.py` | BitDistill-style sub-norms in front of `o_proj`/`down_proj` |
 | `kernels/` | fused Triton fake-quant/act-quant/stats, int8 W2A8 forward |
+| `ptq/` | analytic latent initializers, calibration, the damage map |
 | `export/` | bake, packers, parity gates |
-| `cli.py` | `axolotl ternary export` |
+| `cli.py` | `axolotl ternary export`, `axolotl ternary damage-map` |
 
 ## Expectations
 

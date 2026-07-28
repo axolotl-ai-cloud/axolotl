@@ -1,5 +1,6 @@
 """CPU-only tests for the `axolotl ternary` CLI and the shipped example configs."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -9,6 +10,10 @@ from click.testing import CliRunner
 
 from axolotl.cli.main import cli
 from axolotl.cli.plugins import BUILTIN_COMMANDS
+from axolotl.integrations.ternary.ptq.damage import (
+    DEFAULT_SEQUENCE_LEN,
+    DEFAULT_SEQUENCES,
+)
 from axolotl.utils.dict import DictDefault
 
 EXAMPLES_DIR = Path(__file__).parents[3] / "examples" / "ternary"
@@ -70,6 +75,35 @@ def stub_export(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def stub_damage_map(monkeypatch):
+    """Replaces `damage_map` so the CLI wiring is tested without loading a model."""
+    from axolotl.integrations.ternary.ptq.damage import DamageReport, DamageRow
+
+    calls = []
+
+    def _damage_map(cfg, num_sequences, sequence_len, dataset):
+        calls.append(
+            {
+                "cfg": cfg,
+                "num_sequences": num_sequences,
+                "sequence_len": sequence_len,
+                "dataset": dataset,
+            }
+        )
+        return DamageReport(
+            baseline_perplexity=9.5,
+            rows=[DamageRow("weights", 12.5, 3.0)],
+            sequences=num_sequences,
+            sequence_len=sequence_len,
+        )
+
+    monkeypatch.setattr(
+        "axolotl.integrations.ternary.ptq.damage.damage_map", _damage_map, raising=True
+    )
+    return calls
+
+
+@pytest.fixture
 def stub_load_cfg(monkeypatch):
     """Replaces `load_cfg` with a plain YAML read (no validation, no GPU probing)."""
 
@@ -110,11 +144,12 @@ def test_registry_entry_matches_the_group_docstring():
     assert spec.short_help == ternary.__doc__.strip()
 
 
-def test_group_help_lists_export(runner):
+def test_group_help_lists_the_commands(runner):
     result = runner.invoke(cli, ["ternary", "--help"])
 
     assert result.exit_code == 0
     assert "export" in result.output
+    assert "damage-map" in result.output
 
 
 def test_export_help_lists_options(runner):
@@ -188,9 +223,92 @@ def test_export_requires_an_existing_config(runner, tmp_path, stub_export):
     assert not stub_export
 
 
+def test_damage_map_help_lists_options(runner):
+    result = runner.invoke(cli, ["ternary", "damage-map", "--help"])
+
+    assert result.exit_code == 0
+    assert "--num-sequences" in result.output
+    assert "--sequence-len" in result.output
+    assert "--dataset" in result.output
+    assert "--json" in result.output
+
+
+def test_damage_map_prints_a_table(runner, config_path, stub_load_cfg, stub_damage_map):
+    result = runner.invoke(cli, ["ternary", "damage-map", str(config_path)])
+
+    assert result.exit_code == 0, result.output
+    assert len(stub_damage_map) == 1
+    assert stub_damage_map[0]["num_sequences"] == DEFAULT_SEQUENCES
+    assert stub_damage_map[0]["sequence_len"] == DEFAULT_SEQUENCE_LEN
+    assert stub_damage_map[0]["dataset"] is None
+    assert stub_damage_map[0]["cfg"].base_model == "HuggingFaceTB/SmolLM2-135M"
+    assert "baseline" in result.output
+    assert "+3.0000" in result.output
+
+
+def test_damage_map_passes_its_options(
+    runner, config_path, stub_load_cfg, stub_damage_map
+):
+    result = runner.invoke(
+        cli,
+        [
+            "ternary",
+            "damage-map",
+            str(config_path),
+            "--num-sequences",
+            "8",
+            "--sequence-len",
+            "256",
+            "--dataset",
+            "wikitext",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert stub_damage_map[0]["num_sequences"] == 8
+    assert stub_damage_map[0]["sequence_len"] == 256
+    assert stub_damage_map[0]["dataset"] == "wikitext"
+
+
+def test_damage_map_emits_json(runner, config_path, stub_load_cfg, stub_damage_map):
+    result = runner.invoke(cli, ["ternary", "damage-map", str(config_path), "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["baseline_perplexity"] == 9.5
+    assert payload["rows"][0]["scope"] == "weights"
+
+
+def test_damage_map_requires_the_plugin(
+    runner, tmp_path, stub_load_cfg, stub_damage_map
+):
+    path = tmp_path / "no-plugin.yml"
+    path.write_text(
+        MINIMAL_CONFIG.replace("  - axolotl.integrations.ternary.TernaryPlugin\n", "")
+    )
+
+    result = runner.invoke(cli, ["ternary", "damage-map", str(path)])
+
+    assert result.exit_code != 0
+    assert "does not enable the ternary plugin" in result.output
+    assert not stub_damage_map
+
+
+def test_damage_map_rejects_a_zero_sequence_count(
+    runner, config_path, stub_load_cfg, stub_damage_map
+):
+    result = runner.invoke(
+        cli, ["ternary", "damage-map", str(config_path), "--num-sequences", "0"]
+    )
+
+    assert result.exit_code != 0
+    assert not stub_damage_map
+
+
 def test_examples_exist():
     assert {path.name for path in EXAMPLE_CONFIGS} == {
         "llama-3.2-1b-qat.yaml",
+        "llama-3.2-1b-ptq-init.yaml",
         "qwen3-4b-distill.yaml",
     }
     assert (EXAMPLES_DIR / "README.md").is_file()
@@ -219,3 +337,20 @@ def test_example_config_export_formats_are_known(path):
 
     assert ternary_cfg.export.formats
     assert ternary_cfg.export.formats[0] == "master_bf16"
+
+
+def test_ptq_init_example_configures_the_calibrated_fit():
+    from axolotl.integrations.ternary.args import resolve_ternary_config
+
+    path = EXAMPLES_DIR / "llama-3.2-1b-ptq-init.yaml"
+    ternary_cfg = resolve_ternary_config(
+        DictDefault(yaml.safe_load(path.read_text(encoding="utf-8")))
+    )
+
+    assert ternary_cfg.init == "ternary_fit_calibrated"
+    assert ternary_cfg.init_calibration.num_sequences == 128
+    assert ternary_cfg.init_calibration.sequence_len == 2048
+    assert ternary_cfg.init_calibration.dataset is None
+    assert ternary_cfg.distill.schedule == "anchored"
+    assert ternary_cfg.distill.anchor_start == 0.9
+    assert "mask_sign" in ternary_cfg.export.formats

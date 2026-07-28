@@ -1,0 +1,90 @@
+base_model: meta-llama/Llama-3.2-1B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+plugins:
+  - axolotl.integrations.ternary.TernaryPlugin
+
+# Run the damage map first to see what the quantizer costs this model before healing:
+#   axolotl ternary damage-map examples/ternary/llama-3.2-1b-ptq-init.yaml
+# Weight-dominant damage is what a fitted init buys down; activation-dominant damage
+# is not, and argues for `activation_bits: null` plus a longer lambda warmup instead.
+
+ternary:
+  # solve each latent against the calibration activations before the heal starts,
+  # so step 0 begins from the best ternary approximation instead of a plain rounding
+  init: ternary_fit_calibrated
+  init_calibration:
+    num_sequences: 128
+    sequence_len: 2048
+    # null calibrates on the training dataset below; a domain mismatch between the
+    # calibration and healing corpora costs more than the fit buys
+    dataset: null
+  # a fitted init needs a scale mode that keeps the scale it solved; the per-tensor
+  # statistic would re-derive absmean from the ternary latent on the first optimizer
+  # step and throw the solve away. `learnable` is per-tensor and exports everywhere
+  weight_scale: learnable
+  # the init already is the quantized function, so there is nothing to warm up to
+  lambda_schedule: none
+  weight_decay_zero_at: 0.5
+  activation_bits: 8
+  log_code_flip_every: 100
+  distill:
+    mode: inprocess
+    teacher_model: meta-llama/Llama-3.2-1B
+    logits_weight: 0.5
+    logits_temperature: 2.0
+    # KD only over the LR-decay tail; the bulk of the heal stays on pure CE
+    schedule: anchored
+    anchor_start: 0.9
+  export:
+    formats:
+      - master_bf16
+      - hf_bitnet
+      # sparsity-adaptive packing: 2 - zero_fraction bits per weight, so it beats the
+      # 2.0 bpw formats exactly as much as the healed model is sparse
+      - mask_sign
+
+pretraining_dataset:
+  - path: HuggingFaceFW/fineweb-edu
+    name: sample-10BT
+    type: pretrain
+    split: train
+streaming: true
+
+output_dir: ./outputs/ternary-llama-3.2-1b-ptq
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+gradient_accumulation_steps: 8
+micro_batch_size: 8
+max_steps: 20000
+
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1e-4
+warmup_steps: 100
+weight_decay: 0.01
+
+bf16: true
+tf32: true
+gradient_checkpointing: true
+attn_implementation: flash_attention_2
+
+logging_steps: 1
+save_strategy: steps
+save_steps: 1000
+save_only_model: true
+
+special_tokens:
+  pad_token: "<|end_of_text|>"
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

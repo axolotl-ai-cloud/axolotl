@@ -5,6 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from types import SimpleNamespace
 
+import pydantic
 import pytest
 import torch
 import torch.nn.functional as F
@@ -94,6 +95,15 @@ def _naive_terms(student_hidden, teacher_hidden, head, teacher_head, targets, ta
         / targets.shape[0]
     )
     return ce, kd
+
+
+def _reference_ce(student, batch):
+    """Plain next-token CE from full `(B, T, V)` logits."""
+    inputs = {key: value for key, value in batch.items() if key != "labels"}
+    logits = student(**inputs).logits[:, :-1].float()
+    targets = batch["labels"][:, 1:]
+    keep = targets != -100
+    return F.cross_entropy(logits[keep], targets[keep])
 
 
 def _reference_loss(student, teacher, batch, alpha, tau):
@@ -754,6 +764,277 @@ def test_compute_loss_does_not_mutate_the_callers_batch():
     trainer.compute_loss(student, batch)
 
     assert set(batch) == keys
+
+
+# --------------------------------------------------------- anchored KD schedule
+
+
+def test_distill_schedule_defaults_to_the_constant_blend():
+    trainer = _bare_trainer()
+    assert trainer.distill_schedule == "constant"
+    assert trainer.anchor_start == 0.9
+    assert trainer.distill_multiplier == 1.0
+
+
+def test_anchored_schedule_starts_with_every_kd_term_off():
+    trainer = _bare_trainer(schedule="anchored", anchor_start=0.8)
+    assert trainer.distill_multiplier == 0.0
+    assert trainer.anchor_start == 0.8
+
+
+def test_loss_is_pure_ce_before_the_anchor():
+    student = _tiny_llama(seed=0)
+    trainer = _bare_trainer(
+        _tiny_llama(seed=1),
+        schedule="anchored",
+        logits_weight=0.5,
+        hidden_weight=1.5,
+        attn_relation_layer=-1,
+    )
+    batch = _batch()
+
+    loss = trainer.compute_loss(student, batch)
+
+    assert loss.item() == pytest.approx(_reference_ce(student, batch).item(), rel=1e-6)
+    # no teacher forward means no relation hooks and no captures either
+    assert not student.model.layers[-1].self_attn.q_proj._forward_hooks
+    assert trainer._captured == {}
+
+
+def test_the_pure_ce_step_keeps_the_trimmed_outputs_and_gradients():
+    student = _tiny_llama(seed=0)
+    trainer = _bare_trainer(schedule="anchored")
+
+    loss, outputs = trainer.compute_loss(student, _batch(), return_outputs=True)
+    loss.backward()
+
+    assert outputs.logits.shape[1] == 1
+    assert any(param.grad is not None for param in student.parameters())
+
+
+def test_the_teacher_is_not_loaded_before_the_anchor(monkeypatch):
+    """The CE phase is the memory win: nothing may pull the teacher in early."""
+    student = _tiny_llama(seed=0)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        lambda name, **kwargs: calls.append(name) or _tiny_llama(seed=1),
+    )
+    trainer = _bare_trainer(teacher_model="dummy/teacher", schedule="anchored")
+
+    for _ in range(3):
+        trainer.compute_loss(student, _batch())
+
+    assert calls == []
+    assert trainer._teacher is None
+    assert trainer._teacher_ready is False
+
+    trainer.set_distill_multiplier(0.5)
+    trainer.compute_loss(student, _batch())
+
+    assert calls == ["dummy/teacher"]
+    assert trainer._teacher is not None
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+def test_the_ce_phase_never_allocates_the_teacher(monkeypatch):
+    student = _tiny_llama(seed=0).cuda()
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM,
+        "from_pretrained",
+        lambda name, **kwargs: _tiny_llama(seed=1),
+    )
+    trainer = _bare_trainer(teacher_model="dummy/teacher", schedule="anchored")
+    batch = {key: value.cuda() for key, value in _batch().items()}
+    teacher_bytes = sum(
+        param.numel() * param.element_size()
+        for param in _tiny_llama(seed=1).parameters()
+    )
+
+    torch.cuda.synchronize()
+    before = torch.cuda.memory_allocated()
+    with torch.no_grad():
+        trainer.compute_loss(student, batch)
+        torch.cuda.synchronize()
+        after_ce = torch.cuda.memory_allocated()
+        trainer.set_distill_multiplier(1.0)
+        trainer.compute_loss(student, batch)
+        torch.cuda.synchronize()
+
+    assert after_ce - before < teacher_bytes
+    assert torch.cuda.memory_allocated() - after_ce >= teacher_bytes
+
+
+def test_every_kd_term_follows_the_schedule_multiplier():
+    student = _tiny_llama(seed=0)
+    trainer = _bare_trainer(
+        _tiny_llama(seed=1),
+        schedule="anchored",
+        logits_weight=0.5,
+        hidden_weight=1.5,
+        attn_relation_layer=-1,
+    )
+    batch = _batch()
+
+    with torch.no_grad():
+        pure_ce = trainer.compute_loss(student, batch).item()
+        trainer.set_distill_multiplier(1.0)
+        blended = trainer.compute_loss(student, batch).item()
+        trainer.set_distill_multiplier(0.5)
+        mid_ramp = trainer.compute_loss(student, batch).item()
+
+    assert blended != pytest.approx(pure_ce, rel=1e-3)
+    # every term is linear in the multiplier, logits/hidden/relation alike
+    assert mid_ramp == pytest.approx((pure_ce + blended) / 2, rel=1e-5)
+
+
+def test_the_anchored_tail_matches_the_constant_blend_exactly():
+    student = _tiny_llama(seed=0)
+    teacher = _tiny_llama(seed=1)
+    batch = _batch()
+    constant = _bare_trainer(
+        copy.deepcopy(teacher), logits_weight=0.5, hidden_weight=1.5
+    )
+    anchored = _bare_trainer(
+        copy.deepcopy(teacher),
+        schedule="anchored",
+        logits_weight=0.5,
+        hidden_weight=1.5,
+    )
+    anchored.set_distill_multiplier(1.0)
+
+    with torch.no_grad():
+        assert (
+            anchored.compute_loss(student, batch).item()
+            == constant.compute_loss(student, batch).item()
+        )
+
+
+def test_constant_schedule_ignores_the_anchor_knobs():
+    student = _tiny_llama(seed=0)
+    teacher = _tiny_llama(seed=1)
+    trainer = _bare_trainer(teacher, logits_weight=0.5, anchor_start=0.1)
+    batch = _batch()
+
+    loss = trainer.compute_loss(student, batch)
+
+    reference = _reference_loss(student, copy.deepcopy(teacher), batch, 0.5, 2.0)
+    assert loss.item() == pytest.approx(reference.item(), rel=1e-5, abs=1e-6)
+    assert set(trainer._stored_metrics["train"]) == {"ternary/ce", "ternary/kd_logits"}
+
+
+def test_anchored_metrics_carry_the_schedule_weight():
+    student = _tiny_llama(seed=0)
+    trainer = _bare_trainer(
+        _tiny_llama(seed=1), schedule="anchored", logits_weight=0.5, hidden_weight=1.0
+    )
+
+    trainer.compute_loss(student, _batch())
+    assert set(trainer._stored_metrics["train"]) == {
+        "ternary/ce",
+        "ternary/distill_weight",
+    }
+
+    trainer.set_distill_multiplier(0.25)
+    trainer.compute_loss(student, _batch())
+    assert set(trainer._stored_metrics["train"]) == {
+        "ternary/ce",
+        "ternary/kd_logits",
+        "ternary/kd_hidden",
+        "ternary/distill_weight",
+    }
+    assert trainer._stored_metrics["train"]["ternary/distill_weight"]["values"] == [
+        0.0,
+        0.25,
+    ]
+
+
+def test_train_defers_the_teacher_load_under_the_anchored_schedule(monkeypatch):
+    student = _tiny_llama(seed=0)
+    trainer = _bare_trainer(None, schedule="anchored")
+    trainer.model = student
+    loaded: list[str] = []
+    monkeypatch.setattr(
+        TernaryDistillTrainer,
+        "_load_teacher",
+        lambda self, s: loaded.append("loaded") or _tiny_llama(seed=1),
+    )
+    monkeypatch.setattr(transformers.Trainer, "train", lambda self, *args, **kwargs: 0)
+
+    trainer.train()
+
+    assert loaded == []
+    assert trainer._teacher is None
+
+
+def test_train_loads_the_teacher_eagerly_under_deepspeed(monkeypatch, caplog):
+    """ZeRO-3 partitions a mid-run `from_pretrained`, so the deferral cannot apply."""
+    student = _tiny_llama(seed=0)
+    trainer = _bare_trainer(None, schedule="anchored")
+    trainer.model = student
+    trainer.is_deepspeed_enabled = True
+    loaded: list[str] = []
+    monkeypatch.setattr(
+        TernaryDistillTrainer,
+        "_load_teacher",
+        lambda self, s: loaded.append("loaded") or _tiny_llama(seed=1),
+    )
+    monkeypatch.setattr(transformers.Trainer, "train", lambda self, *args, **kwargs: 0)
+
+    with caplog.at_level("WARNING"):
+        trainer.train()
+
+    assert loaded == ["loaded"]
+    assert any("DeepSpeed" in record.message for record in caplog.records)
+
+
+def test_the_anchored_trainer_installs_the_schedule_callback(tmp_path):
+    from axolotl.core.training_args import AxolotlTrainingArguments
+    from axolotl.integrations.ternary.callbacks import DistillAnchorCallback
+
+    def _trainer(**knobs):
+        args = AxolotlTrainingArguments(
+            output_dir=str(tmp_path), max_steps=1, report_to=[], save_strategy="no"
+        )
+        for key, value in knobs.items():
+            setattr(args, f"ternary_distill_{key}", value)
+        return TernaryDistillTrainer(
+            model=_tiny_llama(seed=0), args=args, train_dataset=None
+        )
+
+    anchored = _trainer(schedule="anchored", anchor_start=0.75)
+    callbacks = [
+        callback
+        for callback in anchored.callback_handler.callbacks
+        if isinstance(callback, DistillAnchorCallback)
+    ]
+    assert len(callbacks) == 1
+    assert callbacks[0].trainer is anchored
+    assert callbacks[0].anchor_start == 0.75
+    assert anchored.distill_multiplier == 0.0
+
+    constant = _trainer()
+    assert not any(
+        isinstance(callback, DistillAnchorCallback)
+        for callback in constant.callback_handler.callbacks
+    )
+    assert constant.distill_multiplier == 1.0
+
+
+def test_the_schema_values_reach_the_trainer_knobs():
+    from axolotl.integrations.ternary.args import TernaryDistillConfig
+
+    config = TernaryDistillConfig(
+        mode="inprocess", schedule="anchored", anchor_start=0.95
+    )
+    trainer = _bare_trainer(schedule=config.schedule, anchor_start=config.anchor_start)
+    assert (trainer.distill_schedule, trainer.anchor_start) == ("anchored", 0.95)
+    assert trainer.distill_multiplier == 0.0
+
+    # the schema refuses to anchor a KD term that no distill mode ever computes
+    with pytest.raises(pydantic.ValidationError, match="anchors a KD term"):
+        TernaryDistillConfig(schedule="anchored")
 
 
 def test_train_loads_the_teacher_before_the_loop_and_releases_hooks(monkeypatch):

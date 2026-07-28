@@ -12,7 +12,8 @@ The `ternary` plugin converts a full-precision checkpoint into a **ternary** mod
 transformer-block weight becomes one of `{-1, 0, +1}` times a per-tensor scale, about
 1.58 bits per weight — and heals the damage with continued training. The result is
 exported to formats that run today: a bf16 "master" checkpoint, transformers' packed
-BitNet layout, GGUF `TQ2_0`/`TQ1_0` for llama.cpp, and `I2_S` for bitnet.cpp.
+BitNet layout, GGUF `TQ2_0`/`TQ1_0` for llama.cpp, `I2_S` for bitnet.cpp, and a
+sparsity-adaptive `mask_sign` archive that costs `2 − zero_fraction` bits per weight.
 
 This is the *conversion* path. If you already have a prequantized BitNet checkpoint (the
 Falcon-E series) and only want to fine-tune it, see
@@ -134,24 +135,74 @@ need explicit `target_modules`.
 
 | Option | Default | Description |
 |---|---|---|
-| `weight_scale` | `absmean` | `absmean` (per-tensor, the only mode every deployment format can represent), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly). |
-| `group_size` | `null` | Block size for `weight_scale: group`, at least 32 (128 or 256 are the usual values). Required with it, rejected without it. |
+| `weight_scale` | `absmean` | `absmean` (per-tensor statistic), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly), `learnable_row` (one trained scale per output channel), `dual` (five values `{0, ±s_lo, ±s_hi}` from two trained per-row scales). `absmean` and `learnable` are per-tensor and export everywhere; the rest are `master_bf16` only. |
+| `group_size` | `null` | Block size for `weight_scale: group`, at least 32 (128 or 256 are the usual values). Required with it, rejected with every other mode. |
 | `activation_bits` | `8` | `8` for per-token int8 activation quantization, `null` for weight-only QAT. |
-| `init` | `absmean` | Latent initialization for the swapped modules. Only `absmean` is implemented; `ptq_itf` and `svid` are planned. |
+| `init` | `absmean` | Latent initialization for the swapped modules: `absmean` (leave the FP weights alone), `ternary_fit` (data-free alternating scale/state solve), `ternary_fit_calibrated` (activation-aware refit plus error compensation over `init_calibration` sequences). `svid` is planned. Everything but `absmean` requires a scale-keeping `weight_scale` — see [Initialization](#initialization). |
 | `smoothing` | `false` | *Planned.* Fold a SmoothQuant-style norm→linear rescale into the weights before the swap. |
-| `subln` | `false` | *Planned.* Insert BitDistill-style sub-norms before `o_proj`/`down_proj`. Changes the architecture; not representable in GGUF/I2_S exports. |
+| `subln` | `false` | Insert BitDistill-style sub-norms before `o_proj`/`down_proj`. Changes the architecture: the norms are saved into the bf16 master, which then only reloads through this plugin, and no packed format has a tensor slot for them — `hf_bitnet` included, so `export.formats` has to be `master_bf16` (optionally with `mask_sign`). |
+
+Under `ternary.init_calibration`, read only by `init: ternary_fit_calibrated`:
+
+| Option | Default | Description |
+|---|---|---|
+| `num_sequences` | `128` | Sequences the layer-wise Gram matrices are accumulated over. 128 is the published operating point for GPTQ-family solvers. |
+| `sequence_len` | `2048` | Tokens per calibration sequence; longer ones are truncated. |
+| `dataset` | `null` | Dataset to calibrate on. `null` uses the training dataset, which is what you want: calibrating on a corpus that does not match the healing corpus costs more perplexity than the whole method buys. |
+
+Setting the block under any other `init` is a config error rather than a silently ignored
+knob.
 
 ::: {.callout-note}
-The schema accepts `init: ptq_itf`, `init: svid`, `smoothing: true` and `subln: true`, but
-nothing implements them yet, so the plugin raises `NotImplementedError` at swap time rather
-than training a model that silently ignored them.
+The schema accepts `init: svid` and `smoothing: true`, but nothing implements them yet, so
+the plugin raises `NotImplementedError` rather than training a model that silently ignored
+them.
 :::
 
 ::: {.callout-warning}
-`weight_scale: group` cannot be exported to `hf_bitnet`, `gguf_tq2_0`, `gguf_tq1_0` or
-`i2_s` — those formats carry a single per-tensor scale. Group scales are `master_bf16`
-only, and the config validator will tell you so up front rather than at export time.
+`weight_scale: group`, `learnable_row` and `dual` cannot be exported to `hf_bitnet`,
+`gguf_tq2_0`, `gguf_tq1_0`, `i2_s` or `mask_sign` — those formats carry a single per-tensor
+scale and a single trit plane. Those modes are `master_bf16` only, and the config validator
+will tell you so up front rather than at export time.
 :::
+
+### Initialization {#initialization}
+
+`init: absmean` starts the heal from the original FP weights and lets the quantizer round
+them at step 0. The fitting modes instead rewrite each latent so that its *quantized* form
+is already the best ternary approximation of the original tensor:
+
+- **`ternary_fit`** — data-free. A closed-form symmetric scale solve alternated with the
+  optimal 3-state assignment, ~30 iterations per tensor. Costs nothing but CPU time and
+  needs no corpus.
+- **`ternary_fit_calibrated`** — `ternary_fit` plus an activation-aware refit against
+  `S = XᵀX` accumulated over `init_calibration` sequences, inside a GPTQ-style
+  error-compensation loop, one decoder layer at a time. The published ablations put most of
+  the gain in the activation-weighted refit rather than the data-free part.
+
+Both write the fit's own reconstruction — `codes · s` — into the latent, which has two
+consequences worth knowing before you turn one on:
+
+::: {.callout-important}
+A fitting `init` requires a `weight_scale` that **keeps** the scale it solved:
+`learnable`, `learnable_row` or `dual`. `absmean` and `group` re-derive their scale from
+the latent on every forward, and `absmean(codes · s)` is `s` times the non-zero code
+fraction — so the solve would survive exactly until the first optimizer step, after which
+the model is a *worse* approximation than `init: absmean` ever was. The config validator
+rejects that pair. `learnable` is per-tensor and exports everywhere, so it is the drop-in
+for `absmean`.
+:::
+
+The λ warmup also has nothing left to walk to: the latent already *is* the quantized
+weight, so `fake_quant` is the identity and every λ produces the same forward. Pair a
+fitting init with `lambda_schedule: none` (the validator warns otherwise) and spend the
+budget on the heal instead.
+
+Neither replaces healing. Pure PTQ to ternary is weak below ~8B and collapses on
+data-saturated models; a fitted init buys a head start, not a shipped model. Measure it —
+run the [damage map](#damage-map) before and compare the `weights` row. The damage map
+itself always swaps with `init: absmean` and `subln: false`, whatever the config says, so
+its baseline stays the untouched FP model.
 
 ### Schedules
 
@@ -202,6 +253,18 @@ Under `ternary.distill`:
 | `logits_temperature` | `2.0` | Softmax temperature for the logits-KD term. |
 | `hidden_weight` | `0.0` | Cosine hidden-state feature-KD weight. `inprocess` only; `0` disables. |
 | `attn_relation_layer` | `null` | *Experimental.* Layer index for single-layer attention-relation KD. `inprocess` only; negative indexes count from the last layer. Results are sensitive to the layer choice. |
+| `schedule` | `constant` | When the KD term contributes: `constant` blends it across the whole run, `anchored` switches it on only for the last `1 - anchor_start` of the steps. |
+| `anchor_start` | `0.9` | Fraction of `max_steps` after which `schedule: anchored` turns the KD term on. Ignored under `constant`. |
+
+**Why `anchored`.** The only public conversion at 8B with ~96% benchmark retention runs a
+CE-dominant QAT phase and then turns KD on *only* for the LR-decay tail — the teacher
+anchors the model where the learning rate can no longer move it far, instead of pulling on
+it for the whole run. It is also cheaper: with an in-process teacher, 90% of the steps skip
+the teacher forward entirely. `constant` remains the default because it is the
+better-documented setting; `anchored` is the A/B worth running on a real budget.
+
+Requesting `schedule: anchored` without a `distill.mode` is a config error — there would be
+no KD term to anchor.
 
 ### Export
 
@@ -267,6 +330,7 @@ to the config's `output_dir`, which is also where the baked master is read from.
 | `gguf_tq2_0` | 2.0625 | llama.cpp |
 | `gguf_tq1_0` | 1.6875 | llama.cpp |
 | `i2_s` | 2.0 | bitnet.cpp |
+| `mask_sign` | `2 − zero_fraction` | none (archival/transport; unpack with this plugin) |
 
 ::: {.callout-note}
 GGUF exports (`gguf_tq2_0`, `gguf_tq1_0`, `i2_s`) require the optional `gguf` package:
@@ -321,6 +385,26 @@ python setup_env.py -md ./outputs/ternary-out -q i2_s
 python run_inference.py -m ./outputs/ternary-out/ggml-model-i2_s.gguf -p "Hello"
 ```
 
+### mask_sign
+
+This plugin's own packing, and the only format whose size depends on the model rather than
+the format. Each tensor becomes a header, a 1-bit-per-weight zero bitmap, and one sign bit
+per *nonzero* weight — so the payload costs `2 − zero_fraction` bits per weight instead of a
+flat 2.0, plus a 32-byte header carrying the shape, the nonzero count and the f16 scale. The
+packed byte strings live in an ordinary safetensors container under
+`<module>.weight_mask_sign`, beside a `ternary_mask_sign.json` that records each tensor's
+shape, nonzero count, measured bits per weight and sha256.
+
+**Prefer it when your healed model is sparse.** Plain absmean rounding lands near a 33%
+zero fraction, where this saves little (~1.67 bpw). The strongest published conversions
+settle nearer 60%, where it costs ~1.4 bpw — below `TQ1_0`, with no block structure and no
+codebook. `ternary/zero_frac/<family>` in your training logs says which regime you are in
+before you bother.
+
+**It is not a kernel format.** Decoding a weight means a prefix sum over the mask, not a
+shift, so no runtime consumes it directly; it is for archiving and shipping checkpoints
+whose sparsity you paid for. Per-tensor scale only, like the other packed formats.
+
 ### Parity gates
 
 With `run_parity_gate: true` (the default), every export is checked against the master
@@ -346,14 +430,62 @@ swapped model is chaotic: after ~30 layers, two quantizers that agree to the las
 representable code still move the max logit by O(1), so that number cannot separate a
 real fault from arithmetic ordering.
 
-`master_bf16` and `hf_bitnet` are re-read from disk. The GGUF/I2_S containers have no
-in-tree reader, so they are gated *as they are packed*: each tensor's serialized byte
-string is decoded again with our own unpacker and compared to the master's codes and
+`master_bf16`, `hf_bitnet` and `mask_sign` are re-read from disk. The GGUF/I2_S containers
+have no in-tree reader, so they are gated *as they are packed*: each tensor's serialized
+byte string is decoded again with our own unpacker and compared to the master's codes and
 `s16` before the container writer sees it, and the digests land in
-`ternary_block_gate.json` beside the file. A format with neither gate is refused rather
-than written unverified.
+`ternary_block_gate.json` beside the file. `mask_sign` gets both — its bytes are gated as
+they are packed (digests in `ternary_mask_sign.json`) *and* the written artifact is re-read
+and compared. A format with neither gate is refused rather than written unverified.
 
 A failing gate raises rather than writing a broken artifact.
+
+## Damage map {#damage-map}
+
+Before spending a heal budget, measure what the quantizer actually costs *this* model:
+
+```bash
+axolotl ternary damage-map config.yaml
+axolotl ternary damage-map config.yaml --num-sequences 128 --sequence-len 2048
+axolotl ternary damage-map config.yaml --dataset wikitext --json
+```
+
+It loads the FP model, swaps it as a training run would (minus `init` and `subln`, which
+are not function-preserving at λ=0 and would move the baseline), and runs eval-only passes
+over a small split of your own corpus — no training, no optimizer, no checkpoints written.
+The split is read as **raw text**: it tokenizes a `text` / `content` / `raw_content` field
+and never applies a prompt strategy, so point `--dataset` at a pretraining-style corpus if
+your `datasets:` are instruction records.
+
+```
+64 sequences x 1024 tokens
+
+scope               perplexity         delta
+--------------------------------------------
+baseline                9.8412
+weights                24.6031      +14.7619
+activations            10.9902       +1.1490
+both                   26.4188      +16.5776
+family:q_proj          10.1044       +0.2632
+family:down_proj       14.9077       +5.0665
+```
+
+- **`weights`** — ternary weights, full-precision activations.
+- **`activations`** — FP weights, per-token int8 activations (measured whatever
+  `activation_bits` says, so the row is comparable across configs).
+- **`both`** — the configured quantizer.
+- **`family:<name>`** — that family ternary, every other module full precision, and no
+  activation quantization anywhere — the same axis as the `weights` row, so the two
+  compare.
+
+How to read it: weight-dominant damage is what a fitted `init` and a longer λ warmup buy
+down. Activation-dominant damage is not — that is the case for `activation_bits: null` or
+(once implemented) `smoothing`. A single family far above the others is a candidate for
+`keep_fp_modules`; `down_proj` and `o_proj` are the usual offenders, which is also why
+`subln` puts its norms in front of exactly those two.
+
+Perplexity here is a *relative* instrument. Run it on a few hundred sequences of the corpus
+you intend to heal on and compare rows within one table, not across models or splits.
 
 ## Relationship to `use_onebitllms`
 
@@ -409,3 +541,5 @@ See `examples/ternary/`:
 
 - `llama-3.2-1b-qat.yaml` — pure QAT heal on streamed pretraining text.
 - `qwen3-4b-distill.yaml` — the same heal with an in-process frozen FP teacher.
+- `llama-3.2-1b-ptq-init.yaml` — calibrated PTQ init, KD anchored to the LR-decay tail, and
+  a `mask_sign` export; pair it with `axolotl ternary damage-map`.

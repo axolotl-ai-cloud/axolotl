@@ -9,6 +9,7 @@ from transformers import TrainerControl, TrainerState
 
 from axolotl.integrations.ternary import callbacks as callbacks_mod
 from axolotl.integrations.ternary.callbacks import (
+    DistillAnchorCallback,
     LambdaScheduleCallback,
     TernaryMonitorCallback,
     WdAnnealCallback,
@@ -202,6 +203,110 @@ def test_lambda_callback_is_a_noop_without_ternary_modules():
 
     assert callback.ternary_modules == []
     assert callback.current_lambda == -1.0
+
+
+class _MultiplierSpy:
+    """Records every multiplier the anchor callback pushes."""
+
+    def __init__(self) -> None:
+        self.pushed: list[float] = []
+
+    def set_distill_multiplier(self, value: float) -> None:
+        self.pushed.append(value)
+
+
+def _multipliers(max_steps: int, anchor_start: float, steps=None) -> list[float]:
+    steps = range(max_steps) if steps is None else steps
+    return [
+        DistillAnchorCallback.multiplier_at(step, max_steps, anchor_start)
+        for step in steps
+    ]
+
+
+def test_anchor_multiplier_is_zero_before_the_anchor_and_one_after_the_ramp():
+    # max_steps 100 -> a 2-step ramp opening at step 90
+    assert _multipliers(100, 0.9, steps=[0, 45, 89]) == [0.0, 0.0, 0.0]
+    assert DistillAnchorCallback.multiplier_at(90, 100, 0.9) == pytest.approx(0.5)
+    assert _multipliers(100, 0.9, steps=[91, 95, 99]) == [1.0, 1.0, 1.0]
+
+
+def test_the_kd_phase_is_the_configured_fraction_of_the_run():
+    """The anchor is the first KD step, so the tail is exactly `1 - anchor_start` long."""
+    for max_steps, anchor_start in ((1000, 0.9), (100, 0.9), (200, 0.5), (20, 0.9)):
+        values = _multipliers(max_steps, anchor_start)
+        assert sum(value > 0.0 for value in values) == round(
+            (1.0 - anchor_start) * max_steps
+        )
+
+
+def test_anchor_ramp_is_monotone_and_never_a_single_step_jump():
+    """A discrete jump in loss composition shocks the optimizer; λ jumps failed the same way."""
+    values = _multipliers(1000, 0.9)
+    assert values == sorted(values)
+    partial = [value for value in values if 0.0 < value < 1.0]
+    assert len(partial) == 19
+    assert partial[0] == pytest.approx(0.05)
+    assert values.count(0.0) == 900
+
+
+def test_anchor_start_is_a_fraction_of_max_steps():
+    assert _multipliers(200, 0.5, steps=[99, 100, 103]) == [0.0, 0.25, 1.0]
+    assert _multipliers(200, 0.75, steps=[149, 150, 153]) == [0.0, 0.25, 1.0]
+
+
+def test_anchor_ramp_still_completes_on_a_short_run_with_a_late_anchor():
+    """`anchor_start` near 1.0 must not leave the KD phase with no full-weight step."""
+    assert _multipliers(10, 0.95) == [0.0] * 9 + [1.0]
+    assert _multipliers(4, 0.9) == [0.0, 0.0, 0.0, 1.0]
+    assert _multipliers(2, 0.9) == [0.0, 1.0]
+    # a single-step run is all tail: the schedule still delivers its KD phase
+    assert _multipliers(1, 0.9) == [1.0]
+
+
+def test_anchor_without_a_known_horizon_falls_back_to_the_constant_blend(caplog):
+    assert DistillAnchorCallback.multiplier_at(0, 0, 0.9) == 1.0
+
+    spy = _MultiplierSpy()
+    callback = DistillAnchorCallback(trainer=spy)
+    with caplog.at_level("WARNING"):
+        callback.on_train_begin(ARGS, _state(0, max_steps=0), CONTROL)
+        callback.on_step_begin(ARGS, _state(1, max_steps=0), CONTROL)
+
+    assert spy.pushed == [1.0]
+    assert sum("max_steps" in record.message for record in caplog.records) == 1
+
+
+def test_anchor_callback_pushes_the_multiplier_onto_the_trainer():
+    spy = _MultiplierSpy()
+    callback = DistillAnchorCallback(trainer=spy, anchor_start=0.9)
+
+    callback.on_train_begin(ARGS, _state(0), CONTROL)
+    assert spy.pushed == [0.0]
+    assert callback.multiplier == 0.0
+
+    for step in (50, 90, 91, 92, 99):
+        callback.on_step_begin(ARGS, _state(step), CONTROL)
+
+    # only the changes are pushed, and the last one is full weight
+    assert spy.pushed == [0.0, 0.5, 1.0]
+    assert callback.multiplier == 1.0
+
+
+def test_anchor_callback_resumes_at_the_checkpoint_step():
+    spy = _MultiplierSpy()
+    callback = DistillAnchorCallback(trainer=spy, anchor_start=0.9)
+
+    callback.on_train_begin(ARGS, _state(95), CONTROL)
+
+    assert spy.pushed == [1.0]
+
+
+def test_anchor_callback_tolerates_a_trainer_without_the_setter():
+    callback = DistillAnchorCallback(trainer=SimpleNamespace(), anchor_start=0.9)
+
+    callback.on_step_begin(ARGS, _state(95), CONTROL)
+
+    assert callback.multiplier == 1.0
 
 
 def _two_group_optimizer(model: nn.Module) -> torch.optim.Optimizer:

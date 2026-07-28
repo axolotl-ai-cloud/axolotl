@@ -97,6 +97,9 @@ def _write_artifact(
     gate: bool,
     embedding_dtype: EmbeddingDtype = "bf16",
 ) -> Path:
+    from ..subln import assert_subln_exportable
+
+    assert_subln_exportable(manifest, fmt)
     if fmt == "master_bf16":
         if output.resolve() == master.resolve():
             return master
@@ -116,6 +119,10 @@ def _write_artifact(
             gate=gate,
             embedding_dtype=embedding_dtype,
         )
+    if fmt == "mask_sign":
+        from . import mask_sign
+
+        return mask_sign.export_mask_sign(master, output / fmt, manifest)
     if fmt == "i2_s":
         from . import i2s
 

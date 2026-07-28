@@ -17,17 +17,43 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-WeightScaleMode = Literal["absmean", "group", "learnable"]
+WeightScaleMode = Literal["absmean", "group", "learnable", "learnable_row", "dual"]
 LambdaSchedule = Literal["linear", "sigmoid", "none"]
-InitMode = Literal["absmean", "ptq_itf", "svid"]
+InitMode = Literal["absmean", "ternary_fit", "ternary_fit_calibrated", "svid"]
 DistillMode = Literal["kd_plugin", "inprocess"]
-ExportFormat = Literal["master_bf16", "hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s"]
+DistillSchedule = Literal["constant", "anchored"]
+ExportFormat = Literal[
+    "master_bf16", "hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign"
+]
 EmbeddingDtype = Literal["bf16", "int8"]
 
+# one scale and one trit plane for the whole tensor — everything a packed format holds
 PER_TENSOR_SCALE_FORMATS: frozenset[str] = frozenset(
-    {"hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s"}
+    {"hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign"}
 )
 GGUF_FORMATS: frozenset[str] = frozenset({"gguf_tq2_0", "gguf_tq1_0", "i2_s"})
+
+# formats with nowhere to put a `ternary.subln` gain. hf_bitnet is among them: the
+# packer emits the source architecture plus a bitnet `quantization_config`, and
+# transformers' BitLinear only offers an input norm through a model-wide
+# `use_rms_norm` flag that would also normalize the projections subln leaves alone.
+SUBLN_UNSUPPORTED_FORMATS: frozenset[str] = GGUF_FORMATS | {"hf_bitnet"}
+
+# scale modes no packed format can carry: more than one scale per tensor ('group',
+# 'learnable_row') or more than one plane ('dual')
+NON_PER_TENSOR_SCALE_MODES: frozenset[str] = frozenset(
+    {"group", "learnable_row", "dual"}
+)
+# scale modes whose scale is an optimizer-visible parameter rather than a statistic
+LEARNABLE_SCALE_MODES: frozenset[str] = frozenset(
+    {"learnable", "learnable_row", "dual"}
+)
+# init modes that consume `ternary.init_calibration`
+CALIBRATED_INIT_MODES: frozenset[str] = frozenset({"ternary_fit_calibrated"})
+# init modes that solve a scale and write the solution into the latent
+FITTING_INIT_MODES: frozenset[str] = frozenset(
+    {"ternary_fit", "ternary_fit_calibrated", "svid"}
+)
 
 # below this a group holds too few weights for a shared scale to quantize anything
 MIN_GROUP_SIZE: int = 32
@@ -47,6 +73,31 @@ CONFLICTING_KEYS: tuple[str, ...] = (
     "load_in_8bit",
     "load_in_4bit",
 )
+
+
+class TernaryInitCalibrationConfig(BaseModel):
+    """Calibration corpus for `init: ternary_fit_calibrated`, under `ternary.init_calibration`."""
+
+    num_sequences: int = Field(
+        default=128,
+        ge=1,
+        description=(
+            "Sequences whose activations the layer-wise Gram matrices are accumulated "
+            "over. 128 is the published operating point for GPTQ-family solvers."
+        ),
+    )
+    sequence_len: int = Field(
+        default=2048,
+        ge=1,
+        description="Tokens per calibration sequence; longer ones are truncated.",
+    )
+    dataset: str | None = Field(
+        default=None,
+        description=(
+            "Dataset path to calibrate on; null uses the training dataset. Calibrating "
+            "on a corpus that does not match the healing corpus costs accuracy."
+        ),
+    )
 
 
 class TernaryDistillConfig(BaseModel):
@@ -99,6 +150,23 @@ class TernaryDistillConfig(BaseModel):
             "are sensitive to the layer choice."
         ),
     )
+    schedule: DistillSchedule = Field(
+        default="constant",
+        description=(
+            "When the KD term contributes: 'constant' blends it across the whole run, "
+            "'anchored' switches it on only for the last `1 - anchor_start` of the "
+            "steps (the LR-decay tail), leaving the bulk of the heal on pure CE."
+        ),
+    )
+    anchor_start: float = Field(
+        default=0.9,
+        gt=0.0,
+        lt=1.0,
+        description=(
+            "Fraction of max_steps after which `schedule: anchored` turns the KD term "
+            "on. Ignored under `schedule: constant`."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_distill_mode(self) -> "TernaryDistillConfig":
@@ -106,6 +174,11 @@ class TernaryDistillConfig(BaseModel):
             if self.teacher_model:
                 raise ValueError(
                     "ternary.distill.teacher_model requires ternary.distill.mode"
+                )
+            if self.schedule != "constant":
+                raise ValueError(
+                    f"ternary.distill.schedule: {self.schedule} anchors a KD term that "
+                    "a run without ternary.distill.mode never computes"
                 )
             return self
         if self.mode != "inprocess":
@@ -129,7 +202,10 @@ class TernaryExportConfig(BaseModel):
         default_factory=lambda: list(DEFAULT_EXPORT_FORMATS),
         description=(
             "Artifacts to emit after training. 'master_bf16' is the baked "
-            "{-s, 0, +s} bf16 checkpoint; the rest are packed deployment formats."
+            "{-s, 0, +s} bf16 checkpoint; the rest are packed deployment formats. "
+            "'mask_sign' is this plugin's own sparsity-adaptive packing — a zero "
+            "bitmap plus one sign bit per nonzero, so it costs `2 - zero_fraction` "
+            "bits per weight and beats the 2.0 bpw formats on a sparse model."
         ),
     )
     run_parity_gate: bool = Field(
@@ -209,9 +285,12 @@ class TernaryConfig(BaseModel):
     weight_scale: WeightScaleMode = Field(
         default="absmean",
         description=(
-            "Weight scale mode: 'absmean' (per-tensor, the only mode every deployment "
-            "format can represent), 'group' (per group_size block), 'learnable' "
-            "(per-tensor scale trained jointly)."
+            "Weight scale mode: 'absmean' (per-tensor statistic), 'group' (per "
+            "group_size block), 'learnable' (per-tensor scale trained jointly), "
+            "'learnable_row' (one trained scale per output channel), 'dual' (five "
+            "values {0, ±s_lo, ±s_hi} from two trained per-row scales). 'absmean' and "
+            "'learnable' are per-tensor and export everywhere; the rest export to "
+            "master_bf16 only."
         ),
     )
     group_size: int | None = Field(
@@ -251,7 +330,17 @@ class TernaryConfig(BaseModel):
 
     init: InitMode = Field(
         default="absmean",
-        description="Latent-weight initialization for the swapped modules.",
+        description=(
+            "Latent-weight initialization for the swapped modules: 'absmean' leaves "
+            "the FP weights alone (the quantizer rounds them at step 0), "
+            "'ternary_fit' runs a data-free alternating scale/state solve, "
+            "'ternary_fit_calibrated' adds an activation-aware refit and error "
+            "compensation over `init_calibration` sequences. 'svid' is planned."
+        ),
+    )
+    init_calibration: TernaryInitCalibrationConfig = Field(
+        default_factory=TernaryInitCalibrationConfig,
+        description="Calibration corpus for `init: ternary_fit_calibrated`; unused by the other modes.",
     )
     smoothing: bool = Field(
         default=False,
@@ -260,8 +349,10 @@ class TernaryConfig(BaseModel):
     subln: bool = Field(
         default=False,
         description=(
-            "Insert BitDistill-style sub-norms before o_proj/down_proj. Changes the "
-            "architecture and is not representable in GGUF/I2_S exports."
+            "Insert BitDistill-style sub-norms before o_proj/down_proj. The norms live "
+            "inside the ternary linears and are saved into the bf16 master, so that "
+            "master only reloads with this plugin enabled; the packed deployment "
+            "formats have no tensor slots for them."
         ),
     )
 
@@ -316,24 +407,66 @@ class TernaryConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _validate_init_calibration(self) -> "TernaryConfig":
+        # compared against the defaults rather than `model_fields_set`: axolotl dumps
+        # and re-validates the whole config, which marks every field as set
+        if (
+            self.init not in CALIBRATED_INIT_MODES
+            and self.init_calibration != TernaryInitCalibrationConfig()
+        ):
+            raise ValueError(
+                "ternary.init_calibration configures `init: ternary_fit_calibrated`, "
+                f"but init is {self.init!r}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_init_scale_mode(self) -> "TernaryConfig":
+        if self.init not in FITTING_INIT_MODES:
+            return self
+        if self.weight_scale not in LEARNABLE_SCALE_MODES:
+            raise ValueError(
+                f"ternary.init: {self.init} solves a scale per tensor, but "
+                f"ternary.weight_scale: {self.weight_scale} keeps no scale — it "
+                "re-derives one from the latent on every forward, and the latent a fit "
+                "writes is its own ternary reconstruction, whose absmean is the fitted "
+                "scale times the non-zero code fraction. The solved scale would "
+                "therefore survive exactly until the first optimizer step and the run "
+                "would heal from a worse point than `init: absmean`. Use "
+                "`weight_scale: learnable` (per-tensor, exports everywhere), "
+                "`learnable_row` or `dual`"
+            )
+        if self.lambda_schedule != "none":
+            LOG.warning(
+                f"ternary.init: {self.init} writes the quantized weight into the latent, "
+                f"so lambda_schedule: {self.lambda_schedule} interpolates between two "
+                "identical tensors and the warmup is a no-op — the run starts fully "
+                "ternary. Set lambda_schedule: none to say so, or init: absmean to get "
+                "a warmup that means something"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_export_compat(self) -> "TernaryConfig":
-        if self.weight_scale == "group":
+        if self.weight_scale in NON_PER_TENSOR_SCALE_MODES:
             unsupported = sorted(
                 fmt for fmt in self.export.formats if fmt in PER_TENSOR_SCALE_FORMATS
             )
             if unsupported:
                 raise ValueError(
-                    f"ternary.weight_scale: group cannot be represented by {unsupported}; "
-                    "those formats carry a single per-tensor scale. Export master_bf16 only."
+                    f"ternary.weight_scale: {self.weight_scale} cannot be represented "
+                    f"by {unsupported}; those formats carry one per-tensor scale and a "
+                    "single trit plane. Export master_bf16 only."
                 )
         if self.subln:
             unsupported = sorted(
-                fmt for fmt in self.export.formats if fmt in GGUF_FORMATS
+                fmt for fmt in self.export.formats if fmt in SUBLN_UNSUPPORTED_FORMATS
             )
             if unsupported:
                 raise ValueError(
                     f"ternary.subln inserts sub-norms that {unsupported} have no tensor "
-                    "slots for; export master_bf16 or hf_bitnet instead."
+                    "slots for; set ternary.export.formats to master_bf16 (optionally "
+                    "with mask_sign)."
                 )
         return self
 

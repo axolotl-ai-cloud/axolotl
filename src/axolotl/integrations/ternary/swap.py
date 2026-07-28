@@ -16,6 +16,7 @@ from axolotl.utils.logging import get_logger
 
 from .args import TernaryConfig, resolve_ternary_config
 from .modules import TernaryLinear
+from .ptq import initialize_model_latents
 
 LOG = get_logger(__name__)
 
@@ -80,6 +81,9 @@ class SwapManifest:
     weight_scale: str = "absmean"
     group_size: int | None = None
     activation_bits: int | None = 8
+    init: str = "absmean"
+    subln: bool = False
+    subln_modules: list[str] = field(default_factory=list)
     final_lambda: float | None = None
     quantizer: dict = field(default_factory=dict)
 
@@ -144,6 +148,9 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
     neither list, or both, is a hard error — silent misses are how MoE routers get
     ternarized by accident.
 
+    Sub-norms (`ternary.subln`) are inserted on the enumerated Linears before they are
+    replaced, and the configured PTQ initializer rewrites the latents afterwards.
+
     Args:
         model: The freshly built model, before any parallelism wrapping.
         cfg: The axolotl config; `ternary.*` is read through `resolve_ternary_config`.
@@ -154,9 +161,16 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
     Raises:
         ValueError: On unmatched or doubly-matched Linears, or a biased target.
         NotImplementedError: When the architecture stores experts as fused 3D
-            parameter stacks.
+            parameter stacks, or a configured option is not implemented yet.
     """
+    # local import so the subln seam stays monkeypatchable as a module attribute
+    from .subln import assert_subln_reloadable
+
     ternary_cfg = resolve_ternary_config(cfg)
+    # runs whichever way `ternary.subln` is set: the case it catches is a marked
+    # master reloaded by a run that would silently drop its gains
+    assert_subln_reloadable(model, cfg)
+    assert_scale_mode_reloadable(model, cfg)
     model_type = (
         getattr(getattr(model, "config", None), "model_type", None) or "unknown"
     )
@@ -246,6 +260,12 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
             f"ternary: keeping {_summarize(unmatched)} full precision (unenumerated)"
         )
 
+    subln_modules: list[str] = []
+    if ternary_cfg.subln:
+        from .subln import insert_subln
+
+        subln_modules = insert_subln(model, cfg, [name for name, _ in to_swap])
+
     entries: list[SwapEntry] = []
     for name, linear in to_swap:
         parent_name, _, attr = name.rpartition(".")
@@ -280,9 +300,13 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         weight_scale=ternary_cfg.weight_scale,
         group_size=ternary_cfg.group_size,
         activation_bits=ternary_cfg.activation_bits,
+        init=ternary_cfg.init,
+        subln=ternary_cfg.subln,
+        subln_modules=subln_modules,
         quantizer=_quantizer_identity(ternary_cfg),
     )
     setattr(model, MANIFEST_ATTR, manifest)
+    initialize_model_latents(model, manifest, cfg)
     LOG.info(
         f"ternary: swapped {len(entries)} Linear modules to ternary, "
         f"{len(kept_fp)} kept full precision"
@@ -300,6 +324,50 @@ def get_manifest(model: nn.Module) -> SwapManifest | None:
     return getattr(model, MANIFEST_ATTR, None)
 
 
+def assert_scale_mode_reloadable(model: PreTrainedModel, cfg: DictDefault) -> None:
+    """Refuse a master whose saved grid is not the grid this run would read it on.
+
+    A baked master only re-quantizes to itself under the scale mode it was baked with:
+    the per-tensor probe reads a per-row or five-value master as ordinary FP values,
+    the `baked` flag never lights, and the run silently re-quantizes the master onto
+    the wrong grid instead of continuing from it.
+
+    Raises:
+        ValueError: If the checkpoint directory holds a manifest whose scale grid
+            disagrees with the resolved `ternary` config.
+    """
+    from .subln import checkpoint_dir
+
+    source = checkpoint_dir(model, cfg)
+    if source is None or not (source / MANIFEST_FILENAME).is_file():
+        return
+    saved = SwapManifest.load(source)
+    ternary_cfg = resolve_ternary_config(cfg)
+    if (saved.weight_scale, saved.group_size) == (
+        ternary_cfg.weight_scale,
+        ternary_cfg.group_size,
+    ):
+        return
+    raise ValueError(
+        f"{source / MANIFEST_FILENAME} says this master was baked on the "
+        f"{_grid(saved.weight_scale, saved.group_size)} grid, but this run configures "
+        f"{_grid(ternary_cfg.weight_scale, ternary_cfg.group_size)}. Reading a master "
+        "through the wrong grid does not fail loudly — the baked probe simply misses "
+        "and every weight is re-quantized onto the new grid, which is a different "
+        f"model. Set ternary.weight_scale: {saved.weight_scale}"
+        + (
+            f" and ternary.group_size: {saved.group_size}"
+            if saved.group_size is not None
+            else ""
+        )
+        + ", or start from the original full-precision checkpoint"
+    )
+
+
+def _grid(weight_scale: str, group_size: int | None) -> str:
+    return weight_scale if group_size is None else f"{weight_scale}/{group_size}"
+
+
 def _fused_expert_stacks(model: nn.Module) -> list[str]:
     """Return the names of modules holding experts as fused 3D parameter stacks."""
     stacks = []
@@ -313,9 +381,10 @@ def _fused_expert_stacks(model: nn.Module) -> list[str]:
 
 def _quantizer_identity(ternary_cfg: TernaryConfig) -> dict:
     """Return the quantizer stamp recorded in the manifest for export and parity."""
+    dual = ternary_cfg.weight_scale == "dual"
     return {
-        "scheme": "ternary",
-        "codes": [-1, 0, 1],
+        "scheme": "dual_ternary" if dual else "ternary",
+        "codes": [-2, -1, 0, 1, 2] if dual else [-1, 0, 1],
         "rounding": "half_even",
         "weight_dequant_scale": "f16_round",
         "activation": "per_token_int8" if ternary_cfg.activation_bits else "none",
@@ -337,6 +406,7 @@ __all__ = [
     "MANIFEST_FILENAME",
     "SwapEntry",
     "SwapManifest",
+    "assert_scale_mode_reloadable",
     "convert_model",
     "get_manifest",
     "module_family",

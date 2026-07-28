@@ -23,6 +23,9 @@ def test_defaults_match_design():
     assert cfg.lambda_warmup_steps == 1000
     assert cfg.weight_decay_zero_at == 0.5
     assert cfg.init == "absmean"
+    assert cfg.init_calibration.num_sequences == 128
+    assert cfg.init_calibration.sequence_len == 2048
+    assert cfg.init_calibration.dataset is None
     assert cfg.smoothing is False
     assert cfg.subln is False
     assert cfg.int8_forward == "auto"
@@ -33,6 +36,8 @@ def test_defaults_match_design():
     assert cfg.distill.logits_temperature == 2.0
     assert cfg.distill.hidden_weight == 0.0
     assert cfg.distill.attn_relation_layer is None
+    assert cfg.distill.schedule == "constant"
+    assert cfg.distill.anchor_start == 0.9
     assert cfg.export.formats == ["master_bf16", "hf_bitnet"]
     assert cfg.export.run_parity_gate is True
 
@@ -44,13 +49,17 @@ def test_full_config_parses():
                 "target_modules": [r".*\.self_attn\.(q|k|v|o)_proj"],
                 "keep_fp_modules": [r"lm_head"],
                 "strict_enumeration": False,
-                "weight_scale": "group",
-                "group_size": 128,
+                "weight_scale": "learnable_row",
                 "activation_bits": None,
                 "lambda_schedule": "sigmoid",
                 "lambda_warmup_steps": 0.1,
                 "weight_decay_zero_at": 0.25,
-                "init": "ptq_itf",
+                "init": "ternary_fit_calibrated",
+                "init_calibration": {
+                    "num_sequences": 64,
+                    "sequence_len": 1024,
+                    "dataset": "HuggingFaceFW/fineweb-edu",
+                },
                 "smoothing": True,
                 "distill": {
                     "mode": "inprocess",
@@ -59,6 +68,8 @@ def test_full_config_parses():
                     "logits_temperature": 5.0,
                     "hidden_weight": 0.1,
                     "attn_relation_layer": -2,
+                    "schedule": "anchored",
+                    "anchor_start": 0.8,
                 },
                 "int8_forward": False,
                 "fused_fake_quant": False,
@@ -68,12 +79,15 @@ def test_full_config_parses():
         }
     )
 
-    assert args.ternary.weight_scale == "group"
-    assert args.ternary.group_size == 128
+    assert args.ternary.weight_scale == "learnable_row"
+    assert args.ternary.group_size is None
     assert args.ternary.activation_bits is None
     assert args.ternary.lambda_warmup_steps == 0.1
     assert args.ternary.int8_forward is False
+    assert args.ternary.init_calibration.num_sequences == 64
     assert args.ternary.distill.attn_relation_layer == -2
+    assert args.ternary.distill.schedule == "anchored"
+    assert args.ternary.distill.anchor_start == 0.8
     assert args.ternary.export.formats == ["master_bf16"]
 
 
@@ -138,7 +152,9 @@ def test_group_size_at_or_above_the_minimum_is_accepted(group_size):
     assert cfg.group_size == group_size
 
 
-@pytest.mark.parametrize("fmt", ["hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s"])
+@pytest.mark.parametrize(
+    "fmt", ["hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign"]
+)
 def test_group_scale_rejected_for_per_tensor_export_formats(fmt):
     with pytest.raises(pydantic.ValidationError, match="cannot be represented"):
         TernaryConfig(
@@ -155,14 +171,55 @@ def test_group_scale_allowed_with_master_only_export():
     assert cfg.export.formats == ["master_bf16"]
 
 
-@pytest.mark.parametrize("fmt", ["gguf_tq2_0", "gguf_tq1_0", "i2_s"])
-def test_subln_rejected_for_gguf_exports(fmt):
+@pytest.mark.parametrize("mode", ["learnable_row", "dual"])
+def test_row_and_dual_scale_modes_accepted_with_master_only_export(mode):
+    cfg = TernaryConfig(weight_scale=mode, export={"formats": ["master_bf16"]})
+    assert cfg.weight_scale == mode
+    assert cfg.group_size is None
+
+
+@pytest.mark.parametrize("mode", ["learnable_row", "dual"])
+@pytest.mark.parametrize(
+    "fmt", ["hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign"]
+)
+def test_row_and_dual_scale_modes_rejected_for_per_tensor_formats(mode, fmt):
+    with pytest.raises(pydantic.ValidationError, match="cannot be represented"):
+        TernaryConfig(weight_scale=mode, export={"formats": ["master_bf16", fmt]})
+
+
+@pytest.mark.parametrize("mode", ["absmean", "learnable", "learnable_row", "dual"])
+def test_group_size_rejected_outside_group_scale(mode):
+    """'dual' scales per row, so a group size has nothing to size."""
+    with pytest.raises(pydantic.ValidationError, match="only valid with"):
+        TernaryConfig(
+            weight_scale=mode, group_size=128, export={"formats": ["master_bf16"]}
+        )
+
+
+@pytest.mark.parametrize("mode", ["absmean", "learnable"])
+def test_per_tensor_scale_modes_export_to_every_format(mode):
+    cfg = TernaryConfig(
+        weight_scale=mode,
+        export={"formats": ["master_bf16", "hf_bitnet", "mask_sign"]},
+    )
+    assert cfg.export.formats == ["master_bf16", "hf_bitnet", "mask_sign"]
+
+
+@pytest.mark.parametrize("fmt", ["gguf_tq2_0", "gguf_tq1_0", "i2_s", "hf_bitnet"])
+def test_subln_rejected_for_packed_exports(fmt):
     with pytest.raises(pydantic.ValidationError, match="no tensor"):
         TernaryConfig(subln=True, export={"formats": [fmt]})
 
 
-def test_subln_allowed_for_hf_bitnet():
-    assert TernaryConfig(subln=True, export={"formats": ["hf_bitnet"]}).subln is True
+def test_subln_rejects_the_default_export_formats():
+    """`hf_bitnet` is a default, so the refusal has to happen before training, not after."""
+    with pytest.raises(pydantic.ValidationError, match="no tensor"):
+        TernaryConfig(subln=True)
+
+
+def test_subln_allowed_for_master_and_mask_sign():
+    cfg = TernaryConfig(subln=True, export={"formats": ["master_bf16", "mask_sign"]})
+    assert cfg.subln is True
 
 
 @pytest.mark.parametrize("steps", [1, 1000, 0.05, 1.0])
@@ -217,6 +274,11 @@ def test_unknown_enum_values_rejected():
         TernaryConfig(export={"formats": ["awq"]})
 
 
+def test_mask_sign_is_an_export_format():
+    cfg = TernaryConfig(export={"formats": ["master_bf16", "mask_sign"]})
+    assert cfg.export.formats == ["master_bf16", "mask_sign"]
+
+
 def test_duplicate_export_formats_rejected():
     with pytest.raises(pydantic.ValidationError, match="duplicate"):
         TernaryConfig(export={"formats": ["hf_bitnet", "hf_bitnet"]})
@@ -239,6 +301,65 @@ def test_anchored_gate_proj_regex_does_not_warn(caplog):
     assert "router" not in caplog.text
 
 
+# ----------------------------------------------------------------------- init
+
+
+@pytest.mark.parametrize(
+    "mode", ["absmean", "ternary_fit", "ternary_fit_calibrated", "svid"]
+)
+def test_init_modes_accepted(mode):
+    scale = "absmean" if mode == "absmean" else "learnable"
+    assert TernaryConfig(init=mode, weight_scale=scale).init == mode
+
+
+def test_retired_init_mode_rejected():
+    """`ptq_itf` was superseded by the two ternary_fit tiers."""
+    with pytest.raises(pydantic.ValidationError):
+        TernaryConfig(init="ptq_itf")
+
+
+def test_init_calibration_accepted_for_the_calibrated_init():
+    cfg = TernaryConfig(
+        init="ternary_fit_calibrated",
+        weight_scale="learnable",
+        init_calibration={"num_sequences": 64, "dataset": "wikitext"},
+    )
+
+    assert cfg.init_calibration.num_sequences == 64
+    assert cfg.init_calibration.sequence_len == 2048
+    assert cfg.init_calibration.dataset == "wikitext"
+
+
+@pytest.mark.parametrize("init", ["absmean", "ternary_fit", "svid"])
+def test_init_calibration_rejected_for_the_other_init_modes(init):
+    with pytest.raises(pydantic.ValidationError, match="ternary_fit_calibrated"):
+        TernaryConfig(init=init, init_calibration={"num_sequences": 64})
+
+
+@pytest.mark.parametrize("init", ["absmean", "ternary_fit"])
+def test_unset_init_calibration_keeps_its_defaults(init):
+    """Only an explicit block is a misconfiguration; the defaults ride along."""
+    scale = "absmean" if init == "absmean" else "learnable"
+    config = TernaryConfig(init=init, weight_scale=scale)
+    assert config.init_calibration.num_sequences == 128
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("num_sequences", 0), ("num_sequences", -1), ("sequence_len", 0)],
+)
+def test_init_calibration_sizes_must_be_positive(field, value):
+    with pytest.raises(pydantic.ValidationError):
+        TernaryConfig(
+            init="ternary_fit_calibrated",
+            weight_scale="learnable",
+            init_calibration={field: value},
+        )
+
+
+# -------------------------------------------------------------------- distill
+
+
 def test_distill_teacher_requires_mode():
     with pytest.raises(pydantic.ValidationError, match="requires ternary.distill.mode"):
         TernaryConfig(distill={"teacher_model": "meta-llama/Llama-3.2-1B"})
@@ -253,6 +374,34 @@ def test_inprocess_only_distill_knobs_rejected_for_kd_plugin(knob):
 def test_distill_temperature_must_be_positive():
     with pytest.raises(pydantic.ValidationError):
         TernaryConfig(distill={"mode": "inprocess", "logits_temperature": 0.0})
+
+
+def test_anchored_schedule_requires_a_distill_mode():
+    with pytest.raises(pydantic.ValidationError, match="anchors a KD term"):
+        TernaryConfig(distill={"schedule": "anchored"})
+
+
+@pytest.mark.parametrize("mode", ["kd_plugin", "inprocess"])
+def test_anchored_schedule_accepted_with_a_mode(mode):
+    cfg = TernaryConfig(
+        distill={"mode": mode, "schedule": "anchored", "anchor_start": 0.95}
+    )
+
+    assert cfg.distill.schedule == "anchored"
+    assert cfg.distill.anchor_start == 0.95
+
+
+@pytest.mark.parametrize("value", [0.0, 1.0, -0.1, 1.5])
+def test_anchor_start_must_be_a_strict_fraction(value):
+    with pytest.raises(pydantic.ValidationError):
+        TernaryConfig(
+            distill={"mode": "inprocess", "schedule": "anchored", "anchor_start": value}
+        )
+
+
+def test_unknown_distill_schedule_rejected():
+    with pytest.raises(pydantic.ValidationError):
+        TernaryConfig(distill={"mode": "inprocess", "schedule": "cosine"})
 
 
 def test_resolve_ternary_config_from_mapping():
@@ -331,7 +480,8 @@ def test_int8_embeddings_accepted_for_gguf_formats(fmt):
 
 
 @pytest.mark.parametrize(
-    "formats", [["hf_bitnet"], ["master_bf16"], ["master_bf16", "hf_bitnet"]]
+    "formats",
+    [["hf_bitnet"], ["master_bf16"], ["master_bf16", "hf_bitnet"], ["mask_sign"]],
 )
 def test_int8_embeddings_rejected_without_a_gguf_format(formats):
     """Neither the master nor hf_bitnet can carry quantized embeddings."""

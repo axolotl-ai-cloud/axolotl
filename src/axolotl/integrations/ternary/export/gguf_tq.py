@@ -33,7 +33,7 @@ import torch
 from axolotl.utils.logging import get_logger
 
 from .. import quant
-from ..args import EmbeddingDtype
+from ..args import NON_PER_TENSOR_SCALE_MODES, EmbeddingDtype
 from ..swap import SwapEntry, SwapManifest
 from .bake import derive_codes_and_scale, load_master
 
@@ -576,7 +576,10 @@ def _unpack_trits(packed: torch.Tensor, n_trits: int) -> torch.Tensor:
 
 
 def _check_per_tensor_scale(manifest: SwapManifest) -> None:
-    if manifest.group_size is not None or manifest.weight_scale == "group":
+    if (
+        manifest.group_size is not None
+        or manifest.weight_scale in NON_PER_TENSOR_SCALE_MODES
+    ):
         raise ValueError(
             "GGUF ternary formats carry one f16 scale per 256-weight block derived from "
             f"a single per-tensor scale; ternary.weight_scale: {manifest.weight_scale} "

@@ -10,6 +10,7 @@ import torch
 
 from axolotl.utils.logging import get_logger
 
+from ..args import NON_PER_TENSOR_SCALE_MODES
 from ..quant import CODES_PER_BYTE
 from ..swap import SwapManifest
 from . import bake
@@ -171,7 +172,10 @@ def export_hf_bitnet(
 
 
 def _reject_unsupported(manifest: SwapManifest) -> None:
-    if manifest.group_size is not None or manifest.weight_scale == "group":
+    if (
+        manifest.group_size is not None
+        or manifest.weight_scale in NON_PER_TENSOR_SCALE_MODES
+    ):
         raise ValueError(
             "hf_bitnet stores one scalar weight_scale per tensor and cannot represent "
             f"ternary.weight_scale: {manifest.weight_scale} "

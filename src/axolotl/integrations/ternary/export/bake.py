@@ -41,16 +41,37 @@ TORCH_WEIGHTS_NAME: str = "pytorch_model.bin"
 TORCH_INDEX_NAME: str = "pytorch_model.bin.index.json"
 
 
-def bake_weight(weight: torch.Tensor, group_size: int | None = None) -> torch.Tensor:
+def bake_weight(
+    weight: torch.Tensor,
+    group_size: int | None = None,
+    weight_scale: str = "absmean",
+) -> torch.Tensor:
     """Return the latent weight replaced by `codes * s16`, same shape and dtype.
 
     Baking an already-baked weight is a no-op: re-running the quantizer would
     re-derive the scale from the ternary values themselves (absmean shrinks by the
     non-zero fraction) and shift every magnitude, so the tensor is returned as is.
+    Reading a per-row or five-value master through the per-tensor grid is the same
+    corruption, so `weight_scale` selects the grid the tensor is read on.
     """
+    if weight_scale == "dual":
+        if quant.baked_dual_codes_and_scales(weight) is not None:
+            return weight
+        low, high = quant.dual_absmean_scales(weight)
+        return quant.fake_quant_weight_dual(weight.detach(), 1.0, low, high)
+    group_size = _grid_group_size(weight, group_size, weight_scale)
     if quant.baked_codes_and_scale(weight, group_size) is not None:
         return weight
     return quant.fake_quant_weight(weight.detach(), 1.0, group_size)
+
+
+def _grid_group_size(
+    weight: torch.Tensor, group_size: int | None, weight_scale: str
+) -> int | None:
+    """Group size the quantizer sees: a per-row scale is one group of `in_features`."""
+    if weight_scale == "learnable_row":
+        return int(weight.shape[-1])
+    return group_size
 
 
 def bake_state_dict(
@@ -75,33 +96,61 @@ def bake_state_dict(
             raise KeyError(
                 f"{key} is listed in the swap manifest but not in the state dict"
             )
-        baked[key] = bake_weight(baked[key], entry.group_size)
+        baked[key] = bake_weight(baked[key], entry.group_size, entry.weight_scale)
     return baked
 
 
 def derive_codes_and_scale(
-    weight: torch.Tensor, group_size: int | None = None
+    weight: torch.Tensor,
+    group_size: int | None = None,
+    weight_scale: str = "absmean",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Recover the exact codes and `s16` scale from an already-baked master weight.
 
-    Exact by construction: a baked tensor has at most three distinct magnitudes, so
-    every packer derives identical codes without re-running the quantizer.
+    Exact by construction: a baked tensor has at most three distinct magnitudes per
+    scale unit, so every packer derives identical codes without re-running the
+    quantizer.
 
     Returns:
         `(codes, scale)` — int8 codes shaped like `weight`, and the fp32 `s16` scale
-        (0-dim per tensor, or one per group). An all-zero tensor yields zero codes
-        and the `SCALE_EPS` floor so downstream reciprocals stay finite.
+        (0-dim per tensor, or one per group / row). Under `dual` the codes are the
+        five-state `{-2..2}` grid and the scale is `(out_features, 2)` holding
+        `(s_lo, s_hi)` per row. An all-zero tensor yields zero codes and the
+        `SCALE_EPS` floor so downstream reciprocals stay finite.
 
     Raises:
-        ValueError: If `weight` is not a baked ternary tensor.
+        ValueError: If `weight` is not baked on `weight_scale`'s grid.
     """
-    recovered = quant.baked_codes_and_scale(weight, group_size)
+    if weight_scale == "dual":
+        dual = quant.baked_dual_codes_and_scales(weight)
+        if dual is None:
+            raise ValueError(
+                f"tensor of shape {tuple(weight.shape)} is not baked: its rows are not "
+                "exactly {-s_hi, -s_lo, 0, +s_lo, +s_hi}"
+            )
+        codes, low, high = dual
+        return codes, torch.cat([low, high], dim=-1)
+    recovered = quant.baked_codes_and_scale(
+        weight, _grid_group_size(weight, group_size, weight_scale)
+    )
     if recovered is None:
         raise ValueError(
             f"tensor of shape {tuple(weight.shape)} is not baked: its values are not "
             "exactly {-s, 0, +s}"
         )
     return recovered
+
+
+def dequantize_derived(
+    codes: torch.Tensor,
+    scale: torch.Tensor,
+    weight_scale: str = "absmean",
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """Reconstruct the weight a `derive_codes_and_scale` pair stands for."""
+    if weight_scale == "dual":
+        return quant.dequantize_dual_codes(codes, scale[:, :1], scale[:, 1:], dtype)
+    return quant.dequantize_codes(codes, scale, dtype)
 
 
 def load_master(master_dir: str | Path) -> tuple[dict[str, torch.Tensor], SwapManifest]:
@@ -228,14 +277,15 @@ def bake_directory(
     if output.resolve() != master_dir.resolve():
         copy_aux_files(master_dir, output, skip={path.name for path in shards})
 
-    group_sizes = {
-        f"{entry.name}.weight": entry.group_size for entry in manifest.entries
+    grids = {
+        f"{entry.name}.weight": (entry.group_size, entry.weight_scale)
+        for entry in manifest.entries
     }
-    remaining = set(group_sizes)
+    remaining = set(grids)
     for path in shards:
         tensors, metadata = load_shard(path)
         for key in tensors.keys() & remaining:
-            tensors[key] = bake_weight(tensors[key], group_sizes[key])
+            tensors[key] = bake_weight(tensors[key], *grids[key])
             remaining.discard(key)
         save_shard(tensors, output / path.name, metadata)
     if remaining:
@@ -246,7 +296,7 @@ def bake_directory(
 
     manifest.save(output)
     write_quantizer_metadata(output, manifest)
-    LOG.info(f"ternary: baked {len(group_sizes)} weights into {output}")
+    LOG.info(f"ternary: baked {len(grids)} weights into {output}")
     return output
 
 
@@ -290,6 +340,7 @@ __all__ = [
     "bake_state_dict",
     "bake_weight",
     "copy_aux_files",
+    "dequantize_derived",
     "derive_codes_and_scale",
     "load_master",
     "load_shard",

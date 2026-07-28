@@ -102,7 +102,8 @@ class TernaryPlugin(BasePlugin):
                 f"ternary conversion requires torch >= 2.6.0, found {torch_version}"
             )
 
-        distill_mode = resolve_ternary_config(cfg).distill.mode
+        distill_cfg = resolve_ternary_config(cfg).distill
+        distill_mode = distill_cfg.mode
         if distill_mode and cfg.get("rl"):
             raise ValueError(
                 f"ternary.distill.mode: {distill_mode} heals a causal-LM next-token "
@@ -120,6 +121,13 @@ class TernaryPlugin(BasePlugin):
                 "or use ternary.distill.mode: inprocess"
             )
 
+        if distill_mode != "inprocess" and distill_cfg.schedule != "constant":
+            LOG.warning(
+                f"ternary: distill.schedule: {distill_cfg.schedule} is read by the "
+                f"in-process distillation trainer only; under distill.mode: "
+                f"{distill_mode} the KD integration owns the loss and its weighting, "
+                "so the anchor will not take effect"
+            )
         if cfg.get("torch_compile"):
             LOG.warning(
                 "ternary: `torch_compile` is untested against the fake-quant forward; "
@@ -142,19 +150,9 @@ class TernaryPlugin(BasePlugin):
         from .swap import convert_model
 
         ternary_cfg = resolve_ternary_config(cfg)
-        unimplemented = [
-            name
-            for name, requested in (
-                (f"init: {ternary_cfg.init}", ternary_cfg.init != "absmean"),
-                ("smoothing", ternary_cfg.smoothing),
-                ("subln", ternary_cfg.subln),
-            )
-            if requested
-        ]
-        if unimplemented:
+        if ternary_cfg.smoothing:
             raise NotImplementedError(
-                "ternary options accepted by the schema but not implemented yet: "
-                + ", ".join(f"ternary.{name}" for name in unimplemented)
+                "ternary.smoothing is accepted by the schema but not implemented yet"
             )
 
         self.manifest = convert_model(model, cfg)
@@ -226,6 +224,8 @@ class TernaryPlugin(BasePlugin):
             "ternary_distill_hidden_weight": distill_cfg.hidden_weight,
             "ternary_distill_attn_relation_layer": distill_cfg.attn_relation_layer,
             "ternary_distill_teacher_device_map": distill_cfg.teacher_device_map,
+            "ternary_distill_schedule": distill_cfg.schedule,
+            "ternary_distill_anchor_start": distill_cfg.anchor_start,
         }
 
     def post_train_unload(self, cfg: DictDefault) -> None:
