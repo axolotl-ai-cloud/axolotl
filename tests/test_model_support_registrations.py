@@ -430,7 +430,9 @@ def test_loss_function_strategy_sets_per_instance_loss(monkeypatch):
     assert not hasattr(plain_model, "loss_function")
 
 
-def test_before_save_hooks_dispatch_from_save_trained_model():
+def test_before_save_hooks_dispatch_with_the_finalized_model():
+    from types import SimpleNamespace
+
     from axolotl.model_support import ModelHookContext, ModelHookPhase
     from axolotl.train import save_trained_model
 
@@ -446,7 +448,19 @@ def test_before_save_hooks_dispatch_from_save_trained_model():
             hooks=ModelHooks({ModelHookPhase.BEFORE_SAVE: (_on_save,)}),
         )
 
-    class _FakeTrainedModel:
+    class _MergedModel:
+        pass
+
+    merged = _MergedModel()
+
+    class _ReloraModel:
+        def named_modules(self):
+            return []
+
+        def merge_and_unload(self):
+            return merged
+
+    class _AlreadySavedReloraModel:
         def named_modules(self):
             return []
 
@@ -457,17 +471,25 @@ def test_before_save_hooks_dispatch_from_save_trained_model():
     train_module.get_model_support = lambda model_type: (
         support if model_type == "registrations_save_test" else None
     )
-    model = _FakeTrainedModel()
+    trainer = SimpleNamespace(is_fsdp_enabled=False)
     processor = object()
     try:
-        # relora with no merge_and_unload returns right after the save hooks
+        # hooks run after the ReLoRA merge, with the model the save paths use
         save_trained_model(
             DictDefault(model_config_type="registrations_save_test", relora=True),
-            trainer=None,
-            model=model,
+            trainer=trainer,
+            model=_ReloraModel(),
             processor=processor,
         )
+        assert events == [(merged, processor)]
+
+        # the already-saved ReLoRA path returns before any save: no dispatch
+        save_trained_model(
+            DictDefault(model_config_type="registrations_save_test", relora=True),
+            trainer=trainer,
+            model=_AlreadySavedReloraModel(),
+            processor=processor,
+        )
+        assert events == [(merged, processor)]
     finally:
         train_module.get_model_support = original
-
-    assert events == [(model, processor)]

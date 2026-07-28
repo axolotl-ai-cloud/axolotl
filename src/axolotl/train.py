@@ -284,14 +284,6 @@ def save_trained_model(
     """
     LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
 
-    run_model_support_hooks(
-        get_model_support(cfg.model_config_type),
-        ModelHookPhase.BEFORE_SAVE,
-        ModelHookContext(
-            cfg=cfg, model=model, tokenizer=tokenizer, processor=processor
-        ),
-    )
-
     # Post training module hooks
     for name, module in model.named_modules():
         if hasattr(module, "_post_training"):
@@ -318,6 +310,16 @@ def save_trained_model(
         else:
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
+
+    # After QAT conversion and any ReLoRA merge: save hooks get the model
+    # object the save paths below will actually serialize.
+    run_model_support_hooks(
+        get_model_support(cfg.model_config_type),
+        ModelHookPhase.BEFORE_SAVE,
+        ModelHookContext(
+            cfg=cfg, model=model, tokenizer=tokenizer, processor=processor
+        ),
+    )
 
     # EP-sharded expert LoRA: the adapter is split across the EP axis, so the normal
     # FSDP/PEFT save would persist only the local rank's experts. Gather across EP and
