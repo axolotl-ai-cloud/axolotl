@@ -199,6 +199,11 @@ class TestDropNoTrainableTokens(unittest.TestCase):
                 Dataset.from_dict({"labels": [[-100, -100]]}),
             )
 
+    def test_already_empty_dataset_does_not_raise(self):
+        # nothing was dropped here, so the all-masked error would misreport the cause
+        train_dataset, _ = self._process([])
+        self.assertEqual(len(train_dataset), 0)
+
     def test_samples_with_trainable_tokens_are_kept(self):
         labels = [[1, 2, 3], [-100, 4, -100]]
         train_dataset, eval_dataset = self._process(labels)

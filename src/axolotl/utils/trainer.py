@@ -303,7 +303,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         **filter_map_kwargs,
         **drop_long_kwargs,
     )
-    if prior_len is not None:
+    if prior_len:
         dropped = prior_len - len(train_dataset)
         if dropped:
             LOG.warning(
@@ -322,7 +322,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             **filter_map_kwargs,
             **drop_long_kwargs,
         )
-        if prior_len is not None:
+        if prior_len:
             dropped = prior_len - len(eval_dataset)
             if dropped:
                 LOG.warning(
