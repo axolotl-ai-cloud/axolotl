@@ -159,8 +159,8 @@ def cluster_up(
     for host in workers:
         LOG.info("joining worker %s", host)
         result = subprocess.run(  # nosec B603
-            _ssh_cmd(host, ssh_user, ssh_key)
-            + [
+            [
+                *_ssh_cmd(host, ssh_user, ssh_key),
                 "ray",
                 "start",
                 f"--address={state.address}",
@@ -180,7 +180,9 @@ def cluster_up(
                 "failed to join %s (exit %d):\n%s", host, result.returncode, stderr_head
             )
 
-    state.workers = joined
+    # merge with previously recorded workers so a partial re-up doesn't orphan
+    # daemons that `axolotl ray down` still needs to stop
+    state.workers = list(dict.fromkeys([*state.workers, *joined]))
     state.save()
 
     expected_nodes = 1 + len(joined)
@@ -219,7 +221,7 @@ def cluster_down(force: bool = False) -> None:
 
     for host in state.workers:
         LOG.info("stopping worker %s", host)
-        cmd = _ssh_cmd(host, state.ssh_user, state.ssh_key)
+        cmd = [*_ssh_cmd(host, state.ssh_user, state.ssh_key)]
         if force:
             # targeted: only daemons started from our unique temp dir
             cmd += ["pkill", "-9", "-f", Path(state.temp_dir).name]

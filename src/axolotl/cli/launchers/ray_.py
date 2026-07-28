@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import click
 import yaml
 
-from axolotl.cli.launchers.base import build_command
+from axolotl.cli.launchers.base import _peek_yaml_key, build_command
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -369,15 +369,6 @@ def _recorded_cluster_address() -> "str | None":
         if sock.connect_ex((state.head_ip, state.port)) != 0:
             return None
     return state.address
-
-
-def _peek_yaml_key(config_path: str, key: str):
-    try:
-        with open(config_path, encoding="utf-8") as fin:
-            data = yaml.safe_load(fin)
-        return data.get(key) if isinstance(data, dict) else None
-    except (OSError, yaml.YAMLError):
-        return None
 
 
 def _local_gpu_count() -> int:

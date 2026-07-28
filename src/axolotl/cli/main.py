@@ -596,9 +596,9 @@ def ray_up(
 
     runtime_cfg = None
     if runtime:
-        from axolotl.utils.schemas.runtime import RuntimeConfig
+        from axolotl.cli.launchers.resolve import _load_runtime_config
 
-        runtime_cfg = RuntimeConfig.from_file(runtime)
+        runtime_cfg = _load_runtime_config(runtime)
     cluster_up(
         hostfile=hostfile,
         port=port,

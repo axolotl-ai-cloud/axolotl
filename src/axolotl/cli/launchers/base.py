@@ -5,7 +5,19 @@ import subprocess  # nosec
 import sys
 from typing import Any
 
+import yaml
+
 LEGACY_LAUNCHER_KWARGS = ("num_processes", "main_process_port")
+
+
+def _peek_yaml_key(config_path: str, key: str) -> Any:
+    """Cheap top-level YAML lookup; None on missing file, bad YAML, or non-mapping."""
+    try:
+        with open(config_path, encoding="utf-8") as fin:
+            data = yaml.safe_load(fin)
+        return data.get(key) if isinstance(data, dict) else None
+    except (OSError, yaml.YAMLError):
+        return None
 
 
 def pop_legacy_launcher_kwargs(kwargs: dict) -> dict:

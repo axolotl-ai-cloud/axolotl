@@ -140,4 +140,8 @@ fsdp_config:
   reshard_after_forward: true
 ```
 
-All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.
+If you went the `default_config.yaml` route, all you have to do now is launch
+using accelerate as you would usually do on each machine — the processes start
+once accelerate is running on every machine. The runtime-config commands above
+need no separate accelerate invocation: `axolotl train` performs the launch
+itself.

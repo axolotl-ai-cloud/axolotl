@@ -18,6 +18,45 @@ from tests.e2e.utils import (
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
+def lora_ddp_cfg(temp_dir: str, **overrides) -> DictDefault:
+    """Base LoRA DDP training config shared by the ray launcher tests."""
+    return DictDefault(
+        {
+            "base_model": "HuggingFaceTB/SmolLM2-135M",
+            "sequence_len": 1024,
+            "adapter": "lora",
+            "lora_r": 8,
+            "lora_alpha": 16,
+            "lora_dropout": 0.05,
+            "lora_target_linear": True,
+            "val_set_size": 0.05,
+            "special_tokens": {
+                "pad_token": "<|endoftext|>",
+            },
+            "datasets": [
+                {
+                    "path": "tatsu-lab/alpaca",
+                    "type": "alpaca",
+                    "split": "train[:10%]",
+                },
+            ],
+            "num_epochs": 1,
+            "max_steps": 2,
+            "micro_batch_size": 4,
+            "gradient_accumulation_steps": 2,
+            "output_dir": temp_dir,
+            "dataset_prepared_path": temp_dir + "/last_run_prepared",
+            "learning_rate": 0.00001,
+            "optimizer": "adamw_8bit",
+            "lr_scheduler": "cosine",
+            "flash_attention": True,
+            "use_tensorboard": True,
+            "save_first_step": False,
+            **overrides,
+        }
+    )
+
+
 class TestMultiGPURay:
     """
     Test cases for AnyScale Ray post training
@@ -25,42 +64,7 @@ class TestMultiGPURay:
 
     @require_torch_2_7_0
     def test_lora_ddp(self, temp_dir):
-        cfg = DictDefault(
-            {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "sequence_len": 1024,
-                "adapter": "lora",
-                "lora_r": 8,
-                "lora_alpha": 16,
-                "lora_dropout": 0.05,
-                "lora_target_linear": True,
-                "val_set_size": 0.05,
-                "special_tokens": {
-                    "pad_token": "<|endoftext|>",
-                },
-                "datasets": [
-                    {
-                        "path": "tatsu-lab/alpaca",
-                        "type": "alpaca",
-                        "split": "train[:10%]",
-                    },
-                ],
-                "num_epochs": 1,
-                "max_steps": 2,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 2,
-                "output_dir": temp_dir,
-                "dataset_prepared_path": temp_dir + "/last_run_prepared",
-                "learning_rate": 0.00001,
-                "optimizer": "adamw_8bit",
-                "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "use_tensorboard": True,
-                "use_ray": True,
-                "ray_num_workers": 2,
-                "save_first_step": False,
-            }
-        )
+        cfg = lora_ddp_cfg(temp_dir, use_ray=True, ray_num_workers=2)
 
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
@@ -210,40 +214,7 @@ class TestMultiGPURay:
 
     @require_torch_2_7_0
     def test_lora_ddp_runtime_file(self, temp_dir):
-        cfg = DictDefault(
-            {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "sequence_len": 1024,
-                "adapter": "lora",
-                "lora_r": 8,
-                "lora_alpha": 16,
-                "lora_dropout": 0.05,
-                "lora_target_linear": True,
-                "val_set_size": 0.05,
-                "special_tokens": {
-                    "pad_token": "<|endoftext|>",
-                },
-                "datasets": [
-                    {
-                        "path": "tatsu-lab/alpaca",
-                        "type": "alpaca",
-                        "split": "train[:10%]",
-                    },
-                ],
-                "num_epochs": 1,
-                "max_steps": 2,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 2,
-                "output_dir": temp_dir,
-                "dataset_prepared_path": temp_dir + "/last_run_prepared",
-                "learning_rate": 0.00001,
-                "optimizer": "adamw_8bit",
-                "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "use_tensorboard": True,
-                "save_first_step": False,
-            }
-        )
+        cfg = lora_ddp_cfg(temp_dir)
         runtime = {
             "launcher": "ray",
             "ray": {

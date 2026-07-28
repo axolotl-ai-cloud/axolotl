@@ -5,6 +5,7 @@ Modal Cloud support from CLI
 import copy
 import json
 import os
+import shlex
 import subprocess  # nosec B404
 from pathlib import Path
 from random import randint
@@ -15,7 +16,7 @@ from axolotl.cli.cloud.base import Cloud
 from axolotl.utils.schemas.runtime import LauncherChoice
 
 
-def run_cmd(cmd: str, run_folder: str, volumes=None):
+def run_cmd(cmd: "str | list[str]", run_folder: str, volumes=None):
     """Run a command inside a folder, with Modal Volume reloading before and commit on success."""
     # Ensure volumes contain latest files.
     if volumes:
@@ -37,10 +38,9 @@ def run_cmd(cmd: str, run_folder: str, volumes=None):
         else:
             del new_env["PYTHONPATH"]
 
+    argv = shlex.split(cmd) if isinstance(cmd, str) else cmd
     # Propagate errors from subprocess.
-    if exit_code := subprocess.call(  # nosec B603
-        cmd.split(), cwd=run_folder, env=new_env
-    ):
+    if exit_code := subprocess.call(argv, cwd=run_folder, env=new_env):  # nosec B603
         exit(exit_code)
 
     # Commit writes to volume.
@@ -287,24 +287,16 @@ def _train(
 
     launcher_args = launcher_args or []
 
-    launcher_arg = f"--launcher {launcher}"
-
-    runtime_arg = ""
+    cmd = ["axolotl", "train", "--launcher", str(launcher)]
     if runtime_yaml:
         with open("/workspace/mounts/runtime.yaml", "w", encoding="utf-8") as f_out:
             f_out.write(runtime_yaml)
-        runtime_arg = "--runtime /workspace/mounts/runtime.yaml"
-
-    # Build launcher args string
-    launcher_args_str = ""
+        cmd += ["--runtime", "/workspace/mounts/runtime.yaml"]
+    cmd.append("/workspace/mounts/config.yaml")
     if launcher_args:
-        launcher_args_str = "-- " + " ".join(launcher_args)
+        cmd += ["--", *launcher_args]
 
-    cmd = (
-        f"axolotl train {launcher_arg} {runtime_arg} /workspace/mounts/config.yaml"
-        f" {launcher_args_str}"
-    )
-    run_cmd(" ".join(cmd.split()), run_folder, volumes)
+    run_cmd(cmd, run_folder, volumes)
 
 
 def _lm_eval(config_yaml: str, volumes=None):

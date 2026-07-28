@@ -5,7 +5,11 @@ import dataclasses
 import click
 import yaml
 
-from axolotl.cli.launchers.base import merge_launcher_args, pop_legacy_launcher_kwargs
+from axolotl.cli.launchers.base import (
+    _peek_yaml_key,
+    merge_launcher_args,
+    pop_legacy_launcher_kwargs,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.runtime import LauncherChoice, RuntimeConfig
 
@@ -49,12 +53,17 @@ class ResolvedLaunch:
 
 def peek_legacy_use_ray(config_path: str) -> bool:
     """Cheap top-level peek at the training YAML; no load_cfg/pydantic."""
+    return bool(_peek_yaml_key(config_path, "use_ray"))
+
+
+def _load_runtime_config(runtime_path: str) -> RuntimeConfig:
+    """Load a --runtime file, converting parse/validation failures to clean CLI errors."""
+    from pydantic import ValidationError
+
     try:
-        with open(config_path, encoding="utf-8") as fin:
-            data = yaml.safe_load(fin)
-        return isinstance(data, dict) and bool(data.get("use_ray"))
-    except (OSError, yaml.YAMLError):
-        return False
+        return RuntimeConfig.from_file(runtime_path)
+    except (ValidationError, ValueError, yaml.YAMLError) as err:
+        raise click.UsageError(f"invalid runtime config {runtime_path}: {err}") from err
 
 
 def _runtime_launcher_args(runtime: RuntimeConfig | None, launcher: str) -> list[str]:
@@ -142,7 +151,7 @@ def resolve_launch(
     flat ray cfg fields. Precedence: explicit CLI flags > runtime file > legacy
     training-YAML `use_ray` > default accelerate.
     """
-    runtime = RuntimeConfig.from_file(runtime_path) if runtime_path else None
+    runtime = _load_runtime_config(runtime_path) if runtime_path else None
     # tri-state: absent (flag not passed; filter_none_kwargs strips it) / True / False
     use_ray_flag = kwargs.get("use_ray")
 

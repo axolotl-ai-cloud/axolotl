@@ -37,6 +37,10 @@ class BasetenCloud(Cloud):
             raise click.UsageError(
                 "--runtime is not yet supported with the baseten cloud provider"
             )
+        if launcher == "ray":
+            raise click.UsageError(
+                "--launcher ray is not supported with the baseten cloud provider"
+            )
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = self.config.copy()
             config["launcher"] = launcher

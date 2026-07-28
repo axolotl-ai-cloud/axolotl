@@ -32,20 +32,20 @@ def launch_training(
         _launch_cloud_training(
             cloud, cfg_file, launcher, kwargs, launcher_args, runtime=runtime
         )
-    elif launcher:
-        if launcher == "accelerate":
-            _launch_accelerate_training(cfg_file, kwargs, launcher_args, use_exec, env)
-        elif launcher == "torchrun":
-            _launch_torchrun_training(cfg_file, kwargs, launcher_args, use_exec, env)
-        elif launcher == "ray":
-            from axolotl.cli.launchers.ray_ import launch_ray_training
+    elif launcher == "accelerate":
+        _launch_accelerate_training(cfg_file, kwargs, launcher_args, use_exec, env)
+    elif launcher == "torchrun":
+        _launch_torchrun_training(cfg_file, kwargs, launcher_args, use_exec, env)
+    elif launcher == "ray":
+        from axolotl.cli.launchers.ray_ import launch_ray_training
 
-            launch_ray_training(cfg_file, kwargs, runtime, env=env)
-        elif launcher == "python":
-            _launch_python_training(cfg_file, kwargs)
-    elif launcher is None:
-        # legacy programmatic path (pre-runtime-config callers passed None for ray)
+        launch_ray_training(cfg_file, kwargs, runtime, env=env)
+    elif launcher == "python" or launcher is None:
+        # None is the legacy programmatic path (pre-runtime-config callers passed
+        # None for ray)
         _launch_python_training(cfg_file, kwargs)
+    else:
+        raise ValueError(f"unknown launcher: {launcher!r}")
 
 
 def _launch_cloud_training(

@@ -262,3 +262,9 @@ class TestHelpers:
         path = tmp_path / "cfg.yaml"
         path.write_text("use_ray: true\n")
         assert peek_legacy_use_ray(str(path)) is True
+
+
+def test_invalid_runtime_file_is_usage_error(tmp_path, train_cfg):
+    runtime = write_runtime(tmp_path, "launcher: bogus\n")
+    with pytest.raises(click.UsageError, match="invalid runtime config"):
+        resolve_launch(train_cfg, runtime, None, {}, [])

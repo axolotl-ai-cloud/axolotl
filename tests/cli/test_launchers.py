@@ -362,3 +362,13 @@ class TestRequireRay:
         monkeypatch.setitem(sys.modules, "ray", None)  # forces ImportError
         with pytest.raises(click.UsageError, match="axolotl\\[ray\\]"):
             ray_launcher._require_ray()
+
+
+class TestLaunchDispatch:
+    """launch_training dispatcher edge cases."""
+
+    def test_unknown_launcher_raises(self):
+        from axolotl.cli.launchers import launch_training
+
+        with pytest.raises(ValueError, match="unknown launcher"):
+            launch_training("config.yaml", "bogus", None, {})

@@ -1,6 +1,6 @@
 """torchrun launcher backend."""
 
-from axolotl.cli.launchers.base import build_command, run_command
+from axolotl.cli.launchers.base import _flag_name, build_command, run_command
 
 
 def _add_default_rdzv_args(launcher_args: list[str]) -> list[str]:
@@ -14,19 +14,13 @@ def _add_default_rdzv_args(launcher_args: list[str]) -> list[str]:
         Updated launcher args with defaults added if needed
     """
     args = launcher_args.copy()
+    flags = {name for arg in args if (name := _flag_name(arg)) is not None}
 
-    # Check if rdzv_endpoint is present
-    has_rdzv_endpoint = any("--rdzv_endpoint" in arg for arg in args)
-
-    if has_rdzv_endpoint:
-        # Check if rdzv_backend is already provided
-        has_rdzv_backend = any("--rdzv_backend" in arg for arg in args)
-        if not has_rdzv_backend:
+    if "rdzv_endpoint" in flags:
+        if "rdzv_backend" not in flags:
             args.extend(["--rdzv_backend", "c10d"])
 
-        # Check if rdzv_id is already provided
-        has_rdzv_id = any("--rdzv_id" in arg for arg in args)
-        if not has_rdzv_id:
+        if "rdzv_id" not in flags:
             import uuid
 
             args.extend(["--rdzv_id", str(uuid.uuid4())[:8]])
