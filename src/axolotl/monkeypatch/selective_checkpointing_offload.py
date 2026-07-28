@@ -88,7 +88,6 @@ class SacOffloadEngine:
         self.max_cpu_buffer_pool_size = max_cpu_buffer_pool_size
         self.stats = SacOffloadStats()
 
-        self.s0 = torch.cuda.current_stream() if torch.cuda.is_available() else None
         self.s1 = torch.cuda.Stream() if torch.cuda.is_available() else None
 
         self._pack_seq = 0
