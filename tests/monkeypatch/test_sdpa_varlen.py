@@ -215,6 +215,27 @@ def test_falls_back_on_large_head_dim(patched):
     assert not torch.allclose(out, leak, atol=1e-2)
 
 
+def test_falls_back_on_fp32(patched):
+    """Regression: fp32 QKV must not reach varlen_attn (the Flash kernel rejects fp32
+    with a RuntimeError); a packed fp32 row falls back to block-diagonal stock SDPA."""
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    pos = _pos([[256, 256]])
+    B, S = pos.shape
+    Hq, Hkv, D = 8, 2, 64
+    torch.manual_seed(0)
+    q = torch.randn(B, Hq, S, D, device=DEV, dtype=torch.float32)
+    k = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.float32)
+    v = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.float32)
+    mod = _Mod(num_key_value_groups=Hq // Hkv)
+    scaling = D**-0.5
+
+    wrapper = ALL_ATTENTION_FUNCTIONS["sdpa"]
+    out, _ = wrapper(mod, q, k, v, None, scaling=scaling, position_ids=pos)
+    ref = _ref(q, k, v, scaling, pos)
+    assert torch.allclose(out, ref, atol=1e-4)
+
+
 def test_varlen_engages_in_training_forward():
     """Regression: in a real training forward (use_cache=False) transformers builds a 4D
     packed mask from position_ids, which used to bypass the varlen path entirely. The mask
