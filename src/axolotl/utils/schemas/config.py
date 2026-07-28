@@ -956,6 +956,12 @@ class AxolotlInputConfig(
             "description": "Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html"
         },
     )
+    lora_mlp_kernel_b200: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Opt-in B200-tuned factored LoRA MLP kernel. Requires lora_mlp_kernel, adapter: lora with bf16 base weights, a SwiGLU MLP, and lora_dropout: 0. Hard-gated to compute capability (10, 0) (B200/sm_100) at runtime; every other device falls back to the standard LoRA MLP kernel. See: https://docs.axolotl.ai/docs/lora_optims.html"
+        },
+    )
     lora_qkv_kernel: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1869,6 +1875,65 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     raise ValueError(
                         "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP1."
                     )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_mlp_kernel_b200(cls, data):
+        if not data.get("lora_mlp_kernel_b200"):
+            return data
+        if data.get("lora_mlp_kernel") is False:
+            raise ValueError("lora_mlp_kernel_b200 requires lora_mlp_kernel: true")
+        if data.get("adapter") != "lora":
+            raise ValueError(
+                "lora_mlp_kernel_b200 requires adapter: lora (bf16 dense base "
+                "weights; QLoRA/quantized bases are unsupported)"
+            )
+        if data.get("load_in_4bit") or data.get("load_in_8bit"):
+            raise ValueError(
+                "lora_mlp_kernel_b200 is incompatible with load_in_4bit/load_in_8bit "
+                "(bf16 dense base weights only)"
+            )
+        if data.get("lora_dropout"):
+            raise ValueError(
+                "lora_mlp_kernel_b200 does not implement LoRA dropout - set "
+                "lora_dropout: 0 or disable the kernel"
+            )
+        if data.get("peft_use_dora"):
+            raise ValueError("lora_mlp_kernel_b200 does not support DoRA")
+        if data.get("fsdp_config") or data.get("deepspeed"):
+            raise ValueError(
+                "lora_mlp_kernel_b200 has not been validated with FSDP/DeepSpeed "
+                "sharding - disable one of them"
+            )
+        if data.get("lora_mlp_kernel") is None:
+            data["lora_mlp_kernel"] = True
+        if data.get("torch_compile"):
+            LOG.warning(
+                "lora_mlp_kernel_b200 runs eager; torch.compile will graph-break "
+                "around the LoRA MLP blocks"
+            )
+
+        capabilities = data.get("capabilities")
+        compute_capability = (
+            capabilities.get("compute_capability")
+            if isinstance(capabilities, dict)
+            else getattr(capabilities, "compute_capability", None)
+        )
+        if compute_capability and compute_capability != "sm_100":
+            LOG.warning(
+                f"lora_mlp_kernel_b200: device is {compute_capability}, not sm_100 "
+                "(B200) - the standard LoRA MLP kernel will be used"
+            )
+
+        # Best-effort: cuBLAS reads this env var at handle creation, so the
+        # launch environment is the reliable place to set it (documented in
+        # docs/lora_optims.qmd); this covers the common single-process case.
+        from axolotl.kernels.blackwell.support import (
+            maybe_set_cublas_workspace_config,
+        )
+
+        maybe_set_cublas_workspace_config()
         return data
 
     @model_validator(mode="before")

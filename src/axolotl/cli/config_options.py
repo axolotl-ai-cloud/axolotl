@@ -2363,6 +2363,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html",
     ),
     (
+        ("--lora-mlp-kernel-b200/--no-lora-mlp-kernel-b200",),
+        None,
+        None,
+        "Opt-in B200-tuned factored LoRA MLP kernel. Requires lora_mlp_kernel, adapter: lora with bf16 base weights, a SwiGLU MLP, and lora_dropout: 0. Hard-gated to compute capability (10, 0) (B200/sm_100) at runtime; every other device falls back to the standard LoRA MLP kernel. See: https://docs.axolotl.ai/docs/lora_optims.html",
+    ),
+    (
         ("--lora-qkv-kernel/--no-lora-qkv-kernel",),
         None,
         None,
