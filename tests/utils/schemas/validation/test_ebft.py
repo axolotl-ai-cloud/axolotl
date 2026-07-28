@@ -6,6 +6,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from axolotl.prompt_strategies.ebft import load as load_ebft
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -61,3 +62,16 @@ class TestEBFTValidation:
     )
     def test_example_configs_validate(self, config_path):
         validate_config(DictDefault(yaml.safe_load(config_path.read_text())))
+
+    @pytest.mark.parametrize(
+        "config_path",
+        sorted(EBFT_EXAMPLES_DIR.glob("*.yaml")),
+        ids=lambda path: path.name,
+    )
+    def test_example_dataset_types_resolve(self, config_path):
+        cfg = DictDefault(yaml.safe_load(config_path.read_text()))
+
+        for dataset in cfg.datasets:
+            assert load_ebft(dataset["type"], cfg, dataset_idx=0) is not None, (
+                f"{dataset['type']} does not resolve to a packaged ebft strategy"
+            )
