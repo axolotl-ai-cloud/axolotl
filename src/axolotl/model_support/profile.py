@@ -176,7 +176,9 @@ class ModelRegistrations:
     """Lazy payloads for transformers' own extension registries.
 
     Every field is a zero-argument provider returning that registry's payload
-    (or ``None``); all are applied idempotently before model build:
+    (or ``None``); all are applied idempotently as soon as the run's
+    descriptor is discovered — at the pre-config boundary via matchers, and
+    again by exact ``model_type`` before model build:
 
     - ``weight_conversions``: ``model_type`` or model class name to
       ``WeightTransform`` entries, via

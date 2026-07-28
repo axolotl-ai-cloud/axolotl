@@ -14,6 +14,7 @@ LOG = get_logger(__name__)
 # axolotl.model_support stays cycle-free and cheap.
 _BUILTIN_MODULES = (
     "axolotl.model_support.kimi_linear",
+    "axolotl.model_support.nemotron_h",
     "axolotl.model_support.paddleocr_vl",
 )
 

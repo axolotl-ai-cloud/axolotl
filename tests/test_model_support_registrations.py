@@ -493,3 +493,25 @@ def test_before_save_hooks_dispatch_with_the_finalized_model():
         assert events == [(merged, processor)]
     finally:
         train_module.get_model_support = original
+
+
+def test_pre_config_load_applies_registrations_for_matched_support(monkeypatch):
+    class _EarlyPatchTarget:
+        marker = None
+
+    class EarlySupport(ModelSupport):
+        model_types = ("registrations_preconfig_test",)
+        profile = ModelProfile(
+            family=VANILLA_CAUSAL_LM,
+            registrations=ModelRegistrationOverrides(
+                model_class_attrs=lambda: {_EarlyPatchTarget: {"marker": "set"}},
+            ),
+        )
+
+    monkeypatch.setattr(
+        patch_manager_module,
+        "get_model_support_for_cfg",
+        lambda cfg: EarlySupport(),
+    )
+    patch_manager_module.PatchManager.apply_pre_config_load_patches(DictDefault())
+    assert _EarlyPatchTarget.marker == "set"

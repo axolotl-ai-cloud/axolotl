@@ -141,7 +141,7 @@ The hook runner deliberately does not suppress repeated calls. A long-lived proc
 
 ### Transformers registry declarations
 
-`ModelRegistrations` declares payloads for transformers' own extension registries. They are applied idempotently at the `BEFORE_MODEL_BUILD` boundary, before `from_pretrained` runs:
+`ModelRegistrations` declares payloads for transformers' own extension registries. They are applied idempotently as soon as the run's descriptor is discovered: at the pre-config boundary (via matchers, so `auto_classes` exist before `AutoConfig` resolves) and again by exact `model_type` at `BEFORE_MODEL_BUILD`:
 
 ```python
 def _weight_conversions():
@@ -197,7 +197,7 @@ A matcher is a *global* predicate: `matches_cfg`/`matches_processor` run against
 
 Descriptors without a profile retain neutral legacy behavior: their resolved family is `None`, no component provider is injected, and explicitly declared legacy attributes and methods are adapted into the resolved result. This preserves the existing generic and hardcoded loader and processing fallbacks, including for legacy multimodal descriptors. Unregistered models, missing capabilities, and unset strategy fields also continue through those fallback paths. Profile resolution does not yet replace trainer selection, optimizer construction, adapter loading, loss adaptation, batch preparation, or every legacy `model_type` branch; add those as typed strategies only when the vanilla staged pipeline has a stable replacement seam.
 
-See `model_support/paddleocr_vl/` for a multimodal profile and `model_support/kimi_linear/` for phase-specific idempotent patch hooks.
+See `model_support/paddleocr_vl/` for a multimodal profile, `model_support/kimi_linear/` for phase-specific idempotent patch hooks plus in-tree auto-class registration, and `model_support/nemotron_h/` for cfg-conditional modeling patches and a post-build conversion-mapping fix.
 
 ## Quick Validation Checklist
 

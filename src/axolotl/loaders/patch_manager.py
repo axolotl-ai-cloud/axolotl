@@ -58,6 +58,10 @@ class PatchManager:
             cfg: Configuration dictionary with model and training settings.
         """
         support = get_model_support_for_cfg(cfg)
+        if support is not None:
+            # Auto-class registrations must exist before AutoConfig resolves;
+            # idempotent, so the pre-model-build application re-runs safely.
+            PatchManager._apply_registrations_for_support(support)
         run_model_support_hooks(
             support,
             ModelHookPhase.BEFORE_CONFIG_LOAD,
@@ -185,12 +189,6 @@ class PatchManager:
         )
         self._apply_model_support_loss_function(model)
 
-        if self.cfg.model_config_type == "nemotron_h":
-            # Must run after model build because NemotronHForCausalLM.__init__
-            # calls register_nemotron_h_conversion_mapping() with overwrite=True,
-            # which would clobber any earlier fix.
-            self._fix_nemotron_h_conversion_mapping()
-
         # Gemma 4 hybrid attention runs here in post-build (NOT post-load):
         # the per-layer ``self_attn.config._attn_implementation="sdpa"``
         # override needs to walk the raw model tree, which is broken by
@@ -207,6 +205,10 @@ class PatchManager:
         support = get_model_support(self.cfg.model_config_type)
         if support is None:
             return
+        self._apply_registrations_for_support(support)
+
+    @staticmethod
+    def _apply_registrations_for_support(support):
         registrations = resolve_model_support(support).registrations
 
         conversions_provider = registrations.weight_conversions
@@ -221,7 +223,7 @@ class PatchManager:
             for key, entries in conversions.items():
                 entries = list(entries)
                 register_checkpoint_conversion_mapping(key, entries, overwrite=True)
-                self._warn_irreversible_weight_transforms(key, entries)
+                PatchManager._warn_irreversible_weight_transforms(key, entries)
 
         patch_provider = registrations.patch_mappings
         patch_mapping = patch_provider() if patch_provider is not None else None
@@ -230,10 +232,10 @@ class PatchManager:
 
             register_patch_mapping(dict(patch_mapping), overwrite=True)
 
-        self._register_interface_functions(registrations)
-        self._register_quantizers(registrations)
-        self._register_auto_classes(registrations)
-        self._apply_model_class_attrs(registrations)
+        PatchManager._register_interface_functions(registrations)
+        PatchManager._register_quantizers(registrations)
+        PatchManager._register_auto_classes(registrations)
+        PatchManager._apply_model_class_attrs(registrations)
 
     @staticmethod
     def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
@@ -649,22 +651,6 @@ class PatchManager:
             self.cfg.sample_packing or self.cfg.context_parallel_size > 1
         )
 
-        if self.cfg.model_config_type == "nemotron_h" and ssm_hybrid_patch_needed:
-            from transformers.models.nemotron_h.modeling_nemotron_h import (
-                NemotronHPreTrainedModel,
-            )
-
-            from axolotl.monkeypatch.models.nemotron_h.modeling import (
-                patch_nemotron_h_modeling_packing,
-            )
-
-            patch_nemotron_h_modeling_packing()
-            # supports_gradient_checkpointing is only enabled after
-            # patch_nemotron_h_modeling_packing() installs the GC-compatible
-            # NemotronHBlock.forward. Without the patch, upstream marks this
-            # False because the original block forward is not GC-safe.
-            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
-
         if self.cfg.model_config_type == "falcon_h1" and ssm_hybrid_patch_needed:
             from axolotl.monkeypatch.models.falcon_h1.modeling import (
                 patch_falcon_h1_modeling_packing,
@@ -784,49 +770,6 @@ class PatchManager:
                 )
 
                 patch_qwen3_5_moe_fused_attn()
-
-    @staticmethod
-    def _fix_nemotron_h_conversion_mapping():
-        """Remove the spurious embedding→embeddings WeightRenaming from the
-        nemotron_h checkpoint conversion mapping.
-
-        The nvidia Hub model registers:
-            WeightRenaming("embedding.weight", "embeddings.weight")
-        to handle a legacy checkpoint variant. Its reverse (applied on save)
-        converts ``embeddings`` back to ``embedding``, which silently renames
-        ``backbone.embeddings.weight`` → ``backbone.embedding.weight`` when
-        merging LoRA adapters back into the base model.
-        """
-        try:
-            from transformers.conversion_mapping import (
-                WeightRenaming,
-                get_checkpoint_conversion_mapping,
-                register_checkpoint_conversion_mapping,
-            )
-        except ImportError:
-            return
-
-        mapping = get_checkpoint_conversion_mapping("nemotron_h")
-        if mapping is None:
-            return
-
-        filtered = [
-            entry
-            for entry in mapping
-            if not (
-                isinstance(entry, WeightRenaming)
-                and entry.source_patterns == ["embedding.weight"]
-                and entry.target_patterns == ["embeddings.weight"]
-            )
-        ]
-        if len(filtered) != len(mapping):
-            register_checkpoint_conversion_mapping(
-                "nemotron_h", filtered, overwrite=True
-            )
-            LOG.info(
-                "Removed embedding→embeddings WeightRenaming from nemotron_h "
-                "checkpoint conversion mapping"
-            )
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
