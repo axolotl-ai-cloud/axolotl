@@ -10,14 +10,17 @@ from axolotl.monkeypatch.attention.sdpa_varlen import (
     varlen_available,
 )
 
-pytestmark = [
-    pytest.mark.skipif(not torch.cuda.is_available(), reason="varlen_attn needs CUDA"),
-    pytest.mark.skipif(
-        not varlen_available(), reason="torch.nn.attention.varlen needs torch >= 2.10"
-    ),
-]
+pytestmark = pytest.mark.skipif(
+    not varlen_available(), reason="torch.nn.attention.varlen needs torch >= 2.10"
+)
+
+requires_cuda = pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="varlen_attn needs CUDA"
+)
 
 DEV = "cuda"
+# The fallback path never reaches varlen_attn, so it runs on CPU too.
+FALLBACK_DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
 
 def _varlen_supports_window() -> bool:
@@ -46,11 +49,11 @@ def _block_mask(position_ids, dtype, sliding=None):
     B, S = position_ids.shape
     doc = (position_ids == 0).cumsum(-1)
     same = doc[:, :, None] == doc[:, None, :]
-    idx = torch.arange(S, device=DEV)
+    idx = torch.arange(S, device=position_ids.device)
     allow = same & (idx[:, None] >= idx[None, :])[None]
     if sliding:
         allow = allow & ((idx[:, None] - idx[None, :]) < sliding)[None]
-    m = torch.zeros(B, 1, S, S, device=DEV, dtype=dtype)
+    m = torch.zeros(B, 1, S, S, device=position_ids.device, dtype=dtype)
     m.masked_fill_(~allow[:, None], torch.finfo(dtype).min)
     return m
 
@@ -65,10 +68,10 @@ def _ref(q, k, v, scaling, position_ids, sliding=None):
     return o.transpose(1, 2)  # [B,S,H,D]
 
 
-def _pos(doclens_per_row):
+def _pos(doclens_per_row, device=DEV):
     rows = [torch.cat([torch.arange(ln) for ln in dl]) for dl in doclens_per_row]
     S = max(len(r) for r in rows)
-    return torch.stack([F.pad(r, (0, S - len(r))) for r in rows]).to(DEV)
+    return torch.stack([F.pad(r, (0, S - len(r))) for r in rows]).to(device)
 
 
 @pytest.fixture
@@ -78,6 +81,7 @@ def patched():
     unpatch_sdpa_varlen()
 
 
+@requires_cuda
 @pytest.mark.parametrize(
     "doclens,sliding,label",
     [
@@ -136,6 +140,7 @@ def _assert_defers_to_stock(mod, q, k, v, pos):
     assert torch.equal(out_w, out_o)
 
 
+@requires_cuda
 def test_varlen_matches_flash_attention_2_e2e():
     """The varlen path matches FA2 (the canonical varlen-packing impl) on a real packed forward."""
     from transformers import LlamaConfig, LlamaModel
@@ -176,30 +181,32 @@ def test_varlen_matches_flash_attention_2_e2e():
     )
 
 
-def test_falls_back_when_not_packed(patched):
+@pytest.mark.parametrize("device", FALLBACK_DEVICES)
+def test_falls_back_when_not_packed(patched, device):
     """Single-document rows must defer to stock SDPA (no varlen path)."""
     S, Hq, Hkv, D = 512, 16, 4, 256
-    pos = torch.arange(S, device=DEV)[None]  # one document -> no packing
+    pos = torch.arange(S, device=device)[None]  # one document -> no packing
     torch.manual_seed(0)
-    q = torch.randn(1, Hq, S, D, device=DEV, dtype=torch.bfloat16)
-    k = torch.randn(1, Hkv, S, D, device=DEV, dtype=torch.bfloat16)
-    v = torch.randn(1, Hkv, S, D, device=DEV, dtype=torch.bfloat16)
+    q = torch.randn(1, Hq, S, D, device=device, dtype=torch.bfloat16)
+    k = torch.randn(1, Hkv, S, D, device=device, dtype=torch.bfloat16)
+    v = torch.randn(1, Hkv, S, D, device=device, dtype=torch.bfloat16)
     _assert_defers_to_stock(_Mod(num_key_value_groups=Hq // Hkv), q, k, v, pos)
 
 
-def test_falls_back_on_large_head_dim(patched):
+@pytest.mark.parametrize("device", FALLBACK_DEVICES)
+def test_falls_back_on_large_head_dim(patched, device):
     """head_dim > 256 can't use Flash varlen, but a packed row whose padding mask was
     dropped (attention_mask=None) must still be isolated: the wrapper rebuilds the
     block-diagonal mask rather than running pure-causal (which would leak)."""
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-    pos = _pos([[256, 256]])
+    pos = _pos([[256, 256]], device)
     B, S = pos.shape
     Hq, Hkv, D = 8, 2, 512  # head_dim 512
     torch.manual_seed(0)
-    q = torch.randn(B, Hq, S, D, device=DEV, dtype=torch.bfloat16)
-    k = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.bfloat16)
-    v = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.bfloat16)
+    q = torch.randn(B, Hq, S, D, device=device, dtype=torch.bfloat16)
+    k = torch.randn(B, Hkv, S, D, device=device, dtype=torch.bfloat16)
+    v = torch.randn(B, Hkv, S, D, device=device, dtype=torch.bfloat16)
     mod = _Mod(num_key_value_groups=Hq // Hkv)
     scaling = D**-0.5
 
@@ -215,27 +222,34 @@ def test_falls_back_on_large_head_dim(patched):
     assert not torch.allclose(out, leak, atol=1e-2)
 
 
-def test_falls_back_on_fp32(patched):
-    """Regression: fp32 QKV must not reach varlen_attn (the Flash kernel rejects fp32
-    with a RuntimeError); a packed fp32 row falls back to block-diagonal stock SDPA."""
+@pytest.mark.parametrize(
+    "device,dtype",
+    # cpu/bf16 isolates the device guard, cuda/fp32 the dtype guard, cpu/fp32 hits both.
+    [("cpu", torch.bfloat16), ("cpu", torch.float32)]
+    + ([("cuda", torch.float32)] if torch.cuda.is_available() else []),
+)
+def test_falls_back_on_unsupported_dtype_or_device(patched, device, dtype):
+    """Regression: only CUDA fp16/bf16 QKV may reach varlen_attn — its Flash kernel raises on
+    fp32 and has no CPU dispatch. Everything else falls back to block-diagonal stock SDPA."""
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-    pos = _pos([[256, 256]])
+    pos = _pos([[256, 256]], device)
     B, S = pos.shape
     Hq, Hkv, D = 8, 2, 64
     torch.manual_seed(0)
-    q = torch.randn(B, Hq, S, D, device=DEV, dtype=torch.float32)
-    k = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.float32)
-    v = torch.randn(B, Hkv, S, D, device=DEV, dtype=torch.float32)
+    q = torch.randn(B, Hq, S, D, device=device, dtype=dtype)
+    k = torch.randn(B, Hkv, S, D, device=device, dtype=dtype)
+    v = torch.randn(B, Hkv, S, D, device=device, dtype=dtype)
     mod = _Mod(num_key_value_groups=Hq // Hkv)
     scaling = D**-0.5
 
     wrapper = ALL_ATTENTION_FUNCTIONS["sdpa"]
     out, _ = wrapper(mod, q, k, v, None, scaling=scaling, position_ids=pos)
     ref = _ref(q, k, v, scaling, pos)
-    assert torch.allclose(out, ref, atol=1e-4)
+    assert torch.allclose(out, ref, atol=1e-4 if dtype == torch.float32 else 1e-2)
 
 
+@requires_cuda
 def test_varlen_engages_in_training_forward():
     """Regression: in a real training forward (use_cache=False) transformers builds a 4D
     packed mask from position_ids, which used to bypass the varlen path entirely. The mask
