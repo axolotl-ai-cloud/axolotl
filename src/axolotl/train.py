@@ -31,6 +31,12 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.model_support import (
+    ModelHookContext,
+    ModelHookPhase,
+    get_model_support,
+    run_model_support_hooks,
+)
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
@@ -263,6 +269,8 @@ def save_trained_model(
     cfg: DictDefault,
     trainer: Any,
     model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizer | None = None,
+    processor: ProcessorMixin | None = None,
 ):
     """
     Save the trained model according to configuration and training setup.
@@ -271,8 +279,18 @@ def save_trained_model(
         cfg: Dictionary mapping `axolotl` config keys to values.
         trainer: The trainer object.
         model: The trained model to save.
+        tokenizer: The tokenizer, for model-support save hooks.
+        processor: The processor, for model-support save hooks.
     """
     LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
+
+    run_model_support_hooks(
+        get_model_support(cfg.model_config_type),
+        ModelHookPhase.BEFORE_SAVE,
+        ModelHookContext(
+            cfg=cfg, model=model, tokenizer=tokenizer, processor=processor
+        ),
+    )
 
     # Post training module hooks
     for name, module in model.named_modules():
@@ -664,7 +682,7 @@ def train(
         torch.cuda.empty_cache()
 
     # Save the trained model and cleanup
-    save_trained_model(cfg, trainer, model)
+    save_trained_model(cfg, trainer, model, tokenizer=tokenizer, processor=processor)
     tokenizer.save_pretrained(
         str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
     )

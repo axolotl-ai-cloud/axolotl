@@ -183,6 +183,7 @@ class PatchManager:
             ModelHookPhase.AFTER_BASE_MODEL_BUILD,
             self._hook_context(model),
         )
+        self._apply_model_support_loss_function(model)
 
         if self.cfg.model_config_type == "nemotron_h":
             # Must run after model build because NemotronHForCausalLM.__init__
@@ -229,6 +230,11 @@ class PatchManager:
 
             register_patch_mapping(dict(patch_mapping), overwrite=True)
 
+        self._register_interface_functions(registrations)
+        self._register_quantizers(registrations)
+        self._register_auto_classes(registrations)
+        self._apply_model_class_attrs(registrations)
+
     @staticmethod
     def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
         """``save_pretrained(save_original_format=True)`` reverses registered
@@ -251,6 +257,103 @@ class PatchManager:
                     key,
                     "; ".join(problems),
                 )
+
+    @staticmethod
+    def _register_interface_functions(registrations):
+        def interface_entries(provider):
+            mapping = provider() if provider is not None else None
+            return mapping.items() if mapping else ()
+
+        for key, function in interface_entries(registrations.attention_functions):
+            from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+            ALL_ATTENTION_FUNCTIONS.register(key, function)
+        for key, function in interface_entries(registrations.attention_mask_functions):
+            from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
+
+            ALL_MASK_ATTENTION_FUNCTIONS.register(key, function)
+        for key, function in interface_entries(registrations.experts_functions):
+            from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+            ALL_EXPERTS_FUNCTIONS.register(key, function)
+
+    @staticmethod
+    def _register_quantizers(registrations):
+        provider = registrations.quantizers
+        quantizers = provider() if provider is not None else None
+        if not quantizers:
+            return
+        from transformers.quantizers.auto import (
+            AUTO_QUANTIZATION_CONFIG_MAPPING,
+            AUTO_QUANTIZER_MAPPING,
+        )
+
+        # register_quantizer() raises on any existing key, so write the
+        # mappings directly: same class is an idempotent no-op, a different
+        # class is a deliberate profile override.
+        for name, registration in quantizers.items():
+            existing = AUTO_QUANTIZER_MAPPING.get(name)
+            if existing is not None and existing is not registration.quantizer_cls:
+                LOG.warning(
+                    "Overriding quantizer %s: %s -> %s",
+                    name,
+                    existing.__name__,
+                    registration.quantizer_cls.__name__,
+                )
+            AUTO_QUANTIZER_MAPPING[name] = registration.quantizer_cls
+            if registration.config_cls is not None:
+                AUTO_QUANTIZATION_CONFIG_MAPPING[name] = registration.config_cls
+
+    @staticmethod
+    def _register_auto_classes(registrations):
+        provider = registrations.auto_classes
+        auto_classes = provider() if provider is not None else None
+        if not auto_classes:
+            return
+        import transformers
+        from transformers import AutoConfig, AutoProcessor, AutoTokenizer
+
+        for registration in auto_classes:
+            config_cls = registration.config_cls
+            AutoConfig.register(config_cls.model_type, config_cls, exist_ok=True)
+            for auto_name, model_cls in registration.model_classes.items():
+                auto_cls = getattr(transformers, auto_name, None)
+                if auto_cls is None or not hasattr(auto_cls, "register"):
+                    raise ValueError(
+                        f"Unknown transformers auto class {auto_name!r} in "
+                        f"auto_classes registration for {config_cls.__name__}"
+                    )
+                auto_cls.register(config_cls, model_cls, exist_ok=True)
+            if registration.slow_tokenizer_cls or registration.fast_tokenizer_cls:
+                AutoTokenizer.register(
+                    config_cls,
+                    slow_tokenizer_class=registration.slow_tokenizer_cls,
+                    fast_tokenizer_class=registration.fast_tokenizer_cls,
+                    exist_ok=True,
+                )
+            if registration.processor_cls is not None:
+                AutoProcessor.register(
+                    config_cls, registration.processor_cls, exist_ok=True
+                )
+
+    @staticmethod
+    def _apply_model_class_attrs(registrations):
+        provider = registrations.model_class_attrs
+        class_attrs = provider() if provider is not None else None
+        if not class_attrs:
+            return
+        for target_cls, attrs in class_attrs.items():
+            for attr_name, value in attrs.items():
+                setattr(target_cls, attr_name, value)
+
+    def _apply_model_support_loss_function(self, model: PreTrainedModel):
+        support = get_model_support(self.cfg.model_config_type)
+        if support is None:
+            return
+        provider = resolve_model_support(support).strategies.loss_function
+        loss_function = provider() if provider is not None else None
+        if loss_function is not None:
+            model.loss_function = loss_function
 
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
