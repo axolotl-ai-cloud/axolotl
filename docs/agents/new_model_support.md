@@ -18,9 +18,11 @@ from axolotl.model_support import (
     ModelHooks,
     ModelMatchers,
     ModelProfile,
+    ModelRegistrationOverrides,
     ModelStrategyOverrides,
     ModelSupport,
     Unsupported,
+    VANILLA_CAUSAL_LM,
     register_model_support,
 )
 
@@ -84,7 +86,7 @@ assert type(support).__name__ == "MyModelSupport"
 2. Per-model profile overrides.
 3. Attributes and methods explicitly declared by a legacy `ModelSupport` subclass.
 
-Capabilities merge by key, strategies and matchers override field by field, and hooks run in family → profile → legacy order. Inherited defaults on `ModelSupport` do not erase profile values. This keeps existing descriptors compatible while allowing new descriptors to remain declarative.
+Capabilities merge by key, strategies, registrations, and matchers override field by field, and hooks run in family → profile → legacy order. Inherited defaults on `ModelSupport` do not erase profile values. This keeps existing descriptors compatible while allowing new descriptors to remain declarative.
 
 `ModelStrategyOverrides` distinguishes omission from removal: an omitted field inherits its family provider, while explicit `None` removes that provider and restores the downstream generic fallback. `ModelMatchers` fields differ: `None` always means inherit — matchers have no removal form. Profile hooks append by default; include a phase in `ModelHooks.replace_phases` to replace its inherited family hooks, using an empty tuple to suppress them entirely. Legacy method hooks remain additive after the declarative result.
 
@@ -134,6 +136,49 @@ The context fields available at each phase are:
 `cfg` is always available. Although the context dataclass prevents assigning different field values, the contained config and model objects remain mutable so hooks can apply their intended configuration or patch. At `BEFORE_TOKENIZER_LOAD`, the exact type may already be available as `cfg.model_config_type`, but the `model_config` object itself is not included in the context. The standard loading helper supplies a processor for multimodal runs; direct `ModelLoader` callers must pass one explicitly if their hooks require it.
 
 The hook runner deliberately does not suppress repeated calls. A long-lived process may load multiple models or need per-run reconfiguration, so module-level monkeypatch functions must be idempotent themselves: guard against re-wrapping, preserve the original callable when practical, and leave model-instance hooks safe to run for every model.
+
+### Transformers registry declarations
+
+`ModelRegistrations` declares payloads for transformers' own extension registries. They are applied idempotently at the `BEFORE_MODEL_BUILD` boundary, before `from_pretrained` runs:
+
+```python
+def _weight_conversions():
+    from transformers.core_model_loading import Concatenate, WeightConverter
+
+    return {
+        "my_model": [
+            WeightConverter(
+                ["experts.*.gate_proj.weight", "experts.*.up_proj.weight"],
+                ["experts.gate_up_proj"],
+                operations=[Concatenate(dim=0)],
+            ),
+        ],
+    }
+
+
+def _patch_mappings():
+    from .modules import FusedMyModelExperts
+
+    return {"MyModelExperts": FusedMyModelExperts}
+
+
+profile = ModelProfile(
+    family=VANILLA_CAUSAL_LM,
+    registrations=ModelRegistrationOverrides(
+        weight_conversions=_weight_conversions,
+        patch_mappings=_patch_mappings,
+    ),
+)
+```
+
+- `weight_conversions` maps a `model_type` or model class name to `WeightTransform` entries (`WeightConverter`, `WeightRenaming`, ...) passed to `transformers.conversion_mapping.register_checkpoint_conversion_mapping`. Class-name keys take priority over `model_type` keys inside transformers. Remote-code models receive only conversion mappings registered this way; transformers skips its built-in table for custom code.
+- `patch_mappings` maps class names (or regex patterns) to replacement `nn.Module` subclasses passed to `transformers.monkey_patching.register_patch_mapping`; transformers swaps the classes during `from_pretrained`/`from_config` module construction. Prefer exact class names: the registry is process-global, and a broad pattern such as `.*Attention` also patches every other architecture loaded later in the same process.
+
+These registries are two halves of one operation: a patch mapping that changes a module's checkpoint layout must ship matching `weight_conversions`, or loading breaks; transformers' own kernel-fusion machinery always registers them as a pair.
+
+Saving reverses conversions. `save_pretrained(save_original_format=True)` (the default) applies each registered transform's reverse to emit the original checkpoint layout, so every `ConversionOps` in a registered `WeightConverter` must implement `reverse_op`. Axolotl warns at registration for any op missing a `reverse_op`; a transform carrying a quantization operation also cannot round-trip, though that only surfaces at save time. The reverse pass is skipped while a PEFT config is loaded, so merged and full-parameter saves are the affected path.
+
+Registrations resolve family → profile like strategies (an omitted field inherits, explicit `None` clears); there is no legacy-method equivalent.
 
 ### Registration and fallback
 

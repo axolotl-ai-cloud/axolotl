@@ -27,6 +27,7 @@ from axolotl.model_support import (
     check_capability,
     get_model_support,
     get_model_support_for_cfg,
+    resolve_model_support,
     run_model_support_hooks,
 )
 from axolotl.monkeypatch.multipack import (
@@ -134,6 +135,7 @@ class PatchManager:
         # Must precede fused-RoPE patches: re-parses ``Attention.forward``
         # via ``inspect.getsource``; the QKV regex misses on a patched body.
         self._apply_self_attention_lora_patch()
+        self._apply_model_support_registrations()
         self._apply_model_support_pre_load_hook()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
@@ -199,6 +201,56 @@ class PatchManager:
         self._apply_gemma_hybrid_attention(model)
         self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
+
+    def _apply_model_support_registrations(self):
+        support = get_model_support(self.cfg.model_config_type)
+        if support is None:
+            return
+        registrations = resolve_model_support(support).registrations
+
+        conversions_provider = registrations.weight_conversions
+        conversions = (
+            conversions_provider() if conversions_provider is not None else None
+        )
+        if conversions:
+            from transformers.conversion_mapping import (
+                register_checkpoint_conversion_mapping,
+            )
+
+            for key, entries in conversions.items():
+                entries = list(entries)
+                register_checkpoint_conversion_mapping(key, entries, overwrite=True)
+                self._warn_irreversible_weight_transforms(key, entries)
+
+        patch_provider = registrations.patch_mappings
+        patch_mapping = patch_provider() if patch_provider is not None else None
+        if patch_mapping:
+            from transformers.monkey_patching import register_patch_mapping
+
+            register_patch_mapping(dict(patch_mapping), overwrite=True)
+
+    @staticmethod
+    def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
+        """``save_pretrained(save_original_format=True)`` reverses registered
+        conversions; surface irreversible entries at registration instead of at
+        save time."""
+        for transform in transforms:
+            problems = []
+            if getattr(transform, "quantization_operation", None) is not None:
+                problems.append("a quantization operation")
+            for operation in getattr(transform, "operations", None) or ():
+                try:
+                    _ = operation.reverse_op
+                except Exception:  # pylint: disable=broad-exception-caught
+                    problems.append(f"no reverse for {type(operation).__name__}")
+            if problems:
+                LOG.warning(
+                    "Weight conversion registered for %s cannot be reversed at save "
+                    "time (%s); saving will fail or emit the converted (non-original) "
+                    "checkpoint layout.",
+                    key,
+                    "; ".join(problems),
+                )
 
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
