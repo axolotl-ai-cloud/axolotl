@@ -36,6 +36,40 @@ class TestQuackVersionGate:
         assert fa4._quack_supported() == (True, None)
 
 
+class TestSm100ElectGate:
+    @pytest.mark.parametrize(
+        "cutlass, elects, expected_ok",
+        [
+            ("4.6.0.dev0", True, True),  # dev0 predates the internal election
+            ("4.5.3", True, True),
+            ("4.6.0", True, False),
+            ("4.6.1", True, False),
+            ("4.6.0", False, True),  # patched FA4
+        ],
+    )
+    def test_version_and_source_matrix(self, monkeypatch, cutlass, elects, expected_ok):
+        monkeypatch.setattr("importlib.metadata.version", lambda _pkg: cutlass)
+        monkeypatch.setattr(fa4, "_fa4_elects_around_bulk_copy", lambda: elects)
+        ok, ver = fa4._sm100_backward_supported()
+        assert ok is expected_ok
+        assert ver == cutlass
+
+    def test_absent_cutlass_is_treated_ok(self, monkeypatch):
+        from importlib.metadata import PackageNotFoundError
+
+        def _raise(_pkg):
+            raise PackageNotFoundError(_pkg)
+
+        monkeypatch.setattr("importlib.metadata.version", _raise)
+        assert fa4._sm100_backward_supported() == (True, None)
+
+    def test_unreadable_source_is_treated_as_patched(self, monkeypatch):
+        monkeypatch.setattr(
+            "importlib.util.find_spec", MagicMock(side_effect=ImportError("gone"))
+        )
+        assert fa4._fa4_elects_around_bulk_copy() is False
+
+
 class TestConfigureFa4:
     def test_suppresses_aux_data_warning(self, monkeypatch):
         monkeypatch.setattr(fa4, "_quack_supported", lambda: (True, None))

@@ -129,6 +129,23 @@ warns and keeps your requested backend when the installed quack is too old.
 
 :::
 
+::: {.callout-important}
+
+## Blackwell (B200, GB200) needs a patched FA4
+
+On Blackwell the FA4 backward hangs with `nvidia-cutlass-dsl>=4.6.0`. Install the fix
+([Dao-AILab/flash-attention#2689](https://github.com/Dao-AILab/flash-attention/pull/2689))
+over your existing FA4:
+
+```bash
+pip install --no-deps --force-reinstall \
+  'git+https://github.com/dongxiao92/flash-attention@fix/sm100-elect-one-and-div-alignment#subdirectory=flash_attn/cute'
+```
+
+`--no-deps` keeps your existing cutlass and quack pins. Hopper (H100, H200) is unaffected.
+
+:::
+
 ::: {.callout-warning}
 
 FA4 only supports head dimensions up to 128 (`d ≤ 128`). The DeepSeek shape `(192, 128)` is
