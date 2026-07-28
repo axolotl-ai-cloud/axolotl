@@ -24,6 +24,7 @@ LambdaSchedule = Literal["linear", "sigmoid", "none"]
 InitMode = Literal["absmean", "ternary_fit", "ternary_fit_calibrated", "svid"]
 DistillMode = Literal["kd_plugin", "inprocess"]
 DistillSchedule = Literal["constant", "anchored"]
+HiddenLoss = Literal["cosine", "mse", "huber"]
 ExportFormat = Literal[
     "master_bf16", "hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign"
 ]
@@ -145,7 +146,38 @@ class TernaryDistillConfig(BaseModel):
     hidden_weight: float = Field(
         default=0.0,
         ge=0.0,
-        description="Weight of the cosine hidden-state feature-KD term (0 disables).",
+        description=(
+            "Weight of the hidden-state feature-KD term (0 disables). Retune it when "
+            "changing `hidden_loss`: cosine is bounded in [0, 2] while the raw-residual "
+            "losses are not, so the same weight means a different blend."
+        ),
+    )
+    hidden_loss: HiddenLoss = Field(
+        default="cosine",
+        description=(
+            "How the hidden-state feature-KD term compares the two residual streams. "
+            "'cosine' matches direction only and ignores magnitude, which makes it "
+            "robust to the outlier channels that dominate a residual stream (the "
+            "TernaryLLM OFF result; OneBit's normalized MSE is the same objective up "
+            "to a constant). 'mse' is raw MSE on the hidden states: magnitude-aware, "
+            "which is the argument for it — the residual stream is never renormalized, "
+            "so its magnitudes are what set the mixing ratio between blocks — but a "
+            "handful of outlier channels then dominate the gradient. 'huber' keeps the "
+            "magnitude sensitivity with the outlier influence bounded past "
+            "`hidden_huber_delta`. The raw losses are on the scale of the hidden "
+            "states squared, not of cosine, so `hidden_weight` needs retuning when "
+            "switching rather than being renormalized here."
+        ),
+    )
+    hidden_huber_delta: float = Field(
+        default=1.0,
+        gt=0.0,
+        description=(
+            "Elbow of `hidden_loss: huber`: residuals below it are squared, above it "
+            "linear. Measured in hidden-state units, so scale it with the residual "
+            "stream rather than leaving it at 1.0 for a model whose activations are "
+            "much larger."
+        ),
     )
     attn_relation_layer: int | None = Field(
         default=None,
@@ -197,6 +229,21 @@ class TernaryDistillConfig(BaseModel):
                     "ternary.distill.attn_relation_layer is only supported with "
                     "ternary.distill.mode: inprocess"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_hidden_loss(self) -> "TernaryDistillConfig":
+        if self.hidden_loss != "cosine" and not self.hidden_weight:
+            raise ValueError(
+                f"ternary.distill.hidden_loss: {self.hidden_loss} selects a term that "
+                "ternary.distill.hidden_weight: 0 never computes; set a weight or drop "
+                "the setting"
+            )
+        if self.hidden_huber_delta != 1.0 and self.hidden_loss != "huber":
+            raise ValueError(
+                "ternary.distill.hidden_huber_delta is the elbow of "
+                f"`hidden_loss: huber`, but hidden_loss is {self.hidden_loss}"
+            )
         return self
 
 

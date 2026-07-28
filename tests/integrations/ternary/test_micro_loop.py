@@ -645,6 +645,8 @@ def test_inprocess_distillation_selects_the_trainer_and_args():
         "ternary_distill_logits_weight": TernaryDistillConfig().logits_weight,
         "ternary_distill_logits_temperature": 2.0,
         "ternary_distill_hidden_weight": 0.5,
+        "ternary_distill_hidden_loss": TernaryDistillConfig().hidden_loss,
+        "ternary_distill_hidden_huber_delta": TernaryDistillConfig().hidden_huber_delta,
         "ternary_distill_attn_relation_layer": None,
         "ternary_distill_teacher_device_map": None,
         "ternary_distill_schedule": "constant",

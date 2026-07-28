@@ -270,7 +270,9 @@ Under `ternary.distill`:
 | `teacher_device_map` | `null` | `device_map` for the `inprocess` teacher (e.g. `auto`, `cpu`) so a teacher that does not fit beside the student can be offloaded. |
 | `logits_weight` | `0.5` | Mixing coefficient between CE and logits-KD: `(1 - w)·CE + w·τ²·KL`. Must be in `[0, 1]`. Pure KD (`1.0`) matches the teacher's temperature-flattened tails at the expense of head sharpness — on short heals it measures better on teacher-KL but worse on perplexity than the CE blend, so reserve it for long OneBit-style distillation runs. |
 | `logits_temperature` | `2.0` | Softmax temperature for the logits-KD term. |
-| `hidden_weight` | `0.0` | Cosine hidden-state feature-KD weight. `inprocess` only; `0` disables. |
+| `hidden_weight` | `0.0` | Hidden-state feature-KD weight. `inprocess` only; `0` disables. Retune it when changing `hidden_loss` — the variants are on different scales. |
+| `hidden_loss` | `cosine` | How the hidden-state term compares the two residual streams. `cosine` matches direction only, ignoring the outlier channels that dominate a residual stream (TernaryLLM's OFF result; OneBit's normalized MSE is the same objective). `mse` is raw MSE on the unnormalized hidden states — magnitude-aware, which is the case for it, since those magnitudes set the mixing ratio between blocks, but a few outlier channels then dominate the gradient. `huber` keeps the magnitude sensitivity with outlier influence bounded. |
+| `hidden_huber_delta` | `1.0` | Elbow of `hidden_loss: huber`, in hidden-state units. Only valid with `huber`. |
 | `attn_relation_layer` | `null` | *Experimental.* Layer index for single-layer attention-relation KD. `inprocess` only; negative indexes count from the last layer. Results are sensitive to the layer choice. |
 | `schedule` | `constant` | When the KD term contributes: `constant` blends it across the whole run, `anchored` switches it on only for the last `1 - anchor_start` of the steps. |
 | `anchor_start` | `0.9` | Fraction of `max_steps` after which `schedule: anchored` turns the KD term on. Ignored under `constant`. |

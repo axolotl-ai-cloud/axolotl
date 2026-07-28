@@ -46,6 +46,7 @@ def bake_weight(
     weight: torch.Tensor,
     group_size: int | None = None,
     weight_scale: str = "absmean",
+    scales: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> torch.Tensor:
     """Return the latent weight replaced by `codes * s16`, same shape and dtype.
 
@@ -62,7 +63,7 @@ def bake_weight(
             onto a scale the model never trained with.
     """
     if weight_scale == "trit_planes":
-        if quant.baked_trit_plane_codes_and_scales(weight) is not None:
+        if quant.baked_trit_plane_codes_and_scales(weight, scales) is not None:
             return weight
         _reject_unbakeable_latent(weight, weight_scale)
         first, second = quant.trit_plane_absmean_scales(weight)
@@ -131,6 +132,7 @@ def derive_codes_and_scale(
     weight: torch.Tensor,
     group_size: int | None = None,
     weight_scale: str = "absmean",
+    scales: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Recover the exact codes and `s16` scale from an already-baked master weight.
 
@@ -150,7 +152,7 @@ def derive_codes_and_scale(
         ValueError: If `weight` is not baked on `weight_scale`'s grid.
     """
     if weight_scale == "trit_planes":
-        free_sum = quant.baked_trit_plane_codes_and_scales(weight)
+        free_sum = quant.baked_trit_plane_codes_and_scales(weight, scales)
         if free_sum is None:
             raise ValueError(
                 f"tensor of shape {tuple(weight.shape)} is not baked: no per-row "
@@ -319,7 +321,11 @@ def bake_directory(
         copy_aux_files(master_dir, output, skip={path.name for path in shards})
 
     grids = {
-        f"{entry.name}.weight": (entry.group_size, entry.weight_scale)
+        f"{entry.name}.weight": (
+            entry.group_size,
+            entry.weight_scale,
+            manifest.scales_for(entry.name),
+        )
         for entry in manifest.entries
     }
     remaining = set(grids)

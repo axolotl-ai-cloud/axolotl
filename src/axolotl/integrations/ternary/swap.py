@@ -7,6 +7,9 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+import torch
+from safetensors import safe_open
+from safetensors.torch import save_file
 from torch import nn
 from transformers import PreTrainedModel
 
@@ -21,6 +24,7 @@ from .ptq import initialize_model_latents
 LOG = get_logger(__name__)
 
 MANIFEST_FILENAME: str = "ternary_manifest.json"
+SCALES_FILENAME: str = "ternary_scales.safetensors"
 MANIFEST_ATTR: str = "_ternary_manifest"
 
 # never ternarized, whatever the preset or user lists say
@@ -86,10 +90,22 @@ class SwapManifest:
     subln_modules: list[str] = field(default_factory=list)
     final_lambda: float | None = None
     quantizer: dict = field(default_factory=dict)
+    # module name -> the per-row scales its master was baked with, kept out of the
+    # JSON and written beside it so the floats survive exactly
+    scales: dict = field(default_factory=dict, compare=False, repr=False)
 
     def to_dict(self) -> dict:
         """Return a JSON-serializable view of the manifest."""
-        return asdict(self)
+        data = asdict(self)
+        data.pop("scales", None)
+        data["persisted_scales"] = sorted(self.scales)
+        return data
+
+    def record_scales(self, name: str, *scales: "torch.Tensor") -> None:
+        """Remember the scales a module baked with, for `save` to persist."""
+        self.scales[name] = [
+            scale.detach().to(torch.float32).reshape(-1).cpu() for scale in scales
+        ]
 
     def save(self, output_dir: str | Path) -> Path:
         """Write `MANIFEST_FILENAME` into `output_dir` and return its path."""
@@ -99,7 +115,23 @@ class SwapManifest:
             json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        self._save_scales(path.parent)
         return path
+
+    def _save_scales(self, output_dir: Path) -> None:
+        """Write the recorded scales beside the manifest, or clear a stale sidecar."""
+        path = output_dir / SCALES_FILENAME
+        if not self.scales:
+            path.unlink(missing_ok=True)
+            return
+        save_file(
+            {
+                f"{name}.{index}": scale
+                for name, pair in self.scales.items()
+                for index, scale in enumerate(pair)
+            },
+            path,
+        )
 
     @classmethod
     def load(cls, output_dir: str | Path) -> "SwapManifest":
@@ -116,7 +148,27 @@ class SwapManifest:
             )
         data = json.loads(path.read_text(encoding="utf-8"))
         entries = [SwapEntry(**entry) for entry in data.pop("entries", [])]
-        return cls(entries=entries, **data)
+        data.pop("persisted_scales", None)
+        manifest = cls(entries=entries, **data)
+        manifest.scales = _load_scales(Path(output_dir) / SCALES_FILENAME)
+        return manifest
+
+    def scales_for(self, name: str) -> "tuple[torch.Tensor, ...] | None":
+        """Return the persisted per-row scales of `name`, or `None` if it has none."""
+        pair = self.scales.get(name)
+        return None if not pair else tuple(scale.reshape(-1, 1) for scale in pair)
+
+
+def _load_scales(path: Path) -> dict:
+    """Read the scale sidecar a master ships, if it has one."""
+    if not path.is_file():
+        return {}
+    scales: dict[str, list] = {}
+    with safe_open(path, framework="pt") as sidecar:
+        for key in sorted(sidecar.keys()):  # noqa: SIM118 — handle, not a mapping
+            name, _, index = key.rpartition(".")
+            scales.setdefault(name, []).insert(int(index), sidecar.get_tensor(key))
+    return scales
 
 
 def module_family(name: str) -> str:
@@ -306,6 +358,9 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         quantizer=_quantizer_identity(ternary_cfg),
     )
     setattr(model, MANIFEST_ATTR, manifest)
+    # before the initializer: a reloaded master whose grid was persisted is already
+    # baked, and a fit that cannot see that would refit the quantizer's own output
+    _adopt_master_scales(model, manifest, cfg)
     initialize_model_latents(model, manifest, cfg)
     LOG.info(
         f"ternary: swapped {len(entries)} Linear modules to ternary, "
@@ -317,6 +372,51 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         manifest.save(output_dir)
 
     return manifest
+
+
+def _adopt_master_scales(
+    model: PreTrainedModel, manifest: SwapManifest, cfg: DictDefault
+) -> None:
+    """Adopt the grid persisted beside `base_model`, when it was a ternary master."""
+    base_model = cfg.get("base_model") if hasattr(cfg, "get") else None
+    if not base_model or not Path(base_model).is_dir():
+        return
+    try:
+        saved = SwapManifest.load(base_model)
+    except (FileNotFoundError, TypeError, ValueError):
+        return
+    manifest.scales = saved.scales
+    adopt_persisted_scales(model, manifest)
+
+
+def adopt_persisted_scales(model: PreTrainedModel, manifest: SwapManifest) -> int:
+    """Give every swapped module the grid its master was baked on, where one is stored.
+
+    `dual` and the single-plane grids can be read back out of the values, but a free
+    sum cannot: a row that uses only combination states never stores `s1` itself. A
+    master that persisted its scales hands them back here, so the reloaded module
+    computes the function it was saved with instead of an inferred one.
+
+    Args:
+        model: The freshly converted model.
+        manifest: The manifest loaded beside the master.
+
+    Returns:
+        The number of modules that adopted a persisted grid.
+    """
+    if not manifest.scales:
+        return 0
+    adopted = 0
+    for entry in manifest.entries:
+        scales = manifest.scales_for(entry.name)
+        module = model.get_submodule(entry.name)
+        if scales is None or not isinstance(module, TernaryLinear):
+            continue
+        if module.adopt_scales(*scales):
+            adopted += 1
+    if adopted:
+        LOG.info(f"ternary: adopted persisted scales for {adopted} modules")
+    return adopted
 
 
 def get_manifest(model: nn.Module) -> SwapManifest | None:
@@ -404,6 +504,7 @@ __all__ = [
     "ArchPreset",
     "MANIFEST_ATTR",
     "MANIFEST_FILENAME",
+    "SCALES_FILENAME",
     "SwapEntry",
     "SwapManifest",
     "assert_scale_mode_reloadable",

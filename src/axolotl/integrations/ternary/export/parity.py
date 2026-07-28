@@ -522,10 +522,16 @@ def run_parity_gate(
         codes, scale = extracted[entry.name]
         try:
             mismatches = _code_mismatches(
-                master[key], codes, entry.group_size, entry.weight_scale
+                master[key],
+                codes,
+                entry.group_size,
+                entry.weight_scale,
+                manifest.scales_for(entry.name),
             )
+            # in the master's own dtype: a free-sum value is a *sum* of two scales,
+            # so an fp32 reconstruction of a bf16 master lands a storage ulp away
             dequantized = bake.dequantize_derived(
-                codes, scale, entry.weight_scale, torch.float32
+                codes, scale, entry.weight_scale, master[key].dtype
             )
             error, bound = check_dequant_error(master[key], dequantized)
         except ValueError as exc:
@@ -557,8 +563,11 @@ def _code_mismatches(
     unpacked_codes: torch.Tensor,
     group_size: int | None,
     weight_scale: str = "absmean",
+    scales: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> int:
-    codes, _ = bake.derive_codes_and_scale(master_weight, group_size, weight_scale)
+    codes, _ = bake.derive_codes_and_scale(
+        master_weight, group_size, weight_scale, scales
+    )
     if codes.shape != unpacked_codes.shape:
         raise ValueError(
             f"shape mismatch: master codes {tuple(codes.shape)} vs unpacked "
@@ -576,7 +585,10 @@ def _extract_master_bf16(
         weight = tensors.get(f"{entry.name}.weight")
         if weight is not None:
             extracted[entry.name] = bake.derive_codes_and_scale(
-                weight, entry.group_size, entry.weight_scale
+                weight,
+                entry.group_size,
+                entry.weight_scale,
+                manifest.scales_for(entry.name),
             )
     return extracted
 

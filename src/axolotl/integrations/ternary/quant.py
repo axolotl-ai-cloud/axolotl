@@ -438,6 +438,7 @@ def trit_plane_grid_scales(
 
 def baked_trit_plane_codes_and_scales(
     weight: torch.Tensor,
+    scales: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Recover `(planes, s1, s2)` from a baked free-sum weight, or `None` if latent.
 
@@ -452,6 +453,10 @@ def baked_trit_plane_codes_and_scales(
 
     Args:
         weight: Candidate baked weight of shape `(rows, cols)`.
+        scales: The `(s1, s2)` the master was baked with, when it persisted them.
+            Value-only recovery is under-determined — a row that uses only the
+            combination states stores `s1 + s2` and `s1 - s2` but never `s1` — so a
+            persisted pair is checked directly instead of inferred.
 
     Returns:
         `(planes, s1, s2)` — int8 `(DUAL_PLANES, rows, cols)` planes and two fp32
@@ -461,6 +466,14 @@ def baked_trit_plane_codes_and_scales(
     values = stored.to(torch.float32)
     if values.ndim != 2:
         return None
+    if scales is not None:
+        # the master persisted its grid, so there is nothing to infer
+        first, second = trit_plane_grid_scales(*scales, stored.dtype)
+        planes = trit_plane_codes(values, first, second)
+        recovered = dequantize_trit_plane_codes(planes, first, second, stored.dtype)
+        if not bool(torch.equal(recovered.to(torch.float32), values)):
+            return None
+        return planes, first, second
     if _too_many_magnitudes(values):
         return None
 

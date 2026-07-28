@@ -1061,3 +1061,143 @@ def test_train_loads_the_teacher_before_the_loop_and_releases_hooks(monkeypatch)
 
     assert loaded == ["loaded"]
     assert trainer._hook_handles == []
+
+
+# ------------------------------------------------------- hidden-loss variants
+
+
+HIDDEN_LOSSES = ("cosine", "mse", "huber")
+
+
+def _hidden(loss: str, student, teacher, mask=None, **knobs):
+    trainer = _bare_trainer(hidden_weight=1.0, hidden_loss=loss, **knobs)
+    return float(trainer.hidden_feature_kd(student, teacher, mask=mask))
+
+
+def test_hidden_loss_defaults_to_cosine():
+    trainer = _bare_trainer()
+
+    assert trainer.hidden_loss == "cosine"
+    assert trainer.hidden_huber_delta == 1.0
+
+
+def test_the_default_dispatches_to_the_cosine_implementation():
+    """The pre-existing behaviour has to stay byte-identical."""
+    torch.manual_seed(0)
+    student = torch.randn(2, 5, 16)
+    teacher = torch.randn(2, 5, 16)
+    mask = torch.tensor([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]])
+    trainer = _bare_trainer(hidden_weight=1.0)
+
+    assert torch.equal(
+        trainer.hidden_feature_kd(student, teacher, mask=mask),
+        trainer.hidden_cosine_kd(student, teacher, mask=mask),
+    )
+
+
+def test_only_the_raw_losses_see_a_pure_magnitude_change():
+    """Same direction, three times the norm: cosine is blind to it by construction."""
+    torch.manual_seed(0)
+    student = torch.randn(1, 4, 8)
+    teacher = student * 3.0
+
+    assert _hidden("cosine", student, teacher) == pytest.approx(0.0, abs=1e-6)
+    assert _hidden("mse", student, teacher) > 0.0
+    assert _hidden("huber", student, teacher) > 0.0
+
+
+def test_huber_bounds_an_outlier_channel_that_mse_lets_dominate():
+    torch.manual_seed(0)
+    student = torch.randn(1, 4, 32)
+    teacher = student.clone()
+    teacher[..., 0] += 50.0
+
+    mse = _hidden("mse", student, teacher)
+    huber = _hidden("huber", student, teacher)
+
+    assert huber < mse
+    # squared vs linear past the elbow: the gap grows with the outlier
+    further = teacher.clone()
+    further[..., 0] += 50.0
+    assert (
+        _hidden("mse", student, further) / mse
+        > _hidden("huber", student, further) / huber
+    )
+
+
+def test_the_huber_elbow_moves_the_loss():
+    torch.manual_seed(0)
+    student = torch.randn(1, 4, 8)
+    teacher = student + 4.0
+
+    tight = _hidden("huber", student, teacher, hidden_huber_delta=0.5)
+    loose = _hidden("huber", student, teacher, hidden_huber_delta=4.0)
+
+    assert tight < loose
+
+
+def test_huber_matches_mse_below_the_elbow():
+    """Inside the quadratic region huber is `0.5·(s - t)²`."""
+    student = torch.zeros(1, 1, 4)
+    teacher = torch.full((1, 1, 4), 0.25)
+
+    huber = _hidden("huber", student, teacher, hidden_huber_delta=1.0)
+    mse = _hidden("mse", student, teacher)
+
+    assert huber == pytest.approx(0.5 * mse)
+
+
+@pytest.mark.parametrize("loss", HIDDEN_LOSSES)
+def test_every_variant_is_zero_on_identical_streams(loss):
+    torch.manual_seed(0)
+    student = torch.randn(2, 3, 8)
+
+    assert _hidden(loss, student, student.clone()) == pytest.approx(0.0, abs=1e-6)
+
+
+@pytest.mark.parametrize("loss", HIDDEN_LOSSES)
+def test_masking_is_identical_across_variants(loss):
+    """Which tokens count must not depend on which variant reduced the features."""
+    torch.manual_seed(0)
+    student = torch.randn(1, 4, 8)
+    teacher = torch.randn(1, 4, 8)
+    mask = torch.tensor([[1, 1, 0, 0]])
+
+    masked = _hidden(loss, student, teacher, mask=mask)
+    kept_only = _hidden(loss, student[:, :2], teacher[:, :2])
+
+    assert masked == pytest.approx(kept_only, rel=1e-6)
+
+
+@pytest.mark.parametrize("loss", HIDDEN_LOSSES)
+def test_every_variant_carries_a_gradient(loss):
+    torch.manual_seed(0)
+    student = torch.randn(1, 4, 8, requires_grad=True)
+    teacher = torch.randn(1, 4, 8)
+    trainer = _bare_trainer(hidden_weight=1.0, hidden_loss=loss)
+
+    trainer.hidden_feature_kd(student, teacher).backward()
+
+    assert student.grad is not None
+    assert float(student.grad.abs().sum()) > 0.0
+
+
+def test_an_unknown_variant_raises():
+    trainer = _bare_trainer(hidden_weight=1.0, hidden_loss="cosine")
+    trainer.hidden_loss = "kullback"
+
+    with pytest.raises(ValueError, match="unknown ternary.distill.hidden_loss"):
+        trainer.hidden_feature_kd(torch.zeros(1, 2, 4), torch.zeros(1, 2, 4))
+
+
+@pytest.mark.parametrize("loss", HIDDEN_LOSSES)
+def test_the_variant_reaches_the_loss_through_compute_loss(loss):
+    student = _tiny_llama(seed=0)
+    trainer = _bare_trainer(
+        _tiny_llama(seed=1), logits_weight=0.5, hidden_weight=1.0, hidden_loss=loss
+    )
+
+    loss_value = trainer.compute_loss(student, _batch())
+
+    assert torch.isfinite(loss_value)
+    assert trainer._stored_metrics["train"]["ternary/kd_hidden"]["values"]

@@ -513,3 +513,66 @@ def test_bf16_embeddings_never_warn(caplog):
 def test_unknown_embedding_dtype_is_rejected():
     with pytest.raises(pydantic.ValidationError):
         TernaryConfig(export={"formats": ["gguf_tq2_0"], "embedding_dtype": "int4"})
+
+
+# ------------------------------------------------------ distill hidden losses
+
+
+def _distill(**knobs) -> TernaryConfig:
+    return TernaryConfig(
+        distill={"mode": "inprocess", **knobs},
+        weight_scale="learnable",
+        export={"formats": ["master_bf16"]},
+    )
+
+
+def test_hidden_loss_defaults_to_cosine():
+    assert TernaryConfig().distill.hidden_loss == "cosine"
+    assert TernaryConfig().distill.hidden_huber_delta == 1.0
+
+
+@pytest.mark.parametrize("loss", ["cosine", "mse", "huber"])
+def test_hidden_loss_accepted_with_a_weight(loss):
+    assert _distill(hidden_weight=0.5, hidden_loss=loss).distill.hidden_loss == loss
+
+
+@pytest.mark.parametrize("loss", ["mse", "huber"])
+def test_hidden_loss_rejected_without_a_weight(loss):
+    with pytest.raises(pydantic.ValidationError, match="never computes"):
+        _distill(hidden_loss=loss)
+
+
+def test_cosine_needs_no_weight_because_it_is_the_default():
+    assert _distill(hidden_loss="cosine").distill.hidden_weight == 0.0
+
+
+def test_the_huber_elbow_requires_the_huber_loss():
+    with pytest.raises(pydantic.ValidationError, match="elbow of"):
+        _distill(hidden_weight=0.5, hidden_loss="mse", hidden_huber_delta=2.0)
+
+
+def test_the_huber_elbow_is_accepted_with_huber():
+    config = _distill(hidden_weight=0.5, hidden_loss="huber", hidden_huber_delta=2.0)
+
+    assert config.distill.hidden_huber_delta == 2.0
+
+
+def test_the_huber_elbow_must_be_positive():
+    with pytest.raises(pydantic.ValidationError):
+        _distill(hidden_weight=0.5, hidden_loss="huber", hidden_huber_delta=0.0)
+
+
+def test_an_unknown_hidden_loss_is_rejected():
+    with pytest.raises(pydantic.ValidationError):
+        _distill(hidden_weight=0.5, hidden_loss="kullback")
+
+
+def test_a_hidden_loss_still_needs_the_inprocess_mode():
+    with pytest.raises(pydantic.ValidationError, match="only supported with"):
+        TernaryConfig(
+            distill={
+                "mode": "kd_plugin",
+                "hidden_weight": 0.5,
+                "hidden_loss": "mse",
+            }
+        )

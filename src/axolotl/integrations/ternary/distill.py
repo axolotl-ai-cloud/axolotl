@@ -16,7 +16,7 @@ from typing_extensions import override
 from axolotl.core.trainers import AxolotlTrainer
 from axolotl.utils.logging import get_logger
 
-from .args import DistillSchedule
+from .args import DistillSchedule, HiddenLoss
 from .callbacks import DistillAnchorCallback
 
 LOG = get_logger(__name__)
@@ -42,6 +42,8 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_logits_weight: float | None = None
     ternary_distill_logits_temperature: float | None = None
     ternary_distill_hidden_weight: float | None = None
+    ternary_distill_hidden_loss: HiddenLoss | None = None
+    ternary_distill_hidden_huber_delta: float | None = None
     ternary_distill_attn_relation_layer: int | None = None
     ternary_distill_teacher_device_map: str | None = None
     ternary_distill_schedule: DistillSchedule | None = None
@@ -86,6 +88,10 @@ class TernaryDistillTrainer(AxolotlTrainer):
         self.logits_weight = weight
         self.logits_temperature = _arg(args, "ternary_distill_logits_temperature", 2.0)
         self.hidden_weight = _arg(args, "ternary_distill_hidden_weight", 0.0)
+        self.hidden_loss = (
+            getattr(args, "ternary_distill_hidden_loss", None) or "cosine"
+        )
+        self.hidden_huber_delta = _arg(args, "ternary_distill_hidden_huber_delta", 1.0)
         self.attn_relation_layer = getattr(
             args, "ternary_distill_attn_relation_layer", None
         )
@@ -231,7 +237,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
         if mask is not None and mask.dim() != 2:
             mask = None
         if self.hidden_weight:
-            hidden = self.hidden_cosine_kd(
+            hidden = self.hidden_feature_kd(
                 student_hidden,
                 teacher_hidden.to(
                     device=student_hidden.device, dtype=student_hidden.dtype
@@ -295,6 +301,40 @@ class TernaryDistillTrainer(AxolotlTrainer):
             chunk_size,
         )
         return kd
+
+    def hidden_feature_kd(
+        self,
+        student_hidden: torch.Tensor,
+        teacher_hidden: torch.Tensor,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Feature-KD between the two residual streams under `hidden_loss`.
+
+        Every variant reduces the feature axis to one number per position and hands
+        that to the same masked mean, so which tokens count never depends on the
+        variant. The raw-residual variants are computed in fp32 on the *unnormalized*
+        hidden states: their magnitudes are the signal `mse`/`huber` exist to see.
+
+        Args:
+            student_hidden: Student hidden states `(batch, seq, d)`.
+            teacher_hidden: Teacher hidden states, same shape.
+            mask: Attention mask; padded positions are excluded when given.
+        """
+        if self.hidden_loss == "cosine":
+            return self.hidden_cosine_kd(student_hidden, teacher_hidden, mask=mask)
+        student = student_hidden.float()
+        teacher = teacher_hidden.float()
+        if self.hidden_loss == "mse":
+            per_feature = F.mse_loss(student, teacher, reduction="none")
+        elif self.hidden_loss == "huber":
+            per_feature = F.huber_loss(
+                student, teacher, reduction="none", delta=self.hidden_huber_delta
+            )
+        else:
+            raise ValueError(
+                f"unknown ternary.distill.hidden_loss: {self.hidden_loss!r}"
+            )
+        return _masked_mean(per_feature.mean(dim=-1), mask)
 
     def hidden_cosine_kd(
         self,

@@ -222,6 +222,8 @@ class TernaryPlugin(BasePlugin):
             "ternary_distill_logits_weight": distill_cfg.logits_weight,
             "ternary_distill_logits_temperature": distill_cfg.logits_temperature,
             "ternary_distill_hidden_weight": distill_cfg.hidden_weight,
+            "ternary_distill_hidden_loss": distill_cfg.hidden_loss,
+            "ternary_distill_hidden_huber_delta": distill_cfg.hidden_huber_delta,
             "ternary_distill_attn_relation_layer": distill_cfg.attn_relation_layer,
             "ternary_distill_teacher_device_map": distill_cfg.teacher_device_map,
             "ternary_distill_schedule": distill_cfg.schedule,

@@ -388,3 +388,244 @@ def test_a_heavy_tailed_row_uses_the_combination_states():
 
     both_nonzero = ((planes[0] != 0) & (planes[1] != 0)).sum()
     assert int(both_nonzero) > 0
+
+
+# ------------------------------------------------- persisted scales (wave-2 fix)
+
+
+def _combination_only_row(scale_1: float, scale_2: float, width: int = 64):
+    """A row using only `±(s1 ± s2)` and `(0, ±1)` — `s1` itself is never stored.
+
+    Two free scales cannot be read back out of such a row: the largest magnitude is
+    `s1 + s2`, the next is `s1 - s2`, and no observed value is `s1`. This is the shape
+    that failed a real 400-step heal.
+    """
+    first = torch.tensor([[scale_1]], dtype=torch.float32)
+    second = torch.tensor([[scale_2]], dtype=torch.float32)
+    planes = torch.zeros(quant.DUAL_PLANES, 1, width, dtype=torch.int8)
+    pattern = [(1, 1), (1, -1), (-1, -1), (-1, 1), (0, 1), (0, -1), (0, 0)]
+    for column in range(width):
+        planes[0, 0, column], planes[1, 0, column] = pattern[column % len(pattern)]
+    first, second = quant.trit_plane_grid_scales(first, second, torch.bfloat16)
+    values = quant.dequantize_trit_plane_codes(planes, first, second, torch.bfloat16)
+    return values, first, second
+
+
+def test_a_combination_only_row_defeats_value_recovery():
+    """The premise of the fix: this is genuinely under-determined, not a solver gap."""
+    values, _, _ = _combination_only_row(1.8164, 0.2285)
+
+    assert quant.baked_trit_plane_codes_and_scales(values) is None
+
+
+def test_persisted_scales_recover_a_combination_only_row():
+    values, first, second = _combination_only_row(1.8164, 0.2285)
+
+    recovered = quant.baked_trit_plane_codes_and_scales(values, (first, second))
+
+    assert recovered is not None
+    planes, got_1, got_2 = recovered
+    assert torch.equal(
+        quant.dequantize_trit_plane_codes(planes, got_1, got_2, torch.bfloat16), values
+    )
+
+
+def test_a_wrong_persisted_pair_is_refused():
+    """A mismatched sidecar must not quietly redefine the master."""
+    values, first, _ = _combination_only_row(1.8164, 0.2285)
+
+    assert quant.baked_trit_plane_codes_and_scales(values, (first, first * 0.5)) is None
+
+
+def test_the_manifest_round_trips_persisted_scales(tmp_path):
+    from axolotl.integrations.ternary.swap import (
+        SCALES_FILENAME,
+        SwapEntry,
+        SwapManifest,
+    )
+
+    manifest = SwapManifest(
+        model_type="llama",
+        entries=[SwapEntry("block.proj", 64, 4, "proj", "trit_planes")],
+    )
+    first, second = torch.rand(4, 1) + 0.5, torch.rand(4, 1) * 0.2
+    manifest.record_scales("block.proj", first, second)
+
+    manifest.save(tmp_path)
+    reloaded = SwapManifest.load(tmp_path)
+
+    assert (tmp_path / SCALES_FILENAME).is_file()
+    got_1, got_2 = reloaded.scales_for("block.proj")
+    assert torch.equal(got_1, first) and torch.equal(got_2, second)
+    assert reloaded.scales_for("block.absent") is None
+
+
+def test_a_master_without_a_sidecar_still_uses_value_recovery(tmp_path):
+    from axolotl.integrations.ternary.swap import (
+        SCALES_FILENAME,
+        SwapEntry,
+        SwapManifest,
+    )
+
+    manifest = SwapManifest(
+        model_type="llama",
+        entries=[SwapEntry("block.proj", 64, 4, "proj", "trit_planes")],
+    )
+
+    manifest.save(tmp_path)
+    reloaded = SwapManifest.load(tmp_path)
+
+    assert not (tmp_path / SCALES_FILENAME).exists()
+    assert reloaded.scales == {}
+    # value recovery still serves the rows it can resolve
+    torch.manual_seed(0)
+    baked = quant.fake_quant_weight_trit_planes(torch.randn(4, 32), 1.0)
+    assert quant.baked_trit_plane_codes_and_scales(baked) is not None
+
+
+def _combination_only_module(rows: int = 8, width: int = 64) -> TernaryLinear:
+    """A module on a combination-only grid, with the grid in its scale parameters.
+
+    `refresh_scale_from_weight` cannot seed these from the values — that is the whole
+    bug — so the crafted pair is written into the parameters directly, the way a
+    trained module would already hold it.
+    """
+    module = TernaryLinear(
+        width, rows, weight_scale="trit_planes", dtype=torch.bfloat16
+    )
+    rows_out = [
+        _combination_only_row(1.8164 + 0.1 * row, 0.2285, width) for row in range(rows)
+    ]
+    with torch.no_grad():
+        module.weight.copy_(torch.cat([values for values, _, _ in rows_out]))
+    module.scale = nn.Parameter(torch.cat([first for _, first, _ in rows_out]).log())
+    module.scale_lo = nn.Parameter(
+        torch.cat([second for _, _, second in rows_out]).log()
+    )
+    module._detect_baked()
+    return module
+
+
+def test_a_combination_only_module_survives_the_whole_loop(tmp_path):
+    """bake -> manifest -> export bake -> parity -> reload, with logits unchanged."""
+    from axolotl.integrations.ternary.export import parity
+    from axolotl.integrations.ternary.swap import (
+        SwapEntry,
+        SwapManifest,
+        adopt_persisted_scales,
+    )
+
+    torch.manual_seed(0)
+    module = _combination_only_module()
+    # a perturbation the way training would leave it: off-grid until the bake, but
+    # small against the grid, so the bake lands back on the same combination states
+    with torch.no_grad():
+        module.weight.add_(torch.randn_like(module.weight) * 0.02)
+    module._clear_baked()
+    x = torch.randn(2, 64, dtype=torch.bfloat16)
+
+    model = nn.Module()
+    model.add_module("proj", module)
+    manifest = SwapManifest(
+        model_type="llama",
+        entries=[SwapEntry("proj", 64, 8, "proj", "trit_planes")],
+    )
+    model._ternary_manifest = manifest
+
+    module._post_training(model, "proj")
+    with torch.no_grad():
+        baked_logits = module(x).clone()
+    assert manifest.scales_for("proj") is not None
+
+    # the export baker accepts it only because the grid travelled with it
+    master = module.weight.detach().clone()
+    scales = manifest.scales_for("proj")
+    assert quant.baked_trit_plane_codes_and_scales(master) is None
+    assert torch.equal(bake.bake_weight(master, None, "trit_planes", scales), master)
+
+    codes, scale = bake.derive_codes_and_scale(master, None, "trit_planes", scales)
+    reconstructed = bake.dequantize_derived(codes, scale, "trit_planes", master.dtype)
+    assert parity.check_dequant_error(master, reconstructed)[0] == 0.0
+
+    manifest.save(tmp_path)
+    reloaded_manifest = SwapManifest.load(tmp_path)
+    fresh = TernaryLinear(64, 8, weight_scale="trit_planes", dtype=torch.bfloat16)
+    with torch.no_grad():
+        fresh.weight.copy_(master)
+    holder = nn.Module()
+    holder.add_module("proj", fresh)
+
+    assert adopt_persisted_scales(holder, reloaded_manifest) == 1
+
+    assert fresh.baked
+    with torch.no_grad():
+        assert torch.equal(fresh(x), baked_logits)
+
+
+def test_the_export_baker_still_refuses_a_master_with_no_grid_at_all():
+    """No sidecar and unrecoverable values keeps failing loudly."""
+    values, _, _ = _combination_only_row(1.8164, 0.2285)
+
+    with pytest.raises(ValueError, match="reached the export baker as a latent"):
+        bake.bake_weight(values, None, "trit_planes")
+
+
+def test_the_plugin_adopts_a_persisted_grid_when_reloading_a_master(tmp_path):
+    """`base_model` pointing at a saved master is the real resume path."""
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    from axolotl.integrations.ternary import TernaryPlugin
+    from axolotl.integrations.ternary.modules import iter_ternary_modules
+    from axolotl.utils.dict import DictDefault
+
+    def cfg_for(base_model, output_dir):
+        return DictDefault(
+            {
+                "base_model": str(base_model) if base_model else None,
+                "output_dir": str(output_dir),
+                "ternary": {
+                    "weight_scale": "trit_planes",
+                    "lambda_schedule": "none",
+                    "export": {"formats": ["master_bf16"]},
+                },
+            }
+        )
+
+    torch.manual_seed(0)
+    model = LlamaForCausalLM(
+        LlamaConfig(
+            vocab_size=64,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            max_position_embeddings=64,
+            tie_word_embeddings=False,
+        )
+    ).to(torch.bfloat16)
+    master_dir = tmp_path / "master"
+    plugin = TernaryPlugin()
+    plugin.post_model_build(cfg_for(None, master_dir), model)
+
+    # train-ish, then bake the way `save_trained_model` does
+    ids = torch.randint(0, 64, (2, 8))
+    model(input_ids=ids, labels=ids).loss.backward()
+    torch.optim.AdamW(model.parameters(), lr=1e-3).step()
+    for name, module in model.named_modules():
+        if hasattr(module, "_post_training"):
+            module._post_training(model, name)
+    model.eval()
+    with torch.no_grad():
+        baked_logits = model(input_ids=ids).logits.clone()
+    model.save_pretrained(master_dir)
+    plugin.manifest.save(master_dir)
+    assert plugin.manifest.scales
+
+    reloaded = LlamaForCausalLM.from_pretrained(master_dir, dtype=torch.bfloat16)
+    TernaryPlugin().post_model_build(cfg_for(master_dir, tmp_path / "resume"), reloaded)
+
+    assert all(module.baked for _, module in iter_ternary_modules(reloaded))
+    reloaded.eval()
+    with torch.no_grad():
+        assert torch.equal(reloaded(input_ids=ids).logits, baked_logits)

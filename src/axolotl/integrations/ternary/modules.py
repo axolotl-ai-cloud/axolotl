@@ -436,6 +436,7 @@ class TernaryLinear(nn.Module):
                     "would hold latent values under a ternary manifest"
                 )
             self._mark_baked()
+        self._record_baked_scales(model, name)
         # unconditional: a module already on its grid still carries the parameters,
         # and a master that ships them reloads into a different function
         for attr in SCALE_ATTRS:
@@ -549,6 +550,28 @@ class TernaryLinear(nn.Module):
             return quant.absmean_scale(weight, self._scale_group_size())
         return scale
 
+    def adopt_scales(self, *scales: torch.Tensor) -> bool:
+        """Take a persisted two-plane grid as this module's own.
+
+        Returns:
+            Whether the weight is on the adopted grid — `False` leaves the module
+            untouched, so a mismatched sidecar cannot quietly redefine a master.
+        """
+        if self.weight_scale not in TWO_PLANE_SCALE_MODES or len(scales) != 2:
+            return False
+        weight = as_local(self.weight.detach())
+        first, second = (scale.to(weight.device).to(torch.float32) for scale in scales)
+        if self.weight_scale == "trit_planes":
+            recovered = quant.baked_trit_plane_codes_and_scales(weight, (first, second))
+        else:
+            recovered = quant.baked_dual_codes_and_scales(weight)
+        if recovered is None:
+            return False
+        self.scale_lo = nn.Parameter(recovered[2].log().to(weight.device))
+        self.scale = nn.Parameter(recovered[1].log().to(weight.device))
+        self._mark_baked()
+        return True
+
     def _trit_plane_scales(
         self, weight: torch.Tensor, gathered: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -651,6 +674,28 @@ class TernaryLinear(nn.Module):
         if self._baked_grad_hook is not None:
             self._baked_grad_hook.remove()
             self._baked_grad_hook = None
+
+    def _record_baked_scales(self, model: PreTrainedModel | None, name: str) -> None:
+        """Persist the grid this module baked on, where the values cannot carry it.
+
+        Every `dual` value is a pure multiple of one scale, so a reload recovers the
+        pair from the magnitudes. A free sum is not: a row that uses only combination
+        states stores `s1 + s2` and `s1 - s2` and never `s1` itself, which two
+        unknowns cannot be read back out of. Those masters carry their scales in the
+        manifest sidecar instead of leaving the loader to guess.
+        """
+        from .swap import get_manifest
+
+        manifest = None if model is None else get_manifest(model)
+        if manifest is None or self.weight_scale not in TWO_PLANE_SCALE_MODES:
+            return
+        weight = as_local(self.weight.detach())
+        pair = (
+            self._trit_plane_scales(weight)
+            if self.weight_scale == "trit_planes"
+            else self._dual_scales(weight)
+        )
+        manifest.record_scales(name, *pair)
 
     def _record_final_lambda(self, model: PreTrainedModel | None, name: str) -> None:
         """Note the λ the bake happened at, and warn when the schedule never finished."""
