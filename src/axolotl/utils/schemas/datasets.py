@@ -1,11 +1,34 @@
 """Pydantic models for datasets-related configuration"""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from axolotl.utils.schemas.enums import ChatTemplate
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
+
+
+class ChatTemplateKwargsMixEntryConfig(BaseModel):
+    """One rendering mode of a chat-template kwargs mix, and its share of the dataset."""
+
+    # the config key is `kwargs`; the attribute cannot be, it collides with the
+    # **kwargs of the __init__ pydantic's mypy plugin synthesizes
+    model_config = ConfigDict(populate_by_name=True)
+
+    template_kwargs: dict[str, Any] = Field(
+        default_factory=dict,
+        alias="kwargs",
+        json_schema_extra={
+            "description": "Chat template kwargs for this rendering, e.g. {enable_thinking: true}"
+        },
+    )
+    weight: float = Field(
+        default=1.0,
+        ge=0.0,
+        json_schema_extra={
+            "description": "Relative share of the dataset rendered this way; weights are normalized"
+        },
+    )
 
 
 class UserDefinedPrompterType(BaseModel):
@@ -84,6 +107,24 @@ class SFTDataset(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Custom jinja chat template or path to jinja file. Used only if `chat_template: jinja` or empty."
+        },
+    )
+    chat_template_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Extra kwargs passed to the chat template for this dataset, e.g. {enable_thinking: false}. Overrides the top-level chat_template_kwargs."
+        },
+    )
+    chat_template_kwargs_mix: list[ChatTemplateKwargsMixEntryConfig] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Render this dataset under several chat template settings at the given proportions, e.g. reasoning on for 30% of examples and off for 70%. Each entry is {kwargs: {...}, weight: float}; weights are normalized. The mode of an example is a deterministic function of (seed, dataset index). Applies only to the dataset entry it is set on -- eval datasets do not inherit it."
+        },
+    )
+    chat_template_kwargs_mix_seed: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Seed for the chat_template_kwargs_mix assignment (defaults to the run's seed)."
         },
     )
     data_files: str | list[str] | None = Field(
@@ -206,6 +247,18 @@ class SFTDataset(BaseModel):
     def handle_legacy_message_fields(cls, data):
         """Handle backwards compatibility between legacy message field mapping and new property mapping system."""
         return handle_legacy_message_fields_logic(data)
+
+    @model_validator(mode="after")
+    def check_chat_template_kwargs_mix(self):
+        if self.chat_template_kwargs_mix is None:
+            return self
+
+        if not self.chat_template_kwargs_mix:
+            raise ValueError("chat_template_kwargs_mix must have at least one entry")
+        if sum(entry.weight for entry in self.chat_template_kwargs_mix) <= 0:
+            raise ValueError("chat_template_kwargs_mix weights must sum to more than 0")
+
+        return self
 
     @model_validator(mode="before")
     @classmethod

@@ -4,6 +4,7 @@ HF Chat Templates prompt strategy
 
 import json
 from collections import defaultdict
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
@@ -12,7 +13,11 @@ from transformers import ProcessorMixin
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
-from axolotl.utils.chat_templates import get_chat_template_from_config
+from axolotl.utils.chat_templates import (
+    ChatTemplateKwargsMix,
+    build_chat_template_kwargs_mix,
+    get_chat_template_from_config,
+)
 from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
@@ -55,6 +60,7 @@ class ChatTemplatePrompter(Prompter):
         roles: dict[str, list[str]] | None = None,
         template_thinking_key: str | None = "reasoning_content",
         chat_template_kwargs: dict[str, Any] | None = None,
+        chat_template_kwargs_mix: "ChatTemplateKwargsMix | None" = None,
         drop_system_message: bool = False,
     ):
         # check if message_property_mappings is None or empty dict
@@ -92,6 +98,8 @@ class ChatTemplatePrompter(Prompter):
         self.processor: ProcessorMixin | None = processor
         self.chat_template = chat_template
         self.chat_template_kwargs = chat_template_kwargs or {}
+        self.chat_template_kwargs_mix = chat_template_kwargs_mix
+        self._mix_kwargs: dict[str, Any] | None = None
         self.template_thinking_key: str = template_thinking_key or "reasoning_content"
         self.max_length = max_length
         self.drop_system_message = drop_system_message
@@ -99,6 +107,26 @@ class ChatTemplatePrompter(Prompter):
     @property
     def chat_template_msg_variables(self) -> Set[str]:
         return self._chat_template_msg_variables
+
+    @contextmanager
+    def template_kwargs_for_index(self, index: int | None):
+        """
+        Pin one rendering mode for every ``build_prompt`` call made for a single example.
+
+        An example is rendered more than once (whole conversation, per-turn spans), and
+        all of those renders have to agree or the label offsets stop lining up.
+        """
+        if self.chat_template_kwargs_mix is None or index is None:
+            yield None
+            return
+
+        selected = self.chat_template_kwargs_mix.kwargs_for_index(index)
+        previous = self._mix_kwargs
+        self._mix_kwargs = selected
+        try:
+            yield selected
+        finally:
+            self._mix_kwargs = previous
 
     def build_prompt(
         self,
@@ -121,6 +149,7 @@ class ChatTemplatePrompter(Prompter):
             "chat_template": self.chat_template,
             "add_generation_prompt": add_generation_prompt,
             **self.chat_template_kwargs,
+            **(self._mix_kwargs or {}),
         }
 
         if tools:
@@ -412,24 +441,37 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         except KeyError:
             return False
 
-    def tokenize_prompt(self, prompt: dict[str, Any]):
+    @property
+    def supports_indices(self) -> bool:
+        return self.prompter.chat_template_kwargs_mix is not None
+
+    def tokenize_prompt(self, prompt: dict[str, Any], index: Any = None):
         """
         Public method that can handle either a single prompt or a batch of prompts.
+
+        ``index`` is the dataset index (or the list of them, when batched), passed only
+        when the strategy asked for it via ``supports_indices``.
         """
 
         prompt = remove_none_values(prompt)
 
         if not self.is_prompt_batched(prompt) or not self.supports_batched:
-            return self._tokenize_single_prompt(prompt)
+            with self.prompter.template_kwargs_for_index(
+                index if isinstance(index, int) else None
+            ):
+                return self._tokenize_single_prompt(prompt)
 
         res = defaultdict(lambda: [])
         feature_names = list(prompt.keys())
+        indices = index if isinstance(index, (list, tuple)) else None
 
         # Process each prompt individually
-        for row in zip(*prompt.values(), strict=False):
-            tokenized_prompt = self._tokenize_single_prompt(
-                dict(zip(feature_names, row, strict=False))
-            )
+        for position, row in enumerate(zip(*prompt.values(), strict=False)):
+            row_index = indices[position] if indices is not None else None
+            with self.prompter.template_kwargs_for_index(row_index):
+                tokenized_prompt = self._tokenize_single_prompt(
+                    dict(zip(feature_names, row, strict=False))
+                )
             for key, val in tokenized_prompt.items():
                 res[key].append(val)
 
@@ -1174,6 +1216,27 @@ class StrategyLoader:
 
         return ChatTemplatePrompter
 
+    @staticmethod
+    def _get_chat_template_kwargs_mix(cfg, ds_cfg: Dict[str, Any]):
+        """
+        Build the rendering mix for one dataset entry.
+
+        Deliberately read from the dataset entry only: an eval split configured under
+        ``test_datasets`` declares its own mix (or none) rather than inheriting the
+        training mix, so eval numbers stay comparable across runs.
+        """
+        mix = ds_cfg.get("chat_template_kwargs_mix")
+        if not mix:
+            return None
+
+        seed = ds_cfg.get("chat_template_kwargs_mix_seed")
+        if seed is None:
+            seed = cfg.get("seed")
+        if seed is None:
+            seed = 42
+
+        return build_chat_template_kwargs_mix(mix, seed=int(seed))
+
     def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
         return {
             "train_on_inputs": cfg.train_on_inputs,
@@ -1212,7 +1275,11 @@ class StrategyLoader:
         prompter_params = {
             "tokenizer": tokenizer,
             "chat_template": chat_template_string,
-            "chat_template_kwargs": cfg.get("chat_template_kwargs", {}),
+            "chat_template_kwargs": dataset_config.get("chat_template_kwargs")
+            or cfg.get("chat_template_kwargs", {}),
+            "chat_template_kwargs_mix": self._get_chat_template_kwargs_mix(
+                cfg, dataset_config
+            ),
             "message_property_mappings": dataset_config.get(
                 "message_property_mappings", {}
             ),

@@ -81,6 +81,65 @@ teacher puts 10.6% of its mass on the token each row should describe (top-k cont
 If this dataset was prepared by an older axolotl, set kd_prepared_targets_alignment: legacy
 ```
 
+## Reasoning-mode mix (hybrid students)
+
+A student that has to work with reasoning both on and off needs training data in both
+renderings. That is a *dataset-side* choice, not a KD one: per dataset entry, declare the
+mix of chat-template kwargs to render under, and axolotl assigns each example one mode.
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template          # or axolotl.integrations.kd.chat_template
+    chat_template_kwargs_mix:
+      - kwargs: {enable_thinking: true}
+        weight: 0.3
+      - kwargs: {enable_thinking: false}
+        weight: 0.7
+```
+
+Weights are relative and normalized (`0.3/0.7` and `3/7` are the same mix). Any template
+kwargs work — `enable_thinking` is simply what the Qwen3 family and its peers call the
+switch. A single fixed rendering needs no mix, just `chat_template_kwargs` on the dataset
+entry (which overrides the top-level `chat_template_kwargs`):
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+    chat_template_kwargs: {enable_thinking: false}
+```
+
+**The teacher inherits the mix for free.** Both the HTTP online teacher and any in-process
+teacher score the *rendered token ids* of each example, so whatever mode an example was
+rendered in is the mode the teacher is asked about. There is no server-side flag for this
+and none is needed — do not set `enable_thinking` on the teacher server.
+
+**Determinism.** An example's mode is a pure function of `(seed, dataset index)` — a
+blake2b draw, no RNG state. The same config produces the same assignment across runs,
+across resumes, and regardless of the `num_proc` used to tokenize (`dataset.map` hands out
+absolute indices, so sharding does not shift anything). The seed is the run's `seed` unless
+the dataset entry sets `chat_template_kwargs_mix_seed`.
+
+**Eval datasets do not inherit it.** The mix belongs to the dataset entry it is written on,
+so a `test_datasets` entry renders exactly how *it* is configured (or with the template
+default). This is deliberate: an eval split whose reasoning mix drifts with the training
+config is not comparable across runs. A `val_set_size` split is carved out of the already
+rendered training data and therefore carries the same mix — configure a separate
+`test_datasets` entry to evaluate in one fixed mode.
+
+**Offline / pre-prepared datasets bake the mix at preparation time.** The rendering happens
+during tokenization, so a dataset prepared once and reused with `skip_prepare_dataset: true`
+keeps the mix it was prepared with; changing `chat_template_kwargs_mix` (or its seed)
+changes the dataset hash and triggers re-preparation. This is the same reasoning as the
+`kd_prepared_targets_alignment` section above: what is on disk is what trains.
+
+**Label masking of think spans is unchanged.** Which tokens of an assistant turn are
+trained follows the template's existing assistant-span rules (`roles_to_train`,
+`train_on_eos`/`train_on_eot`, `split_thinking`); rendering a `<think>` span does not by
+itself mask or unmask it. Masking think spans independently of the rest of the turn would
+be a separate knob — out of scope here.
+
 ## Online teacher
 
 The teacher is queried for prompt logprobs at collation time, so no logprobs need to be
@@ -191,6 +250,14 @@ and applied to the collator and the loss on every step.
 | `kd_online_topk` | `None` | required with an online teacher |
 | `kd_online_timeout` | `120` | per-request timeout, in seconds |
 | `kd_online_preflight` | `true` | probe the teacher once at startup and fail fast if it cannot serve the config |
+
+Per-dataset (not `kd_*`, they work for any chat-template dataset):
+
+| key | default | notes |
+| --- | --- | --- |
+| `chat_template_kwargs` | `None` | fixed template kwargs for this dataset; overrides the top-level setting |
+| `chat_template_kwargs_mix` | `None` | list of `{kwargs, weight}` renderings to mix per example |
+| `chat_template_kwargs_mix_seed` | run `seed` | seed for the mix assignment |
 
 Online and offline KD are mutually exclusive: `kd_online_server_base_url` cannot be combined
 with the `axolotl.integrations.kd.chat_template` dataset type.
