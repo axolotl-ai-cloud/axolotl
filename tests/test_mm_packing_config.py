@@ -57,6 +57,50 @@ class TestMultimodalSamplePacking:
         out = validate_config(cfg)
         assert out.max_steps == 50
 
+    def test_skip_prepare_mm_packing_auto_sets_eval_packing_false(self):
+        # check_eval_packing would otherwise auto-set eval_sample_packing=True,
+        # which the buffered route cannot serve (eval stays unprepared).
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            skip_prepare_dataset=True,
+            remove_unused_columns=False,
+            max_steps=100,
+        )
+        out = validate_config(cfg)
+        assert out.eval_sample_packing is False
+
+    def test_streaming_mm_packing_auto_sets_eval_packing_false(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            streaming=True,
+            remove_unused_columns=False,
+            max_steps=100,
+        )
+        out = validate_config(cfg)
+        assert out.eval_sample_packing is False
+
+    def test_skip_prepare_mm_packing_explicit_eval_packing_raises(self):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            eval_sample_packing=True,
+            skip_prepare_dataset=True,
+            remove_unused_columns=False,
+            max_steps=100,
+        )
+        with pytest.raises(Exception, match="(?i)eval_sample_packing"):
+            validate_config(cfg)
+
+    def test_non_mm_packing_still_auto_sets_eval_packing_true(self):
+        cfg = _cfg(
+            sample_packing=True,
+            flash_attention=True,
+        )
+        out = validate_config(cfg)
+        assert out.eval_sample_packing is True
+
     def test_skip_prepare_mm_eval_only_packing_no_max_steps_ok(self):
         # eval-only packing does not route the training set through the buffered
         # packer, so max_steps is not required.

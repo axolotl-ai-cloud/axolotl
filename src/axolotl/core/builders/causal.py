@@ -57,8 +57,11 @@ _MM_NUM_WORKERS_WARNED: set = set()
 def _warn_if_num_workers_zero_for_mm(cfg, log) -> None:
     if not getattr(cfg, "processor_type", None):
         return
-    # Streaming MM packing intentionally forces num_workers=0 (no worker sharding).
-    if getattr(cfg, "streaming", None) and (
+    # Buffered MM packing (streaming or skip_prepare_dataset) intentionally
+    # forces num_workers=0 (no worker sharding), so don't advise raising it.
+    if (
+        getattr(cfg, "streaming", None) or getattr(cfg, "skip_prepare_dataset", None)
+    ) and (
         getattr(cfg, "sample_packing", None)
         or getattr(cfg, "eval_sample_packing", None)
     ):

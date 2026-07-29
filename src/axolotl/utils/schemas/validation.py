@@ -173,10 +173,19 @@ class DatasetValidationMixin:
             and data.get("eval_sample_packing") is None
             and not data.get("eval_table_size")
         ):
-            LOG.info(
-                "explicitly setting `eval_sample_packing` to match `sample_packing`",
-            )
-            data["eval_sample_packing"] = True
+            if _is_buffered_mm_packing(data):
+                # The buffered packer only serves the train set; the eval multipack
+                # sampler needs a prepared dataset's length/input_ids columns.
+                LOG.info(
+                    "setting `eval_sample_packing: false` for buffered multimodal "
+                    "sample packing (eval runs unpacked)",
+                )
+                data["eval_sample_packing"] = False
+            else:
+                LOG.info(
+                    "explicitly setting `eval_sample_packing` to match `sample_packing`",
+                )
+                data["eval_sample_packing"] = True
 
         if (
             data.get("sample_packing")
@@ -1427,6 +1436,21 @@ class PretrainingValidationMixin:
             data["dataloader_num_workers"] = 0
             # prefetch_factor is only valid with workers > 0.
             data["dataloader_prefetch_factor"] = None
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_buffered_mm_packing_eval_packing(cls, data):
+        # The buffered packer only serves the train set; eval multipack needs a
+        # prepared dataset's length/input_ids and would KeyError on raw rows.
+        if _is_buffered_mm_packing(data) and data.get("eval_sample_packing"):
+            raise ValueError(
+                "eval_sample_packing is not supported with buffered multimodal "
+                "sample packing (streaming or skip_prepare_dataset): the buffered "
+                "packer only packs the train set, and the eval multipack sampler "
+                "requires a prepared dataset. Set `eval_sample_packing: false` "
+                "(eval runs unpacked) or drop `skip_prepare_dataset`/`streaming`."
+            )
         return data
 
     @model_validator(mode="before")
