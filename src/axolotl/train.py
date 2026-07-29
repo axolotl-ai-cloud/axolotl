@@ -228,6 +228,8 @@ def execute_training(
             )
 
         # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
+        # Status: torchao not installed in current env (torch 2.11.0+cu130); disable preserved.
+        # Blocker: needs torchao + FSDP2 integration test before removal.
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
 
