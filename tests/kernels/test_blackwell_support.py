@@ -218,6 +218,27 @@ class TestConfigValidation:
         assert cfg.lora_mlp_kernel_b200 is True
         assert any("not sm_100" in r.message for r in caplog.records)
 
+    def test_non_sm100_capability_does_not_set_cublas_env(self):
+        os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
+        _validate(_cfg(), compute_capability="sm_120")
+        assert "CUBLAS_WORKSPACE_CONFIG" not in os.environ
+
+    def test_sm100_capability_sets_cublas_env(self):
+        os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
+        _validate(_cfg())
+        assert (
+            os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+            == CUBLAS_WORKSPACE_CONFIG_RECOMMENDED
+        )
+
+    def test_missing_bf16_warns(self, caplog):
+        _validate(_cfg())
+        assert any("bf16" in r.message for r in caplog.records)
+
+    def test_bf16_enabled_does_not_warn(self, caplog):
+        _validate(_cfg(bf16=True))
+        assert not any("requires bf16" in r.message for r in caplog.records)
+
 
 class TestCublasWorkspaceConfig:
     """The env var is read at cuBLAS handle creation, so the applies-when-unset

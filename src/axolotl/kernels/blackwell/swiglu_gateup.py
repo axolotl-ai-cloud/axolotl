@@ -108,9 +108,24 @@ def _swiglu_bwd_view_kernel(
     tl.store(up_ptr + om[:, None] * stride_um + on[None, :], grad_up, mask=mask)
 
 
+def _check_view_contract(*tensors: torch.Tensor) -> None:
+    # The kernels index ptr + row*stride_m + col: rows may be strided (column
+    # slices of a wider buffer) but the last dim must be unit-stride, and all
+    # operands must share a shape -- anything else silently corrupts.
+    shape = tensors[0].shape
+    for t in tensors:
+        if t.shape != shape or t.stride(1) != 1:
+            raise ValueError(
+                "swiglu_gateup kernels require same-shape 2D tensors with "
+                f"unit last-dim stride; got shape={tuple(t.shape)}, "
+                f"stride={t.stride()}"
+            )
+
+
 def swiglu_forward_view(
     gate: torch.Tensor, up: torch.Tensor, out: torch.Tensor
 ) -> torch.Tensor:
+    _check_view_contract(gate, up, out)
     M, N = gate.shape
     grid = lambda META: (  # noqa: E731
         triton.cdiv(M, META["BLOCK_M"]),
@@ -127,6 +142,7 @@ def swiglu_backward_view(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """In-place: returns (h, grad_gate, grad_up) as the mutated
     (grad_output, gate, up)."""
+    _check_view_contract(grad_output, gate, up)
     M, N = gate.shape
     grid = lambda META: (  # noqa: E731
         triton.cdiv(M, META["BLOCK_M"]),

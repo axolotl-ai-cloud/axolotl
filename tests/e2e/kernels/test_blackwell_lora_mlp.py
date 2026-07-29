@@ -6,6 +6,10 @@ equivalence vs the standard LoRA_MLP kernel) run on any CUDA device -- the
 math is architecture-portable. Launch-budget and perf tests are keyed by
 compute capability in blackwell_launch_budgets.json and only run where a
 golden exists (sm_100).
+
+The module-level `b200` mark selects this file for the dedicated B200 CI lane
+(cicd/cicd_b200.sh, `-m b200`) so the goldens run on certified hardware; the
+file also runs in the general GPU e2e lanes, where the sm_100-only tests skip.
 """
 
 import json
@@ -166,6 +170,16 @@ def test_live_outputs_canary():
         assert g is not None, f"{name}'s gradient is None"
         assert torch.isfinite(g).all(), f"{name}'s gradient contains NaN/Inf"
         assert g.abs().sum() > 0, f"{name}'s gradient is all-zero"
+
+
+def test_second_backward_through_same_graph_raises():
+    """backward consumes its saved buffers in place; a retain_graph
+    re-backward must fail loudly instead of returning garbage."""
+    X, grad_out, p, names, ts = _make_case()
+    out = _apply_factored(X, p)
+    torch.autograd.grad(out, [X] + ts, grad_outputs=grad_out, retain_graph=True)
+    with pytest.raises(RuntimeError, match="twice"):
+        torch.autograd.grad(out, [X] + ts, grad_outputs=grad_out)
 
 
 def test_no_unfused_scalar_multiply_kernel():
@@ -406,12 +420,13 @@ def _patch_and_get_mlp_forward(cfg_overrides=None):
     return get_layers(model)[0].mlp.forward
 
 
-@pytest.mark.skipif(
-    torch.cuda.get_device_capability() == (10, 0), reason="requires a non-B200 device"
-)
 def test_patching_falls_back_on_non_sm100():
     """G2: with the flag on but on a non-sm_100 device, the patcher must
     select the standard kernel -- no exception, no silent wrong path."""
+    # checked in the body, not a skipif arg: decorator args evaluate at
+    # collection time and get_device_capability raises on CPU-only hosts
+    if torch.cuda.get_device_capability() == (10, 0):
+        pytest.skip("requires a non-B200 device")
     forward = _patch_and_get_mlp_forward()
     assert forward.__func__ is apply_lora_mlp_swiglu
 

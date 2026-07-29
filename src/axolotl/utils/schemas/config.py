@@ -1914,6 +1914,13 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "around the LoRA MLP blocks"
             )
 
+        if not (data.get("bf16") or data.get("bfloat16")):
+            LOG.warning(
+                "lora_mlp_kernel_b200 requires bf16 base weights; without "
+                "bf16: true the per-module checks will fall back to the "
+                "standard LoRA MLP kernel"
+            )
+
         capabilities = data.get("capabilities")
         compute_capability = (
             capabilities.get("compute_capability")
@@ -1925,15 +1932,17 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 f"lora_mlp_kernel_b200: device is {compute_capability}, not sm_100 "
                 "(B200) - the standard LoRA MLP kernel will be used"
             )
+        else:
+            # Best-effort: cuBLAS reads this env var at handle creation, so the
+            # launch environment is the reliable place to set it (documented in
+            # docs/lora_optims.qmd); this covers the common single-process case.
+            # Skipped when the device is known not to be sm_100 -- the setting
+            # is process-wide and the B200 kernel won't run there.
+            from axolotl.kernels.blackwell.support import (
+                maybe_set_cublas_workspace_config,
+            )
 
-        # Best-effort: cuBLAS reads this env var at handle creation, so the
-        # launch environment is the reliable place to set it (documented in
-        # docs/lora_optims.qmd); this covers the common single-process case.
-        from axolotl.kernels.blackwell.support import (
-            maybe_set_cublas_workspace_config,
-        )
-
-        maybe_set_cublas_workspace_config()
+            maybe_set_cublas_workspace_config()
         return data
 
     @model_validator(mode="before")

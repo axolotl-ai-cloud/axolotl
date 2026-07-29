@@ -533,8 +533,12 @@ def apply_lora_kernel_patches(
     # standard kernel path with a logged reason.
     use_b200_mlp = False
     apply_b200_mlp_fn = None
+    lora_mlp_b200_module_supported = None
     if cfg.lora_mlp_kernel and cfg.lora_mlp_kernel_b200:
-        from axolotl.kernels.blackwell import lora_mlp_b200_config_eligible
+        from axolotl.kernels.blackwell import (
+            lora_mlp_b200_config_eligible,
+            lora_mlp_b200_module_supported,
+        )
 
         use_b200_mlp, b200_reason = lora_mlp_b200_config_eligible(
             lora_config, activation
@@ -662,10 +666,6 @@ def apply_lora_kernel_patches(
                 if can_patch_mlp:
                     apply_fn = APPLY_FN_MAPPING[activation]
                     if use_b200_mlp:
-                        from axolotl.kernels.blackwell import (
-                            lora_mlp_b200_module_supported,
-                        )
-
                         supported, module_reason = lora_mlp_b200_module_supported(
                             gate_proj, up_proj, down_proj
                         )

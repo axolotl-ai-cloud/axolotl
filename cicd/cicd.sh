@@ -80,11 +80,8 @@ pytest -v --durations=10 /workspace/axolotl/tests/cli \
   --cov=axolotl \
   --cov-append
 
-# Run remaining e2e tests with coverage append and final report.
-# b200-marked tests run in the dedicated B200 suite (cicd_b200.sh) only;
-# a CLI -m overrides the addopts -m, so "not slow" must be restated here.
+# Run remaining e2e tests with coverage append and final report
 pytest -v --durations=10 \
-  -m "not b200 and not slow" \
   --ignore=tests/e2e/solo/ \
   --ignore=tests/e2e/patched/ \
   --ignore=tests/e2e/multigpu/ \

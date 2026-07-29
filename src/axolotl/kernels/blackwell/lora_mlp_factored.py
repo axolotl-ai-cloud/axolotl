@@ -119,6 +119,17 @@ class LoRA_MLP_B200_Factored(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dY):
+        # backward consumes its saved buffers in place (swiglu_backward_view
+        # mutates buf_eg; inplace=True writes dX into X's storage) and the
+        # Triton writes bypass autograd's version counters, so a second
+        # backward over the same graph would silently compute garbage.
+        if getattr(ctx, "_consumed", False):
+            raise RuntimeError(
+                "LoRA_MLP_B200_Factored does not support backward through the "
+                "same graph twice (saved buffers are consumed in place)"
+            )
+        ctx._consumed = True
+
         (X, buf_eg, XAg, XAu, hAd, A_gu, gate_A, gate_B, up_A, up_B, down_A, down_B) = (
             ctx.saved_tensors
         )
