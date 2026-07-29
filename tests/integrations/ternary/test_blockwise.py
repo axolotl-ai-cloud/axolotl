@@ -303,3 +303,64 @@ def test_the_records_file_survives_a_crash(tmp_path, fitted):
     assert set(records) == {"0"}
     assert records["0"]["weights_sha256"]
     assert records["0"]["student_sha256"]
+
+
+# ------------------------------------------------------- the regime it runs in
+
+
+def test_the_healer_runs_outside_autocast_and_the_trainer():
+    """Establish the regime, because the dtype rules differ from a training run.
+
+    `heal_blocks` is called directly, not through the HF Trainer, so accelerate never
+    wraps it and no autocast context is open. Nothing upcasts the blocks to fp32
+    behind its back — which is what makes the bf16 the cache stores the whole story.
+    """
+    assert not torch.is_autocast_enabled()
+    assert not torch.is_autocast_enabled("cpu")
+
+
+def test_the_cache_normalizes_activations_to_bf16(tmp_path):
+    """The buffers pin the dtype, so an fp32-cast caller cannot change the regime."""
+    cache = ActivationCache(tmp_path)
+
+    cache.write("teacher", 0, iter([torch.randn(2, 4, 8, dtype=torch.float32)]))
+
+    stored = next(iter(cache.read("teacher", 0)))
+    assert stored.dtype == torch.bfloat16
+
+
+def test_a_materialized_block_is_bf16(tmp_path, fitted):
+    source, master, cfg = fitted
+
+    block = blockwise._load_block(master, cfg, "model.layers.0.", DEVICE, student=True)
+
+    floats = [p for p in block.parameters() if p.is_floating_point()]
+    assert floats
+    assert {p.dtype for p in floats} <= {torch.bfloat16, torch.float32}
+
+
+def test_the_block_loss_survives_mixed_input_dtypes(tmp_path, fitted):
+    """MSE harmonizes both sides, so an fp32 target against a bf16 block is fine."""
+    source, master, cfg = fitted
+    block = blockwise._load_block(master, cfg, "model.layers.0.", DEVICE, student=True)
+    hidden = torch.randn(1, 8, HIDDEN, dtype=torch.bfloat16)
+    target = torch.randn(1, 8, HIDDEN, dtype=torch.float32)
+
+    output = blockwise._block_forward(block, hidden, _kwargs_for(block, hidden))
+    loss = torch.nn.functional.mse_loss(output.float(), target.float())
+
+    assert torch.isfinite(loss)
+
+
+def _kwargs_for(block, hidden):
+    """The position kwargs a decoder block needs, built for a bare tensor."""
+    length = hidden.shape[1]
+    positions = torch.arange(length).unsqueeze(0)
+    head_dim = HIDDEN // 4
+    # rope must match the hidden dtype: sdpa refuses fp32 cos/sin against bf16
+    # qkv, the same dtype-harmonization trap the chunked KD loss hit
+    angles = torch.zeros(1, length, head_dim, dtype=hidden.dtype)
+    return {
+        "position_embeddings": (angles.cos(), angles.sin()),
+        "position_ids": positions,
+    }
