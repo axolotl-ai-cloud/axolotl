@@ -33,6 +33,8 @@ ExportFormat = Literal[
     "i2_s",
     "mask_sign",
     "onebitllms_bf16",
+    "fv5",
+    "tp9",
 ]
 EmbeddingDtype = Literal["bf16", "int8"]
 
@@ -51,8 +53,12 @@ SUBLN_UNSUPPORTED_FORMATS: frozenset[str] = GGUF_FORMATS | {
     "onebitllms_bf16",
 }
 
-# scale modes no packed format can carry: more than one scale per tensor ('group',
-# 'learnable_row') or more than one plane ('dual')
+# the packed container each two-plane grid has, and the mode it requires
+TWO_PLANE_FORMATS: dict[str, str] = {"fv5": "dual", "tp9": "trit_planes"}
+
+# scale modes no *single-plane* packed format can carry: more than one scale per tensor
+# ('group', 'learnable_row') or more than one plane ('dual', 'trit_planes'). The
+# two-plane grids have their own containers, see TWO_PLANE_FORMATS
 NON_PER_TENSOR_SCALE_MODES: frozenset[str] = frozenset(
     {"group", "learnable_row", "dual", "trit_planes"}
 )
@@ -558,6 +564,18 @@ class TernaryConfig(BaseModel):
                     f"ternary.subln inserts sub-norms that {unsupported} have no tensor "
                     "slots for; set ternary.export.formats to master_bf16 (optionally "
                     "with mask_sign)."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_two_plane_formats(self) -> "TernaryConfig":
+        for fmt, mode in TWO_PLANE_FORMATS.items():
+            if fmt in self.export.formats and self.weight_scale != mode:
+                raise ValueError(
+                    f"ternary.export.formats: {fmt} is the packed form of "
+                    f"ternary.weight_scale: {mode}, but this run uses "
+                    f"{self.weight_scale}. Each two-plane container carries the grid "
+                    "of exactly one mode"
                 )
         return self
 

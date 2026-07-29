@@ -649,6 +649,120 @@ def _extract_mask_sign(
     return extracted
 
 
+def gate_bitplane_bytes(
+    fmt: str,
+    packed: torch.Tensor,
+    scales: torch.Tensor,
+    master_weight: torch.Tensor,
+    weight_scale: str,
+) -> list[str]:
+    """Round-trip an `fv5`/`tp9` tensor's bytes and gate them on the master.
+
+    Same contract as `gate_block_bytes`, over a two-plane grid: the codes must come
+    back exactly, and the values they reconstruct must equal the master's *in the
+    master's own storage dtype* — a free sum of two scales rounds differently in fp32,
+    which is not a packing fault.
+
+    Args:
+        fmt: `fv5` or `tp9`.
+        packed: The byte string being written.
+        scales: The `(rows, 2)` scale tensor written beside it.
+        master_weight: The baked master tensor it was packed from.
+        weight_scale: The master's scale mode, `dual` or `trit_planes`.
+
+    Returns:
+        A list of failure descriptions; empty when the bytes round-trip exactly.
+    """
+    from . import bitplanes
+
+    shape = (int(master_weight.shape[0]), int(master_weight.shape[1]))
+    decode = (
+        bitplanes.decode_fv5 if fmt == bitplanes.FV5_FORMAT else bitplanes.decode_tp9
+    )
+    try:
+        codes, got_scales = decode(packed, scales, shape)
+    except ValueError as exc:
+        return [f"could not unpack the {fmt} planes: {exc}"]
+
+    failures: list[str] = []
+    try:
+        expected, expected_scales = bake.derive_codes_and_scale(
+            master_weight, None, weight_scale, _scale_pair(scales)
+        )
+    except ValueError as exc:
+        # the stored scales do not describe a grid the master sits on, which is what
+        # a corrupted scale vector looks like from here
+        return [f"the {fmt} scale vectors do not reproduce the master: {exc}"]
+    if codes.shape != expected.shape:
+        return [
+            f"unpacked shape {tuple(codes.shape)} does not match the master's "
+            f"{tuple(expected.shape)}"
+        ]
+    mismatches = int((codes != expected.to(codes.device)).sum())
+    if mismatches:
+        failures.append(
+            f"{mismatches} of {expected.numel()} codes differ from the master after "
+            f"a {fmt} round-trip"
+        )
+    if not torch.equal(got_scales, expected_scales.to(torch.float32)):
+        failures.append(
+            f"the {fmt} scale vectors differ from the grid the master was baked on"
+        )
+    if not failures:
+        rebuilt = bake.dequantize_derived(
+            codes, got_scales, weight_scale, master_weight.dtype
+        )
+        if not bool(torch.equal(rebuilt, master_weight)):
+            drift = float(
+                (rebuilt.to(torch.float32) - master_weight.to(torch.float32))
+                .abs()
+                .amax()
+            )
+            failures.append(
+                f"{fmt} reconstruction differs from the master by up to {drift:.3e}"
+            )
+    return failures
+
+
+def _scale_pair(scales: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Split a stored `(rows, 2)` scale tensor into the pair the deriver wants."""
+    dense = scales.to(torch.float32)
+    return dense[:, :1], dense[:, 1:]
+
+
+def _extract_bitplanes(fmt: str):
+    """Build the artifact extractor for a bit-plane format."""
+
+    def extract(
+        artifact: Path, manifest: SwapManifest
+    ) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+        from . import bitplanes
+
+        suffix = (
+            bitplanes.FV5_SUFFIX
+            if fmt == bitplanes.FV5_FORMAT
+            else bitplanes.TP9_SUFFIX
+        )
+        decode = (
+            bitplanes.decode_fv5
+            if fmt == bitplanes.FV5_FORMAT
+            else bitplanes.decode_tp9
+        )
+        tensors = bake.load_tensors(artifact)
+        extracted: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+        for entry in manifest.entries:
+            packed = tensors.get(f"{entry.name}.{suffix}")
+            scales = tensors.get(f"{entry.name}.{bitplanes.SCALES_SUFFIX}")
+            if packed is None or scales is None:
+                continue
+            extracted[entry.name] = decode(
+                packed, scales, (entry.out_features, entry.in_features)
+            )
+        return extracted
+
+    return extract
+
+
 def _extract_onebitllms(
     artifact: Path, manifest: SwapManifest
 ) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
@@ -693,6 +807,8 @@ register_extractor("master_bf16", _extract_master_bf16)
 register_extractor("hf_bitnet", _extract_hf_bitnet)
 register_extractor("mask_sign", _extract_mask_sign)
 register_extractor("onebitllms_bf16", _extract_onebitllms)
+register_extractor("fv5", _extract_bitplanes("fv5"))
+register_extractor("tp9", _extract_bitplanes("tp9"))
 # mask_sign is re-read from disk like the other extractor formats, but its bytes are
 # also gated as they are packed, so a corrupt write never reaches the container
 for _fmt in (*BLOCK_GATED_FORMATS, "mask_sign"):
@@ -717,6 +833,7 @@ __all__ = [
     "check_code_parity",
     "check_dequant_error",
     "compare_act_quantizers",
+    "gate_bitplane_bytes",
     "gate_block_bytes",
     "gate_q8_0_bytes",
     "register_block_decoder",

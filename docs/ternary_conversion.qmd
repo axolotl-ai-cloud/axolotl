@@ -135,7 +135,7 @@ need explicit `target_modules`.
 
 | Option | Default | Description |
 |---|---|---|
-| `weight_scale` | `absmean` | `absmean` (per-tensor statistic), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly), `learnable_row` (one trained scale per output channel), `dual` (five values `{0, ±s_lo, ±s_hi}` from two trained per-row scales), `trit_planes` (PTQTP-style free sum of two trit planes — per row two scales `s1 >= s2` and per weight two trits, `w = t1·s1 + t2·s2`, spanning up to nine values `{0, ±s2, ±(s1−s2), ±s1, ±(s1+s2)}`). `absmean` and `learnable` are per-tensor and export everywhere; the rest are `master_bf16` only. |
+| `weight_scale` | `absmean` | `absmean` (per-tensor statistic), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly), `learnable_row` (one trained scale per output channel), `dual` (five values `{0, ±s_lo, ±s_hi}` from two trained per-row scales), `trit_planes` (PTQTP-style free sum of two trit planes — per row two scales `s1 >= s2` and per weight two trits, `w = t1·s1 + t2·s2`, spanning up to nine values `{0, ±s2, ±(s1−s2), ±s1, ±(s1+s2)}`). `absmean` and `learnable` are per-tensor and export everywhere; `group` and `learnable_row` are `master_bf16` only; `dual` and `trit_planes` each have their own packed container ([`fv5`](#fv5) and [`tp9`](#tp9)) alongside the master. |
 | `group_size` | `null` | Block size for `weight_scale: group`, at least 32 (128 or 256 are the usual values). Required with it, rejected with every other mode. |
 | `activation_bits` | `8` | `8` for per-token int8 activation quantization, `null` for weight-only QAT. |
 | `init` | `absmean` | Latent initialization for the swapped modules: `absmean` (leave the FP weights alone), `ternary_fit` (data-free alternating scale/state solve), `ternary_fit_calibrated` (activation-aware refit plus error compensation over `init_calibration` sequences). `svid` is planned. Everything but `absmean` requires a scale-keeping `weight_scale` — see [Initialization](#initialization). |
@@ -157,9 +157,10 @@ knob.
 ::: {.callout-note}
 `trit_planes` stores ~4.25 bpw against the single plane's ~1.58, which puts it in the
 research/ablation tier rather than the deployment one: two planes are what buys the extra
-levels, and no packed format has a slot for the second. It is master-only by validation,
-and its scales round through the master's dtype rather than f16 — a *sum* of two scales
-only lands back on the stored value if both are already exact there.
+levels, and no *single-plane* packed format has a slot for the second — it ships either as
+`master_bf16` or in its own container, [`tp9`](#tp9), which no engine reads yet. Its scales
+round through the master's dtype rather than f16: a *sum* of two scales only lands back on
+the stored value if both are already exact there.
 :::
 
 ::: {.callout-note}
@@ -170,9 +171,11 @@ them.
 
 ::: {.callout-warning}
 `weight_scale: group`, `learnable_row`, `dual` and `trit_planes` cannot be exported to `hf_bitnet`,
-`gguf_tq2_0`, `gguf_tq1_0`, `i2_s` or `mask_sign` — those formats carry a single per-tensor
-scale and a single trit plane. Those modes are `master_bf16` only, and the config validator
-will tell you so up front rather than at export time.
+`gguf_tq2_0`, `gguf_tq1_0`, `i2_s`, `mask_sign` or `onebitllms_bf16` — those formats carry a
+single per-tensor scale and a single trit plane. `group` and `learnable_row` are therefore
+`master_bf16` only; `dual` and `trit_planes` additionally have [`fv5`](#fv5) and [`tp9`](#tp9),
+the packed containers for their own grids. The config validator will tell you so up front
+rather than at export time.
 :::
 
 ### Initialization {#initialization}
@@ -353,6 +356,8 @@ to the config's `output_dir`, which is also where the baked master is read from.
 | `i2_s` | 2.0 | bitnet.cpp |
 | `mask_sign` | `2 − zero_fraction` | none (archival/transport; unpack with this plugin) |
 | `onebitllms_bf16` | 16 | axolotl's `use_onebitllms: true` finetuning path (`BitNetLinear` re-derives its own grid; see [Continuing training with onebitllms](#onebitllms)) |
+| `fv5` | 3.0 + `64/cols` | none yet — archival, and the target layout for a five-level kernel (Fermion FV5 precedent) |
+| `tp9` | 4.0 + `64/cols` | none yet — archival, and the target layout for a nine-level kernel |
 
 ::: {.callout-note}
 GGUF exports (`gguf_tq2_0`, `gguf_tq1_0`, `i2_s`) require the optional `gguf` package:
@@ -470,6 +475,49 @@ run kept some block Linear in full precision through `ternary.keep_fp_modules`, 
 finetune will quantize it anyway and will not match the exported function on that
 module; the exporter logs a warning listing them.
 :::
+
+### fv5 {#fv5}
+
+The packed form of `weight_scale: dual`. Three bit planes over the flat row-major weight,
+in the Fermion FV5 shape:
+
+| plane | meaning |
+|---|---|
+| `bp` | the weight is positive |
+| `bn` | the weight is negative |
+| `br` | the weight uses `s_hi` rather than `s_lo` |
+
+`w = (bp − bn) · (br ? s_hi : s_lo)` — 3 bits per weight, plus two f32 per row for the
+grid. Two invariants make the planes a grid rather than three loose masks, and the
+unpacker enforces both: `bp & bn == 0`, and `br ⊆ (bp | bn)`. A container violating
+either is rejected rather than decoded into something plausible.
+
+### tp9 {#tp9}
+
+The packed form of `weight_scale: trit_planes`. The two trit planes, each packed two bits
+per weight through the same routine the code-flip monitor packs its snapshots with, plus
+two f32 per row. `w = t1·s1 + t2·s2` — 4 bits per weight.
+
+::: {.callout-warning}
+**No engine consumes `fv5` or `tp9` today.** They exist so a healed two-plane model can be
+shipped and archived at its real size — 3–4 bits per weight instead of the 16 a
+`master_bf16` costs — and so the byte layout a future llama.cpp fork carrying five- or
+nine-level kernels would read is already pinned, produced and gated. To *run* a two-plane
+model today, use the `master_bf16`.
+:::
+
+Both containers are safetensors, like `mask_sign`: `<module>.weight_fv5` /
+`<module>.weight_tp9` byte tensors beside `<module>.scales` (an `(out_features, 2)` f32),
+with embeddings, head, norms and any `subln` gains passed through in bf16. `subln` masters
+*are* packable here — unlike the GGUF and bitnet containers, these are our own format, so
+the sub-norm gains travel as ordinary tensors. `ternary_fv5.json` / `ternary_tp9.json`
+carry the shapes, the measured bits-per-weight (payload and payload-plus-scales), and a
+sha256 per tensor and per scale vector.
+
+Packing **requires** the master's persisted scale sidecar and never infers a grid from the
+values: a free-sum row that uses only combination states does not contain its own scales,
+and guessing a plausible pair for a shipped artifact is how a silently different model
+gets published.
 
 ### mask_sign
 
@@ -598,6 +646,7 @@ ternary backend yet, and the two-plane modes ship as masters only.
 | `i2_s` | — | ✓ | — | ✗ | — |
 | `mask_sign` | — | — | — | — | — |
 | `dual` / `trit_planes` master | — | — | ✓ (bf16 values) | ✓ (bf16) | — |
+| `fv5` / `tp9` | — | — | — | — | — |
 
 ### llama.cpp (and Ollama)
 
@@ -665,12 +714,13 @@ mlx-lm version.
 
 ### Two-plane modes and what is missing
 
-`dual` and `trit_planes` masters currently run only as bf16 models (ternary-family
-quality at bf16 memory) — no engine has five- or nine-level kernels. The path to
-deploying them is an FV5-style bit-plane format plus a llama.cpp fork carrying its
-kernels, which is the top item on this plugin's roadmap given how strongly those modes
-outperform single-plane at equal healing budget. `mask_sign` is archival/transport
-only. For extra CPU headroom on the GGUF artifacts, T-MAC's LUT kernels consume
+`dual` and `trit_planes` masters still *run* only as bf16 models (ternary-family quality
+at bf16 memory) — no engine has five- or nine-level kernels. Half of that gap is now
+closed on our side: [`fv5`](#fv5) and [`tp9`](#tp9) ship those grids at 3 and 4 bits per
+weight in the bit-plane layout such a kernel would read, gated byte-for-byte, so what
+remains is the llama.cpp fork carrying the kernels rather than a format to feed it.
+Until that exists both containers are archival — size-truthful shipping, not deployment
+— as is `mask_sign`. For extra CPU headroom on the GGUF artifacts, T-MAC's LUT kernels consume
 low-bit GGUF files and post 4–5× single-thread gains over llama.cpp in their paper —
 an advanced option, not a supported target of this plugin's gates.
 

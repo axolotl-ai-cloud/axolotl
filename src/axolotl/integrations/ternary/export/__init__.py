@@ -123,6 +123,10 @@ def _write_artifact(
         from . import mask_sign
 
         return mask_sign.export_mask_sign(master, output / fmt, manifest)
+    if fmt in ("fv5", "tp9"):
+        from . import bitplanes
+
+        return bitplanes.export_bitplanes(master, output / fmt, manifest, fmt)
     if fmt == "onebitllms_bf16":
         from . import onebitllms
 
