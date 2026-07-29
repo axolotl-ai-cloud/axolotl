@@ -241,7 +241,7 @@ def filter_sequences_by_length(
     return results
 
 
-def process_datasets_for_packing(cfg, train_dataset, eval_dataset, split="train"):
+def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
     if drop_attn_mask:
         LOG.info("dropping attention_mask column")
@@ -307,9 +307,9 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset, split="train"
         dropped = prior_len - len(train_dataset)
         if dropped:
             LOG.warning(
-                f"Dropped {dropped} samples with no trainable tokens from {split} dataset"
+                f"Dropped {dropped} samples with no trainable tokens from train dataset"
             )
-        raise_if_empty(train_dataset, split)
+        raise_if_empty(train_dataset, "train")
 
     if eval_dataset:
         try:
