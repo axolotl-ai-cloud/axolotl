@@ -14,7 +14,9 @@ from axolotl.prompt_strategies.chat_template import (
 )
 from axolotl.prompt_tokenizers import DatasetWrappingStrategy, PromptTokenizingStrategy
 from axolotl.utils.data.wrappers import get_dataset_wrapper
+from axolotl.utils.datasets import dataset_map_buffer_kwargs
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.trainer import process_datasets_for_packing
 
 CHAT_TEMPLATE = (
     "{% for message in messages %}{{ message['content'] }}{{ eos_token }}{% endfor %}"
@@ -242,6 +244,64 @@ class TestWrapperBufferDefaults:
         )
         assert captured["batch_size"] == 8
         assert captured["writer_batch_size"] == 64
+
+
+class TestBufferKwargsHelper:
+    """dataset_map_buffer_kwargs drives every map in the prepared pipeline."""
+
+    def test_text_run_returns_empty(self):
+        assert dataset_map_buffer_kwargs(DictDefault({}), batched=True) == {}
+
+    def test_multimodal_cfg_defaults(self):
+        cfg = DictDefault({"processor_type": "AutoProcessor"})
+        assert dataset_map_buffer_kwargs(cfg, batched=True) == {
+            "writer_batch_size": 32,
+            "batch_size": 32,
+        }
+
+    def test_unbatched_omits_batch_size(self):
+        cfg = DictDefault({"is_multimodal": True})
+        assert dataset_map_buffer_kwargs(cfg) == {"writer_batch_size": 32}
+
+    def test_overrides_apply_without_processor(self):
+        cfg = DictDefault(
+            {"dataset_map_batch_size": 8, "dataset_writer_batch_size": 64}
+        )
+        assert dataset_map_buffer_kwargs(cfg, batched=True) == {
+            "writer_batch_size": 64,
+            "batch_size": 8,
+        }
+
+    def test_packing_maps_receive_buffers(self):
+        cfg = DictDefault(
+            {
+                "processor_type": "AutoProcessor",
+                "dataset_num_proc": 1,
+                "sample_packing": True,
+                "sequence_len": 64,
+            }
+        )
+        ds = Dataset.from_dict(
+            {
+                "input_ids": [[1, 2, 3]],
+                "attention_mask": [[1, 1, 1]],
+                "labels": [[1, 2, 3]],
+            }
+        )
+        captured = []
+        original_map = Dataset.map
+
+        def spy(self, *args, **kwargs):
+            captured.append(kwargs)
+            return original_map(self, *args, **kwargs)
+
+        with patch.object(Dataset, "map", spy):
+            process_datasets_for_packing(cfg, ds, None)
+        position_ids_maps = [
+            k for k in captured if k.get("desc", "").startswith("Add position_id")
+        ]
+        assert position_ids_maps
+        assert all(k["writer_batch_size"] == 32 for k in position_ids_maps)
 
 
 if __name__ == "__main__":
