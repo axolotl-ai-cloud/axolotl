@@ -48,6 +48,9 @@ class TokenizedPromptDataset(Dataset):
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 1_000
+        if self.prompt_tokenizer.supports_indices:
+            # datasets passes absolute indices even when sharded across num_proc
+            map_kwargs["with_indices"] = True
 
         if (
             hasattr(self.prompt_tokenizer, "filter_rows")
@@ -78,6 +81,8 @@ def wrap_dataset_for_tokenized_prompt(
         map_kwargs = {}
         if prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
+        if prompt_tokenizer.supports_indices:
+            map_kwargs["with_indices"] = True
         features = list(dataset.features.keys())
         return dataset.map(
             prompt_tokenizer.tokenize_prompt,

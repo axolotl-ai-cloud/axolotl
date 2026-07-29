@@ -70,6 +70,11 @@ class PromptTokenizingStrategy(abc.ABC):
     def supports_batched(self):
         return False
 
+    @property
+    def supports_indices(self):
+        """Whether ``tokenize_prompt`` takes the dataset index as its second argument."""
+        return False
+
     def _tokenize(
         self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False
     ) -> BatchEncoding:
