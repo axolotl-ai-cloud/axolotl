@@ -329,14 +329,20 @@ def test_the_cache_normalizes_activations_to_bf16(tmp_path):
     assert stored.dtype == torch.bfloat16
 
 
-def test_a_materialized_block_is_bf16(tmp_path, fitted):
+def test_student_blocks_are_fp32_and_teacher_blocks_bf16(tmp_path, fitted):
+    """Trainable latents must be fp32: healing updates at sane learning rates sit
+    below bf16's ULP, and bf16 training random-walks near-optimal blocks worse."""
     source, master, cfg = fitted
 
-    block = blockwise._load_block(master, cfg, "model.layers.0.", DEVICE, student=True)
+    student = blockwise._load_block(
+        master, cfg, "model.layers.0.", DEVICE, student=True
+    )
+    teacher = blockwise._load_block(source, cfg, "model.layers.0.", DEVICE)
 
-    floats = [p for p in block.parameters() if p.is_floating_point()]
-    assert floats
-    assert {p.dtype for p in floats} <= {torch.bfloat16, torch.float32}
+    student_floats = {p.dtype for p in student.parameters() if p.is_floating_point()}
+    teacher_floats = {p.dtype for p in teacher.parameters() if p.is_floating_point()}
+    assert student_floats == {torch.float32}
+    assert teacher_floats == {torch.bfloat16}
 
 
 def test_the_block_loss_survives_mixed_input_dtypes(tmp_path, fitted):

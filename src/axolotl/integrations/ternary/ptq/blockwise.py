@@ -351,9 +351,12 @@ def _train_block(
     """Fit one student block onto the teacher's outputs with MSE, and report the arc."""
     parameters = [p for p in student.parameters() if p.requires_grad]
     optimizer = _build_optimizer(parameters, plan)
+    dtype = parameters[0].dtype if parameters else torch.bfloat16
+    # like-for-like improvement metric: a fixed slice measured before and after,
+    # instead of first-batch-loss vs last-batch-loss over different data
+    initial = _slice_loss(student, cache, index, forward_kwargs, device)
     student.train()
 
-    initial = 0.0
     final = 0.0
     steps = 0
     tokens = 0
@@ -366,7 +369,7 @@ def _train_block(
         for inputs, targets in pairs:
             if plan.max_steps and steps >= plan.max_steps:
                 break
-            hidden = inputs.to(device)
+            hidden = inputs.to(device=device, dtype=dtype)
             wanted = targets.to(device)
             output = _block_forward(student, hidden, forward_kwargs)
             loss = torch.nn.functional.mse_loss(output.float(), wanted.float())
@@ -375,16 +378,48 @@ def _train_block(
                 torch.nn.utils.clip_grad_norm_(parameters, plan.max_grad_norm)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-            value = float(loss.detach())
-            if not steps and not epoch:
-                initial = value
-            final = value
             steps += 1
             tokens += int(hidden.shape[0] * hidden.shape[1])
         if plan.max_steps and steps >= plan.max_steps:
             break
     student.eval()
+    final = _slice_loss(student, cache, index, forward_kwargs, device)
     return initial, final, steps, tokens
+
+
+_EVAL_SLICE_CHUNKS = 4
+
+
+@torch.no_grad()
+def _slice_loss(
+    student: nn.Module,
+    cache: "ActivationCache",
+    index: int,
+    forward_kwargs: dict[str, Any],
+    device: str | torch.device,
+) -> float:
+    """Mean block MSE over the first few cached chunks — a fixed yardstick."""
+    was_training = student.training
+    student.eval()
+    dtype = next(student.parameters()).dtype
+    total = 0.0
+    seen = 0
+    pairs = zip(
+        cache.read(_STUDENT_TAG, index),
+        cache.read(_TEACHER_TAG, index + 1),
+        strict=False,
+    )
+    for inputs, targets in pairs:
+        if seen >= _EVAL_SLICE_CHUNKS:
+            break
+        hidden = inputs.to(device=device, dtype=dtype)
+        wanted = targets.to(device)
+        output = _block_forward(student, hidden, forward_kwargs)
+        total += float(torch.nn.functional.mse_loss(output.float(), wanted.float()))
+        seen += 1
+    if was_training:
+        student.train()
+    return total / max(seen, 1)
 
 
 @torch.no_grad()
@@ -392,9 +427,10 @@ def _apply_block(
     block: nn.Module, chunks: Iterator[torch.Tensor], forward_kwargs: dict[str, Any]
 ) -> Iterator[torch.Tensor]:
     """Yield `block(chunk)` for each chunk, never holding two outputs at once."""
-    device = next(block.parameters()).device
+    reference = next(block.parameters())
     for chunk in chunks:
-        yield _block_forward(block, chunk.to(device), forward_kwargs).cpu()
+        staged = chunk.to(device=reference.device, dtype=reference.dtype)
+        yield _block_forward(block, staged, forward_kwargs).cpu()
 
 
 def _block_forward(
@@ -587,9 +623,14 @@ def _materialize(
             f"{prefix or '<root>'} is missing {sorted(real)[:5]} in {directory}; the "
             "checkpoint and the config disagree about its parameters"
         )
+    # trainable (student) blocks hold fp32 latents: healing updates at sane
+    # learning rates sit below bf16's ULP at typical weight scales, and bf16
+    # training degrades near-optimal blocks by rounding random-walk — the same
+    # fp32-latent requirement the end-to-end trainer gets from its upcast
+    train_dtype = torch.float32 if skip_scales else torch.bfloat16
     for param in module.parameters():
-        if param.is_floating_point() and param.dtype not in (torch.bfloat16,):
-            param.data = param.data.to(torch.bfloat16)
+        if param.is_floating_point() and param.dtype is not train_dtype:
+            param.data = param.data.to(train_dtype)
     return module
 
 
