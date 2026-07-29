@@ -186,13 +186,19 @@ class TestNemotronHSupport:
         assert resolved.hooks.for_phase(ModelHookPhase.AFTER_BASE_MODEL_BUILD)
 
     def test_packing_patch_skipped_without_packing_or_context_parallel(self):
+        from transformers.models.nemotron_h.modeling_nemotron_h import (
+            NemotronHPreTrainedModel,
+        )
+
         from axolotl.model_support.nemotron_h import _before_model_build
 
+        before = NemotronHPreTrainedModel.supports_gradient_checkpointing
         _before_model_build(
             ModelHookContext(
                 cfg=DictDefault(sample_packing=False, context_parallel_size=1)
             )
         )
+        assert NemotronHPreTrainedModel.supports_gradient_checkpointing is before
 
     def test_conversion_mapping_fix_removes_spurious_renaming(self):
         from transformers.conversion_mapping import (
@@ -216,8 +222,9 @@ class TestNemotronHSupport:
 
         original = get_checkpoint_conversion_mapping("nemotron_h")
         # the builtin transformers mapping may itself carry the spurious entry
-        seeded = list(original or []) + [
-            WeightRenaming(["embedding.weight"], ["embeddings.weight"])
+        seeded = [
+            *(original or []),
+            WeightRenaming(["embedding.weight"], ["embeddings.weight"]),
         ]
         register_checkpoint_conversion_mapping("nemotron_h", seeded, overwrite=True)
         try:
