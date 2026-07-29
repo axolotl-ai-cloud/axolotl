@@ -24,7 +24,10 @@ from axolotl.kernels.blackwell.lora_mlp_factored import (
 from axolotl.kernels.blackwell.support import lora_mlp_b200_module_supported
 from axolotl.kernels.lora import apply_lora_mlp_swiglu
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+pytestmark = [
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
+    pytest.mark.b200,
+]
 
 _BUDGETS = json.loads(
     (pathlib.Path(__file__).parent / "blackwell_launch_budgets.json").read_text()
