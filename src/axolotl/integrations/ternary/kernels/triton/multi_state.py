@@ -179,6 +179,59 @@ if HAVE_TRITON:
             out = w_f32 + lambda_ * (deq - w_f32)
         tl.store(out_ptr + offs, out.to(w.dtype), mask=mask)
 
+    @triton.jit
+    def _dual_scale_grad_kernel(
+        grad_ptr,
+        codes_ptr,
+        low_ptr,
+        high_ptr,
+        lambda_,
+        numel,
+        BLOCK: tl.constexpr,
+    ):
+        """Split the incoming gradient by level in one pass over the tensor.
+
+        The eager path walks it about nine times — cast, sign, scale, two level
+        masks, two products, two row-wise `where` — allocating a full-size temporary
+        each time. The `where` is not here at all: `swapped` is constant per row, so
+        selecting before or after the row sum gives the same answer, and the caller
+        does it on the two reduced vectors instead.
+        """
+        pid = tl.program_id(0).to(tl.int64)
+        offs = pid * BLOCK + tl.arange(0, BLOCK)
+        mask = offs < numel
+
+        grad = tl.load(grad_ptr + offs, mask=mask, other=0.0).to(tl.float32)
+        codes = tl.load(codes_ptr + offs, mask=mask, other=0).to(tl.int32)
+
+        magnitude = tl.abs(codes)
+        sign = tl.where(codes > 0, 1.0, tl.where(codes < 0, -1.0, 0.0))
+        scaled = grad * sign * lambda_
+        tl.store(low_ptr + offs, tl.where(magnitude == 1, scaled, 0.0), mask=mask)
+        tl.store(high_ptr + offs, tl.where(magnitude > 1, scaled, 0.0), mask=mask)
+
+    @triton.jit
+    def _trit_scale_grad_kernel(
+        grad_ptr,
+        plane0_ptr,
+        plane1_ptr,
+        first_ptr,
+        second_ptr,
+        lambda_,
+        numel,
+        BLOCK: tl.constexpr,
+    ):
+        """Weight the incoming gradient by each trit plane in one pass."""
+        pid = tl.program_id(0).to(tl.int64)
+        offs = pid * BLOCK + tl.arange(0, BLOCK)
+        mask = offs < numel
+
+        grad = tl.load(grad_ptr + offs, mask=mask, other=0.0).to(tl.float32) * lambda_
+        t1 = tl.load(plane0_ptr + offs, mask=mask, other=0).to(tl.float32)
+        t2 = tl.load(plane1_ptr + offs, mask=mask, other=0).to(tl.float32)
+        tl.store(first_ptr + offs, grad * t1, mask=mask)
+        tl.store(second_ptr + offs, grad * t2, mask=mask)
+
 
 _BLOCK: int = 1024
 
@@ -299,6 +352,69 @@ def fake_quant_weight_trit_planes(
     return out
 
 
+def dual_scale_grad_terms(
+    grad_output: torch.Tensor, codes: torch.Tensor, lambda_: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the per-level gradient terms `(low, high)` the dual STE reduces.
+
+    Fuses the elementwise half of the backward only. The reduction stays in torch:
+    a Triton row-sum accumulates in a different order, and fp32 addition is not
+    associative, so a fused reduction would make the fused and eager gradients
+    differ by accumulation noise. The elementwise pass is where the temporaries are
+    anyway.
+
+    Raises:
+        RuntimeError: If Triton is unavailable or the tensors are not on CUDA.
+    """
+    require_cuda(grad_output, codes)
+    grad_output = grad_output.contiguous()
+    codes = codes.contiguous()
+    low = torch.empty(grad_output.shape, dtype=torch.float32, device=grad_output.device)
+    high = torch.empty_like(low)
+    numel = grad_output.numel()
+    _dual_scale_grad_kernel[(triton.cdiv(numel, _BLOCK),)](
+        grad_output,
+        codes,
+        low,
+        high,
+        lambda_,
+        numel,
+        BLOCK=_BLOCK,
+        num_warps=num_warps_for(_BLOCK),
+    )
+    return low, high
+
+
+def trit_scale_grad_terms(
+    grad_output: torch.Tensor, planes: torch.Tensor, lambda_: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the per-plane gradient terms `(first, second)` the free-sum STE reduces.
+
+    Raises:
+        RuntimeError: If Triton is unavailable or the tensors are not on CUDA.
+    """
+    require_cuda(grad_output, planes)
+    grad_output = grad_output.contiguous()
+    planes = planes.contiguous()
+    first = torch.empty(
+        grad_output.shape, dtype=torch.float32, device=grad_output.device
+    )
+    second = torch.empty_like(first)
+    numel = grad_output.numel()
+    _trit_scale_grad_kernel[(triton.cdiv(numel, _BLOCK),)](
+        grad_output,
+        planes[0],
+        planes[1],
+        first,
+        second,
+        lambda_,
+        numel,
+        BLOCK=_BLOCK,
+        num_warps=num_warps_for(_BLOCK),
+    )
+    return first, second
+
+
 def _rows_and_cols(weight: torch.Tensor) -> tuple[int, int]:
     if weight.ndim != 2:
         raise RuntimeError(
@@ -316,7 +432,9 @@ def _row_vector(scale: torch.Tensor, rows: int) -> torch.Tensor:
 
 
 __all__ = [
+    "dual_scale_grad_terms",
     "fake_quant_weight_binary",
     "fake_quant_weight_dual",
     "fake_quant_weight_trit_planes",
+    "trit_scale_grad_terms",
 ]

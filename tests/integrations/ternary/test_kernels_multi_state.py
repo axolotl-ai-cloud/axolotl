@@ -310,3 +310,97 @@ def test_the_dispatch_is_off_the_cuda_path_on_cpu():
     )
 
     assert module._multi_state_ops(module.weight) is None
+
+
+# ------------------------------------------------- fused backward (scale grads)
+
+
+@pytest.fixture(name="no_kernels")
+def fixture_no_kernels(monkeypatch):
+    """Force the eager gradient path, whatever the device offers."""
+    monkeypatch.setattr(quant, "_multi_state_kernels", lambda: None)
+
+
+def _scale_grads(module, x, upstream):
+    for param in (module.weight, module.scale, module.scale_lo):
+        param.grad = None
+    module(x).backward(upstream)
+    return tuple(
+        param.grad.clone() for param in (module.weight, module.scale, module.scale_lo)
+    )
+
+
+@triton_cuda
+@pytest.mark.parametrize("weight_scale", ["dual", "trit_planes"])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+@pytest.mark.parametrize("lambda_", [1.0, 0.5])
+def test_the_fused_backward_is_bit_identical(monkeypatch, weight_scale, dtype, lambda_):
+    """The reduction stays in torch precisely so this is equality, not closeness."""
+    pytest.importorskip("triton")
+    torch.manual_seed(0)
+    module = (
+        TernaryLinear.from_linear(
+            nn.Linear(512, 256, bias=False), weight_scale=weight_scale
+        )
+        .cuda()
+        .to(dtype)
+    )
+    module.set_lambda(lambda_)
+    x = torch.randn(8, 512, device="cuda", dtype=dtype)
+    upstream = torch.randn(8, 256, device="cuda", dtype=dtype)
+
+    fused = _scale_grads(module, x, upstream)
+    monkeypatch.setattr(quant, "_multi_state_kernels", lambda: None)
+    eager = _scale_grads(module, x, upstream)
+
+    for got, want in zip(fused, eager, strict=True):
+        assert torch.equal(got, want)
+
+
+@triton_cuda
+@pytest.mark.parametrize("name", sorted(DEGENERATE))
+def test_the_fused_backward_handles_degenerate_rows(monkeypatch, name):
+    pytest.importorskip("triton")
+    weight = DEGENERATE[name].to("cuda").to(torch.bfloat16)
+    rows, cols = weight.shape
+    module = TernaryLinear(cols, rows, weight_scale="dual", dtype=torch.bfloat16).cuda()
+    with torch.no_grad():
+        module.weight.copy_(weight)
+    module.refresh_scale_from_weight()
+    x = torch.randn(4, cols, device="cuda", dtype=torch.bfloat16)
+    upstream = torch.randn(4, rows, device="cuda", dtype=torch.bfloat16)
+
+    fused = _scale_grads(module, x, upstream)
+    monkeypatch.setattr(quant, "_multi_state_kernels", lambda: None)
+    eager = _scale_grads(module, x, upstream)
+
+    for got, want in zip(fused, eager, strict=True):
+        assert torch.equal(got, want)
+
+
+@triton_cuda
+def test_the_gradient_terms_match_the_eager_expressions(fused):
+    """The kernels alone, against the expressions the STE used to inline."""
+    torch.manual_seed(0)
+    grad = torch.randn(16, 128, device="cuda", dtype=torch.bfloat16)
+    codes = torch.randint(-2, 3, (16, 128), device="cuda", dtype=torch.int8)
+    planes = torch.randint(-1, 2, (2, 16, 128), device="cuda", dtype=torch.int8)
+
+    low, high = fused.dual_scale_grad_terms(grad, codes, 0.5)
+    reference = grad.float() * torch.sign(codes.float()) * 0.5
+    assert torch.equal(low, reference * (codes.abs() == 1))
+    assert torch.equal(high, reference * (codes.abs() > 1))
+
+    first, second = fused.trit_scale_grad_terms(grad, planes, 0.5)
+    weighted = grad.float() * 0.5
+    assert torch.equal(first, weighted * planes[0].float())
+    assert torch.equal(second, weighted * planes[1].float())
+
+
+def test_the_gradient_helpers_fall_back_off_cuda():
+    grad = torch.randn(4, 8)
+    codes = torch.randint(-2, 3, (4, 8), dtype=torch.int8)
+
+    low, high = quant._dual_grad_terms(grad, codes, 1.0)
+
+    assert low.shape == grad.shape and high.shape == grad.shape

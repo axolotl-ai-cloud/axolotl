@@ -808,6 +808,11 @@ class TernaryLinear(nn.Module):
 
     def _quant_weight(self, lambda_: float) -> torch.Tensor:
         multi_state = self._multi_state_ops(self.weight, lambda_)
+        # `trit_planes` is kept even though `torch.compile` runs its forward ~10%
+        # faster than this kernel on the benchmark shapes: compile is not the
+        # shipping baseline (the plugin forces eager for swapped modules and
+        # `torch_compile` is untested against the fake-quant forward), and against
+        # that baseline the kernel is ~91x. Revisit if compile is ever wired here.
         if self.weight_scale == "trit_planes":
             first, second = self._trit_plane_scales(self.weight)
             return quant.fake_quant_weight_trit_planes_ste(

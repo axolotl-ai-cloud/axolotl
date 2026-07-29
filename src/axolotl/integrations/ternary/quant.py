@@ -913,6 +913,48 @@ class FakeQuantWeightBinarySTE(torch.autograd.Function):
         return grad_output, None, None, _single_plane_scale_grad(ctx, grad_output)
 
 
+def _multi_state_kernels():
+    """Return the fused multi-state kernel module when it can run here, else `None`."""
+    try:
+        from .kernels.triton import multi_state
+    except (ImportError, NotImplementedError):  # pragma: no cover
+        return None
+    return multi_state
+
+
+def _dual_grad_terms(
+    grad_output: torch.Tensor, codes: torch.Tensor, lambda_: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Split the incoming gradient into its per-level terms, fused where possible.
+
+    Only the elementwise half is fused; the reduction stays in torch so the fused and
+    eager gradients are the same numbers, not merely close ones.
+    """
+    kernels = _multi_state_kernels() if grad_output.is_cuda else None
+    if kernels is not None and _is_plain(grad_output) and _is_plain(codes):
+        return kernels.dual_scale_grad_terms(grad_output, codes, lambda_)
+    grad = grad_output.to(torch.float32) * torch.sign(codes.to(torch.float32)) * lambda_
+    return grad * (codes.abs() == 1), grad * (codes.abs() > 1)
+
+
+def _trit_grad_terms(
+    grad_output: torch.Tensor, planes: torch.Tensor, lambda_: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Weight the incoming gradient by each trit plane, fused where possible."""
+    kernels = _multi_state_kernels() if grad_output.is_cuda else None
+    if kernels is not None and _is_plain(grad_output) and _is_plain(planes):
+        return kernels.trit_scale_grad_terms(grad_output, planes, lambda_)
+    grad = grad_output.to(torch.float32) * lambda_
+    return grad * planes[0].to(torch.float32), grad * planes[1].to(torch.float32)
+
+
+def _is_plain(tensor: torch.Tensor) -> bool:
+    """Whether `tensor` is an ordinary CUDA tensor a Triton kernel may index."""
+    return not hasattr(tensor, "to_local") and not hasattr(
+        getattr(tensor, "data", None), "to_local"
+    )
+
+
 class FakeQuantWeightDualSTE(torch.autograd.Function):
     """Straight-through estimator for the five-value dual-scale weight path.
 
@@ -953,14 +995,13 @@ class FakeQuantWeightDualSTE(torch.autograd.Function):
         if not ctx.saved_tensors:
             return grad_output, None, None, None, None
         codes, scale_lo, scale_hi, swapped = ctx.saved_tensors
-        grad = (
-            grad_output.to(torch.float32)
-            * torch.sign(codes.to(torch.float32))
-            * ctx.lambda_
-        )
-        low_level, high_level = grad * (codes.abs() == 1), grad * (codes.abs() > 1)
-        grad_lo = _reduce_to(torch.where(swapped, high_level, low_level), scale_lo)
-        grad_hi = _reduce_to(torch.where(swapped, low_level, high_level), scale_hi)
+        low_level, high_level = _dual_grad_terms(grad_output, codes, ctx.lambda_)
+        # `swapped` is per row, so selecting after the reduction is the same answer
+        # over two vectors instead of two full-size tensors
+        low_sum = _reduce_to(low_level, scale_lo)
+        high_sum = _reduce_to(high_level, scale_hi)
+        grad_lo = torch.where(swapped, high_sum, low_sum)
+        grad_hi = torch.where(swapped, low_sum, high_sum)
         return grad_output, None, grad_lo, grad_hi, None
 
 
@@ -1006,11 +1047,11 @@ class FakeQuantWeightTritPlanesSTE(torch.autograd.Function):
         if not ctx.saved_tensors:
             return grad_output, None, None, None, None
         planes, scale_1, scale_2, swapped = ctx.saved_tensors
-        grad = grad_output.to(torch.float32) * ctx.lambda_
-        first = grad * planes[0].to(torch.float32)
-        second = grad * planes[1].to(torch.float32)
-        grad_1 = _reduce_to(torch.where(swapped, second, first), scale_1)
-        grad_2 = _reduce_to(torch.where(swapped, first, second), scale_2)
+        first, second = _trit_grad_terms(grad_output, planes, ctx.lambda_)
+        first_sum = _reduce_to(first, scale_1)
+        second_sum = _reduce_to(second, scale_2)
+        grad_1 = torch.where(swapped, second_sum, first_sum)
+        grad_2 = torch.where(swapped, first_sum, second_sum)
         return grad_output, None, grad_1, grad_2, None
 
 
