@@ -529,3 +529,5 @@ def prepare_plugins(cfg):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
+        for plugin in plugin_manager.plugins.values():
+            plugin.register(cfg)

@@ -137,6 +137,38 @@ class TestKernelImplEnv:
 
         assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
 
+    @pytest.mark.parametrize("bad_value", [True, 1, "triton2", ["cutedsl"]])
+    def test_register_hook_leaves_invalid_values_to_schema(
+        self, monkeypatch, bad_value
+    ):
+        import os
+        import sys
+
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+
+        LigerPlugin().register(DictDefault({"liger_kernel_impl": bad_value}))
+
+        assert "LIGER_KERNEL_IMPL" not in os.environ
+
+    def test_utils_prepare_plugins_invokes_register(
+        self, monkeypatch, minimal_liger_cfg
+    ):
+        import os
+        import sys
+
+        from axolotl.utils.config import prepare_plugins as utils_prepare_plugins
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+
+        test_cfg = DictDefault({"liger_kernel_impl": "cutile"} | minimal_liger_cfg)
+        utils_prepare_plugins(test_cfg)
+
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutile"
+
     def test_raises_when_liger_already_imported_with_other_backend(self, monkeypatch):
         import sys
         import types

@@ -24,6 +24,8 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+LIGER_KERNEL_IMPLS = ("cutile", "cutedsl", "ascend")
+
 
 class LigerArgs(BaseModel):
     """

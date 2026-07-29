@@ -33,8 +33,12 @@ class LigerPlugin(BasePlugin):
 
     def register(self, cfg):
         # earliest hook: pre-model-load patches (fused-attn kernels) import liger
-        # before pre_model_load runs, which would fix the backend too soon
-        if cfg.get("liger_kernel_impl"):
+        # before pre_model_load runs, which would fix the backend too soon.
+        # cfg is the unparsed dict — invalid values fall through untouched so
+        # schema validation raises the proper error instead of an env mutation
+        from axolotl.integrations.liger.args import LIGER_KERNEL_IMPLS
+
+        if cfg.get("liger_kernel_impl") in LIGER_KERNEL_IMPLS:
             self._set_kernel_impl(cfg["liger_kernel_impl"])
 
     @staticmethod
