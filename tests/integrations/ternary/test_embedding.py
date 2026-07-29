@@ -10,6 +10,7 @@ import json
 import pytest
 import torch
 from torch import nn
+from torch.nn import functional as F
 from transformers import LlamaConfig, LlamaForCausalLM
 
 from axolotl.integrations.ternary import quant
@@ -17,6 +18,7 @@ from axolotl.integrations.ternary.args import TernaryConfig
 from axolotl.integrations.ternary.export import bake, hf_bitnet
 from axolotl.integrations.ternary.modules import (
     TernaryEmbedding,
+    TernaryLinear,
     iter_quantized_modules,
     iter_ternary_modules,
 )
@@ -236,21 +238,155 @@ def test_a_tied_head_is_recorded_and_warned_about(caplog):
     assert manifest.tied_embeddings is True
     assert model.lm_head.weight is model.get_input_embeddings().weight
     assert "tie_word_embeddings" in caplog.text
+    assert "same grid" in caplog.text
 
 
-def test_a_tied_head_reads_the_latent_until_the_bake():
-    """Pinned, not endorsed: the head module is untouched, so its quantization error
-    only appears in the artifact. A healing run does not train against it."""
+def test_a_tied_head_quantizes_on_the_embedding_grid():
+    """The head must see the same error the bake will introduce, not the latent.
+
+    Left as a plain Linear it would read the shared latent all through training and
+    only meet the quantization error at save time, so a healing run would never train
+    against what it ships with.
+    """
     model = _model(tied=True)
     convert_model(model, _cfg())
     embedding = model.get_input_embeddings()
-    tokens = torch.tensor([[1, 2]])
-
+    head = model.lm_head
     hidden = torch.randn(1, 2, HIDDEN, dtype=torch.bfloat16)
-    head_out = model.lm_head(hidden)
 
-    assert torch.equal(head_out, torch.nn.functional.linear(hidden, embedding.weight))
-    assert not torch.equal(embedding(tokens), embedding.weight[tokens])
+    with torch.no_grad():
+        got = head(hidden)
+
+    assert isinstance(head, TernaryLinear)
+    assert torch.equal(got, F.linear(hidden, embedding.baked_weight()))
+    assert not torch.equal(got, F.linear(hidden, embedding.weight))
+
+
+@pytest.mark.parametrize(
+    "structure,group_size,expected",
+    [
+        ("per_row", None, ("group", HIDDEN)),
+        ("per_tensor", None, ("absmean", None)),
+        ("grouped", 32, ("group", 32)),
+    ],
+)
+def test_the_tied_head_grid_matches_the_embedding_bit_for_bit(
+    structure, group_size, expected
+):
+    """One group per row is what `per_row` means to a Linear; the others map too."""
+    model = _model(tied=True)
+    convert_model(
+        model, _cfg(embedding_scale=structure, embedding_group_size=group_size)
+    )
+    embedding = model.get_input_embeddings()
+    head = model.lm_head
+
+    assert (head.weight_scale, head.group_size) == expected
+    with torch.no_grad():
+        assert torch.equal(embedding.baked_weight(), head.baked_weight())
+
+
+def test_the_tied_head_shares_the_parameter_rather_than_copying_it():
+    model = _model(tied=True)
+    convert_model(model, _cfg())
+
+    embedding = model.get_input_embeddings()
+    assert model.lm_head.weight is embedding.weight
+    shared = [
+        name for name, param in model.named_parameters() if param is embedding.weight
+    ]
+    assert len(shared) == 1, f"the tensor is duplicated across {shared}"
+
+
+def test_the_tie_survives_a_later_tie_weights_call():
+    model = _model(tied=True)
+    convert_model(model, _cfg())
+
+    model.tie_weights()
+
+    assert isinstance(model.get_input_embeddings(), TernaryEmbedding)
+    assert isinstance(model.lm_head, TernaryLinear)
+    assert model.lm_head.weight is model.get_input_embeddings().weight
+
+
+def test_the_tie_and_the_grid_survive_resize_token_embeddings():
+    model = _model(tied=True)
+    convert_model(model, _cfg(embedding_scale="grouped", embedding_group_size=32))
+
+    model.resize_token_embeddings(VOCAB + 32)
+
+    embedding = model.get_input_embeddings()
+    assert isinstance(embedding, TernaryEmbedding)
+    assert (embedding.scale_structure, embedding.group_size) == ("grouped", 32)
+    assert model.lm_head.weight is embedding.weight
+    assert embedding.weight.shape[0] == VOCAB + 32
+
+
+def test_the_shared_latent_is_baked_exactly_once():
+    """Baking twice through the two views would re-quantize quantized values."""
+    model = _model(tied=True)
+    convert_model(model, _cfg())
+    embedding = model.get_input_embeddings()
+
+    for name, module in iter_quantized_modules(model):
+        module._post_training(model, name)
+    once = embedding.weight.detach().clone()
+    for name, module in iter_quantized_modules(model):
+        module._post_training(model, name)
+
+    assert torch.equal(embedding.weight.detach(), once), "the grid drifted on re-bake"
+    assert model.lm_head.weight is embedding.weight
+
+
+@pytest.mark.parametrize(
+    "structure,group_size", [("per_row", None), ("per_tensor", None), ("grouped", 32)]
+)
+def test_the_tied_pair_upholds_the_requantization_invariant(structure, group_size):
+    model = _model(tied=True)
+    convert_model(
+        model, _cfg(embedding_scale=structure, embedding_group_size=group_size)
+    )
+    embedding = model.get_input_embeddings()
+
+    for name, module in iter_quantized_modules(model):
+        module._post_training(model, name)
+
+    baked = embedding.weight.detach()
+    codes, scale = quant.baked_codes_and_scale(baked, embedding._scale_group_size())
+    assert torch.equal(quant.dequantize_codes(codes, scale, baked.dtype), baked)
+    # and the head agrees the tensor is already on its grid, so it never re-bakes
+    assert model.lm_head.is_baked()
+
+
+def test_the_lambda_schedule_moves_both_views_in_lockstep():
+    model = _model(tied=True)
+    convert_model(model, _cfg())
+
+    for _, module in iter_quantized_modules(model):
+        module.set_lambda(0.3)
+
+    embedding = model.get_input_embeddings()
+    assert embedding.lambda_ == model.lm_head.lambda_ == 0.3
+    covered = {id(module) for _, module in iter_quantized_modules(model)}
+    assert id(model.lm_head) in covered, "the head would drift from the embedding"
+
+
+def test_an_untied_head_is_not_converted():
+    """The new behaviour triggers only on tied + ternary embeddings."""
+    model = _model(tied=False)
+
+    convert_model(model, _cfg())
+
+    assert type(model.lm_head) is nn.Linear
+
+
+def test_a_tied_head_is_untouched_without_ternary_embeddings():
+    model = _model(tied=True)
+
+    convert_model(model, DictDefault({"ternary": {"strict_enumeration": False}}))
+
+    assert type(model.lm_head) is nn.Linear
+    assert type(model.get_input_embeddings()) is nn.Embedding
 
 
 def test_the_embedding_is_not_swapped_by_default():

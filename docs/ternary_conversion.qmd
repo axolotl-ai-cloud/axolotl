@@ -181,6 +181,9 @@ All options live under the `ternary:` key.
 | `target_modules` | preset | Regexes fullmatched against module names; each match becomes a `TernaryLinear`. Defaults to the architecture preset. |
 | `keep_fp_modules` | preset | Regexes for Linears that stay full precision. |
 | `strict_enumeration` | `true` | Require every `nn.Linear` to fullmatch exactly one list. `false` downgrades unmatched/double-matched modules to a warning and keeps them FP. |
+| `embedding_dtype` | `bf16` | `ternary` swaps the token embedding matrix for a module that fake-quantizes its rows. Damaging enough below ~1.7B to be unusable, and pre-healing at any scale — see [Ternary embeddings](#embeddings). Distinct from `export.embedding_dtype`, which only picks a GGUF container. |
+| `embedding_scale` | `per_row` | Scale structure for a ternary embedding: `per_row`, `per_tensor` or `grouped`. |
+| `embedding_group_size` | `null` | Group width along the hidden dimension; required by, and only valid with, `embedding_scale: grouped`, and must divide the hidden size. |
 
 Presets exist for the `llama` and `qwen3` dense architectures, which target
 `.*\.self_attn\.(q|k|v|o)_proj` plus `.*\.mlp\.(gate|up|down)_proj`, and for `qwen3_5`,
@@ -453,6 +456,10 @@ embeddings — it is the re-finetunable interchange artifact — and `hf_bitnet`
 for quantized ones. Setting it with no GGUF format in `formats` is a config error; with a
 mix, the GGUF artifacts get int8 embeddings and the others are logged as exempt.
 `router_dtype: int8` is GGUF-only for the same reasons and validates the same way.
+
+This is the *export* `embedding_dtype`, which only chooses a container. The training-time
+`ternary.embedding_dtype` is a different setting on a different level; see
+[Ternary embeddings](#embeddings).
 :::
 
 ::: {.callout-warning}
@@ -964,10 +971,15 @@ The plugin hard-excludes the modules where ternarization is fatal, and `strict_e
 turns every unrecognized module into a loud error instead of silent damage. Beyond those,
 sensitivity is graded — this section is the field guide.
 
-**Always full precision, not configurable:** token embeddings, `lm_head`, and every norm
-gain. Ternary embeddings destroy a model outright (bitnet.cpp's own ablations), and norm
-vectors are too small to be worth a scale. Exports keep them bf16/f16, optionally `Q8_0`
+**Always full precision, not configurable:** `lm_head` and every norm gain. Norm vectors
+are too small to be worth a scale, and an untied head is the tensor every deployment
+format keeps at higher precision. Exports keep them bf16/f16, optionally `Q8_0`
 (`embedding_dtype: int8`), which is near-lossless.
+
+**Token embeddings default to full precision and are opt-in only.** Ternarizing them is
+damaging enough at small scale to look like a bug rather than a trade — see
+[Ternary embeddings](#embeddings) for the measurements and the narrow conditions under
+which the option is worth reaching for.
 
 **MoE routers stay FP forever.** A router is the one tensor where quantization noise
 changes the computation graph: a flipped top-k pick routes tokens through different
@@ -1055,6 +1067,106 @@ size, and the table is the whole point of the command.
 - **Tiny projections** (aggressive GQA `k/v_proj`, low-rank adapters folded into bases)
   give the per-tensor scale very few weights to average over; if the damage map flags
   them, `learnable` scales usually recover it.
+
+## Ternary embeddings {#embeddings}
+
+Off by default, and the default is the recommendation for almost every run. This section
+exists because "what if the embeddings too" is the first question the size arithmetic
+provokes, and the answer deserves numbers rather than a shrug.
+
+```yaml
+ternary:
+  embedding_dtype: ternary      # default bf16 — the token embedding matrix
+  embedding_scale: per_row      # per_row (default) | per_tensor | grouped
+  embedding_group_size: null    # required by, and only valid with, `grouped`
+```
+
+**Two settings share the name `embedding_dtype`, and they are not the same knob.**
+`ternary.embedding_dtype` above is a *training-time* decision: it swaps the embedding for
+a module that fake-quantizes its rows, so the latent trains against the grid.
+[`ternary.export.embedding_dtype`](#export) is an *export-time* decision that only picks
+how the finished tensor is packed into GGUF (`bf16` or `Q8_0`). They compose — ternary
+rows packed as `Q8_0` are still ternary rows — and neither implies the other. The split is
+deliberate: export configuration must not reach back and change what training does.
+
+### What it costs {#embedding-damage}
+
+Eval loss with the embedding matrix ternarized and nothing else, no healing, against the
+same model's FP baseline:
+
+| model | FP | `per_tensor` | `per_row` | `grouped` |
+|---|---|---|---|---|
+| 135M | — | 398653 | 69275414 | 56420142 (g96) |
+| 1.7B | 8.99 | 3833 | 8099 | 8779 (g128) |
+
+The 135M row is not a regression, it is a demolition: every structure lands in the
+hundreds of thousands and the model is gone. At 1.7B the numbers come down by orders of
+magnitude and are still two to three orders above the 8.99 baseline. Nothing here is a
+usable artifact — these are *unhealed* PTQ numbers, and their only job is to say how far
+a healing run has to travel.
+
+**Read the ranking with care.** `per_tensor` scores best in that table and is still the
+wrong default, because the ranking is unhealed and the failure modes are not
+interchangeable. A per-tensor scale is set by the loudest rows in the vocabulary, so quiet
+rows — rare tokens, exactly the ones with the least magnitude — fall inside the rounding
+cell and quantize to all-zero. That is not quantizing those tokens, it is pruning them,
+and a healing run cannot recover a row that has no gradient signal left to move. `per_row`
+gives every token its own scale, so every row survives the conversion with something to
+train. Better unhealed loss from a structure that has already deleted part of the
+vocabulary is not the quantity worth optimizing, so `per_row` is the default.
+
+`grouped` splits each row into blocks along the hidden dimension and needs
+`embedding_group_size` to divide that dimension exactly. Hidden sizes are not always
+powers of two — a 576-wide embedding rejects the otherwise-universal 128 — and the error
+names the divisors that do fit.
+
+### When to reach for it
+
+The honest guidance is a scale floor and a budget, not a checkbox:
+
+- **Below ~1.7B, don't.** The 135M measurements say the model does not survive to be
+  healed.
+- **At 1.7B and up, only with a healing run.** Every number above is pre-healing. Treat
+  ternary embeddings as a thing you heal *into*, on the same footing as the projections,
+  never as a drop-in size reduction.
+- **Measure the trade you are actually making.** On a model whose projections are already
+  ternary the embedding is a large share of what remains, but so is its share of the
+  damage. Run the [damage map](#damage-map) first.
+
+Enabling it logs a warning saying as much, in the same tone as the router policy: this is
+an experimentation knob.
+
+### Tied weights {#tied-embeddings}
+
+`tie_word_embeddings` means the output head *is* the embedding tensor, so ternarizing the
+embedding ternarizes the head whether or not anything else changes. The plugin makes that
+explicit rather than incidental: with a tie and `embedding_dtype: ternary`, `lm_head` is
+converted too, sharing the very same parameter and quantizing it on the embedding's own
+grid (`per_row` is one group per row, which is what a Linear calls
+`group_size: hidden_size`).
+
+Sharing the parameter rather than copying it is what makes the two views agree. Training
+sees exactly the quantization error the bake will introduce, so a healing run trains
+against what it ships with; the λ schedule drives both views together; and the shared
+tensor is baked exactly once, because the second view detects it is already on the grid
+instead of re-quantizing quantized values.
+
+Untied models are untouched — `lm_head` stays full precision, as the field guide says.
+Untie the weights if you want a ternary embedding and an FP head.
+
+### In the exports
+
+No packed format has a scheme for a quantized embedding: BitNet converts Linears only, and
+the GGUF `TQ1_0`/`TQ2_0` layouts want row lengths that are multiples of 256. So a ternary
+embedding does not ship as a packed ternary tensor anywhere — it ships as its *values*, on
+the ternary grid, inside an ordinary tensor. Nothing is lost by that: the rows are already
+quantized, and the container is the only thing still at full width.
+
+- **`master_bf16`** carries the ternary rows as bf16, like every other baked tensor.
+- **`hf_bitnet`** lists the embedding in `modules_to_not_convert` and ships it as bf16.
+- **GGUF** keeps the existing [`export.embedding_dtype`](#export) route: `bf16`, or `int8`
+  for `Q8_0` at ~8.5 bpw. The training-time setting does not change which container is
+  used, only what values are in it.
 
 ## Running the artifacts {#deployment}
 
@@ -1235,11 +1347,13 @@ Ternary conversion moves roughly 40% of the weights — that is the entire point
 an adapter to wrap: the quantized weight is a function of the latent weight, which has to
 be trainable. Full fine-tuning is not an implementation shortcut here, it is the method.
 
-**Why do `lm_head` and the embeddings stay full precision?**
-They are the most quantization-sensitive tensors in the model and ternarizing them
-collapses output quality, which is why every deployment format keeps them at higher
-precision (GGUF uses Q6_K/F16). They are also a small fraction of a multi-billion-parameter
-model's weights, so the compression you give up is minor.
+**Why do `lm_head` and the embeddings stay full precision by default?**
+They are the most quantization-sensitive tensors in the model, which is why every
+deployment format keeps them at higher precision (GGUF uses Q6_K/F16). They are also a
+small fraction of a multi-billion-parameter model's weights, so the compression given up
+is minor. `lm_head` is not configurable. Embeddings are, via
+[`embedding_dtype: ternary`](#embeddings), but the measurements there say it only starts
+to make sense at 1.7B and up and only with a healing budget.
 
 **Why is there no ternary backward pass?**
 Straight-through estimation means gradients and optimizer state live on the full-precision

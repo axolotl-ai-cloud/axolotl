@@ -384,11 +384,14 @@ class TernaryMonitorCallback(TrainerCallback):
             metrics["ternary/flip_rate"] = sum(flips.values()) / total_compared
         self.metrics = {key: round(value, 6) for key, value in metrics.items()}
 
+        # the first tick has no previous snapshot to compare against, so there is no
+        # flip rate yet — the metrics dict already omits it, and so does the line
+        flip_rate = self.metrics.get("ternary/flip_rate")
         LOG.info(
-            "ternary: step %d zero_frac %.4f flip_rate %.6f",
+            "ternary: step %d zero_frac %.4f%s",
             state.global_step,
             self.metrics["ternary/zero_frac"],
-            self.metrics.get("ternary/flip_rate", float("nan")),
+            "" if flip_rate is None else f" flip_rate {flip_rate:.6f}",
         )
         self._store(self.metrics)
 

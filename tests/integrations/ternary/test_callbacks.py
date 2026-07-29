@@ -417,6 +417,22 @@ def test_monitor_reports_zero_fraction_before_any_flip_data():
     }
 
 
+def test_monitor_does_not_log_a_nan_flip_rate_on_the_first_tick(caplog):
+    """There is no previous snapshot yet, so there is no flip rate to report."""
+    model = _model(q_proj=_codes(8, 4, 4))
+    callback = TernaryMonitorCallback(model, every_n_steps=1)
+
+    with caplog.at_level("INFO"):
+        callback.on_step_end(ARGS, _state(0), CONTROL)
+        first = caplog.text
+        callback.on_step_end(ARGS, _state(1), CONTROL)
+
+    assert "nan" not in first.lower()
+    assert "flip_rate" not in first
+    # the second tick has a baseline, so the metric appears
+    assert "flip_rate" in caplog.text.replace(first, "", 1)
+
+
 def test_monitor_counts_flipped_codes_against_the_previous_snapshot():
     module_codes = _codes(8, 4, 4)
     model = _model(q_proj=module_codes)

@@ -19,7 +19,12 @@ from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 
 from . import aux_modules
-from .args import UNIMPLEMENTED_CODEBOOKS, TernaryConfig, resolve_ternary_config
+from .args import (
+    UNIMPLEMENTED_CODEBOOKS,
+    TernaryConfig,
+    WeightScaleMode,
+    resolve_ternary_config,
+)
 from .modules import TernaryEmbedding, TernaryLinear
 from .ptq import initialize_model_latents
 
@@ -503,20 +508,19 @@ def _convert_embeddings(
         setattr(parent, attr, ternary_embedding)
     model.set_input_embeddings(ternary_embedding)
 
+    grid_scale, grid_size = _embedding_grid(ternary_cfg, embedding.embedding_dim)
+
     tied = bool(getattr(model.config, "tie_word_embeddings", False))
     if tied:
-        # re-tie against the replacement, or the head keeps pointing at the old tensor
-        model.tie_weights()
+        _convert_tied_head(model, ternary_cfg, grid_scale, grid_size)
         LOG.warning(
             f"ternary: {names[0]} is ternary and tie_word_embeddings is set, so the "
-            "output head is the same tensor and bakes ternary with it. The head module "
-            "is left alone, so during training it reads the latent while the embedding "
-            "reads the fake-quantized rows — the head's quantization error therefore "
-            "appears only in the exported artifact, and a healing run does not train "
-            "against it. Untie the weights to keep a full-precision head"
+            "output head is the same tensor. The head now quantizes it on the same "
+            "grid, so training sees exactly the error the bake will introduce, and the "
+            "shared latent is baked once. Untie the weights to keep a full-precision "
+            "head"
         )
 
-    grid_scale, grid_size = _embedding_grid(ternary_cfg, embedding.embedding_dim)
     for name in names:
         entries.append(
             SwapEntry(
@@ -533,7 +537,58 @@ def _convert_embeddings(
     return names, tied
 
 
-def _embedding_grid(ternary_cfg, embedding_dim: int) -> tuple[str, int | None]:
+def _convert_tied_head(
+    model: PreTrainedModel,
+    ternary_cfg,
+    grid_scale: WeightScaleMode,
+    grid_size: int | None,
+) -> None:
+    """Put the tied output head on the embedding's grid, over the very same parameter.
+
+    A tie means the head *is* the embedding tensor, so it bakes ternary whether or not
+    anything is done here. Leaving the head as a plain Linear would mean it reads the
+    latent all through training and only meets the quantization error at save time —
+    the healing run would never train against the error it ships with. Quantizing it on
+    the embedding's own grid closes that gap exactly: `per_row` is one group per row,
+    which is what `group_size = embedding_dim` means to a Linear.
+
+    Activations stay unquantized. The gap being closed is the shared *weight* grid;
+    quantizing the head's input is a separate decision that a tie does not imply.
+    """
+    head = model.get_output_embeddings()
+    if head is None or isinstance(head, TernaryLinear):
+        return
+    if not isinstance(head, nn.Linear) or head.bias is not None:
+        LOG.warning(
+            "ternary: tie_word_embeddings is set but the output head is a "
+            f"{type(head).__name__}"
+            f"{' with a bias' if getattr(head, 'bias', None) is not None else ''}, "
+            "which the shared-grid head does not cover; it keeps reading the shared "
+            "latent and will only meet the quantization error at bake time"
+        )
+        return
+
+    ternary_head = TernaryLinear.from_linear(
+        head,
+        weight_scale=grid_scale,
+        codebook=ternary_cfg.codebook,
+        group_size=grid_size,
+        activation_bits=None,
+        fused=ternary_cfg.fused_fake_quant,
+    )
+    for name, module in list(model.named_modules()):
+        if module is head and name:
+            parent_name, _, attr = name.rpartition(".")
+            parent = model.get_submodule(parent_name) if parent_name else model
+            setattr(parent, attr, ternary_head)
+    model.set_output_embeddings(ternary_head)
+    # re-assert the tie against the replacements; both views must stay one parameter
+    model.tie_weights()
+
+
+def _embedding_grid(
+    ternary_cfg, embedding_dim: int
+) -> tuple[WeightScaleMode, int | None]:
     """Map an embedding scale structure onto the manifest's `(weight_scale, group_size)`.
 
     The bake and the packers read those two fields, and a per-row scale is exactly one
