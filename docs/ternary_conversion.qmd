@@ -115,6 +115,50 @@ buys:
 Budget the run before starting it. A 1B-token heal of an 8B model produces something that
 talks, not something you ship.
 
+## Measured results {#results}
+
+Every default in this plugin was chosen by ablation on a fixed testbed — SmolLM2-135M,
+400 heal steps (~13M fineweb-edu tokens), wikitext-2 perplexity, FP base 17.2 — so the
+numbers below are directly comparable to each other, not to production runs. Budgets
+this small produce demo-quality models; the *ordering* is what transfers.
+
+| Recipe (400 steps unless noted) | ~bpw | wikitext ppl |
+|---|---|---|
+| unhealed (swap only) | 1.58 | 32,289,364 |
+| pure KD, τ=2 | 1.58 | 7,735 |
+| CE only | 1.58 | 3,981 |
+| CE+KD blend 0.5 | 1.58 | 3,805 |
+| blend + hidden feature-KD 0.1 (mse / cosine / huber) | 1.58 | 3,761 / 3,691 / 3,682 |
+| `dual` five-value + `ternary_fit` | ~2.4 | **311** |
+| `trit_planes` + `ternary_fit` | ~4.25 | **54** |
+| *30k steps (~1B tokens), blend, single-plane* | 1.58 | 444 |
+
+What the table teaches, in order of effect size:
+
+1. **Representation dominates.** At equal budget, five-value `dual` beats the best
+   1.58-bit recipe by ~12×, and `trit_planes` by ~70× — `dual` at 400 steps even beats a
+   75×-token single-plane run. Each ~doubling of weight-representation bits bought
+   roughly an order of magnitude of perplexity on this testbed.
+2. **Loss composition helps by percents.** The CE+KD blend beats pure CE by ~5%; a small
+   hidden-state feature-KD term adds ~3% more (cosine and huber tie; raw mse trails).
+   Pure KD at τ=2 wins on teacher-KL but loses ~2× on perplexity — it matches the
+   teacher's temperature-flattened tails at the expense of head sharpness, which is why
+   `logits_weight` defaults to 0.5.
+3. **Fitted inits do not beat the λ warmup at short budgets.** Latent-replacing
+   `ternary_fit` discards the FP weights that the warmup would have kept training, and
+   its codes freeze (exact cell centers — see `init_jitter`). The calibrated tier claws
+   back to parity with `absmean` but not past it. `init: absmean` stays the default.
+4. **Negative results, so you don't repeat them:** `init_jitter` unfreezes code
+   assignments but hurts at 400-step budgets (noise damage outruns the mobility gain);
+   naively merging independently healed ternary models fails badly — codes and
+   continuous parameters co-adapt per run, and neither code-voting nor latent averaging
+   respects that coupling.
+
+Per-family damage (eval-only, `axolotl ternary damage-map`): quantizing `down_proj`
+alone costs ppl 4e10 on this testbed, `o_proj` 15k, `gate/up_proj` 2–6k, `q/k/v` only
+200–400, and int8 activations are nearly free (+0.6 ppl) — see
+[What not to quantize](#sensitive-modules).
+
 ## Configuration reference
 
 All options live under the `ternary:` key.
