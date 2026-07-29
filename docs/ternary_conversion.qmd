@@ -133,6 +133,17 @@ this small produce demo-quality models; the *ordering* is what transfers.
 | `trit_planes` + `ternary_fit` | ~4.25 | **54** |
 | *30k steps (~1B tokens), blend, single-plane* | 1.58 | 444 |
 
+Scale-out (SmolLM2-1.7B, 2000 steps / ~65M tokens, FP base 8.99):
+
+| Recipe | ~bpw | wikitext ppl | ×FP |
+|---|---|---|---|
+| healed `dual` + `ternary_fit` | ~2.4 | **27.5** | 3.1× |
+| healed absmean (control) | 1.58 | 579 | 64× |
+
+The `dual` advantage grows with model size (21× over the 1.58-bit control at 1.7B vs
+12× at 135M), and larger models retain far more at equal relative budget — the same
+scale trend every published conversion reports.
+
 What the table teaches, in order of effect size:
 
 1. **Representation dominates.** At equal budget, five-value `dual` beats the best
