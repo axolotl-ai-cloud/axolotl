@@ -1256,6 +1256,21 @@ class TestValidation(BaseValidation):
                 for record in self._caplog.records
             )
 
+    def test_dpo_liger_kernel_rejects_ipo_in_coerced_set(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": {"ipo"},
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
+            validate_config(cfg)
+
     def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
         cfg = (
             DictDefault(

@@ -782,29 +782,29 @@ class RLValidationMixin:
                 f"but got {rl=}, {dpo_loss_type=} and {dpo_loss_weights=}"
             )
 
-        # raw pre-parse values: only act on an explicit True and a real sequence,
-        # leaving malformed input to the schema's own field validation
-        if data.get("dpo_use_liger_kernel") is True:
-            liger_loss_types = (
-                dpo_loss_type if isinstance(dpo_loss_type, (list, tuple)) else None
-            )
-            # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
-            # only loss_type[0] reaches liger, so later entries are ignored, not fatal
-            if rl == "ipo" or (liger_loss_types and liger_loss_types[0] == "ipo"):
-                raise ValueError(
-                    "`dpo_use_liger_kernel` does not support the `ipo` loss type "
-                    "(liger-kernel's fused DPO loss cannot length-normalize the "
-                    "squared margin). Disable the liger kernel or use another loss."
-                )
-            # TRL's liger DPO path constructs the fused loss from loss_type[0] only
-            if liger_loss_types and len(liger_loss_types) > 1:
-                LOG.warning(
-                    "`dpo_use_liger_kernel` uses only the first entry of "
-                    f"`dpo_loss_type` ({liger_loss_types[0]!r}); remaining entries "
-                    "are ignored on the liger loss path."
-                )
-
         return data
+
+    @model_validator(mode="after")
+    def check_dpo_use_liger_kernel(self):
+        if not self.dpo_use_liger_kernel:
+            return self
+        loss_types = self.dpo_loss_type
+        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
+        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
+        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
+            raise ValueError(
+                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
+                "(liger-kernel's fused DPO loss cannot length-normalize the "
+                "squared margin). Disable the liger kernel or use another loss."
+            )
+        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
+        if loss_types and len(loss_types) > 1:
+            LOG.warning(
+                "`dpo_use_liger_kernel` uses only the first entry of "
+                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
+                "are ignored on the liger loss path."
+            )
+        return self
 
     @model_validator(mode="before")
     @classmethod
