@@ -576,6 +576,16 @@ class PatchManager:
 
             patch_granitemoehybrid_modeling_packing()
 
+        from axolotl.monkeypatch.models.vision_patch_embed_linear import (
+            patch_vision_patch_embed_linear,
+            unpatch_vision_patch_embed_linear,
+        )
+
+        if self.cfg.vision_patch_embed_linear is not False:
+            patch_vision_patch_embed_linear(self.cfg.model_config_type)
+        else:
+            unpatch_vision_patch_embed_linear(self.cfg.model_config_type)
+
         # Patches requiring CUDA
         if torch.cuda.is_available():
             if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
@@ -661,16 +671,6 @@ class PatchManager:
                 )
 
                 patch_qwen3_vl_fused_attn()
-
-            from axolotl.monkeypatch.models.vision_patch_embed_linear import (
-                patch_vision_patch_embed_linear,
-                unpatch_vision_patch_embed_linear,
-            )
-
-            if self.cfg.vision_patch_embed_linear is not False:
-                patch_vision_patch_embed_linear(self.cfg.model_config_type)
-            else:
-                unpatch_vision_patch_embed_linear(self.cfg.model_config_type)
 
             if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
                 "qwen3_5",
