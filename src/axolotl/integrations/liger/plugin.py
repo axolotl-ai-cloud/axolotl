@@ -12,11 +12,10 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 _KERNEL_IMPL_ENV = "LIGER_KERNEL_IMPL"
-_UNSET = object()
-# env value before this plugin's first write, and what it last wrote — lets a
-# config that omits liger_kernel_impl undo a previous config's mutation (e.g.
+# env value before this plugin's last owned write, and what it last wrote — lets
+# a config that omits liger_kernel_impl undo a previous config's mutation (e.g.
 # one rejected by validation after register() already ran)
-_env_before_write = _UNSET
+_env_before_write: str | None = None
 _last_written: str | None = None
 
 LIGER_FLAGS = (
@@ -58,39 +57,54 @@ class LigerPlugin(BasePlugin):
         # liger reads LIGER_KERNEL_IMPL exactly once, at the first import of
         # liger_kernel.ops — setting it after that import is silently inert
         if "liger_kernel.ops" in sys.modules:
-            current = os.environ.get("LIGER_KERNEL_IMPL", "").strip().lower()
-            if current != impl:
+            # the env var is mutable after import, so compare against the backend
+            # liger actually loaded, not the current env value
+            loaded = LigerPlugin._loaded_kernel_impl()
+            if loaded != impl:
                 raise ValueError(
                     f"liger_kernel_impl: '{impl}' cannot take effect: liger_kernel.ops "
-                    "was already imported with a different backend. Another component "
-                    "imported liger before the Liger plugin ran; set the "
+                    f"was already imported with backend {loaded or 'default'!r}. Another "
+                    "component imported liger before the Liger plugin ran; set the "
                     "LIGER_KERNEL_IMPL env var before launching instead."
                 )
             return
         global _env_before_write, _last_written
-        if _env_before_write is _UNSET:
-            _env_before_write = os.environ.get(_KERNEL_IMPL_ENV)
+        current = os.environ.get(_KERNEL_IMPL_ENV)
+        if _last_written is None or current != _last_written:
+            # first write, or a foreign overwrite happened: that value is the new restore point
+            _env_before_write = current
         os.environ[_KERNEL_IMPL_ENV] = impl
         _last_written = impl
         LOG.info(f"Set LIGER_KERNEL_IMPL={impl} for liger kernel backend selection")
+
+    @staticmethod
+    def _loaded_kernel_impl() -> str | None:
+        # the applied impl's ops module is imported by _replace_with_impl_ops;
+        # its presence in sys.modules identifies the backend liger loaded with
+        from liger_kernel.ops.backends.registry import IMPL_REGISTRY
+
+        for name, info in IMPL_REGISTRY.items():
+            if info.module_path in sys.modules:
+                return name
+        return None
 
     @staticmethod
     def _restore_kernel_impl():
         import os
 
         global _env_before_write, _last_written
-        # only undo our own write, and only while the backend is still selectable
-        if (
-            _last_written is None
-            or "liger_kernel.ops" in sys.modules
-            or os.environ.get(_KERNEL_IMPL_ENV) != _last_written
-        ):
+        if _last_written is None or "liger_kernel.ops" in sys.modules:
+            return
+        if os.environ.get(_KERNEL_IMPL_ENV) != _last_written:
+            # foreign overwrite: relinquish ownership, never erase another component's value
+            _env_before_write = None
+            _last_written = None
             return
         if _env_before_write is None:
             os.environ.pop(_KERNEL_IMPL_ENV, None)
         else:
             os.environ[_KERNEL_IMPL_ENV] = _env_before_write
-        _env_before_write = _UNSET
+        _env_before_write = None
         _last_written = None
 
     def pre_model_load(self, cfg):

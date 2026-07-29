@@ -49,6 +49,25 @@ def fixture_cfg():
     )
 
 
+class TestPreparePluginsScope:
+    def test_skips_plugins_retained_from_previous_configs(self, minimal_liger_cfg):
+        from axolotl.integrations.base import PluginManager
+
+        calls = []
+
+        class StalePlugin:
+            def register(self, cfg):
+                calls.append(cfg)
+
+        manager = PluginManager.get_instance()
+        manager.plugins["tests.stale.StalePlugin"] = StalePlugin()
+        try:
+            prepare_plugins(DictDefault(dict(minimal_liger_cfg)))
+        finally:
+            manager.plugins.pop("tests.stale.StalePlugin", None)
+        assert not calls
+
+
 class TestValidation:
     """
     Test the validation module for liger
@@ -159,7 +178,7 @@ class TestKernelImplEnv:
 
         monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
         monkeypatch.setenv("LIGER_KERNEL_IMPL", "cutile")
-        monkeypatch.setattr(liger_plugin, "_env_before_write", liger_plugin._UNSET)
+        monkeypatch.setattr(liger_plugin, "_env_before_write", None)
         monkeypatch.setattr(liger_plugin, "_last_written", None)
 
         # a config sets cutedsl (e.g. then fails validation), the next one omits it
@@ -178,12 +197,61 @@ class TestKernelImplEnv:
 
         monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
         monkeypatch.setenv("LIGER_KERNEL_IMPL", "cutile")
-        monkeypatch.setattr(liger_plugin, "_env_before_write", liger_plugin._UNSET)
+        monkeypatch.setattr(liger_plugin, "_env_before_write", None)
         monkeypatch.setattr(liger_plugin, "_last_written", None)
 
         # user-set env value, no plugin write in this process: leave it alone
         LigerPlugin().register(DictDefault({}))
         assert os.environ["LIGER_KERNEL_IMPL"] == "cutile"
+
+    def test_foreign_overwrite_becomes_restore_point(self, monkeypatch):
+        import os
+        import sys
+
+        from axolotl.integrations.liger import plugin as liger_plugin
+        from axolotl.integrations.liger.plugin import LigerPlugin
+        from axolotl.utils.dict import DictDefault
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+        monkeypatch.setattr(liger_plugin, "_env_before_write", None)
+        monkeypatch.setattr(liger_plugin, "_last_written", None)
+
+        # unset -> plugin cutile -> foreign cutedsl -> plugin ascend -> omitted
+        LigerPlugin().register(DictDefault({"liger_kernel_impl": "cutile"}))
+        os.environ["LIGER_KERNEL_IMPL"] = "cutedsl"
+        LigerPlugin().register(DictDefault({"liger_kernel_impl": "ascend"}))
+        LigerPlugin().register(DictDefault({}))
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
+
+    def test_foreign_overwrite_relinquishes_ownership(self, monkeypatch):
+        import os
+        import sys
+
+        from axolotl.integrations.liger import plugin as liger_plugin
+        from axolotl.integrations.liger.plugin import LigerPlugin
+        from axolotl.utils.dict import DictDefault
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+        monkeypatch.setattr(liger_plugin, "_env_before_write", None)
+        monkeypatch.setattr(liger_plugin, "_last_written", None)
+
+        LigerPlugin().register(DictDefault({"liger_kernel_impl": "cutile"}))
+        os.environ["LIGER_KERNEL_IMPL"] = "cutedsl"
+        LigerPlugin().register(DictDefault({}))
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
+
+    def test_already_imported_checks_loaded_backend_not_env(self, monkeypatch):
+        import liger_kernel.ops.backends.registry as registry
+
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        # env matches the request, but liger imported with the default backend
+        monkeypatch.setenv("LIGER_KERNEL_IMPL", "cutedsl")
+        monkeypatch.setattr(registry, "IMPL_REGISTRY", {})
+        with pytest.raises(ValueError, match="already imported with backend"):
+            LigerPlugin._set_kernel_impl("cutedsl")
 
     def test_register_hook_sets_env_from_raw_cfg(self, monkeypatch):
         import os
@@ -246,13 +314,21 @@ class TestKernelImplEnv:
 
     def test_noop_when_liger_already_imported_with_same_backend(self, monkeypatch):
         import sys
-        import types
+
+        import liger_kernel.ops.backends.registry as registry
 
         from axolotl.integrations.liger.plugin import LigerPlugin
 
-        monkeypatch.setitem(
-            sys.modules, "liger_kernel.ops", types.ModuleType("liger_kernel.ops")
+        # simulate liger having actually loaded cutedsl: its impl module is imported
+        # (cutedsl may not self-register without nvidia-cutlass-dsl, so inject it)
+        info = registry.ImplInfo(
+            name="cutedsl", devices=("cuda",), module_path="tests.fake_cutedsl_ops"
         )
-        monkeypatch.setenv("LIGER_KERNEL_IMPL", "cutedsl")
+        monkeypatch.setitem(registry.IMPL_REGISTRY, "cutedsl", info)
+        monkeypatch.setitem(sys.modules, info.module_path, sys)
+        # cached submodule import doesn't re-import a popped parent package
+        import liger_kernel.ops  # noqa: F401
+
+        assert "liger_kernel.ops" in sys.modules
 
         LigerPlugin._set_kernel_impl("cutedsl")
