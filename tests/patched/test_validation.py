@@ -1271,6 +1271,22 @@ class TestValidation(BaseValidation):
         with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
             validate_config(cfg)
 
+    @pytest.mark.parametrize("truthy", ["true", 1])
+    def test_dpo_liger_kernel_coerced_true_still_guards_ipo(self, minimal_cfg, truthy):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": truthy,
+                    "dpo_loss_type": ["ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
+            validate_config(cfg)
+
     def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
         cfg = (
             DictDefault(
