@@ -913,6 +913,21 @@ class AxolotlInputConfig(
         },
     )
 
+    vision_patch_embed_linear: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Run the Qwen3-VL vision patch_embed Conv3d as its exact F.linear "
+                "equivalent (kernel_size == stride makes them the same GEMM). "
+                "~11x faster than cuDNN's conv3d for this shape and immune to "
+                "torch builds lacking cuDNN, where eager Conv3d falls back to "
+                "slow_conv_dilated3d (~2,500x slower). Weights and state_dict "
+                "are unchanged. Enabled by default for qwen3_vl; set false to "
+                "keep the stock Conv3d forward."
+            )
+        },
+    )
+
     experts_implementation: str | None = Field(
         default=None,
         json_schema_extra={
