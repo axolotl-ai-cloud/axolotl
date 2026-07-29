@@ -92,5 +92,5 @@ Healing needs tokens: ~1B is demo quality, ~10B is usable, 30B+ is where a conve
 model becomes generally good. Budget accordingly before starting a run.
 
 See [docs/ternary_conversion.qmd](../../../../docs/ternary_conversion.qmd) for the full
-config reference, recipes (pure QAT, KD-plugin teacher, in-process distillation) and the
+config reference, recipes (pure QAT and in-process teacher distillation) and the
 export/parity details.

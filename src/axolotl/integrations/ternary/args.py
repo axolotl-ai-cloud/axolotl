@@ -22,7 +22,10 @@ WeightScaleMode = Literal[
 ]
 LambdaSchedule = Literal["linear", "sigmoid", "none"]
 InitMode = Literal["absmean", "ternary_fit", "ternary_fit_calibrated", "svid"]
-DistillMode = Literal["kd_plugin", "inprocess"]
+DistillMode = Literal["inprocess"]
+
+# removed modes, kept only to answer for themselves — see `_validate_distill_mode`
+REMOVED_DISTILL_MODES: frozenset[str] = frozenset({"kd_plugin"})
 DistillSchedule = Literal["constant", "anchored"]
 HiddenLoss = Literal["cosine", "mse", "huber"]
 ExportFormat = Literal[
@@ -127,9 +130,10 @@ class TernaryDistillConfig(BaseModel):
     mode: DistillMode | None = Field(
         default=None,
         description=(
-            "Distillation path: null (pure QAT), 'kd_plugin' (compose with the KD "
-            "integration and a served/offline teacher), or 'inprocess' (frozen teacher "
-            "copy loaded beside the student)."
+            "Distillation path: null (pure QAT) or 'inprocess' (a frozen teacher "
+            "loaded beside the student). Healing wants full-vocab KL and the teacher's "
+            "activations, so the teacher has to be in the process — a served top-k "
+            "logprob teacher cannot supply either."
         ),
     )
     teacher_model: str | None = Field(
@@ -220,6 +224,27 @@ class TernaryDistillConfig(BaseModel):
         ),
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_modes(cls, data: Any) -> Any:
+        """Answer for `mode: kd_plugin` by name rather than as an enum failure."""
+        mode = data.get("mode") if isinstance(data, dict) else None
+        if mode not in REMOVED_DISTILL_MODES:
+            return data
+        raise ValueError(
+            f"ternary.distill.mode: {mode} has been removed. Healing needs losses a "
+            "served teacher cannot express: full-vocab KL (the KD integration ships "
+            "top-k logprobs, which truncates exactly the tail a quantized model has to "
+            "relearn) and the teacher's *activations* for hidden-state and "
+            "attention-relation feature-KD, which a logprob stream does not carry at "
+            "all. Use `ternary.distill.mode: inprocess`, which loads the frozen "
+            "teacher beside the student; set `ternary.distill.teacher_device_map: "
+            "auto` (or `cpu`) for a teacher that does not fit alongside it, and "
+            "`ternary.distill.schedule: anchored` to keep the run teacher-free until "
+            "the tail. The KD integration itself is unchanged and remains the right "
+            "tool for non-ternary logprob distillation"
+        )
+
     @model_validator(mode="after")
     def _validate_distill_mode(self) -> "TernaryDistillConfig":
         if self.mode is None:
@@ -232,18 +257,12 @@ class TernaryDistillConfig(BaseModel):
                     f"ternary.distill.schedule: {self.schedule} anchors a KD term that "
                     "a run without ternary.distill.mode never computes"
                 )
-            return self
-        if self.mode != "inprocess":
-            if self.hidden_weight > 0.0:
-                raise ValueError(
-                    "ternary.distill.hidden_weight is only supported with "
-                    "ternary.distill.mode: inprocess"
-                )
-            if self.attn_relation_layer is not None:
-                raise ValueError(
-                    "ternary.distill.attn_relation_layer is only supported with "
-                    "ternary.distill.mode: inprocess"
-                )
+            for knob in ("hidden_weight", "attn_relation_layer"):
+                if getattr(self, knob):
+                    raise ValueError(
+                        f"ternary.distill.{knob} is a teacher loss, and this run has "
+                        "no teacher; set ternary.distill.mode: inprocess"
+                    )
         return self
 
     @model_validator(mode="after")

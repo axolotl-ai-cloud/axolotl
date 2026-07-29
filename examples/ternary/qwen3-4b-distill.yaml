@@ -12,7 +12,8 @@ ternary:
   log_code_flip_every: 100
   distill:
     # a frozen FP copy of `teacher_model` is loaded beside the student, so this needs
-    # room for both; use `mode: kd_plugin` with a vllm-served teacher for larger ones
+    # room for both; for a teacher that does not fit, set `teacher_device_map: auto`
+    # (or `cpu`), or use `schedule: anchored` to stay teacher-free until the tail
     mode: inprocess
     teacher_model: Qwen/Qwen3-4B
     logits_weight: 0.5

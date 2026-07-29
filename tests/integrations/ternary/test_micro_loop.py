@@ -489,7 +489,8 @@ def test_prepare_plugins_rejects_conflicting_config(plugin_manager, override, ma
         prepare_plugins(cfg)
 
 
-def test_register_requires_the_kd_plugin_for_kd_distillation():
+def test_the_removed_kd_plugin_mode_is_refused_at_config_time():
+    """The plugin no longer defers to the KD integration; the schema says why."""
     cfg = DictDefault(
         {
             **MINIMAL_CONFIG,
@@ -498,11 +499,8 @@ def test_register_requires_the_kd_plugin_for_kd_distillation():
         }
     )
 
-    with pytest.raises(ValueError, match="KDPlugin"):
+    with pytest.raises(ValueError, match="has been removed"):
         TernaryPlugin().register(cfg)
-
-    cfg["plugins"] = [PLUGIN_PATH, "axolotl.integrations.kd.KDPlugin"]
-    TernaryPlugin().register(cfg)
 
 
 def test_register_recommends_save_only_model(caplog):
@@ -723,15 +721,14 @@ def test_post_train_unload_survives_a_torn_down_process_group(monkeypatch, tmp_p
     assert calls == [1]
 
 
-@pytest.mark.parametrize("mode", ["inprocess", "kd_plugin"])
-def test_register_rejects_distillation_on_the_rl_path(mode):
+def test_register_rejects_distillation_on_the_rl_path():
     cfg = DictDefault(
         {
             "base_model": "meta-llama/Llama-3.2-1B",
             "rl": "dpo",
             "save_only_model": True,
-            "plugins": [PLUGIN_PATH, "axolotl.integrations.kd.KDPlugin"],
-            "ternary": {"distill": {"mode": mode}},
+            "plugins": [PLUGIN_PATH],
+            "ternary": {"distill": {"mode": "inprocess"}},
         }
     )
 

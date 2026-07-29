@@ -323,7 +323,7 @@ Under `ternary.distill`:
 
 | Option | Default | Description |
 |---|---|---|
-| `mode` | `null` | `null` (pure QAT), `kd_plugin` (compose with the KD integration), `inprocess` (frozen teacher loaded beside the student). |
+| `mode` | `null` | `null` (pure QAT) or `inprocess` (a frozen teacher loaded beside the student). Healing needs full-vocab KL and the teacher's activations, so the teacher runs in-process — see [Teacher options](#teacher-options). |
 | `teacher_model` | `base_model` | Teacher checkpoint. Defaults to the unquantized base you are converting. |
 | `teacher_device_map` | `null` | `device_map` for the `inprocess` teacher (e.g. `auto`, `cpu`) so a teacher that does not fit beside the student can be offloaded. |
 | `logits_weight` | `0.5` | Mixing coefficient between CE and logits-KD: `(1 - w)·CE + w·τ²·KL`. Must be in `[0, 1]`. Pure KD (`1.0`) matches the teacher's temperature-flattened tails at the expense of head sharpness — on short heals it measures better on teacher-KL but worse on perplexity than the CE blend, so reserve it for long OneBit-style distillation runs. |
@@ -367,27 +367,69 @@ mix, the GGUF artifacts get int8 embeddings and the others are logged as exempt.
 **No teacher (`distill.mode: null`).** Pure QAT on next-token loss. Simplest, cheapest per
 step, and the recipe the token-budget table above is calibrated for. Start here.
 
-**`distill.mode: kd_plugin`.** Compose with axolotl's existing
-[KD integration](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/kd):
-serve the FP base with [`axolotl vllm-serve`](vllm_serving.qmd) or precompute an offline
-top-k logprob dataset, and run the KD trainer against the swapped model. This is the
-memory-cheap path and the recommendation for teachers at 7B and above, since the teacher
-never has to sit in the training process.
-
-**`distill.mode: inprocess`.** A frozen copy of `teacher_model` is loaded beside the
-student and runs under `no_grad` in eval mode. The loss is cross-entropy plus a chunked
-logits-KD term (computed per vocab-chunk so a 128k+ vocabulary does not blow up memory),
-optionally plus cosine hidden-state KD and single-layer attention-relation KD. Use it for
-teachers up to ~4B, or on boxes with GPUs to spare.
+**`distill.mode: inprocess`.** The teacher path. A frozen copy of `teacher_model`
+(defaulting to `base_model`, i.e. the unquantized model you are converting) is loaded
+beside the student and runs under `no_grad` in eval mode. The loss is cross-entropy
+blended with a chunked full-vocab logits-KL term, optionally plus hidden-state feature-KD
+and single-layer attention-relation KD.
 
 ```yaml
 ternary:
   distill:
     mode: inprocess
-    logits_weight: 0.5
+    logits_weight: 0.5        # (1 - w)·CE + w·τ²·KL
     logits_temperature: 2.0
-    hidden_weight: 0.1
+    hidden_weight: 0.1        # 0 disables the feature term
+    hidden_loss: cosine       # cosine | mse | huber
 ```
+
+**The loss menu.**
+
+- *Logits KL* — computed per vocab-chunk from the hidden states and the head, so a 128k+
+  vocabulary never materializes a full `(tokens, vocab)` logits pair. `logits_weight`
+  mixes it against CE; `logits_temperature` flattens both distributions before the KL.
+- *Hidden-state feature-KD* (`hidden_weight`, `hidden_loss`) — `cosine` matches direction
+  and ignores the outlier channels that dominate a residual stream; `mse` is
+  magnitude-aware, which is the argument for it, since those magnitudes set the mixing
+  ratio between blocks; `huber` keeps the magnitude sensitivity with outlier influence
+  bounded past `hidden_huber_delta`.
+- *Attention-relation KD* (`attn_relation_layer`) — experimental, MiniLM-style relations
+  on one late layer. Sensitive to the layer choice; leave it off unless you are ablating.
+
+**Memory.** The teacher is a second full-precision model in the process, which is the
+cost of this design. Three knobs manage it:
+
+- `teacher_device_map: auto` or `cpu` offloads a teacher that does not fit beside the
+  student. The chunked KD runs the teacher's head on the teacher's own device and ships
+  only per-chunk log-probs back, so an offloaded teacher never copies its `(vocab,
+  hidden)` head across the bus.
+- `schedule: anchored` turns the KD term on only for the last `1 - anchor_start` of the
+  run. Those earlier steps are then not merely CE-weighted but *teacher-free*: nothing
+  loads the teacher until the anchor ramp starts, so the bulk of the heal runs at
+  pure-QAT memory.
+- Falling back to `mode: null` and healing longer is always available, and for very large
+  teachers on small boxes it is often the better trade.
+
+::: {.callout-note}
+## Why not the KD integration?
+
+Axolotl ships a [KD integration](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/kd)
+that distills from a served or precomputed teacher, and `ternary` used to compose with it.
+It no longer does — not because that integration is lacking, but because its loss shape is
+the wrong one for healing.
+
+A served teacher ships **top-k logprobs**. Healing a quantized model is precisely the job
+of relearning the distribution's tail: the ternary grid perturbs every logit, and the mass
+that moves is spread across the vocabulary, not concentrated in the top-k the stream
+carries. Worse, a logprob stream carries no **activations** at all, so the hidden-state and
+attention-relation feature-KD terms — the ones with the strongest published evidence for
+low-bit healing — cannot be expressed against it in any form.
+
+Both losses need the teacher's forward pass in the process, on the same tokens, at the same
+time as the student's. That is what `mode: inprocess` is, and it is the right design for
+this problem rather than a workaround for a missing server. The KD integration is unchanged
+and remains the right tool for the logprob-distillation use cases it was built for.
+:::
 
 ## Export formats
 

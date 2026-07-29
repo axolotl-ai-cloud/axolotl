@@ -1,5 +1,7 @@
 """CPU-only schema-validation tests for the ternary plugin config."""
 
+from typing import get_args
+
 import pydantic
 import pytest
 
@@ -366,9 +368,9 @@ def test_distill_teacher_requires_mode():
 
 
 @pytest.mark.parametrize("knob", [{"hidden_weight": 0.5}, {"attn_relation_layer": -1}])
-def test_inprocess_only_distill_knobs_rejected_for_kd_plugin(knob):
-    with pytest.raises(pydantic.ValidationError, match="mode: inprocess"):
-        TernaryConfig(distill={"mode": "kd_plugin", **knob})
+def test_teacher_losses_are_rejected_without_a_teacher(knob):
+    with pytest.raises(pydantic.ValidationError, match="no teacher"):
+        TernaryConfig(distill=knob)
 
 
 def test_distill_temperature_must_be_positive():
@@ -381,10 +383,9 @@ def test_anchored_schedule_requires_a_distill_mode():
         TernaryConfig(distill={"schedule": "anchored"})
 
 
-@pytest.mark.parametrize("mode", ["kd_plugin", "inprocess"])
-def test_anchored_schedule_accepted_with_a_mode(mode):
+def test_anchored_schedule_accepted_with_a_mode():
     cfg = TernaryConfig(
-        distill={"mode": mode, "schedule": "anchored", "anchor_start": 0.95}
+        distill={"mode": "inprocess", "schedule": "anchored", "anchor_start": 0.95}
     )
 
     assert cfg.distill.schedule == "anchored"
@@ -567,12 +568,32 @@ def test_an_unknown_hidden_loss_is_rejected():
         _distill(hidden_weight=0.5, hidden_loss="kullback")
 
 
-def test_a_hidden_loss_still_needs_the_inprocess_mode():
-    with pytest.raises(pydantic.ValidationError, match="only supported with"):
-        TernaryConfig(
-            distill={
-                "mode": "kd_plugin",
-                "hidden_weight": 0.5,
-                "hidden_loss": "mse",
-            }
-        )
+def test_a_hidden_loss_still_needs_a_teacher():
+    with pytest.raises(pydantic.ValidationError, match="no teacher"):
+        TernaryConfig(distill={"hidden_weight": 0.5, "hidden_loss": "mse"})
+
+
+# ------------------------------------------------------------ removed modes
+
+
+def test_the_removed_kd_plugin_mode_explains_itself():
+    """A migration message, not an anonymous enum failure."""
+    with pytest.raises(pydantic.ValidationError) as caught:
+        TernaryConfig(distill={"mode": "kd_plugin"})
+
+    message = str(caught.value)
+    assert "has been removed" in message
+    # why it went
+    assert "full-vocab KL" in message and "activations" in message
+    # what to do instead, including the memory escape hatches
+    assert "mode: inprocess" in message
+    assert "teacher_device_map" in message and "anchored" in message
+    # and that the KD integration itself is still there
+    assert "KD integration itself is unchanged" in message
+
+
+def test_the_removed_mode_is_not_a_valid_enum_value():
+    from axolotl.integrations.ternary.args import REMOVED_DISTILL_MODES, DistillMode
+
+    assert get_args(DistillMode) == ("inprocess",)
+    assert "kd_plugin" in REMOVED_DISTILL_MODES

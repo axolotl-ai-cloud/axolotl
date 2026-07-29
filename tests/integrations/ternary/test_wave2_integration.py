@@ -353,21 +353,6 @@ def test_the_forwarded_keys_are_fields_of_the_training_args_mixin():
     )
 
 
-def test_the_anchored_schedule_warns_where_only_kd_plugin_would_read_it(caplog):
-    """The schema accepts the pair; only the in-process trainer honours the anchor."""
-    plugin = TernaryPlugin()
-    cfg = {
-        "plugins": ["axolotl.integrations.kd.KDPlugin"],
-        "save_only_model": True,
-        "ternary": {"distill": {"mode": "kd_plugin", "schedule": "anchored"}},
-    }
-
-    with caplog.at_level("WARNING"):
-        plugin.register(cfg)
-
-    assert any("schedule: anchored" in record.message for record in caplog.records)
-
-
 def test_the_default_schedule_is_forwarded_unchanged():
     plugin = TernaryPlugin()
     cfg = DictDefault(

@@ -23,8 +23,6 @@ if TYPE_CHECKING:
 
 LOG = get_logger(__name__)
 
-KD_PLUGIN_PATH = "axolotl.integrations.kd.KDPlugin"
-
 __all__ = [
     "TernaryArgs",
     "TernaryConfig",
@@ -78,9 +76,8 @@ class TernaryPlugin(BasePlugin):
 
         Rejects adapters and any co-set quantization path (`use_onebitllms`, `qat`,
         `quantization`, `load_in_*bit`), requires torch >= 2.6 (the QAT floor),
-        requires the KD plugin alongside `distill.mode: kd_plugin`, and recommends
-        `save_only_model: true` so optimizer state is not written beside the baked
-        master.
+        keeps the teacher losses off the RL path, and recommends `save_only_model:
+        true` so optimizer state is not written beside the baked master.
         """
         if cfg.get("adapter"):
             raise ValueError(
@@ -102,8 +99,7 @@ class TernaryPlugin(BasePlugin):
                 f"ternary conversion requires torch >= 2.6.0, found {torch_version}"
             )
 
-        distill_cfg = resolve_ternary_config(cfg).distill
-        distill_mode = distill_cfg.mode
+        distill_mode = resolve_ternary_config(cfg).distill.mode
         if distill_mode and cfg.get("rl"):
             raise ValueError(
                 f"ternary.distill.mode: {distill_mode} heals a causal-LM next-token "
@@ -111,23 +107,6 @@ class TernaryPlugin(BasePlugin):
                 "ternary.distill (pure QAT works on the RL path) or drop `rl:`"
             )
 
-        plugins = cfg.get("plugins") or []
-        if distill_mode == "kd_plugin" and not any(
-            str(name).endswith("KDPlugin") for name in plugins
-        ):
-            raise ValueError(
-                "ternary.distill.mode: kd_plugin heals against a teacher served by the "
-                f"KD integration; add {KD_PLUGIN_PATH} to `plugins:` and configure it, "
-                "or use ternary.distill.mode: inprocess"
-            )
-
-        if distill_mode != "inprocess" and distill_cfg.schedule != "constant":
-            LOG.warning(
-                f"ternary: distill.schedule: {distill_cfg.schedule} is read by the "
-                f"in-process distillation trainer only; under distill.mode: "
-                f"{distill_mode} the KD integration owns the loss and its weighting, "
-                "so the anchor will not take effect"
-            )
         if cfg.get("torch_compile"):
             LOG.warning(
                 "ternary: `torch_compile` is untested against the fake-quant forward; "
