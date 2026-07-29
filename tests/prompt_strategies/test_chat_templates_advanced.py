@@ -1953,8 +1953,8 @@ class TestTurnSpansThinking:
             {"role": "assistant", "content": "done"},
         ]
 
-        # The middle turn's reasoning is dropped from the render, so only the two
-        # assistant contents are trainable: no control tokens, no user content.
+        # The middle turn's reasoning is dropped from the render, leaving only the
+        # two assistant contents trainable.
         assert (
             _turn_span_trained_text(strategy, qwen3_tokenizer, turns)
             == "The answer is done.done"
@@ -2024,12 +2024,7 @@ class TestTurnSpansLocator:
         ],
     )
     def test_edge_chars_not_absorbed(self, llama3_tokenizer, content):
-        """Content sharing edge chars with a placeholder must keep its full span.
-
-        A single placeholder lets the template glue a shared edge char onto it,
-        absorbing it into the diff's common prefix/suffix; the second, edge-disjoint
-        placeholder exposes it again.
-        """
+        """Content sharing edge chars with a placeholder must keep its full span."""
         strategy = _turn_span_strategy(llama3_tokenizer)
         turns = [
             {"role": "user", "content": "go"},
@@ -2039,8 +2034,8 @@ class TestTurnSpansLocator:
         assert _turn_span_trained_text(strategy, llama3_tokenizer, turns) == content
 
     def test_sentinels_have_disjoint_edges(self):
-        """The union fix only works if no content char can collide with both
-        placeholders on the same side, i.e. their first and last chars all differ."""
+        """The union fix relies on no content char colliding with both placeholders
+        on the same side, i.e. their first and last chars all differ."""
         firsts = [sentinel[0] for sentinel in ChatTemplateStrategy._SENTINELS]
         lasts = [sentinel[-1] for sentinel in ChatTemplateStrategy._SENTINELS]
         assert len(set(firsts)) == len(firsts)
@@ -2092,8 +2087,8 @@ class TestTurnSpansLocator:
         assert _turn_span_trained_text(strategy, llama3_tokenizer, turns) == "pong"
 
     def test_falls_back_when_render_mismatches_ids(self, llama3_tokenizer, monkeypatch):
-        """If the text render doesn't re-tokenize to input_ids, char spans would
-        index the wrong sequence, so the locator has to bail to the token diff."""
+        """A render that doesn't re-tokenize to input_ids would index the wrong
+        sequence, so the locator has to bail to the token diff."""
         strategy = _turn_span_strategy(llama3_tokenizer)
         turns = [
             {"role": "user", "content": "ping"},

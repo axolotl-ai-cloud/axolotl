@@ -174,9 +174,8 @@ class ChatTemplatePrompter(Prompter):
     ) -> str | None:
         """Render a conversation to text without tokenizing.
 
-        Returns ``None`` when the render can't be mapped back to token offsets, i.e.
-        a processor is in play (it splices in image/audio tokens that have no
-        counterpart in the text).
+        Returns ``None`` under a processor, whose spliced-in image/audio tokens have
+        no text counterpart to map offsets back from.
         """
         if self.processor:
             return None
@@ -695,11 +694,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return -1
 
     def _log_fallback_once(self, reason: str):
-        """Note, once per worker, why the fast char-space path is unavailable.
-
-        Preprocessing forks per ``num_proc``, so this fires up to ``num_proc`` times
-        rather than exactly once.
-        """
+        """Log why the char-space path is unavailable, once per ``num_proc`` worker."""
         seen = self.__dict__.setdefault("_logged_fallbacks", set())
         if reason not in seen:
             seen.add(reason)
@@ -714,8 +709,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         """Render and tokenize the conversation once so turns can be located in char space.
 
         Returns ``(rendered_text, token_starts, token_ends)``, or ``None`` when the
-        render can't be trusted to line up with ``input_ids`` and ``find_turn`` has to
-        fall back to diffing tokens.
+        render can't be trusted to line up with ``input_ids``.
         """
         if not getattr(self.tokenizer, "is_fast", False):
             self._log_fallback_once("tokenizer is not a fast tokenizer")
@@ -729,8 +723,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         encoded = self.tokenizer(
             full_text, add_special_tokens=False, return_offsets_mapping=True
         )
-        # Spans are used to index into input_ids, so bail unless re-tokenizing the
-        # render reproduces it exactly.
+        # Spans index into input_ids, so the render must re-tokenize to it exactly.
         if list(encoded["input_ids"]) != list(input_ids):
             self._log_fallback_once("re-tokenized render does not match input_ids")
             return None
@@ -738,15 +731,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         offsets = encoded["offset_mapping"]
         return full_text, [s for s, _ in offsets], [e for _, e in offsets]
 
-    # Chunk size for the char-space diff. Comparing block slices keeps the scan in C;
-    # a per-character Python loop here costs more than the tokenization it saves.
+    # Block compares keep the diff scan in C; a per-char Python loop would cost more
+    # than the tokenization it saves.
     _DIFF_BLOCK = 4096
 
-    # Placeholders diffed against the real turn. They share no first or last
-    # character, so an edge char a template glues onto one placeholder (absorbing it
-    # into the diff's common prefix/suffix) is still exposed by the other; the union
-    # of both spans is the true span. Only one field is ever replaced at a time, so a
-    # single string per placeholder covers both content and reasoning.
+    # Two placeholders with disjoint first/last chars: a template can glue a shared
+    # edge char onto one placeholder, hiding it in the diff's common prefix/suffix,
+    # but the other then exposes it. The union of both spans is the true span.
     _SENTINELS = ("[[dummy_message]]", "zzdummymessagezz")
 
     @classmethod
@@ -758,7 +749,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         """
 
         def prefix_len(left: str, right: str, limit: int) -> int:
-            # Block compares stay in C; the char loop only refines the final block.
             block, i = cls._DIFF_BLOCK, 0
             while i + block <= limit and left[i : i + block] == right[i : i + block]:
                 i += block
@@ -784,11 +774,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         Every render keeps the turn at its original index, so position-dependent
         template logic (thinking stripped from non-final turns, tool-call collapsing)
-        applies identically to each and cancels out in the diff.
+        cancels out in the diff.
 
-        Three-valued return: ``None`` means "can't resolve here, fall back to the
-        token diff"; ``(-1, -1)`` means "resolved, but the field is absent from the
-        render so there is nothing to label"; a span means the content tokens.
+        Returns ``None`` to fall back to the token diff, ``(-1, -1)`` when the field
+        is absent from the render, otherwise the token span.
         """
         full_text, token_starts, token_ends = locator
 
@@ -804,17 +793,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 return None
             spans.append(self._diff_char_span(full_text, dummy_text))
 
-        # A diff never extends past the real content (identical template on both
-        # sides), so absorbed edge chars only shrink a span; the widest span across
-        # edge-disjoint sentinels recovers the truth.
+        # The template is identical on both sides, so a span can only come out too
+        # small; the widest across edge-disjoint sentinels is the true one.
         char_start = min(start for start, _ in spans)
         char_end = max(end for _, end in spans)
         if char_end <= char_start:
             return -1, -1
 
-        # BPE can split one character across tokens sharing an offset, so the
-        # exclusive end comes from starts, not ends: bisecting ends would drop the
-        # trailing piece of a multi-token character.
+        # BPE can split one char across tokens sharing an offset, so the exclusive
+        # end bisects starts: bisecting ends would drop the char's trailing piece.
         start_idx = bisect_right(token_ends, char_start)
         end_idx = bisect_left(token_starts, char_end)
         if start_idx >= len(token_ends) or end_idx > len(token_ends):
@@ -831,10 +818,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     ) -> tuple[int, int] | None:
         """Locate a turn by re-tokenizing the conversation prefix twice.
 
-        Fallback for renders that can't be mapped to char offsets (processors, slow
-        tokenizers). Costs a full tokenization per turn, and because it renders a
-        prefix rather than the whole conversation it can't see position-dependent
-        template logic — prefer ``_find_turn_from_text`` whenever a locator exists.
+        Fallback for renders with no char offsets (processors, slow tokenizers). Costs
+        a tokenization per turn and, rendering only a prefix, misses position-dependent
+        template logic.
         """
         real_last_index = len(turns) - 1
 
@@ -886,13 +872,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         thinking_key = self.prompter.template_thinking_key
 
         if reasoning_only:
-            # Keep content as-is, replace reasoning with the placeholder.
             dummy_turn = {"role": turn.get("role"), "content": turn.get("content", "")}
             if thinking_key and thinking_key in turn:
                 dummy_turn[thinking_key] = sentinel
             return dummy_turn
 
-        # Replace content; keep reasoning when content_only so the diff excludes it.
+        # Keep reasoning under content_only so the diff excludes it.
         dummy_turn = {"role": turn.get("role"), "content": sentinel}
         if content_only and thinking_key and thinking_key in turn:
             dummy_turn[thinking_key] = turn[thinking_key]
@@ -918,7 +903,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             reasoning_only: If True, preserve content in the dummy turn and replace
                 reasoning_content with a dummy, so the diff only captures the
                 reasoning_content field boundaries.
-            locator: Prepared render from ``_build_turn_locator``. When supplied the
+            locator: Prepared render from ``_build_turn_locator``. When supplied,
                 boundaries are diffed in char space instead of by re-tokenizing.
         """
 
