@@ -25,7 +25,13 @@ import torch
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
+from axolotl.integrations.kd.utils import LOGPROB_PAD_VALUE
 from axolotl.utils.collators.batching import DataCollatorForSeq2Seq
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
+KD_TARGET_FIELDS = ("target_logprobs", "target_token_ids", "target_mask")
 
 
 @dataclass
@@ -46,13 +52,140 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+    # a mis-declared alignment shows up as the alternative hypothesis explaining the
+    # labels much better than the declared one; requiring both a ratio and an absolute
+    # gap over a minimum number of positions keeps a noisy teacher from tripping it
+    ALIGNMENT_WARN_RATIO: float = 1.5
+    ALIGNMENT_WARN_GAP: float = 0.1
+    ALIGNMENT_MIN_POSITIONS: int = 64
+    ALIGNMENT_MAX_BATCHES: int = 8
 
-    def __call__(self, features, return_tensors=None):
+    def __init__(self, *args, **kwargs):
+        alignment = kwargs.pop("kd_prepared_targets_alignment", None)
+        super().__init__(*args, **kwargs)
+        self.kd_prepared_targets_alignment = alignment or "current"
+        self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+        self._alignment_checked = False
+        self._alignment_check_batches = 0
+
+    def realign_prepared_targets(self, features) -> None:
+        """
+        Compensate for baked target_* columns that use the legacy convention, where row
+        ``j`` holds the distribution over token ``j`` instead of token ``j + 1``.
+
+        Applied per sequence, before packing, so rows never cross a sequence boundary.
+        """
+        if self.kd_prepared_targets_alignment != "legacy":
+            return
+
+        for feature in features:
+            if any(
+                feature.get(field) is None or len(feature[field]) == 0
+                for field in KD_TARGET_FIELDS
+            ):
+                continue
+            for field, pad_value in zip(
+                KD_TARGET_FIELDS, (LOGPROB_PAD_VALUE, 0, 0), strict=True
+            ):
+                rows = feature[field]
+                shifted = list(rows[1:])
+                shifted.append([pad_value] * len(rows[0]))
+                feature[field] = shifted
+
+    @staticmethod
+    def _alignment_stats(
+        labels, target_token_ids, target_probs, slot_valid, valid, offset, horizon
+    ) -> tuple[float, float]:
+        """
+        How well the teacher rows explain the tokens ``offset`` positions ahead:
+        (mean probability mass on that token, rate at which it is in the stored top-k).
+
+        Mass and containment are used instead of top-1 equality because a dataset
+        sampled at temperature/top-p (or scored over text the teacher never generated)
+        routinely has the actual token outside the teacher's argmax, which would make a
+        top-1 statistic look mis-aligned even when it is not.
+        """
+        target = labels[:, offset : offset + horizon].unsqueeze(-1)
+        hits = (target_token_ids[:, :horizon] == target) & slot_valid[:, :horizon]
+
+        mass = (target_probs[:, :horizon] * hits).sum(-1)
+        contained = hits.any(-1)
+
+        n_valid = max(1, int(valid.sum().item()))
+        return (
+            mass[valid].sum().item() / n_valid,
+            contained[valid].sum().item() / n_valid,
+        )
+
+    def _check_target_alignment(
+        self, labels, target_token_ids, target_logprobs, target_mask
+    ) -> None:
+        """
+        Sanity-check the declared alignment against the labels once, cheaply: the teacher
+        puts far more mass on the token a row actually describes than on its neighbours,
+        so a mis-declared dataset is visible in a single batch.
+        """
+        if self._alignment_checked or not torch.is_tensor(labels):
+            return
+
+        self._alignment_check_batches += 1
+        # after compensation every dataset should be in the current convention; an
+        # over-shifted (declared legacy, actually current) dataset lands one further out
+        alt_offset = 0 if self.kd_prepared_targets_alignment == "current" else 2
+        horizon = labels.shape[1] - max(1, alt_offset)
+        if horizon <= 0:
+            return
+
+        slot_valid = target_mask > 0
+        valid = slot_valid[:, :horizon, 0]
+        n_valid = int(valid.sum().item())
+        if n_valid < self.ALIGNMENT_MIN_POSITIONS:
+            if self._alignment_check_batches >= self.ALIGNMENT_MAX_BATCHES:
+                self._alignment_checked = True
+            return
+
+        self._alignment_checked = True
+
+        # renormalize the stored slice so the statistic is comparable whether or not the
+        # producer normalized the top-k, and so padded slots carry no mass
+        probs = torch.softmax(
+            target_logprobs.float().masked_fill(~slot_valid, float("-inf")), dim=-1
+        )
+        probs = torch.nan_to_num(probs)
+
+        declared_mass, declared_containment = self._alignment_stats(
+            labels, target_token_ids, probs, slot_valid, valid, 1, horizon
+        )
+        alt_mass, alt_containment = self._alignment_stats(
+            labels, target_token_ids, probs, slot_valid, valid, alt_offset, horizon
+        )
+
+        if (
+            alt_mass > self.ALIGNMENT_WARN_RATIO * declared_mass
+            and alt_mass - declared_mass >= self.ALIGNMENT_WARN_GAP
+        ):
+            suggested = (
+                "legacy"
+                if self.kd_prepared_targets_alignment == "current"
+                else "current"
+            )
+            LOG.warning(
+                "KD teacher targets look mis-aligned: with "
+                f"kd_prepared_targets_alignment={self.kd_prepared_targets_alignment!r} the "
+                f"teacher puts {declared_mass:.1%} of its mass on the token each row "
+                f"should describe (top-k containment {declared_containment:.1%}), but "
+                f"{alt_mass:.1%} on the token {alt_offset - 1:+d} positions away "
+                f"(containment {alt_containment:.1%}), over {n_valid} positions. "
+                "If this dataset was prepared by an older axolotl, set "
+                f"kd_prepared_targets_alignment: {suggested}"
+            )
+
+    def __call__(self, features, return_tensors=None, targets_realigned=False):
         if return_tensors is None:
             return_tensors = self.return_tensors
+
+        if not targets_realigned:
+            self.realign_prepared_targets(features)
 
         padding_side = self.tokenizer.padding_side
         max_len = 0
@@ -187,6 +320,12 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
             features["target_logprobs"] = padded_target_logprobs
             features["target_token_ids"] = padded_target_token_ids
             features["target_mask"] = padded_teacher_mask_list
+            self._check_target_alignment(
+                features.get("labels"),
+                padded_target_token_ids,
+                padded_target_logprobs,
+                padded_teacher_mask_list,
+            )
 
         # Prepare decoder_input_ids if the model supports it
         if (
@@ -208,7 +347,7 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
     Adapts DataCollatorForKD so it can pack multiple sequences in a single batch item.
     """
 
-    def __call__(self, features, return_tensors=None):
+    def __call__(self, features, return_tensors=None, targets_realigned=False):
         """
         Expects that `features` could be either:
           - a single list of dicts, OR
@@ -217,7 +356,18 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
         # 1) If we are *not* dealing with multiple sequences per batch element,
         #    just pass straight to parent.
         if not isinstance(features[0], list):
-            return super().__call__(features, return_tensors=return_tensors)
+            return super().__call__(
+                features,
+                return_tensors=return_tensors,
+                targets_realigned=targets_realigned,
+            )
+
+        # realign per sequence, before the sub-batches are concatenated, so a shifted row
+        # never crosses into the neighbouring sequence
+        if not targets_realigned:
+            for sub_features in features:
+                self.realign_prepared_targets(sub_features)
+            targets_realigned = True
 
         # 2) Otherwise, we *are* dealing with multiple sequences in each batch item.
         #    We want to produce a single "merged" feature dict for each sub-batch.
@@ -271,4 +421,8 @@ class KDBatchSamplerDataCollatorForSeq2Seq(DataCollatorForKD):
         #    - padding of labels/position_ids
         #    - KD-specific padding for target_logprobs, target_token_ids, etc.
         #    - final conversion to return_tensors
-        return super().__call__(out_features, return_tensors=return_tensors)
+        return super().__call__(
+            out_features,
+            return_tensors=return_tensors,
+            targets_realigned=targets_realigned,
+        )

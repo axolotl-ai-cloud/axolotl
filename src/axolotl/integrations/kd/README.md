@@ -27,6 +27,60 @@ datasets:
 
 An example dataset can be found at [`axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample`](https://huggingface.co/datasets/axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample)
 
+## Pre-prepared datasets and `kd_prepared_targets_alignment`
+
+Datasets whose `target_logprobs` / `target_token_ids` / `target_mask` columns were baked
+ahead of time (typically used with `skip_prepare_dataset: true`) carry whichever row
+alignment the axolotl version that prepared them used:
+
+| value | meaning | who produces it |
+| --- | --- | --- |
+| `current` (default) | row `j` holds the teacher distribution over token `j + 1` | axolotl > 0.18.0, and every online teacher |
+| `legacy` | row `j` holds the distribution over token `j` | axolotl <= 0.18.0 |
+
+`legacy` datasets are one position out of step with what the loss consumes. Rather than
+rebuilding them — teacher logprobs are expensive to produce — declare the convention and
+the collator shifts the rows into place per sequence at collation time:
+
+```yaml
+kd_trainer: True
+skip_prepare_dataset: true
+kd_prepared_targets_alignment: legacy
+```
+
+This applies to any dataset prepared before the alignment fix, including the published
+`winglian/OpenThoughts-*-prepared-*` sets. Re-preparing the dataset with a current axolotl
+is the alternative; freshly prepared data is `current` and needs no knob. The shift is a
+per-sequence slice done before packing (so rows never cross a sequence boundary), costs
+nothing measurable, and never mutates the dataset on disk.
+
+### Alignment detector
+
+On the first batch that has enough unmasked positions, the collator checks the declared
+alignment against the labels and logs a warning — never a hard failure — if the data looks
+mis-declared. It compares two hypotheses on the same batch:
+
+- **probability mass**: how much of the stored top-k distribution (renormalized over the
+  stored slice, padded slots excluded) sits on the token a row should describe;
+- **top-k containment**: how often that token appears anywhere in the stored top-k.
+
+Top-1 equality is deliberately *not* used: a dataset sampled with temperature or top-p, or
+one where the teacher scored text it never generated, routinely has the actual token
+outside the teacher's argmax, which would make correctly-aligned data look broken. Mass and
+containment degrade gracefully in those cases while still separating the hypotheses
+sharply.
+
+The warning fires only when the alternative hypothesis beats the declared one by both a
+ratio (1.5x) and an absolute margin (0.10 mass), over at least 64 valid positions, and it
+reports both hypotheses' numbers so the call is yours:
+
+```
+KD teacher targets look mis-aligned: with kd_prepared_targets_alignment='current' the
+teacher puts 10.6% of its mass on the token each row should describe (top-k containment
+33.3%), but 32.9% on the token -1 positions away (containment 100.0%), over 84 positions.
+If this dataset was prepared by an older axolotl, set kd_prepared_targets_alignment: legacy
+```
+
 ## Online teacher
 
 The teacher is queried for prompt logprobs at collation time, so no logprobs need to be
@@ -55,11 +109,18 @@ sample_packing: true
 The teacher must be a **stock OpenAI-compatible vLLM server with prefix caching off**:
 
 ```bash
-vllm serve <teacher-model> --port 8000 --no-enable-prefix-caching
+vllm serve <teacher-model> --port 8000 \
+  --max-logprobs <kd_online_topk> \
+  --no-enable-prefix-caching
 ```
 
-Prefix caching has to be disabled because prompt logprobs are not produced for cached
-prefix blocks.
+Both flags are required:
+
+- **`--max-logprobs >= kd_online_topk`**. vLLM's default cap is 20; asking for more makes
+  the server reject *every* request with
+  `Requested prompt logprobs of N, which is greater than max allowed: 20`.
+- **`--no-enable-prefix-caching`**, because prompt logprobs are not produced for cached
+  prefix blocks.
 
 `axolotl vllm-serve` **cannot** be used here: it starts the weight-syncing server used by
 GRPO/EBFT, which exposes neither `/v1/completions` nor `prompt_logprobs`.
@@ -75,7 +136,28 @@ the student must share a tokenizer/vocabulary, since teacher token ids are used 
 gather student logits.
 
 For sglang (`kd_online_server: sglang`) the equivalent `/generate` request is sent with
-`return_logprob`, `top_logprobs_num` and `max_new_tokens: 0`.
+`return_logprob`, `top_logprobs_num` and `max_new_tokens: 0`; the server must allow at least
+`kd_online_topk` top logprobs per position and run with `--disable-radix-cache`.
+
+### Startup preflight
+
+Before training starts — in the main process, before any dataloader worker exists — the
+collator sends a single 3-token probe to the teacher and checks connectivity, the response
+contract, and that the server actually returns `kd_online_topk` logprobs per position. A
+teacher that cannot serve the config fails the run immediately, quoting the server's own
+error and the remedy, instead of failing once per batch inside every worker:
+
+```
+TeacherRequestError: the online teacher rejected the request with HTTP 400
+(http://teacher:8000/v1/completions): {"object": "error", "message": "Requested prompt
+logprobs of 64, which is greater than max allowed: 20", ...}. The teacher must be a stock
+OpenAI-compatible `vllm serve` started with --max-logprobs >= kd_online_topk (64) and
+--no-enable-prefix-caching.
+```
+
+Rejected requests (any 4xx) are never retried at any point — a configuration error cannot be
+fixed by trying again, and retrying it turns a fast failure into a silent stall. Set
+`kd_online_preflight: false` to skip the probe.
 
 ## Temperature
 
@@ -103,10 +185,12 @@ and applied to the collator and the loss on every step.
 | `kd_beta` | `0.0` | `0.0` forward KL, `1.0` reverse KL, in-between JSD |
 | `kd_normalize_topk` | `true` | renormalize the top-k slice into a distribution |
 | `kd_compiled_kernel` | `true` | `torch.compile` the chunked loss kernel |
+| `kd_prepared_targets_alignment` | `current` | convention of baked `target_*` columns; `legacy` shifts them at collation time |
 | `kd_online_server_base_url` | `None` | enables the online teacher |
 | `kd_online_server` | `vllm` | `vllm` or `sglang` |
 | `kd_online_topk` | `None` | required with an online teacher |
 | `kd_online_timeout` | `120` | per-request timeout, in seconds |
+| `kd_online_preflight` | `true` | probe the teacher once at startup and fail fast if it cannot serve the config |
 
 Online and offline KD are mutually exclusive: `kd_online_server_base_url` cannot be combined
 with the `axolotl.integrations.kd.chat_template` dataset type.

@@ -53,6 +53,7 @@ def make_collator(server="vllm", topk=TOP_K, kd_temperature=1.0, normalize=True)
         kd_temperature=kd_temperature,
         kd_online_server=server,
         kd_normalize_topk=normalize,
+        kd_online_preflight=False,
     )
 
 

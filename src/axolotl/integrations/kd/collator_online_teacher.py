@@ -3,6 +3,7 @@ Packed data loader for online teacher training supporting vllm and sglang.
 """
 
 import math
+import os
 import time
 from collections import deque
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -19,6 +20,24 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+class TeacherRequestError(RuntimeError):
+    """
+    The online teacher cannot serve this configuration.
+
+    Deliberately not a ``requests`` exception: retrying a rejected request only turns a
+    configuration error into a silent stall, so this must escape the retry decorator.
+    """
+
+
+def _response_snippet(response: requests.Response, limit: int = 500) -> str:
+    try:
+        body = response.text
+    except Exception:  # pylint: disable=broad-except  # nosec B110
+        body = repr(response.content[:limit])
+    body = " ".join(body.split())
+    return body[:limit] if body else "<empty response body>"
+
+
 class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
     """
     Collator for online teacher training.
@@ -29,6 +48,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
 
     DEFAULT_LABEL_PAD_TOKEN_ID: int = -100
     LOG_EVERY_N_REQUESTS: int = 50
+    PREFLIGHT_PROMPT: Tuple[int, ...] = (1, 2, 3)
 
     def __init__(
         self,
@@ -39,6 +59,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         kd_online_server: Optional[str] = "vllm",
         kd_online_timeout: Optional[int] = 120,
         kd_normalize_topk: Optional[bool] = True,
+        kd_online_preflight: Optional[bool] = True,
         **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
@@ -56,15 +77,42 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         self.kd_online_topk = kd_online_topk
         self.kd_temperature = kd_temperature or 1.0
         self.kd_online_server = kd_online_server
-        self.http_session = requests.Session()
         self.kd_online_timeout = kd_online_timeout
         self.kd_normalize_topk = kd_normalize_topk
 
+        self._session: Optional[requests.Session] = None
+        self._session_pid: Optional[int] = None
         self._latencies: deque[float] = deque(maxlen=1024)
         self._teacher_attempts = 0
         self._teacher_requests = 0
         self._mask_slots_valid = 0
         self._mask_slots_total = 0
+
+        if kd_online_preflight is not False:
+            self.preflight()
+
+    @property
+    def http_session(self) -> requests.Session:
+        # dataloader workers fork this collator; a connection pool shared across
+        # processes hands the same socket to several of them
+        pid = os.getpid()
+        if self._session is None or self._session_pid != pid:
+            self._session = requests.Session()
+            self._session_pid = pid
+        return self._session
+
+    def _serving_remedy(self) -> str:
+        if self.kd_online_server == "sglang":
+            return (
+                "The teacher must be an sglang server that allows at least "
+                f"kd_online_topk ({self.kd_online_topk}) top logprobs per position, with "
+                "prefix/radix caching disabled (--disable-radix-cache)."
+            )
+        return (
+            "The teacher must be a stock OpenAI-compatible `vllm serve` started with "
+            f"--max-logprobs >= kd_online_topk ({self.kd_online_topk}) and "
+            "--no-enable-prefix-caching."
+        )
 
     def _padding_row(self) -> Tuple[List[float], List[int], List[int]]:
         return (
@@ -115,16 +163,127 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         self._teacher_attempts += 1
         headers = {"Accept-Encoding": "deflate, gzip, br, zstd"}
         start = time.perf_counter()
-        response = self.http_session.post(
-            api_endpoint,
-            json=payload,
-            headers=headers,
-            timeout=self.kd_online_timeout,
-        )
-        self._latencies.append(time.perf_counter() - start)
+        try:
+            response = self.http_session.post(
+                api_endpoint,
+                json=payload,
+                headers=headers,
+                timeout=self.kd_online_timeout,
+            )
+        except requests.exceptions.RequestException as exc:
+            LOG.warning(
+                f"teacher request to {api_endpoint} failed "
+                f"(attempt {self._teacher_attempts}): {exc}"
+            )
+            raise
+        finally:
+            self._latencies.append(time.perf_counter() - start)
+
+        if 400 <= response.status_code < 500:
+            raise TeacherRequestError(
+                f"the online teacher rejected the request with HTTP "
+                f"{response.status_code} ({api_endpoint}): {_response_snippet(response)}. "
+                f"{self._serving_remedy()}"
+            )
+        if response.status_code >= 500:
+            LOG.warning(
+                f"teacher returned HTTP {response.status_code} "
+                f"(attempt {self._teacher_attempts}): {_response_snippet(response)}"
+            )
         response.raise_for_status()
         self._teacher_requests += 1
         return response
+
+    def preflight(self) -> None:
+        """
+        Probe the teacher once, at construction, in the main process: a teacher that
+        cannot serve this config then fails the run immediately with the server's own
+        error, instead of failing once per collate call inside every dataloader worker.
+        """
+        if self.kd_online_server == "sglang":
+            endpoint, payload, extract = self._sglang_probe()
+        else:
+            endpoint, payload, extract = self._vllm_probe()
+
+        try:
+            response = self._post(endpoint, payload)
+            data = orjson.loads(response.content)
+        except TeacherRequestError:
+            raise
+        except requests.exceptions.RequestException as exc:
+            raise TeacherRequestError(
+                f"could not reach the online teacher at {endpoint}: {exc}. "
+                f"{self._serving_remedy()}"
+            ) from exc
+
+        rows = extract(data)
+        if rows is None or len(rows) != len(self.PREFLIGHT_PROMPT):
+            raise TeacherRequestError(
+                f"the online teacher at {endpoint} did not return per-token logprobs for "
+                f"a {len(self.PREFLIGHT_PROMPT)}-token probe. {self._serving_remedy()}"
+            )
+
+        scored = [row for row in rows if row]
+        if not scored:
+            raise TeacherRequestError(
+                f"the online teacher at {endpoint} returned no prompt logprobs; this is "
+                "what a prefix-cached prompt looks like. "
+                f"{self._serving_remedy()}"
+            )
+
+        width = min(len(row) for row in scored)
+        if width < self.kd_online_topk:
+            raise TeacherRequestError(
+                f"the online teacher at {endpoint} returned only {width} logprobs per "
+                f"position, but kd_online_topk is {self.kd_online_topk}. "
+                f"{self._serving_remedy()}"
+            )
+
+        LOG.info(
+            f"kd online teacher preflight ok: {endpoint} served {width} logprobs per "
+            f"position for kd_online_topk={self.kd_online_topk}"
+        )
+
+    def _vllm_probe(self):
+        endpoint = f"{self.kd_online_server_base_url}/v1/completions"
+        payload = {
+            "prompt": [list(self.PREFLIGHT_PROMPT)],
+            "max_tokens": 0,
+            "echo": True,
+            "prompt_logprobs": self.kd_online_topk,
+        }
+
+        def extract(data):
+            choices = data.get("choices") if isinstance(data, dict) else None
+            if not isinstance(choices, list) or not choices:
+                return None
+            rows = choices[0].get("prompt_logprobs")
+            if not isinstance(rows, list):
+                return None
+            return [row if isinstance(row, dict) else {} for row in rows]
+
+        return endpoint, payload, extract
+
+    def _sglang_probe(self):
+        endpoint = f"{self.kd_online_server_base_url}/generate"
+        payload = {
+            "input_ids": [list(self.PREFLIGHT_PROMPT)],
+            "return_logprob": True,
+            "top_logprobs_num": self.kd_online_topk,
+            "logprob_start_len": 0,
+            "sampling_params": {"max_new_tokens": 0},
+        }
+
+        def extract(data):
+            sequences = data if isinstance(data, list) else [data]
+            if not sequences or not isinstance(sequences[0], dict):
+                return None
+            rows = (sequences[0].get("meta_info") or {}).get("input_top_logprobs")
+            if not isinstance(rows, list):
+                return None
+            return [row if isinstance(row, list) else [] for row in rows]
+
+        return endpoint, payload, extract
 
     def _record_coverage(self, target_mask: List[List[List[int]]]) -> None:
         for sequence in target_mask:
@@ -149,7 +308,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
             f"target_mask_coverage={coverage:.4f}"
         )
 
-    @retry_on_request_exceptions(max_retries=10, delay=5, retry_client_errors=False)
+    @retry_on_request_exceptions(max_retries=4, delay=2, retry_client_errors=False)
     def fetch_online_logprobs_sglang(
         self, batch_input_ids: List[List[int]], labels: List[List[int]]
     ):
@@ -244,7 +403,7 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
             "target_mask": ret_data_target_mask,
         }
 
-    @retry_on_request_exceptions(max_retries=10, delay=5, retry_client_errors=False)
+    @retry_on_request_exceptions(max_retries=4, delay=2, retry_client_errors=False)
     def fetch_online_logprobs_vllm(
         self, batch_input_ids: List[List[int]], labels: List[List[int]]
     ):
@@ -394,10 +553,15 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
         self._maybe_log_stats()
 
     def __call__(
-        self, features: List[Any], return_tensors: Optional[str] = None
+        self,
+        features: List[Any],
+        return_tensors: Optional[str] = None,
+        targets_realigned: bool = True,  # the teacher is queried live, always current
     ) -> Dict[str, Any]:
         if not features:
-            return super().__call__(features, return_tensors=return_tensors)
+            return super().__call__(
+                features, return_tensors=return_tensors, targets_realigned=True
+            )
 
         # features is either a list of packed sub-batches or a flat list of features
         sub_batches = features if isinstance(features[0], list) else [features]
@@ -407,4 +571,6 @@ class OnlineTeacherCollator(KDBatchSamplerDataCollatorForSeq2Seq):
                 continue
             self._attach_teacher_logprobs(sub_batch_features)
 
-        return super().__call__(features, return_tensors=return_tensors)
+        return super().__call__(
+            features, return_tensors=return_tensors, targets_realigned=True
+        )

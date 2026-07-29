@@ -78,11 +78,15 @@ class KDPlugin(BasePlugin):
                 "kd_online_server": cfg.kd_online_server,
                 "kd_online_timeout": cfg.kd_online_timeout,
                 "kd_normalize_topk": cfg.kd_normalize_topk,
+                "kd_online_preflight": cfg.kd_online_preflight,
             }
 
+        collator_kwargs = {
+            "kd_prepared_targets_alignment": cfg.kd_prepared_targets_alignment
+        }
         if use_batch_sampler_collator:
-            return KDBatchSamplerDataCollatorForSeq2Seq, {}
-        return DataCollatorForKD, {}
+            return KDBatchSamplerDataCollatorForSeq2Seq, collator_kwargs
+        return DataCollatorForKD, collator_kwargs
 
     def add_callbacks_post_trainer(self, cfg: Any, trainer: Trainer) -> list:
         """

@@ -18,6 +18,7 @@ Plugin args for KD support.
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -59,12 +60,33 @@ class KDArgs(BaseModel):
     )
     kd_compiled_kernel: bool | None = None  # torch.compile the chunked KD loss kernel
 
+    kd_prepared_targets_alignment: Literal["current", "legacy"] | None = Field(
+        default="current",
+        description=(
+            "Which convention the dataset's baked target_* columns use, for datasets "
+            "prepared ahead of time (typically loaded with skip_prepare_dataset). "
+            "'current' means row j holds the teacher distribution over token j+1, what "
+            "the loss expects and what axolotl > 0.18.0 prepares. 'legacy' means row j "
+            "holds the distribution over token j, which is what axolotl <= 0.18.0 "
+            "prepared; those rows are shifted into place at collation time so the "
+            "dataset does not have to be rebuilt."
+        ),
+    )
+
     kd_online_server_base_url: str | None = None
     kd_online_topk: int | None = None
     kd_online_server: InferenceServerType | None = Field(
         default_factory=lambda: InferenceServerType.vllm
     )
     kd_online_timeout: int | None = 120
+    kd_online_preflight: bool | None = Field(
+        default=True,
+        description=(
+            "Probe the online teacher once at startup to check connectivity, the "
+            "response contract and the server's logprob cap, so a teacher that cannot "
+            "serve this config fails the run immediately instead of inside every batch."
+        ),
+    )
     kd_temperature_min: float | None = (
         None  # kd temperature scheduling during online kd
     )
@@ -97,6 +119,8 @@ class KDArgs(BaseModel):
             self.kd_normalize_topk = True
         if self.kd_compiled_kernel is None:
             self.kd_compiled_kernel = True
+        if self.kd_prepared_targets_alignment is None:
+            self.kd_prepared_targets_alignment = "current"
 
         if self.kd_temperature_min is not None:
             if not self.kd_online_server_base_url:
@@ -114,6 +138,11 @@ class KDArgs(BaseModel):
             if not self.kd_online_topk or self.kd_online_topk <= 0:
                 raise ValueError(
                     "kd_online_topk must be a positive integer when using an online teacher"
+                )
+            if self.kd_prepared_targets_alignment == "legacy":
+                raise ValueError(
+                    "kd_prepared_targets_alignment describes baked target_* columns; an "
+                    "online teacher produces its targets fresh, so 'legacy' has no meaning"
                 )
             if any(
                 _dataset_type(dataset).startswith(KD_OFFLINE_DATASET_TYPE)

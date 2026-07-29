@@ -28,6 +28,7 @@ def test_alphas_default_to_a_usable_loss():
     assert args.kd_temperature == 1.0
     assert args.kd_normalize_topk is True
     assert args.kd_compiled_kernel is True
+    assert args.kd_prepared_targets_alignment == "current"
 
     # the defaults must be directly usable by the loss, which pre-fix raised
     # TypeError on None weights
@@ -69,6 +70,15 @@ def test_kd_trainer_is_boolean():
                 "kd_temperature_min": 2.0,
             },
             "kd_temperature_min",
+        ),
+        ({"kd_prepared_targets_alignment": "ancient"}, "kd_prepared_targets_alignment"),
+        (
+            {
+                "kd_online_server_base_url": "http://teacher:8000",
+                "kd_online_topk": 8,
+                "kd_prepared_targets_alignment": "legacy",
+            },
+            "online teacher produces its targets fresh",
         ),
     ],
 )
