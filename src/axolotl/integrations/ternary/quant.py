@@ -927,8 +927,13 @@ class FakeQuantWeightDualSTE(torch.autograd.Function):
         lambda_: float,
         scale_lo: torch.Tensor,
         scale_hi: torch.Tensor,
+        impl=None,
     ) -> torch.Tensor:
-        """Return the effective weight; see `fake_quant_weight_dual`."""
+        """Return the effective weight; see `fake_quant_weight_dual`.
+
+        `impl` swaps in a fused forward that reproduces the oracle bit for bit; the
+        backward is unchanged either way, since it reads the codes, not the values.
+        """
         ctx.lambda_ = lambda_
         if lambda_ > 0.0 and (scale_lo.requires_grad or scale_hi.requires_grad):
             ctx.save_for_backward(
@@ -939,13 +944,14 @@ class FakeQuantWeightDualSTE(torch.autograd.Function):
                 # each argument drove the other's level and takes the other's gradient
                 scale_lo.to(torch.float32) > scale_hi.to(torch.float32),
             )
-        return fake_quant_weight_dual(weight, lambda_, scale_lo, scale_hi)
+        forward = impl or fake_quant_weight_dual
+        return forward(weight, lambda_, scale_lo, scale_hi)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         """Pass the incoming gradient through, splitting the scale grad by state."""
         if not ctx.saved_tensors:
-            return grad_output, None, None, None
+            return grad_output, None, None, None, None
         codes, scale_lo, scale_hi, swapped = ctx.saved_tensors
         grad = (
             grad_output.to(torch.float32)
@@ -955,7 +961,7 @@ class FakeQuantWeightDualSTE(torch.autograd.Function):
         low_level, high_level = grad * (codes.abs() == 1), grad * (codes.abs() > 1)
         grad_lo = _reduce_to(torch.where(swapped, high_level, low_level), scale_lo)
         grad_hi = _reduce_to(torch.where(swapped, low_level, high_level), scale_hi)
-        return grad_output, None, grad_lo, grad_hi
+        return grad_output, None, grad_lo, grad_hi, None
 
 
 class FakeQuantWeightTritPlanesSTE(torch.autograd.Function):
@@ -974,8 +980,12 @@ class FakeQuantWeightTritPlanesSTE(torch.autograd.Function):
         lambda_: float,
         scale_1: torch.Tensor,
         scale_2: torch.Tensor,
+        impl=None,
     ) -> torch.Tensor:
-        """Return the effective weight; see `fake_quant_weight_trit_planes`."""
+        """Return the effective weight; see `fake_quant_weight_trit_planes`.
+
+        `impl` swaps in a bit-identical fused forward; the backward reads the planes.
+        """
         ctx.lambda_ = lambda_
         if lambda_ > 0.0 and (scale_1.requires_grad or scale_2.requires_grad):
             first, second = trit_plane_grid_scales(scale_1, scale_2, weight.dtype)
@@ -987,20 +997,21 @@ class FakeQuantWeightTritPlanesSTE(torch.autograd.Function):
                 # each argument drove the other's plane and takes its gradient
                 scale_1.to(torch.float32) < scale_2.to(torch.float32),
             )
-        return fake_quant_weight_trit_planes(weight, lambda_, scale_1, scale_2)
+        forward = impl or fake_quant_weight_trit_planes
+        return forward(weight, lambda_, scale_1, scale_2)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         """Pass the incoming gradient through, splitting the scale grad by plane."""
         if not ctx.saved_tensors:
-            return grad_output, None, None, None
+            return grad_output, None, None, None, None
         planes, scale_1, scale_2, swapped = ctx.saved_tensors
         grad = grad_output.to(torch.float32) * ctx.lambda_
         first = grad * planes[0].to(torch.float32)
         second = grad * planes[1].to(torch.float32)
         grad_1 = _reduce_to(torch.where(swapped, second, first), scale_1)
         grad_2 = _reduce_to(torch.where(swapped, first, second), scale_2)
-        return grad_output, None, grad_1, grad_2
+        return grad_output, None, grad_1, grad_2, None
 
 
 class ActQuantSTE(torch.autograd.Function):
@@ -1042,11 +1053,12 @@ def fake_quant_weight_dual_ste(
     lambda_: float = 1.0,
     scale_lo: torch.Tensor | None = None,
     scale_hi: torch.Tensor | None = None,
+    impl=None,
 ) -> torch.Tensor:
     """Autograd-wired `fake_quant_weight_dual` (STE backward)."""
     if scale_lo is None or scale_hi is None:
         scale_lo, scale_hi = dual_absmean_scales(weight.detach())
-    return FakeQuantWeightDualSTE.apply(weight, lambda_, scale_lo, scale_hi)
+    return FakeQuantWeightDualSTE.apply(weight, lambda_, scale_lo, scale_hi, impl)
 
 
 def fake_quant_weight_trit_planes_ste(
@@ -1054,11 +1066,12 @@ def fake_quant_weight_trit_planes_ste(
     lambda_: float = 1.0,
     scale_1: torch.Tensor | None = None,
     scale_2: torch.Tensor | None = None,
+    impl=None,
 ) -> torch.Tensor:
     """Autograd-wired `fake_quant_weight_trit_planes` (STE backward)."""
     if scale_1 is None or scale_2 is None:
         scale_1, scale_2 = trit_plane_absmean_scales(weight.detach())
-    return FakeQuantWeightTritPlanesSTE.apply(weight, lambda_, scale_1, scale_2)
+    return FakeQuantWeightTritPlanesSTE.apply(weight, lambda_, scale_1, scale_2, impl)
 
 
 def act_quant_ste(x: torch.Tensor, lambda_: float = 1.0) -> torch.Tensor:

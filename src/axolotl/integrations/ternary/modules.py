@@ -516,10 +516,36 @@ class TernaryLinear(nn.Module):
         return _fused_ops()
 
     def _weight_ops(self, tensor: torch.Tensor) -> ModuleType | None:
-        """`_ops`, restricted to the grids the fused weight kernels cover."""
-        if self.weight_scale not in FUSED_SCALE_MODES or self.codebook != "ternary":
+        """`_ops`, restricted to the grids the single-plane fused kernel covers."""
+        if self.weight_scale not in FUSED_SCALE_MODES:
             return None
         return self._ops(tensor)
+
+    def _multi_state_ops(
+        self, tensor: torch.Tensor, lambda_: float = 1.0
+    ) -> ModuleType | None:
+        """The fused kernels for the grids the eager assignment is slowest on.
+
+        `dual` and `trit_planes` materialize a comparison tensor per candidate level
+        eagerly; `binary` is cheap either way but shares the pass. All three fall back
+        to the oracle off CUDA, under FSDP2 sharding, or without Triton.
+
+        One more fallback keeps fused and eager the *same function* rather than merely
+        a close one: in fp32 with λ < 1 the kernel's blend contracts to an FMA and
+        lands a single ulp from the oracle's two separately-rounded operations. bf16
+        and f16 round that away, and λ = 1 skips the blend entirely, so the fused path
+        covers every case a real heal spends its time in — an fp32 λ-warmup is the one
+        it hands back.
+        """
+        if self._ops(tensor) is None:
+            return None
+        if tensor.dtype is torch.float32 and lambda_ < 1.0:
+            return None
+        try:
+            from .kernels.triton import multi_state
+        except (ImportError, NotImplementedError):  # pragma: no cover
+            return None
+        return multi_state
 
     def _int8_linear(self, x: torch.Tensor) -> torch.Tensor | None:
         # the W2A8 epilogue rescales by one scalar per tensor, over ternary codes
@@ -781,21 +807,42 @@ class TernaryLinear(nn.Module):
             self.refresh_scale_from_weight()
 
     def _quant_weight(self, lambda_: float) -> torch.Tensor:
+        multi_state = self._multi_state_ops(self.weight, lambda_)
         if self.weight_scale == "trit_planes":
             first, second = self._trit_plane_scales(self.weight)
             return quant.fake_quant_weight_trit_planes_ste(
-                self.weight, lambda_, first, second
+                self.weight,
+                lambda_,
+                first,
+                second,
+                impl=None
+                if multi_state is None
+                else multi_state.fake_quant_weight_trit_planes,
             )
         if self.weight_scale == "dual":
             low, high = self._dual_scales(self.weight)
-            return quant.fake_quant_weight_dual_ste(self.weight, lambda_, low, high)
+            return quant.fake_quant_weight_dual_ste(
+                self.weight,
+                lambda_,
+                low,
+                high,
+                impl=None
+                if multi_state is None
+                else multi_state.fake_quant_weight_dual,
+            )
         scale = self._scale()
         # fused kernels carry no gradient for a learnable scale
         ops = self._weight_ops(self.weight) if scale is None else None
         if ops is not None:
-            return _FusedQuantSTE.apply(
-                self.weight, ops.fake_quant_weight, lambda_, self.group_size, None
+            kernel = (
+                multi_state.fake_quant_weight_binary
+                if self.codebook == "binary" and multi_state is not None
+                else ops.fake_quant_weight
             )
+            if self.codebook != "binary" or multi_state is not None:
+                return _FusedQuantSTE.apply(
+                    self.weight, kernel, lambda_, self.group_size, None
+                )
         fake_quant_ste = (
             quant.fake_quant_weight_binary_ste
             if self.codebook == "binary"
