@@ -461,6 +461,97 @@ and compared. A format with neither gate is refused rather than written unverifi
 
 A failing gate raises rather than writing a broken artifact.
 
+## Running the artifacts {#deployment}
+
+What actually consumes each export, with commands. The short version: ternary kernels
+live in the CPU ecosystem today (llama.cpp, bitnet.cpp); GPU serving stacks have no
+ternary backend yet, and the two-plane modes ship as masters only.
+
+| | llama.cpp / ollama | bitnet.cpp | transformers | vLLM / SGLang | MLX |
+|---|---|---|---|---|---|
+| `master_bf16` | via convert (bf16) | — | ✓ (bf16) | ✓ (bf16, no size/speed win) | ✓ via 2-bit convert |
+| `hf_bitnet` | — | — | ✓ packed | ✗ | — |
+| `gguf_tq2_0` | ✓ (recommended) | — | — | ✗ | — |
+| `gguf_tq1_0` | ✓ (smallest) | — | — | ✗ | — |
+| `i2_s` | — | ✓ | — | ✗ | — |
+| `mask_sign` | — | — | — | — | — |
+| `dual` / `trit_planes` master | — | — | ✓ (bf16 values) | ✓ (bf16) | — |
+
+### llama.cpp (and Ollama)
+
+`TQ2_0` is the deployment default: ~2× `Q4_K` decode speed on AVX2 CPUs at 2.06 bpw.
+`TQ1_0` trades some speed for the smallest footprint (1.69 bpw). Both are CPU-first
+types — GPU/Metal offload for TQ tensors is limited upstream, so benchmark before
+assuming an offloaded speedup; plan for CPU/edge serving.
+
+```bash
+axolotl ternary export config.yaml --format gguf_tq2_0
+llama-cli -m outputs/model/gguf/model-tq2_0.gguf -p "..."   # or llama-server
+```
+
+With `ternary.export.embedding_dtype: int8` the embeddings/head emit as `Q8_0`, which
+llama.cpp consumes natively and which roughly halves the unembedding DRAM traffic that
+dominates single-stream decode. Ollama loads the same file through a `Modelfile`
+(`FROM ./model-tq2_0.gguf`) on any build whose bundled llama.cpp is recent enough to
+carry the TQ types.
+
+### bitnet.cpp
+
+Microsoft's dedicated ternary CPU runtime — the best published CPU throughput and
+energy numbers for this format class (2.4–6.2× over llama.cpp on x86 in their report).
+Export `i2_s`, then point their tooling at it:
+
+```bash
+axolotl ternary export config.yaml --format i2_s
+python setup_env.py -md /path/to/export --quant-type i2_s   # in microsoft/BitNet
+python run_inference.py -m ... -p "..."
+```
+
+### transformers
+
+`hf_bitnet` loads directly on llama-family architectures — the packed uint8 weights and
+`quantization_config` follow the upstream BitNet convention:
+
+```python
+model = AutoModelForCausalLM.from_pretrained("outputs/model/hf_bitnet")
+```
+
+This is the correctness/eval path, not a speed path: transformers has no fused ternary
+kernels, so it runs at bf16-class speed with packed-size memory. The `master_bf16`
+loads anywhere transformers runs and stays re-finetunable.
+
+### vLLM and SGLang
+
+Neither has a ternary quantization backend today — the packed formats cannot be served.
+The `master_bf16` serves as an ordinary bf16 model (full memory, no speedup), which is
+useful for quality evaluation behind an OpenAI-compatible API rather than efficiency.
+Watch upstream for TQ/BitNet backend support before planning GPU serving around ternary.
+
+### MLX (Apple Silicon)
+
+MLX has no scale-only ternary type, but a ternary master quantizes **exactly** into
+MLX's affine 2-bit group format: every group's values are a subset of `{-s, 0, +s}`, so
+the affine fit is lossless (this is also how Prism ships its ternary models on MLX).
+
+```bash
+mlx_lm.convert --hf-path outputs/model -q --q-bits 2 --q-group-size 64
+```
+
+Verify with a fixed-prompt logits comparison against the master after converting — the
+exactness argument holds per group, but embedding/head quantization settings differ by
+mlx-lm version.
+
+### Two-plane modes and what is missing
+
+`dual` and `trit_planes` masters currently run only as bf16 models (ternary-family
+quality at bf16 memory) — no engine has five- or nine-level kernels. The path to
+deploying them is an FV5-style bit-plane format plus a llama.cpp fork carrying its
+kernels, which is the top item on this plugin's roadmap given how strongly those modes
+outperform single-plane at equal healing budget. `mask_sign` is archival/transport
+only. For extra CPU headroom on the GGUF artifacts, T-MAC's LUT kernels consume
+low-bit GGUF files and post 4–5× single-thread gains over llama.cpp in their paper —
+an advanced option, not a supported target of this plugin's gates.
+
 ## Damage map {#damage-map}
 
 Before spending a heal budget, measure what the quantizer actually costs *this* model:
