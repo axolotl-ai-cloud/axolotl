@@ -1071,6 +1071,7 @@ ternary backend yet, and the two-plane modes ship as masters only.
 | `i2_s` | — | ✓ | — | ✗ | — |
 | `mask_sign` | — | — | — | — | — |
 | `dual` / `trit_planes` master | — | — | ✓ (bf16 values) | ✓ (bf16) | — |
+| binary master / `sign_plane` | — | — | ✓ (bf16 values) | ✓ (bf16) | ✓ via 1-bit convert |
 | `fv5` / `tp9` | — | — | — | — | — |
 
 ### llama.cpp (and Ollama)
@@ -1124,6 +1125,23 @@ useful for quality evaluation behind an OpenAI-compatible API rather than effici
 Watch upstream for TQ/BitNet backend support before planning GPU serving around ternary.
 
 ### MLX (Apple Silicon)
+
+MLX's affine group quantization also covers the **binary** codebook exactly: 1-bit
+affine gives `w = scale·q + bias` with `q ∈ {0,1}` per group, and `scale = 2s,
+bias = −s` maps losslessly onto binary `{−s, +s}` — the same construction as the
+ternary-into-2-bit path below, at ~1.25 bpw with g128 metadata (~1.5 at g64). This
+makes MLX the first stock runtime for binary masters:
+
+```bash
+mlx_lm.convert --hf-path <binary-master> -q --q-bits 1 --q-group-size 64
+```
+
+Verify on-device with a weight-level dequantize-and-compare against the master's
+manifest tensors before trusting it — 1-bit affine support is the newer path and
+this mapping is exactness-verified in CI only at the arithmetic level, not against
+every mlx-lm release.
+
+#### Ternary into 2-bit
 
 MLX has no scale-only ternary type, but a ternary master quantizes **exactly** into
 MLX's affine 2-bit group format: every group's values are a subset of `{-s, 0, +s}`, so
