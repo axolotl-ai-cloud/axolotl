@@ -168,3 +168,18 @@ def test_zero3_placeholder_weight_routes_to_stock_forward(
         lambda self, hidden_states: sentinel
     )
     assert module(torch.randn(16, 3 * 2 * 4 * 4)) is sentinel
+
+
+@pytest.mark.parametrize("model_config_type", ["qwen3_vl"])
+def test_accelerate_hooked_proj_routes_to_stock_forward(
+    model_config_type, clean_patch_slate
+):
+    patch_vision_patch_embed_linear(model_config_type)
+    module = _make_module(model_config_type)
+    module.proj._hf_hook = object()
+
+    sentinel = torch.zeros(1)
+    clean_patch_slate._axolotl_patch_embed_original_forward = (
+        lambda self, hidden_states: sentinel
+    )
+    assert module(torch.randn(16, 3 * 2 * 4 * 4)) is sentinel

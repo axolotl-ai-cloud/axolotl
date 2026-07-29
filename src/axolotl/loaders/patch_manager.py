@@ -581,7 +581,7 @@ class PatchManager:
             unpatch_vision_patch_embed_linear,
         )
 
-        if self.cfg.vision_patch_embed_linear is not False:
+        if getattr(self.cfg, "vision_patch_embed_linear", None) is not False:
             patch_vision_patch_embed_linear(self.cfg.model_config_type)
         else:
             unpatch_vision_patch_embed_linear(self.cfg.model_config_type)

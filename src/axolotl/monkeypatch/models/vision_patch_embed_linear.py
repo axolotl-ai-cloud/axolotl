@@ -62,9 +62,13 @@ SUPPORTED_PATCH_EMBEDS: dict[str, tuple[str, str]] = {
 
 def _linear_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
     proj = self.proj
-    if type(proj) is not nn.Conv3d or hasattr(proj.weight, "ds_id"):
-        # PEFT-wrapped proj or ZeRO-3 placeholder weight: only a module call keeps
-        # the adapter delta / DeepSpeed gather hooks in the path
+    if (
+        type(proj) is not nn.Conv3d
+        or hasattr(proj, "_hf_hook")
+        or hasattr(proj.weight, "ds_id")
+    ):
+        # PEFT wrapper, accelerate offload hook, or ZeRO-3 placeholder: only a
+        # module call keeps the adapter delta / device-align / gather logic in path
         return self._axolotl_patch_embed_original_forward(hidden_states)
     weight = proj.weight
     # input flat layout matches the (D, C, T, Ph, Pw) weight layout element-for-element
