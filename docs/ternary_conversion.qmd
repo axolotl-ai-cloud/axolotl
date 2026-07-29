@@ -923,6 +923,41 @@ gate is refused rather than written unverified.
 
 A failing gate raises rather than writing a broken artifact.
 
+## Healing reasoning-hybrid models {#reasoning-mix}
+
+Models whose chat template carries a reasoning toggle (Qwen3-style `enable_thinking`)
+have two behavioral modes, and a heal only repairs what the corpus exercises: heal in
+one mode and the other degrades unmeasured. When mode retention matters, heal on
+instruct-rendered data with a weighted mix of template kwargs instead of raw text:
+
+```yaml
+datasets:
+  - path: your/heal-corpus
+    type: chat_template
+    chat_template_kwargs_mix:
+      - kwargs: {enable_thinking: true}
+        weight: 0.3
+      - kwargs: {enable_thinking: false}
+        weight: 0.7
+
+ternary:
+  distill:
+    mode: inprocess
+```
+
+Assignment is per-example and deterministic from `seed`, so runs are reproducible and
+resumable. The in-process teacher scores the same rendered ids the student trains on,
+so student and teacher always agree about which mode a sample is in — there is nothing
+teacher-side to configure. Evaluate the healed model in **both** modes; a single-mode
+eval cannot see single-mode collapse.
+
+When the base model's training data is unavailable (converting third-party models),
+prefer a KL-dominant loss at temperature 1 (`logits_weight: 0.8`,
+`logits_temperature: 1.0`, plus `hidden_weight: 0.1`) over the CE blend: CE against a
+proxy corpus pulls the model toward the proxy distribution, while KL against the FP
+teacher preserves the original behavior no matter what text exercises it. Do not use
+`schedule: anchored` in that setting — its CE-dominant phase is the harmful component.
+
 ## What not to quantize {#sensitive-modules}
 
 The plugin hard-excludes the modules where ternarization is fatal, and `strict_enumeration`
