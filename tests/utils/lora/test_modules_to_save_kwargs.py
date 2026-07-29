@@ -19,8 +19,6 @@ HIDDEN_SIZE = 16
 
 
 class KwargsOnlyVisionTower(torch.nn.Module):
-    """Submodule that only accepts keyword arguments, like Gemma's vision tower."""
-
     def __init__(self):
         super().__init__()
         self.proj = torch.nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE)
@@ -30,8 +28,6 @@ class KwargsOnlyVisionTower(torch.nn.Module):
 
 
 class TinyVlmForCausalLM(torch.nn.Module):
-    """Minimal VLM-shaped model: kwargs-only vision tower feeding LoRA-targeted projections."""
-
     def __init__(self):
         super().__init__()
         self.config = PretrainedConfig()
