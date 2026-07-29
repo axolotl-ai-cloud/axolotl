@@ -918,14 +918,9 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": (
                 "Run the vision patch_embed Conv3d as its exact F.linear "
-                "equivalent (kernel_size == stride makes them the same GEMM), "
-                "the way vLLM implements patchify. ~11x faster than cuDNN's "
-                "conv3d for this shape and immune to torch builds lacking "
-                "cuDNN, where eager Conv3d falls back to slow_conv_dilated3d "
-                "(~2,500x slower). Weights and state_dict are unchanged. "
-                "Enabled by default for Qwen2-VL/2.5-VL/2.5-Omni, "
-                "Qwen3-VL(-MoE), Qwen3.5(-MoE), Qwen3-Omni-MoE, GLM-4V(-MoE) "
-                "and GLM-OCR; set false to keep the stock Conv3d forward."
+                "equivalent — faster and immune to the slow_conv_dilated3d "
+                "fallback on cuDNN-less torch builds. Default on for supported "
+                "Qwen/GLM VLMs; set false to keep the stock Conv3d forward."
             )
         },
     )
