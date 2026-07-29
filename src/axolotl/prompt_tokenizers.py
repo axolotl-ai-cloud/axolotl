@@ -132,8 +132,8 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         tokenized_prompt = self._tokenize(user_prompt, add_eos_token=False)
         if not self.train_on_inputs:
             user_prompt_len = len(tokenized_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
-            tokenized_prompt["labels"] = [IGNORE_INDEX] * user_prompt_len
+            import numpy as np
+            tokenized_prompt["labels"] = np.full(user_prompt_len, IGNORE_INDEX, dtype=np.int32).tolist()
         tokenized_res_prompt = self._tokenize(
             response, strip_bos_token=True, add_eos_token=True
         )
