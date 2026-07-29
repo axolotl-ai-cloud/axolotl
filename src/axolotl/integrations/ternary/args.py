@@ -346,6 +346,15 @@ class TernaryBlockwiseConfig(BaseModel):
             "so there is no warmup to inherit and no state to carry across blocks."
         ),
     )
+    optimizer: Literal["adamw_torch", "adamw_torch_8bit"] = Field(
+        default="adamw_torch",
+        description=(
+            "Per-block optimizer. 'adamw_torch_8bit' (torchao) quantizes the two "
+            "moment tensors from fp32 to 8-bit — ~8 bytes/param down to ~2 — which "
+            "is the difference between an ~11GB and a ~3GB optimizer for a 100B-class "
+            "model's 1.4B-param block."
+        ),
+    )
     max_grad_norm: float = Field(
         default=1.0, ge=0, description="Gradient clipping per block; 0 disables it."
     )

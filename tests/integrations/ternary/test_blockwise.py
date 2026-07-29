@@ -364,3 +364,27 @@ def _kwargs_for(block, hidden):
         "position_embeddings": (angles.cos(), angles.sin()),
         "position_ids": positions,
     }
+
+
+def test_the_8bit_optimizer_builds_and_heals(tmp_path, tokenizer_dir):
+    from torchao.optim import AdamW8bit
+
+    from axolotl.integrations.ternary.args import TernaryBlockwiseConfig
+    from axolotl.integrations.ternary.ptq.blockwise import _build_optimizer
+
+    plan = TernaryBlockwiseConfig(enabled=True, optimizer="adamw_torch_8bit")
+    param = torch.nn.Parameter(torch.randn(8, 8))
+    assert isinstance(_build_optimizer([param], plan), AdamW8bit)
+    default = TernaryBlockwiseConfig(enabled=True)
+    assert type(_build_optimizer([param], default)) is torch.optim.AdamW
+
+    source = _teacher(tmp_path / "teacher", tokenizer_dir)
+    cfg = _cfg(source, optimizer="adamw_torch_8bit")
+    master = tmp_path / "master"
+    stream_fit(source, master, cfg)
+    report = heal_blocks(
+        master, tmp_path / "out", cfg, source_dir=source, device=DEVICE
+    )
+    assert report.blocks_healed == BLOCKS
+    for record in report.records.values():
+        assert record.final_loss <= record.initial_loss

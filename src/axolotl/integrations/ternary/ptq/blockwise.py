@@ -327,6 +327,19 @@ def _heal_one_block(
     )
 
 
+def _build_optimizer(parameters, plan) -> torch.optim.Optimizer:
+    if plan.optimizer == "adamw_torch_8bit":
+        try:
+            from torchao.optim import AdamW8bit
+        except ImportError as err:
+            raise ImportError(
+                "ternary.blockwise.optimizer: adamw_torch_8bit needs torchao "
+                "(pip install torchao)"
+            ) from err
+        return AdamW8bit(parameters, lr=plan.learning_rate)
+    return torch.optim.AdamW(parameters, lr=plan.learning_rate)
+
+
 def _train_block(
     student: nn.Module,
     cache: ActivationCache,
@@ -337,7 +350,7 @@ def _train_block(
 ) -> tuple[float, float, int, int]:
     """Fit one student block onto the teacher's outputs with MSE, and report the arc."""
     parameters = [p for p in student.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(parameters, lr=plan.learning_rate)
+    optimizer = _build_optimizer(parameters, plan)
     student.train()
 
     initial = 0.0
