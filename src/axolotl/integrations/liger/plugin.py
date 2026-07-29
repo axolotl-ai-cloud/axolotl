@@ -31,7 +31,29 @@ class LigerPlugin(BasePlugin):
     def get_input_args(self):
         return "axolotl.integrations.liger.LigerArgs"
 
+    @staticmethod
+    def _set_kernel_impl(impl: str):
+        import os
+
+        # liger reads LIGER_KERNEL_IMPL exactly once, at the first import of
+        # liger_kernel.ops — setting it after that import is silently inert
+        if "liger_kernel.ops" in sys.modules:
+            current = os.environ.get("LIGER_KERNEL_IMPL", "").strip().lower()
+            if current != impl:
+                raise ValueError(
+                    f"liger_kernel_impl: '{impl}' cannot take effect: liger_kernel.ops "
+                    "was already imported with a different backend. Another component "
+                    "imported liger before the Liger plugin ran; set the "
+                    "LIGER_KERNEL_IMPL env var before launching instead."
+                )
+            return
+        os.environ["LIGER_KERNEL_IMPL"] = impl
+        LOG.info(f"Set LIGER_KERNEL_IMPL={impl} for liger kernel backend selection")
+
     def pre_model_load(self, cfg):
+        if cfg.liger_kernel_impl:
+            self._set_kernel_impl(cfg.liger_kernel_impl)
+
         if any(getattr(cfg, flag, False) for flag in LIGER_FLAGS):
             check_capability(
                 get_model_support(cfg.model_config_type),

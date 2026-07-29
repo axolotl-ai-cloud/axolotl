@@ -16,6 +16,8 @@
 Module for handling LIGER input arguments.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 from axolotl.utils.logging import get_logger
@@ -59,6 +61,20 @@ class LigerArgs(BaseModel):
             "description": (
                 "Enables use_token_scaling in fused_linear_cross_entropy. "
                 "When True, each token's loss is multiplied by its predicted probability (detached from gradients)."
+            )
+        },
+    )
+    liger_kernel_impl: Literal["cutile", "cutedsl", "ascend"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Selects an alternative liger kernel backend via the "
+                "LIGER_KERNEL_IMPL env var (liger-kernel >= 0.8.1). 'cutile' "
+                "(requires cuda-tile) covers cross_entropy/geglu/layer_norm/rope "
+                "and more; 'cutedsl' (requires nvidia-cutlass-dsl, tuned for "
+                "Blackwell) covers cross_entropy/rms_norm. "
+                "fused_linear_cross_entropy stays Triton on both. Unset keeps "
+                "liger's default Triton kernels."
             )
         },
     )

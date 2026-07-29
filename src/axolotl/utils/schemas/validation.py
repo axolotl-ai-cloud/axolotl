@@ -782,6 +782,22 @@ class RLValidationMixin:
                 f"but got {rl=}, {dpo_loss_type=} and {dpo_loss_weights=}"
             )
 
+        if data.get("dpo_use_liger_kernel"):
+            # liger's chunked DPO loss raises NotImplementedError for ipo at runtime
+            if rl == "ipo" or (dpo_loss_type and "ipo" in dpo_loss_type):
+                raise ValueError(
+                    "`dpo_use_liger_kernel` does not support the `ipo` loss type "
+                    "(liger-kernel's fused DPO loss cannot length-normalize the "
+                    "squared margin). Disable the liger kernel or use another loss."
+                )
+            # TRL's liger DPO path constructs the fused loss from loss_type[0] only
+            if dpo_loss_type and len(dpo_loss_type) > 1:
+                LOG.warning(
+                    "`dpo_use_liger_kernel` uses only the first entry of "
+                    f"`dpo_loss_type` ({dpo_loss_type[0]!r}); remaining entries are "
+                    "ignored on the liger loss path."
+                )
+
         return data
 
     @model_validator(mode="before")

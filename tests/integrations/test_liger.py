@@ -91,3 +91,62 @@ class TestValidation:
         ):
             prepare_plugins(test_cfg)
             validate_config(test_cfg)
+
+    def test_kernel_impl_accepted(self, minimal_liger_cfg):
+        test_cfg = DictDefault({"liger_kernel_impl": "cutedsl"} | minimal_liger_cfg)
+
+        prepare_plugins(test_cfg)
+        updated_cfg = validate_config(test_cfg)
+        assert updated_cfg.liger_kernel_impl == "cutedsl"
+
+    def test_kernel_impl_rejects_unknown_backend(self, minimal_liger_cfg):
+        test_cfg = DictDefault({"liger_kernel_impl": "triton2"} | minimal_liger_cfg)
+
+        with pytest.raises(ValueError):
+            prepare_plugins(test_cfg)
+            validate_config(test_cfg)
+
+
+class TestKernelImplEnv:
+    """LIGER_KERNEL_IMPL env handling in LigerPlugin._set_kernel_impl"""
+
+    def test_sets_env_before_liger_import(self, monkeypatch):
+        import sys
+
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+
+        LigerPlugin._set_kernel_impl("cutile")
+
+        import os
+
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutile"
+
+    def test_raises_when_liger_already_imported_with_other_backend(self, monkeypatch):
+        import sys
+        import types
+
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        monkeypatch.setitem(
+            sys.modules, "liger_kernel.ops", types.ModuleType("liger_kernel.ops")
+        )
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+
+        with pytest.raises(ValueError, match=r"already imported"):
+            LigerPlugin._set_kernel_impl("cutedsl")
+
+    def test_noop_when_liger_already_imported_with_same_backend(self, monkeypatch):
+        import sys
+        import types
+
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        monkeypatch.setitem(
+            sys.modules, "liger_kernel.ops", types.ModuleType("liger_kernel.ops")
+        )
+        monkeypatch.setenv("LIGER_KERNEL_IMPL", "cutedsl")
+
+        LigerPlugin._set_kernel_impl("cutedsl")
