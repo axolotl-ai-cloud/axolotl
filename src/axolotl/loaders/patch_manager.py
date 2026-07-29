@@ -213,13 +213,11 @@ class PatchManager:
             conversions_provider() if conversions_provider is not None else None
         )
         if conversions:
-            from transformers.conversion_mapping import (
-                register_checkpoint_conversion_mapping,
-            )
+            from axolotl.utils.weight_conversions import register_weight_conversions
 
             for key, entries in conversions.items():
                 entries = list(entries)
-                register_checkpoint_conversion_mapping(key, entries, overwrite=True)
+                register_weight_conversions(key, entries)
                 self._warn_irreversible_weight_transforms(key, entries)
 
         patch_provider = registrations.patch_mappings
