@@ -306,9 +306,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if prior_len:
         dropped = prior_len - len(train_dataset)
         if dropped:
-            LOG.warning(
-                f"Dropped {dropped} samples with no trainable tokens from train dataset"
-            )
+            LOG.warning(f"Dropped {dropped} samples with no trainable tokens")
         raise_if_empty(train_dataset)
 
     if eval_dataset:
