@@ -227,57 +227,6 @@ class LigerPlugin(BasePlugin):
                 rms_norm=cfg.liger_rms_norm,
                 swiglu=cfg.liger_glu_activation,
             )
-        elif cfg.model_config_type == "gemma4":
-            # multimodal gemma4 only; gemma4_text uses liger 0.8.0 native dispatch (incl. FLCE)
-            from liger_kernel.transformers.geglu import LigerGEGLUMLP
-            from transformers.models.gemma4 import modeling_gemma4
-
-            if cfg.liger_rms_norm:
-                _OrigGemma4RMSNorm = modeling_gemma4.Gemma4RMSNorm
-
-                class _LigerGemma4RMSNorm(LigerRMSNorm):
-                    """LigerRMSNorm for Gemma4: offset=0, in_place=False (grad-ckpt safe), with_scale support."""
-
-                    def __new__(cls, dim, eps=1e-6, with_scale=True):
-                        if not with_scale:
-                            return _OrigGemma4RMSNorm(dim, eps, with_scale=False)
-                        return super().__new__(cls)
-
-                    def __init__(self, dim, eps=1e-6, with_scale=True):
-                        if not with_scale:
-                            return
-                        # offset=0.0 (standard), in_place=False (gradient checkpointing safe)
-                        super().__init__(
-                            dim, eps, offset=0.0, casting_mode="llama", in_place=False
-                        )
-
-                modeling_gemma4.Gemma4RMSNorm = _LigerGemma4RMSNorm
-            if cfg.liger_glu_activation:
-
-                class _LigerGemma4MLP(LigerGEGLUMLP):
-                    def __init__(self, config, layer_idx=None):
-                        super().__init__(config)
-
-                modeling_gemma4.Gemma4TextMLP = _LigerGemma4MLP
-            if cfg.liger_rope:
-                LOG.warning(
-                    "Liger RoPE is not compatible with Gemma4 (separate q/k application). Skipping."
-                )
-            if cfg.liger_layer_norm:
-                modeling_gemma4.nn.LayerNorm = LigerLayerNorm
-            if cfg.liger_cross_entropy:
-                modeling_gemma4.nn.CrossEntropyLoss = LigerCrossEntropyLoss
-            if cfg.liger_fused_linear_cross_entropy:
-                LOG.warning(
-                    "Liger fused linear cross entropy for multimodal gemma4 is not in "
-                    "liger-kernel 0.8.0 (added upstream in PR #1203, post-0.8.0). Skipping; "
-                    "the gemma4_text language model gets FLCE via liger's native path."
-                )
-            LOG.info(
-                f"Applied Liger kernels for gemma4: "
-                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
-                f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm}"
-            )
         elif cfg.model_config_type in ("gemma4_unified", "gemma4_unified_text"):
             # gemma4_unified mirrors gemma4's Liger compatibility: offset=0,
             # in_place=False (gradient-checkpoint safe), RoPE incompatible
