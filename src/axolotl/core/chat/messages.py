@@ -142,13 +142,14 @@ class Messages(BaseModel):
         pending_weight = self.weight
         running_content = ""
         for _, msg_content in enumerate(self.content):
-            # TODO also handle non-text content types
+            # Handle text/tool content; skip non-text (image/audio) for tokenization
             if msg_content.type in [
                 MessageContentTypes.text.value,
                 MessageContentTypes.tool_call.value,
                 MessageContentTypes.tool_response.value,
             ]:
-                running_content += str(msg_content)
+                content_str = str(msg_content) if msg_content.content is not None else ""
+                running_content += content_str
                 tok_results = tokenizer(running_content, add_special_tokens=False)
                 tok_input_ids = tok_results["input_ids"]
                 if pending_input_ids:
