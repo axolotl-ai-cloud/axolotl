@@ -2549,6 +2549,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "FSDP version",
     ),
     (
+        ("--fp32-master-weights/--no-fp32-master-weights",),
+        None,
+        None,
+        "Keep fp32 master copies of trainable params under FSDP2; compute stays in the mixed-precision dtype. Defaults to true for full fine-tunes and false for adapters. Set to false for pure bf16 and lower memory. Requires fsdp_version: 2.",
+    ),
+    (
         ("--fp32-norms/--no-fp32-norms",),
         None,
         None,
