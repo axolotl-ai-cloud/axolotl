@@ -68,6 +68,50 @@ class TestPreparePluginsScope:
         assert not calls
 
 
+class TestValidationErrorCleanup:
+    LIGER = "axolotl.integrations.liger.LigerPlugin"
+
+    def test_rejected_config_restores_env(self, monkeypatch, minimal_liger_cfg):
+        import os
+        import sys
+
+        from axolotl.integrations.base import PluginManager
+        from axolotl.integrations.liger import plugin as liger_plugin
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+        monkeypatch.setattr(liger_plugin, "_env_before_write", None)
+        monkeypatch.setattr(liger_plugin, "_last_written", None)
+
+        cfg = DictDefault({"liger_kernel_impl": "cutedsl"} | minimal_liger_cfg)
+        prepare_plugins(cfg)
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
+
+        PluginManager.get_instance().on_config_validation_error(cfg)
+        assert "LIGER_KERNEL_IMPL" not in os.environ
+
+    def test_cleanup_scoped_to_config_plugins(self, monkeypatch, minimal_liger_cfg):
+        import os
+        import sys
+
+        from axolotl.integrations.base import PluginManager
+        from axolotl.integrations.liger import plugin as liger_plugin
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+        monkeypatch.setattr(liger_plugin, "_env_before_write", None)
+        monkeypatch.setattr(liger_plugin, "_last_written", None)
+
+        cfg = DictDefault({"liger_kernel_impl": "cutedsl"} | minimal_liger_cfg)
+        prepare_plugins(cfg)
+
+        # rejected config listed other plugins only: liger's write stays
+        PluginManager.get_instance().on_config_validation_error(
+            DictDefault({"plugins": ["some.other.Plugin"]})
+        )
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
+
+
 class TestValidation:
     """
     Test the validation module for liger

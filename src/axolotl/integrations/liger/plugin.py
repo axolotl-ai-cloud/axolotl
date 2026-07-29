@@ -77,6 +77,9 @@ class LigerPlugin(BasePlugin):
         _last_written = impl
         LOG.info(f"Set LIGER_KERNEL_IMPL={impl} for liger kernel backend selection")
 
+    def on_config_validation_error(self, cfg):
+        self._restore_kernel_impl()
+
     @staticmethod
     def _loaded_kernel_impl() -> str | None:
         # the applied impl's ops module is imported by _replace_with_impl_ops;

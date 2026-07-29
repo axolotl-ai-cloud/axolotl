@@ -93,6 +93,9 @@ class BasePlugin:
             cfg: The configuration for the plugin.
         """
 
+    def on_config_validation_error(self, cfg: dict):
+        """Undo any register()-time side effects after the config is rejected."""
+
     def get_input_args(self) -> str | None:
         """Returns a pydantic model for the plugin's input arguments."""
 
@@ -416,6 +419,12 @@ class PluginManager:
             # print stacktrace
             traceback.print_exc()
             print(f"Error: {exc}")
+
+    def on_config_validation_error(self, cfg):
+        """Lets plugins in the current config undo register()-time side effects."""
+        for plugin_name, plugin in self.plugins.items():
+            if plugin_name in (cfg.get("plugins") or []):
+                plugin.on_config_validation_error(cfg)
 
     def get_input_args(self) -> list[str]:
         """Returns a list of Pydantic classes for all registered plugins' input arguments.'
