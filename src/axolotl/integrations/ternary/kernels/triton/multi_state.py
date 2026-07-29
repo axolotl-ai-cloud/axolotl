@@ -26,6 +26,7 @@ from __future__ import annotations
 import torch
 
 from ...quant import (
+    DUAL_PLANES,
     SCALE_EPS,
     _ordered_dual_scales,
     binary_scale,
@@ -80,11 +81,13 @@ if HAVE_TRITON:
     def _dual_kernel(
         w_ptr,
         out_ptr,
+        codes_ptr,
         low_ptr,
         high_ptr,
         lambda_,
         in_features,
         LAMBDA_ONE: tl.constexpr,
+        EMIT_CODES: tl.constexpr,
         BLOCK: tl.constexpr,
     ):
         """Nearest of `{0, ±s_lo, ±s_hi}` by midpoint threshold, λ-blended."""
@@ -112,6 +115,10 @@ if HAVE_TRITON:
         )
         deq = (tl.where(level > 0, sign * picked, 0.0)).to(w.dtype).to(tl.float32)
 
+        if EMIT_CODES:
+            # exactly `dual_codes`: the level times the sign, zero where the sign is
+            tl.store(codes_ptr + offs, (level * sign).to(tl.int8), mask=mask)
+
         if LAMBDA_ONE:
             out = deq
         else:
@@ -122,11 +129,15 @@ if HAVE_TRITON:
     def _trit_planes_kernel(
         w_ptr,
         out_ptr,
+        plane0_ptr,
+        plane1_ptr,
         first_ptr,
         second_ptr,
         lambda_,
         in_features,
+        numel,
         LAMBDA_ONE: tl.constexpr,
+        EMIT_CODES: tl.constexpr,
         BLOCK: tl.constexpr,
     ):
         """Nearest of the nine free sums `t1·s1 + t2·s2`, λ-blended.
@@ -169,9 +180,16 @@ if HAVE_TRITON:
             best_t1 = tl.where(closer, t1, best_t1)
             best_t2 = tl.where(closer, t2, best_t2)
 
+        # `trit_plane_codes` signs with `torch.sign`, so a zero weight keeps zero
+        # trits; state 0 already has both trits at zero, so the two agree there
         sign = tl.where(w_f32 < 0.0, -1.0, 1.0)
-        deq = (best_t1 * sign) * first + (best_t2 * sign) * second
-        deq = deq.to(w.dtype).to(tl.float32)
+        trit_1 = best_t1 * sign
+        trit_2 = best_t2 * sign
+        deq = (trit_1 * first + trit_2 * second).to(w.dtype).to(tl.float32)
+
+        if EMIT_CODES:
+            tl.store(plane0_ptr + offs, trit_1.to(tl.int8), mask=mask)
+            tl.store(plane1_ptr + offs, trit_2.to(tl.int8), mask=mask)
 
         if LAMBDA_ONE:
             out = deq
@@ -281,8 +299,14 @@ def fake_quant_weight_dual(
     lambda_: float = 1.0,
     scale_lo: torch.Tensor | None = None,
     scale_hi: torch.Tensor | None = None,
-) -> torch.Tensor:
-    """Fused `quant.fake_quant_weight_dual`.
+    with_codes: bool = False,
+):
+    """Fused `quant.fake_quant_weight_dual`, optionally emitting its codes too.
+
+    `with_codes` returns `(effective weight, int8 five-state codes)`. The codes are
+    the same tensor `dual_codes` would return, produced by the pass that was already
+    computing the levels — the STE saves them for its backward instead of running a
+    second, eager assignment over the whole weight.
 
     Raises:
         RuntimeError: If Triton is unavailable, `weight` is not on CUDA, or the pair
@@ -298,18 +322,25 @@ def fake_quant_weight_dual(
     weight = weight.contiguous()
     rows, in_features = _rows_and_cols(weight)
     out = torch.empty_like(weight)
+    codes = (
+        torch.empty(weight.shape, dtype=torch.int8, device=weight.device)
+        if with_codes
+        else out
+    )
     _dual_kernel[(rows, triton.cdiv(in_features, _BLOCK))](
         weight,
         out,
+        codes,
         _row_vector(low, rows),
         _row_vector(high, rows),
         lambda_,
         in_features,
         LAMBDA_ONE=lambda_ >= 1.0,
+        EMIT_CODES=with_codes,
         BLOCK=_BLOCK,
         num_warps=num_warps_for(_BLOCK),
     )
-    return out
+    return (out, codes) if with_codes else out
 
 
 def fake_quant_weight_trit_planes(
@@ -317,8 +348,12 @@ def fake_quant_weight_trit_planes(
     lambda_: float = 1.0,
     scale_1: torch.Tensor | None = None,
     scale_2: torch.Tensor | None = None,
-) -> torch.Tensor:
-    """Fused `quant.fake_quant_weight_trit_planes`.
+    with_codes: bool = False,
+):
+    """Fused `quant.fake_quant_weight_trit_planes`, optionally emitting its planes.
+
+    `with_codes` returns `(effective weight, int8 (2, rows, cols) planes)` — what
+    `trit_plane_codes` would return, from the pass that already searched the states.
 
     Raises:
         RuntimeError: If Triton is unavailable, `weight` is not on CUDA, or the pair
@@ -338,18 +373,29 @@ def fake_quant_weight_trit_planes(
     weight = weight.contiguous()
     rows, in_features = _rows_and_cols(weight)
     out = torch.empty_like(weight)
+    planes = (
+        torch.empty(
+            (DUAL_PLANES, *weight.shape), dtype=torch.int8, device=weight.device
+        )
+        if with_codes
+        else None
+    )
     _trit_planes_kernel[(rows, triton.cdiv(in_features, _BLOCK))](
         weight,
         out,
+        planes[0] if with_codes else out,
+        planes[1] if with_codes else out,
         _row_vector(first, rows),
         _row_vector(second, rows),
         lambda_,
         in_features,
+        weight.numel(),
         LAMBDA_ONE=lambda_ >= 1.0,
+        EMIT_CODES=with_codes,
         BLOCK=_BLOCK,
         num_warps=num_warps_for(_BLOCK),
     )
-    return out
+    return (out, planes) if with_codes else out
 
 
 def dual_scale_grad_terms(

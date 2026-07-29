@@ -977,17 +977,31 @@ class FakeQuantWeightDualSTE(torch.autograd.Function):
         backward is unchanged either way, since it reads the codes, not the values.
         """
         ctx.lambda_ = lambda_
-        if lambda_ > 0.0 and (scale_lo.requires_grad or scale_hi.requires_grad):
-            ctx.save_for_backward(
-                dual_codes(weight, scale_lo, scale_hi),
-                scale_lo,
-                scale_hi,
-                # the forward reads the pair as (min, max); where that swapped the two,
-                # each argument drove the other's level and takes the other's gradient
-                scale_lo.to(torch.float32) > scale_hi.to(torch.float32),
+        needs_codes = lambda_ > 0.0 and (
+            scale_lo.requires_grad or scale_hi.requires_grad
+        )
+        if not needs_codes:
+            forward = impl.fake_quant_weight_dual if impl else fake_quant_weight_dual
+            return forward(weight, lambda_, scale_lo, scale_hi)
+
+        if impl is not None:
+            # one pass: the kernel already knows every weight's level, so saving its
+            # codes costs nothing where recomputing them costs a second assignment
+            output, codes = impl.fake_quant_weight_dual(
+                weight, lambda_, scale_lo, scale_hi, with_codes=True
             )
-        forward = impl or fake_quant_weight_dual
-        return forward(weight, lambda_, scale_lo, scale_hi)
+        else:
+            codes = dual_codes(weight, scale_lo, scale_hi)
+            output = fake_quant_weight_dual(weight, lambda_, scale_lo, scale_hi)
+        ctx.save_for_backward(
+            codes,
+            scale_lo,
+            scale_hi,
+            # the forward reads the pair as (min, max); where that swapped the two,
+            # each argument drove the other's level and takes the other's gradient
+            scale_lo.to(torch.float32) > scale_hi.to(torch.float32),
+        )
+        return output
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -1028,18 +1042,33 @@ class FakeQuantWeightTritPlanesSTE(torch.autograd.Function):
         `impl` swaps in a bit-identical fused forward; the backward reads the planes.
         """
         ctx.lambda_ = lambda_
-        if lambda_ > 0.0 and (scale_1.requires_grad or scale_2.requires_grad):
-            first, second = trit_plane_grid_scales(scale_1, scale_2, weight.dtype)
-            ctx.save_for_backward(
-                trit_plane_codes(weight, first, second),
-                scale_1,
-                scale_2,
-                # the forward reads the pair as (max, min); where that swapped the two,
-                # each argument drove the other's plane and takes its gradient
-                scale_1.to(torch.float32) < scale_2.to(torch.float32),
+        needs_codes = lambda_ > 0.0 and (scale_1.requires_grad or scale_2.requires_grad)
+        if not needs_codes:
+            forward = (
+                impl.fake_quant_weight_trit_planes
+                if impl
+                else fake_quant_weight_trit_planes
             )
-        forward = impl or fake_quant_weight_trit_planes
-        return forward(weight, lambda_, scale_1, scale_2)
+            return forward(weight, lambda_, scale_1, scale_2)
+
+        if impl is not None:
+            # the nine-state search runs once, not twice
+            output, planes = impl.fake_quant_weight_trit_planes(
+                weight, lambda_, scale_1, scale_2, with_codes=True
+            )
+        else:
+            first, second = trit_plane_grid_scales(scale_1, scale_2, weight.dtype)
+            planes = trit_plane_codes(weight, first, second)
+            output = fake_quant_weight_trit_planes(weight, lambda_, scale_1, scale_2)
+        ctx.save_for_backward(
+            planes,
+            scale_1,
+            scale_2,
+            # the forward reads the pair as (max, min); a swapped argument drove the
+            # other's plane and takes its gradient
+            scale_1.to(torch.float32) < scale_2.to(torch.float32),
+        )
+        return output
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]

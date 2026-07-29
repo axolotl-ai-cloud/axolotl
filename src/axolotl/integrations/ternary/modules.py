@@ -820,9 +820,7 @@ class TernaryLinear(nn.Module):
                 lambda_,
                 first,
                 second,
-                impl=None
-                if multi_state is None
-                else multi_state.fake_quant_weight_trit_planes,
+                impl=multi_state,
             )
         if self.weight_scale == "dual":
             low, high = self._dual_scales(self.weight)
@@ -831,9 +829,7 @@ class TernaryLinear(nn.Module):
                 lambda_,
                 low,
                 high,
-                impl=None
-                if multi_state is None
-                else multi_state.fake_quant_weight_dual,
+                impl=multi_state,
             )
         scale = self._scale()
         # fused kernels carry no gradient for a learnable scale

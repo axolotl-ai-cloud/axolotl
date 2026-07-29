@@ -404,3 +404,148 @@ def test_the_gradient_helpers_fall_back_off_cuda():
     low, high = quant._dual_grad_terms(grad, codes, 1.0)
 
     assert low.shape == grad.shape and high.shape == grad.shape
+
+
+# ------------------------------------------------- saved codes (one assignment)
+
+
+@triton_cuda
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("lambda_", [1.0, 0.5])
+def test_the_emitted_dual_codes_are_the_eager_codes(fused, dtype, shape, lambda_):
+    """What the STE saves must be what `dual_codes` would have produced."""
+    weight = _weight(shape, dtype, seed=shape[1])
+    low, high = quant.dual_absmean_scales(weight)
+
+    out, codes = fused.fake_quant_weight_dual(
+        weight, lambda_, low, high, with_codes=True
+    )
+
+    assert codes.dtype is torch.int8
+    assert torch.equal(codes, quant.dual_codes(weight, low, high))
+    _assert_matches(
+        out, quant.fake_quant_weight_dual(weight, lambda_, low, high), dtype, lambda_
+    )
+
+
+@triton_cuda
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("lambda_", [1.0, 0.5])
+def test_the_emitted_trit_planes_are_the_eager_planes(fused, dtype, shape, lambda_):
+    weight = _weight(shape, dtype, seed=shape[1])
+    scale_1, scale_2 = quant.trit_plane_absmean_scales(weight)
+    first, second = quant.trit_plane_grid_scales(scale_1, scale_2, dtype)
+
+    out, planes = fused.fake_quant_weight_trit_planes(
+        weight, lambda_, scale_1, scale_2, with_codes=True
+    )
+
+    assert planes.dtype is torch.int8
+    assert planes.shape == (quant.DUAL_PLANES, *shape)
+    assert torch.equal(planes, quant.trit_plane_codes(weight, first, second))
+    _assert_matches(
+        out,
+        quant.fake_quant_weight_trit_planes(weight, lambda_, scale_1, scale_2),
+        dtype,
+        lambda_,
+    )
+
+
+@triton_cuda
+@pytest.mark.parametrize("name", sorted(DEGENERATE))
+def test_the_emitted_codes_survive_degenerate_rows(fused, name):
+    weight = DEGENERATE[name].to("cuda").to(torch.bfloat16)
+    low, high = quant.dual_absmean_scales(weight)
+    scale_1, scale_2 = quant.trit_plane_absmean_scales(weight)
+    first, second = quant.trit_plane_grid_scales(scale_1, scale_2, torch.bfloat16)
+
+    _, codes = fused.fake_quant_weight_dual(weight, 1.0, low, high, with_codes=True)
+    _, planes = fused.fake_quant_weight_trit_planes(
+        weight, 1.0, scale_1, scale_2, with_codes=True
+    )
+
+    assert torch.equal(codes, quant.dual_codes(weight, low, high))
+    assert torch.equal(planes, quant.trit_plane_codes(weight, first, second))
+
+
+@triton_cuda
+def test_emitting_codes_does_not_change_the_effective_weight(fused):
+    """`with_codes` is a second output, not a second code path."""
+    weight = _weight((64, 512), torch.bfloat16)
+    low, high = quant.dual_absmean_scales(weight)
+    scale_1, scale_2 = quant.trit_plane_absmean_scales(weight)
+
+    plain = fused.fake_quant_weight_dual(weight, 1.0, low, high)
+    with_codes, _ = fused.fake_quant_weight_dual(
+        weight, 1.0, low, high, with_codes=True
+    )
+    assert torch.equal(plain, with_codes)
+
+    plain = fused.fake_quant_weight_trit_planes(weight, 1.0, scale_1, scale_2)
+    with_codes, _ = fused.fake_quant_weight_trit_planes(
+        weight, 1.0, scale_1, scale_2, with_codes=True
+    )
+    assert torch.equal(plain, with_codes)
+
+
+@triton_cuda
+@pytest.mark.parametrize("weight_scale", ["dual", "trit_planes"])
+def test_the_ste_saves_int8_codes_and_no_more(weight_scale):
+    """The saved tensor is the int8 codes, so the fix costs no activation memory.
+
+    The eager path already saved exactly these; emitting them from the forward only
+    removes the second assignment, it does not hold anything new between the passes.
+    """
+    pytest.importorskip("triton")
+    from axolotl.integrations.ternary.kernels.triton import multi_state
+
+    torch.manual_seed(0)
+    weight = _weight((64, 512), torch.bfloat16).requires_grad_(True)
+    planes = quant.DUAL_PLANES if weight_scale == "trit_planes" else 1
+
+    if weight_scale == "dual":
+        low, high = quant.dual_absmean_scales(weight.detach())
+        out = quant.fake_quant_weight_dual_ste(
+            weight,
+            1.0,
+            low.requires_grad_(True),
+            high.requires_grad_(True),
+            impl=multi_state,
+        )
+    else:
+        first, second = quant.trit_plane_absmean_scales(weight.detach())
+        out = quant.fake_quant_weight_trit_planes_ste(
+            weight,
+            1.0,
+            first.requires_grad_(True),
+            second.requires_grad_(True),
+            impl=multi_state,
+        )
+
+    saved = [t for t in out.grad_fn.saved_tensors if t.dtype is torch.int8]
+    assert len(saved) == 1
+    assert saved[0].numel() == weight.numel() * planes
+
+
+@triton_cuda
+@pytest.mark.parametrize("weight_scale", ["dual", "trit_planes"])
+def test_a_frozen_scale_skips_the_codes_entirely(weight_scale):
+    """No scale gradient, nothing to save — the forward stays a single output."""
+    pytest.importorskip("triton")
+    module = (
+        TernaryLinear.from_linear(
+            nn.Linear(256, 128, bias=False), weight_scale=weight_scale
+        )
+        .cuda()
+        .to(torch.bfloat16)
+    )
+    module.scale.requires_grad_(False)
+    module.scale_lo.requires_grad_(False)
+    x = torch.randn(4, 256, device="cuda", dtype=torch.bfloat16)
+
+    module.fused = True
+    fused_out = module(x)
+    module.fused = False
+    assert torch.equal(fused_out, module(x))
