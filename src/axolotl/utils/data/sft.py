@@ -306,12 +306,8 @@ def _load_streaming_mm_dataset(
     # 0), so — unlike the pretraining loader — no non-main-rank placeholder guard.
     from axolotl.utils.data.mm_streaming import build_streaming_mm_dataset
 
-    raw_dataset = load_dataset(
-        dataset_config["path"],
-        streaming=True,
-        split=dataset_config["split"],
-        name=dataset_config.get("name"),
-        data_files=dataset_config.get("data_files"),
+    raw_dataset = load_dataset_with_config(
+        dataset_config, cfg.hf_use_auth_token, streaming=True
     )
     if isinstance(raw_dataset, (DatasetDict, IterableDatasetDict)):
         raw_dataset = raw_dataset[dataset_config["split"]]
@@ -332,12 +328,8 @@ def _load_skip_prepare_mm_dataset(
     """
     from axolotl.utils.data.mm_streaming import build_streaming_mm_dataset
 
-    raw_dataset = load_dataset(
-        dataset_config["path"],
-        streaming=False,
-        split=dataset_config["split"],
-        name=dataset_config.get("name"),
-        data_files=dataset_config.get("data_files"),
+    raw_dataset = load_dataset_with_config(
+        dataset_config, cfg.hf_use_auth_token, streaming=False
     )
     if isinstance(raw_dataset, (DatasetDict, IterableDatasetDict)):
         raw_dataset = raw_dataset[dataset_config["split"]]
