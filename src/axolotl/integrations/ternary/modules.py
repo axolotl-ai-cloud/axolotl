@@ -40,7 +40,14 @@ ROW_SCALE_MODES: frozenset[str] = frozenset({"learnable_row", "dual", "trit_plan
 # the grids the fused Triton kernels and the W2A8 int8 forward implement; everything
 # else runs the eager oracle until a kernel for its scale layout lands
 FUSED_SCALE_MODES: frozenset[str] = frozenset({"absmean", "group"})
-INT8_FORWARD_SCALE_MODES: frozenset[str] = frozenset({"absmean", "learnable"})
+# int8 W2A8 forward modes. `learnable_row` joins them because one GEMM plus a
+# vector epilogue beats the fused fake-quant forward at every eval shape measured
+# (1.16-1.50x). `dual` and `trit_planes` are deliberately absent: their two-GEMM
+# split loses 20% on the widest projection shape (4096x2048->8192, i.e. gate/up),
+# and winning 11-32% elsewhere does not pay for regressing the most common one.
+INT8_FORWARD_SCALE_MODES: frozenset[str] = frozenset(
+    {"absmean", "learnable", "learnable_row"}
+)
 
 # state-dict entries holding a learnable scale, in `__init__` order
 SCALE_ATTRS: tuple[str, ...] = ("scale", "scale_lo")

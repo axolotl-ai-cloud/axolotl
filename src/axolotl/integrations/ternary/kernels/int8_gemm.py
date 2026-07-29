@@ -62,6 +62,7 @@ class _EvalWeightCodes:
     data_ptr: int
     codes: torch.Tensor
     scale: torch.Tensor
+    stamp: tuple = ()
 
 
 if _HAS_TRITON:
@@ -109,6 +110,35 @@ if _HAS_TRITON:
         code = rint(div_rn(w, scale))
         code = tl.minimum(tl.maximum(code, -1.0), 1.0)
         tl.store(codes_ptr + offsets, code.to(tl.int8), mask=mask)
+
+    @triton.jit
+    def _row_rescale_kernel(
+        acc_ptr,
+        x_scale_ptr,
+        w_scale_ptr,
+        out_ptr,
+        acc_row_stride,
+        out_row_stride,
+        n_cols,
+        BLOCK_SIZE: tl.constexpr,
+    ):
+        """`int32 -> fp32 · s_x · s16[n] -> out_dtype`, one weight scale per column.
+
+        The per-tensor epilogue reads one scalar; a per-row weight scale is one value
+        per *output* feature, so it is a vector load along the same axis the block
+        already walks.
+        """
+        row = tl.program_id(0)
+        offsets = tl.program_id(1) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < n_cols
+        acc = tl.load(acc_ptr + row * acc_row_stride + offsets, mask=mask, other=0)
+        w_scale = tl.load(w_scale_ptr + offsets, mask=mask, other=0.0).to(tl.float32)
+        out = acc.to(tl.float32) * tl.load(x_scale_ptr + row) * w_scale
+        tl.store(
+            out_ptr + row * out_row_stride + offsets,
+            out.to(out_ptr.dtype.element_ty),
+            mask=mask,
+        )
 
     @triton.jit
     def _act_quant_kernel(
@@ -202,10 +232,22 @@ def _rescale(
     w_scale: torch.Tensor,
     out_dtype: torch.dtype,
 ) -> torch.Tensor:
-    """Apply `acc · (s_x · s16)` and cast — pinned multiply order, Triton or eager."""
+    """Apply `acc · (s_x · s16)` and cast — pinned multiply order, Triton or eager.
+
+    `w_scale` is either a single value for the whole tensor or one per output
+    feature; the per-row form takes a vector load along the axis the block already
+    walks, so it costs the same pass.
+    """
     tokens, out_features = acc.shape
+    per_row = w_scale.numel() > 1
+    if per_row and w_scale.numel() != out_features:
+        raise ValueError(
+            f"expected one weight scale per output feature, got {w_scale.numel()} "
+            f"for {out_features}"
+        )
     if not (_HAS_TRITON and acc.is_cuda):
-        return (acc * (x_scale.reshape(tokens, 1).to(torch.float32) * w_scale)).to(
+        dense = w_scale.reshape(1, -1) if per_row else w_scale
+        return (acc * (x_scale.reshape(tokens, 1).to(torch.float32) * dense)).to(
             out_dtype
         )
 
@@ -213,7 +255,8 @@ def _rescale(
     if tokens == 0 or out_features == 0:
         return out
     grid = (tokens, triton.cdiv(out_features, _RESCALE_BLOCK))
-    _rescale_kernel[grid](
+    kernel = _row_rescale_kernel if per_row else _rescale_kernel
+    kernel[grid](
         acc,
         x_scale.reshape(-1).to(torch.float32).contiguous(),
         w_scale.reshape(-1).to(torch.float32).contiguous(),
@@ -274,7 +317,7 @@ def int8_gemm(
         x_codes: int8 activations of shape `(tokens, in_features)`.
         w_codes: int8 ternary weight codes of shape `(out_features, in_features)`.
         x_scale: fp32 per-token scale of shape `(tokens, 1)`.
-        w_scale: fp32 per-tensor scale (`s16`), 0-dim.
+        w_scale: fp32 weight scale — 0-dim per tensor, or `(out_features,)` per row.
         out_dtype: Output dtype.
 
     Returns:
@@ -298,8 +341,11 @@ def int8_gemm(
             f"expected one activation scale per token, got {x_scale.numel()} for "
             f"{x_codes.shape[0]} tokens"
         )
-    if w_scale.numel() != 1:
-        raise ValueError("int8_gemm expects a per-tensor weight scale")
+    if w_scale.numel() not in (1, w_codes.shape[0]):
+        raise ValueError(
+            "int8_gemm expects a per-tensor weight scale or one per output feature, "
+            f"got {w_scale.numel()} for {w_codes.shape[0]} outputs"
+        )
 
     acc = _int32_matmul(x_codes, w_codes)
     return _rescale(acc, x_scale, w_scale, out_dtype)
@@ -351,6 +397,12 @@ def ternary_codes(weight: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
 
 def _derive_weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.Tensor]:
     weight = module.weight.detach()
+    row_scale = _row_scale(module)
+    if row_scale is not None:
+        # `learnable_row` stores its grid, so the codes come from the trained scale
+        # rather than a statistic re-derived from the latent
+        scale = row_scale.to(torch.float32)
+        return ternary_codes(weight, scale), quant.f16_round_scale(scale).reshape(-1)
     is_baked = getattr(module, "is_baked", None)
     if is_baked() if callable(is_baked) else getattr(module, "baked", False):
         # a baked latent already holds exactly `code · s16`; absmean would shrink the scale
@@ -363,6 +415,14 @@ def _derive_weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.T
     return codes, scale_f16
 
 
+def _row_scale(module: torch.nn.Module) -> torch.Tensor | None:
+    """Return the `(out_features, 1)` trained scale of a per-row module, else `None`."""
+    if getattr(module, "weight_scale", None) != "learnable_row":
+        return None
+    scale = getattr(module, "_scale", None)
+    return None if scale is None else scale()
+
+
 def _weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.Tensor]:
     """Int8 codes for `module.weight`, cached only while the module is in eval mode."""
     weight = module.weight
@@ -373,10 +433,12 @@ def _weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.Tensor]:
             delattr(module, _EVAL_CACHE_ATTR)
         return _derive_weight_codes(module)
 
+    stamp = _cache_stamp(module)
     if (
         cached is not None
         and cached.version == weight._version
         and cached.data_ptr == weight.data_ptr()
+        and cached.stamp == stamp
     ):
         return cached.codes, cached.scale
 
@@ -384,9 +446,25 @@ def _weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.Tensor]:
     setattr(
         module,
         _EVAL_CACHE_ATTR,
-        _EvalWeightCodes(weight._version, weight.data_ptr(), codes, scale),
+        _EvalWeightCodes(weight._version, weight.data_ptr(), codes, scale, stamp),
     )
     return codes, scale
+
+
+def _cache_stamp(module: torch.nn.Module) -> tuple:
+    """Identity of everything the cached codes were derived from beyond the weight.
+
+    A per-row module keeps its grid in a trained parameter, so the weight's version
+    counter alone does not describe the codes — and a fused optimizer updates
+    parameters without bumping that counter at all (the same blind spot that once let
+    a fit-initialized module claim to be baked for a whole run). The scale's own
+    identity and contents go into the key so a moved scale cannot be served stale.
+    """
+    scale = _row_scale(module)
+    if scale is None:
+        return ()
+    dense = scale.detach()
+    return (dense.data_ptr(), dense._version, float(dense.sum()))
 
 
 class Int8LinearSTE(torch.autograd.Function):
@@ -445,7 +523,7 @@ def int8_linear_forward(
         return None
     if getattr(module, "group_size", None) is not None:
         return None
-    if getattr(module, "scale", None) is not None:
+    if getattr(module, "scale", None) is not None and _row_scale(module) is None:
         return None
     if not (x.is_cuda and weight.is_cuda and x.device == weight.device):
         return None
