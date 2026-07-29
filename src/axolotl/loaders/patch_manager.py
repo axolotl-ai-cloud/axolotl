@@ -662,15 +662,12 @@ class PatchManager:
 
                 patch_qwen3_vl_fused_attn()
 
-            if (
-                self.cfg.vision_patch_embed_linear is not False
-                and self.cfg.model_config_type == "qwen3_vl"
-            ):
-                from axolotl.monkeypatch.models.qwen3_vl.patch_embed_linear import (
-                    patch_qwen3_vl_patch_embed_linear,
+            if self.cfg.vision_patch_embed_linear is not False:
+                from axolotl.monkeypatch.models.vision_patch_embed_linear import (
+                    patch_vision_patch_embed_linear,
                 )
 
-                patch_qwen3_vl_patch_embed_linear()
+                patch_vision_patch_embed_linear(self.cfg.model_config_type)
 
             if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
                 "qwen3_5",
