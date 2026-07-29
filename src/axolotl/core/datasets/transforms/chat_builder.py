@@ -123,28 +123,22 @@ def chat_message_transform_builder(
                 else role_default_weights_mappings[role]
             )
 
-            # TODO if "tool_calls" in message[message_content_field]: then convert tool call to ToolCallContents
-            if isinstance(message[message_content_field], str):
-                messages.append(
-                    {
-                        "role": role,
-                        "content": [
-                            {
-                                "type": "text",
-                                "value": message[message_content_field],
-                            }
-                        ],
-                        "weight": weight,
-                    }
-                )
+            # Convert tool calls to ToolCallContents when present
+            content_data = message[message_content_field]
+            if isinstance(content_data, str):
+                content_items = [{"type": "text", "value": content_data}]
             else:
-                messages.append(
-                    {
-                        "role": role,
-                        "content": message[message_content_field],
-                        "weight": weight,
-                    }
-                )
+                if isinstance(content_data, dict) and "tool_calls" in content_data:
+                    content_items = [{"type": "tool_call", "value": content_data["tool_calls"]}]
+                else:
+                    content_items = content_data if isinstance(content_data, list) else [{"type": "text", "value": str(content_data)}]
+            messages.append(
+                {
+                    "role": role,
+                    "content": content_items,
+                    "weight": weight,
+                }
+            )
 
         return {"conversation": messages}
 
