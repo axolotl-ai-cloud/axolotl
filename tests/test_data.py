@@ -187,12 +187,17 @@ class TestDropNoTrainableTokens(unittest.TestCase):
         self.assertEqual(eval_dataset["labels"], [[-100, 7, -100]])
 
     def test_all_samples_masked_raises(self):
-        with self.assertRaisesRegex(ValueError, "train dataset has no samples left"):
-            self._process([[-100, -100], [-100, -100, -100]])
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        with self.assertRaisesRegex(ValueError, "dataset has no samples left"):
+            process_datasets_for_packing(
+                cfg,
+                Dataset.from_dict({"labels": [[-100, -100], [-100, -100, -100]]}),
+                None,
+            )
 
     def test_all_eval_samples_masked_raises(self):
         cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
-        with self.assertRaisesRegex(ValueError, "eval dataset has no samples left"):
+        with self.assertRaisesRegex(ValueError, "dataset has no samples left"):
             process_datasets_for_packing(
                 cfg,
                 Dataset.from_dict({"labels": [[1, 2, 3]]}),

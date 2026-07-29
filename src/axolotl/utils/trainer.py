@@ -275,11 +275,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         results = [any(v != -100 for v in row_labels) for row_labels in labels]
         return results
 
-    def raise_if_empty(dataset, split):
+    def raise_if_empty(dataset):
         if len(dataset) == 0:
             raise ValueError(
-                f"The {split} dataset has no samples left after dropping samples with "
-                "no trainable tokens. Every sample had all of its labels masked to "
+                "The dataset has no samples left after dropping samples with no "
+                "trainable tokens. Every sample had all of its labels masked to "
                 "-100, so there is nothing to train on. Check `train_on_inputs`, "
                 "`roles_to_train`, and your prompt strategy / chat template."
             )
@@ -309,7 +309,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             LOG.warning(
                 f"Dropped {dropped} samples with no trainable tokens from train dataset"
             )
-        raise_if_empty(train_dataset, "train")
+        raise_if_empty(train_dataset)
 
     if eval_dataset:
         try:
@@ -328,7 +328,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 LOG.warning(
                     f"Dropped {dropped} samples with no trainable tokens from eval dataset"
                 )
-            raise_if_empty(eval_dataset, "eval")
+            raise_if_empty(eval_dataset)
 
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
