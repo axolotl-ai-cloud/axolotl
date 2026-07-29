@@ -296,9 +296,10 @@ def _compute_expert_block_lora(
 
     # Base weight pointers: W[E_idx, :, :] is [K, N], load [BLOCK_K, BLOCK_N]
     X_blk_ptrs = X_ptr + M_in_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
+    # i64 expert offset: E_idx * stride_we overflows i32 on a >2^31-element expert stack
     W_blk_ptrs = (
         W_ptr
-        + E_idx * stride_we
+        + E_idx.to(tl.int64) * stride_we
         + K_block[:, None] * stride_wk
         + N_block[None, :] * stride_wn
     )
@@ -897,7 +898,7 @@ def _compute_expert_block_lora_dX(
     # As [BLOCK_N, BLOCK_K] tile: row=n, col=k
     WT_blk_ptrs = (
         W_ptr
-        + E_idx * stride_we
+        + E_idx.to(tl.int64) * stride_we
         + N_block[:, None] * stride_wn  # row = n dimension
         + K_block[None, :] * stride_wk
     )  # col = k dimension
@@ -2445,14 +2446,14 @@ def _compute_expert_block_lora_mxfp4(
     # Packed W pointers: tile shape [BLOCK_N, BLOCK_K] (each byte loaded twice)
     Wp_blk_ptrs = (
         Wp_ptr
-        + E_idx * stride_wpe
+        + E_idx.to(tl.int64) * stride_wpe
         + N_block[:, None] * stride_wpn
         + K_byte_block[None, :] * stride_wpk
     )
     # Scale pointers: tile shape [BLOCK_N, BLOCK_K] (broadcast within block)
     Ws_blk_ptrs = (
         Ws_ptr
-        + E_idx * stride_wse
+        + E_idx.to(tl.int64) * stride_wse
         + N_block[:, None] * stride_wsn
         + K_scale_block[None, :] * stride_wsk
     )
@@ -3001,14 +3002,14 @@ def _compute_expert_block_lora_dX_mxfp4(
     # stride_wpn (= K/2) is large, but the K row stride is 1.
     Wp_blk_ptrs = (
         Wp_ptr
-        + E_idx * stride_wpe
+        + E_idx.to(tl.int64) * stride_wpe
         + N_block[None, :] * stride_wpn
         + K_byte_block[:, None] * stride_wpk
     )
     # Scale [E, N, K/32]; row=K_scale_idx (broadcast within MX_BLOCK_SIZE), col=N
     Ws_blk_ptrs = (
         Ws_ptr
-        + E_idx * stride_wse
+        + E_idx.to(tl.int64) * stride_wse
         + N_block[None, :] * stride_wsn
         + K_scale_block[:, None] * stride_wsk
     )
