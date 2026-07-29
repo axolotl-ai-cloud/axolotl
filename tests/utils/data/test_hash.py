@@ -128,6 +128,17 @@ class TestGenerateDatasetHashFromConfig:
 
         assert h1 != h2
 
+    def test_nearest_distinct_from_unset(self):
+        # the emptiness filter must not treat the normalized NEAREST (int 0)
+        # as an unset field, or NEAREST configs would reuse default-hash caches
+        h_unset = generate_dataset_hash_from_config(_base_cfg(), _datasets(), "tok")
+        h_nearest = generate_dataset_hash_from_config(
+            _base_cfg(image_resize_algorithm=Image.Resampling.NEAREST),
+            _datasets(),
+            "tok",
+        )
+        assert h_unset != h_nearest
+
     def test_dataset_chat_template_fields_affect_hash(self):
         datasets_a = _datasets()
         datasets_b = _datasets()
