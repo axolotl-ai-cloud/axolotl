@@ -90,8 +90,18 @@ class TokenizedPromptDataset(Dataset):
                 [_tokenize(dataset.select(with_media))]
                 + [_tokenize(dataset.select(without_media))]
             )
+            if len(merged) != len(order):
+                # Tokenization dropped rows, so the original permutation no longer
+                # applies; keep the concatenated (media-first) order.
+                LOG.warning(
+                    "%d row(s) were dropped while tokenizing a mixed media/text "
+                    "dataset; original row order is not restored.",
+                    len(order) - len(merged),
+                )
+                return merged
             return merged.select(order).flatten_indices(
-                writer_batch_size=self.writer_batch_size or 1_000
+                keep_in_memory=bool(self.keep_in_memory),
+                writer_batch_size=self.writer_batch_size or 1_000,
             )
 
         return _tokenize(dataset)

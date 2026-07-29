@@ -298,6 +298,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         drop_no_trainable_tokens,
         batched=True,
         **filter_map_kwargs,
+        **map_buffer_kwargs,
         **drop_long_kwargs,
     )
     if prior_len:
@@ -316,6 +317,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         eval_dataset = eval_dataset.filter(
             drop_no_trainable_tokens,
             **filter_map_kwargs,
+            **map_buffer_kwargs,
             **drop_long_kwargs,
         )
         if prior_len:

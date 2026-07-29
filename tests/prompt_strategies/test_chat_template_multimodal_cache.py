@@ -302,6 +302,48 @@ class TestCrossBatchMixedModality:
         tds.prompt_tokenizer = strategy
         assert tds._split_media_indices(ds) is None  # pylint: disable=protected-access
 
+    def test_dropped_rows_dont_crash_order_restore(self):
+        strategy = self.make_strategy()
+        original = strategy._tokenize_single_prompt  # pylint: disable=protected-access
+
+        def drop_page_two(prompt):
+            if prompt.get("messages") == ["c"]:
+                return {}
+            return original(prompt)
+
+        strategy._tokenize_single_prompt = drop_page_two  # pylint: disable=protected-access
+        ds = Dataset.from_dict(
+            {
+                "messages": [["a"], ["b"], ["c"], ["d"]],
+                "images": [["img"], [], ["img"], []],
+            }
+        )
+        tds = TokenizedPromptDataset(strategy, ds, batch_size=2)
+        assert len(tds) == 3
+        media = sorted(tds[i]["pixel_values"] is not None for i in range(3))
+        assert media == [False, False, True]
+
+    def test_keep_in_memory_forwarded_to_flatten(self):
+        ds = Dataset.from_dict(
+            {
+                "messages": [["a"], ["b"]],
+                "images": [["img"], []],
+            }
+        )
+        captured = {}
+        original_flatten = Dataset.flatten_indices
+
+        def spy(self, **kwargs):
+            captured.update(kwargs)
+            return original_flatten(self, **kwargs)
+
+        with patch.object(Dataset, "flatten_indices", spy):
+            TokenizedPromptDataset(
+                self.make_strategy(), ds, keep_in_memory=True, writer_batch_size=2
+            )
+        assert captured["keep_in_memory"] is True
+        assert captured["writer_batch_size"] == 2
+
     def test_iterable_batch_size_forwarded(self):
         strategy = self.make_mixed_iterable_strategy()
         ds = Dataset.from_dict({"messages": [["a"]], "images": [["img"]]})
@@ -364,19 +406,33 @@ class TestBufferKwargsHelper:
             }
         )
         captured = []
+        filter_captured = []
         original_map = Dataset.map
+        original_filter = Dataset.filter
 
         def spy(self, *args, **kwargs):
             captured.append(kwargs)
             return original_map(self, *args, **kwargs)
 
-        with patch.object(Dataset, "map", spy):
+        def filter_spy(self, *args, **kwargs):
+            filter_captured.append(kwargs)
+            return original_filter(self, *args, **kwargs)
+
+        with (
+            patch.object(Dataset, "map", spy),
+            patch.object(Dataset, "filter", filter_spy),
+        ):
             process_datasets_for_packing(cfg, ds, None)
         position_ids_maps = [
             k for k in captured if k.get("desc", "").startswith("Add position_id")
         ]
         assert position_ids_maps
         assert all(k["writer_batch_size"] == 32 for k in position_ids_maps)
+        trainable_filters = [
+            k for k in filter_captured if "Trainable Tokens" in k.get("desc", "")
+        ]
+        assert trainable_filters
+        assert all(k["batch_size"] == 32 for k in trainable_filters)
 
 
 if __name__ == "__main__":
