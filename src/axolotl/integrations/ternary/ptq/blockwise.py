@@ -360,7 +360,7 @@ def _train_block(
     final = 0.0
     steps = 0
     tokens = 0
-    for epoch in range(max(1, plan.epochs)):
+    for _epoch in range(max(1, plan.epochs)):
         pairs = zip(
             cache.read(_STUDENT_TAG, index),
             cache.read(_TEACHER_TAG, index + 1),
