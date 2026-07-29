@@ -346,6 +346,7 @@ def test_the_config_marker_is_the_export_gate_key():
         "gguf_tq2_0",
         "i2_s",
         "hf_bitnet",
+        "onebitllms_bf16",
     }
 
 

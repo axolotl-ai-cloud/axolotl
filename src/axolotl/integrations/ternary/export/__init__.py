@@ -123,6 +123,10 @@ def _write_artifact(
         from . import mask_sign
 
         return mask_sign.export_mask_sign(master, output / fmt, manifest)
+    if fmt == "onebitllms_bf16":
+        from . import onebitllms
+
+        return onebitllms.export_onebitllms(master, output / fmt, manifest)
     if fmt == "i2_s":
         from . import i2s
 

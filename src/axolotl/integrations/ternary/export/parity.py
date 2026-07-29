@@ -22,6 +22,16 @@ LOG = get_logger(__name__)
 # stores it as f16, which bounds the whole dequantization error since |code| <= 1
 F16_HALF_ULP: float = 2.0**-11
 
+# `onebitllms_bf16` stores a latent rather than a grid, so its consumer re-derives the
+# scale as the mean of bf16-rounded inflated values. Each value carries up to half a
+# bf16 mantissa ulp (2^-9 relative), and the mean of same-signed roundings does not
+# cancel, so the re-derived scale can sit that far from the master's. Measured at
+# ~1e-3 relative on real tensors; the bound is one binade of headroom over that.
+LATENT_SCALE_RTOL: float = 1e-2
+
+# formats whose consumer re-derives the scale from a stored latent
+LATENT_SCALE_FORMATS: frozenset[str] = frozenset({"onebitllms_bf16"})
+
 SMOKE_TOKENS: int = 16
 
 # The weight path is a deterministic fp32 graph fed bit-identical weights, so its
@@ -285,12 +295,16 @@ def check_code_parity(master_weight: torch.Tensor, unpacked_codes: torch.Tensor)
 
 
 def check_dequant_error(
-    master_weight: torch.Tensor, dequantized: torch.Tensor
+    master_weight: torch.Tensor,
+    dequantized: torch.Tensor,
+    rtol: float = F16_HALF_ULP,
 ) -> tuple[float, float]:
     """Return `(max_abs_error, bound)` for a round-tripped tensor.
 
-    The bound is the f16-rounding error of the scale: an export that stores the same
-    codes and an f16 scale cannot drift further than that.
+    The default bound is the f16-rounding error of the scale: an export that stores
+    the same codes and an f16 scale cannot drift further than that. Formats that
+    store a *latent* and have their consumer re-derive the scale pass their own
+    `rtol` — see `LATENT_SCALE_RTOL`.
     """
     master = master_weight.detach().to(torch.float32)
     if master.shape != dequantized.shape:
@@ -299,7 +313,7 @@ def check_dequant_error(
             f"{tuple(dequantized.shape)}"
         )
     error = (master - dequantized.to(torch.float32)).abs().amax()
-    return float(error), float(master.abs().amax()) * F16_HALF_ULP
+    return float(error), float(master.abs().amax()) * rtol
 
 
 def bitlinear_act_quant_int8(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -533,7 +547,9 @@ def run_parity_gate(
             dequantized = bake.dequantize_derived(
                 codes, scale, entry.weight_scale, master[key].dtype
             )
-            error, bound = check_dequant_error(master[key], dequantized)
+            error, bound = check_dequant_error(
+                master[key], dequantized, _dequant_rtol(fmt)
+            )
         except ValueError as exc:
             report.failures.append(f"{entry.name}: {exc}")
             continue
@@ -556,6 +572,11 @@ def run_parity_gate(
         if report.smoke is not None:
             report.failures.extend(report.smoke.failures)
     return report
+
+
+def _dequant_rtol(fmt: str) -> float:
+    """Relative bound on a format's dequantized weights against the master."""
+    return LATENT_SCALE_RTOL if fmt in LATENT_SCALE_FORMATS else F16_HALF_ULP
 
 
 def _code_mismatches(
@@ -628,6 +649,28 @@ def _extract_mask_sign(
     return extracted
 
 
+def _extract_onebitllms(
+    artifact: Path, manifest: SwapManifest
+) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+    """Read the artifact the way `BitNetLinear` will: run their quantizer on it.
+
+    The stored tensors are latents, not a grid, so the gate has to re-derive the grid
+    exactly as the consumer does. That is what makes it catch the trap this format
+    exists for: handing the *raw* master to `use_onebitllms` keeps the codes but
+    shrinks every scale by the density, and running their quantizer here surfaces that
+    as a dequant-scale mismatch rather than a silent 0.67x on every linear.
+    """
+    from . import onebitllms
+
+    tensors = bake.load_tensors(artifact)
+    extracted: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+    for entry in manifest.entries:
+        weight = tensors.get(f"{entry.name}.weight")
+        if weight is not None:
+            extracted[entry.name] = onebitllms.onebitllms_quantize(weight)
+    return extracted
+
+
 def _decode_block(fmt: str):
     def decode(packed: torch.Tensor, shape: tuple[int, int]):
         if fmt == "i2_s":
@@ -649,6 +692,7 @@ def _decode_block(fmt: str):
 register_extractor("master_bf16", _extract_master_bf16)
 register_extractor("hf_bitnet", _extract_hf_bitnet)
 register_extractor("mask_sign", _extract_mask_sign)
+register_extractor("onebitllms_bf16", _extract_onebitllms)
 # mask_sign is re-read from disk like the other extractor formats, but its bytes are
 # also gated as they are packed, so a corrupt write never reaches the container
 for _fmt in (*BLOCK_GATED_FORMATS, "mask_sign"):
@@ -660,6 +704,8 @@ __all__ = [
     "BLOCK_GATED_FORMATS",
     "EXTRACTORS",
     "F16_HALF_ULP",
+    "LATENT_SCALE_FORMATS",
+    "LATENT_SCALE_RTOL",
     "Q8_0_STEP_TOL",
     "RUNTIME_CODE_MISMATCH_TOL",
     "RUNTIME_DEQUANT_STEP_TOL",

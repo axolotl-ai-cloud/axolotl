@@ -80,6 +80,10 @@ SUBLN_UNSUPPORTED_FORMATS: dict[str, str] = {
         f"the attention and MLP blocks, and the packer does not map `<linear>."
         f"{SUBLN_ATTR}.weight` onto those names yet"
     ),
+    "onebitllms_bf16": (
+        "`replace_linear_with_bitnet_linear` swaps stock `nn.Linear` modules, so the "
+        "sub-norm the swap inserted has nowhere to live in the finetuning model"
+    ),
 }
 
 

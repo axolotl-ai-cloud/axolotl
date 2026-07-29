@@ -26,13 +26,19 @@ DistillMode = Literal["kd_plugin", "inprocess"]
 DistillSchedule = Literal["constant", "anchored"]
 HiddenLoss = Literal["cosine", "mse", "huber"]
 ExportFormat = Literal[
-    "master_bf16", "hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign"
+    "master_bf16",
+    "hf_bitnet",
+    "gguf_tq2_0",
+    "gguf_tq1_0",
+    "i2_s",
+    "mask_sign",
+    "onebitllms_bf16",
 ]
 EmbeddingDtype = Literal["bf16", "int8"]
 
 # one scale and one trit plane for the whole tensor — everything a packed format holds
 PER_TENSOR_SCALE_FORMATS: frozenset[str] = frozenset(
-    {"hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign"}
+    {"hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign", "onebitllms_bf16"}
 )
 GGUF_FORMATS: frozenset[str] = frozenset({"gguf_tq2_0", "gguf_tq1_0", "i2_s"})
 
@@ -40,7 +46,10 @@ GGUF_FORMATS: frozenset[str] = frozenset({"gguf_tq2_0", "gguf_tq1_0", "i2_s"})
 # packer emits the source architecture plus a bitnet `quantization_config`, and
 # transformers' BitLinear only offers an input norm through a model-wide
 # `use_rms_norm` flag that would also normalize the projections subln leaves alone.
-SUBLN_UNSUPPORTED_FORMATS: frozenset[str] = GGUF_FORMATS | {"hf_bitnet"}
+SUBLN_UNSUPPORTED_FORMATS: frozenset[str] = GGUF_FORMATS | {
+    "hf_bitnet",
+    "onebitllms_bf16",
+}
 
 # scale modes no packed format can carry: more than one scale per tensor ('group',
 # 'learnable_row') or more than one plane ('dual')

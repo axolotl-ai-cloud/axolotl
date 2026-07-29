@@ -352,6 +352,7 @@ to the config's `output_dir`, which is also where the baked master is read from.
 | `gguf_tq1_0` | 1.6875 | llama.cpp |
 | `i2_s` | 2.0 | bitnet.cpp |
 | `mask_sign` | `2 − zero_fraction` | none (archival/transport; unpack with this plugin) |
+| `onebitllms_bf16` | 16 | axolotl's `use_onebitllms: true` finetuning path (`BitNetLinear` re-derives its own grid; see [Continuing training with onebitllms](#onebitllms)) |
 
 ::: {.callout-note}
 GGUF exports (`gguf_tq2_0`, `gguf_tq1_0`, `i2_s`) require the optional `gguf` package:
@@ -406,6 +407,70 @@ python setup_env.py -md ./outputs/ternary-out -q i2_s
 python run_inference.py -m ./outputs/ternary-out/ggml-model-i2_s.gguf -p "Hello"
 ```
 
+### onebitllms_bf16 {#onebitllms}
+
+A full checkpoint directory — config, tokenizer and all — whose ternary tensors are
+stored *inflated*. It exists to hand a healed model to axolotl's existing
+`use_onebitllms: true` path for further finetuning.
+
+`onebitllms`' `BitNetLinear` is a QAT layer, not a loader: it keeps a full-precision
+latent and re-derives its own b1.58 grid on every forward,
+
+```
+scale = 1 / max(mean|w|, 1e-5),   codes = round(w · scale).clamp(±1),   w_eff = codes / scale
+```
+
+so a checkpoint hands it a *latent*, not a grid. **Do not point `use_onebitllms` at the
+raw master.** The master holds `code · s`, whose absmean is `s · (1 − z)` for a zero
+fraction `z`, so their scale comes out `1 / (s · (1 − z))`: the codes survive, but every
+weight dequantizes to `code · s · (1 − z)`. At the ~33% density a healed model settles
+at, that is a uniform **0.68x shrink of every linear** — measured end to end against
+real `BitNetLinear`, a 1-layer model already drifts 14% in max logit, and the error
+compounds with depth.
+
+This format applies the closed-form fix: store `code · s / (1 − z)`. Then `mean|w| = s`
+exactly, their scale is `1 / s`, their codes are `round(code / (1 − z)).clamp(±1)` — which
+is `code` for every `z` in `[0, 1)`, since `1 / (1 − z) >= 1` — and their dequant is
+`code · s`. The trained function is an exact fixed point of their quantizer. The
+per-tensor factors land in `ternary_onebitllms.json` beside the shards, and the export's
+parity gate re-runs their quantizer over the written tensors, so the raw-master mistake
+fails the gate rather than shipping.
+
+Per-tensor single-plane scale modes only (`absmean`, `learnable`): `BitNetLinear`
+re-derives one scale for the whole tensor, so a group, per-row or two-plane grid has
+nowhere to live. `subln` is refused for the same reason —
+`replace_linear_with_bitnet_linear` swaps stock `nn.Linear` modules and has no slot for
+the inserted sub-norm.
+
+The handoff, end to end:
+
+```yaml
+# 1. convert and heal, exporting the bridge format
+plugins:
+  - axolotl.integrations.ternary.TernaryPlugin
+ternary:
+  weight_scale: absmean
+  export:
+    formats: [master_bf16, onebitllms_bf16]
+```
+
+```yaml
+# 2. continue training from the export — the ternary plugin is NOT used here;
+#    `use_onebitllms` owns the weight representation and the two are mutually exclusive
+base_model: ./outputs/ternary-out/onebitllms_bf16
+use_onebitllms: true
+```
+
+Then `onebitllms`' own `quantize_to_1bit` produces their packed artifact from whatever
+that run saves.
+
+::: {.callout-warning}
+`replace_linear_with_bitnet_linear` swaps *every* `nn.Linear` except `lm_head`. If your
+run kept some block Linear in full precision through `ternary.keep_fp_modules`, the
+finetune will quantize it anyway and will not match the exported function on that
+module; the exporter logs a warning listing them.
+:::
+
 ### mask_sign
 
 This plugin's own packing, and the only format whose size depends on the model rather than
@@ -457,7 +522,11 @@ byte string is decoded again with our own unpacker and compared to the master's 
 `s16` before the container writer sees it, and the digests land in
 `ternary_block_gate.json` beside the file. `mask_sign` gets both — its bytes are gated as
 they are packed (digests in `ternary_mask_sign.json`) *and* the written artifact is re-read
-and compared. A format with neither gate is refused rather than written unverified.
+and compared. `onebitllms_bf16` stores a latent rather than a grid, so its gate re-runs
+the consumer's own quantizer over the written tensors: the codes must come back exactly,
+and the scale it re-derives must sit within 1% of the master's — which is what turns the
+raw-master mistake into a failed export instead of a 0.68x shrink. A format with neither
+gate is refused rather than written unverified.
 
 A failing gate raises rather than writing a broken artifact.
 
