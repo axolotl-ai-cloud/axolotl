@@ -849,6 +849,16 @@ class PatchManager:
         if not varlen_available():
             return  # torch < 2.10; block-diagonal packing path is correct
 
+        # Every call would fall back anyway, and patching drops the shared 4D mask.
+        half = self.cfg.torch_dtype in (torch.float16, torch.bfloat16)
+        if not (half and torch.cuda.is_available()):
+            if explicit:
+                LOG.info(
+                    "sdpa_varlen: varlen_attn needs CUDA fp16/bf16; keeping stock SDPA "
+                    "(packing still isolated via the block-diagonal mask)."
+                )
+            return
+
         def _attr(name):
             mc = self.model_config
             return mc.get(name) if isinstance(mc, dict) else getattr(mc, name, None)
