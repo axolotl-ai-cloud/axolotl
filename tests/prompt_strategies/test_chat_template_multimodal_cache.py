@@ -5,9 +5,9 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import torch
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 
-from axolotl.datasets import TokenizedPromptDataset
+from axolotl.datasets import TokenizedPromptDataset, wrap_dataset_for_tokenized_prompt
 from axolotl.prompt_strategies.chat_template import (
     ChatTemplatePrompter,
     ChatTemplateStrategy,
@@ -244,6 +244,81 @@ class TestWrapperBufferDefaults:
         )
         assert captured["batch_size"] == 8
         assert captured["writer_batch_size"] == 64
+
+
+class TestCrossBatchMixedModality:
+    """Mixed media/text rows must tokenize even when a whole map batch is
+    single-modality (the Arrow writer locks its schema on the first batch)."""
+
+    def make_strategy(self):
+        strategy = make_strategy(processor=FakeProcessor())
+
+        def fake_single(prompt):
+            row = {"input_ids": [1, 2], "attention_mask": [1, 1], "labels": [1, 2]}
+            if prompt.get("images"):
+                row["pixel_values"] = [[0.5, 0.5]]
+            return row
+
+        strategy._tokenize_single_prompt = fake_single  # pylint: disable=protected-access
+        return strategy
+
+    def test_single_modality_batches_tokenize(self):
+        # batch_size=2 -> batches [text, text] and [img, img]: schema drift repro
+        ds = Dataset.from_dict(
+            {
+                "messages": [["a"], ["b"], ["c"], ["d"]],
+                "images": [[], None, ["img"], ["img"]],
+            }
+        )
+        tds = TokenizedPromptDataset(self.make_strategy(), ds, batch_size=2)
+        assert len(tds) == 4
+        assert tds[0]["pixel_values"] is None
+        assert tds[2]["pixel_values"] == [[0.5, 0.5]]
+
+    def test_row_order_preserved(self):
+        ds = Dataset.from_dict(
+            {
+                "messages": [["a"], ["b"], ["c"], ["d"]],
+                "images": [["img"], [], ["img"], []],
+            }
+        )
+        tds = TokenizedPromptDataset(self.make_strategy(), ds, batch_size=1)
+        has_media = [tds[i]["pixel_values"] is not None for i in range(4)]
+        assert has_media == [True, False, True, False]
+
+    def test_homogeneous_dataset_skips_split(self):
+        ds = Dataset.from_dict(
+            {"messages": [["a"], ["b"]], "images": [["img"], ["img"]]}
+        )
+        strategy = self.make_strategy()
+        tds = TokenizedPromptDataset(strategy, ds, batch_size=2)
+        assert tds._split_media_indices(ds) is None  # pylint: disable=protected-access
+        assert all(tds[i]["pixel_values"] is not None for i in range(2))
+
+    def test_text_only_strategy_skips_split(self):
+        ds = Dataset.from_dict({"messages": [["a"]], "images": [["img"]]})
+        strategy = make_strategy()  # no processor
+        tds = TokenizedPromptDataset.__new__(TokenizedPromptDataset)
+        tds.prompt_tokenizer = strategy
+        assert tds._split_media_indices(ds) is None  # pylint: disable=protected-access
+
+    def test_iterable_batch_size_forwarded(self):
+        strategy = self.make_mixed_iterable_strategy()
+        ds = Dataset.from_dict({"messages": [["a"]], "images": [["img"]]})
+        iterable = ds.to_iterable_dataset()
+        captured = {}
+        original_map = IterableDataset.map
+
+        def spy(self, *args, **kwargs):
+            captured.update(kwargs)
+            return original_map(self, *args, **kwargs)
+
+        with patch.object(IterableDataset, "map", spy):
+            wrap_dataset_for_tokenized_prompt(strategy, iterable, batch_size=7)
+        assert captured["batch_size"] == 7
+
+    def make_mixed_iterable_strategy(self):
+        return self.make_strategy()
 
 
 class TestBufferKwargsHelper:
