@@ -15,11 +15,15 @@ import torch
 from safetensors import safe_open
 from transformers import LlamaConfig, LlamaForCausalLM
 
-from axolotl.integrations.ternary import TernaryPlugin
+from axolotl.integrations.ternary import TernaryPlugin, quant
 from axolotl.integrations.ternary.modules import iter_ternary_modules
 from axolotl.utils.dict import DictDefault
 
+from .test_binary_codebook import binary_swap
+
 LEARNED_SCALE_MODES = ("learnable", "learnable_row", "dual", "trit_planes")
+# the sign codebook has no two-plane grid, so its learned modes are the single-plane ones
+BINARY_SCALE_MODES = ("learnable", "learnable_row")
 STEPS = 8
 
 
@@ -44,13 +48,16 @@ def _batch() -> dict[str, torch.Tensor]:
     return {"input_ids": ids, "labels": ids}
 
 
-def _cfg(output_dir, init: str, weight_scale: str) -> DictDefault:
+def _cfg(
+    output_dir, init: str, weight_scale: str, codebook: str = "ternary"
+) -> DictDefault:
     return DictDefault(
         {
             "output_dir": str(output_dir),
             "ternary": {
                 "init": init,
                 "weight_scale": weight_scale,
+                "codebook": codebook,
                 "lambda_schedule": "none",
                 "export": {"formats": ["master_bf16"]},
             },
@@ -226,6 +233,124 @@ def test_a_fused_run_saves_the_trained_function(tmp_path, weight_scale):
         after_reload = reloaded(**{k: v.cpu() for k, v in batch.items()}).logits
 
     assert _rel(after_reload, trained) < 1e-5
+
+
+# ------------------------------------------------------- the same rows, codebook: binary
+
+
+@pytest.mark.parametrize("init", ["absmean", "ternary_fit"])
+@pytest.mark.parametrize("weight_scale", BINARY_SCALE_MODES)
+def test_a_binary_trained_function_survives_bake_and_reload(
+    tmp_path, init, weight_scale
+):
+    """The sign grid has no zero state, so a shrunken absmean would be visible at once."""
+    model = _tiny_llama()
+    cfg = _cfg(tmp_path, init, weight_scale, codebook="binary")
+    with binary_swap():
+        TernaryPlugin().post_model_build(cfg, model)
+    _train(model)
+
+    model.eval()
+    batch = _batch()
+    with torch.no_grad():
+        trained = model(**batch).logits.clone()
+
+    _bake_all(model)
+    with torch.no_grad():
+        after_bake = model(**batch).logits.clone()
+    model.save_pretrained(tmp_path)
+
+    reloaded = LlamaForCausalLM.from_pretrained(tmp_path)
+    with binary_swap():
+        TernaryPlugin().post_model_build(cfg, reloaded)
+    reloaded.eval()
+    with torch.no_grad():
+        after_reload = reloaded(**batch).logits
+
+    assert _rel(after_bake, trained) == 0.0
+    assert _rel(after_reload, trained) < 1e-5
+
+
+@pytest.mark.parametrize("weight_scale", BINARY_SCALE_MODES)
+def test_a_binary_master_holds_one_magnitude_and_no_scales(tmp_path, weight_scale):
+    model = _tiny_llama()
+    cfg = _cfg(tmp_path, "ternary_fit", weight_scale, codebook="binary")
+    with binary_swap():
+        TernaryPlugin().post_model_build(cfg, model)
+    _train(model)
+    _bake_all(model)
+    model.save_pretrained(tmp_path)
+
+    with safe_open(tmp_path / "model.safetensors", framework="pt") as shard:
+        keys = list(shard.keys())
+        weights = {
+            key: shard.get_tensor(key) for key in keys if key.endswith(".weight")
+        }
+
+    assert not [key for key in keys if key.split(".")[-1] in ("scale", "scale_lo")]
+    for name, module in iter_ternary_modules(model):
+        weight = weights[f"{name}.weight"]
+        assert (
+            quant.baked_binary_codes_and_scale(weight, module._scale_group_size())
+            is not None
+        )
+
+
+@pytest.mark.parametrize("weight_scale", BINARY_SCALE_MODES)
+def test_a_gradient_lapses_the_baked_flag_under_binary(tmp_path, weight_scale):
+    model = _tiny_llama()
+    cfg = _cfg(tmp_path, "ternary_fit", weight_scale, codebook="binary")
+    with binary_swap():
+        TernaryPlugin().post_model_build(cfg, model)
+    modules = [module for _, module in iter_ternary_modules(model)]
+    assert all(module.is_baked() for module in modules)
+
+    model(**_batch()).loss.backward()
+
+    assert not any(module.is_baked() for module in modules)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="fused AdamW needs CUDA")
+@pytest.mark.parametrize("weight_scale", BINARY_SCALE_MODES)
+def test_a_fused_binary_run_saves_the_trained_function(tmp_path, weight_scale):
+    model = _tiny_llama().to("cuda")
+    cfg = _cfg(tmp_path, "ternary_fit", weight_scale, codebook="binary")
+    with binary_swap():
+        TernaryPlugin().post_model_build(cfg, model)
+    _train(model, fused=True)
+
+    model.eval()
+    batch = {key: value.to("cuda") for key, value in _batch().items()}
+    with torch.no_grad():
+        trained = model(**batch).logits.clone().cpu()
+
+    _bake_all(model)
+    model.save_pretrained(tmp_path)
+
+    reloaded = LlamaForCausalLM.from_pretrained(tmp_path)
+    with binary_swap():
+        TernaryPlugin().post_model_build(cfg, reloaded)
+    reloaded.eval()
+    with torch.no_grad():
+        after_reload = reloaded(**{k: v.cpu() for k, v in batch.items()}).logits
+
+    assert _rel(after_reload, trained) < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="fused AdamW needs CUDA")
+def test_a_fused_binary_run_still_lapses_the_baked_flag(tmp_path):
+    """`torch._fused_adamw_` moves the latent without bumping `_version`."""
+    model = _tiny_llama().to("cuda")
+    cfg = _cfg(tmp_path, "ternary_fit", "learnable", codebook="binary")
+    with binary_swap():
+        TernaryPlugin().post_model_build(cfg, model)
+    modules = [module for _, module in iter_ternary_modules(model)]
+    versions = [module.weight._version for module in modules]
+
+    _train(model, steps=4, fused=True)
+
+    assert [module.weight._version for module in modules] == versions
+    assert not any(module.is_baked() for module in modules)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="fused AdamW needs CUDA")

@@ -186,14 +186,48 @@ Presets exist for the `llama` and `qwen3` dense architectures, which target
 `.*\.self_attn\.(q|k|v|o)_proj` plus `.*\.mlp\.(gate|up|down)_proj`, and for `qwen3_5`,
 which adds keep lists for the parts of that hybrid you should not ternarize: the
 linear-attention projections (`.*\.linear_attn\.(in_proj_qkv|in_proj_a|in_proj_b|in_proj_z|out_proj)`)
-and the whole vision tower (`model\.visual\..*`) — see
-[What not to quantize](#sensitive-modules) for why. Other architectures need explicit
-`target_modules`.
+and the whole vision tower — see [What not to quantize](#sensitive-modules) for why.
+Other architectures need explicit `target_modules`.
+
+#### The auxiliary-module registry {#aux-registry}
+
+Every architecture bolts modules onto the transformer stack that are not part of the
+residual path a heal repairs. They are a rounding error in parameter count and they do
+not fail as slightly worse loss: a router flips a near-tie and the expert mix drifts, a
+draft head's acceptance rate collapses, an MTP head takes damage no gradient in the run
+can repair. The plugin keeps one registry of their name shapes, and every seam reads
+from it — the arch presets, the canary check on your `target_modules`, the
+strict-enumeration error, the [zero-gradient warning](#zero-grad), and the GGUF
+refusals.
+
+| Family | Patterns (fullmatched against module names) | Why it is not ternarized |
+|---|---|---|
+| MoE router | `(.*\.)?mlp\.gate`, `(.*\.)?block_sparse_moe\.gate`, `(.*\.)?router(\..*)?`, `(.*\.)?gate\.wg` | Router logits pick experts through a discrete top-k, so rounding flips near-ties and drifts utilization — for ~0.1% of the parameters. |
+| vision tower | `(.*\.)?visual\..*`, `(.*\.)?vision_tower\..*`, `(.*\.)?vision_model\..*` | Towers are a small fraction of the parameters and quantize far worse than the LM (the Prism 4-bit precedent). |
+| modality projector | `(.*\.)?multi_modal_projector\..*`, `(.*\.)?mm_projector\..*`, `.*\.merger\..*` | The single bridge between two pretrained representations; its error is not re-normalized by any later block. |
+| multi-token-prediction head *(best effort)* | `(.*\.)?mtp\..*`, `(.*\.)?nextn\..*` | Trained by an auxiliary loss the heal usually does not run, so nothing produces a gradient to repair the damage. |
+| draft head | `(.*\.)?medusa_head.*`, `(.*\.)?eagle.*`, `(.*\.)?draft_model\..*` | A speculative-decoding draft head is judged by acceptance against the target model, so its damage shows up as lost throughput, not as loss. |
+| value head | `(.*\.)?value_head(\..*)?`, `(.*\.)?v_head(\..*)?`, `(.*\.)?score(\..*)?` | A scalar head whose outputs are only ever compared to each other, where rounding one output row is pure noise on the comparison. |
+
+The patterns are prefix-tolerant on purpose: the same tower is `model.visual.*` inside a
+VL tree and `visual.*` when it is loaded on its own, and a suggestion that misses on
+paste is worse than no suggestion. When strict enumeration trips over modules the
+registry recognizes, the error names the family, gives the reason, and prints the exact
+`keep_fp_modules:` block to paste back.
+
+::: {.callout-note}
+The registry is advisory for everything except the arch presets — it never overrides
+your lists. If your `target_modules` really does match a router or a tower, the plugin
+warns and then does what you asked. The MTP family is marked *best effort*: those heads
+are spelled out in the model config on some architectures and are indistinguishable
+from an ordinary block on others, so name matching is all there is.
+:::
 
 ### Quantizer
 
 | Option | Default | Description |
 |---|---|---|
+| `codebook` | `ternary` | Values a weight may take. `ternary` is `{-s, 0, +s}` (~1.58 bpw); `binary` is `{-s, +s}` — a pure sign plane with no zero state, the BitNet-b1 / OneBit codebook, 1 bit per weight. See [Binary](#binary) before choosing it. |
 | `weight_scale` | `absmean` | `absmean` (per-tensor statistic), `group` (per `group_size` block), `learnable` (per-tensor scale trained jointly), `learnable_row` (one trained scale per output channel), `dual` (five values `{0, ±s_lo, ±s_hi}` from two trained per-row scales), `trit_planes` (PTQTP-style free sum of two trit planes — per row two scales `s1 >= s2` and per weight two trits, `w = t1·s1 + t2·s2`, spanning up to nine values `{0, ±s2, ±(s1−s2), ±s1, ±(s1+s2)}`). `absmean` and `learnable` are per-tensor and export everywhere; `group` and `learnable_row` are `master_bf16` only; `dual` and `trit_planes` each have their own packed container ([`fv5`](#fv5) and [`tp9`](#tp9)) alongside the master. |
 | `group_size` | `null` | Block size for `weight_scale: group`, at least 32 (128 or 256 are the usual values). Required with it, rejected with every other mode. |
 | `activation_bits` | `8` | `8` for per-token int8 activation quantization, `null` for weight-only QAT. |
@@ -236,6 +270,59 @@ single per-tensor scale and a single trit plane. `group` and `learnable_row` are
 the packed containers for their own grids. The config validator will tell you so up front
 rather than at export time.
 :::
+
+### Binary: the 1-bit tier {#binary}
+
+`codebook: binary` drops the zero state. Every weight becomes `sign(w) · s` with the
+least-squares optimal `s = mean(|W|)`, one bit each, and the quantizer, the STE, the
+monitoring and the [`sign_plane`](#sign-plane) container all follow the ternary ones
+with the middle state removed.
+
+**Take the size claim apart before you take it.** Binary stores 1.0 bpw against
+ternary's ~1.58, so on paper it is a 37% saving. In a deployed artifact it usually is
+not, because the zero state is where a healed ternary model puts most of its weights
+and where the sparsity-adaptive packings get their compression: at the ~60% zero
+fraction the strongest public conversions reach, [`mask_sign`](#mask_sign) already
+stores ternary at ~1.4 bpw. The honest comparison is 1.0 against 1.4, not against
+2.0 — and you pay for it in quality, not in bits.
+
+**What the evidence says.** The tier is real: Prism ships Bonsai 27B in a ternary and a
+1-bit variant. But their *published* number is for the ternary one — 94.6% retention
+(80.49 vs 85.07 across 15 thinking-mode benchmarks) — which is already a ~5-point tax at
+27B, and 1 bit starts below that. OneBit, the strongest open W1 result, retains ~83% of
+zero-shot accuracy at 13B and needs ~13.5B token-passes of pure KD to get there, with no
+fast inference path at the end. Meta's ParetoQ scaling study puts ternary/2/3-bit on one
+Pareto frontier that beats *both* 4-bit and binary. Microsoft's own BitNet FAQ is blunter
+still about the ≤2-bit end: PTQ there is "significant loss", and continuing training from
+a 1-bit PTQ checkpoint bought them nothing over training from scratch.
+
+**All of it is scale-dependent, and the dependence is steep.** Every 1-bit result worth
+citing is at 8B and up. Below ~4B even *data-free ternary* PTQ degrades hard (Qwen3-0.6B
+loses 10 MMLU points; 1.7B doubles its perplexity), and binary is strictly the harder
+problem. If you are converting a model in the 1–8B range that axolotl users mostly
+train, `codebook: ternary` with a real heal is the recommendation, and binary is an
+ablation.
+
+::: {.callout-warning}
+No deployment engine reads a 1-bit container today. The ternary containers *can* hold
+binary codes — a sign plane is a ternary plane that never uses its zero state — so a
+binary master still packs into `hf_bitnet` / `gguf_tq2_0` / `i2_s` and runs on their
+engines, at ~2 bpw, paying for a state the model never takes. The only container that
+stores it at 1 bit is [`sign_plane`](#sign-plane), and nothing consumes `sign_plane` yet.
+Binary today is a research and archival tier.
+:::
+
+Two schema rules follow from the codebook itself:
+
+- `weight_scale: dual` and `weight_scale: trit_planes` are rejected. Both spend their
+  second plane on structure a sign codebook does not have — `dual` encodes
+  `{0, ±s_lo, ±s_hi}` and `trit_planes` the free sum `t1·s1 + t2·s2` — and every state
+  either adds is a zero or a second magnitude. Under binary they collapse back to one
+  sign plane.
+- `init_jitter` is warned about as near-useless. A sign codebook has exactly one
+  assignment boundary, at `w = 0`, and a fit writes every latent at `±s` — a full scale
+  away from it — so the noise perturbs the reconstruction without unfreezing the codes
+  it exists to unfreeze.
 
 ### Initialization {#initialization}
 
@@ -358,13 +445,111 @@ Under `ternary.export`:
 | `formats` | `[master_bf16, hf_bitnet]` | Artifacts written after training completes. |
 | `run_parity_gate` | `true` | Verify each packed export against the baked master and fail the export when it does not match. |
 | `embedding_dtype` | `bf16` | Weight dtype for the token embeddings and the output head (one tensor when tied). `int8` packs them as Q8_0 — 32 weights per block with an f16 scale, ~8.5 bpw against 16. Unembedding is 40%+ of decode DRAM traffic on a ternary model, where every other weight is already ~2 bpw, and int8 weight-only embeddings are near-lossless. |
+| `router_dtype` | `bf16` | Weight dtype for the MoE router tensors, which stay out of the ternary grid either way. `int8` packs them as Q8_0. **This is an experimentation knob, not a size lever** — routers are ~0.1% of the parameters, so the saving is negligible, while their logits feed a discrete top-k where a rounded near-tie silently changes which expert runs. Setting it logs a loud warning and names the tensors it touched. See [What not to quantize](#sensitive-modules). |
 
 ::: {.callout-note}
 `embedding_dtype: int8` is a GGUF-only option. `master_bf16` always keeps full-precision
 embeddings — it is the re-finetunable interchange artifact — and `hf_bitnet` has no scheme
 for quantized ones. Setting it with no GGUF format in `formats` is a config error; with a
 mix, the GGUF artifacts get int8 embeddings and the others are logged as exempt.
+`router_dtype: int8` is GGUF-only for the same reasons and validates the same way.
 :::
+
+::: {.callout-warning}
+`router_dtype: int8` puts the file outside what upstream produces: llama.cpp's own
+quantizer never touches `ffn_gate_inp`. Check the runtime loads it at all, and
+re-measure expert utilization — not just perplexity — before shipping one.
+:::
+
+## Very large models: streaming PTQ {#fit-stream}
+
+`init: ternary_fit` fits the latents of a model that is already built, so the largest
+model you can fit is the largest one that fits on the host. `axolotl ternary fit-stream`
+removes that ceiling by never building a model:
+
+```bash
+axolotl ternary fit-stream config.yaml \
+  --input-dir ./Qwen3-235B --output-dir ./Qwen3-235B-ternary-fit
+```
+
+`--input-dir` defaults to the config's `base_model` and `--output-dir` to its
+`output_dir`; `--json` emits the full per-shard report instead of a summary line.
+
+It walks the checkpoint's safetensors shards, fits each weight tensor as it is read,
+and writes the reconstruction straight back out. **Peak memory is one shard**, so the
+ceiling moves from "the model fits in RAM" to "one shard fits in RAM" — a few GB for
+any checkpoint sharded the way HF ships them. `--device cuda:0` runs the per-tensor
+solve on a GPU and streams the shards through it; the solver, not the I/O, is the
+bottleneck.
+
+Three consequences of having no model, all of which change what the pass can promise:
+
+- **Classification is by tensor name.** With no `nn.Linear` instances to enumerate,
+  `target_modules` / `keep_fp_modules` are matched against the state-dict key with its
+  `.weight` stripped, and the [auxiliary-module registry](#aux-registry) supplies the
+  same verdicts the swap uses. There is no strict enumeration here: a name that matches
+  nothing is copied through untouched rather than raising, because the error the swap
+  can afford needs a module tree to enumerate. Read the report.
+- **Fused expert stacks are fittable, on a per-tensor grid only.** `convert_model`
+  refuses a 3-D expert parameter because it cannot swap one; a fit only needs a matrix,
+  so the stack is fitted one slice at a time and each expert gets its own scale. Which
+  of a slice's two axes is the output one is *not* knowable from a state-dict key —
+  transformers stores GptOss and Llama4 experts as `(experts, in, out)` and Qwen3-MoE as
+  `(experts, out, in)` — so `learnable_row`, `dual` and `trit_planes` are refused for
+  fused stacks rather than guessed at; use `weight_scale: learnable`. A fused stack also
+  gets no manifest entry (the manifest addresses a module through its `.weight`), so no
+  packed format reaches it: **a streamed MoE master is a `master_bf16` artifact**, its
+  experts ship at the master's own width, the reported bits per weight says so, and
+  `axolotl train` will not reload it for a heal. The pass names every such tensor in its
+  report and in a warning.
+- **Resumption is per shard.** A pass over a 100-shard checkpoint will be interrupted.
+  Each output shard is written under a temporary name, fsynced and renamed only once
+  complete, and every finished shard appends a record to `ternary_stream_fit.json` — so
+  a resumed run sees either a finished shard or no shard, never a torn one it would
+  trust. Each record names the digest of the input shard it was fitted from as well as
+  the output it produced, so a resume into a directory a *different* checkpoint was
+  fitted into (A/B-ing two base models, or a source that was re-downloaded since) refits
+  instead of keeping the other model's weights. `--no-resume` refits everything.
+
+What comes out is an ordinary checkpoint whose values happen to sit on the ternary grid
+(`codes · f16(scale)`), exactly like a [`master_bf16`](#master_bf16). Reloading it
+through the plugin is the same fixed point, and the [export formats](#export-formats)
+pack every tensor the manifest names from it unchanged — so the deployment path is
+`fit-stream` → `axolotl ternary export --format gguf_tq2_0`, with no separate packer.
+The exception is fused expert stacks, which no manifest entry addresses and no packer
+covers; see the bullet above.
+
+The summary line's bits per weight is the cost in the container each tensor's grid packs
+into, not a constant: single-plane ternary is measured as mask+sign (`2 − zero_fraction`,
+the sparsity the solver actually found), `dual` and `trit_planes` are their `fv5` / `tp9`
+containers including per-row scales (~4–5 bits), `binary` is a flat sign plane, and a
+fused stack is counted at the master's own width.
+
+::: {.callout-important}
+**This is PTQ, not a conversion.** v1 streams the data-free `init: ternary_fit` solve
+and nothing else: no healing, and no activation-aware calibration.
+`init: ternary_fit_calibrated` is refused up front — refitting a layer against the
+activations its inputs produce needs the layer built and a batch pushed through it, and
+layer-streaming calibration is future work. `init: absmean` is refused too: it leaves
+the weights alone, so the pass would copy your checkpoint and solve nothing.
+`ternary.smoothing` is refused for the same reason `axolotl train` refuses it — it is
+not implemented — and `ternary.subln` warns: sub-norms are inserted into a module tree
+this pass never builds, so the streamed master carries none and the heal that reloads it
+inserts them.
+:::
+
+**Whether the output is usable depends almost entirely on scale**, and that is the
+reason this command exists at the size it does. Data-free ternary PTQ is a credible
+artifact at ≥27B and possibly sufficient there; retraining-free work reports ~90–92%
+retention at 32B–70B and much weaker results at 7B; below ~4B it degrades hard
+(Qwen3-0.6B loses 10 MMLU points). Treat `fit-stream` as either a shippable artifact
+for a very large model or a strong *initializer* you then heal — which is the honest
+framing everywhere below ~8B. Run the [damage map](#damage-map) on the output before
+deciding which one you have.
+
+`codebook: binary` streams too, through the closed-form `mean(|W|)` scale and `sign(W)`
+assignment, and halves the output's information content — with all of the caveats in
+[Binary](#binary) attached, including that nothing runs a 1-bit container yet.
 
 ## Teacher options
 
@@ -459,6 +644,7 @@ to the config's `output_dir`, which is also where the baked master is read from.
 | `onebitllms_bf16` | 16 | axolotl's `use_onebitllms: true` finetuning path (`BitNetLinear` re-derives its own grid; see [Continuing training with onebitllms](#onebitllms)) |
 | `fv5` | 3.0 + `64/cols` | none yet — archival, and the target layout for a five-level kernel (Fermion FV5 precedent) |
 | `tp9` | 4.0 + `64/cols` | none yet — archival, and the target layout for a nine-level kernel |
+| `sign_plane` | 1.0 | none yet — the packed form of [`codebook: binary`](#binary) |
 
 ::: {.callout-note}
 GGUF exports (`gguf_tq2_0`, `gguf_tq1_0`, `i2_s`) require the optional `gguf` package:
@@ -523,6 +709,18 @@ llama-cli -m ./outputs/ternary-out/model-tq2_0.gguf -p "Hello"
 ::: {.callout-note}
 You cannot `llama-quantize` a normal FP model into `TQ2_0`/`TQ1_0`. The source has to
 already be ternary-with-scale — which is exactly what the baked master is.
+:::
+
+::: {.callout-important}
+**A GGUF file describes one text transformer stack, and the writers refuse anything
+else.** A master carrying a vision or audio tower, a modality projector, an MTP head or
+a draft head has tensors with no GGUF name, and a writer that dropped them would produce
+a file that loads, answers, and is quietly missing a component the checkpoint was trained
+with. The export fails before it writes a byte, names the tensors, and says which family
+[the registry](#aux-registry) recognized them as. Multimodal masters ship as
+`master_bf16` or `hf_bitnet` — both keep the source architecture, towers included — or
+you point the GGUF export at a text-only checkpoint. Architectures with no GGUF mapping
+at all (`qwen3_5`, for instance) are refused one step earlier, by `model_type`.
 :::
 
 ### i2_s
@@ -641,6 +839,31 @@ values: a free-sum row that uses only combination states does not contain its ow
 and guessing a plausible pair for a shipped artifact is how a silently different model
 gets published.
 
+### sign_plane {#sign-plane}
+
+The packed form of [`codebook: binary`](#binary), and the smallest container here: one
+LSB-first sign bit per weight over the flat row-major tensor, plus one per-tensor scale.
+`w = (bit ? +s : −s)` — 1.0 bit per weight, with no zero state to encode and no block
+structure. Same shape as the other plugin-owned containers: a safetensors file holding
+`<module>.weight_sign` byte strings beside their scales, everything else passed through
+in bf16, and a `ternary_sign_plane.json` recording each tensor's shape, measured bits per
+weight and sha256.
+
+A zero is not a state of this container. `pack_sign_plane` rejects one rather than
+storing it as a sign, because a container that silently turned a zeroed weight into `±s`
+would decode into a different model without failing anything. The padding bits of the
+final byte are not weights, so a decoder ignores them and a container is only rejected on
+its byte count.
+
+::: {.callout-warning}
+`sign_plane` is only writable from a `codebook: binary` run — the validator rejects the
+pair up front — and **no engine reads it**. It exists so a healed 1-bit model can be
+shipped at its real size instead of the 16 bits a master costs, and so the byte layout is
+already pinned, produced and gated for whatever reads it first. To *run* a binary model
+today, export the `master_bf16`, or accept ~2 bpw and pack it into one of the ternary
+containers.
+:::
+
 ### mask_sign
 
 This plugin's own packing, and the only format whose size depends on the model rather than
@@ -715,7 +938,51 @@ vectors are too small to be worth a scale. Exports keep them bf16/f16, optionall
 changes the computation graph: a flipped top-k pick routes tokens through different
 experts entirely. The config validator carries router canary names so an unanchored
 `.*gate.*` regex is rejected before it can ternarize `mlp.gate`, and fused 3-D expert
-stacks are refused until the expert-aware path lands.
+stacks are refused until the expert-aware path lands. (`export.router_dtype: int8` will
+pack them as Q8_0 in a GGUF, which is an experiment to measure, not a size lever to
+reach for.)
+
+**The auxiliary modules the registry knows about.** Routers, vision towers, modality
+projectors, MTP heads, draft heads and value heads are all kept full precision by
+[the registry](#aux-registry), and the presets, warnings and errors read from it. Two of
+those families deserve spelling out, because they fail in a way no metric shows you:
+
+- **MTP heads.** A multi-token-prediction head is trained by an auxiliary loss your heal
+  almost certainly does not run. Ternarize one and it takes the damage in full while no
+  gradient in the run exists to repair any of it — and the loss curve is identical to a
+  run that healed it. Its family is marked *best effort*: `mtp.*` / `nextn.*` is all
+  there is to match on, and some architectures do not name them that way at all.
+- **Modality projectors.** The projector is the single bridge between two pretrained
+  representations. Nothing downstream re-normalizes its error the way a residual block
+  re-normalizes an attention projection's, and a run with no images in the corpus never
+  produces a gradient there either.
+
+[**The zero-gradient trap.**]{#zero-grad} The general form of the failure above is: a
+module the objective never reaches is the worst trade the plugin can make, because it
+pays the full quantization cost for none of the healing. The plugin watches for it —
+over the first 50 optimizer steps it records which targeted latents ever carry a
+gradient, and warns once, naming the modules and what they look like:
+
+```
+ternary: 2 targeted module(s) received no gradient in the first 50 optimizer steps.
+They take the quantization damage in full and this run's objective has no gradient to
+heal any of it — a loss curve cannot show you this.
+2 of them are known auxiliary modules that ternary conversion keeps full precision:
+  multi-token-prediction head: model.layers.0.mtp.up_proj, model.layers.1.mtp.up_proj
+    an MTP head is trained by an auxiliary loss the heal usually does not run, so
+    nothing produces a gradient to repair the damage
+
+ternary:
+  keep_fp_modules:
+    - (.*\.)?mtp\..*
+```
+
+Modules the registry does not recognize are reported apart, because their benign cause
+is different: a cold MoE expert no batch has routed to yet is a property of the data, not
+of the wiring, and it heals as soon as it is routed. A module whose labels are entirely
+masked, or one left out of the optimizer's parameter groups, is not. Monitoring stops
+when the window closes, so it costs nothing for the rest of the run; under FSDP2 each
+rank inspects its own shard.
 
 **Sensitivity is not uniform across the block.** An eval-only `axolotl ternary damage-map`
 run on SmolLM2-135M ranks the families: `down_proj` is catastrophic alone (ppl 4e10),
@@ -746,9 +1013,10 @@ size, and the table is the whole point of the command.
   embedding ingestion, head feeding). `keep_fp_modules: ['model\.layers\.0\..*']` is a
   cheap experiment when the damage map shows early-layer concentration.
 - **Multimodal towers and hybrid-arch mixers** (vision encoders, Mamba/SSM in-projections,
-  speech convs) have no presets on purpose: strict enumeration errors on them, forcing an
-  explicit `keep_fp_modules` decision. Prism kept its vision tower at 4-bit, not ternary —
-  treat that as the precedent.
+  speech convs) have presets only where one has been measured: strict enumeration errors
+  on the rest, forcing an explicit `keep_fp_modules` decision, and the error prints the
+  registry's own patterns for the families it recognized so the decision is a paste. Prism
+  kept its vision tower at 4-bit, not ternary — treat that as the precedent.
 - **Tiny projections** (aggressive GQA `k/v_proj`, low-rank adapters folded into bases)
   give the per-tensor scale very few weights to average over; if the damage map flags
   them, `learnable` scales usually recover it.
@@ -842,7 +1110,8 @@ closed on our side: [`fv5`](#fv5) and [`tp9`](#tp9) ship those grids at 3 and 4 
 weight in the bit-plane layout such a kernel would read, gated byte-for-byte, so what
 remains is the llama.cpp fork carrying the kernels rather than a format to feed it.
 Until that exists both containers are archival — size-truthful shipping, not deployment
-— as is `mask_sign`. For extra CPU headroom on the GGUF artifacts, T-MAC's LUT kernels consume
+— as are `mask_sign` and, at the other end of the range, [`sign_plane`](#sign-plane):
+1 bit per weight with nothing that reads it. For extra CPU headroom on the GGUF artifacts, T-MAC's LUT kernels consume
 low-bit GGUF files and post 4–5× single-thread gains over llama.cpp in their paper —
 an advanced option, not a supported target of this plugin's gates.
 
@@ -933,6 +1202,20 @@ a hard jump to λ=1 causes catastrophic forgetting the run never recovers from.
 It is gated on λ == 1, where the effective weights are exactly `code · s`, and is verified
 against the eager reference implementation. It is a speed path, not a different quantizer;
 `auto` falls back to the fake-quant path whenever shapes or hardware do not qualify.
+
+**Should I use `codebook: binary`?**
+Almost certainly not, unless you are converting something very large and running an
+ablation. It stores 1.0 bpw against ternary's ~1.58, but the zero state it gives up is
+where a healed ternary model puts most of its weights and where the sparsity-adaptive
+packings get their compression — so the realistic comparison is 1.0 against ~1.4, for a
+quality drop every scaling study puts on the wrong side of the Pareto frontier. Nothing
+runs a 1-bit container today either. [Binary](#binary) has the numbers.
+
+**Can I convert a model too big to fit on the machine?**
+Yes, as a PTQ fit: [`axolotl ternary fit-stream`](#fit-stream) walks the checkpoint's
+shards and never builds the model, so peak memory is one shard. It runs the data-free
+`init: ternary_fit` solve only — no healing, no calibration — which is a shippable
+artifact at ≥27B and an initializer below that.
 
 **Which architectures work?**
 Presets ship for `llama` and `qwen3` dense models and for the `qwen3_5` hybrid (full

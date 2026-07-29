@@ -16,7 +16,12 @@ from transformers import PreTrainedModel
 from axolotl.utils.logging import get_logger
 
 from . import quant
-from .args import LEARNABLE_SCALE_MODES, TWO_PLANE_SCALE_MODES, WeightScaleMode
+from .args import (
+    LEARNABLE_SCALE_MODES,
+    TWO_PLANE_SCALE_MODES,
+    Codebook,
+    WeightScaleMode,
+)
 
 LOG = get_logger(__name__)
 
@@ -24,6 +29,7 @@ LOG = get_logger(__name__)
 _ACT_MEMO: WeakTensorKeyDictionary = WeakTensorKeyDictionary()
 
 SCALE_MODES: frozenset[str] = frozenset(get_args(WeightScaleMode))
+CODEBOOKS: frozenset[str] = frozenset(get_args(Codebook))
 
 # schema-accepted scale modes whose quantizer has not landed yet
 UNIMPLEMENTED_SCALE_MODES: frozenset[str] = frozenset()
@@ -125,6 +131,11 @@ class TernaryLinear(nn.Module):
     row, carried by two learnable scale vectors; the pair is kept ordered by reading
     them as `(min, max)`, so both keep receiving gradient however they move.
 
+    `codebook: binary` narrows it the other way, to `{-s, +s}`: the same scale
+    machinery drives a sign plane with no zero state, so every grid-shaped thing here
+    — the bake, the baked probe, the learnable-scale seed, the monitoring snapshot —
+    takes the binary member of the pair and nothing else changes.
+
     Attributes:
         weight: Latent `nn.Parameter` of shape `(out_features, in_features)`.
         scale: `nn.Parameter` holding `log_s`, shape `(1,)` in `weight_scale:
@@ -137,6 +148,7 @@ class TernaryLinear(nn.Module):
         lambda_: Current quantization strength in `[0, 1]`, driven by
             `LambdaScheduleCallback`; 1.0 means fully ternary.
         weight_scale: Scale mode this module was built with.
+        codebook: `"ternary"` for `{-s, 0, +s}`, `"binary"` for the sign plane.
         group_size: Group size in group-scale mode, `None` for per tensor.
         activation_bits: 8 for per-token int8 activation quantization, `None` for
             weight-only QAT.
@@ -166,6 +178,7 @@ class TernaryLinear(nn.Module):
         in_features: int,
         out_features: int,
         weight_scale: WeightScaleMode = "absmean",
+        codebook: Codebook = "ternary",
         group_size: int | None = None,
         activation_bits: int | None = 8,
         fused: bool = True,
@@ -176,14 +189,23 @@ class TernaryLinear(nn.Module):
         """Build an (uninitialized) ternary linear; see `from_linear` for conversion.
 
         Raises:
-            ValueError: If `group_size` does not divide `in_features`, or the scale
-                mode and `group_size` disagree.
+            ValueError: If `group_size` does not divide `in_features`, the scale
+                mode and `group_size` disagree, or the codebook and the scale mode
+                cannot be combined.
             NotImplementedError: For a scale mode the schema accepts but the
                 quantizer does not implement yet.
         """
         super().__init__()
         if weight_scale not in SCALE_MODES:
             raise ValueError(f"unknown ternary weight_scale mode: {weight_scale!r}")
+        if codebook not in CODEBOOKS:
+            raise ValueError(f"unknown ternary codebook: {codebook!r}")
+        if codebook == "binary" and weight_scale in TWO_PLANE_SCALE_MODES:
+            raise ValueError(
+                f"codebook='binary' cannot be combined with weight_scale="
+                f"{weight_scale!r}: every state its second plane adds is a zero or a "
+                "second magnitude, and a sign codebook has neither"
+            )
         if weight_scale in UNIMPLEMENTED_SCALE_MODES:
             raise NotImplementedError(
                 f"ternary.weight_scale: {weight_scale} is accepted by the schema but "
@@ -212,6 +234,7 @@ class TernaryLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.weight_scale = weight_scale
+        self.codebook = codebook
         self.group_size = group_size
         self.activation_bits = activation_bits
         self.fused = fused
@@ -250,6 +273,7 @@ class TernaryLinear(nn.Module):
         cls,
         linear: nn.Linear,
         weight_scale: WeightScaleMode = "absmean",
+        codebook: Codebook = "ternary",
         group_size: int | None = None,
         activation_bits: int | None = 8,
         fused: bool = True,
@@ -264,6 +288,7 @@ class TernaryLinear(nn.Module):
             linear: Source module; its weight is moved (not copied) where possible so
                 the swap does not double peak memory.
             weight_scale: Scale mode.
+            codebook: `"ternary"` or `"binary"`.
             group_size: Group size for group-scale mode.
             activation_bits: 8 or `None`.
             fused: Use the fused Triton kernels.
@@ -285,6 +310,7 @@ class TernaryLinear(nn.Module):
             linear.in_features,
             linear.out_features,
             weight_scale=weight_scale,
+            codebook=codebook,
             group_size=group_size,
             activation_bits=activation_bits,
             fused=fused,
@@ -368,8 +394,8 @@ class TernaryLinear(nn.Module):
             else:
                 scale = self._snapshot_scale()
                 if scale is None:
-                    scale = quant.absmean_scale(weight, self._scale_group_size())
-                codes = quant.ternary_codes(weight, scale)
+                    scale = self._statistic_scale(weight)
+                codes = self._codes(weight, scale)
         ops = self._ops(codes)
         if ops is not None:
             return ops.pack_codes(codes)
@@ -450,6 +476,8 @@ class TernaryLinear(nn.Module):
             f"out_features={self.out_features}",
             f"weight_scale={self.weight_scale}",
         ]
+        if self.codebook != "ternary":
+            parts.append(f"codebook={self.codebook}")
         if self.group_size is not None:
             parts.append(f"group_size={self.group_size}")
         parts.append(f"activation_bits={self.activation_bits}")
@@ -457,6 +485,28 @@ class TernaryLinear(nn.Module):
         if self.baked:
             parts.append("baked=True")
         return ", ".join(parts)
+
+    def _statistic_scale(self, weight: torch.Tensor) -> torch.Tensor:
+        """Return the scale the statistic modes re-derive from `weight` every forward."""
+        group_size = self._scale_group_size()
+        if self.codebook == "binary":
+            return quant.binary_scale(weight, group_size)
+        return quant.absmean_scale(weight, group_size)
+
+    def _codes(self, weight: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+        """Return this module's codebook's codes for `weight` under `scale`."""
+        if self.codebook == "binary":
+            return quant.binary_codes(weight, scale)
+        return quant.ternary_codes(weight, scale)
+
+    def _baked_codes_and_scale(
+        self, weight: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        """Recover `(codes, s16)` from `weight` on this module's grid, or `None`."""
+        group_size = self._scale_group_size()
+        if self.codebook == "binary":
+            return quant.baked_binary_codes_and_scale(weight, group_size)
+        return quant.baked_codes_and_scale(weight, group_size)
 
     def _ops(self, tensor: torch.Tensor) -> ModuleType | None:
         # the fused kernels are CUDA-only and reject sharded tensors; anything else
@@ -466,14 +516,17 @@ class TernaryLinear(nn.Module):
         return _fused_ops()
 
     def _weight_ops(self, tensor: torch.Tensor) -> ModuleType | None:
-        """`_ops`, restricted to the scale layouts the fused weight kernels cover."""
-        if self.weight_scale not in FUSED_SCALE_MODES:
+        """`_ops`, restricted to the grids the fused weight kernels cover."""
+        if self.weight_scale not in FUSED_SCALE_MODES or self.codebook != "ternary":
             return None
         return self._ops(tensor)
 
     def _int8_linear(self, x: torch.Tensor) -> torch.Tensor | None:
-        # the W2A8 epilogue rescales by one scalar per tensor
-        ops = _int8_ops() if self.weight_scale in INT8_FORWARD_SCALE_MODES else None
+        # the W2A8 epilogue rescales by one scalar per tensor, over ternary codes
+        supported = (
+            self.weight_scale in INT8_FORWARD_SCALE_MODES and self.codebook == "ternary"
+        )
+        ops = _int8_ops() if supported else None
         out = None if ops is None else ops.int8_linear_forward(self, x)
         if out is None and self.int8_forward is True and not self._int8_warned:
             self._int8_warned = True
@@ -547,7 +600,7 @@ class TernaryLinear(nn.Module):
             return self._dual_scales(weight)[0]
         scale = self._scale()
         if scale is None:
-            return quant.absmean_scale(weight, self._scale_group_size())
+            return self._statistic_scale(weight)
         return scale
 
     def adopt_scales(self, *scales: torch.Tensor) -> bool:
@@ -603,18 +656,22 @@ class TernaryLinear(nn.Module):
         if self.weight_scale == "dual":
             low, high = self._dual_scales(weight, gathered=gathered)
             return quant.fake_quant_weight_dual(weight, 1.0, low, high)
-        return quant.fake_quant_weight(
+        fake_quant = (
+            quant.fake_quant_weight_binary
+            if self.codebook == "binary"
+            else quant.fake_quant_weight
+        )
+        return fake_quant(
             weight, 1.0, self._scale_group_size(), self._scale(gathered=gathered)
         )
 
     def _initial_scale(self) -> torch.Tensor:
         """Return the fp32 scale a learnable `log_s` starts from."""
         weight = as_local(self.weight.detach())
-        group_size = self._scale_group_size()
-        recovered = quant.baked_codes_and_scale(weight, group_size)
+        recovered = self._baked_codes_and_scale(weight)
         if recovered is not None:
             return recovered[1]
-        return quant.absmean_scale(weight, group_size)
+        return self._statistic_scale(weight)
 
     def _initial_dual_scales(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Return the fp32 `(s_lo, s_hi)` pair the learnable dual scales start from."""
@@ -648,10 +705,7 @@ class TernaryLinear(nn.Module):
         elif self.weight_scale == "dual":
             self.baked = quant.baked_dual_codes_and_scales(weight) is not None
         else:
-            self.baked = (
-                quant.baked_codes_and_scale(weight, self._scale_group_size())
-                is not None
-            )
+            self.baked = self._baked_codes_and_scale(weight) is not None
         if self.baked:
             self._mark_baked()
         else:
@@ -742,9 +796,12 @@ class TernaryLinear(nn.Module):
             return _FusedQuantSTE.apply(
                 self.weight, ops.fake_quant_weight, lambda_, self.group_size, None
             )
-        return quant.fake_quant_weight_ste(
-            self.weight, lambda_, self._scale_group_size(), scale
+        fake_quant_ste = (
+            quant.fake_quant_weight_binary_ste
+            if self.codebook == "binary"
+            else quant.fake_quant_weight_ste
         )
+        return fake_quant_ste(self.weight, lambda_, self._scale_group_size(), scale)
 
     def _quant_act(self, x: torch.Tensor, lambda_: float) -> torch.Tensor:
         if not self.share_act_quant:
@@ -780,6 +837,29 @@ def iter_ternary_modules(model: nn.Module) -> Iterator[tuple[str, TernaryLinear]
     for name, module in model.named_modules():
         if isinstance(module, TernaryLinear):
             yield name, module
+
+
+def assert_codebook_applied(model: nn.Module, codebook: Codebook) -> None:
+    """Refuse a converted model whose modules do not implement the configured codebook.
+
+    The codebook is a property of the module, and the swap is what puts it there.
+    Nothing downstream can tell the two apart afterwards — a binary run whose modules
+    were built ternary trains, bakes, exports and reloads as a perfectly consistent
+    ternary model — so the disagreement is caught here rather than shipped.
+
+    Raises:
+        RuntimeError: If any `TernaryLinear` carries a different codebook.
+    """
+    built = {module.codebook for _, module in iter_ternary_modules(model)}
+    wrong = sorted(built - {codebook})
+    if wrong:
+        raise RuntimeError(
+            f"ternary.codebook: {codebook} was configured, but the swap built "
+            f"{', '.join(wrong)} modules. The codebook reaches a module only through "
+            "`TernaryLinear.from_linear(..., codebook=...)`, so `swap.convert_model` "
+            "has to pass `ternary_cfg.codebook` (and record it on the manifest for "
+            "the export side)"
+        )
 
 
 def set_act_quant_sharing(model: nn.Module, enabled: bool = True) -> int:

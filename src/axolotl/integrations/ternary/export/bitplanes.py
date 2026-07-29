@@ -1,8 +1,9 @@
-"""Packed containers for the two-plane grids: `fv5` (dual) and `tp9` (trit_planes).
+"""Bit-plane containers: `fv5` (dual), `tp9` (trit_planes) and `sign_plane` (binary).
 
-Both modes reach quality the single-plane grid cannot, and both were master-only until
-now — 16 bits per weight to ship a model whose information content is 3 to 4. These are
-size-truthful containers for them, in the layout a five/nine-level kernel would want.
+Both two-plane modes reach quality the single-plane grid cannot, and both were
+master-only until now — 16 bits per weight to ship a model whose information content is
+3 to 4. These are size-truthful containers for them, in the layout a five/nine-level
+kernel would want, plus the same treatment for the codebook at the other extreme.
 
 **`fv5`** carries the five-value `dual` grid `{0, ±s_lo, ±s_hi}` as three bit planes over
 the flat row-major weight, in the Fermion FV5 shape:
@@ -27,16 +28,26 @@ Neither is a kernel format today — nothing consumes them. They exist so a heal
 two-plane model can be shipped and archived at its real size, and so the layout a future
 llama.cpp fork would need already has a producer and a byte-exact spec.
 
-The scales are *not* re-derived from the values here: packing requires the manifest's
-persisted scale sidecar. A free-sum row that uses only combination states does not
-contain its own scales at all, and inferring a plausible pair for a shipped artifact is
-how a silently different model gets published.
+**`sign_plane`** is the one-plane member of the family and the only container for
+`codebook: binary`: one sign bit per weight over the flat row-major weight plus the
+per-tensor f32 scale, so `w = (bit ? +s : -s)` at 1 bit per weight. It has no zero
+state at all, which is exactly why it must never be handed a ternary master — every
+zeroed weight would come back as `±s`.
+
+The two-plane scales are *not* re-derived from the values here: packing requires the
+manifest's persisted scale sidecar. A free-sum row that uses only combination states
+does not contain its own scales at all, and inferring a plausible pair for a shipped
+artifact is how a silently different model gets published. `sign_plane` needs no
+sidecar, because a binary tensor holds exactly one magnitude and that magnitude *is*
+its scale — there is nothing to infer.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 import torch
@@ -44,27 +55,44 @@ import torch
 from axolotl.utils.logging import get_logger
 
 from .. import quant
-from ..swap import SwapManifest
+from ..args import NON_PER_TENSOR_SCALE_MODES
+from ..swap import SwapEntry, SwapManifest
 from . import bake
 
 LOG = get_logger(__name__)
 
+# (manifest entry, baked master tensor) -> ({tensor key: tensor}, accounting record)
+PackTensor = Callable[[SwapEntry, torch.Tensor], "tuple[dict[str, torch.Tensor], dict]"]
+
 FV5_FORMAT: str = "fv5"
 TP9_FORMAT: str = "tp9"
+SIGN_PLANE_FORMAT: str = "sign_plane"
 
 FV5_SUFFIX: str = "weight_fv5"
 TP9_SUFFIX: str = "weight_tp9"
+SIGN_PLANE_SUFFIX: str = "weight_sign"
 SCALES_SUFFIX: str = "scales"
 
 FV5_RECORD_FILENAME: str = "ternary_fv5.json"
 TP9_RECORD_FILENAME: str = "ternary_tp9.json"
+SIGN_PLANE_RECORD_FILENAME: str = "ternary_sign_plane.json"
+
+FORMAT_RECORD_FILENAMES: dict[str, str] = {
+    FV5_FORMAT: FV5_RECORD_FILENAME,
+    TP9_FORMAT: TP9_RECORD_FILENAME,
+    SIGN_PLANE_FORMAT: SIGN_PLANE_RECORD_FILENAME,
+}
 
 # scale mode each container is the packed form of
 FORMAT_SCALE_MODES: dict[str, str] = {FV5_FORMAT: "dual", TP9_FORMAT: "trit_planes"}
 
+# codebook each container is the packed form of; absent means ternary
+FORMAT_CODEBOOKS: dict[str, str] = {SIGN_PLANE_FORMAT: "binary"}
+
 FV5_PLANES: int = 3
 FV5_BITS_PER_WEIGHT: float = 3.0
 TP9_BITS_PER_WEIGHT: float = 4.0
+SIGN_PLANE_BITS_PER_WEIGHT: float = 1.0
 
 _BITS_PER_BYTE: int = 8
 _SCALE_COLUMNS: int = 2
@@ -198,6 +226,125 @@ def decode_tp9(
     return unpack_tp9(packed, shape), _check_scales(scales, shape, TP9_FORMAT)
 
 
+# ------------------------------------------------------------- sign_plane (binary)
+
+
+def pack_sign_plane(codes: torch.Tensor) -> torch.Tensor:
+    """Pack binary codes into one LSB-first sign bit per weight.
+
+    Args:
+        codes: int8 codes in `{-1, +1}` of shape `(rows, cols)`. A zero is not a
+            state of this container and is rejected rather than packed as a sign.
+
+    Returns:
+        Flat uint8 tensor of `ceil(numel / 8)` bytes, bit set where the weight is
+        positive, LSB-first over the row-major weight.
+
+    Raises:
+        ValueError: If `codes` is not 2-D or holds a state outside `{-1, +1}`.
+    """
+    if codes.ndim != 2:
+        raise ValueError(f"expected a 2D weight, got shape {tuple(codes.shape)}")
+    flat = codes.reshape(-1).to(torch.int16)
+    if bool(((flat != -1) & (flat != 1)).any()):
+        raise ValueError(
+            "sign_plane expects sign codes in {-1, +1}; it has no bit pattern for a "
+            "zero, so a ternary tensor cannot be packed into it"
+        )
+    return _pack_bits(flat > 0).contiguous()
+
+
+def unpack_sign_plane(packed: torch.Tensor, shape: tuple[int, int]) -> torch.Tensor:
+    """Inverse of `pack_sign_plane`, returning int8 codes in `{-1, +1}`.
+
+    The padding bits of the final byte are not weights and must be ignored rather
+    than decoded, so a container is only rejected on its byte count.
+
+    Raises:
+        ValueError: If the byte count disagrees with `shape`.
+    """
+    numel = int(shape[0]) * int(shape[1])
+    expected = _plane_bytes(numel)
+    if packed.numel() != expected:
+        raise ValueError(
+            f"sign_plane tensor has {packed.numel()} bytes, expected {expected} for "
+            f"{shape}"
+        )
+    positive = _unpack_bits(packed, numel)
+    return torch.where(positive, 1, -1).to(torch.int8).reshape(shape)
+
+
+def decode_sign_plane(
+    packed: torch.Tensor, scale: torch.Tensor, shape: tuple[int, int]
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return `(binary codes, per-tensor f32 scale)` read back out of sign_plane bytes.
+
+    Raises:
+        ValueError: If the byte count disagrees with `shape`, or `scale` is not the
+            single value this container carries.
+    """
+    return unpack_sign_plane(packed, shape), _check_scalar_scale(scale)
+
+
+def export_sign_plane(
+    master_dir: str | Path, output_dir: str | Path, manifest: SwapManifest
+) -> Path:
+    """Write a `sign_plane` checkpoint beside the master and return its directory.
+
+    Same shape as `export_bitplanes`: every swapped tensor becomes a byte string plus
+    its scale, everything else is copied through, each byte string is decoded again
+    and gated on the master before it is written, and its sha256 lands in the record.
+
+    Raises:
+        ValueError: If the master was not trained with `ternary.codebook: binary`,
+            still holds latent weights, or the output would overwrite the master.
+        KeyError: If a manifest entry has no matching weight in the master.
+        RuntimeError: If a packed tensor does not round-trip back to the master.
+    """
+    _reject_non_binary(manifest)
+    return _export_container(
+        master_dir, output_dir, manifest, SIGN_PLANE_FORMAT, _pack_sign_plane_tensor
+    )
+
+
+def _reject_non_binary(manifest: SwapManifest) -> None:
+    if manifest.weight_scale in NON_PER_TENSOR_SCALE_MODES:
+        raise ValueError(
+            f"sign_plane carries one scale per tensor and cannot represent "
+            f"ternary.weight_scale: {manifest.weight_scale}"
+        )
+    codebook = manifest.quantizer.get("codebook", getattr(manifest, "codebook", None))
+    if codebook is not None and codebook != FORMAT_CODEBOOKS[SIGN_PLANE_FORMAT]:
+        raise ValueError(
+            f"sign_plane is the packed form of ternary.codebook: "
+            f"{FORMAT_CODEBOOKS[SIGN_PLANE_FORMAT]}, but this master was trained with "
+            f"{codebook}. It has no bit pattern for a zero, so every zeroed weight "
+            "would come back as ±s"
+        )
+
+
+def _pack_sign_plane_tensor(
+    entry: SwapEntry, tensor: torch.Tensor
+) -> tuple[dict[str, torch.Tensor], dict]:
+    """Pack one baked binary tensor into its bit string and per-tensor scale."""
+    recovered = quant.baked_binary_codes_and_scale(tensor)
+    if recovered is None:
+        raise ValueError(
+            f"{entry.name} is not on the binary grid: its values are not exactly "
+            "{-s, +s}. A ternary master reaches here whenever any weight is zero, and "
+            "an unbaked one whenever the latents were never written to their grid"
+        )
+    codes, scale = recovered
+    payload = pack_sign_plane(codes)
+    record = _gate_and_record(
+        SIGN_PLANE_FORMAT, payload, scale.reshape(1), tensor, entry.weight_scale
+    )
+    return {
+        f"{entry.name}.{SIGN_PLANE_SUFFIX}": payload,
+        f"{entry.name}.{SCALES_SUFFIX}": scale.reshape(1).to(torch.float32),
+    }, record
+
+
 # ------------------------------------------------------------------- accounting
 
 
@@ -206,7 +353,16 @@ def payload_bytes(fmt: str, shape: tuple[int, int]) -> int:
     numel = int(shape[0]) * int(shape[1])
     if fmt == FV5_FORMAT:
         return FV5_PLANES * _plane_bytes(numel)
+    if fmt == SIGN_PLANE_FORMAT:
+        return _plane_bytes(numel)
     return quant.DUAL_PLANES * -(-numel // quant.CODES_PER_BYTE)
+
+
+def scale_bytes(fmt: str, shape: tuple[int, int]) -> int:
+    """Return the bytes a tensor of `shape` spends on scales in `fmt`."""
+    if fmt == SIGN_PLANE_FORMAT:
+        return _SCALE_BYTES
+    return int(shape[0]) * _SCALE_COLUMNS * _SCALE_BYTES
 
 
 def bits_per_weight(
@@ -215,18 +371,19 @@ def bits_per_weight(
     """Return the measured cost of a tensor in bits per weight.
 
     Args:
-        fmt: `fv5` or `tp9`.
+        fmt: `fv5`, `tp9` or `sign_plane`.
         shape: `(rows, cols)` of the weight.
-        with_scales: Include the two f32 per row. The planes alone are 3.0 (fv5) or
-            4.0 (tp9) bits; the scales add `64 / cols`, which is where a narrow tensor
-            pays for the per-row grid.
+        with_scales: Include the scales. The planes alone are 3.0 (fv5), 4.0 (tp9) or
+            1.0 (sign_plane) bits; the two-plane grids add `64 / cols` for their per-row
+            pair, which is where a narrow tensor pays for them, while `sign_plane`'s one
+            per-tensor scale costs `32 / numel` and rounds away on anything real.
     """
     numel = int(shape[0]) * int(shape[1])
     if not numel:
         return 0.0
     total = payload_bytes(fmt, shape)
     if with_scales:
-        total += int(shape[0]) * _SCALE_COLUMNS * _SCALE_BYTES
+        total += scale_bytes(fmt, shape)
     return total * _BITS_PER_BYTE / numel
 
 
@@ -252,9 +409,44 @@ def export_bitplanes(
         KeyError: If a manifest entry has no matching weight in the master.
         RuntimeError: If a packed tensor does not round-trip back to the master.
     """
+    _reject_unsupported(manifest, fmt)
+    pack_tensor = partial(_pack_two_plane_tensor, manifest, fmt)
+    return _export_container(master_dir, output_dir, manifest, fmt, pack_tensor)
+
+
+def _pack_two_plane_tensor(
+    manifest: SwapManifest, fmt: str, entry: SwapEntry, tensor: torch.Tensor
+) -> tuple[dict[str, torch.Tensor], dict]:
+    """Pack one baked two-plane tensor into its bit string and per-row scales."""
+    scales = _require_scales(manifest, entry.name, fmt)
+    try:
+        codes, derived = bake.derive_codes_and_scale(
+            tensor, entry.group_size, entry.weight_scale, scales
+        )
+    except ValueError as exc:
+        raise ValueError(
+            f"{entry.name} still holds latent weights ({exc}); bake the master "
+            "before packing it"
+        ) from exc
+    payload = pack_fv5(codes) if fmt == FV5_FORMAT else pack_tp9(codes)
+    suffix = FV5_SUFFIX if fmt == FV5_FORMAT else TP9_SUFFIX
+    record = _gate_and_record(fmt, payload, derived, tensor, entry.weight_scale)
+    return {
+        f"{entry.name}.{suffix}": payload,
+        f"{entry.name}.{SCALES_SUFFIX}": derived.to(torch.float32),
+    }, record
+
+
+def _export_container(
+    master_dir: str | Path,
+    output_dir: str | Path,
+    manifest: SwapManifest,
+    fmt: str,
+    pack_tensor: PackTensor,
+) -> Path:
+    """Write one packed container beside the master; `pack_tensor` supplies the layout."""
     master_dir = Path(master_dir)
     output = Path(output_dir)
-    _reject_unsupported(manifest, fmt)
     if output.resolve() == master_dir.resolve():
         raise ValueError(
             f"{fmt} must be written beside the master, not over it; the packed weights "
@@ -271,7 +463,6 @@ def export_bitplanes(
         | {bake.SAFETENSORS_INDEX_NAME, bake.TORCH_INDEX_NAME},
     )
 
-    suffix = FV5_SUFFIX if fmt == FV5_FORMAT else TP9_SUFFIX
     weight_map: dict[str, str] = {}
     records: dict[str, dict] = {}
     total_size = 0
@@ -283,22 +474,8 @@ def export_bitplanes(
             if entry is None:
                 packed[key] = tensor
                 continue
-            scales = _require_scales(manifest, entry.name, fmt)
-            try:
-                codes, derived = bake.derive_codes_and_scale(
-                    tensor, entry.group_size, entry.weight_scale, scales
-                )
-            except ValueError as exc:
-                raise ValueError(
-                    f"{entry.name} still holds latent weights ({exc}); bake the master "
-                    "before packing it"
-                ) from exc
-            payload = pack_fv5(codes) if fmt == FV5_FORMAT else pack_tp9(codes)
-            packed[f"{entry.name}.{suffix}"] = payload
-            packed[f"{entry.name}.{SCALES_SUFFIX}"] = derived.to(torch.float32)
-            records[entry.name] = _gate_and_record(
-                fmt, payload, derived, tensor, entry.weight_scale
-            )
+            payload, records[entry.name] = pack_tensor(entry, tensor)
+            packed.update(payload)
             remaining.discard(key)
         shard_name = Path(path).name
         for key, value in packed.items():
@@ -334,13 +511,13 @@ def export_bitplanes(
 
 def write_record(output_dir: str | Path, fmt: str, records: dict[str, dict]) -> Path:
     """Write the per-tensor gate digests and bit accounting, returning the record path."""
-    name = FV5_RECORD_FILENAME if fmt == FV5_FORMAT else TP9_RECORD_FILENAME
-    path = Path(output_dir) / name
+    path = Path(output_dir) / FORMAT_RECORD_FILENAMES[fmt]
     path.write_text(
         json.dumps(
             {
                 "format": fmt,
-                "scale_mode": FORMAT_SCALE_MODES[fmt],
+                "scale_mode": FORMAT_SCALE_MODES.get(fmt, "per-tensor"),
+                "codebook": FORMAT_CODEBOOKS.get(fmt, "ternary"),
                 "consumed_by": "no engine yet — archival and future-kernel layout",
                 **summarize(records),
                 "tensors": records,
@@ -414,7 +591,7 @@ def _gate_and_record(
         "cols": shape[1],
         "weights": shape[0] * shape[1],
         "payload_bytes": int(payload.numel()),
-        "scale_bytes": int(scales.numel()) * _SCALE_BYTES,
+        "scale_bytes": scale_bytes(fmt, shape),
         "payload_bits_per_weight": bits_per_weight(fmt, shape, with_scales=False),
         "bits_per_weight": bits_per_weight(fmt, shape),
         "sha256": hashlib.sha256(_payload_bytes(payload)).hexdigest(),
@@ -445,6 +622,15 @@ def _check_scales(
     return scales.to(torch.float32)
 
 
+def _check_scalar_scale(scale: torch.Tensor) -> torch.Tensor:
+    if scale.numel() != 1:
+        raise ValueError(
+            f"{SIGN_PLANE_FORMAT} carries one scale for the whole tensor, got "
+            f"{tuple(scale.shape)}"
+        )
+    return scale.to(torch.float32).reshape(())
+
+
 def _plane_bytes(numel: int) -> int:
     return -(-numel // _BITS_PER_BYTE)
 
@@ -473,6 +659,8 @@ def _bit_shifts(device: torch.device) -> torch.Tensor:
 
 
 __all__ = [
+    "FORMAT_CODEBOOKS",
+    "FORMAT_RECORD_FILENAMES",
     "FORMAT_SCALE_MODES",
     "FV5_BITS_PER_WEIGHT",
     "FV5_FORMAT",
@@ -480,19 +668,28 @@ __all__ = [
     "FV5_RECORD_FILENAME",
     "FV5_SUFFIX",
     "SCALES_SUFFIX",
+    "SIGN_PLANE_BITS_PER_WEIGHT",
+    "SIGN_PLANE_FORMAT",
+    "SIGN_PLANE_RECORD_FILENAME",
+    "SIGN_PLANE_SUFFIX",
     "TP9_BITS_PER_WEIGHT",
     "TP9_FORMAT",
     "TP9_RECORD_FILENAME",
     "TP9_SUFFIX",
     "bits_per_weight",
     "decode_fv5",
+    "decode_sign_plane",
     "decode_tp9",
     "export_bitplanes",
+    "export_sign_plane",
     "pack_fv5",
+    "pack_sign_plane",
     "pack_tp9",
     "payload_bytes",
+    "scale_bytes",
     "summarize",
     "unpack_fv5",
+    "unpack_sign_plane",
     "unpack_tp9",
     "write_record",
 ]

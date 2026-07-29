@@ -18,6 +18,11 @@ single-plane rule: each row carries an `(s_lo, s_hi)` pair and every weight take
 nearest of `{0, ±s_lo, ±s_hi}`, coded as `{-2, -1, 0, +1, +2}`. Everything else — the
 fp32 accumulation, the `SCALE_EPS` floor, the `f16`-rounded dequant scale and the
 λ-interpolation — is identical, so a baked five-value master re-quantizes to itself.
+
+The binary codebook (`codebook: binary`) drops the zero state instead of adding one:
+codes are `sign(W)` and the scale is `mean(|W|)`, which is the least-squares optimum
+rather than a threshold heuristic. The `SCALE_EPS` floor, the `f16`-rounded dequant
+scale and the λ-interpolation carry over unchanged.
 """
 
 from __future__ import annotations
@@ -130,8 +135,12 @@ def dequantize_codes(
 
 def _has_more_than_two_magnitudes(values: torch.Tensor) -> bool:
     """Cheap negative probe: a per-tensor baked weight holds only `{0, s}` magnitudes."""
+    return _magnitudes_exceed(values, 2)
+
+
+def _magnitudes_exceed(values: torch.Tensor, limit: int) -> bool:
     sample = values.reshape(-1)[:BAKED_PROBE_ELEMENTS]
-    return bool(torch.unique(sample.abs()).numel() > 2)
+    return bool(torch.unique(sample.abs()).numel() > limit)
 
 
 def baked_codes_and_scale(
@@ -611,6 +620,125 @@ def fake_quant_weight_dual(
     return _interp(weight, quantized, lambda_)
 
 
+# ----------------------------------------------------- binary codebook (`{-s, +s}`)
+
+
+def binary_scale(weight: torch.Tensor, group_size: int | None = None) -> torch.Tensor:
+    """Return the fp32 binary scale `mean(|W|)`, clamped to `SCALE_EPS`.
+
+    Numerically the same statistic as `absmean_scale`, and a different fact. For the
+    ternary grid the absmean is a *threshold heuristic* — the least-squares optimum
+    depends on which weights round to zero. For a sign codebook there is no zero
+    state, so `argmin_s ||W - s·sign(W)||²` has the closed form `s = mean(|W|)`
+    exactly: `<W, sign(W)> = Σ|w|` and `<sign(W), sign(W)> = n`. Binary therefore
+    needs no alternation to place its scale, which is why the fit converges in one
+    step where the ternary solver iterates.
+
+    Args:
+        weight: Latent weight, any floating dtype.
+        group_size: When set, scale per contiguous group of `group_size` input
+            elements instead of per tensor.
+
+    Returns:
+        fp32 scale: a 0-dim tensor per tensor, or `(out_features, in_features //
+        group_size)` in group mode.
+    """
+    return absmean_scale(weight, group_size)
+
+
+def binary_codes(weight: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+    """Return the sign codes `{-1, +1}` of `weight` as int8.
+
+    The scale is taken for signature parity with `ternary_codes` and does not enter
+    the assignment: with no zero state the nearest code is `sign(w)` for every
+    positive scale. Zeros go to `+1` — an arbitrary but fixed tie-break, so a baked
+    binary tensor re-quantizes to itself.
+
+    Args:
+        weight: Latent weight.
+        scale: fp32 scale from `binary_scale` (per tensor or per group).
+
+    Returns:
+        int8 tensor of codes with the same shape as `weight`.
+    """
+    del scale
+    return torch.where(weight < 0, -1, 1).to(torch.int8)
+
+
+def fake_quant_weight_binary(
+    weight: torch.Tensor,
+    lambda_: float = 1.0,
+    group_size: int | None = None,
+    scale: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Return `w + λ · (codes · s16 - w)` for the sign codebook, no autograd wiring.
+
+    Dequantization goes through `dequantize_codes` unchanged: the codes are `±1` and
+    the scale is `f16`-rounded exactly as for ternary, so a baked binary master
+    re-quantizes to the same codes in every downstream packer.
+
+    Args:
+        weight: Latent weight.
+        lambda_: Quantization strength in `[0, 1]`.
+        group_size: Group size for group-scale mode, `None` for per tensor.
+        scale: Explicit fp32 scale (learnable-scale mode); derived by `binary_scale`
+            when `None`.
+
+    Returns:
+        Effective weight, same shape and dtype as `weight`.
+    """
+    if lambda_ <= 0.0:
+        return weight
+    if scale is None:
+        scale = binary_scale(weight, group_size)
+    else:
+        scale = scale.to(torch.float32).clamp_min(SCALE_EPS)
+    codes = binary_codes(weight, scale)
+    quantized = dequantize_codes(codes, f16_round_scale(scale), weight.dtype)
+    return _interp(weight, quantized, lambda_)
+
+
+def baked_binary_codes_and_scale(
+    weight: torch.Tensor, group_size: int | None = None
+) -> tuple[torch.Tensor, torch.Tensor] | None:
+    """Recover `(codes, s16)` from an already-baked binary weight, or `None` if latent.
+
+    A baked binary tensor holds exactly `{-s16, +s16}` and nothing else, so its `amax`
+    *is* `s16` and the codes are the signs. Two consequences the ternary probe does
+    not have:
+
+    - a *degenerate* tensor whose values all share one sign is still baked (its single
+      magnitude is `s16`, every code the same); the probe must accept it rather than
+      read the missing counter-sign as evidence of latent weights,
+    - which makes a constant latent tensor indistinguishable from a baked one. That is
+      accepted: the two agree on every value the quantizer would produce, so reading
+      the constant as baked changes nothing downstream.
+
+    An exact zero is not on the grid, so any tensor containing one is latent.
+
+    Args:
+        weight: Candidate baked weight.
+        group_size: Group size for group-scale mode, `None` for per tensor.
+
+    Returns:
+        `(codes, scale)` — int8 codes in `{-1, +1}` shaped like `weight` and the fp32
+        `s16` scale — or `None` when the values are not exactly `{-s, +s}`.
+    """
+    values = weight.detach().to(torch.float32)
+    if group_size is None and _magnitudes_exceed(values, 1):
+        return None
+    view = values if group_size is None else _group_view(values, group_size)
+    magnitude = view.abs()
+    scale = (
+        magnitude.amax() if group_size is None else magnitude.amax(dim=-1)
+    ).clamp_min(SCALE_EPS)
+    divisor = scale if group_size is None else scale.unsqueeze(-1)
+    codes = binary_codes(view, scale)
+    if not bool(torch.equal(codes.to(torch.float32) * divisor, view)):
+        return None
+    return codes.reshape(weight.shape), scale
+
+
 def act_scale(x: torch.Tensor) -> torch.Tensor:
     """Return the per-token activation scale `max(|x|) / ACT_QMAX`, clamped to `SCALE_EPS`.
 
@@ -727,18 +855,24 @@ class FakeQuantWeightSTE(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         """Pass the incoming gradient straight through to the latent weight."""
-        grad_scale = None
-        if ctx.saved_tensors:
-            codes, scale = ctx.saved_tensors
-            grad = grad_output.to(torch.float32) * codes.to(torch.float32) * ctx.lambda_
-            if scale.numel() == 1:
-                grad_scale = grad.sum()
-            else:
-                grad_scale = _group_view(grad, grad.shape[-1] // scale.shape[-1]).sum(
-                    -1
-                )
-            grad_scale = grad_scale.reshape(scale.shape).to(scale.dtype)
-        return grad_output, None, None, grad_scale
+        return grad_output, None, None, _single_plane_scale_grad(ctx, grad_output)
+
+
+def _single_plane_scale_grad(ctx, grad_output: torch.Tensor) -> torch.Tensor | None:
+    """Return the learnable-scale gradient of a one-scale grid, or `None` in statistic mode.
+
+    The effective weight is `code · s`, so `∂/∂s` is the code, summed over whatever
+    unit shares the scale.
+    """
+    if not ctx.saved_tensors:
+        return None
+    codes, scale = ctx.saved_tensors
+    grad = grad_output.to(torch.float32) * codes.to(torch.float32) * ctx.lambda_
+    if scale.numel() == 1:
+        reduced = grad.sum()
+    else:
+        reduced = _group_view(grad, grad.shape[-1] // scale.shape[-1]).sum(-1)
+    return reduced.reshape(scale.shape).to(scale.dtype)
 
 
 def _reduce_to(grad: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -749,6 +883,34 @@ def _reduce_to(grad: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if size == 1:
             grad = grad.sum(dim, keepdim=True)
     return grad.reshape(target.shape).to(target.dtype)
+
+
+class FakeQuantWeightBinarySTE(torch.autograd.Function):
+    """Straight-through estimator for the sign-codebook weight path.
+
+    Forward applies `fake_quant_weight_binary`; backward is the identity into the
+    latent weight (and, in learnable-scale mode, the true gradient of the scale —
+    `∂(s·code)/∂s` is the code, exactly as on the ternary path).
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        weight: torch.Tensor,
+        lambda_: float,
+        group_size: int | None,
+        scale: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Return the effective weight; see `fake_quant_weight_binary`."""
+        ctx.lambda_ = lambda_
+        if scale is not None and scale.requires_grad and lambda_ > 0.0:
+            ctx.save_for_backward(binary_codes(weight, scale), scale)
+        return fake_quant_weight_binary(weight, lambda_, group_size, scale)
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
+        """Pass the incoming gradient straight through to the latent weight."""
+        return grad_output, None, None, _single_plane_scale_grad(ctx, grad_output)
 
 
 class FakeQuantWeightDualSTE(torch.autograd.Function):
@@ -863,6 +1025,16 @@ def fake_quant_weight_ste(
 ) -> torch.Tensor:
     """Autograd-wired `fake_quant_weight` (STE backward)."""
     return FakeQuantWeightSTE.apply(weight, lambda_, group_size, scale)
+
+
+def fake_quant_weight_binary_ste(
+    weight: torch.Tensor,
+    lambda_: float = 1.0,
+    group_size: int | None = None,
+    scale: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Autograd-wired `fake_quant_weight_binary` (STE backward)."""
+    return FakeQuantWeightBinarySTE.apply(weight, lambda_, group_size, scale)
 
 
 def fake_quant_weight_dual_ste(

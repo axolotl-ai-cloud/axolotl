@@ -665,12 +665,16 @@ def gate_bitplane_bytes(
     master's own storage dtype* — a free sum of two scales rounds differently in fp32,
     which is not a packing fault.
 
+    `sign_plane` runs the same gate over its one plane and its single per-tensor
+    scale — the codebook narrows, the contract does not.
+
     Args:
-        fmt: `fv5` or `tp9`.
+        fmt: `fv5`, `tp9` or `sign_plane`.
         packed: The byte string being written.
-        scales: The `(rows, 2)` scale tensor written beside it.
+        scales: The `(rows, 2)` scale tensor written beside it, or the one f32 a
+            `sign_plane` tensor carries.
         master_weight: The baked master tensor it was packed from.
-        weight_scale: The master's scale mode, `dual` or `trit_planes`.
+        weight_scale: The master's scale mode.
 
     Returns:
         A list of failure descriptions; empty when the bytes round-trip exactly.
@@ -678,6 +682,8 @@ def gate_bitplane_bytes(
     from . import bitplanes
 
     shape = (int(master_weight.shape[0]), int(master_weight.shape[1]))
+    if fmt == bitplanes.SIGN_PLANE_FORMAT:
+        return _gate_sign_plane_bytes(packed, scales, master_weight, shape)
     decode = (
         bitplanes.decode_fv5 if fmt == bitplanes.FV5_FORMAT else bitplanes.decode_tp9
     )
@@ -724,6 +730,68 @@ def gate_bitplane_bytes(
                 f"{fmt} reconstruction differs from the master by up to {drift:.3e}"
             )
     return failures
+
+
+def _gate_sign_plane_bytes(
+    packed: torch.Tensor,
+    scale: torch.Tensor,
+    master_weight: torch.Tensor,
+    shape: tuple[int, int],
+) -> list[str]:
+    """Round-trip a `sign_plane` tensor's bytes and gate them on the master."""
+    from . import bitplanes
+
+    try:
+        codes, got_scale = bitplanes.decode_sign_plane(packed, scale, shape)
+    except ValueError as exc:
+        return [f"could not unpack the sign_plane bits: {exc}"]
+
+    recovered = quant.baked_binary_codes_and_scale(master_weight)
+    if recovered is None:
+        return [
+            "the master is not on the binary grid: its values are not exactly {-s, +s}"
+        ]
+    expected, expected_scale = recovered
+
+    failures: list[str] = []
+    mismatches = int((codes != expected.to(codes.device)).sum())
+    if mismatches:
+        failures.append(
+            f"{mismatches} of {expected.numel()} codes differ from the master after "
+            "a sign_plane round-trip"
+        )
+    if not torch.equal(got_scale, expected_scale):
+        failures.append("the sign_plane scale differs from the master's own magnitude")
+    if not failures:
+        rebuilt = quant.dequantize_codes(codes, got_scale, master_weight.dtype)
+        if not bool(torch.equal(rebuilt, master_weight)):
+            drift = float(
+                (rebuilt.to(torch.float32) - master_weight.to(torch.float32))
+                .abs()
+                .amax()
+            )
+            failures.append(
+                f"sign_plane reconstruction differs from the master by up to {drift:.3e}"
+            )
+    return failures
+
+
+def _extract_sign_plane(
+    artifact: Path, manifest: SwapManifest
+) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+    from . import bitplanes
+
+    tensors = bake.load_tensors(artifact)
+    extracted: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+    for entry in manifest.entries:
+        packed = tensors.get(f"{entry.name}.{bitplanes.SIGN_PLANE_SUFFIX}")
+        scale = tensors.get(f"{entry.name}.{bitplanes.SCALES_SUFFIX}")
+        if packed is None or scale is None:
+            continue
+        extracted[entry.name] = bitplanes.decode_sign_plane(
+            packed, scale, (entry.out_features, entry.in_features)
+        )
+    return extracted
 
 
 def _scale_pair(scales: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -811,6 +879,7 @@ register_extractor("mask_sign", _extract_mask_sign)
 register_extractor("onebitllms_bf16", _extract_onebitllms)
 register_extractor("fv5", _extract_bitplanes("fv5"))
 register_extractor("tp9", _extract_bitplanes("tp9"))
+register_extractor("sign_plane", _extract_sign_plane)
 # mask_sign is re-read from disk like the other extractor formats, but its bytes are
 # also gated as they are packed, so a corrupt write never reaches the container
 for _fmt in (*BLOCK_GATED_FORMATS, "mask_sign"):

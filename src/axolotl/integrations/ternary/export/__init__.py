@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
-from ..args import EmbeddingDtype, ExportFormat, resolve_ternary_config
+from ..args import EmbeddingDtype, ExportFormat, RouterDtype, resolve_ternary_config
 from ..swap import SwapManifest
 from . import bake, parity
 
@@ -82,7 +82,13 @@ def run_export(
     artifacts: dict[str, Path] = {}
     for fmt in requested:
         artifacts[fmt] = _write_artifact(
-            fmt, master, output, manifest, gate, ternary_cfg.export.embedding_dtype
+            fmt,
+            master,
+            output,
+            manifest,
+            gate,
+            embedding_dtype=ternary_cfg.export.embedding_dtype,
+            router_dtype=ternary_cfg.export.router_dtype,
         )
         if gate:
             _gate_artifact(fmt, master, artifacts[fmt], manifest)
@@ -96,6 +102,7 @@ def _write_artifact(
     manifest: SwapManifest,
     gate: bool,
     embedding_dtype: EmbeddingDtype = "bf16",
+    router_dtype: RouterDtype = "bf16",
 ) -> Path:
     from ..subln import assert_subln_exportable
 
@@ -118,6 +125,7 @@ def _write_artifact(
             GGUF_QUANT_TYPES[fmt],
             gate=gate,
             embedding_dtype=embedding_dtype,
+            router_dtype=router_dtype,
         )
     if fmt == "mask_sign":
         from . import mask_sign
@@ -127,6 +135,10 @@ def _write_artifact(
         from . import bitplanes
 
         return bitplanes.export_bitplanes(master, output / fmt, manifest, fmt)
+    if fmt == "sign_plane":
+        from . import bitplanes
+
+        return bitplanes.export_sign_plane(master, output / fmt, manifest)
     if fmt == "onebitllms_bf16":
         from . import onebitllms
 
@@ -135,7 +147,12 @@ def _write_artifact(
         from . import i2s
 
         return i2s.export_i2s(
-            master, output / fmt, manifest, gate=gate, embedding_dtype=embedding_dtype
+            master,
+            output / fmt,
+            manifest,
+            gate=gate,
+            embedding_dtype=embedding_dtype,
+            router_dtype=router_dtype,
         )
     raise ValueError(f"unknown ternary export format {fmt!r}")
 

@@ -32,8 +32,8 @@ import torch
 
 from axolotl.utils.logging import get_logger
 
-from .. import quant
-from ..args import NON_PER_TENSOR_SCALE_MODES, EmbeddingDtype
+from .. import aux_modules, quant
+from ..args import NON_PER_TENSOR_SCALE_MODES, EmbeddingDtype, RouterDtype
 from ..swap import SwapEntry, SwapManifest
 from .bake import derive_codes_and_scale, load_master
 
@@ -56,6 +56,17 @@ F16_MIN_POSITIVE: float = 2.0**-24
 EMBEDDING_TENSOR_NAMES: frozenset[str] = frozenset(
     {"token_embd.weight", "output.weight"}
 )
+
+# the aux-module family `router_dtype` applies to
+ROUTER_FAMILY_KEY: str = "routers"
+
+# parameter suffixes a state-dict key carries over its module name
+_PARAM_SUFFIXES: tuple[str, ...] = (".weight", ".bias")
+
+_MAX_REPORTED_ROUTERS: int = 3
+
+# tensors spelled out per family before the refusal truncates
+_MAX_REPORTED_TENSORS: int = 5
 
 QK_K: int = 256
 
@@ -296,6 +307,7 @@ def export_gguf_tq(
     quant_type: GGUFTernaryType = "tq2_0",
     gate: bool = True,
     embedding_dtype: EmbeddingDtype = "bf16",
+    router_dtype: RouterDtype = "bf16",
 ) -> Path:
     """Write a GGUF file whose ternary tensors use TQ2_0/TQ1_0 and return its path.
 
@@ -309,6 +321,7 @@ def export_gguf_tq(
         gate: Round-trip every packed tensor's bytes back to codes before they reach
             the container writer.
         embedding_dtype: `int8` packs the token embeddings and output head as Q8_0.
+        router_dtype: `int8` packs the kept-FP MoE router tensors as Q8_0.
 
     Raises:
         ImportError: If the `gguf` package is not installed.
@@ -344,6 +357,7 @@ def export_gguf_tq(
         file_type=getattr(gguf.LlamaFileType, f"MOSTLY_{quant_type.upper()}", None),
         gate_format=f"gguf_{quant_type}" if gate else None,
         embedding_dtype=embedding_dtype,
+        router_dtype=router_dtype,
     )
 
 
@@ -372,6 +386,7 @@ def write_gguf(
     file_type: Any = None,
     gate_format: str | None = None,
     embedding_dtype: EmbeddingDtype = "bf16",
+    router_dtype: RouterDtype = "bf16",
 ) -> Path:
     """Write one GGUF file from a baked master, packing ternary tensors with `pack_entry`.
 
@@ -385,10 +400,14 @@ def write_gguf(
         embedding_dtype: `int8` packs the token embeddings and the output head as
             Q8_0 instead of F16; with tied embeddings only one tensor exists and
             llama.cpp derives the head from it.
+        router_dtype: `int8` packs the 2-D weights of kept-FP router modules as Q8_0
+            instead of F16. Router biases stay F32 with the other 1-D tensors.
 
     Raises:
-        ValueError: If the manifest scale mode or architecture is unsupported, or a
-            tensor has no GGUF name for the architecture.
+        ValueError: If the manifest scale mode or architecture is unsupported, the
+            master carries tensors outside the text stack (see
+            `assert_text_stack_only`), or a tensor selected for Q8_0 has a row length
+            Q8_0 cannot block.
         RuntimeError: If a gated tensor's blocks do not round-trip to the master.
     """
     gguf = require_gguf()
@@ -407,26 +426,26 @@ def write_gguf(
     state_dict, _ = load_master(master_dir)
     ternary = {f"{entry.name}.weight": entry for entry in manifest.entries}
     name_map = gguf.get_tensor_name_map(arch, int(config["num_hidden_layers"]))
+    assert_text_stack_only(state_dict, name_map, manifest.model_type)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / filename
     digests: dict[str, str] = {}
+    quantized_routers: list[str] = []
     writer = gguf.GGUFWriter(path, gguf.MODEL_ARCH_NAMES[arch])
     try:
         _add_metadata(writer, config, master_dir, file_type)
         for key, tensor in state_dict.items():
             if key.endswith(".inv_freq"):
                 continue
-            name = name_map.get_name(key, try_suffixes=(".weight", ".bias"))
-            if name is None:
-                raise ValueError(
-                    f"no gguf tensor name for {key!r} under architecture "
-                    f"{manifest.model_type!r}"
-                )
+            name = name_map.get_name(key, try_suffixes=_PARAM_SUFFIXES)
             entry = ternary.get(key)
             if entry is None:
-                if embedding_dtype == "int8" and name in EMBEDDING_TENSOR_NAMES:
-                    data = pack_q8_0(*quantize_q8_0(tensor)).numpy()
+                knob = _q8_0_knob(key, name, tensor, embedding_dtype, router_dtype)
+                if knob is not None:
+                    data = _pack_q8_0_tensor(key, knob, tensor)
+                    if knob == "router_dtype":
+                        quantized_routers.append(key)
                     if gate_format is not None:
                         digests[name] = gate_packed_bytes("q8_0", data, tensor)
                     writer.add_tensor(
@@ -452,10 +471,135 @@ def write_gguf(
     finally:
         writer.close()
 
+    if router_dtype == "int8":
+        _report_quantized_routers(quantized_routers)
     if gate_format is not None:
         write_gate_record(output_dir, gate_format, path, digests)
     LOG.info(f"ternary: wrote {path}")
     return path
+
+
+def assert_text_stack_only(
+    state_dict: dict[str, torch.Tensor], name_map: Any, model_type: str
+) -> None:
+    """Refuse a master carrying tensors no GGUF tensor name fits.
+
+    A GGUF tensor name map describes one text transformer stack. Anything bolted onto
+    it — a vision or audio tower, its projector, an MTP or draft head — maps to
+    nothing, and the writer would otherwise produce a file that loads, answers, and
+    is missing a component the checkpoint was trained with.
+
+    Args:
+        state_dict: The baked master's tensors.
+        name_map: The `gguf` tensor name map for this architecture.
+        model_type: The manifest's model type, named in the error.
+
+    Raises:
+        ValueError: If any tensor has no GGUF name.
+    """
+    unnamed = [
+        key
+        for key in state_dict
+        if not key.endswith(".inv_freq")
+        and name_map.get_name(key, try_suffixes=_PARAM_SUFFIXES) is None
+    ]
+    if unnamed:
+        raise ValueError(_unrepresentable_message(unnamed, model_type))
+
+
+def _unrepresentable_message(keys: list[str], model_type: str) -> str:
+    grouped: dict[str, list[str]] = {}
+    unclaimed: list[str] = []
+    for key in keys:
+        family = aux_modules.classify(_module_name(key))
+        if family is None:
+            unclaimed.append(key)
+        else:
+            grouped.setdefault(family.key, []).append(key)
+
+    plural = "" if len(keys) == 1 else "s"
+    lines = [
+        f"ternary: {len(keys)} tensor{plural} of this master have no gguf tensor name "
+        f"under architecture {model_type!r}. A GGUF file describes one text "
+        "transformer stack, so writing it would silently drop them and ship the "
+        "language model alone:"
+    ]
+    for family_key, family in aux_modules.AUX_MODULE_FAMILIES.items():
+        if family_key in grouped:
+            lines.append(f"  {family.label}: {_listed(grouped[family_key])}")
+    if unclaimed:
+        lines.append(f"  claimed by no known family: {_listed(unclaimed)}")
+    lines.append(
+        "Export master_bf16 (the re-finetunable interchange artifact) or hf_bitnet "
+        "(which keeps the source architecture, towers included), or point the GGUF "
+        "export at a text-only checkpoint."
+    )
+    return "\n".join(lines)
+
+
+def _listed(names: list[str]) -> str:
+    head = ", ".join(names[:_MAX_REPORTED_TENSORS])
+    extra = len(names) - _MAX_REPORTED_TENSORS
+    return f"{head} (+{extra} more)" if extra > 0 else head
+
+
+def _module_name(key: str) -> str:
+    """Return the module name behind a state-dict key, for the aux-module registry."""
+    for suffix in _PARAM_SUFFIXES:
+        key = key.removesuffix(suffix)
+    return key
+
+
+def is_router_tensor(key: str) -> bool:
+    """Whether a state-dict key names a parameter of an MoE router module."""
+    module = key
+    for suffix in _PARAM_SUFFIXES:
+        module = module.removesuffix(suffix)
+    family = aux_modules.classify(module)
+    return family is not None and family.key == ROUTER_FAMILY_KEY
+
+
+def _q8_0_knob(
+    key: str,
+    name: str,
+    tensor: torch.Tensor,
+    embedding_dtype: EmbeddingDtype,
+    router_dtype: RouterDtype,
+) -> str | None:
+    """Return the export knob asking for this kept-FP tensor as Q8_0, or `None`."""
+    if embedding_dtype == "int8" and name in EMBEDDING_TENSOR_NAMES:
+        return "embedding_dtype"
+    if router_dtype == "int8" and tensor.ndim == 2 and is_router_tensor(key):
+        return "router_dtype"
+    return None
+
+
+def _pack_q8_0_tensor(key: str, knob: str, tensor: torch.Tensor) -> np.ndarray:
+    try:
+        return pack_q8_0(*quantize_q8_0(tensor)).numpy()
+    except ValueError as exc:
+        raise ValueError(
+            f"ternary.export.{knob}: int8 cannot pack {key} "
+            f"{tuple(tensor.shape)}: {exc}"
+        ) from exc
+
+
+def _report_quantized_routers(names: list[str]) -> None:
+    if not names:
+        LOG.warning(
+            "ternary: export.router_dtype: int8 matched no router module in this "
+            "model; every tensor was written at its default dtype"
+        )
+        return
+    listed = ", ".join(names[:_MAX_REPORTED_ROUTERS])
+    if len(names) > _MAX_REPORTED_ROUTERS:
+        listed += f" (+{len(names) - _MAX_REPORTED_ROUTERS} more)"
+    LOG.warning(
+        f"ternary: packed {len(names)} router tensors as Q8_0: {listed}. "
+        "llama.cpp's own quantizer never quantizes ffn_gate_inp, so this file is "
+        "outside what upstream produces: check the runtime loads it and re-measure "
+        "expert utilization before shipping it"
+    )
 
 
 def gate_packed_bytes(fmt: str, data: np.ndarray, master_weight: torch.Tensor) -> str:
@@ -665,16 +809,19 @@ __all__ = [
     "Q8_0_BLOCK_BYTES",
     "Q8_0_BLOCK_SIZE",
     "Q8_0_QMAX",
+    "ROUTER_FAMILY_KEY",
     "TQ1_0_BLOCK_BYTES",
     "TQ1_0_QH_BYTES",
     "TQ1_0_QS_BYTES",
     "TQ2_0_BLOCK_BYTES",
     "TQ2_0_QS_BYTES",
+    "assert_text_stack_only",
     "decode_q8_0",
     "dequantize_q8_0",
     "export_gguf_tq",
     "gate_packed_bytes",
     "gguf_available",
+    "is_router_tensor",
     "pack_q8_0",
     "pack_tq1_0",
     "pack_tq2_0",

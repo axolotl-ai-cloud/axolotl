@@ -614,7 +614,10 @@ def test_callbacks_follow_the_config(tmp_path):
     plugin = TernaryPlugin()
     plugin.post_model_build(cfg, model)
 
-    assert plugin.add_callbacks_pre_trainer(cfg, model) == []
+    callbacks = plugin.add_callbacks_pre_trainer(cfg, model)
+
+    # only the always-on zero-gradient watch survives every knob being turned off
+    assert [type(cb).__name__ for cb in callbacks] == ["ZeroGradWarningCallback"]
 
 
 def test_distillation_hooks_are_off_by_default(tmp_path):

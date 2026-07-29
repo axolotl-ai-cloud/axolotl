@@ -1,4 +1,10 @@
-"""transformers-bitnet packing: uint8 `(out_features / 4, in_features)` + scalar scale."""
+"""transformers-bitnet packing: uint8 `(out_features / 4, in_features)` + scalar scale.
+
+A `codebook: binary` master packs into the same container without a special case —
+`{-s, +s}` is a subset of `{-s, 0, +s}`, so the codes, the reciprocal scale companion
+and `BitLinear`'s dequantization are all exactly right. It just costs two bits per
+weight to carry one bit of information, which is what the warning below says.
+"""
 
 from __future__ import annotations
 
@@ -167,8 +173,21 @@ def export_hf_bitnet(
         )
     _write_config(output, manifest)
     manifest.save(output)
+    _warn_binary_padding(manifest)
     LOG.info(f"ternary: wrote {len(entries)} packed hf_bitnet tensors to {output}")
     return output
+
+
+def _warn_binary_padding(manifest: SwapManifest) -> None:
+    """Note that a sign codebook pays ternary's two bits per weight in this container."""
+    codebook = manifest.quantizer.get("codebook", getattr(manifest, "codebook", None))
+    if codebook != "binary":
+        return
+    LOG.warning(
+        "ternary: hf_bitnet stores a two-bit code per weight, so a codebook: binary "
+        "master loads and runs correctly here but ships at twice its information "
+        "content. Export sign_plane alongside it for the size-truthful artifact"
+    )
 
 
 def _reject_unsupported(manifest: SwapManifest) -> None:

@@ -47,6 +47,7 @@ def bake_weight(
     group_size: int | None = None,
     weight_scale: str = "absmean",
     scales: tuple[torch.Tensor, torch.Tensor] | None = None,
+    codebook: str = "ternary",
 ) -> torch.Tensor:
     """Return the latent weight replaced by `codes * s16`, same shape and dtype.
 
@@ -62,6 +63,12 @@ def bake_weight(
             falling back to the absmean statistic here would quantize the checkpoint
             onto a scale the model never trained with.
     """
+    if codebook == "binary":
+        group_size = _grid_group_size(weight, group_size, weight_scale)
+        if quant.baked_binary_codes_and_scale(weight, group_size) is not None:
+            return weight
+        _reject_unbakeable_latent(weight, weight_scale)
+        return quant.fake_quant_weight_binary(weight.detach(), 1.0, group_size)
     if weight_scale == "trit_planes":
         if quant.baked_trit_plane_codes_and_scales(weight, scales) is not None:
             return weight
@@ -124,7 +131,9 @@ def bake_state_dict(
             raise KeyError(
                 f"{key} is listed in the swap manifest but not in the state dict"
             )
-        baked[key] = bake_weight(baked[key], entry.group_size, entry.weight_scale)
+        baked[key] = bake_weight(
+            baked[key], entry.group_size, entry.weight_scale, codebook=entry.codebook
+        )
     return baked
 
 
@@ -320,19 +329,19 @@ def bake_directory(
     if output.resolve() != master_dir.resolve():
         copy_aux_files(master_dir, output, skip={path.name for path in shards})
 
-    grids = {
-        f"{entry.name}.weight": (
-            entry.group_size,
-            entry.weight_scale,
-            manifest.scales_for(entry.name),
-        )
-        for entry in manifest.entries
-    }
+    grids = {f"{entry.name}.weight": entry for entry in manifest.entries}
     remaining = set(grids)
     for path in shards:
         tensors, metadata = load_shard(path)
         for key in tensors.keys() & remaining:
-            tensors[key] = bake_weight(tensors[key], *grids[key])
+            entry = grids[key]
+            tensors[key] = bake_weight(
+                tensors[key],
+                entry.group_size,
+                entry.weight_scale,
+                manifest.scales_for(entry.name),
+                entry.codebook,
+            )
             remaining.discard(key)
         save_shard(tensors, output / path.name, metadata)
     if remaining:

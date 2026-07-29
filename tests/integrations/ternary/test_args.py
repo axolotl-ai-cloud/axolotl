@@ -597,3 +597,205 @@ def test_the_removed_mode_is_not_a_valid_enum_value():
 
     assert get_args(DistillMode) == ("inprocess",)
     assert "kd_plugin" in REMOVED_DISTILL_MODES
+
+
+# ------------------------------------------------------------------ router dtype
+
+
+def test_router_dtype_defaults_to_bf16():
+    assert TernaryConfig().export.router_dtype == "bf16"
+
+
+@pytest.mark.parametrize("fmt", ["gguf_tq2_0", "gguf_tq1_0", "i2_s"])
+def test_int8_routers_accepted_for_gguf_formats(fmt):
+    cfg = TernaryConfig(export={"formats": [fmt], "router_dtype": "int8"})
+
+    assert cfg.export.router_dtype == "int8"
+
+
+@pytest.mark.parametrize(
+    "formats", [["hf_bitnet"], ["master_bf16"], ["master_bf16", "mask_sign"]]
+)
+def test_int8_routers_rejected_without_a_gguf_format(formats):
+    with pytest.raises(pydantic.ValidationError, match="only representable in the"):
+        TernaryConfig(export={"formats": formats, "router_dtype": "int8"})
+
+
+def test_int8_routers_warn_loudly_about_what_they_cost(caplog):
+    with caplog.at_level("WARNING"):
+        TernaryConfig(export={"formats": ["gguf_tq2_0"], "router_dtype": "int8"})
+
+    # the risk (discrete routing), the non-benefit (0.1% of params), and the verdict
+    assert "top-k" in caplog.text
+    assert "utilization" in caplog.text
+    assert "0.1%" in caplog.text
+    assert "experimentation knob" in caplog.text
+
+
+def test_int8_routers_warn_about_the_exempt_formats(caplog):
+    with caplog.at_level("WARNING"):
+        TernaryConfig(
+            export={
+                "formats": ["master_bf16", "gguf_tq2_0"],
+                "router_dtype": "int8",
+            }
+        )
+
+    assert "keep full-precision routers" in caplog.text
+    assert "'master_bf16'" in caplog.text
+
+
+def test_bf16_routers_never_warn(caplog):
+    with caplog.at_level("WARNING"):
+        TernaryConfig(export={"formats": ["gguf_tq2_0"]})
+
+    assert "router" not in caplog.text
+
+
+def test_unknown_router_dtype_is_rejected():
+    with pytest.raises(pydantic.ValidationError):
+        TernaryConfig(export={"formats": ["gguf_tq2_0"], "router_dtype": "int4"})
+
+
+# --------------------------------------------------------------------- codebook
+
+
+def test_codebook_defaults_to_ternary():
+    assert TernaryConfig().codebook == "ternary"
+
+
+def test_binary_codebook_accepted():
+    assert TernaryConfig(codebook="binary").codebook == "binary"
+
+
+def test_unknown_codebook_is_rejected():
+    with pytest.raises(pydantic.ValidationError):
+        TernaryConfig(codebook="quaternary")
+
+
+@pytest.mark.parametrize("mode", ["dual", "trit_planes"])
+def test_binary_codebook_rejects_the_two_plane_grids(mode):
+    with pytest.raises(pydantic.ValidationError) as caught:
+        TernaryConfig(codebook="binary", weight_scale=mode)
+
+    message = str(caught.value)
+    # why: the second plane exists to encode zero and a second magnitude
+    assert "zero" in message and "magnitude" in message
+    assert "collapse" in message
+
+
+@pytest.mark.parametrize("mode", ["absmean", "group", "learnable", "learnable_row"])
+def test_binary_codebook_accepts_the_single_plane_scale_modes(mode):
+    group_size = 128 if mode == "group" else None
+    cfg = TernaryConfig(
+        codebook="binary",
+        weight_scale=mode,
+        group_size=group_size,
+        export={"formats": ["master_bf16"]},
+    )
+
+    assert cfg.codebook == "binary"
+
+
+def test_binary_codebook_warns_that_init_jitter_has_no_boundary_to_cross(caplog):
+    with caplog.at_level("WARNING"):
+        cfg = TernaryConfig(
+            codebook="binary",
+            init="ternary_fit",
+            weight_scale="learnable",
+            lambda_schedule="none",
+            init_jitter=0.25,
+            export={"formats": ["master_bf16"]},
+        )
+
+    assert cfg.init_jitter == 0.25
+    assert "near-useless" in caplog.text
+    assert "w = 0" in caplog.text
+
+
+def test_ternary_codebook_never_warns_about_init_jitter(caplog):
+    with caplog.at_level("WARNING"):
+        TernaryConfig(
+            init="ternary_fit",
+            weight_scale="learnable",
+            lambda_schedule="none",
+            init_jitter=0.25,
+            export={"formats": ["master_bf16"]},
+        )
+
+    assert "near-useless" not in caplog.text
+
+
+# ------------------------------------------------------------------- sign_plane
+
+
+def test_sign_plane_is_an_export_format():
+    assert "sign_plane" in get_args(
+        TernaryConfig.model_fields["export"]
+        .annotation.model_fields["formats"]
+        .annotation.__args__[0]
+    )
+
+
+def test_sign_plane_accepted_under_the_binary_codebook():
+    cfg = TernaryConfig(codebook="binary", export={"formats": ["sign_plane"]})
+
+    assert cfg.export.formats == ["sign_plane"]
+
+
+def test_sign_plane_rejected_under_the_ternary_codebook():
+    with pytest.raises(pydantic.ValidationError) as caught:
+        TernaryConfig(export={"formats": ["master_bf16", "sign_plane"]})
+
+    message = str(caught.value)
+    assert "codebook: binary" in message
+    assert "zero state" in message
+
+
+def test_sign_plane_carries_one_scale_per_tensor():
+    with pytest.raises(pydantic.ValidationError, match="cannot be represented"):
+        TernaryConfig(
+            codebook="binary",
+            weight_scale="learnable_row",
+            export={"formats": ["sign_plane"]},
+        )
+
+
+# -------------------------------------------------------------- streaming seam
+
+
+def _stream_cfg(init: str) -> TernaryConfig:
+    scale = "absmean" if init == "absmean" else "learnable"
+    return TernaryConfig(
+        init=init, weight_scale=scale, lambda_schedule="none", export={"formats": []}
+    )
+
+
+def test_a_data_free_fit_streams():
+    from axolotl.integrations.ternary.args import assert_stream_supported
+
+    assert assert_stream_supported(_stream_cfg("ternary_fit")) is None
+
+
+def test_a_calibrated_fit_does_not_stream():
+    from axolotl.integrations.ternary.args import assert_stream_supported
+
+    with pytest.raises(ValueError) as caught:
+        assert_stream_supported(_stream_cfg("ternary_fit_calibrated"))
+
+    message = str(caught.value)
+    assert "layer-streaming calibration" in message
+    assert "future work" in message
+    assert "init: ternary_fit" in message
+
+
+def test_streaming_an_init_that_solves_nothing_is_refused():
+    from axolotl.integrations.ternary.args import assert_stream_supported
+
+    with pytest.raises(ValueError, match="solve nothing"):
+        assert_stream_supported(_stream_cfg("absmean"))
+
+
+def test_the_streaming_seam_is_not_a_schema_validator():
+    """The same config is valid for `axolotl train`; only fit-stream refuses it."""
+    assert _stream_cfg("ternary_fit_calibrated").init == "ternary_fit_calibrated"

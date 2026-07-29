@@ -141,11 +141,15 @@ class TernaryPlugin(BasePlugin):
     def add_callbacks_pre_trainer(
         self, cfg: DictDefault, model: PreTrainedModel
     ) -> list[Callable]:
-        """Builds the λ-schedule and weight-decay-anneal callbacks."""
-        from .callbacks import LambdaScheduleCallback, WdAnnealCallback
+        """Builds the λ-schedule, weight-decay-anneal and zero-gradient callbacks."""
+        from .callbacks import (
+            LambdaScheduleCallback,
+            WdAnnealCallback,
+            ZeroGradWarningCallback,
+        )
 
         ternary_cfg = resolve_ternary_config(cfg)
-        callbacks: list[Callable] = []
+        callbacks: list[Callable] = [ZeroGradWarningCallback(model)]
         if ternary_cfg.lambda_schedule != "none":
             callbacks.append(
                 LambdaScheduleCallback(

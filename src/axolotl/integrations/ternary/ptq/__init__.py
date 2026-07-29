@@ -34,8 +34,8 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 from ..args import resolve_ternary_config
-from ..modules import TernaryLinear
-from .ternary_fit import dequantize_fit, fit_ternary
+from ..modules import TernaryLinear, assert_codebook_applied
+from .ternary_fit import dequantize_fit, fit_binary, fit_ternary
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel
@@ -75,8 +75,11 @@ def initialize_model_latents(
 
     Raises:
         NotImplementedError: For an init mode the plugin accepts but cannot run yet.
+        RuntimeError: If the swapped modules do not carry the configured codebook.
     """
     ternary_cfg = resolve_ternary_config(cfg)
+    # the last hook inside `convert_model` that sees the config and the built modules
+    assert_codebook_applied(model, ternary_cfg.codebook)
     if ternary_cfg.init == "absmean":
         return
     if ternary_cfg.init not in ("ternary_fit", "ternary_fit_calibrated"):
@@ -131,8 +134,9 @@ def has_meta_latents(model: "PreTrainedModel", manifest: "SwapManifest") -> bool
 
 
 def fit_module_latent(module: TernaryLinear, entry: "SwapEntry") -> None:
-    """Run the data-free fit for `entry`'s scale mode and write it into `module`."""
-    codes, scale = fit_ternary(
+    """Run the data-free fit for `module`'s codebook and `entry`'s scale mode, in place."""
+    fit = fit_binary if module.codebook == "binary" else fit_ternary
+    codes, scale = fit(
         module.weight.detach(),
         scale_mode=entry.weight_scale,  # type: ignore[arg-type]
         group_size=entry.group_size,

@@ -39,10 +39,16 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 from .. import quant
-from ..args import WeightScaleMode, resolve_ternary_config
+from ..args import Codebook, WeightScaleMode, resolve_ternary_config
 from ..modules import SUBLN_ATTR, TernaryLinear, iter_ternary_modules
 from . import fit_module_latent, iter_swapped, write_latent
-from .ternary_fit import RIDGE_LAMBDA, fit_ternary, solve_2x2_ridge, solve_scale
+from .ternary_fit import (
+    RIDGE_LAMBDA,
+    fit_binary,
+    fit_ternary,
+    solve_2x2_ridge,
+    solve_scale,
+)
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel
@@ -147,6 +153,7 @@ def calibrate_model_latents(
                             gram,
                             scale_mode=entry.weight_scale,  # type: ignore[arg-type]
                             group_size=entry.group_size,
+                            codebook=module.codebook,
                         )
                         write_latent(module, codes, scale)
                     pending.pop(id(module))
@@ -330,6 +337,7 @@ def gptq_compensate(
     group_size: int | None = None,
     block_size: int = BLOCK_SIZE,
     damping: float = DAMPING,
+    codebook: Codebook = "ternary",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Quantize `weight` column-block by column-block, compensating the error as it goes.
 
@@ -340,13 +348,19 @@ def gptq_compensate(
         group_size: Block size for `scale_mode: group`.
         block_size: Columns quantized before the residual is pushed forward.
         damping: Fraction of `mean(diag(S))` added to the diagonal for stability.
+        codebook: `ternary` or the `binary` sign plane. Only the per-column assignment
+            rule changes: the scale is still refit against the activation-weighted
+            objective, and the residual is still pushed into the columns to its right.
 
     Returns:
         `(codes, scales)` in the same layout `fit_ternary` returns.
     """
+    binary = codebook == "binary"
+    fit = fit_binary if binary else fit_ternary
+    assign = quant.binary_codes if binary else quant.ternary_codes
     dense = weight.detach().to(torch.float32)
     second_moment = _validated_gram(dense, gram)
-    codes, _ = fit_ternary(dense, scale_mode, group_size)
+    codes, _ = fit(dense, scale_mode, group_size)
     scale = aga_refit(dense, codes, second_moment, scale_mode, group_size, damping)
     if scale_mode == "dual":
         # the five-value grid has no single-column rounding rule to compensate against
@@ -360,7 +374,7 @@ def gptq_compensate(
         block = work[:, start:stop].clone()
         if _refits_block(scale_mode, group_size, start, stop):
             assert group_size is not None
-            block_codes, _ = fit_ternary(block, "group", group_size)
+            block_codes, _ = fit(block, "group", group_size)
             scale[:, start // group_size : stop // group_size] = aga_refit(
                 block,
                 block_codes,
@@ -374,7 +388,7 @@ def gptq_compensate(
         for offset in range(stop - start):
             column = block[:, offset : offset + 1]
             column_scale = _column_scale(scale, start + offset, scale_mode, group_size)
-            column_codes = quant.ternary_codes(column, column_scale)
+            column_codes = assign(column, column_scale)
             quantized = column_codes.to(torch.float32) * quant.f16_round_scale(
                 column_scale
             )

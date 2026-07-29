@@ -56,6 +56,81 @@ def export(config: str, formats: tuple[str, ...], output_dir: str | None) -> Non
         click.echo(f"{fmt}: {path}")
 
 
+@ternary.command(name="fit-stream")
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--input-dir",
+    default=None,
+    type=click.Path(path_type=str),
+    help="Checkpoint to fit. Defaults to the config's `base_model`.",
+)
+@click.option(
+    "--output-dir",
+    default=None,
+    type=click.Path(path_type=str),
+    help="Where the fitted checkpoint is written. Defaults to the config's `output_dir`.",
+)
+@click.option(
+    "--device",
+    default="cpu",
+    show_default=True,
+    type=str,
+    help="Device the per-tensor solve runs on.",
+)
+@click.option(
+    "--resume/--no-resume",
+    default=True,
+    show_default=True,
+    help="Skip shards a previous pass already finished.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the report as JSON instead of a summary line.",
+)
+def fit_stream_command(
+    config: str,
+    input_dir: str | None,
+    output_dir: str | None,
+    device: str,
+    resume: bool,
+    as_json: bool,
+) -> None:
+    """fit ternary codes shard by shard, without loading the model"""
+    from .args import assert_stream_supported, resolve_ternary_config
+    from .ptq.stream import stream_fit, summarize_families
+
+    cfg = _load_plugin_cfg(config)
+    try:
+        assert_stream_supported(resolve_ternary_config(cfg))
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    report = stream_fit(
+        input_dir or cfg.base_model,
+        output_dir or cfg.output_dir,
+        cfg,
+        device=device,
+        resume=resume,
+    )
+    if as_json:
+        click.echo(json.dumps(report.to_dict(), indent=2))
+        return
+    click.echo(
+        f"{report.output_dir}: {report.tensors_fitted} tensors fitted over "
+        f"{report.shards_fitted}/{report.shards} shards "
+        f"({report.shards_skipped} skipped)"
+    )
+    click.echo(
+        f"{report.weights_fitted} weights at {report.bits_per_weight:.3f} bits per "
+        f"weight, {report.zero_fraction:.1%} zero, "
+        f"{report.weights_per_second / 1e6:.1f}M weights/s"
+    )
+    if report.families:
+        click.echo(f"per family: {summarize_families(report.families)}")
+
+
 @ternary.command(name="damage-map")
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(

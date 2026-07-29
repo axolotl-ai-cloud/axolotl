@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import cast
 
 import torch
 from safetensors import safe_open
@@ -17,7 +18,8 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.logging import get_logger
 
-from .args import TernaryConfig, resolve_ternary_config
+from . import aux_modules
+from .args import UNIMPLEMENTED_CODEBOOKS, TernaryConfig, resolve_ternary_config
 from .modules import TernaryLinear
 from .ptq import initialize_model_latents
 
@@ -76,8 +78,8 @@ ARCH_PRESETS: dict[str, ArchPreset] = {
         ),
         keep_fp_modules=(
             r".*\.linear_attn\.(in_proj_qkv|in_proj_a|in_proj_b|in_proj_z|out_proj)",
-            r"model\.visual\..*",
-        ),
+        )
+        + aux_modules.family_patterns("vision_towers"),
     ),
 }
 
@@ -92,6 +94,7 @@ class SwapEntry:
     family: str
     weight_scale: str
     group_size: int | None = None
+    codebook: str = "ternary"
 
 
 @dataclass
@@ -103,6 +106,7 @@ class SwapManifest:
     kept_fp: list[str] = field(default_factory=list)
     weight_scale: str = "absmean"
     group_size: int | None = None
+    codebook: str = "ternary"
     activation_bits: int | None = 8
     init: str = "absmean"
     subln: bool = False
@@ -172,10 +176,19 @@ class SwapManifest:
         manifest.scales = _load_scales(Path(output_dir) / SCALES_FILENAME)
         return manifest
 
-    def scales_for(self, name: str) -> "tuple[torch.Tensor, ...] | None":
-        """Return the persisted per-row scales of `name`, or `None` if it has none."""
+    def scales_for(self, name: str) -> "tuple[torch.Tensor, torch.Tensor] | None":
+        """Return the persisted per-row scales of `name`, or `None` if it has none.
+
+        Only the two-plane grids record scales, so the pair is an invariant of every
+        producer; the cast states it for the consumers that index both halves.
+        """
         pair = self.scales.get(name)
-        return None if not pair else tuple(scale.reshape(-1, 1) for scale in pair)
+        if not pair:
+            return None
+        return cast(
+            "tuple[torch.Tensor, torch.Tensor]",
+            tuple(scale.reshape(-1, 1) for scale in pair),
+        )
 
 
 def _load_scales(path: Path) -> dict:
@@ -246,12 +259,19 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         getattr(getattr(model, "config", None), "model_type", None) or "unknown"
     )
 
+    if ternary_cfg.codebook in UNIMPLEMENTED_CODEBOOKS:
+        raise NotImplementedError(
+            f"ternary.codebook: {ternary_cfg.codebook} is accepted by the schema but "
+            "its quantizer has not landed yet; use `codebook: ternary`"
+        )
+
     targets = list(ternary_cfg.target_modules or ())
     keeps = list(ternary_cfg.keep_fp_modules or ())
     if not targets:
         preset = resolve_preset(model_type)
         targets = list(preset.target_modules)
         keeps.extend(preset.keep_fp_modules)
+    keeps = _dedupe(keeps)
 
     target_res = [re.compile(pattern) for pattern in targets]
     keep_res = [re.compile(pattern) for pattern in keeps]
@@ -321,15 +341,19 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
             "keeping them full precision"
         )
     if unmatched:
+        recognized = aux_modules.explain(unmatched)
         if ternary_cfg.strict_enumeration:
             raise ValueError(
                 f"{_summarize(unmatched)} match neither ternary.target_modules nor "
                 "ternary.keep_fp_modules; list every Linear explicitly or set "
                 "ternary.strict_enumeration: false to keep the rest full precision"
+                + (f"\n\n{recognized}" if recognized else "")
             )
         LOG.warning(
             f"ternary: keeping {_summarize(unmatched)} full precision (unenumerated)"
+            + (f"\n{recognized}" if recognized else "")
         )
+    _warn_targeted_aux_modules([name for name, _ in to_swap])
 
     subln_modules: list[str] = []
     if ternary_cfg.subln:
@@ -347,6 +371,7 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
             TernaryLinear.from_linear(
                 linear,
                 weight_scale=ternary_cfg.weight_scale,
+                codebook=ternary_cfg.codebook,
                 group_size=ternary_cfg.group_size,
                 activation_bits=ternary_cfg.activation_bits,
                 fused=ternary_cfg.fused_fake_quant,
@@ -361,6 +386,7 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
                 family=module_family(name),
                 weight_scale=ternary_cfg.weight_scale,
                 group_size=ternary_cfg.group_size,
+                codebook=ternary_cfg.codebook,
             )
         )
 
@@ -370,6 +396,7 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         kept_fp=kept_fp,
         weight_scale=ternary_cfg.weight_scale,
         group_size=ternary_cfg.group_size,
+        codebook=ternary_cfg.codebook,
         activation_bits=ternary_cfg.activation_bits,
         init=ternary_cfg.init,
         subln=ternary_cfg.subln,
@@ -462,6 +489,16 @@ def assert_scale_mode_reloadable(model: PreTrainedModel, cfg: DictDefault) -> No
         return
     saved = SwapManifest.load(source)
     ternary_cfg = resolve_ternary_config(cfg)
+    if saved.codebook != ternary_cfg.codebook:
+        raise ValueError(
+            f"{source / MANIFEST_FILENAME} says this master was fitted on the "
+            f"{saved.codebook} codebook, but this run configures "
+            f"{ternary_cfg.codebook}. The two grids share the {{-s, +s}} values, so "
+            "the baked probe still lights and nothing fails loudly — the run simply "
+            "continues on a different code set than the one that was trained. Set "
+            f"ternary.codebook: {saved.codebook}, or start from the original "
+            "full-precision checkpoint"
+        )
     if (saved.weight_scale, saved.group_size) == (
         ternary_cfg.weight_scale,
         ternary_cfg.group_size,
@@ -483,6 +520,22 @@ def assert_scale_mode_reloadable(model: PreTrainedModel, cfg: DictDefault) -> No
     )
 
 
+def _dedupe(patterns: list[str]) -> list[str]:
+    """Drop repeated regexes, keeping the first occurrence's position."""
+    return list(dict.fromkeys(patterns))
+
+
+def _warn_targeted_aux_modules(names: list[str]) -> None:
+    """Warn about enumerated targets the registry knows should stay full precision."""
+    for key, matched in aux_modules.group_by_family(names).items():
+        family = aux_modules.AUX_MODULE_FAMILIES[key]
+        LOG.warning(
+            f"ternary: ternary.target_modules ternarizes {_summarize(matched)}, which "
+            f"the {family.label} family keeps full precision by default: "
+            f"{family.rationale}"
+        )
+
+
 def _grid(weight_scale: str, group_size: int | None) -> str:
     return weight_scale if group_size is None else f"{weight_scale}/{group_size}"
 
@@ -501,9 +554,11 @@ def _fused_expert_stacks(model: nn.Module) -> list[str]:
 def _quantizer_identity(ternary_cfg: TernaryConfig) -> dict:
     """Return the quantizer stamp recorded in the manifest for export and parity."""
     dual = ternary_cfg.weight_scale == "dual"
+    binary = ternary_cfg.codebook == "binary"
     return {
-        "scheme": "dual_ternary" if dual else "ternary",
-        "codes": [-2, -1, 0, 1, 2] if dual else [-1, 0, 1],
+        "scheme": "binary" if binary else "dual_ternary" if dual else "ternary",
+        "codes": [-1, 1] if binary else [-2, -1, 0, 1, 2] if dual else [-1, 0, 1],
+        "codebook": ternary_cfg.codebook,
         "rounding": "half_even",
         "weight_dequant_scale": "f16_round",
         "activation": "per_token_int8" if ternary_cfg.activation_bits else "none",

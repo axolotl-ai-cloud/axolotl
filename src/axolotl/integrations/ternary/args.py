@@ -15,11 +15,14 @@ from pydantic import (
 
 from axolotl.utils.logging import get_logger
 
+from .aux_modules import AUX_MODULE_FAMILIES
+
 LOG = get_logger(__name__)
 
 WeightScaleMode = Literal[
     "absmean", "group", "learnable", "learnable_row", "dual", "trit_planes"
 ]
+Codebook = Literal["ternary", "binary"]
 LambdaSchedule = Literal["linear", "sigmoid", "none"]
 InitMode = Literal["absmean", "ternary_fit", "ternary_fit_calibrated", "svid"]
 DistillMode = Literal["inprocess"]
@@ -38,12 +41,28 @@ ExportFormat = Literal[
     "onebitllms_bf16",
     "fv5",
     "tp9",
+    "sign_plane",
 ]
 EmbeddingDtype = Literal["bf16", "int8"]
+RouterDtype = Literal["bf16", "int8"]
+
+# codebooks whose quantizer is accepted by the schema but has not landed yet
+UNIMPLEMENTED_CODEBOOKS: frozenset[str] = frozenset()
+
+# packed containers that only carry a `{-s, +s}` sign plane, one codebook each
+CODEBOOK_FORMATS: dict[str, str] = {"sign_plane": "binary"}
 
 # one scale and one trit plane for the whole tensor — everything a packed format holds
 PER_TENSOR_SCALE_FORMATS: frozenset[str] = frozenset(
-    {"hf_bitnet", "gguf_tq2_0", "gguf_tq1_0", "i2_s", "mask_sign", "onebitllms_bf16"}
+    {
+        "hf_bitnet",
+        "gguf_tq2_0",
+        "gguf_tq1_0",
+        "i2_s",
+        "mask_sign",
+        "onebitllms_bf16",
+        "sign_plane",
+    }
 )
 GGUF_FORMATS: frozenset[str] = frozenset({"gguf_tq2_0", "gguf_tq1_0", "i2_s"})
 
@@ -83,11 +102,9 @@ FITTING_INIT_MODES: frozenset[str] = frozenset(
 MIN_GROUP_SIZE: int = 32
 DEFAULT_EXPORT_FORMATS: tuple[ExportFormat, ...] = ("master_bf16", "hf_bitnet")
 
-# module names a router regex would grab if it is written unanchored (`.*gate.*`)
-ROUTER_CANARY_NAMES: tuple[str, ...] = (
-    "model.layers.0.mlp.gate",
-    "model.layers.0.block_sparse_moe.gate",
-)
+# init modes `axolotl ternary fit-stream` cannot run: they need activations, which a
+# shard-at-a-time pass over the weights never sees
+STREAM_UNSUPPORTED_INIT_MODES: frozenset[str] = CALIBRATED_INIT_MODES
 
 # keys on the merged config that cannot coexist with a ternary conversion run
 CONFLICTING_KEYS: tuple[str, ...] = (
@@ -311,6 +328,17 @@ class TernaryExportConfig(BaseModel):
             "re-finetunable artifact, and hf_bitnet has no scheme for quantized ones."
         ),
     )
+    router_dtype: RouterDtype = Field(
+        default="bf16",
+        description=(
+            "Weight dtype for the MoE router tensors, which stay out of the ternary "
+            "grid either way. 'int8' packs them as Q8_0. This is an experimentation "
+            "knob, not a size lever: routers are ~0.1% of the parameters, so the "
+            "saving is negligible, while their logits feed a discrete top-k where a "
+            "rounded near-tie silently changes which expert runs. GGUF formats only, "
+            "like `embedding_dtype`."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_formats(self) -> "TernaryExportConfig":
@@ -342,6 +370,33 @@ class TernaryExportConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_router_dtype(self) -> "TernaryExportConfig":
+        if self.router_dtype == "bf16":
+            return self
+        honoring = [fmt for fmt in self.formats if fmt in GGUF_FORMATS]
+        if not honoring:
+            raise ValueError(
+                "ternary.export.router_dtype: int8 is only representable in the GGUF "
+                f"formats {sorted(GGUF_FORMATS)}; the bf16 master is the "
+                "re-finetunable artifact and hf_bitnet has no scheme for a quantized "
+                "router. Add a GGUF format or drop router_dtype."
+            )
+        LOG.warning(
+            "ternary: export.router_dtype: int8 quantizes the MoE routers. Router "
+            "logits feed a discrete top-k, so a rounded near-tie changes which expert "
+            "runs and expert utilization drifts with it — and routers are ~0.1% of "
+            "the parameters, so the saving is negligible. This is an experimentation "
+            "knob: re-measure routing before shipping the artifact"
+        )
+        exempt = [fmt for fmt in self.formats if fmt not in GGUF_FORMATS]
+        if exempt:
+            LOG.warning(
+                f"ternary: router_dtype: int8 applies to {sorted(honoring)}; "
+                f"{sorted(exempt)} keep full-precision routers"
+            )
+        return self
+
 
 class TernaryConfig(BaseModel):
     """Nested ternary conversion configuration available under the `ternary` key."""
@@ -368,6 +423,18 @@ class TernaryConfig(BaseModel):
         ),
     )
 
+    codebook: Codebook = Field(
+        default="ternary",
+        description=(
+            "Values a weight may take: 'ternary' is `{-s, 0, +s}`, 'binary' is "
+            "`{-s, +s}` — a pure sign plane with no zero state, the BitNet-b1 / "
+            "OneBit codebook. Binary stores one bit per weight against ternary's "
+            "~1.58 but gives up the zero state, which is where a ternary model puts "
+            "most of its weights and where the sparsity-adaptive packings get their "
+            "compression, so the crossover is a quality question per model, not a "
+            "size one."
+        ),
+    )
     weight_scale: WeightScaleMode = Field(
         default="absmean",
         description=(
@@ -495,6 +562,29 @@ class TernaryConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _validate_codebook(self) -> "TernaryConfig":
+        if self.codebook == "ternary":
+            return self
+        if self.weight_scale in TWO_PLANE_SCALE_MODES:
+            raise ValueError(
+                f"ternary.codebook: binary cannot be combined with "
+                f"ternary.weight_scale: {self.weight_scale}. Both two-plane grids "
+                "spend their second plane on structure a sign codebook does not have: "
+                "'dual' encodes {0, ±s_lo, ±s_hi} and 'trit_planes' the free sum "
+                "t1·s1 + t2·s2, and every state either of them adds is a zero or a "
+                "second magnitude. Under binary they collapse back to one sign plane"
+            )
+        if self.init_jitter:
+            LOG.warning(
+                "ternary: init_jitter is near-useless under codebook: binary. A sign "
+                "codebook has exactly one assignment boundary, at w = 0, and a fit "
+                "writes every latent at ±s — a full scale away from it — so the noise "
+                "perturbs the reconstruction without unfreezing the codes it is meant "
+                "to unfreeze"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_init_calibration(self) -> "TernaryConfig":
         # compared against the defaults rather than `model_fields_set`: axolotl dumps
         # and re-validates the whole config, which marks every field as set
@@ -599,6 +689,19 @@ class TernaryConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _validate_codebook_formats(self) -> "TernaryConfig":
+        for fmt, codebook in CODEBOOK_FORMATS.items():
+            if fmt in self.export.formats and self.codebook != codebook:
+                raise ValueError(
+                    f"ternary.export.formats: {fmt} is the packed form of "
+                    f"ternary.codebook: {codebook}, but this run uses "
+                    f"{self.codebook}. It stores one sign bit per weight and has "
+                    "nowhere to put a zero state, so every zeroed weight would come "
+                    "back as ±s"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _validate_lambda_warmup_steps(self) -> "TernaryConfig":
         steps = self.lambda_warmup_steps
         if isinstance(steps, float):
@@ -626,12 +729,16 @@ class TernaryConfig(BaseModel):
                     ) from exc
                 if field != "target_modules":
                     continue
-                for canary in ROUTER_CANARY_NAMES:
-                    if compiled.fullmatch(canary):
-                        LOG.warning(
-                            f"ternary.target_modules pattern {pattern!r} matches the MoE "
-                            f"router name {canary!r}; routers must stay full precision"
-                        )
+                for family in AUX_MODULE_FAMILIES.values():
+                    if not family.keep_fp:
+                        continue
+                    for canary in family.canaries:
+                        if compiled.fullmatch(canary):
+                            LOG.warning(
+                                f"ternary.target_modules pattern {pattern!r} matches "
+                                f"the {family.label} name {canary!r}, which must stay "
+                                f"full precision: {family.rationale}"
+                            )
         return self
 
     @model_serializer(mode="wrap")
@@ -668,6 +775,37 @@ class TernaryArgs(BaseModel):
                     "quantizer owns the weight representation for the whole run"
                 )
         return data
+
+
+def assert_stream_supported(ternary_cfg: TernaryConfig) -> None:
+    """Refuse an `init` mode `axolotl ternary fit-stream` cannot run.
+
+    Deliberately not a schema validator: the same config is valid for `axolotl train`,
+    which builds the whole model and can run an activation-aware fit, and invalid for
+    a pass that only ever holds one shard of weights. The constraint belongs to the
+    entry point, so `stream_fit` and the CLI call this and the schema stays silent.
+
+    Raises:
+        ValueError: If `ternary.init` needs calibration activations, or has nothing
+            to solve in the first place.
+    """
+    init = ternary_cfg.init
+    if init in STREAM_UNSUPPORTED_INIT_MODES:
+        raise ValueError(
+            f"ternary.init: {init} refits each layer against the activations its "
+            "inputs produce, and fit-stream never builds the model — it walks the "
+            "checkpoint shards and only ever holds one tensor's weights. Running it "
+            "streamed needs layer-streaming calibration (materialize one layer, push "
+            "the calibration batch through it, fit, release), which is future work. "
+            "Use `init: ternary_fit` for a data-free streamed fit, or run "
+            f"`init: {init}` through `axolotl train`"
+        )
+    if init not in FITTING_INIT_MODES:
+        raise ValueError(
+            f"ternary.init: {init} leaves the full-precision weights in place, so "
+            "fit-stream would copy the checkpoint and solve nothing. Set a fitting "
+            f"init ({', '.join(sorted(FITTING_INIT_MODES))})"
+        )
 
 
 def resolve_ternary_config(cfg: Any) -> TernaryConfig:

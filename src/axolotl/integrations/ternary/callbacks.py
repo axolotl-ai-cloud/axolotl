@@ -17,8 +17,9 @@ from transformers import (
 
 from axolotl.utils.logging import get_logger
 
+from . import aux_modules
 from .args import LambdaSchedule
-from .modules import TernaryLinear, iter_ternary_modules
+from .modules import TernaryLinear, as_local, iter_ternary_modules
 from .quant import flip_count, zero_fraction
 from .swap import module_family
 
@@ -29,6 +30,12 @@ SIGMOID_STEEPNESS: float = 12.0
 
 # width of the KD anchor ramp, as a fraction of max_steps
 ANCHOR_RAMP_FRACTION: float = 0.02
+
+# optimizer steps a targeted module may go without a gradient before it is called out
+ZERO_GRAD_MONITORED_STEPS: int = 50
+
+# module names spelled out in the zero-grad warning before it truncates
+_MAX_REPORTED_MODULES: int = 5
 
 
 def _sigmoid(value: float) -> float:
@@ -401,6 +408,199 @@ class TernaryMonitorCallback(TrainerCallback):
         store(dict(metrics), train_eval="train")
         self.metrics = {}
         return True
+
+
+class ZeroGradWarningCallback(TrainerCallback):
+    """Warns once about targeted modules that never receive a gradient.
+
+    Quantizing a module the run's loss does not reach is the worst trade the plugin
+    can make: the damage is taken in full and no gradient exists to heal any of it.
+    It is also invisible — the loss curve of a heal that skipped an MTP head looks
+    exactly like one that healed it, because nothing in the objective ever touched it.
+
+    The usual causes are structural rather than accidental: an MTP head under a run
+    with no MTP loss, a draft head, a reward head on a plain SFT objective, a vision
+    tower that no image in the corpus activates, or a cold MoE expert. The first four
+    are the `aux_modules` families, so the warning can name the likely cause instead
+    of only the module. A cold expert is different — it is a data property, not a
+    wiring mistake — so the two are reported apart.
+
+    The evidence is `weight.grad`, which not every engine keeps there: DeepSpeed ZeRO
+    reduces into a flat partition and clears the parameter's gradient before
+    `optimizer.step()`, and FSDP1 without `use_orig_params` leaves the module holding
+    a view of a FlatParameter that has none. Both make every watched module look
+    unreached, so both are detected and the watch stands down rather than accusing the
+    whole model. FSDP2's DTensor latents keep a real per-rank gradient and are read
+    through `as_local`.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        monitored_steps: int = ZERO_GRAD_MONITORED_STEPS,
+    ) -> None:
+        """Store the swapped modules to watch and how long to watch them.
+
+        Args:
+            model: The already-swapped model.
+            monitored_steps: Optimizer steps from the start of training over which a
+                module must stay gradient-free to be reported. Monitoring stops after
+                the window, so the check costs nothing for the rest of the run.
+        """
+        self.monitored_steps = monitored_steps
+        self.ternary_modules: list[tuple[str, TernaryLinear]] = list(
+            iter_ternary_modules(model)
+        )
+        self.seen_grad: set[str] = set()
+        self.warned = False
+        self.monitoring = True
+        # a trainer that never fires `on_pre_optimizer_step` would otherwise look
+        # exactly like a run whose loss reaches nothing
+        self.observed_steps = 0
+
+    def on_pre_optimizer_step(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ) -> None:
+        """Record which targeted latents carry a gradient this step.
+
+        This is the only hook where the answer exists: gradients are allocated by
+        backward and gone again after `optimizer.zero_grad()`. Under FSDP2 the
+        latent is a DTensor and only this rank's shard is inspected.
+        """
+        if not self.monitoring:
+            return
+        if self._gradients_are_partitioned(args):
+            self.monitoring = False
+            LOG.debug(
+                "ternary: this run keeps its gradients off the parameters, so the "
+                "zero-gradient watch has nothing to read and stands down"
+            )
+            return
+        self.observed_steps += 1
+        for name, module in self.ternary_modules:
+            if name in self.seen_grad:
+                continue
+            grad = module.weight.grad
+            # sharded runs allocate a zero-filled gradient for an unused parameter,
+            # so presence alone answers a different question than the one asked
+            if grad is not None and bool(as_local(grad).any()):
+                self.seen_grad.add(name)
+        if len(self.seen_grad) == len(self.ternary_modules):
+            self.monitoring = False
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ) -> None:
+        """Emit the warning once the monitoring window closes, then stop watching."""
+        if not self.monitoring or state.global_step < self.monitored_steps:
+            return
+        self._report(f"first {self.monitored_steps} optimizer steps")
+
+    def on_train_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ) -> None:
+        """Report on a run that ended before the monitoring window ever closed.
+
+        A short heal — an ablation, a smoke run, `max_steps` under the window — is
+        where a mis-wired target list is cheapest to catch, and it is exactly the run
+        `on_step_end` never reports on.
+        """
+        if not self.monitoring:
+            return
+        self._report(f"run's {self.observed_steps} optimizer step(s)")
+
+    def _report(self, window: str) -> None:
+        """Warn about the modules still gradient-free, then stop watching."""
+        self.monitoring = False
+        if not self.observed_steps:
+            return
+        missing = [
+            name for name, _ in self.ternary_modules if name not in self.seen_grad
+        ]
+        if not missing:
+            return
+        if len(missing) == len(self.ternary_modules) and len(missing) > 1:
+            # every watched module at once is the signature of gradients living
+            # somewhere this hook cannot see, not of an objective reaching nothing
+            LOG.debug(
+                "ternary: no targeted module exposed a gradient at all; reading the "
+                "watch as wrong plumbing rather than as an unreachable model"
+            )
+            return
+        LOG.warning(self._message(missing, window))
+        self.warned = True
+
+    def _gradients_are_partitioned(self, args: TrainingArguments) -> bool:
+        """Whether this run keeps its gradients somewhere `weight.grad` is not.
+
+        DeepSpeed ZeRO-2 (with `contiguous_gradients`) and ZeRO-3 reduce into a flat
+        partition and clear the parameter's gradient before the optimizer steps, which
+        is where this hook fires; FSDP1 without `use_orig_params` replaces the module's
+        weight with a plain view of a FlatParameter. Either way the presence check
+        answers a question about the engine rather than about the objective.
+        """
+        if getattr(args, "deepspeed", None) or getattr(args, "deepspeed_plugin", None):
+            return True
+        return any(
+            hasattr(module.weight, "ds_id")
+            or not isinstance(module.weight, nn.Parameter)
+            for _, module in self.ternary_modules
+        )
+
+    def _message(self, names: list[str], window: str | None = None) -> str:
+        """Return the one-shot warning: the modules, and the cause each one suggests.
+
+        Args:
+            names: Targeted module names that saw no gradient in the window.
+            window: How to describe the window that saw none, as it is not always the
+                configured one — a run can end before it closes.
+
+        Returns:
+            The log line, with the `aux_modules` families spelled out by name and
+            rationale and everything else grouped as unreached modules.
+        """
+        window = window or f"first {self.monitored_steps} optimizer steps"
+        lines = [
+            f"ternary: {len(names)} targeted module(s) received no gradient in the "
+            f"{window}. They take the "
+            "quantization damage in full and this run's objective has no gradient to "
+            "heal any of it — a loss curve cannot show you this."
+        ]
+        explanation = aux_modules.explain(names)
+        if explanation:
+            lines.append(explanation)
+        claimed = {
+            name
+            for matched in aux_modules.group_by_family(names).values()
+            for name in matched
+        }
+        rest = [name for name in names if name not in claimed]
+        if rest:
+            head = ", ".join(rest[:_MAX_REPORTED_MODULES])
+            extra = len(rest) - _MAX_REPORTED_MODULES
+            lines.append(
+                f"{len(rest)} belong to no auxiliary-module family: "
+                + (f"{head} (+{extra} more)" if extra > 0 else head)
+            )
+            lines.append(
+                "  a cold MoE expert no batch has routed to yet is the benign case — "
+                "that is a property of the data, not of the wiring, and it heals as "
+                "soon as it is routed. A module whose labels are entirely masked, or "
+                "one left out of the optimizer's parameter groups, is not"
+            )
+        return "\n".join(lines)
 
 
 def _code_count(module: nn.Module) -> int:

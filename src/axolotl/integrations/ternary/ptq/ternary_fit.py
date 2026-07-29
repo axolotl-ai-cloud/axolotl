@@ -17,6 +17,10 @@ latent so the quantizer reproduces exactly this solution on the first forward. T
 scale it stores must still survive `quant.f16_round_scale`, or the export path and
 the fit disagree on the very first tensor.
 
+`fit_binary` is the degenerate member of the same family: a sign codebook's assignment
+does not depend on its scale, so step 3 is fixed before step 2 runs and the whole
+alternation collapses to one closed-form solve.
+
 Both alternations therefore run their assignment step through the *f16-rounded* scale
 and score the objective against the same dequantization, which buys two properties
 the heal depends on: every returned pair satisfies `codes == ternary_codes(W,
@@ -130,6 +134,51 @@ def fit_ternary(
         if float(gain.max()) <= tol:
             break
 
+    return (
+        codes.reshape(weight.shape).to(torch.int8),
+        scale.reshape(scale_shape).contiguous(),
+    )
+
+
+def fit_binary(
+    weight: torch.Tensor,
+    scale_mode: WeightScaleMode = "absmean",
+    group_size: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fit sign codes and scales to `weight` — one pass, no alternation.
+
+    The alternation `fit_ternary` runs exists because the ternary assignment depends
+    on the scale (a weight rounds to zero or not depending where the threshold sits).
+    A sign codebook has no threshold: `sign(w)` is the nearest code under every
+    positive scale, so the codes are final before the scale is solved and the
+    closed-form `s = <W, T> / <T, T> = mean|w|` is the global optimum of
+    `‖W - s·sign(W)‖²` over that unit. Iterating could only return the same pair.
+
+    Args:
+        weight: Latent weight of shape `(out_features, in_features)`, any float dtype.
+        scale_mode: Which unit shares a scale — `absmean`/`learnable` per tensor,
+            `group` per `group_size` block, `learnable_row` per output channel.
+        group_size: Block size for `scale_mode: group`; must divide `in_features`.
+
+    Returns:
+        `(codes, scales)` — int8 codes in `{-1, +1}` shaped like `weight`, and fp32
+        scales in the layout `fit_ternary` returns for `scale_mode`.
+
+    Raises:
+        ValueError: If `group_size` does not divide `in_features`, the scale mode and
+            `group_size` disagree, or the scale mode carries two planes.
+    """
+    _validate(weight, scale_mode, group_size)
+    if scale_mode in TWO_PLANE_SCALE_MODES:
+        raise ValueError(
+            f"the binary codebook has one plane, so scale_mode={scale_mode!r} has "
+            "nothing to put in its second one"
+        )
+    dense = weight.detach().to(torch.float32)
+    view, scale_shape = _unit_view(dense, scale_mode, group_size)
+    fallback = view.abs().mean(-1).clamp_min(quant.SCALE_EPS)
+    codes = quant.binary_codes(view, fallback).to(torch.float32)
+    scale = _closed_form(view, codes, fallback)
     return (
         codes.reshape(weight.shape).to(torch.int8),
         scale.reshape(scale_shape).contiguous(),
@@ -416,6 +465,7 @@ __all__ = [
     "SCALE_MODES",
     "TWN_THRESHOLD",
     "dequantize_fit",
+    "fit_binary",
     "fit_ternary",
     "solve_2x2_ridge",
     "solve_scale",
