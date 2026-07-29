@@ -6,16 +6,16 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import torch
-from PIL import Image, ImageOps
+from PIL import Image
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
-from transformers.image_utils import load_image
 from transformers.models.internvl import InternVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
 from axolotl.utils.dict import remove_none_values
+from axolotl.utils.images import load_and_resize_image
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -276,28 +276,11 @@ class ProcessingStrategy:
                         "See https://docs.axolotl.ai/docs/multimodal.html#dataset-format"
                     )
 
-                image_value = processed_example[image_key][0]
-
-                image_value = load_image(image_value)
-
-                if self.image_size is not None:
-                    assert hasattr(image_value, "resize"), (
-                        "Image does not have a resize method"
-                    )
-
-                    if isinstance(self.image_size, tuple):
-                        image_value = image_value.resize(
-                            self.image_size, self.image_resize_algorithm
-                        )
-                    else:
-                        # Int image_size: preserve aspect ratio then pad to square (black) to avoid distortion.
-                        padding_color = (0, 0, 0)
-                        image_value = ImageOps.pad(
-                            image_value,
-                            (self.image_size, self.image_size),
-                            method=self.image_resize_algorithm,
-                            color=padding_color,
-                        )
+                image_value = load_and_resize_image(
+                    processed_example[image_key][0],
+                    self.image_size,
+                    self.image_resize_algorithm,
+                )
 
                 msg_ind_to_add = None
                 ind_to_add = None
