@@ -320,8 +320,31 @@ class TestCrossBatchMixedModality:
         )
         tds = TokenizedPromptDataset(strategy, ds, batch_size=2)
         assert len(tds) == 3
-        media = sorted(tds[i]["pixel_values"] is not None for i in range(3))
-        assert media == [False, False, True]
+        # survivors a(img), b(text), d(text) keep their original relative order
+        has_media = [tds[i]["pixel_values"] is not None for i in range(3)]
+        assert has_media == [True, False, False]
+
+    def test_dropped_rows_in_both_parts_keep_order(self):
+        strategy = self.make_strategy()
+        original = strategy._tokenize_single_prompt  # pylint: disable=protected-access
+
+        def drop_c_and_f(prompt):
+            if prompt.get("messages") in (["c"], ["f"]):
+                return {}
+            return original(prompt)
+
+        strategy._tokenize_single_prompt = drop_c_and_f  # pylint: disable=protected-access
+        ds = Dataset.from_dict(
+            {
+                "messages": [["a"], ["b"], ["c"], ["d"], ["e"], ["f"]],
+                "images": [["img"], [], ["img"], [], ["img"], []],
+            }
+        )
+        tds = TokenizedPromptDataset(strategy, ds, batch_size=2)
+        assert len(tds) == 4
+        # survivors a(img), b(text), d(text), e(img) in original order
+        has_media = [tds[i]["pixel_values"] is not None for i in range(4)]
+        assert has_media == [True, False, False, True]
 
     def test_keep_in_memory_forwarded_to_flatten(self):
         ds = Dataset.from_dict(

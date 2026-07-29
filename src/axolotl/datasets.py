@@ -85,21 +85,78 @@ class TokenizedPromptDataset(Dataset):
             # Media rows emit processor columns (pixel_values, ...) that text rows
             # don't, and the Arrow writer locks its schema on the first batch it
             # sees; tokenize each modality separately and restore the row order.
-            with_media, without_media, order = split_indices
-            merged = concatenate_datasets(
-                [_tokenize(dataset.select(with_media))]
-                + [_tokenize(dataset.select(without_media))]
-            )
-            if len(merged) != len(order):
-                # Tokenization dropped rows, so the original permutation no longer
-                # applies; keep the concatenated (media-first) order.
+            with_media, without_media = split_indices
+            tokenize_prompt = self.prompt_tokenizer.tokenize_prompt
+
+            batched = self.prompt_tokenizer.supports_batched
+
+            def _tokenize_row_tracked(batch, indices):
+                # row-by-row (batches of one) so dropped rows can't desync the
+                # order restore: survivors carry their part-relative source index
+                feature_names = list(batch.keys())
+                rows, row_ids = [], []
+                for idx, values in zip(
+                    indices, zip(*batch.values(), strict=False), strict=False
+                ):
+                    if batched:
+                        result = tokenize_prompt(
+                            {
+                                k: [v]
+                                for k, v in zip(feature_names, values, strict=False)
+                            }
+                        )
+                        row = {k: v[0] for k, v in result.items()} if result else None
+                    else:
+                        row = tokenize_prompt(
+                            dict(zip(feature_names, values, strict=False))
+                        )
+                    if row:
+                        rows.append(row)
+                        row_ids.append(idx)
+                keys: list[str] = []
+                for row in rows:
+                    for key in row:
+                        if key not in keys:
+                            keys.append(key)
+                out = {key: [row.get(key) for row in rows] for key in keys}
+                out["__mm_source_row"] = row_ids
+                return out
+
+            def _tokenize_part(indices):
+                part_kwargs = dict(map_kwargs)
+                part_kwargs["batched"] = True
+                part_kwargs.setdefault("batch_size", self.batch_size or 1_000)
+                return dataset.select(indices).map(
+                    _tokenize_row_tracked,
+                    with_indices=True,
+                    num_proc=self.process_count,
+                    remove_columns=features,
+                    keep_in_memory=self.keep_in_memory,
+                    desc="Tokenizing Prompts",
+                    **part_kwargs,
+                )
+
+            parts, source_rows = [], []
+            for indices in (with_media, without_media):
+                part = _tokenize_part(indices)
+                if len(part):
+                    parts.append(part)
+                    source_rows.append(
+                        np.asarray(indices)[np.asarray(part["__mm_source_row"])]
+                    )
+            if not parts:
+                return _tokenize(dataset.select([]))
+
+            merged = concatenate_datasets(parts).remove_columns("__mm_source_row")
+            dropped = len(with_media) + len(without_media) - len(merged)
+            if dropped:
                 LOG.warning(
                     "%d row(s) were dropped while tokenizing a mixed media/text "
-                    "dataset; original row order is not restored.",
-                    len(order) - len(merged),
+                    "dataset; surviving rows keep their original order.",
+                    dropped,
                 )
-                return merged
-            return merged.select(order).flatten_indices(
+            restore = np.argsort(np.concatenate(source_rows), kind="stable")
+            return merged.select(restore).flatten_indices(
                 keep_in_memory=bool(self.keep_in_memory),
                 writer_batch_size=self.writer_batch_size or 1_000,
             )
@@ -107,8 +164,8 @@ class TokenizedPromptDataset(Dataset):
         return _tokenize(dataset)
 
     def _split_media_indices(self, dataset):
-        """Row indices (with_media, without_media, restore_order) for mixed
-        media/text datasets, or None when no split is needed."""
+        """Row indices (with_media, without_media) for mixed media/text
+        datasets, or None when no split is needed."""
         prompter = getattr(self.prompt_tokenizer, "prompter", None)
         if getattr(prompter, "processor", None) is None:
             return None
@@ -132,8 +189,7 @@ class TokenizedPromptDataset(Dataset):
         without_media = np.flatnonzero(~mask)
         if not len(with_media) or not len(without_media):
             return None
-        order = np.argsort(np.concatenate([with_media, without_media]), kind="stable")
-        return with_media, without_media, order
+        return with_media, without_media
 
 
 def wrap_dataset_for_tokenized_prompt(
