@@ -1256,6 +1256,36 @@ class TestValidation(BaseValidation):
                 for record in self._caplog.records
             )
 
+    def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": "false",
+                    "dpo_loss_type": ["ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["dpo_use_liger_kernel"] is False
+
+    def test_dpo_liger_kernel_malformed_loss_type_hits_schema_error(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": 123,
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValidationError):
+            validate_config(cfg)
+
     def test_dpo_liger_kernel_allows_new_liger_loss_types(self, minimal_cfg):
         cfg = (
             DictDefault(
