@@ -124,6 +124,19 @@ class TestKernelImplEnv:
 
         assert os.environ["LIGER_KERNEL_IMPL"] == "cutile"
 
+    def test_register_hook_sets_env_from_raw_cfg(self, monkeypatch):
+        import os
+        import sys
+
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.delenv("LIGER_KERNEL_IMPL", raising=False)
+
+        LigerPlugin().register(DictDefault({"liger_kernel_impl": "cutedsl"}))
+
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
+
     def test_raises_when_liger_already_imported_with_other_backend(self, monkeypatch):
         import sys
         import types

@@ -31,6 +31,12 @@ class LigerPlugin(BasePlugin):
     def get_input_args(self):
         return "axolotl.integrations.liger.LigerArgs"
 
+    def register(self, cfg):
+        # earliest hook: pre-model-load patches (fused-attn kernels) import liger
+        # before pre_model_load runs, which would fix the backend too soon
+        if cfg.get("liger_kernel_impl"):
+            self._set_kernel_impl(cfg["liger_kernel_impl"])
+
     @staticmethod
     def _set_kernel_impl(impl: str):
         import os

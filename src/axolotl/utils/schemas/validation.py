@@ -783,8 +783,9 @@ class RLValidationMixin:
             )
 
         if data.get("dpo_use_liger_kernel"):
-            # liger's chunked DPO loss raises NotImplementedError for ipo at runtime
-            if rl == "ipo" or (dpo_loss_type and "ipo" in dpo_loss_type):
+            # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
+            # only loss_type[0] reaches liger, so later entries are ignored, not fatal
+            if rl == "ipo" or (dpo_loss_type and dpo_loss_type[0] == "ipo"):
                 raise ValueError(
                     "`dpo_use_liger_kernel` does not support the `ipo` loss type "
                     "(liger-kernel's fused DPO loss cannot length-normalize the "

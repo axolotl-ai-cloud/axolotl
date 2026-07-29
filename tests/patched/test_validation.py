@@ -1218,6 +1218,25 @@ class TestValidation(BaseValidation):
         with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
             validate_config(cfg)
 
+    def test_dpo_liger_kernel_allows_ignored_ipo_entry(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": ["sigmoid", "ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        with self._caplog.at_level("WARNING"):
+            validate_config(cfg)
+            assert any(
+                "only the first entry" in record.message
+                for record in self._caplog.records
+            )
+
     def test_dpo_liger_kernel_warns_on_multiple_loss_types(self, minimal_cfg):
         cfg = (
             DictDefault(
