@@ -27,7 +27,7 @@ def _mm_cfg(**extra):
 
 
 @patch("axolotl.processing_strategies.get_processing_strategy")
-@patch("axolotl.utils.data.sft.load_dataset")
+@patch("axolotl.utils.data.sft.load_dataset_with_config")
 def test_skip_prepare_mm_routes_to_buffered_packer(mock_load, mock_strategy):
     # A tiny materialized (non-streaming) map dataset stands in for a real download.
     mock_load.return_value = Dataset.from_dict({"messages": [[], []]})
