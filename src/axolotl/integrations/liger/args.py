@@ -74,9 +74,10 @@ class LigerArgs(BaseModel):
                 "LIGER_KERNEL_IMPL env var (liger-kernel >= 0.8.1). 'cutile' "
                 "(requires cuda-tile) covers cross_entropy/geglu/layer_norm/rope "
                 "and more; 'cutedsl' (requires nvidia-cutlass-dsl, tuned for "
-                "Blackwell) covers cross_entropy/rms_norm. "
-                "fused_linear_cross_entropy stays Triton on both. Unset keeps "
-                "liger's default Triton kernels."
+                "Blackwell) covers cross_entropy/rms_norm; 'ascend' is NPU-only "
+                "(auto-selected on NPU, so usually unnecessary). "
+                "fused_linear_cross_entropy stays Triton on the CUDA backends. "
+                "Unset keeps liger's default kernels."
             )
         },
     )
