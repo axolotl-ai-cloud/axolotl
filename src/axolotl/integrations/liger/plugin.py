@@ -11,6 +11,14 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+_KERNEL_IMPL_ENV = "LIGER_KERNEL_IMPL"
+_UNSET = object()
+# env value before this plugin's first write, and what it last wrote — lets a
+# config that omits liger_kernel_impl undo a previous config's mutation (e.g.
+# one rejected by validation after register() already ran)
+_env_before_write = _UNSET
+_last_written: str | None = None
+
 LIGER_FLAGS = (
     "liger_rope",
     "liger_rms_norm",
@@ -40,6 +48,8 @@ class LigerPlugin(BasePlugin):
 
         if cfg.get("liger_kernel_impl") in LIGER_KERNEL_IMPLS:
             self._set_kernel_impl(cfg["liger_kernel_impl"])
+        elif cfg.get("liger_kernel_impl") is None:
+            self._restore_kernel_impl()
 
     @staticmethod
     def _set_kernel_impl(impl: str):
@@ -57,8 +67,31 @@ class LigerPlugin(BasePlugin):
                     "LIGER_KERNEL_IMPL env var before launching instead."
                 )
             return
-        os.environ["LIGER_KERNEL_IMPL"] = impl
+        global _env_before_write, _last_written
+        if _env_before_write is _UNSET:
+            _env_before_write = os.environ.get(_KERNEL_IMPL_ENV)
+        os.environ[_KERNEL_IMPL_ENV] = impl
+        _last_written = impl
         LOG.info(f"Set LIGER_KERNEL_IMPL={impl} for liger kernel backend selection")
+
+    @staticmethod
+    def _restore_kernel_impl():
+        import os
+
+        global _env_before_write, _last_written
+        # only undo our own write, and only while the backend is still selectable
+        if (
+            _last_written is None
+            or "liger_kernel.ops" in sys.modules
+            or os.environ.get(_KERNEL_IMPL_ENV) != _last_written
+        ):
+            return
+        if _env_before_write is None:
+            os.environ.pop(_KERNEL_IMPL_ENV, None)
+        else:
+            os.environ[_KERNEL_IMPL_ENV] = _env_before_write
+        _env_before_write = _UNSET
+        _last_written = None
 
     def pre_model_load(self, cfg):
         if cfg.liger_kernel_impl:

@@ -149,6 +149,42 @@ class TestKernelImplEnv:
 
         assert os.environ["LIGER_KERNEL_IMPL"] == "cutile"
 
+    def test_omitted_option_undoes_previous_config_write(self, monkeypatch):
+        import os
+        import sys
+
+        from axolotl.integrations.liger import plugin as liger_plugin
+        from axolotl.integrations.liger.plugin import LigerPlugin
+        from axolotl.utils.dict import DictDefault
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.setenv("LIGER_KERNEL_IMPL", "cutile")
+        monkeypatch.setattr(liger_plugin, "_env_before_write", liger_plugin._UNSET)
+        monkeypatch.setattr(liger_plugin, "_last_written", None)
+
+        # a config sets cutedsl (e.g. then fails validation), the next one omits it
+        LigerPlugin().register(DictDefault({"liger_kernel_impl": "cutedsl"}))
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
+        LigerPlugin().register(DictDefault({}))
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutile"
+
+    def test_omitted_option_keeps_foreign_env_value(self, monkeypatch):
+        import os
+        import sys
+
+        from axolotl.integrations.liger import plugin as liger_plugin
+        from axolotl.integrations.liger.plugin import LigerPlugin
+        from axolotl.utils.dict import DictDefault
+
+        monkeypatch.delitem(sys.modules, "liger_kernel.ops", raising=False)
+        monkeypatch.setenv("LIGER_KERNEL_IMPL", "cutile")
+        monkeypatch.setattr(liger_plugin, "_env_before_write", liger_plugin._UNSET)
+        monkeypatch.setattr(liger_plugin, "_last_written", None)
+
+        # user-set env value, no plugin write in this process: leave it alone
+        LigerPlugin().register(DictDefault({}))
+        assert os.environ["LIGER_KERNEL_IMPL"] == "cutile"
+
     def test_register_hook_sets_env_from_raw_cfg(self, monkeypatch):
         import os
         import sys
