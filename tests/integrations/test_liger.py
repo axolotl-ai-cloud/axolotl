@@ -10,6 +10,26 @@ from axolotl.utils.config import prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 
+@pytest.fixture(autouse=True)
+def _isolate_liger_kernel_impl_env():
+    # register()/_set_kernel_impl write LIGER_KERNEL_IMPL into os.environ; without
+    # this, the leak makes the first later import of liger_kernel.ops raise on CPU CI
+    import os
+    import sys
+
+    saved_env = os.environ.get("LIGER_KERNEL_IMPL")
+    saved_ops = sys.modules.get("liger_kernel.ops")
+    yield
+    if saved_env is None:
+        os.environ.pop("LIGER_KERNEL_IMPL", None)
+    else:
+        os.environ["LIGER_KERNEL_IMPL"] = saved_env
+    if saved_ops is None:
+        sys.modules.pop("liger_kernel.ops", None)
+    else:
+        sys.modules["liger_kernel.ops"] = saved_ops
+
+
 @pytest.fixture(name="minimal_liger_cfg")
 def fixture_cfg():
     return DictDefault(
@@ -93,6 +113,11 @@ class TestValidation:
             validate_config(test_cfg)
 
     def test_kernel_impl_accepted(self, minimal_liger_cfg):
+        import sys
+
+        # the plugin refuses to switch backends once liger_kernel.ops is imported;
+        # an earlier test may have imported it (autouse fixture restores it after)
+        sys.modules.pop("liger_kernel.ops", None)
         test_cfg = DictDefault({"liger_kernel_impl": "cutedsl"} | minimal_liger_cfg)
 
         prepare_plugins(test_cfg)
