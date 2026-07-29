@@ -5,10 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from torch import nn
 
 from axolotl.monkeypatch.models.vision_patch_embed_linear import (
     SUPPORTED_PATCH_EMBEDS,
     patch_vision_patch_embed_linear,
+    unpatch_vision_patch_embed_linear,
 )
 
 # families whose patch-embed __init__ takes kwargs instead of a config object
@@ -24,16 +26,23 @@ def _resolve(model_config_type):
 @pytest.fixture
 def clean_patch_slate(model_config_type):
     cls = _resolve(model_config_type)
-    original_forward = cls.forward
-    had_sentinel = getattr(cls, "_axolotl_patch_embed_linear", False)
+    saved = {
+        name: cls.__dict__.get(name)
+        for name in (
+            "forward",
+            "_axolotl_patch_embed_linear",
+            "_axolotl_patch_embed_original_forward",
+        )
+    }
     try:
         yield cls
     finally:
-        cls.forward = original_forward
-        if had_sentinel:
-            cls._axolotl_patch_embed_linear = True
-        elif hasattr(cls, "_axolotl_patch_embed_linear"):
-            del cls._axolotl_patch_embed_linear
+        for name, value in saved.items():
+            if value is None:
+                if name in cls.__dict__:
+                    delattr(cls, name)
+            else:
+                setattr(cls, name, value)
 
 
 def _make_module(model_config_type):
@@ -82,9 +91,57 @@ def test_patch_is_idempotent(model_config_type, clean_patch_slate):
     assert clean_patch_slate.forward is first
 
 
+@pytest.mark.parametrize("model_config_type", ["qwen3_vl"])
+def test_unpatch_restores_stock_forward(model_config_type, clean_patch_slate):
+    stock = clean_patch_slate.forward
+    patch_vision_patch_embed_linear(model_config_type)
+    assert clean_patch_slate.forward is not stock
+
+    unpatch_vision_patch_embed_linear(model_config_type)
+    assert clean_patch_slate.forward is stock
+    assert not getattr(clean_patch_slate, "_axolotl_patch_embed_linear", False)
+
+    unpatch_vision_patch_embed_linear(model_config_type)
+    assert clean_patch_slate.forward is stock
+
+
+@pytest.mark.parametrize("model_config_type", ["qwen3_vl"])
+def test_peft_wrapped_proj_keeps_wrapper_in_path(model_config_type, clean_patch_slate):
+    class FakeAdapter(nn.Module):
+        def __init__(self, base):
+            super().__init__()
+            self.base_layer = base
+            self.delta = nn.Parameter(torch.tensor(0.5))
+
+        @property
+        def weight(self):
+            return self.base_layer.weight
+
+        @property
+        def bias(self):
+            return self.base_layer.bias
+
+        def forward(self, x):
+            return self.base_layer(x) + self.delta
+
+    module = _make_module(model_config_type)
+    x = torch.randn(16, 3 * 2 * 4 * 4)
+    base_out = module(x)
+
+    patch_vision_patch_embed_linear(model_config_type)
+    module.proj = FakeAdapter(module.proj)
+    wrapped_out = module(x)
+
+    torch.testing.assert_close(wrapped_out, base_out + 0.5, rtol=1e-5, atol=1e-5)
+    wrapped_out.sum().backward()
+    assert module.proj.delta.grad is not None
+
+
 def test_unsupported_model_type_is_a_noop():
     patch_vision_patch_embed_linear("llama")
     patch_vision_patch_embed_linear(None)
+    unpatch_vision_patch_embed_linear("llama")
+    unpatch_vision_patch_embed_linear(None)
 
 
 def test_registry_classes_are_distinct():

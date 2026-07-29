@@ -1,22 +1,17 @@
-# Why: these families' vision patch_embed Conv3d has kernel_size == stride and
-# no padding, so it is exactly a linear projection over flattened patches (vLLM
-# implements patchify the same way). The GEMM path (cuBLAS) is ~11x faster than
-# cuDNN's conv3d for this shape and, unlike Conv3d, never dispatches to
-# slow_conv_dilated3d on torch builds without cuDNN (measured 41 s vs 1.4 ms
-# per 3 MP image). Weights stay in each family's Conv3d module, so state_dicts
-# are unchanged in both directions.
+# Why: patchify Conv3d (kernel_size == stride, no padding) is exactly F.linear
+# over flat patches; ~11x faster than cuDNN conv3d, no slow_conv_dilated3d cliff.
 
 import importlib
 
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from axolotl.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# model_config_type -> (modeling module, patch-embed class). Every entry was
-# verified to construct its Conv3d with stride == kernel_size.
+# model_config_type -> (modeling module, class); all build Conv3d with stride == kernel_size
 SUPPORTED_PATCH_EMBEDS: dict[str, tuple[str, str]] = {
     "qwen3_vl": (
         "transformers.models.qwen3_vl.modeling_qwen3_vl",
@@ -66,25 +61,47 @@ SUPPORTED_PATCH_EMBEDS: dict[str, tuple[str, str]] = {
 
 
 def _linear_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-    weight = self.proj.weight
-    # weight is (embed_dim, C, T, Ph, Pw); the stock forward views the input to
-    # the same trailing dims, so the flat layouts match element-for-element.
+    proj = self.proj
+    if type(proj) is not nn.Conv3d:
+        # PEFT-wrapped proj (LoRA / ModulesToSaveWrapper): keep its forward in the path
+        return self._axolotl_patch_embed_original_forward(hidden_states)
+    weight = proj.weight
+    # input flat layout matches the (D, C, T, Ph, Pw) weight layout element-for-element
     hidden_states = hidden_states.reshape(-1, weight[0].numel()).to(dtype=weight.dtype)
-    return F.linear(hidden_states, weight.reshape(weight.shape[0], -1), self.proj.bias)
+    return F.linear(hidden_states, weight.reshape(weight.shape[0], -1), proj.bias)
+
+
+def _resolve_class(model_config_type: str | None):
+    entry = SUPPORTED_PATCH_EMBEDS.get(model_config_type or "")
+    if entry is None:
+        return None
+    module_path, class_name = entry
+    return getattr(importlib.import_module(module_path), class_name)
 
 
 def patch_vision_patch_embed_linear(model_config_type: str | None) -> None:
-    entry = SUPPORTED_PATCH_EMBEDS.get(model_config_type or "")
-    if entry is None:
+    cls = _resolve_class(model_config_type)
+    if cls is None or getattr(cls, "_axolotl_patch_embed_linear", False):
         return
 
-    module_path, class_name = entry
-    cls = getattr(importlib.import_module(module_path), class_name)
-    if getattr(cls, "_axolotl_patch_embed_linear", False):
-        return
-
+    cls._axolotl_patch_embed_original_forward = cls.forward
     cls.forward = _linear_forward
     cls._axolotl_patch_embed_linear = True
     logger.info(
-        "Patched %s.forward to the equivalent patchify GEMM (F.linear)", class_name
+        "Patched %s.forward to the equivalent patchify GEMM (F.linear)", cls.__name__
     )
+
+
+def unpatch_vision_patch_embed_linear(model_config_type: str | None) -> None:
+    cls = _resolve_class(model_config_type)
+    if cls is None:
+        return
+    original = cls.__dict__.get("_axolotl_patch_embed_original_forward")
+    if original is None:
+        return
+
+    cls.forward = original
+    del cls._axolotl_patch_embed_original_forward
+    if "_axolotl_patch_embed_linear" in cls.__dict__:
+        del cls._axolotl_patch_embed_linear
+    logger.info("Restored %s.forward to the stock Conv3d path", cls.__name__)
