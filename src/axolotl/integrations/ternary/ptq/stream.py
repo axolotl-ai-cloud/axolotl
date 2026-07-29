@@ -63,6 +63,7 @@ from ..args import (
 )
 from ..export import bake, bitplanes
 from ..swap import ALWAYS_KEEP_FP, SwapEntry, SwapManifest
+from . import fp8
 from .ternary_fit import dequantize_fit, fit_ternary
 
 LOG = get_logger(__name__)
@@ -303,6 +304,7 @@ def stream_fit(
     bake.copy_aux_files(
         source, output, skip={path.name for path in shards} | _OWN_FILES
     )
+    fp8.strip_quantization_config(output / "config.json")
     started = time.monotonic()
     for path in shards:
         destination = output / path.name
@@ -926,13 +928,29 @@ def _matches(name: str, patterns: tuple[str, ...]) -> bool:
 
 
 def _iter_tensors(path: Path) -> Iterator[tuple[str, torch.Tensor]]:
-    """Yield one shard's tensors, materializing them one at a time where the format allows."""
+    """Yield one shard's tensors, materializing them one at a time where the format allows.
+
+    An fp8 weight is dequantized against its companion scale as it is read, and the
+    scale tensors are dropped: from here on the pass only ever sees float weights, so
+    nothing downstream has to know the source was quantized.
+    """
     if path.suffix != ".safetensors":
-        yield from bake.load_shard(path)[0].items()
+        yield from fp8.dequantized_items(bake.load_shard(path)[0])
         return
     with safe_open(path, framework="pt") as shard:
-        for key in shard.keys():  # noqa: SIM118 — safetensors handle, not a mapping
-            yield key, shard.get_tensor(key)
+        keys = list(shard.keys())  # noqa: SIM118 — safetensors handle, not a mapping
+        drop = fp8.companion_keys(keys)
+        scales = fp8.scale_keys(keys)
+        for key in keys:
+            if key in drop:
+                continue
+            tensor = shard.get_tensor(key)
+            scale_key = scales.get(key)
+            if scale_key is not None and fp8.is_fp8(tensor.dtype):
+                yield key, fp8.dequantize(tensor, shard.get_tensor(scale_key))
+                continue
+            fp8.assert_no_orphan_fp8(key, tensor.dtype)
+            yield key, tensor
 
 
 def _shard_metadata(path: Path) -> dict[str, str]:

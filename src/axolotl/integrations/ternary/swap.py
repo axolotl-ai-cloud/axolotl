@@ -81,6 +81,18 @@ ARCH_PRESETS: dict[str, ArchPreset] = {
         )
         + aux_modules.family_patterns("vision_towers"),
     ),
+    # Mistral 3 multimodal: the language model is nested under `model.language_model`,
+    # with a vision tower and a projector beside it. Only the language model's
+    # projections are ternarized — the tower and projector stay FP on the same Prism
+    # precedent as `qwen3_5`, and the checkpoint's own fp8 pass skipped them too, so
+    # they are the parts the vendor already judged precision-sensitive.
+    "mistral3": ArchPreset(
+        target_modules=(
+            r".*\.language_model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj",
+            r".*\.language_model\.layers\.\d+\.mlp\.(gate|up|down)_proj",
+        ),
+        keep_fp_modules=aux_modules.family_patterns("vision_towers", "projectors"),
+    ),
 }
 
 
