@@ -164,11 +164,11 @@ class ModelStrategyOverrides:
     inherited provider and restores the downstream generic fallback.
     """
 
-    auto_model_cls: AutoModelClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    auto_model_cls: AutoModelClassProvider | _InheritStrategy | None = _INHERIT_STRATEGY
     processing_strategy_cls: (
-        ProcessingStrategyClassProvider | None | _InheritStrategy
+        ProcessingStrategyClassProvider | _InheritStrategy | None
     ) = _INHERIT_STRATEGY
-    loss_function: LossFunctionProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    loss_function: LossFunctionProvider | _InheritStrategy | None = _INHERIT_STRATEGY
 
 
 @dataclass(frozen=True)
@@ -233,22 +233,22 @@ class ModelRegistrationOverrides:
     the inherited provider. Field names mirror `ModelRegistrations`.
     """
 
-    weight_conversions: WeightConversionsProvider | None | _InheritStrategy = (
+    weight_conversions: WeightConversionsProvider | _InheritStrategy | None = (
         _INHERIT_STRATEGY
     )
-    patch_mappings: PatchMappingsProvider | None | _InheritStrategy = _INHERIT_STRATEGY
-    attention_functions: InterfaceFunctionsProvider | None | _InheritStrategy = (
+    patch_mappings: PatchMappingsProvider | _InheritStrategy | None = _INHERIT_STRATEGY
+    attention_functions: InterfaceFunctionsProvider | _InheritStrategy | None = (
         _INHERIT_STRATEGY
     )
-    attention_mask_functions: InterfaceFunctionsProvider | None | _InheritStrategy = (
+    attention_mask_functions: InterfaceFunctionsProvider | _InheritStrategy | None = (
         _INHERIT_STRATEGY
     )
-    experts_functions: InterfaceFunctionsProvider | None | _InheritStrategy = (
+    experts_functions: InterfaceFunctionsProvider | _InheritStrategy | None = (
         _INHERIT_STRATEGY
     )
-    quantizers: QuantizersProvider | None | _InheritStrategy = _INHERIT_STRATEGY
-    auto_classes: AutoClassesProvider | None | _InheritStrategy = _INHERIT_STRATEGY
-    model_class_attrs: ModelClassAttrsProvider | None | _InheritStrategy = (
+    quantizers: QuantizersProvider | _InheritStrategy | None = _INHERIT_STRATEGY
+    auto_classes: AutoClassesProvider | _InheritStrategy | None = _INHERIT_STRATEGY
+    model_class_attrs: ModelClassAttrsProvider | _InheritStrategy | None = (
         _INHERIT_STRATEGY
     )
 
