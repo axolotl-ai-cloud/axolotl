@@ -86,6 +86,17 @@ fused_attn_kernel: true
 - **Compile cold-start:** adds 5–15 min on the first step.
 - **Tuning (`torch_compile_options`):** optionally sets allowlisted `torch._inductor.config` flags (disallowed keys are rejected at validation; see the config reference for the list). Payoff is arch-specific: the only measured win is `max_autotune_gemm: true` on sm_120 with ≥32 GB (~−2.6% over plain compile) — the same flag *regresses* ~+13% on sm_86, and every other flag tested was within noise. `triton.cudagraphs` needs static shapes and is incompatible with `sample_packing`.
 
+### Vision Patch Embed as GEMM (Qwen2-VL / Qwen2.5-VL / Qwen2.5-Omni / Qwen3-VL(-MoE) / Qwen3.5(-MoE) / Qwen3-Omni-MoE / GLM-4V(-MoE) / GLM-OCR)
+
+Runs the vision tower's patchify `Conv3d` as its exact `F.linear` equivalent — `kernel_size == stride` with no padding makes them the same GEMM, the way vLLM implements patchify. Enabled by default for the supported families; numerically identical up to bf16 reduction order. The GEMM is ~11x faster than cuDNN's conv3d for this shape (1.4 ms vs 16 ms per 3 MP image), and it sidesteps PyTorch's `slow_conv_dilated3d` reference fallback (~41 s per image) that eager Conv3d hits on torch builds without cuDNN — the eager evaluation path is where that cliff otherwise shows up, since `torch.compile` already avoids it during training.
+
+```yaml
+vision_patch_embed_linear: false  # opt out; the default (unset) is on
+```
+
+- **Checkpoint-neutral:** weights stay in the Conv3d module, so state_dicts, LoRA targeting, and `modules_to_save` are unchanged in both directions.
+- **Automatic fallback to the stock forward** when PEFT wraps `patch_embed.proj` itself, under DeepSpeed ZeRO-3 (partitioned placeholder weights), or when Accelerate offload hooks manage the projection — those paths need the module call.
+
 ### Expert Kernels
 
 Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
