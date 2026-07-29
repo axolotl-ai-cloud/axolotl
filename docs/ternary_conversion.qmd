@@ -461,6 +461,59 @@ and compared. A format with neither gate is refused rather than written unverifi
 
 A failing gate raises rather than writing a broken artifact.
 
+## What not to quantize {#sensitive-modules}
+
+The plugin hard-excludes the modules where ternarization is fatal, and `strict_enumeration`
+turns every unrecognized module into a loud error instead of silent damage. Beyond those,
+sensitivity is graded — this section is the field guide.
+
+**Always full precision, not configurable:** token embeddings, `lm_head`, and every norm
+gain. Ternary embeddings destroy a model outright (bitnet.cpp's own ablations), and norm
+vectors are too small to be worth a scale. Exports keep them bf16/f16, optionally `Q8_0`
+(`embedding_dtype: int8`), which is near-lossless.
+
+**MoE routers stay FP forever.** A router is the one tensor where quantization noise
+changes the computation graph: a flipped top-k pick routes tokens through different
+experts entirely. The config validator carries router canary names so an unanchored
+`.*gate.*` regex is rejected before it can ternarize `mlp.gate`, and fused 3-D expert
+stacks are refused until the expert-aware path lands.
+
+**Sensitivity is not uniform across the block.** An eval-only `axolotl ternary damage-map`
+run on SmolLM2-135M ranks the families: `down_proj` is catastrophic alone (ppl 4e10),
+`o_proj` severe (15k), `gate/up_proj` heavy (2--6k), `q/k/v_proj` mild (200--400). This is
+exactly where BitDistill inserts SubLN and where BitNet-2B-4T carries `ffn_sub_norm` /
+`attn_sub_norm`. Two recipes follow:
+
+```yaml
+# quality-critical at 1.58-bit: spend FP on the worst offender
+ternary:
+  keep_fp_modules:
+    - '.*\.mlp\.down_proj'
+```
+
+Run the damage map on *your* model before choosing — the ranking above is one model at one
+size, and the table is the whole point of the command.
+
+**Gotchas without guardrails yet:**
+
+- **MoE shared experts** are always-active and behave like a dense MLP — do not assume the
+  "experts are ternarizable" logic covers them; keep them FP (or `dual`) until measured.
+  Per-expert router bias terms (aux-loss-free routing) must stay FP.
+- **Cold routed experts erode under weight decay**: decay fires every step whether or not
+  an expert was routed, so rarely-used experts shrink monotonically into the zero-code
+  region — dead experts that look like router collapse. Until gradient-gated decay masking
+  lands, set expert weight decay to 0 on MoE conversions.
+- **First and last decoder layers** are the classic mixed-precision escape hatches (raw
+  embedding ingestion, head feeding). `keep_fp_modules: ['model\.layers\.0\..*']` is a
+  cheap experiment when the damage map shows early-layer concentration.
+- **Multimodal towers and hybrid-arch mixers** (vision encoders, Mamba/SSM in-projections,
+  speech convs) have no presets on purpose: strict enumeration errors on them, forcing an
+  explicit `keep_fp_modules` decision. Prism kept its vision tower at 4-bit, not ternary —
+  treat that as the precedent.
+- **Tiny projections** (aggressive GQA `k/v_proj`, low-rank adapters folded into bases)
+  give the per-tensor scale very few weights to average over; if the damage map flags
+  them, `learnable` scales usually recover it.
+
 ## Running the artifacts {#deployment}
 
 What actually consumes each export, with commands. The short version: ternary kernels
