@@ -23,6 +23,8 @@ class TokenizedPromptDataset(Dataset):
         dataset: Dataset with text files.
         process_count: Number of processes to use for tokenizing.
         keep_in_memory: Whether to keep the tokenized dataset in memory.
+        batch_size: Rows per batched tokenization call.
+        writer_batch_size: Rows buffered in RAM before each Arrow cache flush.
     """
 
     def __init__(
@@ -31,11 +33,15 @@ class TokenizedPromptDataset(Dataset):
         dataset: Dataset,
         process_count: int | None = None,
         keep_in_memory: bool | None = False,
+        batch_size: int | None = None,
+        writer_batch_size: int | None = None,
         **kwargs,
     ):
         self.prompt_tokenizer = prompt_tokenizer
         self.process_count = process_count
         self.keep_in_memory = keep_in_memory
+        self.batch_size = batch_size
+        self.writer_batch_size = writer_batch_size
         super().__init__(
             self.process(dataset).data,
             **kwargs,
@@ -47,7 +53,9 @@ class TokenizedPromptDataset(Dataset):
         map_kwargs = {}
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
-            map_kwargs["batch_size"] = 1_000
+            map_kwargs["batch_size"] = self.batch_size or 1_000
+        if self.writer_batch_size:
+            map_kwargs["writer_batch_size"] = self.writer_batch_size
 
         if (
             hasattr(self.prompt_tokenizer, "filter_rows")

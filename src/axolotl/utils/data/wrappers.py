@@ -84,6 +84,16 @@ def get_dataset_wrapper(
         "keep_in_memory": cfg.dataset_keep_in_memory is True,
     }
 
+    # Multimodal rows can carry tens of MB of pixel_values each, so the default
+    # 1000-row map/writer buffers would hold many GB per tokenization worker
+    default_batch_size = 32 if processor is not None else None
+    batch_size = cfg.dataset_map_batch_size or default_batch_size
+    writer_batch_size = cfg.dataset_writer_batch_size or default_batch_size
+    if batch_size:
+        dataset_kwargs["batch_size"] = batch_size
+    if writer_batch_size:
+        dataset_kwargs["writer_batch_size"] = writer_batch_size
+
     LOG.info(
         f"Loading dataset: {dataset_config['path']} with base_type: "
         f"{dataset_base_type} and prompt_style: {dataset_prompt_style}"
