@@ -32,3 +32,8 @@ class KDTemperatureSchedulerCallback(TrainerCallback):
 
         if hasattr(self.trainer.data_collator, "kd_temperature"):
             self.trainer.data_collator.kd_temperature = self.temperature
+
+        # the loss fn scales the student logits, so it has to track the same temperature
+        kd_loss_fn = getattr(self.trainer, "_kd_loss_fn", None)
+        if kd_loss_fn is not None and hasattr(kd_loss_fn, "temperature"):
+            kd_loss_fn.temperature = self.temperature

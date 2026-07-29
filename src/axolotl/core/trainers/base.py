@@ -29,7 +29,6 @@ from transformers import PreTrainedModel, Trainer
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
 from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
-from trl.experimental.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.constants import TOKENS_STATE_FILE
@@ -44,6 +43,7 @@ from axolotl.core.trainers.mixins import (
     SchedulerMixin,
 )
 from axolotl.core.trainers.utils import (
+    pad_to_length,
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
     trainable_tokens_per_sec_per_gpu,

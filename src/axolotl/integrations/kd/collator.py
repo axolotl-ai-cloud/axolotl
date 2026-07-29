@@ -99,6 +99,13 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
         )
 
         if has_teacher_data:
+            if padding_side != "right":
+                raise ValueError(
+                    "KD requires right padding: teacher targets are right-padded, so "
+                    f"padding_side={padding_side!r} would shift them off the tokens "
+                    "they describe"
+                )
+
             # Extract and remove from features
             for f in features:
                 target_logprobs_list.append(f.pop("target_logprobs"))
@@ -119,13 +126,13 @@ class DataCollatorForKD(DataCollatorForSeq2Seq):
                 target_logprobs_list,
                 target_token_ids_list,
                 target_mask_list,
-                strict=False,
+                strict=True,
             ):
                 t_logprobs_padded = []
                 t_ids_padded = []
                 t_mask_padded = []
 
-                for lp, ids, mask in zip(t_logprobs, t_ids, t_mask, strict=False):
+                for lp, ids, mask in zip(t_logprobs, t_ids, t_mask, strict=True):
                     lp_len = len(lp)
                     if lp_len < max_k:
                         # Use -1e9 for padding logprobs and 0 for token_ids

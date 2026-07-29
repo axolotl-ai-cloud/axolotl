@@ -1,5 +1,21 @@
 """Utils for Axolotl trainers"""
 
+import torch
+
+
+def pad_to_length(
+    tensor: torch.Tensor, length: int, pad_value: int | float, dim: int = -1
+) -> torch.Tensor:
+    """Right-pad ``tensor`` along ``dim`` up to ``length``, or return it unchanged if it
+    is already at least that long."""
+    if tensor.size(dim) >= length:
+        return tensor
+
+    pad_shape = list(tensor.shape)
+    pad_shape[dim] = length - tensor.size(dim)
+    padding = torch.full(pad_shape, pad_value, dtype=tensor.dtype, device=tensor.device)
+    return torch.cat([tensor, padding], dim=dim)
+
 
 def trainable_tokens_per_sec_per_gpu(
     prev_trainable: float | None,

@@ -7,6 +7,9 @@ import numpy as np
 import torch
 from torch import FloatTensor, Tensor
 
+# finite stand-in for -inf so masked-out slots can never produce 0 * -inf = NaN
+LOGPROB_PAD_VALUE = -1e9
+
 
 def normalize_logprobs(logprobs: FloatTensor, topk: int) -> FloatTensor:
     """
@@ -41,6 +44,26 @@ def normalize_logprobs(logprobs: FloatTensor, topk: int) -> FloatTensor:
     final_logprobs_tensor = torch.log(teacher_probs_t_online)
 
     return final_logprobs_tensor
+
+
+def rescale_topk_logprobs(
+    logprobs: FloatTensor,
+    gen_temperature: float = 1.0,
+    kd_temperature: float = 1.0,
+    normalize: bool = True,
+) -> FloatTensor:
+    """
+    Re-scale top-k teacher logprobs from the temperature they were produced at to the
+    KD temperature, and renormalize them over the retained top-k entries.
+
+    p_{T2}(k) = p_{T1}(k) ** (T1 / T2) / Z, which in log space is a plain scaling of the
+    logprobs followed by a log_softmax over the top-k.
+    """
+    if gen_temperature != kd_temperature:
+        logprobs = logprobs * (gen_temperature / kd_temperature)
+    if normalize:
+        logprobs = torch.log_softmax(logprobs, dim=-1)
+    return logprobs
 
 
 def strided_chunk_views(

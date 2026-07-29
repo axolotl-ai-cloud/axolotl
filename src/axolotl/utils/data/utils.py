@@ -28,8 +28,18 @@ class RetryStrategy(Enum):
     EXPONENTIAL = 3
 
 
+def is_client_error(exc: Exception) -> bool:
+    """Whether an exception carries a 4xx response, which a retry cannot fix."""
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    return status_code is not None and 400 <= status_code < 500
+
+
 def retry_on_request_exceptions(
-    max_retries=3, delay=1, retry_strategy: RetryStrategy = RetryStrategy.LINEAR
+    max_retries=3,
+    delay=1,
+    retry_strategy: RetryStrategy = RetryStrategy.LINEAR,
+    retry_client_errors: bool = True,
 ) -> Callable:
     """Decorator that retries function calls on specific request exceptions.
 
@@ -37,6 +47,7 @@ def retry_on_request_exceptions(
         max_retries: Maximum number of retry attempts.
         delay: Base delay between retries in seconds.
         retry_strategy: Strategy for calculating retry delays.
+        retry_client_errors: Whether 4xx responses are retried.
 
     Returns:
         Decorated function with retry logic.
@@ -54,6 +65,8 @@ def retry_on_request_exceptions(
                     requests.exceptions.HTTPError,
                     huggingface_hub.errors.HfHubHTTPError,
                 ) as exc:
+                    if not retry_client_errors and is_client_error(exc):
+                        raise exc
                     if attempt < max_retries - 1:
                         if retry_strategy == RetryStrategy.EXPONENTIAL:
                             step_delay = delay * 2**attempt

@@ -7,10 +7,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+import requests
 from datasets import Dataset
 
 from axolotl.utils.data.shared import _load_from_local_path
-from axolotl.utils.data.utils import handle_long_seq_in_dataset, remove_double_bos_token
+from axolotl.utils.data.utils import (
+    handle_long_seq_in_dataset,
+    remove_double_bos_token,
+    retry_on_request_exceptions,
+)
 from axolotl.utils.dict import DictDefault
 
 
@@ -622,6 +628,60 @@ class TestRemoveDoubleBOSToken(unittest.TestCase):
         example = remove_double_bos_token(example, 0)
         assert example["input_ids"] == [0, 1]
         assert example["labels"] == [1, 2]
+
+
+def _http_error(status_code):
+    response = requests.Response()
+    response.status_code = status_code
+    return requests.exceptions.HTTPError(f"{status_code} error", response=response)
+
+
+@pytest.mark.parametrize("status_code", [400, 404, 422])
+def test_client_errors_are_not_retried(status_code):
+    calls = []
+
+    @retry_on_request_exceptions(max_retries=5, delay=0, retry_client_errors=False)
+    def failing():
+        calls.append(1)
+        raise _http_error(status_code)
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        failing()
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "exc_factory",
+    [
+        lambda: _http_error(503),
+        requests.exceptions.ConnectionError,
+        requests.exceptions.ReadTimeout,
+    ],
+)
+def test_server_and_transport_errors_are_retried(exc_factory):
+    calls = []
+
+    @retry_on_request_exceptions(max_retries=3, delay=0, retry_client_errors=False)
+    def failing():
+        calls.append(1)
+        raise exc_factory()
+
+    with pytest.raises(requests.exceptions.RequestException):
+        failing()
+    assert len(calls) == 3
+
+
+def test_client_errors_are_retried_by_default():
+    calls = []
+
+    @retry_on_request_exceptions(max_retries=3, delay=0)
+    def failing():
+        calls.append(1)
+        raise _http_error(404)
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        failing()
+    assert len(calls) == 3
 
 
 if __name__ == "__main__":

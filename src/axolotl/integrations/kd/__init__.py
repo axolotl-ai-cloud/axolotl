@@ -51,6 +51,7 @@ class KDPlugin(BasePlugin):
             "kd_temperature": cfg.kd_temperature,
             "kd_beta": cfg.kd_beta,
             "kd_normalize_topk": cfg.kd_normalize_topk,
+            "kd_compiled_kernel": cfg.kd_compiled_kernel,
         }
 
     def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
@@ -68,6 +69,8 @@ class KDPlugin(BasePlugin):
         if cfg.kd_online_server_base_url:
             from .collator_online_teacher import OnlineTeacherCollator
 
+            # eval batches need teacher logprobs too, so the online collator is used for
+            # both splits regardless of packing
             return OnlineTeacherCollator, {
                 "kd_online_server_base_url": cfg.kd_online_server_base_url,
                 "kd_online_topk": cfg.kd_online_topk,

@@ -16,10 +16,11 @@
 Chat template prompt strategy loader with KD support
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 import torch
 
+from axolotl.integrations.kd.utils import LOGPROB_PAD_VALUE, rescale_topk_logprobs
 from axolotl.prompt_strategies.chat_template import ChatTemplateStrategy, StrategyLoader
 from axolotl.utils.logging import get_logger
 
@@ -67,106 +68,142 @@ class ChatTemplateStrategyWithKD(ChatTemplateStrategy):
         # batching doesn't work well for logprob data
         return False
 
-    def transform_logprobs(self, sample):
-        """
-        Transform logprobs to target format for KD training
-        """
-
-        logprobs = sample.pop(self.logprobs_field)
-        target_seq_len = len(logprobs)
-        input_seq_len = len(sample["input_ids"])
-        input_padding_len = input_seq_len - target_seq_len
-        # get non-zero top-k (prune None logprobs from vllm data step)
+    @staticmethod
+    def _infer_top_k(logprobs) -> int:
+        # prune None logprobs from vllm data step
         top_k_vals = [
             len(logprobs[i])
             for i in range(len(logprobs))
             if logprobs[i] is not None and len(logprobs[i])
         ]
+        if not top_k_vals:
+            raise ValueError("No non-zero top-k logprobs found.")
         max_top_k = max(set(top_k_vals), key=top_k_vals.count)
         min_top_k = min(set(top_k_vals), key=top_k_vals.count)
         top_k = min(max_top_k, min_top_k)
         if top_k == 0:
             raise ValueError("No non-zero top-k logprobs found.")
+        return top_k
 
-        target_logprobs = []
-        target_token_ids = []
-        target_mask = []
+    def _extract_rows(
+        self, sample, logprobs
+    ) -> Tuple[List[List[float]], List[List[int]]]:
+        """
+        Split the raw logprob rows into parallel (logprob, token_id) rows.
+        """
+        row_logprobs: List[List[float]] = []
+        row_token_ids: List[List[int]] = []
 
-        if input_padding_len < 0:
-            # logprobs is longer than target_seq_len,
-            # so we need to slice from the left/beginning of logprobs
-            logprobs = logprobs[:-input_seq_len]
-            input_padding_len = 0
-            # target_seq_len = input_seq_len
-
-        # truncate the second dimension of the logprobs to top_k
-        logprobs = [row[:top_k] for row in logprobs]
-
-        # fill with -inf for padding_len tokens for top_k tokens
-        # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
-
-        # we shift for causal models in the trainer, so start the range from 0
-        for _ in range(0, input_padding_len):
-            target_logprobs.append([-float("inf")] * top_k)
-            target_token_ids.append(list(range(top_k)))
-            target_mask.append([0] * top_k)
-
-        for position in range(input_padding_len, input_seq_len):
-            if sample["labels"][position] == -100:
-                target_mask.append([0] * top_k)
-            else:
-                target_mask.append([1] * top_k)
-
-        for _, token_pos_logprobs in enumerate(logprobs):
-            # Initialize collections for logprobs and token_ids
+        for token_pos_logprobs in logprobs:
             position_logprobs = []
             position_token_ids = []
+            for entry in token_pos_logprobs or []:
+                position_logprobs.append(entry["logprob"])
+                # token is stored in the "token_id:###" format
+                position_token_ids.append(int(entry["token"].split(":")[1]))
+            row_logprobs.append(position_logprobs)
+            row_token_ids.append(position_token_ids)
 
-            # Process each token probability entry
-            for entry in token_pos_logprobs:
-                # Extract logprob value
-                logprob = entry["logprob"]
+        return row_logprobs, row_token_ids
 
-                # Parse token_id from the "token_id:###" format
-                token_id = int(entry["token"].split(":")[1])
+    def transform_logprobs(self, sample):
+        """
+        Transform logprobs to target format for KD training.
 
-                # Append to our collections
-                position_logprobs.append(logprob)
-                position_token_ids.append(token_id)
+        Row ``r`` of the dataset logprobs is the teacher distribution over the token at
+        absolute position ``front_pad + r``; the loss pairs teacher row ``j`` with the
+        student position that predicts ``input_ids[j + 1]``, so rows land one position
+        to the left of the token they describe.
+        """
 
-            # Convert to a tensor for easier manipulation
-            position_logprobs_tensor = torch.tensor(
-                position_logprobs, dtype=torch.float
+        logprobs = sample.pop(self.logprobs_field)
+        input_seq_len = len(sample["input_ids"])
+        top_k = self._infer_top_k(logprobs)
+
+        row_logprobs, row_token_ids = self._extract_rows(sample, logprobs)
+
+        front_pad = input_seq_len - len(row_logprobs)
+        if front_pad <= 0:
+            # over-length: tokenization kept the head of the sequence, so keep the head
+            # rows, minus row 0 which describes a token no student position predicts
+            row_logprobs = row_logprobs[1:input_seq_len]
+            row_token_ids = row_token_ids[1:input_seq_len]
+            front_pad = 0
+        else:
+            front_pad -= 1
+
+        if not row_logprobs:
+            raise ValueError(
+                f"no teacher logprob rows left for a sequence of {input_seq_len} tokens"
             )
 
-            # Now we have distribution at T1 in log form, i.e. log p_{T1}(k).
-            # Next, re-scale to T2 = self.kd_temperature via exponent-based trick
-            # p_{T2}(k) = [p_{T1}(k)]^(T1 / T2) / Z
-            #
-            # Convert from log to probability
-            teacher_probs_t1 = position_logprobs_tensor.exp()
-            # normalize probabilities to sum to 1 in case they aren't already
-            teacher_probs_t1_sum = teacher_probs_t1.sum(dim=0, keepdim=True)
-            if teacher_probs_t1_sum > 1e-9:
-                teacher_probs_t1 = teacher_probs_t1 / teacher_probs_t1_sum
-            if self.kd_temperature != self.gen_temperature:
-                # Exponentiate by factor (T1 / T2)
-                exponent = self.gen_temperature / self.kd_temperature
-                teacher_probs_t2 = teacher_probs_t1**exponent
-            else:
-                teacher_probs_t2 = teacher_probs_t1
-            # Re-normalize
-            teacher_probs_t2 = teacher_probs_t2 / teacher_probs_t2.sum(
-                dim=0, keepdim=True
+        # the final position predicts a token outside the sequence, so it is always padded
+        tail_pad = input_seq_len - front_pad - len(row_logprobs)
+        if tail_pad < 1:
+            raise ValueError(
+                f"teacher logprobs overflow the sequence: {front_pad} + "
+                f"{len(row_logprobs)} rows > {input_seq_len - 1} predictable tokens"
             )
-            # Convert back to log
-            position_logprobs_tensor = torch.log(teacher_probs_t2)
 
-            # Now we have log p_{teacher, T2}(k) stored in position_logprobs_tensor
-            position_logprobs_scaled = position_logprobs_tensor.tolist()
+        pad_logprobs = [LOGPROB_PAD_VALUE] * top_k
+        pad_token_ids = [0] * top_k
+        pad_mask = [0] * top_k
 
-            target_logprobs.append(position_logprobs_scaled)
+        target_logprobs: List[List[float]] = [
+            list(pad_logprobs) for _ in range(front_pad)
+        ]
+        target_token_ids: List[List[int]] = [
+            list(pad_token_ids) for _ in range(front_pad)
+        ]
+        target_mask: List[List[int]] = [list(pad_mask) for _ in range(front_pad)]
+
+        labels = sample["labels"]
+        for offset, (position_logprobs, position_token_ids) in enumerate(
+            zip(row_logprobs, row_token_ids, strict=True)
+        ):
+            position_logprobs = position_logprobs[:top_k]
+            position_token_ids = position_token_ids[:top_k]
+
+            if not position_logprobs:
+                target_logprobs.append(list(pad_logprobs))
+                target_token_ids.append(list(pad_token_ids))
+                target_mask.append(list(pad_mask))
+                continue
+
+            scaled = rescale_topk_logprobs(
+                torch.tensor(position_logprobs, dtype=torch.float),
+                gen_temperature=self.gen_temperature,
+                kd_temperature=self.kd_temperature,
+            ).tolist()
+
+            valid = 0 if labels[front_pad + offset + 1] == -100 else 1
+            position_mask = [valid] * len(position_token_ids)
+
+            slot_pad = top_k - len(position_token_ids)
+            if slot_pad > 0:
+                scaled = scaled + [LOGPROB_PAD_VALUE] * slot_pad
+                position_token_ids = position_token_ids + [0] * slot_pad
+                position_mask = position_mask + [0] * slot_pad
+
+            target_logprobs.append(scaled)
             target_token_ids.append(position_token_ids)
+            target_mask.append(position_mask)
+
+        for _ in range(tail_pad):
+            target_logprobs.append(list(pad_logprobs))
+            target_token_ids.append(list(pad_token_ids))
+            target_mask.append(list(pad_mask))
+
+        if (
+            not len(target_logprobs)
+            == len(target_token_ids)
+            == len(target_mask)
+            == input_seq_len
+        ):
+            raise ValueError(
+                f"teacher target rows ({len(target_logprobs)}) do not match the "
+                f"{input_seq_len} input tokens"
+            )
 
         # Update sample with transformed logprobs
         sample["target_logprobs"] = target_logprobs
@@ -198,99 +235,23 @@ class ChatTemplateStrategyWithKDv2(ChatTemplateStrategyWithKD):
     Strat for datasets with complete structured KD logprob data
     """
 
-    def transform_logprobs(self, sample):
+    def _extract_rows(
+        self, sample, logprobs
+    ) -> Tuple[List[List[float]], List[List[int]]]:
         """
-        Transform logprobs to target format for KD training
+        v2 rows are already split: logprob values in the logprobs field and their token
+        ids in a parallel pre-tokenized field.
         """
-
-        logprobs = sample.pop(self.logprobs_field)
-        target_seq_len = len(logprobs)
-        input_seq_len = len(sample["input_ids"])
-        input_padding_len = input_seq_len - target_seq_len
-        # get non-zero top-k (prune None logprobs from vllm data step)
-        top_k_vals = [
-            len(logprobs[i])
-            for i in range(len(logprobs))
-            if logprobs[i] is not None and len(logprobs[i])
-        ]
-        max_top_k = max(set(top_k_vals), key=top_k_vals.count)
-        min_top_k = min(set(top_k_vals), key=top_k_vals.count)
-        top_k = min(max_top_k, min_top_k)
-        if top_k == 0:
-            raise ValueError("No non-zero top-k logprobs found.")
-
-        target_logprobs = []
-        target_token_ids = []
-        target_mask = []
-
-        if input_padding_len < 0:
-            # logprobs is longer than target_seq_len,
-            # so we need to slice from the left/beginning of logprobs
-            logprobs = logprobs[:-input_seq_len]
-            input_padding_len = 0
-            # target_seq_len = input_seq_len
-
-        # truncate the second dimension of the logprobs to top_k
-        logprobs = [row[:top_k] for row in logprobs]
-
-        # fill with -inf for padding_len tokens for top_k tokens
-        # extend target_logprobs with a padding_len x top_k 2D list filled with -inf
-
-        # we shift for causal models in the trainer, so start the range from 0
-        for _ in range(0, input_padding_len):
-            target_logprobs.append([-float("inf")] * top_k)
-            target_token_ids.append(list(range(top_k)))
-            target_mask.append([0] * top_k)
-
-        for position in range(input_padding_len, input_seq_len):
-            if sample["labels"][position] == -100:
-                target_mask.append([0] * top_k)
-            else:
-                target_mask.append([1] * top_k)
-
-        for token_pos_logprobs, pos_target_token_ids in zip(
-            logprobs, sample["target_token_ids"], strict=False
-        ):
-            # Convert to a tensor for easier manipulation
-            position_logprobs_tensor = torch.tensor(
-                token_pos_logprobs, dtype=torch.float
+        row_token_ids = sample["target_token_ids"]
+        if len(row_token_ids) != len(logprobs):
+            raise ValueError(
+                f"target_token_ids has {len(row_token_ids)} rows but logprobs has "
+                f"{len(logprobs)}"
             )
-
-            # Now we have distribution at T1 in log form, i.e. log p_{T1}(k).
-            # Next, re-scale to T2 = self.kd_temperature via exponent-based trick
-            # p_{T2}(k) = [p_{T1}(k)]^(T1 / T2) / Z
-            #
-            # Convert from log to probability
-            teacher_probs_t1 = position_logprobs_tensor.exp()
-            # normalize probabilities to sum to 1 in case they aren't already
-            teacher_probs_t1_sum = teacher_probs_t1.sum(dim=0, keepdim=True)
-            if teacher_probs_t1_sum > 1e-9:
-                teacher_probs_t1 = teacher_probs_t1 / teacher_probs_t1_sum
-            if self.kd_temperature != self.gen_temperature:
-                # Exponentiate by factor (T1 / T2)
-                exponent = self.gen_temperature / self.kd_temperature
-                teacher_probs_t2 = teacher_probs_t1**exponent
-            else:
-                teacher_probs_t2 = teacher_probs_t1
-            # Re-normalize
-            teacher_probs_t2 = teacher_probs_t2 / teacher_probs_t2.sum(
-                dim=0, keepdim=True
-            )
-            # Convert back to log
-            position_logprobs_tensor = torch.log(teacher_probs_t2)
-
-            # Now we have log p_{teacher, T2}(k) stored in position_logprobs_tensor
-            position_logprobs_scaled = position_logprobs_tensor.tolist()
-
-            target_logprobs.append(position_logprobs_scaled)
-            target_token_ids.append(pos_target_token_ids)
-
-        # Update sample with transformed logprobs
-        sample["target_logprobs"] = target_logprobs
-        sample["target_token_ids"] = target_token_ids
-        sample["target_mask"] = target_mask
-
-        return sample
+        return (
+            [list(row or []) for row in logprobs],
+            [list(row or []) for row in row_token_ids],
+        )
 
     def _prepare_kd_fields(self, tokenized_prompt, original_prompt):
         """

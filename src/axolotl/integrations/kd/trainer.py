@@ -44,11 +44,13 @@ class AxolotlKDTrainer(AxolotlTrainer):
         super().__init__(*args, **kwargs)
         self.model_accepts_loss_kwargs = True
 
+        compiled_kernel = self.args.kd_compiled_kernel
         self._kd_loss_fn = LigerFusedLinearKLTopKLogprobLoss(
             self.args.kd_ce_alpha,  # hard label loss
             self.args.kd_alpha,  # kd loss
             self.args.kd_temperature,
             self.args.kd_beta or 0.0,
+            compiled=True if compiled_kernel is None else bool(compiled_kernel),
             compute_ce_loss=bool(self.args.kd_ce_alpha),
             normalize_topk=self.args.kd_normalize_topk,
         )

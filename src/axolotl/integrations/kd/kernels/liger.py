@@ -244,8 +244,12 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             )
             # has_aux=True: first return is the differentiated scalar, rest is aux.
             # Combine here so both terms contribute to backward; aux carries the
-            # unweighted soft/ce values for reporting.
-            combined = weight_soft_loss * soft_loss + weight_hard_loss * ce_loss
+            # unweighted soft/ce values for reporting. temperature**2 belongs in the
+            # differentiated scalar, otherwise the gradient is 1/T^2 of the reported loss.
+            combined = (
+                weight_soft_loss * (temperature**2) * soft_loss
+                + weight_hard_loss * ce_loss
+            )
             return combined, (soft_loss, ce_loss)
 
         def accumulate_chunk_grads(
