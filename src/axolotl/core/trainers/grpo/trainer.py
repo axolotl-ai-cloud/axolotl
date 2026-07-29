@@ -253,6 +253,8 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
 
         # Return unprepared dataloader if using sequence parallelism
         # TODO(djsaunde): We might be able to use `accelerate`'s dataloader preparation
+        # Status: Integration requires `dispatch_batches` + `slice_fn_for_dispatch`
+        # along sequence dimension. Preserved until accelerate API confirmed compatible.
         # if we use `dispatch_batches` and `slice_fn_for_dispatch` properly (i.e.,
         # slice each batch along the sequence dimension).
         if self.args.context_parallel_size > 1:
