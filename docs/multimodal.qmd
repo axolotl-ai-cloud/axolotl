@@ -70,12 +70,12 @@ For processors that support native resolution controls, `processor_kwargs` forwa
 
 ```yaml
 processor_kwargs:
-  max_pixels: 1003520  # ~1280 vision patches per image before 2x2 merging
+  max_pixels: 1003520  # ~1280 merged vision tokens per image (after 2x2 merging)
   # min_pixels: 3136
 ```
 
 ::: {.callout-warning}
-Some processors apply no resolution cap by default. Qwen-VL processors default to `size.longest_edge: 16777216` (a 16-megapixel *area* budget), so a 1700x2200 document scan produces ~14,600 patches — roughly 90 MB of `pixel_values` and ~3,650 vision tokens per image. If pre-tokenization exhausts host RAM or training is slow on high-resolution images, set `max_pixels` (or `image_size`) first.
+Some processors apply no resolution cap by default. The Qwen3-VL processor defaults to `size.longest_edge: 16777216` (a 16-megapixel *area* budget), so a 1700x2200 document scan produces ~14,600 patches — roughly 90 MB of `pixel_values` and ~3,650 vision tokens per image. Defaults differ across the family: Qwen2-VL caps at `max_pixels: 1003520` and Qwen2.5-VL at 12,845,056. If pre-tokenization exhausts host RAM or training is slow on high-resolution images, set `max_pixels` (or `image_size`) first.
 :::
 
 ::: {.callout-tip}

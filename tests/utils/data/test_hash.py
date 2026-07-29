@@ -6,6 +6,8 @@ changing output_dir should not bust the dataset cache when added_tokens_override
 is set.
 """
 
+from PIL import Image
+
 from axolotl.utils.data.shared import generate_dataset_hash_from_config
 from axolotl.utils.dict import DictDefault
 
@@ -88,6 +90,38 @@ class TestGenerateDatasetHashFromConfig:
     def test_different_chat_template_different_hash(self):
         cfg_a = _base_cfg(chat_template="chatml")
         cfg_b = _base_cfg(chat_template="jinja", chat_template_jinja="{{ messages }}")
+
+        h1 = generate_dataset_hash_from_config(cfg_a, _datasets(), "tok")
+        h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), "tok")
+
+        assert h1 != h2
+
+    def test_image_size_affects_hash(self):
+        cfg_a = _base_cfg()
+        cfg_b = _base_cfg(image_size=(336, 336))
+        cfg_c = _base_cfg(image_size=512)
+
+        h1 = generate_dataset_hash_from_config(cfg_a, _datasets(), "tok")
+        h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), "tok")
+        h3 = generate_dataset_hash_from_config(cfg_c, _datasets(), "tok")
+
+        assert h1 != h2
+        assert h1 != h3
+        assert h2 != h3
+
+    def test_processor_kwargs_affects_hash(self):
+        cfg_a = _base_cfg()
+        cfg_b = _base_cfg(processor_kwargs={"max_pixels": 1003520})
+
+        h1 = generate_dataset_hash_from_config(cfg_a, _datasets(), "tok")
+        h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), "tok")
+
+        assert h1 != h2
+
+    def test_image_resize_algorithm_affects_hash(self):
+        # Resampling.NEAREST is an IntEnum with value 0; must serialize and hash
+        cfg_a = _base_cfg(image_resize_algorithm=Image.Resampling.NEAREST)
+        cfg_b = _base_cfg(image_resize_algorithm=Image.Resampling.BICUBIC)
 
         h1 = generate_dataset_hash_from_config(cfg_a, _datasets(), "tok")
         h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), "tok")

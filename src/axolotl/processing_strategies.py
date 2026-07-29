@@ -69,8 +69,11 @@ class ProcessingStrategy:
         self.field_messages = self._normalize_field_messages(field_messages)
 
         self.image_size = image_size
+        # `or` would clobber Resampling.NEAREST (value 0)
         self.image_resize_algorithm = (
-            image_resize_algorithm or Image.Resampling.BILINEAR
+            Image.Resampling.BILINEAR
+            if image_resize_algorithm is None
+            else image_resize_algorithm
         )
 
         # Defaults mirror the text-only ChatTemplateStrategy. An explicit

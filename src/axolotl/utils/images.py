@@ -17,7 +17,8 @@ def load_and_resize_image(
         return image
 
     assert hasattr(image, "resize"), "Image does not have a resize method"
-    resample = resample or Resampling.BILINEAR
+    # `or` would clobber Resampling.NEAREST (value 0)
+    resample = Resampling.BILINEAR if resample is None else resample
 
     if isinstance(image_size, tuple):
         return image.resize(image_size, resample)

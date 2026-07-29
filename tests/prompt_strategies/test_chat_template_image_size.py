@@ -1,9 +1,12 @@
 """Tests that cfg.image_size is honored on the pre-tokenization path."""
 
+from unittest.mock import MagicMock
+
 import pytest
 import torch
 from PIL import Image
 
+from axolotl.processing_strategies import ProcessingStrategy
 from axolotl.prompt_strategies.chat_template import ChatTemplatePrompter, load
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.images import load_and_resize_image
@@ -60,6 +63,33 @@ class TestLoadAndResizeImage:
         image = Image.new("RGB", (20, 10))
         out = load_and_resize_image(image, None)
         assert out.size == (20, 10)
+
+    def test_nearest_resample_honored(self):
+        # NEAREST is falsy (value 0); an `or` fallback would silently swap in BILINEAR
+        image = Image.new("RGB", (20, 10))
+        image.putdata([(x * 12, y * 25, 0) for y in range(10) for x in range(20)])
+        nearest = load_and_resize_image(image, (8, 6), Image.Resampling.NEAREST)
+        bilinear = load_and_resize_image(image, (8, 6), Image.Resampling.BILINEAR)
+        assert nearest.tobytes() != bilinear.tobytes()
+        assert (
+            nearest.tobytes()
+            == image.resize((8, 6), Image.Resampling.NEAREST).tobytes()
+        )
+
+
+class TestProcessingStrategyResizeAlgorithm:
+    """ProcessingStrategy must not clobber falsy Resampling.NEAREST."""
+
+    def test_nearest_kept(self):
+        strategy = ProcessingStrategy(
+            processor=MagicMock(),
+            image_resize_algorithm=Image.Resampling.NEAREST,
+        )
+        assert strategy.image_resize_algorithm == Image.Resampling.NEAREST
+
+    def test_none_defaults_to_bilinear(self):
+        strategy = ProcessingStrategy(processor=MagicMock())
+        assert strategy.image_resize_algorithm == Image.Resampling.BILINEAR
 
 
 class TestBuildPromptImageSize:
