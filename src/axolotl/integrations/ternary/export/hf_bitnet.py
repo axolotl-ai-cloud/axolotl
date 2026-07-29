@@ -23,7 +23,7 @@ WEIGHT_SCALE_SUFFIX: str = "weight_scale"
 
 # archs whose ternary layout `BitNetForCausalLM` reproduces one-to-one
 SUPPORTED_MODEL_TYPES: frozenset[str] = frozenset(
-    {"llama", "mistral", "qwen2", "qwen3"}
+    {"llama", "mistral", "qwen2", "qwen3", "qwen3_5"}
 )
 
 
@@ -203,9 +203,50 @@ def _write_config(output_dir: Path, manifest: SwapManifest) -> None:
 
 
 def _modules_to_not_convert(manifest: SwapManifest) -> list[str]:
-    # transformers prefix-matches these patterns, so an unanchored `...mlp.gate`
-    # would also spare `...mlp.gate_proj`
-    return [f"{re.escape(name)}$" for name in sorted(set(manifest.kept_fp))]
+    """Return the patterns that keep every full-precision Linear out of BitLinear.
+
+    Name-based, because the swap leaves these modules alone and the manifest has no
+    ternary entry for them: `kept_fp` is the only record that they exist.
+
+    Two shapes per module, because transformers' `should_convert_module` accepts
+    either an anchored regex or a literal suffix, and the tree a master is *saved*
+    from is not always the tree the packed artifact is *loaded* into:
+
+    - the escaped, end-anchored absolute name — exact, and what matches when the two
+      trees agree;
+    - a re-rooting-safe suffix from the layer index onward, for when they do not. A
+      multimodal master saves `model.language_model.layers.0.linear_attn.out_proj`
+      and reloads as a text-only causal LM whose module is
+      `model.layers.0.linear_attn.out_proj`; the absolute pattern misses, the module
+      is wrapped in BitLinear, its `weight_scale` is freshly initialized and its
+      full-precision weights are read as packed codes.
+
+    A suffix is only emitted when no ternarized module ends with it, so a keep can
+    never swallow a tensor that *is* packed.
+    """
+    kept = sorted(set(manifest.kept_fp))
+    targeted = [entry.name for entry in manifest.entries]
+    patterns = [f"{re.escape(name)}$" for name in kept]
+    for name in kept:
+        suffix = _rerooting_suffix(name)
+        if suffix and not any(other.endswith(suffix) for other in targeted):
+            patterns.append(suffix)
+    return patterns
+
+
+def _rerooting_suffix(name: str) -> str | None:
+    """Return `name` from its last numeric component's parent on, if it has one.
+
+    `model.language_model.layers.0.linear_attn.out_proj` becomes
+    `layers.0.linear_attn.out_proj`, which is a suffix of that name under any
+    wrapper. A name with no stack index (`lm_head`) has no re-rooting-safe form and
+    keeps only its absolute pattern.
+    """
+    parts = name.split(".")
+    for index in range(len(parts) - 1, 0, -1):
+        if parts[index].isdigit():
+            return ".".join(parts[index - 1 :])
+    return None
 
 
 __all__ = [

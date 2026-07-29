@@ -182,9 +182,13 @@ All options live under the `ternary:` key.
 | `keep_fp_modules` | preset | Regexes for Linears that stay full precision. |
 | `strict_enumeration` | `true` | Require every `nn.Linear` to fullmatch exactly one list. `false` downgrades unmatched/double-matched modules to a warning and keeps them FP. |
 
-Presets exist for `llama` and `qwen3` dense architectures and target
-`.*\.self_attn\.(q|k|v|o)_proj` plus `.*\.mlp\.(gate|up|down)_proj`. Other architectures
-need explicit `target_modules`.
+Presets exist for the `llama` and `qwen3` dense architectures, which target
+`.*\.self_attn\.(q|k|v|o)_proj` plus `.*\.mlp\.(gate|up|down)_proj`, and for `qwen3_5`,
+which adds keep lists for the parts of that hybrid you should not ternarize: the
+linear-attention projections (`.*\.linear_attn\.(in_proj_qkv|in_proj_a|in_proj_b|in_proj_z|out_proj)`)
+and the whole vision tower (`model\.visual\..*`) — see
+[What not to quantize](#sensitive-modules) for why. Other architectures need explicit
+`target_modules`.
 
 ### Quantizer
 
@@ -484,6 +488,27 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 model = AutoModelForCausalLM.from_pretrained("./outputs/ternary-out/hf_bitnet")
 tokenizer = AutoTokenizer.from_pretrained("./outputs/ternary-out/hf_bitnet")
 ```
+
+Architectures: `llama`, `mistral`, `qwen2`, `qwen3`, `qwen3_5`. The packer also writes
+`quantization_config.modules_to_not_convert`, listing every Linear the swap kept in full
+precision — the always-FP head as well as any island your `keep_fp_modules` carved out.
+Without it transformers' bitnet quantizer wraps *every* `nn.Linear` it walks, so a kept-FP
+module would be given a `BitLinear` whose `weight_scale` is missing (and therefore freshly
+initialized) while its full-precision weights are read as packed codes: a model that loads
+without complaint and computes the wrong function. Each kept module contributes two patterns, both matched by
+transformers' own `should_convert_module`: an end-anchored absolute name (so `layers.1`
+never shields `layers.11`) and a suffix from the stack index onward. The suffix matters
+because the tree a master is *saved* from is not always the tree the packed artifact is
+*loaded* into — a multimodal master saves
+`model.language_model.layers.0.linear_attn.out_proj` and reloads as a text-only causal LM
+whose module is `model.layers.0.linear_attn.out_proj`. A suffix is emitted only when no
+packed tensor ends with it, so a keep can never swallow a tensor that really is packed.
+
+This matters most on hybrid architectures. `qwen3_5` interleaves full-attention blocks with
+linear-attention ones and carries a vision tower; its preset ternarizes only the
+full-attention projections and the dense MLPs, leaving the linear-attention projections and
+all of `model.visual.*` full precision — so a packed `qwen3_5` is mostly kept-FP islands,
+and the list is what preserves them through loading.
 
 ### gguf_tq2_0 / gguf_tq1_0
 
@@ -910,8 +935,9 @@ against the eager reference implementation. It is a speed path, not a different 
 `auto` falls back to the fake-quant path whenever shapes or hardware do not qualify.
 
 **Which architectures work?**
-Presets ship for `llama` and `qwen3` dense models, and the export writers target those
-families first. Other architectures can be converted by supplying `target_modules`
+Presets ship for `llama` and `qwen3` dense models and for the `qwen3_5` hybrid (full
+attention and dense MLPs ternary; linear attention and the vision tower kept FP), and the
+export writers target those families first. Other architectures can be converted by supplying `target_modules`
 explicitly, but the GGUF/bitnet.cpp writers need per-architecture tensor-name mapping and
 will tell you when they do not have it. Fused 3D MoE expert stacks are detected and
 rejected with a clear error rather than silently mishandled.

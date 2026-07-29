@@ -2,6 +2,7 @@
 
 import copy
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from transformers import AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
 
 from axolotl.integrations.ternary import quant
 from axolotl.integrations.ternary.export import bake, hf_bitnet, parity
+from axolotl.integrations.ternary.export.hf_bitnet import _modules_to_not_convert
 from axolotl.integrations.ternary.modules import iter_ternary_modules
 from axolotl.integrations.ternary.swap import SwapEntry, SwapManifest, convert_model
 from axolotl.utils.dict import DictDefault
@@ -820,3 +822,291 @@ def _act_quant_int8_with(
     scale = amax / quant.ACT_QMAX if inverted else quant.ACT_QMAX / amax
     codes = (x.float() * scale).round().clamp_(low, high)
     return codes.to(torch.int8), scale
+
+
+# ------------------------------------------- kept-FP islands through transformers
+
+QWEN35_LINEARS = (
+    "model.language_model.layers.0.self_attn.q_proj",
+    "model.language_model.layers.0.self_attn.k_proj",
+    "model.language_model.layers.0.self_attn.v_proj",
+    "model.language_model.layers.0.self_attn.o_proj",
+    "model.language_model.layers.0.mlp.gate_proj",
+    "model.language_model.layers.0.mlp.up_proj",
+    "model.language_model.layers.0.mlp.down_proj",
+    "model.language_model.layers.1.linear_attn.in_proj_qkv",
+    "model.language_model.layers.1.linear_attn.in_proj_a",
+    "model.language_model.layers.1.linear_attn.in_proj_b",
+    "model.language_model.layers.1.linear_attn.in_proj_z",
+    "model.language_model.layers.1.linear_attn.out_proj",
+    "model.visual.blocks.0.attn.qkv",
+    "model.visual.blocks.0.attn.proj",
+    "model.visual.blocks.0.mlp.linear_fc1",
+    "model.visual.blocks.0.mlp.linear_fc2",
+    "model.visual.merger.linear_fc1",
+    "lm_head",
+)
+
+
+def _mixed_master(directory):
+    """A master with kept-FP *block* Linears — `v_proj` and `down_proj` islands."""
+    torch.manual_seed(0)
+    model = _tiny_llama()
+    manifest = convert_model(
+        model,
+        DictDefault(
+            {
+                "output_dir": str(directory),
+                "ternary": {
+                    "target_modules": [
+                        r".*\.self_attn\.(q|k|o)_proj",
+                        r".*\.mlp\.(gate|up)_proj",
+                    ],
+                    "keep_fp_modules": [
+                        r".*\.self_attn\.v_proj",
+                        r".*\.mlp\.down_proj",
+                    ],
+                },
+            }
+        ),
+    )
+    for name, module in iter_ternary_modules(model):
+        module._post_training(model, name)
+    model.save_pretrained(directory)
+    manifest.save(directory)
+    bake.write_quantizer_metadata(directory, manifest)
+    return manifest
+
+
+def test_modules_to_not_convert_lists_every_kept_linear(tmp_path):
+    manifest = _mixed_master(tmp_path / "master")
+
+    patterns = hf_bitnet._modules_to_not_convert(manifest)
+
+    # one anchored absolute pattern per kept module, plus re-rooting suffixes
+    assert len(patterns) >= len(set(manifest.kept_fp))
+    for name in set(manifest.kept_fp):
+        assert f"{re.escape(name)}$" in patterns
+    # the always-FP head is in there alongside the block islands
+    assert any(pattern.startswith("lm_head") for pattern in patterns)
+    assert any("v_proj" in pattern for pattern in patterns)
+    assert any("down_proj" in pattern for pattern in patterns)
+
+
+def test_the_patterns_match_transformers_own_matcher(tmp_path):
+    """`should_convert_module` is the consumer; the list is only correct if it agrees."""
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    manifest = _mixed_master(tmp_path / "master")
+    patterns = hf_bitnet._modules_to_not_convert(manifest)
+
+    for name in manifest.kept_fp:
+        assert not should_convert_module(name, patterns), name
+    for entry in manifest.entries:
+        assert should_convert_module(entry.name, patterns), entry.name
+
+
+def test_the_patterns_do_not_spare_a_longer_sibling_name():
+    """`layers.1` must not shield `layers.11`, so the patterns are end-anchored."""
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    manifest = SwapManifest(
+        model_type="llama", kept_fp=["model.layers.1.mlp.down_proj"]
+    )
+    patterns = hf_bitnet._modules_to_not_convert(manifest)
+
+    assert not should_convert_module("model.layers.1.mlp.down_proj", patterns)
+    assert should_convert_module("model.layers.11.mlp.down_proj", patterns)
+
+
+def test_the_packed_config_always_carries_the_kept_list(tmp_path):
+    """Regression: a master with kept-FP block Linears must never ship without it."""
+    manifest = _mixed_master(tmp_path / "master")
+
+    artifact = hf_bitnet.export_hf_bitnet(
+        tmp_path / "master", tmp_path / "packed", manifest
+    )
+
+    quant_config = json.loads((artifact / "config.json").read_text())[
+        "quantization_config"
+    ]
+    islands = [
+        name
+        for name in manifest.kept_fp
+        if "lm_head" not in name and "embed" not in name
+    ]
+    assert islands, "the fixture is meant to have kept-FP block Linears"
+    assert quant_config["modules_to_not_convert"]
+    assert len(quant_config["modules_to_not_convert"]) >= len(set(manifest.kept_fp))
+
+
+def test_transformers_leaves_the_kept_islands_unwrapped(tmp_path):
+    """End to end: the kept-FP Linears must survive the bitnet quantizer as `nn.Linear`.
+
+    Without the not-convert list they would be wrapped in `BitLinear`, their missing
+    `weight_scale` freshly initialized and their full-precision weights read as packed
+    codes — a silently wrong model that still loads.
+    """
+    manifest = _mixed_master(tmp_path / "master")
+    artifact = hf_bitnet.export_hf_bitnet(
+        tmp_path / "master", tmp_path / "packed", manifest
+    )
+
+    loaded = AutoModelForCausalLM.from_pretrained(artifact, dtype=torch.bfloat16)
+
+    kinds = {name: type(module).__name__ for name, module in loaded.named_modules()}
+    for entry in manifest.entries:
+        assert kinds[entry.name].endswith("BitLinear"), entry.name
+    for name in manifest.kept_fp:
+        assert kinds[name] == "Linear", name
+
+
+# --------------------------------------------------------------- qwen3_5 preset
+
+
+def test_qwen3_5_is_a_supported_pack_target():
+    assert "qwen3_5" in hf_bitnet.SUPPORTED_MODEL_TYPES
+
+
+def test_the_qwen3_5_preset_splits_the_hybrid_the_way_the_probe_did():
+    """Full attention and dense MLPs ternary; linear attention and the tower FP."""
+    from axolotl.integrations.ternary.swap import ALWAYS_KEEP_FP, resolve_preset
+
+    preset = resolve_preset("qwen3_5")
+    targets = [re.compile(pattern) for pattern in preset.target_modules]
+    keeps = [re.compile(pattern) for pattern in preset.keep_fp_modules]
+    protected = [re.compile(pattern) for pattern in ALWAYS_KEEP_FP]
+
+    targeted, kept = [], []
+    for name in QWEN35_LINEARS:
+        is_target = any(pattern.fullmatch(name) for pattern in targets)
+        is_keep = any(pattern.fullmatch(name) for pattern in keeps)
+        assert not (is_target and is_keep), f"{name} matches both lists"
+        if any(pattern.fullmatch(name) for pattern in protected):
+            kept.append(name)
+            continue
+        assert is_target or is_keep, f"{name} matches neither list"
+        (targeted if is_target else kept).append(name)
+
+    assert (
+        targeted
+        == [name for name in QWEN35_LINEARS if "self_attn" in name or "mlp" in name][:7]
+    )
+    assert all("linear_attn" in n or "visual" in n or "lm_head" in n for n in kept)
+
+
+def test_the_qwen3_5_preset_keeps_the_vision_tower_whole():
+    from axolotl.integrations.ternary.swap import resolve_preset
+
+    keeps = [re.compile(p) for p in resolve_preset("qwen3_5").keep_fp_modules]
+    tower = [name for name in QWEN35_LINEARS if name.startswith("model.visual.")]
+
+    assert tower
+    for name in tower:
+        assert any(pattern.fullmatch(name) for pattern in keeps), name
+
+
+# ------------------------------------------- re-rooted trees (the qwen3_5 failure)
+
+
+def _nested_manifest() -> SwapManifest:
+    """A master saved from a multimodal tree: the decoder sits under `language_model`."""
+    prefix = "model.language_model.layers.0"
+    return SwapManifest(
+        model_type="qwen3_5",
+        entries=[
+            SwapEntry(f"{prefix}.self_attn.q_proj", 64, 64, "q_proj", "absmean"),
+            SwapEntry(f"{prefix}.mlp.gate_proj", 64, 128, "gate_proj", "absmean"),
+        ],
+        kept_fp=[
+            f"{prefix}.linear_attn.in_proj_qkv",
+            f"{prefix}.linear_attn.out_proj",
+            "model.visual.blocks.0.attn.qkv",
+            "lm_head",
+        ],
+    )
+
+
+def _reroot(name: str) -> str:
+    """The same module as a text-only causal LM names it at load."""
+    return name.replace("model.language_model.", "model.")
+
+
+def test_kept_modules_survive_a_re_rooted_reload():
+    """The real failure: saved under `model.language_model.*`, loaded as `model.*`.
+
+    An absolute pattern misses, the module is wrapped in BitLinear, its `weight_scale`
+    is freshly initialized and its FP weights are read as packed codes.
+    """
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    manifest = _nested_manifest()
+    patterns = _modules_to_not_convert(manifest)
+
+    for name in manifest.kept_fp:
+        assert not should_convert_module(name, patterns), f"saved tree: {name}"
+        assert not should_convert_module(_reroot(name), patterns), (
+            f"loaded tree: {name}"
+        )
+    for entry in manifest.entries:
+        assert should_convert_module(entry.name, patterns)
+        assert should_convert_module(_reroot(entry.name), patterns)
+
+
+def test_the_absolute_pattern_alone_would_miss_the_re_rooted_module():
+    """Pins why the suffix exists, so nobody 'simplifies' it back."""
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    kept = "model.language_model.layers.0.linear_attn.out_proj"
+
+    absolute_only = [f"{re.escape(kept)}$"]
+    assert should_convert_module(_reroot(kept), absolute_only), "premise changed"
+    assert not should_convert_module(
+        _reroot(kept),
+        _modules_to_not_convert(SwapManifest(model_type="qwen3_5", kept_fp=[kept])),
+    )
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        (
+            "model.language_model.layers.0.linear_attn.out_proj",
+            "layers.0.linear_attn.out_proj",
+        ),
+        ("model.layers.11.mlp.down_proj", "layers.11.mlp.down_proj"),
+        ("model.visual.blocks.3.attn.qkv", "blocks.3.attn.qkv"),
+        ("lm_head", None),
+        ("model.visual.merger.linear_fc1", None),
+    ],
+)
+def test_the_re_rooting_suffix_starts_at_the_stack_index(name, expected):
+    assert hf_bitnet._rerooting_suffix(name) == expected
+
+
+def test_a_suffix_that_would_swallow_a_packed_tensor_is_not_emitted():
+    """A keep must never spare a module whose weights are actually packed."""
+    manifest = SwapManifest(
+        model_type="llama",
+        entries=[
+            SwapEntry("vision.layers.0.mlp.down_proj", 64, 64, "down_proj", "absmean")
+        ],
+        kept_fp=["text.layers.0.mlp.down_proj"],
+    )
+
+    patterns = _modules_to_not_convert(manifest)
+
+    assert "layers.0.mlp.down_proj" not in patterns
+    assert any(pattern.endswith("$") for pattern in patterns)
+
+
+def test_every_packed_tensor_stays_convertible_under_both_trees():
+    """The invariant the suffix guard protects, checked with transformers' matcher."""
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    manifest = _nested_manifest()
+    patterns = _modules_to_not_convert(manifest)
+
+    for entry in manifest.entries:
+        for name in (entry.name, _reroot(entry.name)):
+            assert should_convert_module(name, patterns), name

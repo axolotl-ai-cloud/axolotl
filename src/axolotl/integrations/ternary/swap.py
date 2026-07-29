@@ -60,6 +60,25 @@ ARCH_PRESETS: dict[str, ArchPreset] = {
             r".*\.mlp\.(gate|up|down)_proj",
         ),
     ),
+    # a hybrid: full-attention blocks interleaved with linear-attention ones, plus a
+    # vision tower. Only the full-attention projections and the dense MLPs are
+    # ternarized. The linear-attention projections stay FP because ternary sensitivity
+    # in a linear-attention state update is unstudied — its `in_proj_a` / `in_proj_b`
+    # feed a recurrent decay whose error compounds along the sequence rather than
+    # being re-normalized every block, which is not the regime the ternary evidence
+    # covers. The vision tower stays FP on the Prism 4-bit precedent: towers are a
+    # small fraction of the parameters and quantize far worse than the LM. Both are
+    # covered in the field guide; see [What not to quantize].
+    "qwen3_5": ArchPreset(
+        target_modules=(
+            r".*\.self_attn\.(q|k|v|o)_proj",
+            r".*\.mlp\.(gate|up|down)_proj",
+        ),
+        keep_fp_modules=(
+            r".*\.linear_attn\.(in_proj_qkv|in_proj_a|in_proj_b|in_proj_z|out_proj)",
+            r"model\.visual\..*",
+        ),
+    ),
 }
 
 
