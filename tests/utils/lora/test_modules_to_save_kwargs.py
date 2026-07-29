@@ -1,10 +1,7 @@
 """Kwargs-only forward through modules wrapped by lora_modules_to_save.
 
-PEFT < 0.20.0 required a positional first argument in
-``ModulesToSaveWrapper.forward``, so any ``lora_modules_to_save`` entry the
-model invokes with keyword arguments only (e.g. a VLM's
-``vision_tower(pixel_values=...)``) crashed with a TypeError at the first
-forward pass. Fixed upstream in huggingface/peft#3199 (peft 0.20.0).
+Guards the peft pin: peft < 0.20.0 required a positional first argument in
+``ModulesToSaveWrapper.forward``, crashing wrapped modules invoked kwargs-only.
 """
 
 import torch
