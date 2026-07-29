@@ -533,8 +533,7 @@ class PluginManager:
         return return_ds_meta
 
     def post_tokenizer_load(self, cfg: DictDefault, tokenizer):
-        """Calls the `post_tokenizer_load` method of all registered plugins, threading
-        the tokenizer through so a plugin may wrap or replace it.
+        """Calls the `post_tokenizer_load` method of all registered plugins.
 
         Args:
             cfg: The configuration for the plugins.

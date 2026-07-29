@@ -41,8 +41,7 @@ class PretrainTokenizationStrategy(PromptTokenizingStrategy):
         if encoder:
             res = encoder([prompt] if isinstance(prompt, str) else prompt)
 
-        # fast encoders ignore return_overflowing_tokens, so anything that needs the
-        # strided remainder has to go back through the tokenizer
+        # fast encoders ignore return_overflowing_tokens; overflow needs the tokenizer
         if res is None or any(len(seq) > max_length for seq in res["input_ids"]):
             res = self.tokenizer(
                 prompt,

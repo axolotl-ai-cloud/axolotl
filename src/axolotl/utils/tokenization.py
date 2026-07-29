@@ -12,8 +12,7 @@ FAST_ENCODER_ATTR = "_axolotl_fast_encoder"
 def set_fast_encoder(tokenizer, encoder) -> None:
     """Attach an accelerated drop-in encoder for raw-text tokenization.
 
-    The encoder is only used where plain `tokenizer(text, ...)` semantics are enough;
-    the tokenizer itself is left untouched so prompt strategies keep the full HF API.
+    The tokenizer itself is left untouched so prompt strategies keep the full HF API.
     """
     setattr(tokenizer, FAST_ENCODER_ATTR, encoder)
 
