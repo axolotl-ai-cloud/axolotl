@@ -19,7 +19,13 @@ from axolotl.utils.logging import get_logger
 
 from . import aux_modules
 from .args import LambdaSchedule
-from .modules import TernaryLinear, as_local, iter_ternary_modules
+from .modules import (
+    TernaryEmbedding,
+    TernaryLinear,
+    as_local,
+    iter_quantized_modules,
+    iter_ternary_modules,
+)
 from .quant import flip_count, zero_fraction
 from .swap import module_family
 
@@ -66,8 +72,8 @@ class LambdaScheduleCallback(TrainerCallback):
         """
         self.schedule = schedule
         self.warmup_steps = warmup_steps
-        self.ternary_modules: list[TernaryLinear] = [
-            module for _, module in iter_ternary_modules(model)
+        self.ternary_modules: list[TernaryLinear | TernaryEmbedding] = [
+            module for _, module in iter_quantized_modules(model)
         ]
         self.current_lambda: float = -1.0
 

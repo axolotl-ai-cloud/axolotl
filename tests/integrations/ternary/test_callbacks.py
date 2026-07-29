@@ -76,6 +76,7 @@ def _iter_fakes(model):
 @pytest.fixture(autouse=True)
 def stub_ternary_deps(monkeypatch):
     monkeypatch.setattr(callbacks_mod, "iter_ternary_modules", _iter_fakes)
+    monkeypatch.setattr(callbacks_mod, "iter_quantized_modules", _iter_fakes)
     monkeypatch.setattr(callbacks_mod, "flip_count", _ref_flip_count)
     monkeypatch.setattr(callbacks_mod, "zero_fraction", _ref_zero_fraction)
     monkeypatch.setattr(
@@ -514,12 +515,16 @@ def test_monitor_is_a_noop_without_ternary_modules():
 @pytest.fixture
 def real_ternary_deps(monkeypatch):
     """Undo the stubs so the callbacks drive real `TernaryLinear` modules."""
-    from axolotl.integrations.ternary.modules import iter_ternary_modules
+    from axolotl.integrations.ternary.modules import (
+        iter_quantized_modules,
+        iter_ternary_modules,
+    )
     from axolotl.integrations.ternary.quant import flip_count, zero_fraction
     from axolotl.integrations.ternary.swap import module_family
 
     for name, real in (
         ("iter_ternary_modules", iter_ternary_modules),
+        ("iter_quantized_modules", iter_quantized_modules),
         ("flip_count", flip_count),
         ("zero_fraction", zero_fraction),
         ("module_family", module_family),

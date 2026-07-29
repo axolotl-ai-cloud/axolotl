@@ -54,6 +54,10 @@ _EVAL_CACHE_ATTR: str = "_ternary_int8_eval_cache"
 _INT_MM_REJECTED: set[tuple[int, int, int]] = set()
 
 
+# scale modes whose dequant grid is a trained parameter rather than a latent statistic
+_TRAINED_SCALE_MODES: frozenset[str] = frozenset({"learnable", "learnable_row"})
+
+
 @dataclass
 class _EvalWeightCodes:
     """Int8 weight codes cached against the identity of the latent they came from."""
@@ -397,11 +401,11 @@ def ternary_codes(weight: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
 
 def _derive_weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.Tensor]:
     weight = module.weight.detach()
-    row_scale = _row_scale(module)
-    if row_scale is not None:
-        # `learnable_row` stores its grid, so the codes come from the trained scale
-        # rather than a statistic re-derived from the latent
-        scale = row_scale.to(torch.float32)
+    trained = _trained_scale(module)
+    if trained is not None:
+        # a learnable mode stores its grid, so the codes come from the trained scale;
+        # an absmean statistic re-derived from the latent is a different quantizer
+        scale = trained.to(torch.float32)
         return ternary_codes(weight, scale), quant.f16_round_scale(scale).reshape(-1)
     is_baked = getattr(module, "is_baked", None)
     if is_baked() if callable(is_baked) else getattr(module, "baked", False):
@@ -415,9 +419,13 @@ def _derive_weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.T
     return codes, scale_f16
 
 
-def _row_scale(module: torch.nn.Module) -> torch.Tensor | None:
-    """Return the `(out_features, 1)` trained scale of a per-row module, else `None`."""
-    if getattr(module, "weight_scale", None) != "learnable_row":
+def _trained_scale(module: torch.nn.Module) -> torch.Tensor | None:
+    """Return the trained dequant scale of a learnable module, else `None`.
+
+    `_scale()` undoes the log-space storage the parameter actually holds, and already
+    declines the two-plane modes, whose grid no single scale can describe.
+    """
+    if getattr(module, "weight_scale", None) not in _TRAINED_SCALE_MODES:
         return None
     scale = getattr(module, "_scale", None)
     return None if scale is None else scale()
@@ -454,13 +462,13 @@ def _weight_codes(module: torch.nn.Module) -> tuple[torch.Tensor, torch.Tensor]:
 def _cache_stamp(module: torch.nn.Module) -> tuple:
     """Identity of everything the cached codes were derived from beyond the weight.
 
-    A per-row module keeps its grid in a trained parameter, so the weight's version
+    A learnable mode keeps its grid in a trained parameter, so the weight's version
     counter alone does not describe the codes — and a fused optimizer updates
     parameters without bumping that counter at all (the same blind spot that once let
     a fit-initialized module claim to be baked for a whole run). The scale's own
     identity and contents go into the key so a moved scale cannot be served stale.
     """
-    scale = _row_scale(module)
+    scale = _trained_scale(module)
     if scale is None:
         return ()
     dense = scale.detach()
@@ -523,7 +531,7 @@ def int8_linear_forward(
         return None
     if getattr(module, "group_size", None) is not None:
         return None
-    if getattr(module, "scale", None) is not None and _row_scale(module) is None:
+    if getattr(module, "scale", None) is not None and _trained_scale(module) is None:
         return None
     if not (x.is_cuda and weight.is_cuda and x.device == weight.device):
         return None

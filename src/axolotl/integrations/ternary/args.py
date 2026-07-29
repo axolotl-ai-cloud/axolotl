@@ -44,6 +44,8 @@ ExportFormat = Literal[
     "sign_plane",
 ]
 EmbeddingDtype = Literal["bf16", "int8"]
+EmbeddingScaleStructure = Literal["per_row", "per_tensor", "grouped"]
+LatentEmbeddingDtype = Literal["bf16", "ternary"]
 RouterDtype = Literal["bf16", "int8"]
 
 # codebooks whose quantizer is accepted by the schema but has not landed yet
@@ -559,6 +561,30 @@ class TernaryConfig(BaseModel):
             raise ValueError(
                 "ternary.weight_scale: group requires ternary.group_size (e.g. 128)"
             )
+        if self.embedding_group_size is not None and self.embedding_scale != "grouped":
+            raise ValueError(
+                "ternary.embedding_group_size is only valid with "
+                "ternary.embedding_scale: grouped"
+            )
+        if self.embedding_scale == "grouped" and self.embedding_group_size is None:
+            raise ValueError(
+                "ternary.embedding_scale: grouped requires "
+                "ternary.embedding_group_size (e.g. 128)"
+            )
+        if self.embedding_dtype == "bf16" and self.embedding_scale != "per_row":
+            raise ValueError(
+                f"ternary.embedding_scale: {self.embedding_scale} has no effect while "
+                "ternary.embedding_dtype is bf16; set embedding_dtype: ternary"
+            )
+        if self.embedding_dtype == "ternary":
+            LOG.warning(
+                "ternary: embedding_dtype: ternary quantizes the token embedding "
+                "matrix. The damage probe shows a 135M model destroyed at every scale "
+                "structure and a 1.7B model still far above its FP loss unhealed, so "
+                "this requires a healing run at 1.7B or larger to be worth anything — "
+                "it is not a drop-in size lever. With tied weights the output head is "
+                "the same tensor and becomes ternary with it"
+            )
         return self
 
     @model_validator(mode="after")
@@ -597,6 +623,40 @@ class TernaryConfig(BaseModel):
                 f"but init is {self.init!r}"
             )
         return self
+
+    embedding_dtype: LatentEmbeddingDtype = Field(
+        default="bf16",
+        description=(
+            "Latent dtype of the token embedding matrix during training. 'ternary' "
+            "swaps it for a TernaryEmbedding, which fake-quantizes the gathered rows "
+            "and bakes with the rest of the model. Distinct from "
+            "ternary.export.embedding_dtype, which only chooses how the finished "
+            "tensor is packed into GGUF. Embeddings are damaged far more than the "
+            "projections by the same grid — a 135M model does not recover at any "
+            "scale structure — so this is a heal-at-1.7B-and-up knob, not a free "
+            "size win."
+        ),
+    )
+    embedding_scale: EmbeddingScaleStructure = Field(
+        default="per_row",
+        description=(
+            "Scale structure for a ternary embedding. 'per_row' gives every token its "
+            "own scale, which is the only structure that keeps rare rows alive: under "
+            "'per_tensor' a scale set by the whole vocabulary rounds low-magnitude "
+            "rows to all-zero, which prunes those tokens rather than quantizing them. "
+            "'grouped' needs ternary.embedding_group_size to divide the hidden size."
+        ),
+    )
+    embedding_group_size: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Group width along the hidden dimension for "
+            "ternary.embedding_scale: grouped. Must divide the model's hidden size — "
+            "which is not always a power of two, so a 128 that works everywhere else "
+            "will not fit a 576-wide embedding."
+        ),
+    )
 
     init_jitter: float = Field(
         default=0.0,

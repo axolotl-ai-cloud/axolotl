@@ -35,6 +35,8 @@ def ternary_linear(
     )
     with torch.no_grad():
         module.weight.normal_(0.0, 0.02)
+    # the constructor seeds a learnable scale from the *uninitialized* latent
+    module.refresh_scale_from_weight()
     if baked:
         module._post_training(None, "")  # type: ignore[arg-type]
     return module
@@ -365,7 +367,9 @@ def test_replaced_weight_is_never_served_from_a_stale_cache():
         ({}, 0.999),
         ({"activation_bits": None}, 1.0),
         ({"weight_scale": "group", "group_size": 128}, 1.0),
-        ({"weight_scale": "learnable"}, 1.0),
+        ({"weight_scale": "dual"}, 1.0),
+        ({"weight_scale": "trit_planes"}, 1.0),
+        ({"weight_scale": "learnable"}, 0.5),
     ],
 )
 def test_int8_linear_forward_declines_unsupported_modules(kwargs, lambda_):
@@ -373,6 +377,20 @@ def test_int8_linear_forward_declines_unsupported_modules(kwargs, lambda_):
     module.set_lambda(lambda_)
     x = torch.randn(32, 1024, device="cuda", dtype=torch.bfloat16)
     assert int8.int8_linear_forward(module, x) is None
+
+
+@requires_cuda
+@pytest.mark.parametrize("weight_scale", ["learnable", "learnable_row"])
+def test_int8_linear_forward_accepts_the_trained_scale_modes(weight_scale):
+    """These carry a scale parameter, which the gate once refused outright."""
+    module = ternary_linear(1024, 1024, weight_scale=weight_scale).eval()
+    x = torch.randn(32, 1024, device="cuda", dtype=torch.bfloat16)
+
+    got = int8.int8_linear_forward(module, x)
+
+    assert got is not None
+    with torch.no_grad():
+        assert rel_l2(got, module(x)) < 5e-3
 
 
 @requires_cuda

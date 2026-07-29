@@ -20,6 +20,7 @@ from .args import (
     LEARNABLE_SCALE_MODES,
     TWO_PLANE_SCALE_MODES,
     Codebook,
+    EmbeddingScaleStructure,
     WeightScaleMode,
 )
 
@@ -40,13 +41,21 @@ ROW_SCALE_MODES: frozenset[str] = frozenset({"learnable_row", "dual", "trit_plan
 # the grids the fused Triton kernels and the W2A8 int8 forward implement; everything
 # else runs the eager oracle until a kernel for its scale layout lands
 FUSED_SCALE_MODES: frozenset[str] = frozenset({"absmean", "group"})
-# int8 W2A8 forward modes. `learnable_row` joins them because one GEMM plus a
-# vector epilogue beats the fused fake-quant forward at every eval shape measured
-# (1.16-1.50x). `dual` and `trit_planes` are deliberately absent: their two-GEMM
-# split loses 20% on the widest projection shape (4096x2048->8192, i.e. gate/up),
-# and winning 11-32% elsewhere does not pay for regressing the most common one.
+# int8 W2A8 forward modes, all of which reach the dispatch. `learnable` and
+# `learnable_row` derive codes from their trained scale, not an absmean statistic, and
+# run 1.45-2.7x the fused fake-quant forward at prefill and wide-decode shapes (roughly
+# par at 1x2048->2048, where the epilogue dominates). `dual` and `trit_planes` are
+# deliberately absent: their two-GEMM split loses 20% on the widest projection shape
+# (4096x2048->8192, i.e. gate/up), and winning 11-32% elsewhere does not pay for
+# regressing the most common one.
 INT8_FORWARD_SCALE_MODES: frozenset[str] = frozenset(
     {"absmean", "learnable", "learnable_row"}
+)
+
+# scale structures a ternary embedding can carry, mapped onto the quantizer's group
+# size by `TernaryEmbedding._scale_group_size`
+EMBEDDING_SCALE_STRUCTURES: frozenset[str] = frozenset(
+    get_args(EmbeddingScaleStructure)
 )
 
 # state-dict entries holding a learnable scale, in `__init__` order
@@ -876,6 +885,260 @@ class TernaryLinear(nn.Module):
         return quant.act_quant_ste(x, lambda_)
 
 
+class TernaryEmbedding(nn.Embedding):
+    """Ternary token embedding: latent rows, fake-quant gather, bake-on-save.
+
+    Subclasses `nn.Embedding` so `get_input_embeddings`, `tie_weights` and
+    `resize_token_embeddings` keep working unchanged; only the forward differs. There
+    is no kernel: a gather is not a GEMM, so the eager oracle quantizes the one tensor
+    once per step.
+
+    `per_row` is the default because it is the structure that keeps every token row on
+    its own grid. A per-tensor scale set by the whole vocabulary rounds rare rows —
+    whose magnitudes sit below the global grid — straight to zero, which is pruning
+    the tokens rather than quantizing them.
+    """
+
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        padding_idx: int | None = None,
+        scale_structure: EmbeddingScaleStructure = "per_row",
+        group_size: int | None = None,
+        codebook: Codebook = "ternary",
+        device: Any = None,
+        dtype: torch.dtype | None = None,
+    ) -> None:
+        """Build a ternary embedding.
+
+        Args:
+            num_embeddings: Vocabulary size.
+            embedding_dim: Row width.
+            padding_idx: Forwarded to `nn.Embedding`.
+            scale_structure: `"per_row"`, `"per_tensor"` or `"grouped"`.
+            group_size: Group width along `embedding_dim`, `"grouped"` only.
+            codebook: `"ternary"` or `"binary"`.
+            device: Parameter device.
+            dtype: Latent dtype.
+
+        Raises:
+            ValueError: On an unknown structure or codebook, or a group size that does
+                not divide `embedding_dim`.
+        """
+        if scale_structure not in EMBEDDING_SCALE_STRUCTURES:
+            raise ValueError(
+                f"scale_structure must be one of {sorted(EMBEDDING_SCALE_STRUCTURES)}, "
+                f"got {scale_structure!r}"
+            )
+        if codebook not in CODEBOOKS:
+            raise ValueError(
+                f"codebook must be one of {sorted(CODEBOOKS)}, got {codebook!r}"
+            )
+        if scale_structure == "grouped":
+            if group_size is None:
+                raise ValueError(
+                    "ternary.embedding_scale: grouped requires "
+                    "ternary.embedding_group_size (e.g. 128)"
+                )
+            if embedding_dim % group_size:
+                raise ValueError(
+                    f"ternary embedding group_size {group_size} does not divide "
+                    f"embedding_dim {embedding_dim}; the quantizer reshapes rows into "
+                    f"whole groups. Divisors of {embedding_dim}: "
+                    f"{_divisors(embedding_dim)}"
+                )
+        elif group_size is not None:
+            raise ValueError(
+                "group_size is only valid with scale_structure='grouped', got "
+                f"{scale_structure!r}"
+            )
+
+        super().__init__(
+            num_embeddings,
+            embedding_dim,
+            padding_idx=padding_idx,
+            device=device,
+            dtype=dtype,
+        )
+        self.scale_structure = scale_structure
+        self.group_size = group_size
+        self.codebook = codebook
+        self.baked = False
+        self.lambda_ = 1.0
+        self._baked_version: int | None = None
+        self._baked_grad_hook: Any = None
+
+    @classmethod
+    def from_embedding(
+        cls,
+        embedding: nn.Embedding,
+        scale_structure: EmbeddingScaleStructure = "per_row",
+        group_size: int | None = None,
+        codebook: Codebook = "ternary",
+    ) -> "TernaryEmbedding":
+        """Build a `TernaryEmbedding` adopting `embedding`'s weight as its latent.
+
+        Args:
+            embedding: Source module; its weight is moved, not copied.
+            scale_structure: `"per_row"`, `"per_tensor"` or `"grouped"`.
+            group_size: Group width, `"grouped"` only.
+            codebook: `"ternary"` or `"binary"`.
+
+        Returns:
+            The replacement module, on the source module's device and dtype.
+        """
+        module = cls(
+            embedding.num_embeddings,
+            embedding.embedding_dim,
+            padding_idx=embedding.padding_idx,
+            scale_structure=scale_structure,
+            group_size=group_size,
+            codebook=codebook,
+            device="meta",
+            dtype=embedding.weight.dtype,
+        )
+        module.max_norm = embedding.max_norm
+        module.norm_type = embedding.norm_type
+        module.scale_grad_by_freq = embedding.scale_grad_by_freq
+        module.sparse = embedding.sparse
+        weight = embedding.weight
+        module.weight = (
+            weight if isinstance(weight, nn.Parameter) else nn.Parameter(weight)
+        )
+        module._detect_baked()
+        return module
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """Gather from the fake-quantized weight."""
+        lambda_ = self.lambda_
+        if lambda_ <= 0.0 or self.is_baked():
+            weight = self.weight
+        else:
+            fake_quant = (
+                quant.fake_quant_weight_binary_ste
+                if self.codebook == "binary"
+                else quant.fake_quant_weight_ste
+            )
+            weight = fake_quant(self.weight, lambda_, self._scale_group_size(), None)
+        return F.embedding(
+            input,
+            weight,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
+
+    def set_lambda(self, value: float) -> None:
+        """Set the quantization strength for subsequent forwards."""
+        self.lambda_ = float(min(max(value, 0.0), 1.0))
+
+    def is_baked(self) -> bool:
+        """Whether `weight` still holds the exact quantized values it was baked to."""
+        return self.baked and self.weight._version == self._baked_version
+
+    def baked_weight(self) -> torch.Tensor:
+        """Return the exact `codes * s16` weight in the latent dtype (λ-independent)."""
+        with torch.no_grad():
+            weight = self.weight.detach()
+            if self.is_baked():
+                return weight.clone()
+            fake_quant = (
+                quant.fake_quant_weight_binary
+                if self.codebook == "binary"
+                else quant.fake_quant_weight
+            )
+            return fake_quant(weight, 1.0, self._scale_group_size(), None)
+
+    def code_snapshot(self) -> torch.Tensor:
+        """Int8 codes of the current latent, for the flip monitor."""
+        weight = as_local(self.weight.detach())
+        group_size = self._scale_group_size()
+        recovered = self._baked_codes_and_scale(weight)
+        if recovered is not None:
+            return recovered[0]
+        return quant.ternary_codes(weight, quant.absmean_scale(weight, group_size))
+
+    def _post_training(self, model: PreTrainedModel, name: str) -> None:
+        """Bake the latent to `codes * s16` in place so every save path emits the master.
+
+        Raises:
+            RuntimeError: If the write did not land — a silently unbaked embedding
+                would be saved as an ordinary FP tensor labelled as a master.
+        """
+        if self._detect_baked():
+            return
+        baked = self.baked_weight()
+        with torch.no_grad():
+            self.weight.copy_(baked)
+        if not bool(torch.equal(as_local(self.weight.detach()), as_local(baked))):
+            raise RuntimeError(
+                f"ternary: baking {name} did not land in its weight; the checkpoint "
+                "would carry full-precision embeddings labelled as a ternary master"
+            )
+        self._mark_baked()
+
+    def _scale_group_size(self) -> int | None:
+        """Group size the quantizer sees; a per-row scale is one group of `embedding_dim`."""
+        if self.scale_structure == "per_row":
+            return self.embedding_dim
+        return self.group_size
+
+    def _baked_codes_and_scale(
+        self, weight: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        group_size = self._scale_group_size()
+        if self.codebook == "binary":
+            return quant.baked_binary_codes_and_scale(weight, group_size)
+        return quant.baked_codes_and_scale(weight, group_size)
+
+    def _detect_baked(self) -> bool:
+        """Flag the module when its weight already holds exactly the quantized values."""
+        weight = as_local(self.weight.detach())
+        if weight.device.type == "meta" or not weight.numel():
+            return False
+        self.baked = self._baked_codes_and_scale(weight) is not None
+        if self.baked:
+            self._mark_baked()
+        else:
+            self._clear_baked()
+        return self.baked
+
+    def _mark_baked(self) -> None:
+        """Flag the latent as on-grid, and arm the invalidators."""
+        self.baked = True
+        self._baked_version = self.weight._version
+        if self._baked_grad_hook is None and self.weight.requires_grad:
+            self._baked_grad_hook = self.weight.register_post_accumulate_grad_hook(
+                lambda _param: self._clear_baked()
+            )
+
+    def _clear_baked(self) -> None:
+        """A trained latent is no longer on the grid, whatever the optimizer did."""
+        self.baked = False
+        self._baked_version = None
+
+    def code_count(self) -> int:
+        """Number of codes `code_snapshot` covers — the local shard under FSDP2."""
+        return as_local(self.weight.detach()).numel()
+
+    def extra_repr(self) -> str:
+        """Describe the grid alongside the embedding shape."""
+        grid = str(self.scale_structure)
+        if self.group_size is not None:
+            grid = f"{grid}({self.group_size})"
+        return f"{super().extra_repr()}, scale={grid}, codebook={self.codebook}"
+
+
+def _divisors(value: int, limit: int = 8) -> str:
+    """Render the larger divisors of `value`, for a group-size error message."""
+    found = [d for d in range(1, value + 1) if value % d == 0]
+    tail = found[-limit:]
+    return ", ".join(str(d) for d in tail)
+
+
 class TernaryExperts(nn.Module):
     """Ternary replacement for fused 3D MoE expert stacks (planned, M5)."""
 
@@ -891,6 +1154,15 @@ def iter_ternary_modules(model: nn.Module) -> Iterator[tuple[str, TernaryLinear]
     """Yield `(name, module)` for every `TernaryLinear` in `model`."""
     for name, module in model.named_modules():
         if isinstance(module, TernaryLinear):
+            yield name, module
+
+
+def iter_quantized_modules(
+    model: nn.Module,
+) -> Iterator[tuple[str, "TernaryLinear | TernaryEmbedding"]]:
+    """Yield every module carrying a λ, which the embedding does as much as a Linear."""
+    for name, module in model.named_modules():
+        if isinstance(module, (TernaryLinear, TernaryEmbedding)):
             yield name, module
 
 

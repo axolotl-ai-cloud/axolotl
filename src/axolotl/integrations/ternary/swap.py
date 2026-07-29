@@ -20,7 +20,7 @@ from axolotl.utils.logging import get_logger
 
 from . import aux_modules
 from .args import UNIMPLEMENTED_CODEBOOKS, TernaryConfig, resolve_ternary_config
-from .modules import TernaryLinear
+from .modules import TernaryEmbedding, TernaryLinear
 from .ptq import initialize_model_latents
 
 LOG = get_logger(__name__)
@@ -95,6 +95,9 @@ class SwapEntry:
     weight_scale: str
     group_size: int | None = None
     codebook: str = "ternary"
+    # "linear" or "embedding"; the packers that have no scheme for a quantized
+    # embedding key off this rather than guessing from the module name
+    kind: str = "linear"
 
 
 @dataclass
@@ -111,11 +114,27 @@ class SwapManifest:
     init: str = "absmean"
     subln: bool = False
     subln_modules: list[str] = field(default_factory=list)
+    ternary_embeddings: list[str] = field(default_factory=list)
+    tied_embeddings: bool = False
     final_lambda: float | None = None
     quantizer: dict = field(default_factory=dict)
     # module name -> the per-row scales its master was baked with, kept out of the
     # JSON and written beside it so the floats survive exactly
     scales: dict = field(default_factory=dict, compare=False, repr=False)
+
+    def linear_entries(self) -> list["SwapEntry"]:
+        """Entries a weight packer may quantize: the Linears, never the embeddings.
+
+        No packed format has a scheme for a quantized embedding — BitNet converts only
+        Linears, and TQ1_0/TQ2_0 would need `hidden % 256`. A ternary embedding's
+        values ride into every artifact as the baked bf16/Q8_0 tensor instead, which
+        loses nothing: they are already on the grid.
+        """
+        return [entry for entry in self.entries if entry.kind != "embedding"]
+
+    def embedding_entries(self) -> list["SwapEntry"]:
+        """Entries for ternary embeddings."""
+        return [entry for entry in self.entries if entry.kind == "embedding"]
 
     def to_dict(self) -> dict:
         """Return a JSON-serializable view of the manifest."""
@@ -390,6 +409,8 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
             )
         )
 
+    embedding_names, tied = _convert_embeddings(model, ternary_cfg, entries)
+
     manifest = SwapManifest(
         model_type=model_type,
         entries=entries,
@@ -401,6 +422,8 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         init=ternary_cfg.init,
         subln=ternary_cfg.subln,
         subln_modules=subln_modules,
+        ternary_embeddings=embedding_names,
+        tied_embeddings=tied,
         quantizer=_quantizer_identity(ternary_cfg),
     )
     setattr(model, MANIFEST_ATTR, manifest)
@@ -418,6 +441,98 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         manifest.save(output_dir)
 
     return manifest
+
+
+def _convert_embeddings(
+    model: PreTrainedModel, ternary_cfg, entries: list[SwapEntry]
+) -> tuple[list[str], bool]:
+    """Swap the input embedding for a `TernaryEmbedding`, appending its manifest entry.
+
+    The output head is only ever touched through a tie: when `tie_word_embeddings` is
+    set it *is* this tensor, so it becomes ternary with it and the manifest says so.
+    An untied `lm_head` stays full precision — it is a Linear, and `ALWAYS_KEEP_FP`
+    covers it.
+
+    Returns:
+        The swapped module names and whether the head is tied to them.
+    """
+    if getattr(ternary_cfg, "embedding_dtype", "bf16") != "ternary":
+        return [], False
+
+    embedding = model.get_input_embeddings()
+    if embedding is None:
+        raise ValueError(
+            "ternary.embedding_dtype: ternary, but the model exposes no input "
+            "embedding via get_input_embeddings()"
+        )
+    if isinstance(embedding, TernaryEmbedding):
+        raise ValueError("the input embedding is already a TernaryEmbedding")
+    if not isinstance(embedding, nn.Embedding):
+        raise ValueError(
+            "ternary.embedding_dtype: ternary needs an nn.Embedding input embedding, "
+            f"got {type(embedding).__name__}"
+        )
+
+    names = [
+        name for name, module in model.named_modules() if module is embedding and name
+    ]
+    if not names:
+        raise ValueError("the input embedding is not reachable by name from the model")
+
+    ternary_embedding = TernaryEmbedding.from_embedding(
+        embedding,
+        scale_structure=ternary_cfg.embedding_scale,
+        group_size=ternary_cfg.embedding_group_size,
+        codebook=ternary_cfg.codebook,
+    )
+    for name in names:
+        parent_name, _, attr = name.rpartition(".")
+        parent = model.get_submodule(parent_name) if parent_name else model
+        setattr(parent, attr, ternary_embedding)
+    model.set_input_embeddings(ternary_embedding)
+
+    tied = bool(getattr(model.config, "tie_word_embeddings", False))
+    if tied:
+        # re-tie against the replacement, or the head keeps pointing at the old tensor
+        model.tie_weights()
+        LOG.warning(
+            f"ternary: {names[0]} is ternary and tie_word_embeddings is set, so the "
+            "output head is the same tensor and bakes ternary with it. The head module "
+            "is left alone, so during training it reads the latent while the embedding "
+            "reads the fake-quantized rows — the head's quantization error therefore "
+            "appears only in the exported artifact, and a healing run does not train "
+            "against it. Untie the weights to keep a full-precision head"
+        )
+
+    grid_scale, grid_size = _embedding_grid(ternary_cfg, embedding.embedding_dim)
+    for name in names:
+        entries.append(
+            SwapEntry(
+                name=name,
+                in_features=embedding.embedding_dim,
+                out_features=embedding.num_embeddings,
+                family="embedding",
+                weight_scale=grid_scale,
+                group_size=grid_size,
+                codebook=ternary_cfg.codebook,
+                kind="embedding",
+            )
+        )
+    return names, tied
+
+
+def _embedding_grid(ternary_cfg, embedding_dim: int) -> tuple[str, int | None]:
+    """Map an embedding scale structure onto the manifest's `(weight_scale, group_size)`.
+
+    The bake and the packers read those two fields, and a per-row scale is exactly one
+    group per row — so no packer needs to learn a new grid name.
+    """
+    structure = ternary_cfg.embedding_scale
+    if structure == "per_tensor":
+        return "absmean", None
+    if structure == "per_row":
+        return "group", embedding_dim
+    return "group", ternary_cfg.embedding_group_size
 
 
 def _adopt_master_scales(

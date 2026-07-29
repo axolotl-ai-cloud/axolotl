@@ -117,7 +117,7 @@ def export_hf_bitnet(
             "weights are not re-quantizable back into a bf16 master"
         )
 
-    entries = {f"{entry.name}.weight": entry for entry in manifest.entries}
+    entries = {f"{entry.name}.weight": entry for entry in manifest.linear_entries()}
     remaining = set(entries)
     shards = bake.shard_paths(master_dir)
     bake.copy_aux_files(
@@ -243,7 +243,9 @@ def _modules_to_not_convert(manifest: SwapManifest) -> list[str]:
     A suffix is only emitted when no ternarized module ends with it, so a keep can
     never swallow a tensor that *is* packed.
     """
-    kept = sorted(set(manifest.kept_fp))
+    kept = sorted(
+        set(manifest.kept_fp) | {e.name for e in manifest.embedding_entries()}
+    )
     targeted = [entry.name for entry in manifest.entries]
     patterns = [f"{re.escape(name)}$" for name in kept]
     for name in kept:
