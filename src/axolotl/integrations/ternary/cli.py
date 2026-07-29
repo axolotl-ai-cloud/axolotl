@@ -131,6 +131,80 @@ def fit_stream_command(
         click.echo(f"per family: {summarize_families(report.families)}")
 
 
+@ternary.command(name="heal-stream")
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--master-dir",
+    default=None,
+    type=click.Path(path_type=str),
+    help="Fitted ternary master to heal. Defaults to the config's `output_dir`.",
+)
+@click.option(
+    "--source-dir",
+    default=None,
+    type=click.Path(path_type=str),
+    help="Full-precision or fp8 teacher. Defaults to the config's `base_model`.",
+)
+@click.option(
+    "--output-dir",
+    default=None,
+    type=click.Path(path_type=str),
+    help="Where the healed master is written. Defaults to `<master-dir>-healed`.",
+)
+@click.option(
+    "--device",
+    default="cuda",
+    show_default=True,
+    type=str,
+    help="Device one teacher block and one student block are resident on.",
+)
+@click.option(
+    "--resume/--no-resume",
+    default=True,
+    show_default=True,
+    help="Skip blocks a previous pass already healed.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the report as JSON instead of a summary line.",
+)
+def heal_stream_command(
+    config: str,
+    master_dir: str | None,
+    source_dir: str | None,
+    output_dir: str | None,
+    device: str,
+    resume: bool,
+    as_json: bool,
+) -> None:
+    """heal a ternary master one decoder block at a time"""
+    from .ptq.blockwise import heal_blocks
+
+    cfg = _load_plugin_cfg(config)
+    master = master_dir or cfg.output_dir
+    output = output_dir or f"{str(master).rstrip('/')}-healed"
+    try:
+        report = heal_blocks(
+            master, output, cfg, source_dir=source_dir, device=device, resume=resume
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    if as_json:
+        click.echo(json.dumps(report.to_dict(), indent=2))
+        return
+    click.echo(
+        f"{report.output_dir}: healed {report.blocks_healed}/{report.blocks} blocks "
+        f"({report.blocks_skipped} skipped) in {report.seconds:.1f}s"
+    )
+    click.echo(
+        f"mean block MSE {report.mean_final_loss:.6f}, "
+        f"mean improvement {report.mean_improvement:.1%}"
+    )
+
+
 @ternary.command(name="damage-map")
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(

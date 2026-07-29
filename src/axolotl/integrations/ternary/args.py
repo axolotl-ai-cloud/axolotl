@@ -300,6 +300,65 @@ class TernaryDistillConfig(BaseModel):
         return self
 
 
+class TernaryBlockwiseConfig(BaseModel):
+    """Sequential per-block local distillation, for models too large to heal whole."""
+
+    enabled: bool = Field(
+        default=False,
+        description=(
+            "Heal the master one decoder block at a time against the teacher's block "
+            "outputs, holding one teacher block and one student block at a time. The "
+            "vehicle for models whose latents plus optimizer state do not fit the box."
+        ),
+    )
+    dataset: str | None = Field(
+        default=None,
+        description=(
+            "Raw-text corpus the calibration activations come from. `None` uses the "
+            "configured training dataset."
+        ),
+    )
+    num_sequences: int = Field(
+        default=256,
+        gt=0,
+        description=(
+            "Calibration sequences captured once and replayed for every block. This "
+            "is the whole token budget: a block sees `num_sequences x sequence_len` "
+            "tokens per epoch, and the activations for two blocks live on disk."
+        ),
+    )
+    sequence_len: int = Field(
+        default=1024, gt=0, description="Tokens per calibration sequence."
+    )
+    epochs: int = Field(
+        default=1, gt=0, description="Passes over the cached activations per block."
+    )
+    max_steps: int = Field(
+        default=0,
+        ge=0,
+        description="Cap on optimizer steps per block; 0 runs the full epochs.",
+    )
+    learning_rate: float = Field(
+        default=1e-5,
+        gt=0,
+        description=(
+            "Per-block AdamW learning rate. A fresh optimizer is built for each block, "
+            "so there is no warmup to inherit and no state to carry across blocks."
+        ),
+    )
+    max_grad_norm: float = Field(
+        default=1.0, ge=0, description="Gradient clipping per block; 0 disables it."
+    )
+    cache_dir: str | None = Field(
+        default=None,
+        description=(
+            "Where the two rolling activation buffers live. Defaults to "
+            "`<output_dir>/activation-cache`. Point it at fast local disk: every "
+            "block reads both buffers once and writes one."
+        ),
+    )
+
+
 class TernaryExportConfig(BaseModel):
     """Export artifacts written after training, under `ternary.export`."""
 
@@ -656,6 +715,11 @@ class TernaryConfig(BaseModel):
             "which is not always a power of two, so a 128 that works everywhere else "
             "will not fit a 576-wide embedding."
         ),
+    )
+
+    blockwise: TernaryBlockwiseConfig = Field(
+        default_factory=TernaryBlockwiseConfig,
+        description="Sequential per-block local distillation settings.",
     )
 
     init_jitter: float = Field(
