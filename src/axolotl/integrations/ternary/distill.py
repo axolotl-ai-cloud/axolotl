@@ -724,6 +724,13 @@ def _chunked_ce_kd(
     `(chunk_size, vocab)` logits pair instead of the full `(tokens, vocab)` one.
     A `None` teacher drops the KL term (and the teacher head) entirely.
     """
+    # accelerate's mixed-precision wrapper returns fp32 hidden states while the
+    # heads keep the model dtype; this loss runs outside autocast, so harmonize
+    # here (a no-op when the trainer upcast the whole model to fp32)
+    student_hidden = student_hidden.to(student_weight.dtype)
+    if teacher_hidden is not None and teacher_weight is not None:
+        teacher_hidden = teacher_hidden.to(teacher_weight.dtype)
+
     tokens = student_hidden.shape[0]
     if not tokens:
         zero = (student_hidden.sum() + student_weight.sum()) * 0.0

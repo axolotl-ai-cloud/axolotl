@@ -1201,3 +1201,31 @@ def test_the_variant_reaches_the_loss_through_compute_loss(loss):
 
     assert torch.isfinite(loss_value)
     assert trainer._stored_metrics["train"]["ternary/kd_hidden"]["values"]
+
+
+def test_chunked_harmonizes_fp32_hidden_with_low_precision_heads():
+    """accelerate returns fp32 hidden states while pure-bf16 models keep bf16 heads."""
+    torch.manual_seed(3)
+    tokens, hidden, vocab = 11, 16, 29
+    student_hidden = torch.randn(tokens, hidden, requires_grad=True)
+    teacher_hidden = torch.randn(tokens, hidden)
+    head = nn.Linear(hidden, vocab, bias=False).to(torch.bfloat16)
+    teacher_head = nn.Linear(hidden, vocab, bias=False).to(torch.bfloat16)
+    targets = torch.randint(0, vocab, (tokens,))
+
+    ce, kd = _chunked_ce_kd(
+        student_hidden,
+        teacher_hidden,
+        head.weight,
+        None,
+        teacher_head.weight,
+        None,
+        targets,
+        1.0,
+        8,
+    )
+    assert torch.isfinite(ce) and torch.isfinite(kd)
+    (ce + kd).backward()
+    assert student_hidden.grad is not None
+    assert head.weight.grad is not None
+    assert torch.isfinite(student_hidden.grad).all()
