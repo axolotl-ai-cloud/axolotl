@@ -90,6 +90,7 @@ class _Catcher(nn.Module):
         raise _StopForward
 
 
+@quant.pinned_fp32_precision()
 def calibrate_model_latents(
     model: "PreTrainedModel", manifest: "SwapManifest", cfg: DictDefault
 ) -> None:

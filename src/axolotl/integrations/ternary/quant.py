@@ -22,6 +22,8 @@ fp32 accumulation, the `SCALE_EPS` floor, the `f16`-rounded dequant scale and th
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import torch
 
 SCALE_EPS: float = 1e-5
@@ -890,3 +892,36 @@ def fake_quant_weight_trit_planes_ste(
 def act_quant_ste(x: torch.Tensor, lambda_: float = 1.0) -> torch.Tensor:
     """Autograd-wired `act_quant` (STE backward)."""
     return ActQuantSTE.apply(x, lambda_)
+
+
+@contextmanager
+def pinned_fp32_precision():
+    """Pin fp32 matmuls to full precision for the duration, restoring caller state.
+
+    Gates and calibration solves compare or invert fp32 matmul results; ambient
+    TF32 state (e.g. a training config's `tf32: true` applied by normalize_config)
+    silently truncates their mantissas. Usable as a decorator.
+    """
+    state = {
+        "matmul_precision": torch.get_float32_matmul_precision(),
+        "allow_tf32_matmul": torch.backends.cuda.matmul.allow_tf32,
+        "allow_tf32_cudnn": torch.backends.cudnn.allow_tf32,
+    }
+    if hasattr(torch.backends, "fp32_precision"):
+        state["fp32_precision"] = torch.backends.fp32_precision
+        state["fp32_precision_matmul"] = torch.backends.cuda.matmul.fp32_precision
+    try:
+        torch.set_float32_matmul_precision("highest")
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+        if "fp32_precision" in state:
+            torch.backends.fp32_precision = "ieee"
+            torch.backends.cuda.matmul.fp32_precision = "ieee"
+        yield
+    finally:
+        torch.set_float32_matmul_precision(state["matmul_precision"])
+        torch.backends.cuda.matmul.allow_tf32 = state["allow_tf32_matmul"]
+        torch.backends.cudnn.allow_tf32 = state["allow_tf32_cudnn"]
+        if "fp32_precision" in state:
+            torch.backends.fp32_precision = state["fp32_precision"]
+            torch.backends.cuda.matmul.fp32_precision = state["fp32_precision_matmul"]

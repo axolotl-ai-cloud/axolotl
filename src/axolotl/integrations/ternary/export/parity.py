@@ -405,6 +405,7 @@ def _install_act_quant(
     ]
 
 
+@quant.pinned_fp32_precision()
 def run_smoke_eval(
     master_dir: str | Path, artifact: str | Path, fmt: ExportFormat
 ) -> "SmokeReport | None":
@@ -499,6 +500,7 @@ def _hooks(handles: list[torch.utils.hooks.RemovableHandle]):
             handle.remove()
 
 
+@quant.pinned_fp32_precision()
 def run_parity_gate(
     master_dir: str | Path,
     artifact: str | Path,
