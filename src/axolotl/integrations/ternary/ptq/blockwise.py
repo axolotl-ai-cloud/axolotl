@@ -173,6 +173,22 @@ class ActivationCache:
             path.unlink()
         directory.rmdir()
 
+    def prune(self, keep: set[int]) -> None:
+        """Drop every buffer whose block index is not in `keep`.
+
+        Kills and resumes strand buffers outside the rolling window (each one is
+        `num_sequences x sequence_len x hidden` on disk — tens of GB at 1.7B and
+        worse with width), and no later block will ever read them.
+        """
+        for directory in self.root.iterdir():
+            name = directory.name
+            if not directory.is_dir() or "-" not in name:
+                continue
+            tag, _, suffix = name.rpartition("-")
+            if tag in (_TEACHER_TAG, _STUDENT_TAG) and suffix.isdigit():
+                if int(suffix) not in keep:
+                    self.drop(tag, int(suffix))
+
 
 def heal_blocks(
     master_dir: str | Path,
@@ -228,6 +244,35 @@ def heal_blocks(
 
     started = time.monotonic()
     _release(student_model)
+
+    # Resume position comes from the weights digests alone: the rolling window
+    # drops old activation buffers by design, so demanding a cache per healed
+    # block silently re-heals everything past the window (and re-seeding then
+    # re-materializes the whole teacher chain — hundreds of GB of scratch).
+    # Only the boundary needs its buffer, verified against the previous
+    # block's recorded student digest.
+    resume_at = 0
+    for index in range(len(blocks)):
+        record = records.get(str(index))
+        if record is None or not _weights_valid(record, output, index):
+            break
+        resume_at = index + 1
+    if resume_at:
+        previous = records[str(resume_at - 1)]
+        if (
+            not cache.exists(_STUDENT_TAG, resume_at)
+            or cache.digest(_STUDENT_TAG, resume_at) != previous.student_sha256
+        ):
+            raise ValueError(
+                f"resume needs the student buffer for block {resume_at} "
+                f"(digest {previous.student_sha256[:12]}…) in {cache.root}; it is "
+                "missing or stale. Re-run with --no-resume to heal from scratch."
+            )
+    cache.prune(keep={resume_at - 1, resume_at, resume_at + 1})
+    for index in range(resume_at):
+        report.blocks_skipped += 1
+        report.records[str(index)] = records[str(index)]
+
     forward_kwargs = _seed_block_zero(
         master,
         cfg,
@@ -235,14 +280,10 @@ def heal_blocks(
         cache,
         tuple(prefix.rstrip(".") for prefix in prefixes.values()),
         device,
+        write_buffers=resume_at == 0,
     )
 
-    for index in range(len(blocks)):
-        record = records.get(str(index))
-        if record is not None and _is_healed(record, output, index, cache):
-            report.blocks_skipped += 1
-            report.records[str(index)] = record
-            continue
+    for index in range(resume_at, len(blocks)):
         record = _heal_one_block(
             index=index,
             master=master,
@@ -448,6 +489,7 @@ def _seed_block_zero(
     cache: ActivationCache,
     block_prefixes: tuple[str, ...],
     device: str | torch.device,
+    write_buffers: bool = True,
 ) -> dict[str, Any]:
     """Capture the corpus's block-0 inputs, which both models share at the start.
 
@@ -467,10 +509,11 @@ def _seed_block_zero(
     inputs, forward_kwargs = collect_layer_inputs(
         model, cfg, plan.num_sequences, plan.sequence_len, plan.dataset
     )
-    if not cache.exists(_TEACHER_TAG, 0):
-        cache.write(_TEACHER_TAG, 0, iter(inputs))
-    if not cache.exists(_STUDENT_TAG, 0):
-        cache.write(_STUDENT_TAG, 0, iter(inputs))
+    if write_buffers:
+        if not cache.exists(_TEACHER_TAG, 0):
+            cache.write(_TEACHER_TAG, 0, iter(inputs))
+        if not cache.exists(_STUDENT_TAG, 0):
+            cache.write(_STUDENT_TAG, 0, iter(inputs))
     _release(model)
     return forward_kwargs
 
@@ -770,22 +813,16 @@ def _release(module: nn.Module | None) -> None:
         torch.cuda.empty_cache()
 
 
-def _is_healed(
-    record: BlockRecord, output: Path, index: int, cache: ActivationCache
-) -> bool:
-    """Whether a recorded block's weights and propagated outputs are both still valid.
+def _weights_valid(record: BlockRecord, output: Path, index: int) -> bool:
+    """Whether a recorded block's healed weights are still the recorded ones.
 
-    Both halves are load-bearing, the same way fit-stream's resume needs both digests:
-    the weights digest proves the block finished training, and the student-activation
-    digest proves the buffer the *next* block will train on is the one this block
-    actually produced.
+    Deliberately weights-only: the rolling window drops old activation buffers,
+    so healed blocks far behind the frontier cannot and need not prove their
+    outputs — only the resume boundary's buffer is checked, by the caller,
+    against the previous record's student digest.
     """
     weights = output / "blocks" / f"block-{index:04d}.safetensors"
-    if not weights.is_file() or _file_sha256(weights) != record.weights_sha256:
-        return False
-    if not cache.exists(_STUDENT_TAG, index + 1):
-        return False
-    return cache.digest(_STUDENT_TAG, index + 1) == record.student_sha256
+    return weights.is_file() and _file_sha256(weights) == record.weights_sha256
 
 
 def _load_records(output: Path) -> dict[str, BlockRecord]:
