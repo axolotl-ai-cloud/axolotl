@@ -138,3 +138,26 @@ class TestStrategyLoaderPlumbing:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestProcessingStrategyCallResize:
+    """The collate-time path must resize via the shared helper."""
+
+    def test_collate_path_resizes_image(self):
+        strategy = ProcessingStrategy(processor=MagicMock(), image_size=(8, 6))
+        example = {
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+            "images": [Image.new("RGB", (20, 10))],
+        }
+        (processed,) = strategy([example])
+        images = [
+            value
+            for message in processed["messages"]
+            for content in message["content"]
+            for value in content.values()
+            if isinstance(value, Image.Image)
+        ]
+        assert images and images[0].size == (8, 6)
