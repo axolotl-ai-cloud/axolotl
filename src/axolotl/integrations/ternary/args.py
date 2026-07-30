@@ -653,7 +653,8 @@ class TernaryConfig(BaseModel):
                 "ternary.embedding_scale: grouped requires "
                 "ternary.embedding_group_size (e.g. 128)"
             )
-        if self.embedding_dtype == "bf16" and self.embedding_scale != "per_row":
+        scale_default = type(self).model_fields["embedding_scale"].default
+        if self.embedding_dtype == "bf16" and self.embedding_scale != scale_default:
             raise ValueError(
                 f"ternary.embedding_scale: {self.embedding_scale} has no effect while "
                 "ternary.embedding_dtype is bf16; set embedding_dtype: ternary"
@@ -739,13 +740,15 @@ class TernaryConfig(BaseModel):
         ),
     )
     embedding_scale: EmbeddingScaleStructure = Field(
-        default="per_row",
+        default="per_tensor",
         description=(
-            "Scale structure for a ternary embedding. 'per_row' gives every token its "
-            "own scale, which is the only structure that keeps rare rows alive: under "
-            "'per_tensor' a scale set by the whole vocabulary rounds low-magnitude "
-            "rows to all-zero, which prunes those tokens rather than quantizing them. "
-            "'grouped' needs ternary.embedding_group_size to divide the hidden size."
+            "Scale structure for a ternary embedding. 'per_tensor' healed best across "
+            "wikitext, a fineweb holdout, and C4 (~2.5x better than 'per_row' at the "
+            "measured budget), even though unhealed it zeroes low-magnitude rows — "
+            "healing recovers per_tensor's pruned rows better than it denoises "
+            "per_row's. 'per_row' keeps every row alive unhealed, which matters for "
+            "PTQ-only use. 'grouped' needs ternary.embedding_group_size to divide "
+            "the hidden size. Measured on one seed at 26M tokens; see the docs table."
         ),
     )
     embedding_group_size: int | None = Field(

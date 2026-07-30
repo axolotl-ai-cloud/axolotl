@@ -104,10 +104,12 @@ def test_a_partial_lambda_interpolates():
 
 
 def test_per_row_keeps_every_row_alive_where_per_tensor_zeroes_them():
-    """The reason `per_row` is the default, made concrete.
+    """The structural difference between the modes, made concrete.
 
     A per-tensor grid is set by the loud rows, so quiet rows fall inside the rounding
-    cell and quantize to all-zero — that is pruning those tokens, not quantizing them.
+    cell and quantize to all-zero — pruning those tokens rather than quantizing them.
+    per_row avoids that unhealed, which is why it matters for PTQ-only use; healed,
+    per_tensor measured ~2.5x better across three domains, so it is the default.
     """
     torch.manual_seed(0)
     source = nn.Embedding(VOCAB, HIDDEN, dtype=torch.bfloat16)
@@ -196,7 +198,7 @@ def test_the_config_warns_loudly_on_enable(caplog):
 
 def test_the_config_rejects_a_structure_that_cannot_apply():
     with pytest.raises(ValueError, match="no effect while"):
-        TernaryConfig(embedding_dtype="bf16", embedding_scale="per_tensor")
+        TernaryConfig(embedding_dtype="bf16", embedding_scale="per_row")
 
 
 def test_the_config_requires_a_group_size_for_grouped():
@@ -411,8 +413,8 @@ def test_the_manifest_entry_carries_the_embedding_grid():
     assert entry.name == "model.embed_tokens"
     assert entry.out_features == VOCAB
     assert entry.in_features == HIDDEN
-    # per-row is exactly one group per row, so no packer needs a new grid name
-    assert (entry.weight_scale, entry.group_size) == ("group", HIDDEN)
+    # the per_tensor default maps onto the absmean grid every packer already knows
+    assert (entry.weight_scale, entry.group_size) == ("absmean", None)
 
 
 def test_the_lambda_schedule_reaches_the_embedding():
