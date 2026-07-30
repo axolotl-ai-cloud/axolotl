@@ -7,7 +7,6 @@ applied INSIDE the quantizer, so the bake still collapses to pure ternary.
 """
 
 import torch
-from torch import nn
 from transformers import LlamaConfig, LlamaForCausalLM
 
 from axolotl.integrations.ternary.args import TernaryConfig
