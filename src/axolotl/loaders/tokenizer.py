@@ -93,9 +93,9 @@ def modify_tokenizer_files(
                 json.dump(config_data, f, indent=2)
 
         # 2. Update tokenizer.json - added_tokens
-        tokenizer_path = os.path.join(tokenizer_dir, "tokenizer.json")
-        if os.path.exists(tokenizer_path):
-            with open(tokenizer_path, "r", encoding="utf-8") as f:
+        tokenizer_json_path = os.path.join(tokenizer_dir, "tokenizer.json")
+        if os.path.exists(tokenizer_json_path):
+            with open(tokenizer_json_path, "r", encoding="utf-8") as f:
                 tokenizer_data = json.load(f)
 
             # Update added_tokens
@@ -119,7 +119,7 @@ def modify_tokenizer_files(
                             break
 
             # Write the updated tokenizer data back
-            with open(tokenizer_path, "w", encoding="utf-8") as f:
+            with open(tokenizer_json_path, "w", encoding="utf-8") as f:
                 json.dump(tokenizer_data, f, indent=2)
 
     barrier()
