@@ -453,7 +453,7 @@ def _export_container(
             "are not loadable as an ordinary checkpoint"
         )
 
-    entries = {f"{entry.name}.weight": entry for entry in manifest.entries}
+    entries = {entry.parameter_key(): entry for entry in manifest.entries}
     remaining = set(entries)
     shards = bake.shard_paths(master_dir)
     bake.copy_aux_files(

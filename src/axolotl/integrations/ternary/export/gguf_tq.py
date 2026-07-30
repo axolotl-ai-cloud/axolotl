@@ -424,7 +424,7 @@ def write_gguf(
 
     config = json.loads((master_dir / "config.json").read_text(encoding="utf-8"))
     state_dict, _ = load_master(master_dir)
-    ternary = {f"{entry.name}.weight": entry for entry in manifest.linear_entries()}
+    ternary = {entry.parameter_key(): entry for entry in manifest.linear_entries()}
     name_map = gguf.get_tensor_name_map(arch, int(config["num_hidden_layers"]))
     assert_text_stack_only(state_dict, name_map, manifest.model_type)
 

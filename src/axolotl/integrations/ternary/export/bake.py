@@ -126,7 +126,7 @@ def bake_state_dict(
     """
     baked = dict(state_dict)
     for entry in manifest.entries:
-        key = f"{entry.name}.weight"
+        key = entry.parameter_key()
         if key not in baked:
             raise KeyError(
                 f"{key} is listed in the swap manifest but not in the state dict"
@@ -329,7 +329,7 @@ def bake_directory(
     if output.resolve() != master_dir.resolve():
         copy_aux_files(master_dir, output, skip={path.name for path in shards})
 
-    grids = {f"{entry.name}.weight": entry for entry in manifest.entries}
+    grids = {entry.parameter_key(): entry for entry in manifest.entries}
     remaining = set(grids)
     for path in shards:
         tensors, metadata = load_shard(path)

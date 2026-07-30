@@ -342,3 +342,27 @@ def test_swap_defaults_int8_forward_to_auto():
 
     _, module = next(iter_ternary_modules(model))
     assert module.int8_forward == "auto"
+
+
+def test_parameter_key_is_kind_aware():
+    """Consumers ask the entry for its tensor key; a fused expert stack IS the
+    parameter, so assuming a `.weight` suffix would silently miss it."""
+    from axolotl.integrations.ternary.swap import SwapEntry
+
+    linear = SwapEntry(
+        name="model.layers.0.mlp.up_proj",
+        in_features=8,
+        out_features=8,
+        family="up_proj",
+        weight_scale="absmean",
+    )
+    experts = SwapEntry(
+        name="model.layers.0.mlp.experts.gate_up_proj",
+        in_features=8,
+        out_features=8,
+        family="experts",
+        weight_scale="absmean",
+        kind="experts",
+    )
+    assert linear.parameter_key() == "model.layers.0.mlp.up_proj.weight"
+    assert experts.parameter_key() == "model.layers.0.mlp.experts.gate_up_proj"

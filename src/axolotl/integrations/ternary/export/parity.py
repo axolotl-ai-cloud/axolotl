@@ -528,7 +528,7 @@ def run_parity_gate(
         return report
 
     for entry in manifest.entries:
-        key = f"{entry.name}.weight"
+        key = entry.parameter_key()
         if key not in master:
             report.failures.append(f"{key} is missing from the master")
             continue
@@ -605,7 +605,7 @@ def _extract_master_bf16(
     tensors = bake.load_tensors(artifact)
     extracted: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
     for entry in manifest.entries:
-        weight = tensors.get(f"{entry.name}.weight")
+        weight = tensors.get(entry.parameter_key())
         if weight is not None:
             extracted[entry.name] = bake.derive_codes_and_scale(
                 weight,
@@ -622,7 +622,7 @@ def _extract_hf_bitnet(
     tensors = bake.load_tensors(artifact)
     extracted: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
     for entry in manifest.entries:
-        packed = tensors.get(f"{entry.name}.weight")
+        packed = tensors.get(entry.parameter_key())
         scale = tensors.get(f"{entry.name}.{hf_bitnet.WEIGHT_SCALE_SUFFIX}")
         if packed is None or scale is None:
             continue
@@ -849,7 +849,7 @@ def _extract_onebitllms(
     tensors = bake.load_tensors(artifact)
     extracted: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
     for entry in manifest.entries:
-        weight = tensors.get(f"{entry.name}.weight")
+        weight = tensors.get(entry.parameter_key())
         if weight is not None:
             extracted[entry.name] = onebitllms.onebitllms_quantize(weight)
     return extracted

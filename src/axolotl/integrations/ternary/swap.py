@@ -112,9 +112,21 @@ class SwapEntry:
     weight_scale: str
     group_size: int | None = None
     codebook: str = "ternary"
-    # "linear" or "embedding"; the packers that have no scheme for a quantized
-    # embedding key off this rather than guessing from the module name
+    # "linear", "embedding" or "experts"; the packers that have no scheme for a
+    # quantized embedding key off this rather than guessing from the module name
     kind: str = "linear"
+
+    def parameter_key(self) -> str:
+        """The state-dict key this entry's quantized tensor lives under.
+
+        Linears and embeddings hang their tensor off `<module>.weight`; a fused
+        expert stack IS the parameter, so its entry name is already the key. The
+        consumers ask here rather than assuming — an assumed `.weight` suffix on
+        an experts entry would silently miss the tensor.
+        """
+        if self.kind == "experts":
+            return self.name
+        return f"{self.name}.weight"
 
 
 @dataclass
