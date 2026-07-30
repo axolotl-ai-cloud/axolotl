@@ -399,10 +399,16 @@ def _install_act_quant(
 
         return pre_hook
 
-    return [
-        _resolve_submodule(model, name).register_forward_pre_hook(make_hook(name))
-        for name in names
-    ]
+    hooks = []
+    for name in names:
+        module = _resolve_submodule(model, name)
+        if module is None:
+            # e.g. an MTP head the packed causal-LM reload does not instantiate;
+            # its tensors are the weight gate's concern, not the forward smoke's
+            LOG.warning(f"parity smoke: {name} absent from the artifact, not hooked")
+            continue
+        hooks.append(module.register_forward_pre_hook(make_hook(name)))
+    return hooks
 
 
 def _resolve_submodule(model, name: str):
@@ -421,7 +427,10 @@ def _resolve_submodule(model, name: str):
     else:
         head, _, tail = name.partition(".")
         rerooted = f"{head}.language_model.{tail}" if tail else name
-    return model.get_submodule(rerooted)
+    try:
+        return model.get_submodule(rerooted)
+    except AttributeError:
+        return None
 
 
 @quant.pinned_fp32_precision()
