@@ -182,7 +182,7 @@ All options live under the `ternary:` key.
 | `keep_fp_modules` | preset | Regexes for Linears that stay full precision. |
 | `strict_enumeration` | `true` | Require every `nn.Linear` to fullmatch exactly one list. `false` downgrades unmatched/double-matched modules to a warning and keeps them FP. |
 | `embedding_dtype` | `bf16` | `ternary` swaps the token embedding matrix for a module that fake-quantizes its rows. Damaging enough below ~1.7B to be unusable, and pre-healing at any scale — see [Ternary embeddings](#embeddings). Distinct from `export.embedding_dtype`, which only picks a GGUF container. |
-| `embedding_scale` | `per_row` | Scale structure for a ternary embedding: `per_row`, `per_tensor` or `grouped`. |
+| `embedding_scale` | `per_tensor` | Scale structure for a ternary embedding: `per_tensor`, `per_row` or `grouped`. |
 | `embedding_group_size` | `null` | Group width along the hidden dimension; required by, and only valid with, `embedding_scale: grouped`, and must divide the hidden size. |
 
 Presets exist for the `llama` and `qwen3` dense architectures, which target
@@ -1077,7 +1077,7 @@ provokes, and the answer deserves numbers rather than a shrug.
 ```yaml
 ternary:
   embedding_dtype: ternary      # default bf16 — the token embedding matrix
-  embedding_scale: per_row      # per_row (default) | per_tensor | grouped
+  embedding_scale: per_tensor   # per_tensor (default) | per_row | grouped
   embedding_group_size: null    # required by, and only valid with, `grouped`
 ```
 
@@ -1105,15 +1105,26 @@ magnitude and are still two to three orders above the 8.99 baseline. Nothing her
 usable artifact — these are *unhealed* PTQ numbers, and their only job is to say how far
 a healing run has to travel.
 
-**Read the ranking with care.** `per_tensor` scores best in that table and is still the
-wrong default, because the ranking is unhealed and the failure modes are not
-interchangeable. A per-tensor scale is set by the loudest rows in the vocabulary, so quiet
-rows — rare tokens, exactly the ones with the least magnitude — fall inside the rounding
-cell and quantize to all-zero. That is not quantizing those tokens, it is pruning them,
-and a healing run cannot recover a row that has no gradient signal left to move. `per_row`
-gives every token its own scale, so every row survives the conversion with something to
-train. Better unhealed loss from a structure that has already deleted part of the
-vocabulary is not the quantity worth optimizing, so `per_row` is the default.
+**The failure modes are not interchangeable, and the obvious hypothesis lost.** A
+per-tensor scale is set by the loudest rows in the vocabulary, so quiet rows — rare
+tokens — quantize to all-zero: pruning, not quantizing. `per_row` gives every token its
+own scale, so every row survives conversion with something to train. That reasoning
+predicts `per_row` heals better. It was tested, and it is wrong: healed head-to-head at
+1.7B (pure-KL, 26M tokens, one seed), `per_tensor` beat `per_row` roughly 2.5× on
+wikitext, a fineweb holdout, and C4 alike:
+
+| healed arm | wikitext | fineweb holdout | C4 val |
+|---|---|---|---|
+| FP 1.7B | 9.4 | 10.2 | 12.8 |
+| `per_tensor` | 204 | 263 | 355 |
+| `per_row` | 513 | 698 | 936 |
+
+Healing recovers `per_tensor`'s pruned rows better than it denoises `per_row`'s noisy
+ones, so `per_tensor` is the default. Keep `per_row` for PTQ-only conversions, where
+the pruning really is permanent. One warning either way: healing gradients only reach
+an embedding row when its token appears in the corpus, so both structures leave the
+rare-token tail far above the FP baseline unless the healing corpus covers the
+vocabulary — training-batch loss will not show this; evaluate off-corpus.
 
 `grouped` splits each row into blocks along the hidden dimension and needs
 `embedding_group_size` to divide that dimension exactly. Hidden sizes are not always
