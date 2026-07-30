@@ -400,9 +400,28 @@ def _install_act_quant(
         return pre_hook
 
     return [
-        model.get_submodule(name).register_forward_pre_hook(make_hook(name))
+        _resolve_submodule(model, name).register_forward_pre_hook(make_hook(name))
         for name in names
     ]
+
+
+def _resolve_submodule(model, name: str):
+    """`get_submodule`, tolerant of multimodal re-rooting.
+
+    A master saved from a multimodal wrapper names modules
+    `model.language_model.layers.*`, but the packed artifact reloads re-rooted
+    as `model.layers.*` — the same dual shape the hf_bitnet packer handles.
+    """
+    try:
+        return model.get_submodule(name)
+    except AttributeError:
+        pass
+    if ".language_model." in name:
+        rerooted = name.replace(".language_model.", ".", 1)
+    else:
+        head, _, tail = name.partition(".")
+        rerooted = f"{head}.language_model.{tail}" if tail else name
+    return model.get_submodule(rerooted)
 
 
 @quant.pinned_fp32_precision()
