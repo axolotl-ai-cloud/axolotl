@@ -1,6 +1,6 @@
 """Tests for the multimodal pre-tokenization cache path."""
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -460,3 +460,89 @@ class TestBufferKwargsHelper:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestMixedSplitEdgeCases:
+    """Edge branches of the mixed media/text split path."""
+
+    def make_strategy(self):
+        strategy = make_strategy(processor=FakeProcessor())
+
+        def fake_single(prompt):
+            row = {"input_ids": [1, 2], "attention_mask": [1, 1], "labels": [1, 2]}
+            if prompt.get("images"):
+                row["pixel_values"] = [[0.5, 0.5]]
+            return row
+
+        strategy._tokenize_single_prompt = fake_single  # pylint: disable=protected-access
+        return strategy
+
+    def test_all_rows_dropped_returns_empty(self):
+        strategy = make_strategy(processor=FakeProcessor())
+        strategy._tokenize_single_prompt = lambda prompt: {}  # pylint: disable=protected-access
+        ds = Dataset.from_dict({"messages": [["a"], ["b"]], "images": [["img"], []]})
+        tds = TokenizedPromptDataset(strategy, ds, batch_size=1)
+        assert len(tds) == 0
+
+    def test_scalar_media_column_splits_via_validity(self):
+        # non-list images column exercises the pc.is_valid presence branch
+        strategy = self.make_strategy()
+        ds = Dataset.from_dict(
+            {"messages": [["a"], ["b"], ["c"]], "images": ["img", None, "img"]}
+        )
+        tds = TokenizedPromptDataset(strategy, ds, batch_size=1)
+        media = [tds[i]["pixel_values"] is not None for i in range(3)]
+        assert media == [True, False, True]
+
+    def test_missing_media_column_skips_split(self):
+        strategy = self.make_strategy()
+        ds = Dataset.from_dict({"messages": [["a"]]})
+        tds = TokenizedPromptDataset.__new__(TokenizedPromptDataset)
+        tds.prompt_tokenizer = strategy
+        assert tds._split_media_indices(ds) is None  # pylint: disable=protected-access
+
+    def test_non_batched_strategy_through_split(self):
+        class SingleRowStrategy(PromptTokenizingStrategy):
+            def tokenize_prompt(self, prompt):
+                row = {"input_ids": [1, 2], "labels": [1, 2]}
+                if prompt.get("images"):
+                    row["pixel_values"] = [[0.5, 0.5]]
+                return row
+
+        strategy = SingleRowStrategy(
+            make_strategy(processor=FakeProcessor()).prompter,
+            FakeTokenizer(),
+            False,
+            512,
+        )
+        strategy.images = "images"
+        ds = Dataset.from_dict({"messages": [["a"], ["b"]], "images": [["img"], []]})
+        tds = TokenizedPromptDataset(strategy, ds)
+        assert tds[0]["pixel_values"] == [[0.5, 0.5]]
+        assert tds[1]["pixel_values"] is None
+
+
+class TestChatDatasetWriterPlumbing:
+    """TokenizedChatDataset must forward writer_batch_size to Dataset.map."""
+
+    def test_writer_batch_size_forwarded(self):
+        from axolotl.core.datasets.chat import TokenizedChatDataset
+
+        ds = Dataset.from_dict({"conversation": [["hi"], ["yo"]]})
+        captured = {}
+        original_map = Dataset.map
+
+        def spy(self, *args, **kwargs):
+            captured.update(kwargs)
+            return original_map(self, *args, **kwargs)
+
+        tokenized = Mock()
+        tokenized.tokenized.return_value = {"input_ids": [1, 2]}
+        with (
+            patch.object(Dataset, "map", spy),
+            patch(
+                "axolotl.core.datasets.chat.ChatFormattedChats", return_value=tokenized
+            ),
+        ):
+            TokenizedChatDataset(ds, model_transform=Mock(), writer_batch_size=2)
+        assert captured["writer_batch_size"] == 2
