@@ -218,11 +218,7 @@ def test_ray_train_func_skips_plugin_registration_when_no_plugins(monkeypatch):
 
 
 def test_ray_train_func_sets_up_tracking_env_vars(monkeypatch):
-    """Regression: tracking env-var setup functions must be called on the Ray
-    Train worker.  The driver sets these in ``load_cfg``, but that runs in a
-    separate process; the HuggingFace callbacks (MLflowCallback, WandbCallback,
-    etc.) read tracking URIs from env vars, not TrainingArguments.
-    """
+    """Tracking env-var setup must run on the worker, not just the driver."""
     cfg_dict = {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
         "micro_batch_size": 1,

@@ -189,10 +189,7 @@ def ray_train_func(kwargs: dict):
     normalize_config_fn(cfg)
     resolve_dtype_fn(cfg)
 
-    # Tracking env vars must be set on the worker process — the HuggingFace
-    # MLflowCallback / WandbCallback read tracking URIs and experiment names
-    # from env vars, not TrainingArguments.  The driver sets these in load_cfg
-    # but that runs in a separate process; Ray Train workers do not inherit them.
+    # Tracking env vars must be set on the worker — HF callbacks read them from os.environ, not TrainingArguments.
     setup_wandb_env_vars_fn: Any = _lazy_attr("setup_wandb_env_vars")
     setup_mlflow_env_vars_fn: Any = _lazy_attr("setup_mlflow_env_vars")
     setup_comet_env_vars_fn: Any = _lazy_attr("setup_comet_env_vars")
