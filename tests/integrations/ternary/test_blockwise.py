@@ -17,6 +17,7 @@ from axolotl.integrations.ternary.args import TernaryConfig
 from axolotl.integrations.ternary.ptq import blockwise
 from axolotl.integrations.ternary.ptq.blockwise import ActivationCache, heal_blocks
 from axolotl.integrations.ternary.ptq.stream import stream_fit
+from axolotl.integrations.ternary.swap import SwapManifest
 from axolotl.utils.dict import DictDefault
 
 # the heal loop is device-agnostic — a tiny model on CPU exercises the same code the
@@ -394,3 +395,69 @@ def test_the_8bit_optimizer_builds_and_heals(tmp_path, tokenizer_dir):
     assert report.blocks_healed == BLOCKS
     for record in report.records.values():
         assert record.final_loss <= record.initial_loss
+
+
+# ------------------------------------------------- the master is read-only to a heal
+
+
+def _fitted(tmp_path, tokenizer_dir, weight_scale):
+    source = _teacher(tmp_path / f"teacher-{weight_scale}", tokenizer_dir)
+    cfg = _cfg(source)
+    cfg["ternary"]["weight_scale"] = weight_scale
+    master = tmp_path / f"master-{weight_scale}"
+    stream_fit(source, master, cfg)
+    # a real heal config points output_dir at the master it is healing
+    cfg["output_dir"] = str(master)
+    return source, master, cfg
+
+
+@pytest.mark.parametrize("weight_scale", ["learnable", "learnable_row", "dual"])
+def test_reading_a_block_does_not_disturb_the_master_sidecar(
+    tmp_path, tokenizer_dir, weight_scale
+):
+    """`convert_model` saves a manifest to `output_dir`, and a fresh one has no scales.
+
+    With `output_dir` pointing at the master — which is how a heal is configured — that
+    save unlinked the fitted sidecar as though it were stale, so the heal destroyed the
+    grid it was about to restore from.
+    """
+    _, master, cfg = _fitted(tmp_path, tokenizer_dir, weight_scale)
+    sidecar = master / "ternary_scales.safetensors"
+    assert sidecar.is_file(), "the fit wrote no sidecar to begin with"
+    before = sidecar.read_bytes()
+
+    blockwise._load_block(master, cfg, "model.layers.0.", DEVICE, student=True)
+
+    assert sidecar.is_file(), "reading a block deleted the master's scale sidecar"
+    assert sidecar.read_bytes() == before
+    assert SwapManifest.load(master).scales
+
+
+@pytest.mark.parametrize(
+    "weight_scale,count", [("learnable", 1), ("learnable_row", 1), ("dual", 2)]
+)
+def test_a_restored_block_carries_the_fitted_scale_not_a_rederived_one(
+    tmp_path, tokenizer_dir, weight_scale, count
+):
+    """Re-deriving runs a statistic over already-quantized values and under-scales.
+
+    absmean over `{-s, 0, +s}` returns `s * (1 - zero_fraction)`, so a restored module
+    that fell back to the refresh path would be a visibly different quantizer.
+    """
+    _, master, cfg = _fitted(tmp_path, tokenizer_dir, weight_scale)
+    manifest = SwapManifest.load(master)
+    name = next(
+        e.name for e in manifest.entries if e.name.startswith("model.layers.0.")
+    )
+    fitted = manifest.scales_for(name)
+    assert fitted is not None and len(fitted) == count
+
+    block = blockwise._load_block(master, cfg, "model.layers.0.", DEVICE, student=True)
+    module = block.get_submodule(name[len("model.layers.0.") :])
+
+    restored = module._scale() if count == 1 else module._dual_scales(module.weight)
+    values = (restored,) if count == 1 else restored
+    for got, want in zip(values, fitted, strict=True):
+        assert torch.allclose(
+            got.reshape(-1).float(), want.reshape(-1).float(), rtol=1e-2
+        ), f"{name}: restored scale is not the fitted one"

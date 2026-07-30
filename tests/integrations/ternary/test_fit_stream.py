@@ -743,13 +743,21 @@ def test_the_pass_writes_a_manifest_a_master_can_be_reloaded_from(checkpoint, tm
     assert (output / "ternary_scales.safetensors").is_file()
 
 
-def test_a_per_tensor_grid_ships_no_scale_sidecar(checkpoint, tmp_path):
+def test_a_single_plane_learnable_grid_ships_its_fitted_scale(checkpoint, tmp_path):
+    """Every scale-carrying grid persists, per-tensor included.
+
+    A single-plane grid looks recoverable from the values, but absmean over a tensor
+    that already holds `{-s, 0, +s}` returns `s * (1 - zero_fraction)` — so a consumer
+    that re-derives instead of reading gets a different quantizer.
+    """
     output = tmp_path / "out"
 
     stream_fit(checkpoint, output, _cfg("learnable"))
 
-    assert not (output / "ternary_scales.safetensors").exists()
-    assert not SwapManifest.load(output).scales
+    assert (output / "ternary_scales.safetensors").is_file()
+    scales = SwapManifest.load(output).scales
+    assert scales
+    assert all(len(pair) == 1 for pair in scales.values())
 
 
 def test_the_output_config_carries_the_quantizer_stamp(checkpoint, tmp_path):

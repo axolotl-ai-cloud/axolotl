@@ -639,8 +639,19 @@ def _meta_model(directory: Path, cfg: DictDefault, swapped: bool) -> nn.Module:
     with torch.device("meta"):
         model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
     if swapped:
-        swap.convert_model(model, cfg)
+        # never with the caller's output_dir: `convert_model` saves a manifest there,
+        # and a freshly built one has no scales — which makes `_save_scales` unlink the
+        # fitted sidecar as stale. A heal's output_dir is usually the master itself, so
+        # reading a block would delete the grid the block is about to be restored with.
+        swap.convert_model(model, _without_output_dir(cfg))
     return model
+
+
+def _without_output_dir(cfg: DictDefault) -> DictDefault:
+    """Return `cfg` with `output_dir` cleared, so a read path cannot write a manifest."""
+    scoped = DictDefault(dict(cfg))
+    scoped["output_dir"] = None
+    return scoped
 
 
 def _materialize(

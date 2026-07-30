@@ -55,6 +55,7 @@ from axolotl.utils.logging import get_logger
 
 from .. import aux_modules, quant, swap
 from ..args import (
+    LEARNABLE_SCALE_MODES,
     NON_PER_TENSOR_SCALE_MODES,
     UNIMPLEMENTED_CODEBOOKS,
     TernaryConfig,
@@ -570,8 +571,8 @@ def _fit_entry(
 
 def _fit_matrix(
     tensor: torch.Tensor, ternary_cfg: TernaryConfig, device: str | torch.device
-) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
-    """Return one matrix's reconstruction and the scale pair a two-plane grid persists."""
+) -> tuple[torch.Tensor, tuple[torch.Tensor, ...] | None]:
+    """Return one matrix's reconstruction and the scales its grid persists."""
     if tensor.ndim != 2:
         raise ValueError(
             f"fit_tensor expects a 2-D weight or a 3-D fused expert stack, got shape "
@@ -606,18 +607,27 @@ def _fit_binary(
 
 def _persisted_scales(
     scale: torch.Tensor, ternary_cfg: TernaryConfig
-) -> tuple[torch.Tensor, torch.Tensor] | None:
-    """Return the `(first, second)` pair a two-plane master ships beside its values.
+) -> tuple[torch.Tensor, ...] | None:
+    """Return the scales a fitted master ships beside its values, in `SCALE_ATTRS` order.
 
-    The ordering is the one the modules record: `(s_lo, s_hi)` for `dual`, `(s1, s2)`
-    for the free sum, whose larger scale is the fit's second column. Both columns are
-    cloned — two views of one `(rows, 2)` tensor share storage, which the sidecar
+    Every scale-carrying grid persists, not just the two-plane ones. A single-plane
+    grid looks recoverable from the values — the latent *is* the reconstruction — but
+    re-deriving it runs a statistic over a tensor that is already quantized, and
+    absmean over `{-s, 0, +s}` returns `s * (1 - zero_fraction)`. At a 45% zero
+    fraction that is 0.55x the fitted scale, which is a different quantizer wearing
+    the master's name.
+
+    The two-plane ordering is the one the modules record: `(s_lo, s_hi)` for `dual`,
+    `(s1, s2)` for the free sum, whose larger scale is the fit's second column. Columns
+    are cloned — two views of one `(rows, 2)` tensor share storage, which the sidecar
     refuses to write.
     """
     if ternary_cfg.weight_scale == "dual":
         return scale[:, :1].clone(), scale[:, 1:].clone()
     if ternary_cfg.weight_scale == "trit_planes":
         return scale[:, 1:].clone(), scale[:, :1].clone()
+    if ternary_cfg.weight_scale in LEARNABLE_SCALE_MODES:
+        return (scale.detach().clone(),)
     return None
 
 
