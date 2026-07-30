@@ -227,12 +227,21 @@ def test_biased_target_is_rejected():
     assert not list(iter_ternary_modules(model))
 
 
-def test_fused_expert_stacks_are_rejected():
+def test_fused_expert_stacks_are_parametrized():
+    from axolotl.integrations.ternary.modules import TernaryExperts
+
     model = _tiny_llama()
     model.model.layers[0].mlp.experts = _FusedExperts()
 
-    with pytest.raises(NotImplementedError, match="fused MoE expert stacks"):
-        convert_model(model, _cfg())
+    manifest = convert_model(model, _cfg())
+
+    experts = [e for e in manifest.entries if e.kind == "experts"]
+    assert len(experts) == 2  # gate_up_proj and down_proj stacks
+    assert all(e.parameter_key() == e.name for e in experts)
+    quantizers = [
+        m for _, m in model.named_modules() if isinstance(m, TernaryExperts)
+    ]
+    assert len(quantizers) == 2
 
 
 def test_double_conversion_is_rejected():

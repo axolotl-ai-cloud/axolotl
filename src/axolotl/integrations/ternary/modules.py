@@ -1217,14 +1217,48 @@ def _divisors(value: int, limit: int = 8) -> str:
 
 
 class TernaryExperts(nn.Module):
-    """Ternary replacement for fused 3D MoE expert stacks (planned, M5)."""
+    """Fake-quant parametrization over a fused 3-D MoE expert stack.
 
-    def __init__(self, *args, **kwargs) -> None:
-        """Always raises; fused expert tensors are detected and rejected by the swap."""
+    Registered with `torch.nn.utils.parametrize` on the module holding the
+    stack, so the routing/grouped-GEMM forward is untouched — every read of the
+    parameter goes through the quantizer. One learnable log-scale per expert
+    slice (the same per-slice grid fit-stream solves). Baking removes the
+    parametrization with `leave_parametrized=True` at `lambda_ = 1`, which
+    writes exactly `codes * s16` back under the ORIGINAL state-dict key — the
+    master contract the manifest's `kind="experts"` entry names.
+    """
+
+    def __init__(self, stack: torch.Tensor) -> None:
+        """Build per-expert scales from the stack's per-slice absmean."""
         super().__init__()
-        raise NotImplementedError(
-            "ternary conversion of fused MoE expert stacks is not supported yet"
-        )
+        if stack.ndim != 3:
+            raise ValueError(f"expected a fused (E, d1, d2) stack, got {stack.shape}")
+        self.lambda_ = 1.0
+        with torch.no_grad():
+            flat = stack.detach().float().abs().reshape(stack.shape[0], -1)
+            nonzero = (
+                (stack.detach().reshape(stack.shape[0], -1) != 0)
+                .float()
+                .mean(dim=1)
+                .clamp_min(1e-6)
+            )
+            absmean = (flat.mean(dim=1) / nonzero).clamp_min(1e-12)
+        self.scale = nn.Parameter(absmean.log().reshape(-1, 1, 1).to(torch.float32))
+
+    def set_lambda(self, value: float) -> None:
+        """Set the quantization strength for subsequent forwards."""
+        self.lambda_ = float(min(max(value, 0.0), 1.0))
+
+    def forward(self, stack: torch.Tensor) -> torch.Tensor:
+        """`(1-λ)·w + λ·codes·s16`, straight-through, one scale per expert."""
+        if self.lambda_ <= 0.0:
+            return stack
+        return quant.fake_quant_weight_ste(stack, self.lambda_, None, self.scale.exp())
+
+    def baked_stack(self, stack: torch.Tensor) -> torch.Tensor:
+        """The exact grid values for `stack` under the current scales."""
+        with torch.no_grad():
+            return quant.fake_quant_weight(stack, 1.0, None, self.scale.exp())
 
 
 def iter_ternary_modules(model: nn.Module) -> Iterator[tuple[str, TernaryLinear]]:
@@ -1236,10 +1270,10 @@ def iter_ternary_modules(model: nn.Module) -> Iterator[tuple[str, TernaryLinear]
 
 def iter_quantized_modules(
     model: nn.Module,
-) -> Iterator[tuple[str, "TernaryLinear | TernaryEmbedding"]]:
+) -> Iterator[tuple[str, "TernaryLinear | TernaryEmbedding | TernaryExperts"]]:
     """Yield every module carrying a λ, which the embedding does as much as a Linear."""
     for name, module in model.named_modules():
-        if isinstance(module, (TernaryLinear, TernaryEmbedding)):
+        if isinstance(module, (TernaryLinear, TernaryEmbedding, TernaryExperts)):
             yield name, module
 
 

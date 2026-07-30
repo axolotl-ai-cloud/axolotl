@@ -870,6 +870,9 @@ def _single_plane_scale_grad(ctx, grad_output: torch.Tensor) -> torch.Tensor | N
     grad = grad_output.to(torch.float32) * codes.to(torch.float32) * ctx.lambda_
     if scale.numel() == 1:
         reduced = grad.sum()
+    elif scale.ndim == 3 and scale.shape[-2:] == (1, 1):
+        # one scale per expert slice of a fused (E, d1, d2) stack
+        reduced = grad.sum(dim=(-2, -1), keepdim=True)
     else:
         reduced = _group_view(grad, grad.shape[-1] // scale.shape[-1]).sum(-1)
     return reduced.reshape(scale.shape).to(scale.dtype)

@@ -325,12 +325,7 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
     keep_res = [re.compile(pattern) for pattern in keeps]
     protected_res = [re.compile(pattern) for pattern in ALWAYS_KEEP_FP]
 
-    fused_experts = _fused_expert_stacks(model)
-    if fused_experts:
-        raise NotImplementedError(
-            "ternary conversion of fused MoE expert stacks is not supported yet; "
-            f"3D expert parameters live in {_summarize(fused_experts)}"
-        )
+    expert_entries = _convert_expert_stacks(model, ternary_cfg)
 
     to_swap: list[tuple[str, nn.Linear]] = []
     kept_fp: list[str] = []
@@ -439,6 +434,7 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
         )
 
     embedding_names, tied = _convert_embeddings(model, ternary_cfg, entries)
+    entries.extend(expert_entries)
 
     manifest = SwapManifest(
         model_type=model_type,
@@ -770,6 +766,50 @@ def _warn_targeted_aux_modules(names: list[str]) -> None:
 
 def _grid(weight_scale: str, group_size: int | None) -> str:
     return weight_scale if group_size is None else f"{weight_scale}/{group_size}"
+
+
+def _convert_expert_stacks(model, ternary_cfg) -> list[SwapEntry]:
+    """Parametrize every fused 3-D expert stack with a TernaryExperts quantizer.
+
+    The stack stays where the architecture put it; every read goes through the
+    quantizer, and the manifest names the RAW parameter (kind="experts",
+    `parameter_key()` returns it verbatim) so bake and the packers can find the
+    tensor a fused stack IS rather than hangs a `.weight` off.
+    """
+    from torch.nn.utils import parametrize
+
+    from .modules import TernaryExperts
+
+    if ternary_cfg.codebook != "ternary":
+        for name in _fused_expert_stacks(model):
+            raise NotImplementedError(
+                f"fused expert stacks support codebook: ternary only ({name})"
+            )
+    entries: list[SwapEntry] = []
+    for name, module in list(model.named_modules()):
+        if "expert" not in f"{name}.{type(module).__name__}".lower():
+            continue
+        for attr, param in list(module.named_parameters(recurse=False)):
+            if param.ndim != 3:
+                continue
+            quantizer = TernaryExperts(param)
+            parametrize.register_parametrization(module, attr, quantizer)
+            entries.append(
+                SwapEntry(
+                    name=f"{name}.{attr}",
+                    in_features=int(param.shape[-1]),
+                    out_features=int(param.shape[-2]),
+                    family="experts",
+                    weight_scale="learnable",
+                    codebook=ternary_cfg.codebook,
+                    kind="experts",
+                )
+            )
+            LOG.info(
+                f"ternary: parametrized expert stack {name}.{attr} "
+                f"{tuple(param.shape)} with per-expert scales"
+            )
+    return entries
 
 
 def _fused_expert_stacks(model: nn.Module) -> list[str]:
