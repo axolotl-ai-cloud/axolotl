@@ -106,6 +106,10 @@ def test_ray_train_func_validates_with_worker_capabilities(monkeypatch):
     monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.Accelerator", accelerator_mock)
+    monkeypatch.setattr("axolotl.cli.train.setup_wandb_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_mlflow_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_comet_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_trackio_env_vars", lambda *_: None)
 
     with patch("axolotl.cli.train.gpu_capabilities") as mock_caps:
         mock_caps.return_value = (
@@ -161,6 +165,10 @@ def test_ray_train_func_registers_plugins_before_validate_config(monkeypatch):
     monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.setup_wandb_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_mlflow_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_comet_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_trackio_env_vars", lambda *_: None)
 
     ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
 
@@ -198,8 +206,55 @@ def test_ray_train_func_skips_plugin_registration_when_no_plugins(monkeypatch):
     monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.setup_wandb_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_mlflow_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_comet_env_vars", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.setup_trackio_env_vars", lambda *_: None)
 
     ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
 
     prepare_plugins_mock.assert_not_called()
     plugin_set_cfg_mock.assert_not_called()
+
+
+def test_ray_train_func_sets_up_tracking_env_vars(monkeypatch):
+    """Regression: tracking env-var setup functions must be called on the Ray
+    Train worker.  The driver sets these in ``load_cfg``, but that runs in a
+    separate process; the HuggingFace callbacks (MLflowCallback, WandbCallback,
+    etc.) read tracking URIs from env vars, not TrainingArguments.
+    """
+    cfg_dict = {
+        "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "micro_batch_size": 1,
+        "gradient_accumulation_steps": 1,
+    }
+
+    parent = MagicMock()
+    parent.validate_config.side_effect = lambda cfg, **_: cfg
+
+    monkeypatch.setattr("axolotl.cli.train.validate_config", parent.validate_config)
+    monkeypatch.setattr("axolotl.cli.train.gpu_capabilities", lambda: ({}, {}))
+    monkeypatch.setattr("axolotl.cli.train.do_train", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.prepare_optim_env", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+    monkeypatch.setattr(
+        "axolotl.cli.train.setup_wandb_env_vars", parent.setup_wandb_env_vars
+    )
+    monkeypatch.setattr(
+        "axolotl.cli.train.setup_mlflow_env_vars", parent.setup_mlflow_env_vars
+    )
+    monkeypatch.setattr(
+        "axolotl.cli.train.setup_comet_env_vars", parent.setup_comet_env_vars
+    )
+    monkeypatch.setattr(
+        "axolotl.cli.train.setup_trackio_env_vars", parent.setup_trackio_env_vars
+    )
+
+    ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
+
+    parent.setup_wandb_env_vars.assert_called_once()
+    parent.setup_mlflow_env_vars.assert_called_once()
+    parent.setup_comet_env_vars.assert_called_once()
+    parent.setup_trackio_env_vars.assert_called_once()

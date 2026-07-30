@@ -23,6 +23,10 @@ _LAZY_IMPORTS = {
     "prepare_optim_env": "axolotl.utils.trainer",
     "prepare_plugins": "axolotl.cli.config",
     "resolve_dtype": "axolotl.utils.config",
+    "setup_comet_env_vars": "axolotl.utils.comet_",
+    "setup_mlflow_env_vars": "axolotl.utils.mlflow_",
+    "setup_trackio_env_vars": "axolotl.utils.trackio_",
+    "setup_wandb_env_vars": "axolotl.utils.wandb_",
     "train": "axolotl.train",
     "validate_config": "axolotl.utils.config",
 }
@@ -184,6 +188,19 @@ def ray_train_func(kwargs: dict):
     prepare_optim_env_fn(cfg)
     normalize_config_fn(cfg)
     resolve_dtype_fn(cfg)
+
+    # Tracking env vars must be set on the worker process — the HuggingFace
+    # MLflowCallback / WandbCallback read tracking URIs and experiment names
+    # from env vars, not TrainingArguments.  The driver sets these in load_cfg
+    # but that runs in a separate process; Ray Train workers do not inherit them.
+    setup_wandb_env_vars_fn: Any = _lazy_attr("setup_wandb_env_vars")
+    setup_mlflow_env_vars_fn: Any = _lazy_attr("setup_mlflow_env_vars")
+    setup_comet_env_vars_fn: Any = _lazy_attr("setup_comet_env_vars")
+    setup_trackio_env_vars_fn: Any = _lazy_attr("setup_trackio_env_vars")
+    setup_wandb_env_vars_fn(cfg)
+    setup_mlflow_env_vars_fn(cfg)
+    setup_comet_env_vars_fn(cfg)
+    setup_trackio_env_vars_fn(cfg)
 
     # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
     if cfg.deepspeed and hasattr(cfg.deepspeed, "to_dict"):
