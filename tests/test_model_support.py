@@ -5,6 +5,8 @@ from transformers import AutoModelForImageTextToText
 
 from axolotl.model_support import (
     Experimental,
+    ModelHookContext,
+    ModelHookPhase,
     ModelSupport,
     Unsupported,
     check_capability,
@@ -12,8 +14,12 @@ from axolotl.model_support import (
     get_model_support_for_processor,
     register_model_support,
     registry as model_support_registry,
+    resolve_model_support,
+    run_model_support_hooks,
 )
 from axolotl.utils.dict import DictDefault
+
+from tests.conftest import capture_axolotl_warnings
 
 
 class TestRegistry:
@@ -69,7 +75,8 @@ class TestCheckCapability:
             )
 
     def test_experimental_warns_and_does_not_raise(self, caplog):
-        with caplog.at_level("WARNING", logger="axolotl"):
+        # an earlier configure_logging() sets propagate=False, blinding caplog
+        with capture_axolotl_warnings(caplog):
             check_capability(
                 self._Support(), "sample_packing", "cap_test_arch", feature="packing"
             )
@@ -82,6 +89,16 @@ class TestCheckCapability:
 
 class TestKimiLinearSupport:
     """Built-in Kimi-Linear descriptor: cfg-based matching for remote-code patching."""
+
+    @pytest.fixture
+    def restore_dynamic_module_loader(self):
+        import transformers.dynamic_module_utils as dynamic_module_utils
+
+        original = dynamic_module_utils.get_class_in_module
+        try:
+            yield dynamic_module_utils
+        finally:
+            dynamic_module_utils.get_class_in_module = original
 
     def test_matches_cfg_by_model_name(self):
         from axolotl.model_support.registry import get_model_support_for_cfg
@@ -97,20 +114,49 @@ class TestKimiLinearSupport:
         cfg = DictDefault(base_model_config="meta-llama/Llama-3.1-8B-Instruct")
         assert get_model_support_for_cfg(cfg) is None
 
-    def test_pre_config_load_patches_dynamic_module_loading(self):
-        from transformers.dynamic_module_utils import get_class_in_module
+    def test_resolves_vanilla_family_and_declared_hooks(self):
+        resolved = resolve_model_support(get_model_support("kimi_linear"))
 
+        assert resolved.family == "vanilla_causal_lm"
+        assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_CONFIG_LOAD)
+        assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_TOKENIZER_LOAD)
+        assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_MODEL_BUILD)
+
+    def test_dynamic_module_redirect_requires_exact_module_stem(self):
+        from axolotl.model_support.kimi_linear.patch_kimi_linear import (
+            _kimi_module_entry,
+        )
+
+        assert _kimi_module_entry("transformers_modules/x/repo/modeling_kimi.py")
+        assert _kimi_module_entry("transformers_modules.x.repo.modeling_kimi")
+        assert _kimi_module_entry("tokenization_kimi.py")
+        assert _kimi_module_entry("transformers_modules/x/modeling_kimi_vl.py") is None
+        assert _kimi_module_entry("modeling_kimi_vl") is None
+
+    def test_pre_config_load_patches_dynamic_module_loading(
+        self, restore_dynamic_module_loader
+    ):
         cfg = DictDefault(base_model_config="moonshotai/Kimi-Linear-48B-A3B-Instruct")
-        get_model_support("kimi_linear").pre_config_load(cfg)
-
-        import transformers.dynamic_module_utils
+        support = get_model_support("kimi_linear")
+        context = ModelHookContext(cfg=cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            context,
+        )
+        patched = restore_dynamic_module_loader.get_class_in_module
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            context,
+        )
 
         assert getattr(
-            transformers.dynamic_module_utils.get_class_in_module,
+            restore_dynamic_module_loader.get_class_in_module,
             "_axolotl_patched",
             False,
         )
-        del get_class_in_module  # silence unused; imported pre-patch for clarity
+        assert restore_dynamic_module_loader.get_class_in_module is patched
 
 
 class TestPaddleOCRVLSupport:
@@ -119,7 +165,15 @@ class TestPaddleOCRVLSupport:
     def test_registered_and_multimodal(self):
         support = get_model_support("paddleocr_vl")
         assert support is not None
+        resolved = resolve_model_support(support)
+        assert resolved.is_multimodal is True
+        assert resolved.family == "image_text_to_text"
         assert support.is_multimodal is True
+        assert set(support.capabilities) == {
+            "cut_cross_entropy",
+            "liger",
+            "lora_kernels",
+        }
 
     def test_auto_model_cls(self):
         support = get_model_support("paddleocr_vl")
@@ -183,7 +237,13 @@ class TestPaddleOCRVLSupport:
                 "load_in_4bit": True,
             }
         )
-        cfg = validate_config(cfg)
+        # the auto-enable validator lives on AxolotlConfigWCapabilities; a bare
+        # validate_config(cfg) never runs it
+        cfg = validate_config(
+            cfg,
+            capabilities={"n_gpu": 1, "bf16": True, "compute_capability": None},
+            env_capabilities={"torch_version": "2.9.0"},
+        )
         assert not any(
             cfg.get(k)
             for k in (
@@ -193,6 +253,52 @@ class TestPaddleOCRVLSupport:
                 "lora_embedding_kernel",
             )
         )
+
+    def test_lora_kernels_validator_sees_profile_capabilities_of_hybrid_descriptor(
+        self,
+    ):
+        """A legacy class-level ``capabilities`` shadows the profile projection."""
+        from axolotl.model_support import VANILLA_CAUSAL_LM, ModelProfile
+        from axolotl.utils.config import validate_config
+
+        class HybridSupport(ModelSupport):
+            model_types = ("hybrid_caps_arch",)
+            profile = ModelProfile(
+                family=VANILLA_CAUSAL_LM,
+                capabilities={"lora_kernels": Unsupported("No fused-QKV rewrite.")},
+            )
+            capabilities = {"cut_cross_entropy": Unsupported()}
+
+        cfg = DictDefault(
+            {
+                "base_model": "fake/hybrid-caps-model",
+                "model_config_type": "hybrid_caps_arch",
+                "learning_rate": 0.000001,
+                "datasets": [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "adapter": "qlora",
+                "load_in_4bit": True,
+            }
+        )
+        try:
+            register_model_support(HybridSupport)
+            cfg = validate_config(
+                cfg,
+                capabilities={"n_gpu": 1, "bf16": True, "compute_capability": None},
+                env_capabilities={"torch_version": "2.9.0"},
+            )
+            assert not any(
+                cfg.get(k)
+                for k in (
+                    "lora_mlp_kernel",
+                    "lora_qkv_kernel",
+                    "lora_o_kernel",
+                    "lora_embedding_kernel",
+                )
+            )
+        finally:
+            model_support_registry._REGISTRY.pop("hybrid_caps_arch", None)
 
     def test_normalize_config_disables_lora_kernels(self):
         """model_type is usually unknown when the auto-enable validator runs;
