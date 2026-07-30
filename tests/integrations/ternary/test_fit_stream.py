@@ -1103,3 +1103,23 @@ def test_the_cli_requires_the_plugin(checkpoint, tmp_path, stub_load_cfg):
 
     assert result.exit_code != 0
     assert "does not enable the ternary plugin" in result.output
+
+
+def test_a_statistic_grid_ships_no_scale_sidecar(checkpoint, tmp_path):
+    """A manifest with nothing recorded writes no sidecar — and clears a stale one.
+
+    absmean re-derives its scale from the latent by definition; a persisted copy
+    could only drift. stream_fit refuses statistic inits outright, so the
+    invariant lives at the manifest layer every producer shares.
+    """
+    output = tmp_path / "out"
+    stream_fit(checkpoint, output, _cfg("learnable"))
+    sidecar = output / "ternary_scales.safetensors"
+    assert sidecar.is_file()
+
+    manifest = SwapManifest.load(output)
+    manifest.scales = {}
+    manifest.save(output)
+
+    assert not sidecar.is_file()
+    assert not SwapManifest.load(output).scales

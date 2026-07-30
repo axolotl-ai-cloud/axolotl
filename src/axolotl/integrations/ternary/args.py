@@ -22,7 +22,7 @@ LOG = get_logger(__name__)
 WeightScaleMode = Literal[
     "absmean", "group", "learnable", "learnable_row", "dual", "trit_planes"
 ]
-Codebook = Literal["ternary", "binary"]
+Codebook = Literal["ternary", "binary", "iq1s"]
 LambdaSchedule = Literal["linear", "sigmoid", "none"]
 InitMode = Literal["absmean", "ternary_fit", "ternary_fit_calibrated", "svid"]
 DistillMode = Literal["inprocess"]
@@ -668,6 +668,18 @@ class TernaryConfig(BaseModel):
                 "it is not a drop-in size lever. With tied weights the output head is "
                 "the same tensor and becomes ternary with it"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_iq1s(self) -> "TernaryConfig":
+        if self.codebook == "iq1s":
+            if self.weight_scale not in ("absmean", "learnable"):
+                raise ValueError(
+                    "ternary.codebook: iq1s uses one per-tensor scale over grid "
+                    "patterns; set weight_scale: absmean or learnable"
+                )
+            if self.group_size is not None:
+                raise ValueError("ternary.codebook: iq1s does not take group_size")
         return self
 
     @model_validator(mode="after")

@@ -15,7 +15,7 @@ from transformers import PreTrainedModel
 
 from axolotl.utils.logging import get_logger
 
-from . import quant
+from . import iq1s, quant
 from .args import (
     LEARNABLE_SCALE_MODES,
     TWO_PLANE_SCALE_MODES,
@@ -415,6 +415,11 @@ class TernaryLinear(nn.Module):
             elif self.weight_scale == "dual":
                 low, high = self._dual_scales(weight)
                 codes = quant.dual_state_planes(quant.dual_codes(weight, low, high))
+            elif self.codebook == "iq1s":
+                scale = self._snapshot_scale()
+                if scale is None:
+                    scale = self._statistic_scale(weight)
+                codes = iq1s.project_codes(weight, scale)
             else:
                 scale = self._snapshot_scale()
                 if scale is None:
@@ -710,6 +715,11 @@ class TernaryLinear(nn.Module):
         if self.weight_scale == "dual":
             low, high = self._dual_scales(weight, gathered=gathered)
             return quant.fake_quant_weight_dual(weight, 1.0, low, high)
+        if self.codebook == "iq1s":
+            scale = self._scale(gathered=gathered)
+            if scale is None:
+                scale = self._statistic_scale(weight)
+            return iq1s.fake_quant_weight_iq1s(weight, 1.0, scale)
         fake_quant = (
             quant.fake_quant_weight_binary
             if self.codebook == "binary"
@@ -876,6 +886,11 @@ class TernaryLinear(nn.Module):
 
     def _quant_weight(self, lambda_: float) -> torch.Tensor:
         latent = self._healing_latent()
+        if self.codebook == "iq1s":
+            scale = self._scale()
+            if scale is None:
+                scale = self._statistic_scale(as_local(latent.detach()))
+            return iq1s.fake_quant_weight_iq1s_ste(latent, lambda_, scale)
         multi_state = self._multi_state_ops(latent, lambda_)
         # `trit_planes` is kept even though `torch.compile` runs its forward ~10%
         # faster than this kernel on the benchmark shapes: compile is not the
