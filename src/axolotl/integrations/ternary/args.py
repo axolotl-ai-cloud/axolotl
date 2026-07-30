@@ -300,6 +300,20 @@ class TernaryDistillConfig(BaseModel):
         return self
 
 
+class TernaryLowRankDeltaConfig(BaseModel):
+    """Trainable low-rank latent correction, applied inside the quantizer."""
+
+    r: int = Field(default=16, gt=0, description="Rank of the A @ B latent correction.")
+    alpha: float = Field(
+        default=16.0,
+        gt=0,
+        description=(
+            "Scaling numerator: the delta enters as (alpha / r) * A @ B. The bake "
+            "collapses the delta into the codes, so deployment stays pure ternary."
+        ),
+    )
+
+
 class TernaryBlockwiseConfig(BaseModel):
     """Sequential per-block local distillation, for models too large to heal whole."""
 
@@ -692,6 +706,25 @@ class TernaryConfig(BaseModel):
             )
         return self
 
+    heal_codes: Literal["trainable", "frozen"] = Field(
+        default="trainable",
+        description=(
+            "'frozen' stops gradient to every ternary latent weight: healing flows "
+            "through the scale grid, norms, and any low-rank delta instead. The "
+            "memory-light end-to-end strategy for models whose full latents plus "
+            "optimizer state do not fit — codes can still shift where a trainable "
+            "scale moves a rounding boundary, or through a delta."
+        ),
+    )
+    low_rank_delta: TernaryLowRankDeltaConfig | None = Field(
+        default=None,
+        description=(
+            "Attach fp low-rank corrections A @ B to each ternary Linear's latent, "
+            "inside the fake-quant, so codes can flip through the delta even with "
+            "frozen latents. Folded into the latent at bake — deployment format "
+            "unchanged. Linears only; embeddings heal through their own scales."
+        ),
+    )
     embedding_dtype: LatentEmbeddingDtype = Field(
         default="bf16",
         description=(

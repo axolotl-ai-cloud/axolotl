@@ -256,6 +256,10 @@ class TernaryLinear(nn.Module):
         self.fused = fused
         self.int8_forward = int8_forward
         self.baked = False
+        self.heal_frozen = False
+        self.delta_scaling = 0.0
+        self.register_parameter("delta_a", None)
+        self.register_parameter("delta_b", None)
         self.share_act_quant = False
         self.lambda_ = 1.0
         self._int8_warned = False
@@ -376,6 +380,10 @@ class TernaryLinear(nn.Module):
         version — those would otherwise keep a fit-initialized module "baked" for a
         whole run, so it would never bake at save time.
         """
+        if self.heal_frozen or self._has_delta():
+            # frozen latents heal through the scale grid, and a live delta shifts
+            # the codes — both need the quantizer in the loop every forward
+            return False
         return self.baked and self.weight._version == self._baked_version
 
     def baked_weight(self) -> torch.Tensor:
@@ -400,7 +408,7 @@ class TernaryLinear(nn.Module):
         snapshots two ternary planes per weight (see `quant.dual_state_planes`).
         """
         with torch.no_grad():
-            weight = as_local(self.weight.detach())
+            weight = as_local(self._healing_latent().detach())
             if self.weight_scale == "trit_planes":
                 first, second = self._trit_plane_scales(weight)
                 codes = quant.trit_plane_codes(weight, first, second)
@@ -464,6 +472,8 @@ class TernaryLinear(nn.Module):
                 would be saved as an ordinary FP checkpoint labelled as a master.
         """
         self._record_final_lambda(model, name)
+        self.fold_delta()
+        self.heal_frozen = False
         # re-derive from the values rather than trusting the flag: this runs once per
         # module, and a stale flag here writes the trained latents into the master
         if not self._detect_baked():
@@ -566,7 +576,9 @@ class TernaryLinear(nn.Module):
     def _int8_linear(self, x: torch.Tensor) -> torch.Tensor | None:
         # the W2A8 epilogue rescales by one scalar per tensor, over ternary codes
         supported = (
-            self.weight_scale in INT8_FORWARD_SCALE_MODES and self.codebook == "ternary"
+            self.weight_scale in INT8_FORWARD_SCALE_MODES
+            and self.codebook == "ternary"
+            and not self._has_delta()
         )
         ops = _int8_ops() if supported else None
         out = None if ops is None else ops.int8_linear_forward(self, x)
@@ -822,26 +834,67 @@ class TernaryLinear(nn.Module):
         if not any(f"{prefix}{attr}" in state_dict for attr in SCALE_ATTRS):
             self.refresh_scale_from_weight()
 
+    def _has_delta(self) -> bool:
+        return self.delta_a is not None
+
+    def _healing_latent(self) -> torch.Tensor:
+        """The latent the quantizer sees: the weight, plus any low-rank delta.
+
+        The delta lives INSIDE the quantization so the bake collapses it — the
+        deployed format stays pure ternary. Kept in the weight's dtype so a
+        zero delta is a bitwise no-op.
+        """
+        if self.delta_a is None:
+            return self.weight
+        delta = (self.delta_a @ self.delta_b) * self.delta_scaling
+        return self.weight + delta.to(self.weight.dtype)
+
+    def enable_low_rank_delta(self, r: int, alpha: float) -> None:
+        """Attach trainable low-rank latent correction A @ B (B zero-init: exact no-op)."""
+        weight = self.weight
+        self.delta_a = nn.Parameter(
+            torch.randn(weight.shape[0], r, device=weight.device, dtype=weight.dtype)
+            * (1.0 / max(r, 1)) ** 0.5
+        )
+        self.delta_b = nn.Parameter(
+            torch.zeros(r, weight.shape[1], device=weight.device, dtype=weight.dtype)
+        )
+        self.delta_scaling = alpha / r
+
+    def fold_delta(self) -> None:
+        """Collapse the delta into the latent and drop the parameters."""
+        if self.delta_a is None:
+            return
+        with torch.no_grad():
+            delta = (self.delta_a @ self.delta_b) * self.delta_scaling
+            self.weight.add_(delta.to(self.weight.dtype))
+        self._parameters.pop("delta_a", None)
+        self._parameters.pop("delta_b", None)
+        self.register_parameter("delta_a", None)
+        self.register_parameter("delta_b", None)
+        self.delta_scaling = 0.0
+
     def _quant_weight(self, lambda_: float) -> torch.Tensor:
-        multi_state = self._multi_state_ops(self.weight, lambda_)
+        latent = self._healing_latent()
+        multi_state = self._multi_state_ops(latent, lambda_)
         # `trit_planes` is kept even though `torch.compile` runs its forward ~10%
         # faster than this kernel on the benchmark shapes: compile is not the
         # shipping baseline (the plugin forces eager for swapped modules and
         # `torch_compile` is untested against the fake-quant forward), and against
         # that baseline the kernel is ~91x. Revisit if compile is ever wired here.
         if self.weight_scale == "trit_planes":
-            first, second = self._trit_plane_scales(self.weight)
+            first, second = self._trit_plane_scales(latent)
             return quant.fake_quant_weight_trit_planes_ste(
-                self.weight,
+                latent,
                 lambda_,
                 first,
                 second,
                 impl=multi_state,
             )
         if self.weight_scale == "dual":
-            low, high = self._dual_scales(self.weight)
+            low, high = self._dual_scales(latent)
             return quant.fake_quant_weight_dual_ste(
-                self.weight,
+                latent,
                 lambda_,
                 low,
                 high,
@@ -849,7 +902,7 @@ class TernaryLinear(nn.Module):
             )
         scale = self._scale()
         # fused kernels carry no gradient for a learnable scale
-        ops = self._weight_ops(self.weight) if scale is None else None
+        ops = self._weight_ops(latent) if scale is None else None
         if ops is not None:
             kernel = (
                 multi_state.fake_quant_weight_binary
@@ -858,14 +911,14 @@ class TernaryLinear(nn.Module):
             )
             if self.codebook != "binary" or multi_state is not None:
                 return _FusedQuantSTE.apply(
-                    self.weight, kernel, lambda_, self.group_size, None
+                    latent, kernel, lambda_, self.group_size, None
                 )
         fake_quant_ste = (
             quant.fake_quant_weight_binary_ste
             if self.codebook == "binary"
             else quant.fake_quant_weight_ste
         )
-        return fake_quant_ste(self.weight, lambda_, self._scale_group_size(), scale)
+        return fake_quant_ste(latent, lambda_, self._scale_group_size(), scale)
 
     def _quant_act(self, x: torch.Tensor, lambda_: float) -> torch.Tensor:
         if not self.share_act_quant:
@@ -886,6 +939,11 @@ class TernaryLinear(nn.Module):
 
 
 class TernaryEmbedding(nn.Embedding):
+    heal_frozen: bool = False
+
+    def _has_delta(self) -> bool:
+        return False
+
     """Ternary token embedding: latent rows, fake-quant gather, bake-on-save.
 
     Subclasses `nn.Embedding` so `get_input_embeddings`, `tie_weights` and
@@ -1037,6 +1095,10 @@ class TernaryEmbedding(nn.Embedding):
 
     def is_baked(self) -> bool:
         """Whether `weight` still holds the exact quantized values it was baked to."""
+        if self.heal_frozen or self._has_delta():
+            # frozen latents heal through the scale grid, and a live delta shifts
+            # the codes — both need the quantizer in the loop every forward
+            return False
         return self.baked and self.weight._version == self._baked_version
 
     def baked_weight(self) -> torch.Tensor:

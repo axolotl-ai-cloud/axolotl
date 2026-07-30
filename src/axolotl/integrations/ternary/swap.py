@@ -448,6 +448,7 @@ def convert_model(model: PreTrainedModel, cfg: DictDefault) -> SwapManifest:
     # baked, and a fit that cannot see that would refit the quantizer's own output
     _adopt_master_scales(model, manifest, cfg)
     initialize_model_latents(model, manifest, cfg)
+    _apply_healing_strategy(model, ternary_cfg)
     LOG.info(
         f"ternary: swapped {len(entries)} Linear modules to ternary, "
         f"{len(kept_fp)} kept full precision"
@@ -600,6 +601,43 @@ def _embedding_grid(
     if structure == "per_row":
         return "group", embedding_dim
     return "group", ternary_cfg.embedding_group_size
+
+
+def _apply_healing_strategy(model, ternary_cfg) -> None:
+    """Freeze latents and/or attach low-rank deltas, after the init wrote them."""
+    from .modules import TernaryEmbedding, TernaryLinear
+
+    delta_cfg = ternary_cfg.low_rank_delta
+    frozen_params = 0
+    trainable_params = 0
+    delta_modules = 0
+    for module in model.modules():
+        if isinstance(module, TernaryLinear):
+            if delta_cfg is not None:
+                module.enable_low_rank_delta(delta_cfg.r, delta_cfg.alpha)
+                delta_modules += 1
+            if ternary_cfg.heal_codes == "frozen":
+                module.weight.requires_grad_(False)
+                module.heal_frozen = True
+                frozen_params += module.weight.numel()
+        elif isinstance(module, TernaryEmbedding):
+            if ternary_cfg.heal_codes == "frozen":
+                module.weight.requires_grad_(False)
+                module.heal_frozen = True
+                frozen_params += module.weight.numel()
+    if ternary_cfg.heal_codes == "frozen" or delta_cfg is not None:
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        LOG.info(
+            f"ternary: healing strategy heal_codes={ternary_cfg.heal_codes}"
+            + (
+                f" low_rank_delta(r={delta_cfg.r}, alpha={delta_cfg.alpha}) on "
+                f"{delta_modules} modules"
+                if delta_cfg is not None
+                else ""
+            )
+            + f"; {frozen_params:,} latent params frozen, "
+            f"{trainable_params:,} params trainable"
+        )
 
 
 def _adopt_master_scales(
