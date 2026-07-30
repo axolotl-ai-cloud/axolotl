@@ -67,6 +67,9 @@ class BlockRecord:
     seconds: float
     weights_sha256: str
     student_sha256: str
+    # digest of the student buffer this block trained ON — the predecessor's
+    # produced digest. A mismatch means the chain was rewritten under it.
+    consumed_sha256: str = ""
 
 
 @dataclass
@@ -252,10 +255,16 @@ def heal_blocks(
     # Only the boundary needs its buffer, verified against the previous
     # block's recorded student digest.
     resume_at = 0
+    previous_produced: str | None = None
     for index in range(len(blocks)):
         record = records.get(str(index))
         if record is None or not _weights_valid(record, output, index):
             break
+        if index and record.consumed_sha256 != previous_produced:
+            # healed against outputs a later pass rewrote — the student-propagation
+            # contract is broken from here on, so everything after re-heals
+            break
+        previous_produced = record.student_sha256
         resume_at = index + 1
     if resume_at:
         previous = records[str(resume_at - 1)]
@@ -284,8 +293,13 @@ def heal_blocks(
     )
 
     for index in range(resume_at, len(blocks)):
+        if index:
+            consumed = records[str(index - 1)].student_sha256
+        else:
+            consumed = cache.digest(_STUDENT_TAG, 0)
         record = _heal_one_block(
             index=index,
+            consumed=consumed,
             master=master,
             teacher_dir=teacher_dir,
             output=output,
@@ -318,6 +332,7 @@ def heal_blocks(
 def _heal_one_block(
     *,
     index: int,
+    consumed: str,
     master: Path,
     teacher_dir: Path,
     output: Path,
@@ -365,6 +380,7 @@ def _heal_one_block(
         seconds=time.monotonic() - started,
         weights_sha256=_file_sha256(weights),
         student_sha256=cache.digest(_STUDENT_TAG, index + 1),
+        consumed_sha256=consumed,
     )
 
 

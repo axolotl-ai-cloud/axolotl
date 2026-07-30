@@ -461,3 +461,42 @@ def test_a_restored_block_carries_the_fitted_scale_not_a_rederived_one(
         assert torch.allclose(
             got.reshape(-1).float(), want.reshape(-1).float(), rtol=1e-2
         ), f"{name}: restored scale is not the fitted one"
+
+
+def test_a_chain_break_inside_the_window_reheals_from_there(tmp_path, fitted):
+    """The 9.2e9-ppl lesson: a block healed against outputs that were later
+    rewritten must re-heal, not pass silently. Within the rolling window the
+    buffer survives, so re-healing is possible."""
+    source, master, cfg = fitted
+    output = tmp_path / "out"
+    heal_blocks(master, output, cfg, source_dir=source, device=DEVICE)
+
+    records_path = output / blockwise.RECORD_FILENAME
+    records = json.loads(records_path.read_text())
+    entries = records["records"] if "records" in records else records
+
+    # the last block claims it consumed a chain its predecessor never produced
+    entries[str(BLOCKS - 1)]["consumed_sha256"] = "0" * 64
+    records_path.write_text(json.dumps(records))
+
+    resumed = heal_blocks(master, output, cfg, source_dir=source, device=DEVICE)
+    assert resumed.blocks_skipped == BLOCKS - 1
+    assert resumed.blocks_healed == 1
+
+
+def test_a_chain_break_outside_the_window_refuses_loudly(tmp_path, fitted):
+    """Past the rolling window the consumed buffer is gone, so the only honest
+    answers are a full re-heal or a loud refusal — never a silent skip."""
+    source, master, cfg = fitted
+    output = tmp_path / "out"
+    heal_blocks(master, output, cfg, source_dir=source, device=DEVICE)
+
+    records_path = output / blockwise.RECORD_FILENAME
+    records = json.loads(records_path.read_text())
+    entries = records["records"] if "records" in records else records
+
+    entries["1"]["consumed_sha256"] = "0" * 64
+    records_path.write_text(json.dumps(records))
+
+    with pytest.raises(ValueError, match="missing or stale"):
+        heal_blocks(master, output, cfg, source_dir=source, device=DEVICE)
