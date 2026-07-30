@@ -29,7 +29,7 @@ WEIGHT_SCALE_SUFFIX: str = "weight_scale"
 
 # archs whose ternary layout `BitNetForCausalLM` reproduces one-to-one
 SUPPORTED_MODEL_TYPES: frozenset[str] = frozenset(
-    {"llama", "mistral", "qwen2", "qwen3", "qwen3_5"}
+    {"llama", "mistral", "mistral3", "qwen2", "qwen3", "qwen3_5"}
 )
 
 
