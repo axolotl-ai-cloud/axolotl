@@ -238,9 +238,7 @@ def test_fused_expert_stacks_are_parametrized():
     experts = [e for e in manifest.entries if e.kind == "experts"]
     assert len(experts) == 2  # gate_up_proj and down_proj stacks
     assert all(e.parameter_key() == e.name for e in experts)
-    quantizers = [
-        m for _, m in model.named_modules() if isinstance(m, TernaryExperts)
-    ]
+    quantizers = [m for _, m in model.named_modules() if isinstance(m, TernaryExperts)]
     assert len(quantizers) == 2
 
 
@@ -277,6 +275,32 @@ def test_resolve_preset():
 
     with pytest.raises(ValueError, match="no ternary arch preset"):
         resolve_preset("mixtral")
+
+
+def test_qwen3_5_moe_preset_splits_router_experts_and_shared_mlp():
+    import re
+
+    preset = resolve_preset("qwen3_5_moe")
+    targets = [re.compile(p) for p in preset.target_modules]
+    keeps = [re.compile(p) for p in preset.keep_fp_modules]
+
+    def targeted(name):
+        return any(p.fullmatch(name) for p in targets)
+
+    def kept(name):
+        return any(p.fullmatch(name) for p in keeps)
+
+    base = "model.language_model.layers.0"
+    assert targeted(f"{base}.self_attn.q_proj")
+    assert targeted(f"{base}.mlp.shared_expert.gate_proj")
+    assert targeted(f"{base}.mlp.experts.gate_up_proj")
+    assert targeted(f"{base}.mlp.experts.down_proj")
+    assert not targeted(f"{base}.mlp.gate")
+    assert not targeted(f"{base}.mlp.shared_expert_gate")
+    assert kept(f"{base}.mlp.gate")
+    assert kept(f"{base}.mlp.shared_expert_gate")
+    assert kept(f"{base}.linear_attn.in_proj_qkv")
+    assert not kept(f"{base}.mlp.shared_expert.gate_proj")
 
 
 def test_module_family():

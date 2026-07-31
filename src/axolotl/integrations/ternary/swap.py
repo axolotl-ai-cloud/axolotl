@@ -86,6 +86,27 @@ ARCH_PRESETS: dict[str, ArchPreset] = {
         )
         + aux_modules.family_patterns("vision_towers"),
     ),
+    # the MoE sibling of `qwen3_5`: same hybrid attention split, so the
+    # linear-attention projections stay FP for the same recurrent-error reason.
+    # Routed experts live as fused 3D stacks the expert-stack converter discovers on
+    # its own, so the preset only names the 2D linears. The router and the tiny
+    # shared-expert gate stay FP: misrouting compounds across the depth the same way
+    # the recurrent decay does, and both are a negligible parameter fraction.
+    "qwen3_5_moe": ArchPreset(
+        target_modules=(
+            r".*\.self_attn\.(q|k|v|o)_proj",
+            r".*\.mlp\.shared_expert\.(gate|up|down)_proj",
+            # fused 3D stacks: matched as raw parameter keys by the fit-stream; the
+            # live-model swap reaches them through the expert-stack converter instead
+            r".*\.mlp\.experts\.(gate_up|down)_proj",
+        ),
+        keep_fp_modules=(
+            r".*\.linear_attn\.(in_proj_qkv|in_proj_a|in_proj_b|in_proj_z|out_proj)",
+            r".*\.mlp\.gate",
+            r".*\.mlp\.shared_expert_gate",
+        )
+        + aux_modules.family_patterns("vision_towers"),
+    ),
     # Mistral 3 multimodal: the language model is nested under `model.language_model`,
     # with a vision tower and a projector beside it. Only the language model's
     # projections are ternarized — the tower and projector stay FP on the same Prism
