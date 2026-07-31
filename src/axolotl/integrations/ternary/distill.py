@@ -54,6 +54,7 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_teacher_endpoint: str | None = None
     ternary_distill_prefetch_teacher: bool = True
     ternary_distill_logprob_prefetch: bool = True
+    ternary_distill_logprob_prefetch_depth: int | None = None
     ternary_distill_teacher_prefetch_depth: int | None = None
     ternary_distill_schedule: DistillSchedule | None = None
     ternary_distill_anchor_start: float | None = None
@@ -108,6 +109,8 @@ class _TeacherPrefetch:
         self._lp_bias: torch.Tensor | None = None
         self._lp_temperature: float = 1.0
         self._lp_device: torch.device | str | None = None
+        self._lp_depth: int = 2
+        self.last_take_stats: dict[str, float] = {}
 
     def configure_logprobs(
         self,
@@ -115,21 +118,36 @@ class _TeacherPrefetch:
         bias: torch.Tensor | None,
         temperature: float,
         student_device: torch.device | str,
+        depth: int = 2,
     ) -> None:
         self._lp_weight = weight
         self._lp_bias = bias
         self._lp_temperature = temperature
         self._lp_device = student_device
+        self._lp_depth = max(1, depth)
 
-    def stage_ahead(self, count: int = 2) -> None:
-        """Stage log-probs for the next `count` consumptions; nearest deadline first."""
-        for slot in islice(self._slots, count):
-            self._stage_logprobs(slot)
+    def stage_ahead(self, count: int | None = None) -> None:
+        """Stage log-probs for upcoming consumptions, nearest deadline first.
 
-    def _stage_logprobs(self, slot: list) -> None:
-        """Head + log_softmax on the teacher device, fp16 result on the student's."""
+        The nearest two land on the student device; deeper slots stage to pinned
+        CPU memory and are promoted device-side as their turn approaches.
+        """
+        if self._lp_weight is None:
+            return
+        count = self._lp_depth if count is None else count
+        for index, slot in enumerate(islice(self._slots, count)):
+            target = self._lp_device if index < 2 else "cpu"
+            self._stage_logprobs(slot, target)
+            if index < 2 and slot[2] is not None and slot[2].device.type == "cpu":
+                slot[2] = slot[2].to(self._lp_device, non_blocking=True)
+
+    def _stage_logprobs(
+        self, slot: list, target: torch.device | str | None = None
+    ) -> None:
+        """Head + log_softmax on the teacher device; fp16 result on `target`."""
         if self._lp_weight is None or slot[2] is not None:
             return
+        target = self._lp_device if target is None else target
         hidden = slot[1]
         rows, tokens, _ = hidden.shape
         with torch.no_grad():
@@ -144,11 +162,13 @@ class _TeacherPrefetch:
                         torch.float16
                     )
                 )
-            slot[2] = (
-                torch.cat(pieces)
-                .reshape(rows, tokens, -1)
-                .to(self._lp_device, non_blocking=True)
-            )
+            staged = torch.cat(pieces).reshape(rows, tokens, -1)
+            if str(target) == "cpu" and staged.is_cuda:
+                pinned = torch.empty(staged.shape, dtype=staged.dtype, pin_memory=True)
+                pinned.copy_(staged, non_blocking=True)
+                slot[2] = pinned
+            else:
+                slot[2] = staged.to(target, non_blocking=True)
 
     def submit_many(self, teacher: PreTrainedModel, batches: list[dict]) -> None:
         batches = [b for b in batches if "input_ids" in _teacher_keys(b)]
@@ -217,10 +237,21 @@ class _TeacherPrefetch:
             # order broke; anything still queued is for batches we cannot match
             self._slots.clear()
             return None
-        if self._lp_weight is not None and slot[2] is None:
-            self._stage_logprobs(slot)
+        student_ready = slot[2] is not None and slot[2].device.type != "cpu"
+        self.last_take_stats = {
+            "logprob_ready_at_take": 1.0 if student_ready else 0.0,
+            "logprob_staged_at_take": float(
+                (1 if slot[2] is not None else 0)
+                + sum(1 for other in self._slots if other[2] is not None)
+            ),
+        }
+        if self._lp_weight is not None:
+            if slot[2] is None:
+                self._stage_logprobs(slot)
+            elif slot[2].device.type == "cpu":
+                slot[2] = slot[2].to(self._lp_device, non_blocking=True)
         # stage upcoming batches' log-probs while the student trains on this one
-        self.stage_ahead(2)
+        self.stage_ahead()
         return slot[1], slot[2]
 
 
@@ -608,6 +639,10 @@ class TernaryDistillTrainer(AxolotlTrainer):
             "ternary/teacher_logprobs_staged": float(
                 sum(1 for slot in self._teacher_prefetch._slots if slot[2] is not None)
             ),
+            **{
+                f"ternary/{k}": v
+                for k, v in self._teacher_prefetch.last_take_stats.items()
+            },
         }
 
         mask = inputs.get("attention_mask")
@@ -866,6 +901,10 @@ class TernaryDistillTrainer(AxolotlTrainer):
                 getattr(head, "bias", None),
                 self.logits_temperature,
                 next(student.parameters()).device,
+                depth=int(
+                    getattr(self.args, "ternary_distill_logprob_prefetch_depth", None)
+                    or 2
+                ),
             )
         if self.attn_relation_layer is not None:
             self._head_dim = _head_dim(student)

@@ -197,3 +197,22 @@ def test_logprob_pipeline_stages_ahead_and_matches_head_math():
     torch.testing.assert_close(logprobs, want, atol=2e-3, rtol=2e-3)
     # the next slot was staged while this batch would be training
     assert prefetch._slots[0][2] is not None
+
+
+def test_deep_logprob_staging_offloads_to_cpu_and_promotes():
+    teacher = _tiny_teacher()
+    prefetch = _TeacherPrefetch()
+    prefetch.configure_logprobs(
+        teacher.lm_head.weight.detach(), None, 1.0, student_device="cpu", depth=4
+    )
+    batches = [_batch() for _ in range(4)]
+    prefetch.submit_many(teacher, batches)
+    prefetch.stage_ahead()
+    assert all(slot[2] is not None for slot in prefetch._slots)
+
+    taken = prefetch.take(batches[0])
+    assert taken is not None and taken[1] is not None
+    assert (
+        prefetch.last_take_stats["logprob_ready_at_take"] == 0.0
+    )  # cpu counts unready
+    assert prefetch.last_take_stats["logprob_staged_at_take"] == 4.0

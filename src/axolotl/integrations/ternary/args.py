@@ -191,6 +191,16 @@ class TernaryDistillConfig(BaseModel):
             "the chunk checkpoints save inputs instead of recomputing the head."
         ),
     )
+    logprob_prefetch_depth: int = Field(
+        default=2,
+        ge=1,
+        le=64,
+        description=(
+            "How many upcoming batches keep staged teacher log-probs: the nearest "
+            "two on the student device, deeper ones in pinned CPU memory, promoted "
+            "device-side as their turn approaches."
+        ),
+    )
     teacher_prefetch_depth: int = Field(
         default=1,
         ge=1,
