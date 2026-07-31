@@ -52,22 +52,23 @@ def test_take_returns_the_inline_teacher_hidden():
     assert prefetch.take(inputs) is None  # slot consumed
 
 
-def test_replaced_tensor_falls_back():
+def test_content_preserving_rewrap_still_hits():
     teacher = _tiny_teacher()
     inputs = _batch()
     prefetch = _TeacherPrefetch()
     prefetch.submit(teacher, inputs)
+    inputs["input_ids"] = inputs["input_ids"].clone()
     inputs["attention_mask"] = inputs["attention_mask"].clone()
-    assert prefetch.take(inputs) is None
+    assert prefetch.take(inputs) is not None
 
 
-def test_dropped_or_added_key_falls_back():
+def test_changed_content_or_key_set_falls_back():
     teacher = _tiny_teacher()
     prefetch = _TeacherPrefetch()
 
     inputs = _batch()
     prefetch.submit(teacher, inputs)
-    del inputs["attention_mask"]
+    inputs["input_ids"] = inputs["input_ids"] + 1
     assert prefetch.take(inputs) is None
 
     inputs = _batch()
@@ -158,6 +159,7 @@ def test_submit_gating_skips_before_teacher_ready():
     fake = SimpleNamespace(
         distill_multiplier=1.0,
         attn_relation_layer=None,
+        teacher_endpoint=None,
         _teacher_ready=False,
         _teacher=_tiny_teacher(),
         _teacher_prefetch=prefetch,

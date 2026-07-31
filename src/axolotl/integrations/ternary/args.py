@@ -175,6 +175,14 @@ class TernaryDistillConfig(BaseModel):
             "to inline whenever the batch the loss sees differs from the one fetched."
         ),
     )
+    teacher_endpoint: str | None = Field(
+        default=None,
+        description=(
+            "host:port of a running `axolotl.integrations.ternary.teacher_server` "
+            "process; the trainer then loads no local teacher — hidden states come "
+            "from the server and only the head weight is loaded locally."
+        ),
+    )
     teacher_prefetch_depth: int = Field(
         default=1,
         ge=1,

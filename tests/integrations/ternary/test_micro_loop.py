@@ -652,6 +652,7 @@ def test_inprocess_distillation_selects_the_trainer_and_args():
         "ternary_distill_teacher_prefetch_depth": (
             TernaryDistillConfig().teacher_prefetch_depth
         ),
+        "ternary_distill_teacher_endpoint": TernaryDistillConfig().teacher_endpoint,
         "ternary_distill_attn_relation_layer": None,
         "ternary_distill_teacher_device_map": None,
         "ternary_distill_schedule": "constant",

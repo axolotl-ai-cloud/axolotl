@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import inspect
+import queue
+import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 from itertools import islice
@@ -48,6 +51,7 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_hidden_huber_delta: float | None = None
     ternary_distill_attn_relation_layer: int | None = None
     ternary_distill_teacher_device_map: str | None = None
+    ternary_distill_teacher_endpoint: str | None = None
     ternary_distill_prefetch_teacher: bool = True
     ternary_distill_teacher_prefetch_depth: int | None = None
     ternary_distill_schedule: DistillSchedule | None = None
@@ -62,8 +66,22 @@ def _teacher_keys(inputs: dict) -> tuple[str, ...]:
     )
 
 
-def _ident(inputs: dict, keys: tuple[str, ...]) -> tuple[tuple[str, int], ...]:
-    return tuple((k, id(inputs[k])) for k in keys)
+def _ident(inputs: dict, keys: tuple[str, ...]) -> tuple:
+    """Content fingerprint of a batch's teacher inputs.
+
+    Object identity does not survive every rewrap between fetch and loss, so the
+    match is on `input_ids` content: shape plus two checksums. Costs one small
+    sync per batch at fetch time, never inside the step.
+    """
+    ids = inputs["input_ids"]
+    flat = ids.reshape(-1)
+    probe = flat[:: max(1, flat.numel() // 8)]
+    return (
+        keys,
+        tuple(ids.shape),
+        int(flat.sum().item()),
+        int(probe.to("cpu").sum().item()),
+    )
 
 
 class _TeacherPrefetch:
@@ -143,12 +161,121 @@ class _TeacherPrefetch:
         if not self._slots:
             return None
         ident, hidden = self._slots.popleft()
-        keys = tuple(k for k, _ in ident)
-        if _teacher_keys(inputs) != keys or _ident(inputs, keys) != ident:
+        if _ident(inputs, _teacher_keys(inputs)) != ident:
             # order broke; anything still queued is for batches we cannot match
             self._slots.clear()
             return None
         return hidden
+
+
+class _RemoteTeacherClient:
+    """Prefetch slots fed by a `teacher_server` process instead of a local model.
+
+    The main thread only enqueues fetched windows; a worker thread fuses them,
+    talks to the server socket, and delivers hidden states onto the slot deque.
+    `take` blocks until its batch's slot arrives — with the teacher in another
+    process there is no inline fallback, so order is a hard contract.
+    """
+
+    def __init__(self, endpoint: str, device: torch.device | str) -> None:
+        from multiprocessing.connection import Client as _ConnClient
+
+        from .teacher_server import AUTHKEY
+
+        host, _, port = endpoint.rpartition(":")
+        last_error: Exception | None = None
+        for _ in range(120):
+            try:
+                self._conn = _ConnClient((host, int(port)), authkey=AUTHKEY)
+                break
+            except (ConnectionError, OSError) as exc:
+                last_error = exc
+                time.sleep(5)
+        else:
+            raise ConnectionError(
+                f"teacher server at {endpoint} not reachable"
+            ) from last_error
+
+        self.device = device
+        self._slots: deque[tuple[tuple, torch.Tensor]] = deque()
+        self._cond = threading.Condition()
+        self._requests: "queue.Queue[list[dict] | None]" = queue.Queue()
+        self._failure: BaseException | None = None
+        self._thread = threading.Thread(
+            target=self._run, name="ternary-remote-teacher", daemon=True
+        )
+        self._thread.start()
+
+    def submit_many(self, batches: list[dict]) -> None:
+        idents = [(b, _ident(b, _teacher_keys(b))) for b in batches]
+        cpu_batches = [
+            (
+                {k: b[k].detach().to("cpu") for k in _teacher_keys(b)},
+                ident,
+            )
+            for b, ident in idents
+        ]
+        self._requests.put(cpu_batches)
+
+    def take(self, inputs: dict, timeout: float = 600.0) -> torch.Tensor:
+        want = _ident(inputs, _teacher_keys(inputs))
+        with self._cond:
+            ok = self._cond.wait_for(lambda: self._slots or self._failure, timeout)
+            if self._failure is not None:
+                raise RuntimeError("remote teacher worker died") from self._failure
+            if not ok:
+                raise TimeoutError("remote teacher response timed out")
+            ident, hidden = self._slots.popleft()
+        if ident != want:
+            raise RuntimeError(
+                "remote teacher slot order broke: the loss saw a batch the "
+                "prefetch never fetched"
+            )
+        return hidden
+
+    def close(self) -> None:
+        self._requests.put(None)
+        try:
+            self._conn.send(None)
+        except (OSError, ValueError):
+            pass
+
+    def _run(self) -> None:
+        try:
+            while True:
+                window = self._requests.get()
+                if window is None:
+                    return
+                fused: dict[str, torch.Tensor] = {}
+                keys = tuple(window[0][0].keys())
+                if all(tuple(b.keys()) == keys for b, _ in window) and all(
+                    b["input_ids"].shape[0] == 1 for b, _ in window
+                ):
+                    fused = {
+                        k: torch.cat([b[k] for b, _ in window], dim=1) for k in keys
+                    }
+                    self._conn.send({"inputs": fused})
+                    hidden = self._conn.recv().to(self.device, non_blocking=True)
+                    offset = 0
+                    with self._cond:
+                        for batch, ident in window:
+                            span = batch["input_ids"].shape[1]
+                            self._slots.append(
+                                (ident, hidden[:, offset : offset + span])
+                            )
+                            offset += span
+                        self._cond.notify_all()
+                else:
+                    for batch, ident in window:
+                        self._conn.send({"inputs": batch})
+                        hidden = self._conn.recv().to(self.device, non_blocking=True)
+                        with self._cond:
+                            self._slots.append((ident, hidden))
+                            self._cond.notify_all()
+        except BaseException as exc:  # noqa: BLE001 - surfaced via take()
+            self._failure = exc
+            with self._cond:
+                self._cond.notify_all()
 
 
 class _TeacherPrefetchLoader:
@@ -244,6 +371,14 @@ class TernaryDistillTrainer(AxolotlTrainer):
             getattr(args, "ternary_distill_teacher_prefetch_depth", None) or 1
         )
         self._teacher_prefetch = _TeacherPrefetch()
+        self.teacher_endpoint = getattr(args, "ternary_distill_teacher_endpoint", None)
+        if self.teacher_endpoint and self.attn_relation_layer is not None:
+            raise ValueError(
+                "attention-relation KD hooks a live teacher; it cannot run "
+                "against ternary.distill.teacher_endpoint"
+            )
+        self._remote_teacher: _RemoteTeacherClient | None = None
+        self._remote_head: torch.Tensor | None = None
         schedule = getattr(args, "ternary_distill_schedule", None) or "constant"
         self.distill_schedule = schedule
         self.anchor_start = _arg(args, "ternary_distill_anchor_start", 0.9)
@@ -284,7 +419,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
         if multiplier <= 0.0:
             return self._ce_loss(model, student, inputs, labels, return_outputs)
 
-        teacher = self._ensure_teacher(student)
+        teacher = None if self.teacher_endpoint else self._ensure_teacher(student)
         self._captured.clear()
         if self.attn_relation_layer is not None:
             self._register_relation_hooks(student, teacher)
@@ -340,27 +475,37 @@ class TernaryDistillTrainer(AxolotlTrainer):
         outputs = model(**_forward_inputs(inputs, student))
         student_hidden = _last_hidden(outputs, model)
 
-        prefetched = (
-            self._teacher_prefetch.take(inputs) if self.prefetch_teacher else None
-        )
-        if prefetched is not None:
-            teacher_hidden = prefetched
+        if self.teacher_endpoint:
+            teacher_hidden = self._remote().take(inputs)
+            teacher_weight: torch.Tensor | None = self._remote_teacher_head()
+            teacher_bias = None
+            prefetched: torch.Tensor | None = teacher_hidden
         else:
-            teacher_device = next(teacher.parameters()).device
-            teacher_inputs = {
-                key: value.to(teacher_device)
-                for key, value in inputs.items()
-                if key in TEACHER_INPUT_KEYS
-            }
-            with torch.no_grad():
-                teacher_outputs = teacher(**_forward_inputs(teacher_inputs, teacher))
-            # left on the teacher's device: the chunked KD runs the teacher head
-            # there and ships only per-chunk log-probs back, never a
-            # (vocab, hidden) head copy
-            teacher_hidden = _last_hidden(teacher_outputs, teacher)
+            prefetched = (
+                self._teacher_prefetch.take(inputs) if self.prefetch_teacher else None
+            )
+            if prefetched is not None:
+                teacher_hidden = prefetched
+            else:
+                teacher_device = next(teacher.parameters()).device
+                teacher_inputs = {
+                    key: value.to(teacher_device)
+                    for key, value in inputs.items()
+                    if key in TEACHER_INPUT_KEYS
+                }
+                with torch.no_grad():
+                    teacher_outputs = teacher(
+                        **_forward_inputs(teacher_inputs, teacher)
+                    )
+                # left on the teacher's device: the chunked KD runs the teacher
+                # head there and ships only per-chunk log-probs back, never a
+                # (vocab, hidden) head copy
+                teacher_hidden = _last_hidden(teacher_outputs, teacher)
+            teacher_head = _resolve_lm_head(teacher)
+            teacher_weight = teacher_head.weight
+            teacher_bias = getattr(teacher_head, "bias", None)
 
         student_head = _resolve_lm_head(student)
-        teacher_head = _resolve_lm_head(teacher)
 
         shifted = labels[..., 1:]
         supervised = shifted != IGNORE_INDEX
@@ -371,8 +516,8 @@ class TernaryDistillTrainer(AxolotlTrainer):
             teacher_hidden[..., :-1, :][teacher_supervised],
             student_head.weight,
             getattr(student_head, "bias", None),
-            teacher_head.weight,
-            getattr(teacher_head, "bias", None),
+            teacher_weight,
+            teacher_bias,
             shifted[supervised],
             self.logits_temperature,
             chunk_size,
@@ -584,15 +729,31 @@ class TernaryDistillTrainer(AxolotlTrainer):
 
     def get_train_dataloader(self):
         loader = super().get_train_dataloader()
-        if not self.prefetch_teacher:
+        if not self.prefetch_teacher and not self.teacher_endpoint:
             return loader
         return _TeacherPrefetchLoader(loader, self, depth=self.teacher_prefetch_depth)
 
+    def _remote(self) -> _RemoteTeacherClient:
+        if self._remote_teacher is None:
+            device = next(self._unwrap(self.model).parameters()).device
+            self._remote_teacher = _RemoteTeacherClient(self.teacher_endpoint, device)
+        return self._remote_teacher
+
+    def _remote_teacher_head(self) -> torch.Tensor:
+        if self._remote_head is None:
+            device = next(self._unwrap(self.model).parameters()).device
+            self._remote_head = _load_lm_head_weight(self.teacher_model_name, device)
+        return self._remote_head
+
     def _submit_teacher_prefetch(self, batches: list[dict]) -> None:
+        if self.distill_multiplier <= 0.0 or self.attn_relation_layer is not None:
+            return
+        if self.teacher_endpoint:
+            # no local teacher exists to fall back to — a failure here is fatal
+            self._remote().submit_many(batches)
+            return
         if (
             not self.prefetch_teacher
-            or self.distill_multiplier <= 0.0
-            or self.attn_relation_layer is not None
             or not self._teacher_ready
             or self._teacher is None
         ):
@@ -712,6 +873,36 @@ def _forward_accepts(model: nn.Module, name: str) -> bool:
             parameters = frozenset()
         _FORWARD_PARAMETERS[model_cls] = parameters
     return name in parameters
+
+
+def _load_lm_head_weight(model_name: str, device) -> torch.Tensor:
+    """Load only a checkpoint's head weight (tied checkpoints: the embeddings)."""
+    import json
+    from pathlib import Path
+
+    from safetensors import safe_open
+    from transformers.utils import cached_file
+
+    keys = ("lm_head.weight", "model.embed_tokens.weight")
+    index_path = cached_file(
+        model_name,
+        "model.safetensors.index.json",
+        _raise_exceptions_for_missing_entries=False,
+    )
+    if index_path:
+        weight_map = json.loads(Path(index_path).read_text())["weight_map"]
+        for key in keys:
+            if key in weight_map:
+                shard = cached_file(model_name, weight_map[key])
+                with safe_open(shard, framework="pt") as handle:
+                    return handle.get_tensor(key).to(device)
+        raise KeyError(f"none of {keys} in {model_name}'s weight index")
+    shard = cached_file(model_name, "model.safetensors")
+    with safe_open(shard, framework="pt") as handle:
+        for key in keys:
+            if key in handle.keys():
+                return handle.get_tensor(key).to(device)
+    raise KeyError(f"none of {keys} in {model_name}")
 
 
 def _forward_inputs(inputs: dict[str, torch.Tensor], model: nn.Module) -> dict:
