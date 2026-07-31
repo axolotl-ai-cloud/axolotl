@@ -653,6 +653,7 @@ def test_inprocess_distillation_selects_the_trainer_and_args():
         "ternary_distill_logprob_prefetch_depth": (
             TernaryDistillConfig().logprob_prefetch_depth
         ),
+        "ternary_distill_loss_backend": TernaryDistillConfig().loss_backend,
         "ternary_distill_teacher_prefetch_depth": (
             TernaryDistillConfig().teacher_prefetch_depth
         ),

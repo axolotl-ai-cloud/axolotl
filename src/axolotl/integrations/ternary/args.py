@@ -191,6 +191,15 @@ class TernaryDistillConfig(BaseModel):
             "the chunk checkpoints save inputs instead of recomputing the head."
         ),
     )
+    loss_backend: Literal["chunked", "liger_jsd"] = Field(
+        default="chunked",
+        description=(
+            "'chunked' = the CE+KL chunk loss (with analytic fused gradients when "
+            "log-probs are prefetched); 'liger_jsd' = Liger's fused linear JSD, "
+            "which projects both heads itself (in-process same-device teacher only, "
+            "disables log-prob staging)."
+        ),
+    )
     logprob_prefetch_depth: int = Field(
         default=2,
         ge=1,

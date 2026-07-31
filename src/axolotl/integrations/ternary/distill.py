@@ -28,8 +28,10 @@ LOG = get_logger(__name__)
 
 IGNORE_INDEX: int = -100
 
-# one logits chunk is capped at this many elements, so a 256k vocab still fits
-CHUNK_ELEMENT_BUDGET: int = 1 << 23
+# one logits chunk is capped at this many elements; at a 256k vocab this gives
+# 256-token chunks (~270 MB of fp32 logits) instead of 32-token slivers whose
+# per-chunk python and launch overhead dominates
+CHUNK_ELEMENT_BUDGET: int = 1 << 26
 MIN_CHUNK_TOKENS: int = 32
 MAX_CHUNK_TOKENS: int = 1024
 
@@ -55,6 +57,7 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_prefetch_teacher: bool = True
     ternary_distill_logprob_prefetch: bool = True
     ternary_distill_logprob_prefetch_depth: int | None = None
+    ternary_distill_loss_backend: str | None = None
     ternary_distill_teacher_prefetch_depth: int | None = None
     ternary_distill_schedule: DistillSchedule | None = None
     ternary_distill_anchor_start: float | None = None
@@ -470,6 +473,15 @@ class TernaryDistillTrainer(AxolotlTrainer):
         self.logprob_prefetch = bool(
             getattr(args, "ternary_distill_logprob_prefetch", True)
         )
+        self.loss_backend = (
+            getattr(args, "ternary_distill_loss_backend", None) or "chunked"
+        )
+        self._liger_jsd = None
+        if self.loss_backend == "liger_jsd":
+            if getattr(args, "ternary_distill_teacher_endpoint", None):
+                raise ValueError("loss_backend liger_jsd needs an in-process teacher")
+            # the fused JSD projects both heads itself; staged log-probs are unused
+            self.logprob_prefetch = False
         self.teacher_endpoint = getattr(args, "ternary_distill_teacher_endpoint", None)
         if self.teacher_endpoint and self.attn_relation_layer is not None:
             raise ValueError(
@@ -614,23 +626,61 @@ class TernaryDistillTrainer(AxolotlTrainer):
         lp_flat = None
         if teacher_logprobs_full is not None:
             lp_flat = teacher_logprobs_full[..., :-1, :][supervised]
-        ce, kd = _chunked_ce_kd(
-            student_hidden[..., :-1, :][supervised],
-            None
-            if lp_flat is not None
-            else teacher_hidden[..., :-1, :][teacher_supervised],
-            student_head.weight,
-            getattr(student_head, "bias", None),
-            None if lp_flat is not None else teacher_weight,
-            None if lp_flat is not None else teacher_bias,
-            shifted[supervised],
-            self.logits_temperature,
-            chunk_size,
-            teacher_logprobs=lp_flat,
-        )
-
         alpha = multiplier * self.logits_weight
-        loss = (1.0 - alpha) * ce + alpha * self.logits_temperature**2 * kd
+        student_flat = student_hidden[..., :-1, :][supervised]
+        if self.loss_backend == "liger_jsd" and teacher_hidden is not None:
+            from liger_kernel.chunked_loss import LigerFusedLinearJSDLoss
+
+            if self._liger_jsd is None:
+                self._liger_jsd = LigerFusedLinearJSDLoss(
+                    weight_hard_loss=1.0 - alpha,
+                    weight_soft_loss=alpha,
+                    temperature=self.logits_temperature,
+                    return_soft_hard_loss=True,
+                )
+            loss, kd, ce = self._liger_jsd(
+                student_flat.to(student_head.weight.dtype),
+                student_head.weight,
+                teacher_hidden[..., :-1, :][teacher_supervised].to(
+                    teacher_weight.dtype
+                ),
+                teacher_weight,
+                shifted[supervised],
+                getattr(student_head, "bias", None),
+                teacher_bias,
+            )
+        elif (
+            lp_flat is not None
+            and torch.is_grad_enabled()
+            and student_flat.requires_grad
+        ):
+            loss, ce, kd = _fused_ce_kd(
+                student_flat.to(student_head.weight.dtype),
+                student_head.weight,
+                getattr(student_head, "bias", None),
+                lp_flat,
+                shifted[supervised],
+                self.logits_temperature,
+                1.0 - alpha,
+                alpha * self.logits_temperature**2,
+                chunk_size,
+            )
+        else:
+            ce, kd = _chunked_ce_kd(
+                student_flat,
+                None
+                if lp_flat is not None
+                else teacher_hidden[..., :-1, :][teacher_supervised],
+                student_head.weight,
+                getattr(student_head, "bias", None),
+                None if lp_flat is not None else teacher_weight,
+                None if lp_flat is not None else teacher_bias,
+                shifted[supervised],
+                self.logits_temperature,
+                chunk_size,
+                teacher_logprobs=lp_flat,
+            )
+            loss = (1.0 - alpha) * ce + alpha * self.logits_temperature**2 * kd
         metrics = {
             "ternary/ce": ce.detach().item(),
             "ternary/kd_logits": kd.detach().item(),
@@ -1212,6 +1262,99 @@ def _chunk_terms(
     student_logprobs = F.log_softmax(student_logits / temperature, dim=-1)
     kd = F.kl_div(student_logprobs, teacher_logprobs, reduction="sum", log_target=True)
     return ce, kd
+
+
+class _FusedChunkKD(torch.autograd.Function):
+    """CE + KL over one chunk with gradients computed analytically in forward.
+
+    With prefetched teacher log-probs the loss gradients are closed-form:
+    `d(kd_sum)/dz = kd_coeff * (softmax(z/t) - exp(teacher_logprobs)) / t` and
+    `d(ce_sum)/dz = ce_coeff * (softmax(z) - onehot(targets))`. Both are computed
+    while the logits exist, so backward replays stored gradients and the head
+    GEMM + softmax never run a second time (the checkpointed path pays them
+    twice).
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        hidden: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor | None,
+        teacher_logprobs: torch.Tensor,
+        targets: torch.Tensor | None,
+        temperature: float,
+        ce_coeff: float,
+        kd_coeff: float,
+    ):
+        with torch.no_grad():
+            logits = F.linear(hidden, weight, bias).float()
+            s_logprobs = F.log_softmax(logits / temperature, dim=-1)
+            t_logprobs = teacher_logprobs.float()
+            kd = F.kl_div(s_logprobs, t_logprobs, reduction="sum", log_target=True)
+            grad_z = (kd_coeff / temperature) * (s_logprobs.exp() - t_logprobs.exp())
+            if targets is not None and ce_coeff != 0.0:
+                ce = F.cross_entropy(logits, targets, reduction="sum")
+                p = F.softmax(logits, dim=-1)
+                p[torch.arange(p.shape[0], device=p.device), targets] -= 1.0
+                grad_z = grad_z + ce_coeff * p
+            elif targets is not None:
+                ce = F.cross_entropy(logits, targets, reduction="sum")
+            else:
+                ce = logits.new_zeros(())
+            loss = ce_coeff * ce + kd_coeff * kd
+
+        ctx.save_for_backward(grad_z.to(torch.float16), hidden, weight)
+        ctx.has_bias = bias is not None
+        return loss, ce.detach(), kd.detach()
+
+    @staticmethod
+    def backward(ctx, grad_loss, _grad_ce, _grad_kd):  # type: ignore[override]
+        grad_z16, hidden, weight = ctx.saved_tensors
+        grad_z = (grad_z16.float() * grad_loss.float()).to(weight.dtype)
+        # weight/bias/input grads are exact GEMMs over the stored gradient —
+        # the head projection and softmax never run again
+        grad_hidden = grad_z @ weight
+        grad_weight = grad_z.t() @ hidden.to(weight.dtype)
+        grad_bias = grad_z.sum(dim=0) if ctx.has_bias else None
+        return grad_hidden, grad_weight, grad_bias, None, None, None, None, None
+
+
+def _fused_ce_kd(
+    student_hidden: torch.Tensor,
+    student_weight: torch.Tensor,
+    student_bias: torch.Tensor | None,
+    teacher_logprobs: torch.Tensor,
+    targets: torch.Tensor | None,
+    temperature: float,
+    ce_coeff: float,
+    kd_coeff: float,
+    chunk_size: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Chunked fused CE+KD; returns (weighted loss, detached ce sum, detached kd sum) means."""
+    tokens = student_hidden.shape[0]
+    if not tokens:
+        zero = (student_hidden.sum() + student_weight.sum()) * 0.0
+        return zero, zero.detach(), zero.detach()
+    loss_total = None
+    ce_total = None
+    kd_total = None
+    for start in range(0, tokens, max(chunk_size, 1)):
+        stop = min(start + max(chunk_size, 1), tokens)
+        loss, ce, kd = _FusedChunkKD.apply(
+            student_hidden[start:stop],
+            student_weight,
+            student_bias,
+            teacher_logprobs[start:stop],
+            None if targets is None else targets[start:stop],
+            temperature,
+            ce_coeff,
+            kd_coeff,
+        )
+        loss_total = loss if loss_total is None else loss_total + loss
+        ce_total = ce if ce_total is None else ce_total + ce
+        kd_total = kd if kd_total is None else kd_total + kd
+    return loss_total / tokens, ce_total / tokens, kd_total / tokens
 
 
 def _chunked_ce_kd(

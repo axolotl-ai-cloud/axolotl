@@ -16,7 +16,6 @@ from transformers import LlamaConfig, LlamaForCausalLM
 from axolotl.integrations.ternary import distill as distill_mod
 from axolotl.integrations.ternary.distill import (
     MAX_CHUNK_TOKENS,
-    MIN_CHUNK_TOKENS,
     TernaryDistillTrainer,
     TernaryDistillTrainingArgsMixin,
     _chunk_size,
@@ -281,7 +280,7 @@ def test_chunked_logits_kd_method_uses_teacher_head():
 
 @pytest.mark.parametrize(
     "vocab, expected",
-    [(128, MAX_CHUNK_TOKENS), (8192, 1024), (128256, 65), (262144, MIN_CHUNK_TOKENS)],
+    [(128, MAX_CHUNK_TOKENS), (8192, 1024), (128256, 523), (262144, 256)],
 )
 def test_chunk_size_bounds(vocab, expected):
     assert _chunk_size(vocab) == expected

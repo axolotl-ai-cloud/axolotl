@@ -216,3 +216,52 @@ def test_deep_logprob_staging_offloads_to_cpu_and_promotes():
         prefetch.last_take_stats["logprob_ready_at_take"] == 0.0
     )  # cpu counts unready
     assert prefetch.last_take_stats["logprob_staged_at_take"] == 4.0
+
+
+def test_fused_ce_kd_matches_reference_loss_and_grads():
+    import torch.nn.functional as F
+
+    from axolotl.integrations.ternary.distill import _fused_ce_kd
+
+    torch.manual_seed(3)
+    tokens, d, vocab = 10, 8, 24
+    hidden = torch.randn(tokens, d, requires_grad=True)
+    weight = torch.randn(vocab, d, requires_grad=True)
+    teacher_lp = F.log_softmax(torch.randn(tokens, vocab), dim=-1)
+    targets = torch.randint(0, vocab, (tokens,))
+    ce_coeff, kd_coeff, tau = 0.3, 0.7, 1.0
+
+    loss, ce, kd = _fused_ce_kd(
+        hidden,
+        weight,
+        None,
+        teacher_lp.to(torch.float16),
+        targets,
+        tau,
+        ce_coeff,
+        kd_coeff,
+        chunk_size=4,
+    )
+    loss.backward()
+
+    h2 = hidden.detach().clone().requires_grad_(True)
+    w2 = weight.detach().clone().requires_grad_(True)
+    logits = F.linear(h2, w2).float()
+    ce_ref = F.cross_entropy(logits, targets, reduction="sum") / tokens
+    kd_ref = (
+        F.kl_div(
+            F.log_softmax(logits / tau, dim=-1),
+            teacher_lp.to(torch.float16).float(),
+            reduction="sum",
+            log_target=True,
+        )
+        / tokens
+    )
+    ref = ce_coeff * ce_ref + kd_coeff * kd_ref
+    ref.backward()
+
+    torch.testing.assert_close(loss, ref, atol=2e-3, rtol=2e-3)
+    torch.testing.assert_close(ce, ce_ref.detach(), atol=2e-3, rtol=2e-3)
+    torch.testing.assert_close(kd, kd_ref.detach(), atol=2e-3, rtol=2e-3)
+    torch.testing.assert_close(hidden.grad, h2.grad, atol=5e-3, rtol=5e-3)
+    torch.testing.assert_close(weight.grad, w2.grad, atol=5e-3, rtol=5e-3)

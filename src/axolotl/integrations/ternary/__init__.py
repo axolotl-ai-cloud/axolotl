@@ -212,6 +212,7 @@ class TernaryPlugin(BasePlugin):
             "ternary_distill_prefetch_teacher": distill_cfg.prefetch_teacher,
             "ternary_distill_logprob_prefetch": distill_cfg.logprob_prefetch,
             "ternary_distill_logprob_prefetch_depth": distill_cfg.logprob_prefetch_depth,
+            "ternary_distill_loss_backend": distill_cfg.loss_backend,
             "ternary_distill_teacher_prefetch_depth": distill_cfg.teacher_prefetch_depth,
             "ternary_distill_teacher_endpoint": distill_cfg.teacher_endpoint,
             "ternary_distill_schedule": distill_cfg.schedule,
