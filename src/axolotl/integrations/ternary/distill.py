@@ -121,6 +121,11 @@ class _TeacherPrefetch:
         self._lp_temperature = temperature
         self._lp_device = student_device
 
+    def stage_ahead(self, count: int = 2) -> None:
+        """Stage log-probs for the next `count` consumptions; nearest deadline first."""
+        for slot in islice(self._slots, count):
+            self._stage_logprobs(slot)
+
     def _stage_logprobs(self, slot: list) -> None:
         """Head + log_softmax on the teacher device, fp16 result on the student's."""
         if self._lp_weight is None or slot[2] is not None:
@@ -214,9 +219,8 @@ class _TeacherPrefetch:
             return None
         if self._lp_weight is not None and slot[2] is None:
             self._stage_logprobs(slot)
-        if self._slots:
-            # stage the next batch's log-probs while the student trains on this one
-            self._stage_logprobs(self._slots[0])
+        # stage upcoming batches' log-probs while the student trains on this one
+        self.stage_ahead(2)
         return slot[1], slot[2]
 
 
@@ -352,7 +356,7 @@ class _TeacherPrefetchLoader:
         refill = max(1, self.depth // 2)
         exhausted = False
         while True:
-            while not exhausted and len(buffer) < self.depth:
+            while not exhausted and len(buffer) <= self.depth - refill:
                 chunk = list(islice(source, refill))
                 if not chunk:
                     exhausted = True
@@ -827,6 +831,9 @@ class TernaryDistillTrainer(AxolotlTrainer):
             # no local teacher exists to fall back to — a failure here is fatal
             self._remote().submit_many(batches)
             return
+        # near-deadline staging outranks the next window's forward on the
+        # teacher's stream: enqueue imminent log-probs before the fused forward
+        self._teacher_prefetch.stage_ahead(2)
         if (
             not self.prefetch_teacher
             or not self._teacher_ready
