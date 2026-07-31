@@ -636,8 +636,11 @@ class AxolotlTrainer(
         )
 
         # Calculate log odds
+        # Clamp probabilities to prevent exp(x) > 1 which causes log(1 - exp(x)) to produce NaN
+        pos_prob_clamped = torch.clamp(pos_prob, max=0.999)
+        neg_prob_clamped = torch.clamp(neg_prob, max=0.999)
         log_odds = (pos_prob - neg_prob) - (
-            torch.log(1 - torch.exp(pos_prob)) - torch.log(1 - torch.exp(neg_prob))
+            torch.log1p(-torch.exp(pos_prob_clamped)) - torch.log1p(-torch.exp(neg_prob_clamped))
         )
         sig_ratio = torch.nn.functional.sigmoid(log_odds)
         ratio = torch.log(sig_ratio)
