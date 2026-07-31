@@ -143,6 +143,11 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
 
         batch_size, seq_len, _ = hidden_states.shape
 
+        # a plain DynamicCache (no conv/recurrent slots) carries no linear-attention
+        # state — treat it as cacheless rather than assuming the hybrid cache
+        if cache_params is not None and not hasattr(cache_params, "conv_states"):
+            cache_params = None
+
         use_precomputed_states = (
             cache_params is not None
             and cache_params.has_previous_state
