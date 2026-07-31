@@ -108,6 +108,7 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "flash_attention_2",
         "flash_attention_3",
         "flash_attention_4",
+        "flash_attention_torch",
         "flex_attention",
         "xformers",
         "sage",
@@ -138,6 +139,7 @@ ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
         "flash_attention_2",
         "flash_attention_3",
         "flash_attention_4",
+        "flash_attention_torch",
         "flex_attention",
         "xformers",
         "sage",
@@ -159,6 +161,14 @@ ATTN_IMPLS_USING_FLASH_LIB = frozenset(
 
 # Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
 ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
+
+
+def attn_impl_base(attn_implementation: str | None) -> str | None:
+    """Strip the `@revision` / `:kernel_name` suffix so `org/name@v2` still matches above."""
+    if attn_implementation is None:
+        return None
+    return attn_implementation.split(":", 1)[0].split("@", 1)[0].strip()
+
 
 # Narrow allowlist of real torch._inductor.config attrs (verified on torch 2.11; sentinel test guards renames).
 INDUCTOR_COMPILE_OPTIONS_ALLOWLIST = frozenset(

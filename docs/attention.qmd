@@ -21,6 +21,8 @@ backends, axolotl-registered backends, or a hub-kernel path.
 | `sdpa` | PyTorch `scaled_dot_product_attention`. No packing support. |
 | `flash_attention_2` | Dao-AILab Flash Attention 2. |
 | `flash_attention_3` | Dao-AILab Flash Attention 3 (Hopper+). |
+| `flash_attention_4` | Dao-AILab Flash Attention 4 (Hopper+, `flash_attn.cute`). |
+| `flash_attention_torch` | Torch in-tree varlen attention (`torch.nn.attention.varlen`, torch ≥ 2.11, CUDA only). No `flash_attn` dependency. No dropout, attention sinks, or softcap. |
 | `flex_attention` | Torch Flex Attention (requires torch ≥ 2.6). |
 | `xformers` | xFormers memory-efficient attention. |
 | `sage` | SageAttention (QK int8 / PV fp16). |

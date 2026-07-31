@@ -40,6 +40,7 @@ from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RingAttnFunc,
     RLType,
+    attn_impl_base,
 )
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
@@ -841,9 +842,10 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
-                "flash_attention_3, flash_attention_4, flex_attention, xformers, sage, fp8. "
-                "Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted and "
-                "passed through to transformers."
+                "flash_attention_3, flash_attention_4, flash_attention_torch, "
+                "flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. "
+                "kernels-community/flash-attn3) are also accepted and passed through to "
+                "transformers."
             )
         },
     )
@@ -1480,7 +1482,7 @@ class AxolotlInputConfig(
     @computed_field  # type: ignore[misc]
     @property
     def attn_supports_packing(self) -> bool:
-        return self.attn_implementation in ATTN_IMPLS_SUPPORTING_PACKING
+        return attn_impl_base(self.attn_implementation) in ATTN_IMPLS_SUPPORTING_PACKING
 
     @computed_field  # type: ignore[misc]
     @property
@@ -1493,7 +1495,7 @@ class AxolotlInputConfig(
     @computed_field  # type: ignore[misc]
     @property
     def attn_uses_flash_lib(self) -> bool:
-        return self.attn_implementation in ATTN_IMPLS_USING_FLASH_LIB
+        return attn_impl_base(self.attn_implementation) in ATTN_IMPLS_USING_FLASH_LIB
 
     @computed_field  # type: ignore[misc]
     @property
@@ -1715,6 +1717,25 @@ class AxolotlInputConfig(
                 "SageAttention full finetuning has been observed to drop loss to 0. "
                 "Monitor the loss, or switch to LoRA/QLoRA or another attention method."
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_flash_attention_torch_preflight(self):
+        """`flash_attention_torch` is only usable once transformers registers the backend."""
+        if self.attn_implementation != "flash_attention_torch":
+            return self
+
+        import transformers
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+        if "flash_attention_torch" not in ALL_ATTENTION_FUNCTIONS:
+            raise ValueError(
+                "attn_implementation=flash_attention_torch requires a transformers "
+                "release that registers torch's varlen attention backend "
+                "(https://github.com/huggingface/transformers/pull/45153). Installed "
+                f"transformers is {transformers.__version__}."
+            )
+
         return self
 
     @model_validator(mode="before")
