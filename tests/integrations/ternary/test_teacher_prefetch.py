@@ -118,6 +118,28 @@ def test_out_of_order_take_clears_the_queue():
     assert prefetch.take(a) is None  # and the queue was dropped with it
 
 
+def test_packed_rows_fuse_along_the_sequence():
+    # values under stock attention differ from per-batch (no packing-aware
+    # segmentation here); this pins the mechanics: slot count, order, shapes
+    teacher = _tiny_teacher()
+    batches = []
+    for width in (8, 8, 12):
+        batches.append(
+            {
+                "input_ids": torch.randint(0, 48, (1, width)),
+                "attention_mask": torch.ones(1, width, dtype=torch.long),
+                "position_ids": torch.arange(width).reshape(1, width),
+            }
+        )
+    prefetch = _TeacherPrefetch()
+    prefetch.submit_many(teacher, batches)
+    assert len(prefetch._slots) == 3
+    for batch in batches:
+        hidden = prefetch.take(batch)
+        assert hidden is not None
+        assert hidden.shape[:2] == (1, batch["input_ids"].shape[1])
+
+
 def test_ragged_window_falls_back_to_per_batch():
     teacher = _tiny_teacher()
     a = _batch()

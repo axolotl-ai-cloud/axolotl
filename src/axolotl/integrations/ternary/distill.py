@@ -85,31 +85,49 @@ class _TeacherPrefetch:
         if not batches:
             return
         keys = _teacher_keys(batches[0])
-        fusable = len(batches) > 1 and all(
-            _teacher_keys(b) == keys
-            and all(b[k].shape[1:] == batches[0][k].shape[1:] for k in keys)
-            for b in batches
-        )
-        if fusable:
-            device = next(teacher.parameters()).device
-            fused = {
-                k: torch.cat([b[k] for b in batches]).to(device, non_blocking=True)
-                for k in keys
-            }
-            with torch.no_grad():
-                hidden = _last_hidden(
-                    teacher(**_forward_inputs(fused, teacher)), teacher
-                )
-            offset = 0
-            for batch in batches:
-                rows = batch["input_ids"].shape[0]
-                self._slots.append(
-                    (_ident(batch, keys), hidden[offset : offset + rows])
-                )
-                offset += rows
-            return
+        same_keys = all(_teacher_keys(b) == keys for b in batches)
+        if len(batches) > 1 and same_keys:
+            if "position_ids" in keys and all(
+                b["input_ids"].shape[0] == 1 for b in batches
+            ):
+                # packed rows: sequence resets mark doc boundaries, so K rows
+                # concatenated along the sequence are one bigger packed row in
+                # the varlen kernels' native flat batch-1 form
+                self._submit_fused(teacher, batches, keys, dim=1)
+                return
+            if "position_ids" not in keys and all(
+                all(b[k].shape[1:] == batches[0][k].shape[1:] for k in keys)
+                for b in batches
+            ):
+                self._submit_fused(teacher, batches, keys, dim=0)
+                return
         for batch in batches:
             self.submit(teacher, batch)
+
+    def _submit_fused(
+        self,
+        teacher: PreTrainedModel,
+        batches: list[dict],
+        keys: tuple[str, ...],
+        dim: int,
+    ) -> None:
+        device = next(teacher.parameters()).device
+        fused = {
+            k: torch.cat([b[k] for b in batches], dim=dim).to(device, non_blocking=True)
+            for k in keys
+        }
+        with torch.no_grad():
+            hidden = _last_hidden(teacher(**_forward_inputs(fused, teacher)), teacher)
+        offset = 0
+        for batch in batches:
+            span = batch["input_ids"].shape[dim]
+            piece = (
+                hidden[:, offset : offset + span]
+                if dim == 1
+                else hidden[offset : offset + span]
+            )
+            self._slots.append((_ident(batch, keys), piece))
+            offset += span
 
     def submit(self, teacher: PreTrainedModel, inputs: dict) -> None:
         keys = _teacher_keys(inputs)
@@ -572,7 +590,8 @@ class TernaryDistillTrainer(AxolotlTrainer):
 
     def _submit_teacher_prefetch(self, batches: list[dict]) -> None:
         if (
-            self.distill_multiplier <= 0.0
+            not self.prefetch_teacher
+            or self.distill_multiplier <= 0.0
             or self.attn_relation_layer is not None
             or not self._teacher_ready
             or self._teacher is None
@@ -700,6 +719,10 @@ def _forward_inputs(inputs: dict[str, torch.Tensor], model: nn.Module) -> dict:
     forward = dict(inputs)
     forward["output_hidden_states"] = True
     forward["return_dict"] = True
+    # no loss path decodes, and a separately loaded teacher keeps its config
+    # default of use_cache=True — without this it allocates a cache per forward
+    if _forward_accepts(model, "use_cache"):
+        forward["use_cache"] = False
     if _forward_accepts(model, "logits_to_keep"):
         forward["logits_to_keep"] = 1
     return forward
