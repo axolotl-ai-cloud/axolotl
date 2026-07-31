@@ -968,6 +968,10 @@ def test_qwen3_5_is_a_supported_pack_target():
     assert "qwen3_5" in hf_bitnet.SUPPORTED_MODEL_TYPES
 
 
+def test_qwen3_5_moe_is_a_supported_pack_target():
+    assert "qwen3_5_moe" in hf_bitnet.SUPPORTED_MODEL_TYPES
+
+
 def test_the_qwen3_5_preset_splits_the_hybrid_the_way_the_probe_did():
     """Full attention and dense MLPs ternary; linear attention and the tower FP."""
     from axolotl.integrations.ternary.swap import ALWAYS_KEEP_FP, resolve_preset
