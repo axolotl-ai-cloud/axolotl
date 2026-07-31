@@ -448,6 +448,8 @@ def test_metrics_are_stored_per_term():
         "ternary/ce",
         "ternary/kd_logits",
         "ternary/teacher_prefetch_hit",
+        "ternary/teacher_prefetch_depth",
+        "ternary/teacher_logprobs_staged",
         "ternary/kd_hidden",
         "ternary/kd_attn",
     }
@@ -926,6 +928,8 @@ def test_constant_schedule_ignores_the_anchor_knobs():
         "ternary/ce",
         "ternary/kd_logits",
         "ternary/teacher_prefetch_hit",
+        "ternary/teacher_prefetch_depth",
+        "ternary/teacher_logprobs_staged",
     }
 
 
@@ -947,6 +951,8 @@ def test_anchored_metrics_carry_the_schedule_weight():
         "ternary/ce",
         "ternary/kd_logits",
         "ternary/teacher_prefetch_hit",
+        "ternary/teacher_prefetch_depth",
+        "ternary/teacher_logprobs_staged",
         "ternary/kd_hidden",
         "ternary/distill_weight",
     }

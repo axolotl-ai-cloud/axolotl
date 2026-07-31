@@ -333,9 +333,10 @@ class _RemoteTeacherClient:
 class _TeacherPrefetchLoader:
     """Wraps the train dataloader to enqueue teacher forwards at fetch time.
 
-    With `depth > 1`, up to `depth` upcoming batches are drained from the source
-    and handed to the trainer as one fused teacher submission before being
-    yielded onward in order.
+    A rolling buffer of capacity `depth` refills half a window at a time
+    whenever it drops below capacity, so submissions land while the consumer
+    still has queued work and the teacher's lead never collapses to zero at an
+    optimizer-step boundary. Each refill chunk is one fused teacher submission.
     """
 
     def __init__(
@@ -347,12 +348,20 @@ class _TeacherPrefetchLoader:
 
     def __iter__(self):
         source = iter(self.loader)
+        buffer: deque = deque()
+        refill = max(1, self.depth // 2)
+        exhausted = False
         while True:
-            window = list(islice(source, self.depth))
-            if not window:
+            while not exhausted and len(buffer) < self.depth:
+                chunk = list(islice(source, refill))
+                if not chunk:
+                    exhausted = True
+                    break
+                self.trainer._submit_teacher_prefetch(chunk)
+                buffer.extend(chunk)
+            if not buffer:
                 return
-            self.trainer._submit_teacher_prefetch(window)
-            yield from window
+            yield buffer.popleft()
 
     def __len__(self) -> int:
         return len(self.loader)
@@ -591,6 +600,10 @@ class TernaryDistillTrainer(AxolotlTrainer):
             "ternary/ce": ce.detach().item(),
             "ternary/kd_logits": kd.detach().item(),
             "ternary/teacher_prefetch_hit": 1.0 if prefetched is not None else 0.0,
+            "ternary/teacher_prefetch_depth": float(len(self._teacher_prefetch._slots)),
+            "ternary/teacher_logprobs_staged": float(
+                sum(1 for slot in self._teacher_prefetch._slots if slot[2] is not None)
+            ),
         }
 
         mask = inputs.get("attention_mask")

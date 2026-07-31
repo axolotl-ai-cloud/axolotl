@@ -79,19 +79,20 @@ def test_changed_content_or_key_set_falls_back():
     assert prefetch.take(inputs) is None
 
 
-def test_loader_wrapper_submits_windows_and_delegates():
+def test_loader_wrapper_submits_rolling_windows_and_delegates():
     calls = []
     trainer = SimpleNamespace(_submit_teacher_prefetch=calls.append)
-    base = [_batch(), _batch(), _batch()]
+    base = [_batch() for _ in range(5)]
 
     assert list(_TeacherPrefetchLoader(base, trainer)) == base
-    assert [len(w) for w in calls] == [1, 1, 1]
+    assert [len(w) for w in calls] == [1] * 5
 
     calls.clear()
-    wrapped = _TeacherPrefetchLoader(base, trainer, depth=2)
+    wrapped = _TeacherPrefetchLoader(base, trainer, depth=4)
     assert list(wrapped) == base
-    assert [len(w) for w in calls] == [2, 1]
-    assert len(wrapped) == 3
+    # refills of depth//2, submitted before the buffer ever empties
+    assert [len(w) for w in calls] == [2, 2, 1]
+    assert len(wrapped) == 5
     assert wrapped.index == base.index  # attribute delegation
 
 
