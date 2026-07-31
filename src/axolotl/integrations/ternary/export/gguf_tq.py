@@ -86,6 +86,15 @@ _TQ1_0_BASE: int = 3**_TQ1_0_TRITS
 # (bytes, trits per byte) groups, in element order: qs low, qs high, qh
 _TQ1_0_GROUPS: tuple[tuple[int, int], ...] = ((32, 5), (16, 5), (TQ1_0_QH_BYTES, 4))
 
+IQ1S_DELTA: float = 0.125
+IQ1S_GROUP: int = 32
+IQ1S_QS_BYTES: int = QK_K // 8
+IQ1S_QH_BYTES: int = 2 * (QK_K // IQ1S_GROUP)
+IQ1S_BLOCK_BYTES: int = 2 + IQ1S_QS_BYTES + IQ1S_QH_BYTES
+# the 3-bit sub-scale k decodes to multiplier 2k+1; a fixed k=3 makes d = s/7
+# round-trip the per-tensor scale with the least f16 error across its range
+_IQ1S_SUBSCALE: int = 3
+
 _GGUF_ARCH: dict[str, str] = {"llama": "LLAMA", "qwen3": "QWEN3"}
 
 _PackEntry = Callable[
@@ -136,6 +145,95 @@ def unpack_tq2_0(packed: torch.Tensor, shape: tuple[int, int]) -> torch.Tensor:
     qs = qs.reshape(rows, -1, _TQ2_0_HALVES, 1, _TQ2_0_LANE_STRIDE)
     lanes = (qs >> _lane_shifts(packed.device)[:, None]) & 3
     return (lanes.reshape(rows, cols) - 1).to(torch.int8)
+
+
+def pack_iq1s(codes: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+    """Pack grid-pattern ternary codes into IQ1_S blocks (1.5625 bpw).
+
+    Per 256-weight block: f16 `d`, 32 `qs` bytes (low 8 bits of one 11-bit grid
+    index per 8 weights), and 8 `qh` uint16s — one per 32-weight group — carrying
+    the four index high-triples, the 3-bit sub-scale and the shift sign. The format
+    decodes as `d·(2k+1)·(grid + σ·0.125)`: the ±0.125 shift is mandatory, so the
+    packer picks σ per group to pull the decoded group mean toward the original and
+    fixes k so `d·(2k+1)` reproduces the per-tensor scale.
+
+    Args:
+        codes: int8 codes of shape `(out_features, in_features)`; every group of 8
+            must be a grid pattern.
+        scale: fp32 per-tensor scale.
+
+    Returns:
+        Flat uint8 tensor holding the block-serialized rows.
+
+    Raises:
+        ValueError: If `in_features` is not a multiple of 256, or a group of 8 is
+            not on the IQ1_S grid.
+    """
+    from ..iq1s_grid import GRID_DIM, pattern_index_table
+
+    rows, cols = codes.shape
+    if cols % QK_K:
+        raise ValueError(f"IQ1_S needs in_features % {QK_K} == 0, got {cols}")
+
+    powers = torch.tensor(
+        [3**i for i in range(GRID_DIM)], dtype=torch.long, device=codes.device
+    )
+    keys = ((codes.long() + 1).reshape(rows, -1, GRID_DIM) * powers).sum(dim=-1)
+    indices = pattern_index_table(codes.device)[keys]
+    if bool((indices < 0).any()):
+        bad = int((indices < 0).sum())
+        raise ValueError(
+            f"{bad} groups of 8 are not IQ1_S grid patterns; pack only masters "
+            "healed with ternary.codebook: iq1s"
+        )
+
+    n_blocks = cols // QK_K
+    qs = (indices & 0xFF).reshape(rows, n_blocks, IQ1S_QS_BYTES).to(torch.uint8)
+
+    high = (indices >> 8).reshape(rows, n_blocks, QK_K // IQ1S_GROUP, 4)
+    group_sum = codes.reshape(rows, n_blocks, QK_K // IQ1S_GROUP, IQ1S_GROUP).sum(-1)
+    sign_bit = (group_sum > 0).to(torch.long)
+    qh = (
+        high[..., 0]
+        | (high[..., 1] << 3)
+        | (high[..., 2] << 6)
+        | (high[..., 3] << 9)
+        | (_IQ1S_SUBSCALE << 12)
+        | (sign_bit << 15)
+    ).to(torch.int32)
+    qh_bytes = torch.stack([qh & 0xFF, (qh >> 8) & 0xFF], dim=-1).to(torch.uint8)
+
+    d = scale.float() / (2 * _IQ1S_SUBSCALE + 1)
+    blocks = torch.cat(
+        [
+            _scale_bytes(d, "<f2", codes.device).expand(rows, n_blocks, 2),
+            qs,
+            qh_bytes.reshape(rows, n_blocks, IQ1S_QH_BYTES),
+        ],
+        dim=-1,
+    )
+    return blocks.reshape(-1)
+
+
+def decode_iq1s(packed: torch.Tensor, shape: tuple[int, int]) -> torch.Tensor:
+    """Reference decode of IQ1_S blocks, replicating llama.cpp's arithmetic exactly."""
+    from ..iq1s_grid import grid_tensor
+
+    rows, cols = _check_packed(packed, shape, IQ1S_BLOCK_BYTES)
+    blocks = packed.reshape(rows, cols // QK_K, IQ1S_BLOCK_BYTES)
+    d = _decode_f16(blocks[..., :2]).reshape(rows, cols // QK_K)
+    qs = blocks[..., 2 : 2 + IQ1S_QS_BYTES].to(torch.long)
+    qh_lo = blocks[..., 2 + IQ1S_QS_BYTES :: 2].to(torch.long)
+    qh_hi = blocks[..., 3 + IQ1S_QS_BYTES :: 2].to(torch.long)
+    qh = qh_lo | (qh_hi << 8)
+
+    dl = d[..., None] * (2 * ((qh >> 12) & 7) + 1).float()
+    delta = torch.where(qh & 0x8000 != 0, -IQ1S_DELTA, IQ1S_DELTA)
+    high = torch.stack([(qh >> (3 * l)) & 7 for l in range(4)], dim=-1)
+    indices = qs.reshape(*high.shape) | (high << 8)
+    grid = grid_tensor(packed.device).float()[indices]
+    values = dl[..., None, None] * (grid + delta[..., None, None])
+    return values.reshape(rows, cols)
 
 
 def quantize_q8_0(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
