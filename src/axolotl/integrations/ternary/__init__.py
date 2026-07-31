@@ -210,6 +210,7 @@ class TernaryPlugin(BasePlugin):
             "ternary_distill_attn_relation_layer": distill_cfg.attn_relation_layer,
             "ternary_distill_teacher_device_map": distill_cfg.teacher_device_map,
             "ternary_distill_prefetch_teacher": distill_cfg.prefetch_teacher,
+            "ternary_distill_logprob_prefetch": distill_cfg.logprob_prefetch,
             "ternary_distill_teacher_prefetch_depth": distill_cfg.teacher_prefetch_depth,
             "ternary_distill_teacher_endpoint": distill_cfg.teacher_endpoint,
             "ternary_distill_schedule": distill_cfg.schedule,

@@ -53,6 +53,7 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_teacher_device_map: str | None = None
     ternary_distill_teacher_endpoint: str | None = None
     ternary_distill_prefetch_teacher: bool = True
+    ternary_distill_logprob_prefetch: bool = True
     ternary_distill_teacher_prefetch_depth: int | None = None
     ternary_distill_schedule: DistillSchedule | None = None
     ternary_distill_anchor_start: float | None = None
@@ -85,18 +86,64 @@ def _ident(inputs: dict, keys: tuple[str, ...]) -> tuple:
 
 
 class _TeacherPrefetch:
-    """FIFO of teacher final hidden states, enqueued at batch-fetch time.
+    """FIFO of teacher results, enqueued at batch-fetch time.
 
     The teacher is frozen, so its forwards can run on their own device while the
     student computes, and any number of batches may be in flight (no staleness).
     `submit_many` fuses same-shape batches into one forward for throughput; a slot
-    is only honored when the loss receives the exact tensors it was computed from
-    (object identity per teacher input key), so any input fixup between fetch and
-    loss silently falls back to the inline path.
+    is honored when the loss receives a batch whose `input_ids` content
+    fingerprint matches, so any input rewrite between fetch and loss silently
+    falls back to the inline path.
+
+    With `configure_logprobs`, the pipeline also runs the teacher head +
+    log_softmax on the teacher's device ahead of consumption and stages each
+    batch's fp16 log-probs onto the student device one batch early — loss time
+    then needs no teacher math on any device, and nothing is recomputed in
+    backward because the log-probs enter the chunk checkpoint as inputs.
     """
 
     def __init__(self) -> None:
-        self._slots: deque[tuple[tuple[tuple[str, int], ...], torch.Tensor]] = deque()
+        self._slots: deque[list] = deque()  # [ident, hidden, logprobs | None]
+        self._lp_weight: torch.Tensor | None = None
+        self._lp_bias: torch.Tensor | None = None
+        self._lp_temperature: float = 1.0
+        self._lp_device: torch.device | str | None = None
+
+    def configure_logprobs(
+        self,
+        weight: torch.Tensor,
+        bias: torch.Tensor | None,
+        temperature: float,
+        student_device: torch.device | str,
+    ) -> None:
+        self._lp_weight = weight
+        self._lp_bias = bias
+        self._lp_temperature = temperature
+        self._lp_device = student_device
+
+    def _stage_logprobs(self, slot: list) -> None:
+        """Head + log_softmax on the teacher device, fp16 result on the student's."""
+        if self._lp_weight is None or slot[2] is not None:
+            return
+        hidden = slot[1]
+        rows, tokens, _ = hidden.shape
+        with torch.no_grad():
+            flat = hidden.reshape(rows * tokens, -1)
+            pieces = []
+            for start in range(0, flat.shape[0], 256):
+                logits = F.linear(
+                    flat[start : start + 256], self._lp_weight, self._lp_bias
+                ).float()
+                pieces.append(
+                    F.log_softmax(logits / self._lp_temperature, dim=-1).to(
+                        torch.float16
+                    )
+                )
+            slot[2] = (
+                torch.cat(pieces)
+                .reshape(rows, tokens, -1)
+                .to(self._lp_device, non_blocking=True)
+            )
 
     def submit_many(self, teacher: PreTrainedModel, batches: list[dict]) -> None:
         batches = [b for b in batches if "input_ids" in _teacher_keys(b)]
@@ -144,7 +191,7 @@ class _TeacherPrefetch:
                 if dim == 1
                 else hidden[offset : offset + span]
             )
-            self._slots.append((_ident(batch, keys), piece))
+            self._slots.append([_ident(batch, keys), piece, None])
             offset += span
 
     def submit(self, teacher: PreTrainedModel, inputs: dict) -> None:
@@ -155,17 +202,22 @@ class _TeacherPrefetch:
         moved = {k: inputs[k].to(device, non_blocking=True) for k in keys}
         with torch.no_grad():
             hidden = _last_hidden(teacher(**_forward_inputs(moved, teacher)), teacher)
-        self._slots.append((_ident(inputs, keys), hidden))
+        self._slots.append([_ident(inputs, keys), hidden, None])
 
-    def take(self, inputs: dict) -> torch.Tensor | None:
+    def take(self, inputs: dict) -> tuple[torch.Tensor, torch.Tensor | None] | None:
         if not self._slots:
             return None
-        ident, hidden = self._slots.popleft()
-        if _ident(inputs, _teacher_keys(inputs)) != ident:
+        slot = self._slots.popleft()
+        if _ident(inputs, _teacher_keys(inputs)) != slot[0]:
             # order broke; anything still queued is for batches we cannot match
             self._slots.clear()
             return None
-        return hidden
+        if self._lp_weight is not None and slot[2] is None:
+            self._stage_logprobs(slot)
+        if self._slots:
+            # stage the next batch's log-probs while the student trains on this one
+            self._stage_logprobs(self._slots[0])
+        return slot[1], slot[2]
 
 
 class _RemoteTeacherClient:
@@ -371,6 +423,9 @@ class TernaryDistillTrainer(AxolotlTrainer):
             getattr(args, "ternary_distill_teacher_prefetch_depth", None) or 1
         )
         self._teacher_prefetch = _TeacherPrefetch()
+        self.logprob_prefetch = bool(
+            getattr(args, "ternary_distill_logprob_prefetch", True)
+        )
         self.teacher_endpoint = getattr(args, "ternary_distill_teacher_endpoint", None)
         if self.teacher_endpoint and self.attn_relation_layer is not None:
             raise ValueError(
@@ -475,6 +530,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
         outputs = model(**_forward_inputs(inputs, student))
         student_hidden = _last_hidden(outputs, model)
 
+        teacher_logprobs_full: torch.Tensor | None = None
         if self.teacher_endpoint:
             teacher_hidden = self._remote().take(inputs)
             teacher_weight: torch.Tensor | None = self._remote_teacher_head()
@@ -485,7 +541,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
                 self._teacher_prefetch.take(inputs) if self.prefetch_teacher else None
             )
             if prefetched is not None:
-                teacher_hidden = prefetched
+                teacher_hidden, teacher_logprobs_full = prefetched
             else:
                 teacher_device = next(teacher.parameters()).device
                 teacher_inputs = {
@@ -511,16 +567,22 @@ class TernaryDistillTrainer(AxolotlTrainer):
         supervised = shifted != IGNORE_INDEX
         teacher_supervised = supervised.to(teacher_hidden.device)
         chunk_size = _chunk_size(student_head.weight.shape[0])
+        lp_flat = None
+        if teacher_logprobs_full is not None:
+            lp_flat = teacher_logprobs_full[..., :-1, :][supervised]
         ce, kd = _chunked_ce_kd(
             student_hidden[..., :-1, :][supervised],
-            teacher_hidden[..., :-1, :][teacher_supervised],
+            None
+            if lp_flat is not None
+            else teacher_hidden[..., :-1, :][teacher_supervised],
             student_head.weight,
             getattr(student_head, "bias", None),
-            teacher_weight,
-            teacher_bias,
+            None if lp_flat is not None else teacher_weight,
+            None if lp_flat is not None else teacher_bias,
             shifted[supervised],
             self.logits_temperature,
             chunk_size,
+            teacher_logprobs=lp_flat,
         )
 
         alpha = multiplier * self.logits_weight
@@ -777,6 +839,14 @@ class TernaryDistillTrainer(AxolotlTrainer):
         teacher.requires_grad_(False)
         self._teacher = teacher
         self._teacher_ready = True
+        if self.logprob_prefetch and self.prefetch_teacher:
+            head = _resolve_lm_head(self._teacher)
+            self._teacher_prefetch.configure_logprobs(
+                head.weight,
+                getattr(head, "bias", None),
+                self.logits_temperature,
+                next(student.parameters()).device,
+            )
         if self.attn_relation_layer is not None:
             self._head_dim = _head_dim(student)
         return teacher
@@ -1051,22 +1121,29 @@ def _chunk_terms(
     teacher_bias: torch.Tensor | None,
     targets: torch.Tensor | None,
     temperature: float,
+    teacher_logprobs: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Summed CE and KL for one token chunk; the only place logits exist."""
     student_logits = F.linear(student_hidden, student_weight, student_bias).float()
-    if teacher_hidden is None or teacher_weight is None:
+    if teacher_logprobs is None and (teacher_hidden is None or teacher_weight is None):
         if targets is None:
             return student_logits.new_zeros(()), student_logits.new_zeros(())
         ce = F.cross_entropy(student_logits, targets, reduction="sum")
         return ce, student_logits.new_zeros(())
 
-    with torch.no_grad():
-        # the teacher head stays wherever the teacher lives; only this chunk's
-        # log-probs cross the device boundary
-        teacher_logits = F.linear(teacher_hidden, teacher_weight, teacher_bias).float()
-        teacher_logprobs = F.log_softmax(teacher_logits / temperature, dim=-1).to(
-            student_logits.device
-        )
+    if teacher_logprobs is None:
+        with torch.no_grad():
+            # the teacher head stays wherever the teacher lives; only this chunk's
+            # log-probs cross the device boundary
+            teacher_logits = F.linear(
+                teacher_hidden, teacher_weight, teacher_bias
+            ).float()
+            teacher_logprobs = F.log_softmax(teacher_logits / temperature, dim=-1).to(
+                student_logits.device
+            )
+    else:
+        # prefetched at the trainer's temperature; no teacher math on any device
+        teacher_logprobs = teacher_logprobs.float()
 
     if targets is None:
         ce = student_logits.new_zeros(())
@@ -1088,6 +1165,7 @@ def _chunked_ce_kd(
     targets: torch.Tensor | None,
     temperature: float,
     chunk_size: int,
+    teacher_logprobs: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Mean CE and mean KL over `(tokens, d)` hidden states, one chunk at a time.
 
@@ -1123,6 +1201,7 @@ def _chunked_ce_kd(
             teacher_bias,
             None if targets is None else targets[start:stop],
             temperature,
+            None if teacher_logprobs is None else teacher_logprobs[start:stop],
         )
         if recompute:
             ce, kd = checkpoint(_chunk_terms, *arguments, use_reentrant=False)

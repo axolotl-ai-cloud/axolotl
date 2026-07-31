@@ -43,8 +43,10 @@ def test_take_returns_the_inline_teacher_hidden():
     prefetch = _TeacherPrefetch()
     prefetch.submit(teacher, inputs)
 
-    hidden = prefetch.take(inputs)
-    assert hidden is not None
+    taken = prefetch.take(inputs)
+    assert taken is not None
+    hidden, logprobs = taken
+    assert logprobs is None  # not configured
     with torch.no_grad():
         keys = {k: inputs[k] for k in ("input_ids", "attention_mask")}
         inline = _last_hidden(teacher(**_forward_inputs(keys, teacher)), teacher)
@@ -106,7 +108,7 @@ def test_fused_submit_matches_per_batch_hidden():
     for inputs in (a, b):
         got, want = fused.take(inputs), single.take(inputs)
         assert got is not None and want is not None
-        torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(got[0], want[0], atol=1e-5, rtol=1e-5)
 
 
 def test_out_of_order_take_clears_the_queue():
@@ -136,9 +138,9 @@ def test_packed_rows_fuse_along_the_sequence():
     prefetch.submit_many(teacher, batches)
     assert len(prefetch._slots) == 3
     for batch in batches:
-        hidden = prefetch.take(batch)
-        assert hidden is not None
-        assert hidden.shape[:2] == (1, batch["input_ids"].shape[1])
+        taken = prefetch.take(batch)
+        assert taken is not None
+        assert taken[0].shape[:2] == (1, batch["input_ids"].shape[1])
 
 
 def test_ragged_window_falls_back_to_per_batch():
@@ -171,3 +173,26 @@ def test_submit_gating_skips_before_teacher_ready():
     fake._teacher_ready = True
     TernaryDistillTrainer._submit_teacher_prefetch(fake, [_batch()])
     assert prefetch._slots
+
+
+def test_logprob_pipeline_stages_ahead_and_matches_head_math():
+    import torch.nn.functional as F
+
+    teacher = _tiny_teacher()
+    prefetch = _TeacherPrefetch()
+    prefetch.configure_logprobs(
+        teacher.lm_head.weight.detach(), None, 1.0, student_device="cpu"
+    )
+    a, b = _batch(), _batch()
+    prefetch.submit_many(teacher, [a, b])
+
+    taken = prefetch.take(a)
+    assert taken is not None
+    hidden, logprobs = taken
+    assert logprobs is not None and logprobs.dtype == torch.float16
+    want = F.log_softmax(
+        F.linear(hidden, teacher.lm_head.weight.detach()).float(), dim=-1
+    ).to(torch.float16)
+    torch.testing.assert_close(logprobs, want, atol=2e-3, rtol=2e-3)
+    # the next slot was staged while this batch would be training
+    assert prefetch._slots[0][2] is not None

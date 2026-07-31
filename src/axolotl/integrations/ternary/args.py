@@ -183,6 +183,14 @@ class TernaryDistillConfig(BaseModel):
             "from the server and only the head weight is loaded locally."
         ),
     )
+    logprob_prefetch: bool = Field(
+        default=True,
+        description=(
+            "Stage the teacher's fp16 log-probs onto the student device one batch "
+            "ahead of consumption, so loss time runs no teacher math anywhere and "
+            "the chunk checkpoints save inputs instead of recomputing the head."
+        ),
+    )
     teacher_prefetch_depth: int = Field(
         default=1,
         ge=1,
