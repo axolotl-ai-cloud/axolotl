@@ -167,6 +167,14 @@ class TernaryDistillConfig(BaseModel):
             "the student's device."
         ),
     )
+    prefetch_teacher: bool = Field(
+        default=True,
+        description=(
+            "Enqueue the frozen teacher's forward at batch-fetch time so it overlaps "
+            "the student's compute instead of serializing inside the loss; falls back "
+            "to inline whenever the batch the loss sees differs from the one fetched."
+        ),
+    )
     logits_weight: float = Field(
         default=0.5,
         ge=0.0,

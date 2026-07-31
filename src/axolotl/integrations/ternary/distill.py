@@ -46,8 +46,75 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_hidden_huber_delta: float | None = None
     ternary_distill_attn_relation_layer: int | None = None
     ternary_distill_teacher_device_map: str | None = None
+    ternary_distill_prefetch_teacher: bool = True
     ternary_distill_schedule: DistillSchedule | None = None
     ternary_distill_anchor_start: float | None = None
+
+
+class _TeacherPrefetch:
+    """One-slot FIFO of teacher final hidden states, enqueued at batch-fetch time.
+
+    The teacher is frozen, so its forward can run on its own device while the
+    student computes; the slot is only honored when the loss receives the exact
+    tensors it was computed from (object identity per teacher input key), so any
+    input fixup between fetch and loss silently falls back to the inline path.
+    """
+
+    def __init__(self) -> None:
+        self._slot: tuple[tuple[tuple[str, int], ...], torch.Tensor] | None = None
+
+    def submit(self, teacher: PreTrainedModel, inputs: dict) -> None:
+        keys = tuple(
+            sorted(
+                k
+                for k in inputs
+                if k in TEACHER_INPUT_KEYS and torch.is_tensor(inputs[k])
+            )
+        )
+        if "input_ids" not in keys:
+            return
+        device = next(teacher.parameters()).device
+        moved = {k: inputs[k].to(device, non_blocking=True) for k in keys}
+        with torch.no_grad():
+            hidden = _last_hidden(teacher(**_forward_inputs(moved, teacher)), teacher)
+        self._slot = (tuple((k, id(inputs[k])) for k in keys), hidden)
+
+    def take(self, inputs: dict) -> torch.Tensor | None:
+        if self._slot is None:
+            return None
+        ident, hidden = self._slot
+        self._slot = None
+        present = tuple(
+            sorted(
+                k
+                for k in inputs
+                if k in TEACHER_INPUT_KEYS and torch.is_tensor(inputs[k])
+            )
+        )
+        if present != tuple(k for k, _ in ident):
+            return None
+        if tuple((k, id(inputs[k])) for k in present) != ident:
+            return None
+        return hidden
+
+
+class _TeacherPrefetchLoader:
+    """Wraps the train dataloader to enqueue the teacher forward at fetch time."""
+
+    def __init__(self, loader, trainer: "TernaryDistillTrainer") -> None:
+        self.loader = loader
+        self.trainer = trainer
+
+    def __iter__(self):
+        for batch in self.loader:
+            self.trainer._submit_teacher_prefetch(batch)
+            yield batch
+
+    def __len__(self) -> int:
+        return len(self.loader)
+
+    def __getattr__(self, name: str):
+        return getattr(self.loader, name)
 
 
 class TernaryDistillTrainer(AxolotlTrainer):
@@ -105,6 +172,10 @@ class TernaryDistillTrainer(AxolotlTrainer):
         if self.teacher_device_map and getattr(args, "_n_gpu", 0) > 1:
             args._n_gpu = 1
             self._train_batch_size = args.train_batch_size
+        self.prefetch_teacher = bool(
+            getattr(args, "ternary_distill_prefetch_teacher", True)
+        )
+        self._teacher_prefetch = _TeacherPrefetch()
         schedule = getattr(args, "ternary_distill_schedule", None) or "constant"
         self.distill_schedule = schedule
         self.anchor_start = _arg(args, "ternary_distill_anchor_start", 0.9)
@@ -201,17 +272,24 @@ class TernaryDistillTrainer(AxolotlTrainer):
         outputs = model(**_forward_inputs(inputs, student))
         student_hidden = _last_hidden(outputs, model)
 
-        teacher_device = next(teacher.parameters()).device
-        teacher_inputs = {
-            key: value.to(teacher_device)
-            for key, value in inputs.items()
-            if key in TEACHER_INPUT_KEYS
-        }
-        with torch.no_grad():
-            teacher_outputs = teacher(**_forward_inputs(teacher_inputs, teacher))
-        # left on the teacher's device: the chunked KD runs the teacher head there and
-        # ships only per-chunk log-probs back, never a (vocab, hidden) head copy
-        teacher_hidden = _last_hidden(teacher_outputs, teacher)
+        prefetched = (
+            self._teacher_prefetch.take(inputs) if self.prefetch_teacher else None
+        )
+        if prefetched is not None:
+            teacher_hidden = prefetched
+        else:
+            teacher_device = next(teacher.parameters()).device
+            teacher_inputs = {
+                key: value.to(teacher_device)
+                for key, value in inputs.items()
+                if key in TEACHER_INPUT_KEYS
+            }
+            with torch.no_grad():
+                teacher_outputs = teacher(**_forward_inputs(teacher_inputs, teacher))
+            # left on the teacher's device: the chunked KD runs the teacher head
+            # there and ships only per-chunk log-probs back, never a
+            # (vocab, hidden) head copy
+            teacher_hidden = _last_hidden(teacher_outputs, teacher)
 
         student_head = _resolve_lm_head(student)
         teacher_head = _resolve_lm_head(teacher)
@@ -237,6 +315,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
         metrics = {
             "ternary/ce": ce.detach().item(),
             "ternary/kd_logits": kd.detach().item(),
+            "ternary/teacher_prefetch_hit": 1.0 if prefetched is not None else 0.0,
         }
 
         mask = inputs.get("attention_mask")
@@ -434,6 +513,28 @@ class TernaryDistillTrainer(AxolotlTrainer):
             f"(anchor_start {self.anchor_start})"
         )
         return True
+
+    def get_train_dataloader(self):
+        loader = super().get_train_dataloader()
+        if not self.prefetch_teacher:
+            return loader
+        return _TeacherPrefetchLoader(loader, self)
+
+    def _submit_teacher_prefetch(self, inputs: dict) -> None:
+        if (
+            self.distill_multiplier <= 0.0
+            or self.attn_relation_layer is not None
+            or not self._teacher_ready
+            or self._teacher is None
+        ):
+            return
+        try:
+            self._teacher_prefetch.submit(self._teacher, inputs)
+        except Exception:  # noqa: BLE001 - an optimization, never fatal
+            LOG.warning(
+                "ternary: teacher prefetch failed; continuing inline", exc_info=True
+            )
+            self.prefetch_teacher = False
 
     def _ensure_teacher(self, student: PreTrainedModel) -> PreTrainedModel:
         """Load the frozen teacher, once."""

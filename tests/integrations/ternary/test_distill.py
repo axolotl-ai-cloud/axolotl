@@ -447,6 +447,7 @@ def test_metrics_are_stored_per_term():
     assert set(trainer._stored_metrics["train"]) == {
         "ternary/ce",
         "ternary/kd_logits",
+        "ternary/teacher_prefetch_hit",
         "ternary/kd_hidden",
         "ternary/kd_attn",
     }
@@ -921,7 +922,11 @@ def test_constant_schedule_ignores_the_anchor_knobs():
 
     reference = _reference_loss(student, copy.deepcopy(teacher), batch, 0.5, 2.0)
     assert loss.item() == pytest.approx(reference.item(), rel=1e-5, abs=1e-6)
-    assert set(trainer._stored_metrics["train"]) == {"ternary/ce", "ternary/kd_logits"}
+    assert set(trainer._stored_metrics["train"]) == {
+        "ternary/ce",
+        "ternary/kd_logits",
+        "ternary/teacher_prefetch_hit",
+    }
 
 
 def test_anchored_metrics_carry_the_schedule_weight():
@@ -941,6 +946,7 @@ def test_anchored_metrics_carry_the_schedule_weight():
     assert set(trainer._stored_metrics["train"]) == {
         "ternary/ce",
         "ternary/kd_logits",
+        "ternary/teacher_prefetch_hit",
         "ternary/kd_hidden",
         "ternary/distill_weight",
     }

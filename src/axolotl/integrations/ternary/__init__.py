@@ -209,6 +209,7 @@ class TernaryPlugin(BasePlugin):
             "ternary_distill_hidden_huber_delta": distill_cfg.hidden_huber_delta,
             "ternary_distill_attn_relation_layer": distill_cfg.attn_relation_layer,
             "ternary_distill_teacher_device_map": distill_cfg.teacher_device_map,
+            "ternary_distill_prefetch_teacher": distill_cfg.prefetch_teacher,
             "ternary_distill_schedule": distill_cfg.schedule,
             "ternary_distill_anchor_start": distill_cfg.anchor_start,
         }
