@@ -729,19 +729,19 @@ class ModelLoader:
         if (
             self.cfg.adapter in ["qlora", "lora"]
             and hasattr(self.model_config, "quantization_config")
-            and self.model_config.quantization_config["quant_method"]
+            and self.model_config.quantization_config.get("quant_method")
             in ["gptq", "awq", "bitsandbytes"]
         ):
-            if self.model_config.quantization_config["quant_method"] == "gptq":
+            if self.model_config.quantization_config.get("quant_method") == "gptq":
                 self.model_kwargs["quantization_config"] = GPTQConfig(
                     **self.model_config.quantization_config
                 )
-            elif self.model_config.quantization_config["quant_method"] == "awq":
+            elif self.model_config.quantization_config.get("quant_method") == "awq":
                 self.model_kwargs["quantization_config"] = AwqConfig(
                     **self.model_config.quantization_config
                 )
             elif (
-                self.model_config.quantization_config["quant_method"] == "bitsandbytes"
+                self.model_config.quantization_config.get("quant_method") == "bitsandbytes"
             ):
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
