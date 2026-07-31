@@ -99,6 +99,12 @@ class TernaryDistillTrainer(AxolotlTrainer):
         self.teacher_device_map = getattr(
             args, "ternary_distill_teacher_device_map", None
         )
+        # a teacher pinned off the student's device claims that GPU for itself;
+        # DataParallel would replicate the student onto it and OOM. The base
+        # Trainer already cached a batch size scaled by n_gpu, so refresh it too.
+        if self.teacher_device_map and getattr(args, "_n_gpu", 0) > 1:
+            args._n_gpu = 1
+            self._train_batch_size = args.train_batch_size
         schedule = getattr(args, "ternary_distill_schedule", None) or "constant"
         self.distill_schedule = schedule
         self.anchor_start = _arg(args, "ternary_distill_anchor_start", 0.9)
