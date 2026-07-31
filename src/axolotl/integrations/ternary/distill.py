@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import inspect
+from collections import deque
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any
 
 import torch
@@ -47,68 +49,113 @@ class TernaryDistillTrainingArgsMixin:
     ternary_distill_attn_relation_layer: int | None = None
     ternary_distill_teacher_device_map: str | None = None
     ternary_distill_prefetch_teacher: bool = True
+    ternary_distill_teacher_prefetch_depth: int | None = None
     ternary_distill_schedule: DistillSchedule | None = None
     ternary_distill_anchor_start: float | None = None
 
 
-class _TeacherPrefetch:
-    """One-slot FIFO of teacher final hidden states, enqueued at batch-fetch time.
+def _teacher_keys(inputs: dict) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            k for k in inputs if k in TEACHER_INPUT_KEYS and torch.is_tensor(inputs[k])
+        )
+    )
 
-    The teacher is frozen, so its forward can run on its own device while the
-    student computes; the slot is only honored when the loss receives the exact
-    tensors it was computed from (object identity per teacher input key), so any
-    input fixup between fetch and loss silently falls back to the inline path.
+
+def _ident(inputs: dict, keys: tuple[str, ...]) -> tuple[tuple[str, int], ...]:
+    return tuple((k, id(inputs[k])) for k in keys)
+
+
+class _TeacherPrefetch:
+    """FIFO of teacher final hidden states, enqueued at batch-fetch time.
+
+    The teacher is frozen, so its forwards can run on their own device while the
+    student computes, and any number of batches may be in flight (no staleness).
+    `submit_many` fuses same-shape batches into one forward for throughput; a slot
+    is only honored when the loss receives the exact tensors it was computed from
+    (object identity per teacher input key), so any input fixup between fetch and
+    loss silently falls back to the inline path.
     """
 
     def __init__(self) -> None:
-        self._slot: tuple[tuple[tuple[str, int], ...], torch.Tensor] | None = None
+        self._slots: deque[tuple[tuple[tuple[str, int], ...], torch.Tensor]] = deque()
+
+    def submit_many(self, teacher: PreTrainedModel, batches: list[dict]) -> None:
+        batches = [b for b in batches if "input_ids" in _teacher_keys(b)]
+        if not batches:
+            return
+        keys = _teacher_keys(batches[0])
+        fusable = len(batches) > 1 and all(
+            _teacher_keys(b) == keys
+            and all(b[k].shape[1:] == batches[0][k].shape[1:] for k in keys)
+            for b in batches
+        )
+        if fusable:
+            device = next(teacher.parameters()).device
+            fused = {
+                k: torch.cat([b[k] for b in batches]).to(device, non_blocking=True)
+                for k in keys
+            }
+            with torch.no_grad():
+                hidden = _last_hidden(
+                    teacher(**_forward_inputs(fused, teacher)), teacher
+                )
+            offset = 0
+            for batch in batches:
+                rows = batch["input_ids"].shape[0]
+                self._slots.append(
+                    (_ident(batch, keys), hidden[offset : offset + rows])
+                )
+                offset += rows
+            return
+        for batch in batches:
+            self.submit(teacher, batch)
 
     def submit(self, teacher: PreTrainedModel, inputs: dict) -> None:
-        keys = tuple(
-            sorted(
-                k
-                for k in inputs
-                if k in TEACHER_INPUT_KEYS and torch.is_tensor(inputs[k])
-            )
-        )
+        keys = _teacher_keys(inputs)
         if "input_ids" not in keys:
             return
         device = next(teacher.parameters()).device
         moved = {k: inputs[k].to(device, non_blocking=True) for k in keys}
         with torch.no_grad():
             hidden = _last_hidden(teacher(**_forward_inputs(moved, teacher)), teacher)
-        self._slot = (tuple((k, id(inputs[k])) for k in keys), hidden)
+        self._slots.append((_ident(inputs, keys), hidden))
 
     def take(self, inputs: dict) -> torch.Tensor | None:
-        if self._slot is None:
+        if not self._slots:
             return None
-        ident, hidden = self._slot
-        self._slot = None
-        present = tuple(
-            sorted(
-                k
-                for k in inputs
-                if k in TEACHER_INPUT_KEYS and torch.is_tensor(inputs[k])
-            )
-        )
-        if present != tuple(k for k, _ in ident):
-            return None
-        if tuple((k, id(inputs[k])) for k in present) != ident:
+        ident, hidden = self._slots.popleft()
+        keys = tuple(k for k, _ in ident)
+        if _teacher_keys(inputs) != keys or _ident(inputs, keys) != ident:
+            # order broke; anything still queued is for batches we cannot match
+            self._slots.clear()
             return None
         return hidden
 
 
 class _TeacherPrefetchLoader:
-    """Wraps the train dataloader to enqueue the teacher forward at fetch time."""
+    """Wraps the train dataloader to enqueue teacher forwards at fetch time.
 
-    def __init__(self, loader, trainer: "TernaryDistillTrainer") -> None:
+    With `depth > 1`, up to `depth` upcoming batches are drained from the source
+    and handed to the trainer as one fused teacher submission before being
+    yielded onward in order.
+    """
+
+    def __init__(
+        self, loader, trainer: "TernaryDistillTrainer", depth: int = 1
+    ) -> None:
         self.loader = loader
         self.trainer = trainer
+        self.depth = max(1, depth)
 
     def __iter__(self):
-        for batch in self.loader:
-            self.trainer._submit_teacher_prefetch(batch)
-            yield batch
+        source = iter(self.loader)
+        while True:
+            window = list(islice(source, self.depth))
+            if not window:
+                return
+            self.trainer._submit_teacher_prefetch(window)
+            yield from window
 
     def __len__(self) -> int:
         return len(self.loader)
@@ -174,6 +221,9 @@ class TernaryDistillTrainer(AxolotlTrainer):
             self._train_batch_size = args.train_batch_size
         self.prefetch_teacher = bool(
             getattr(args, "ternary_distill_prefetch_teacher", True)
+        )
+        self.teacher_prefetch_depth = int(
+            getattr(args, "ternary_distill_teacher_prefetch_depth", None) or 1
         )
         self._teacher_prefetch = _TeacherPrefetch()
         schedule = getattr(args, "ternary_distill_schedule", None) or "constant"
@@ -518,9 +568,9 @@ class TernaryDistillTrainer(AxolotlTrainer):
         loader = super().get_train_dataloader()
         if not self.prefetch_teacher:
             return loader
-        return _TeacherPrefetchLoader(loader, self)
+        return _TeacherPrefetchLoader(loader, self, depth=self.teacher_prefetch_depth)
 
-    def _submit_teacher_prefetch(self, inputs: dict) -> None:
+    def _submit_teacher_prefetch(self, batches: list[dict]) -> None:
         if (
             self.distill_multiplier <= 0.0
             or self.attn_relation_layer is not None
@@ -529,7 +579,7 @@ class TernaryDistillTrainer(AxolotlTrainer):
         ):
             return
         try:
-            self._teacher_prefetch.submit(self._teacher, inputs)
+            self._teacher_prefetch.submit_many(self._teacher, batches)
         except Exception:  # noqa: BLE001 - an optimization, never fatal
             LOG.warning(
                 "ternary: teacher prefetch failed; continuing inline", exc_info=True

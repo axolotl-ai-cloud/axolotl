@@ -175,6 +175,16 @@ class TernaryDistillConfig(BaseModel):
             "to inline whenever the batch the loss sees differs from the one fetched."
         ),
     )
+    teacher_prefetch_depth: int = Field(
+        default=1,
+        ge=1,
+        le=64,
+        description=(
+            "How many upcoming batches one teacher submission covers; same-shape "
+            "batches are fused into a single forward for throughput. The teacher is "
+            "frozen, so depth costs only held hidden states."
+        ),
+    )
     logits_weight: float = Field(
         default=0.5,
         ge=0.0,

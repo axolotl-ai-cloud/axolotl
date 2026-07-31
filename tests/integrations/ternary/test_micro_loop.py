@@ -649,6 +649,9 @@ def test_inprocess_distillation_selects_the_trainer_and_args():
         "ternary_distill_hidden_loss": TernaryDistillConfig().hidden_loss,
         "ternary_distill_hidden_huber_delta": TernaryDistillConfig().hidden_huber_delta,
         "ternary_distill_prefetch_teacher": TernaryDistillConfig().prefetch_teacher,
+        "ternary_distill_teacher_prefetch_depth": (
+            TernaryDistillConfig().teacher_prefetch_depth
+        ),
         "ternary_distill_attn_relation_layer": None,
         "ternary_distill_teacher_device_map": None,
         "ternary_distill_schedule": "constant",

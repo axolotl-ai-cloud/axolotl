@@ -76,16 +76,59 @@ def test_dropped_or_added_key_falls_back():
     assert prefetch.take(inputs) is None
 
 
-def test_loader_wrapper_submits_and_delegates():
+def test_loader_wrapper_submits_windows_and_delegates():
     calls = []
     trainer = SimpleNamespace(_submit_teacher_prefetch=calls.append)
-    base = [_batch(), _batch()]
-    wrapped = _TeacherPrefetchLoader(base, trainer)
+    base = [_batch(), _batch(), _batch()]
 
+    assert list(_TeacherPrefetchLoader(base, trainer)) == base
+    assert [len(w) for w in calls] == [1, 1, 1]
+
+    calls.clear()
+    wrapped = _TeacherPrefetchLoader(base, trainer, depth=2)
     assert list(wrapped) == base
-    assert len(calls) == 2
-    assert len(wrapped) == 2
+    assert [len(w) for w in calls] == [2, 1]
+    assert len(wrapped) == 3
     assert wrapped.index == base.index  # attribute delegation
+
+
+def test_fused_submit_matches_per_batch_hidden():
+    teacher = _tiny_teacher()
+    a, b = _batch(), _batch()
+
+    fused = _TeacherPrefetch()
+    fused.submit_many(teacher, [a, b])
+    single = _TeacherPrefetch()
+    single.submit(teacher, a)
+    single.submit(teacher, b)
+
+    for inputs in (a, b):
+        got, want = fused.take(inputs), single.take(inputs)
+        assert got is not None and want is not None
+        torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
+
+
+def test_out_of_order_take_clears_the_queue():
+    teacher = _tiny_teacher()
+    a, b = _batch(), _batch()
+    prefetch = _TeacherPrefetch()
+    prefetch.submit_many(teacher, [a, b])
+
+    assert prefetch.take(b) is None  # order broke
+    assert prefetch.take(a) is None  # and the queue was dropped with it
+
+
+def test_ragged_window_falls_back_to_per_batch():
+    teacher = _tiny_teacher()
+    a = _batch()
+    b = {
+        "input_ids": torch.randint(0, 48, (2, 9)),
+        "attention_mask": torch.ones(2, 9, dtype=torch.long),
+    }
+    prefetch = _TeacherPrefetch()
+    prefetch.submit_many(teacher, [a, b])
+    assert prefetch.take(a) is not None
+    assert prefetch.take(b) is not None
 
 
 def test_submit_gating_skips_before_teacher_ready():
@@ -98,9 +141,9 @@ def test_submit_gating_skips_before_teacher_ready():
         _teacher_prefetch=prefetch,
         prefetch_teacher=True,
     )
-    TernaryDistillTrainer._submit_teacher_prefetch(fake, _batch())
-    assert prefetch._slot is None
+    TernaryDistillTrainer._submit_teacher_prefetch(fake, [_batch()])
+    assert not prefetch._slots
 
     fake._teacher_ready = True
-    TernaryDistillTrainer._submit_teacher_prefetch(fake, _batch())
-    assert prefetch._slot is not None
+    TernaryDistillTrainer._submit_teacher_prefetch(fake, [_batch()])
+    assert prefetch._slots
