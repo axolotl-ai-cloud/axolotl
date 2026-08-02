@@ -134,41 +134,43 @@ class Messages(BaseModel):
     def tokenized(
         self, tokenizer: PreTrainedTokenizer, ignore_index=-100
     ) -> dict[str, List[int]]:
-        # iterate over the contents, tokenizing the concatenated string values up to the current MessageContents
-        # returns a dictionary mapping w input_ids, attention_mask, and labels
-        input_ids: List[int] = []
-        labels: List[int] = []
-        pending_input_ids: List[int] = []
-        pending_weight = self.weight
-        running_content = ""
-        for _, msg_content in enumerate(self.content):
+        # tokenize the concatenated content values once, attributing tokens to
+        # their content item by char offset; avoids re-tokenizing the running
+        # string per item (O(n) instead of O(n^2)) and guarantees the output
+        # equals the tokenization of the final string
+        content_str = ""
+        spans: List[tuple[int, int, MessageContents]] = []
+        for msg_content in self.content:
             # TODO also handle non-text content types
             if msg_content.type in [
                 MessageContentTypes.text.value,
                 MessageContentTypes.tool_call.value,
                 MessageContentTypes.tool_response.value,
             ]:
-                running_content += str(msg_content)
-                tok_results = tokenizer(running_content, add_special_tokens=False)
-                tok_input_ids = tok_results["input_ids"]
-                if pending_input_ids:
-                    new_pending_inputs = tok_input_ids[
-                        len(input_ids) : len(input_ids) + len(pending_input_ids)
-                    ]
-                    if new_pending_inputs != pending_input_ids:
-                        pending_input_ids = new_pending_inputs
-                    input_ids.extend(pending_input_ids)
-                    if pending_weight:
-                        labels.extend(pending_input_ids)
-                    else:
-                        labels.extend([ignore_index] * len(pending_input_ids))
-                pending_input_ids = tok_results["input_ids"][len(input_ids) :]
-                pending_weight = self.weight and msg_content.weight not in [0, 0.0]
-        input_ids.extend(pending_input_ids)
-        if pending_weight:
-            labels.extend(pending_input_ids)
-        else:
-            labels.extend([ignore_index] * len(pending_input_ids))
+                start = len(content_str)
+                content_str += str(msg_content)
+                spans.append((start, len(content_str), msg_content))
+        if not spans:
+            return {
+                "input_ids": [],
+                "attention_mask": [],
+                "labels": [],
+            }
+        tok_results = tokenizer(
+            content_str, add_special_tokens=False, return_offsets_mapping=True
+        )
+        input_ids = tok_results["input_ids"]
+        offsets = tok_results["offset_mapping"]
+        labels: List[int] = []
+        item_idx = 0
+        for token_id, (_, end) in zip(input_ids, offsets, strict=True):
+            while item_idx < len(spans) and end > spans[item_idx][1]:
+                item_idx += 1
+            msg_content = spans[item_idx][2]
+            if self.weight and msg_content.weight not in [0, 0.0]:
+                labels.append(token_id)
+            else:
+                labels.append(ignore_index)
         attention_mask = [1] * len(input_ids)
         return {
             "input_ids": input_ids,
