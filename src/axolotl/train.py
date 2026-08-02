@@ -50,6 +50,22 @@ LOG = get_logger(__name__)
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
 PLUGIN_MANAGER = PluginManager.get_instance()
 
+_TORCHAO_LOW_BIT_OPTIMIZERS = frozenset(
+    {"ao_adamw_4bit", "ao_adamw_8bit", "ao_adamw_fp8", "sinkgd"}
+)
+
+
+def _bf16_default_dtype_safe(cfg: DictDefault) -> bool:
+    """False for FSDP2 and torchao low-bit optimizers: they allocate state via
+    torch.empty, which silently picks up a bf16 default dtype."""
+    is_fsdp2 = bool(
+        str(getattr(cfg, "fsdp_version", "")) == "2"
+        and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
+    )
+    if is_fsdp2:
+        return False
+    return str(getattr(cfg, "optimizer", "")) not in _TORCHAO_LOW_BIT_OPTIMIZERS
+
 
 def setup_model_and_tokenizer(
     cfg: DictDefault,
@@ -227,9 +243,8 @@ def execute_training(
                 )
             )
 
-        # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
-        # if cfg.bf16:
-        #     torch.set_default_dtype(torch.bfloat16)
+        if cfg.bf16 and _bf16_default_dtype_safe(cfg):
+            torch.set_default_dtype(torch.bfloat16)
 
         LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
