@@ -339,3 +339,76 @@ class TestChatBuilderToolCalls:
         transform = chat_message_transform_builder()
         with pytest.raises(ValueError, match="message_content"):
             transform({"messages": [{"role": "user"}]})
+
+    def test_content_field_detected_in_later_message(self):
+        transform = chat_message_transform_builder()
+        out = transform(
+            {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "get_temperature",
+                                    "arguments": {},
+                                },
+                            }
+                        ],
+                    },
+                    {"role": "assistant", "content": "The temperature is 22.0."},
+                ]
+            }
+        )
+        assert out["conversation"][0]["content"][0]["type"] == "tool_call"
+        assert out["conversation"][1]["content"] == [
+            {"type": "text", "value": "The temperature is 22.0."}
+        ]
+
+    def test_weight_field_detected_in_later_message(self):
+        transform = chat_message_transform_builder(message_field_training="weight")
+        out = transform(
+            {
+                "messages": [
+                    {"role": "user", "content": "hello"},
+                    {"role": "assistant", "content": "hi", "weight": 0},
+                ]
+            }
+        )
+        assert out["conversation"][1]["weight"] == 0
+
+    def test_tool_contents_validate_as_message_contents(self):
+        from axolotl.core.chat.messages import MessageContents
+
+        transform = chat_message_transform_builder()
+        out = transform(
+            {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "get_temperature",
+                                    "arguments": {"location": "Paris"},
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "name": "get_temperature",
+                        "content": "22.0",
+                        "tool_call_id": "call_1",
+                    },
+                ]
+            }
+        )
+        for content in out["conversation"][0]["content"]:
+            assert content["type"] == "tool_call"
+            MessageContents(**content)
+        response = out["conversation"][1]["content"][0]
+        assert response["type"] == "tool_response"
+        MessageContents(**response)
