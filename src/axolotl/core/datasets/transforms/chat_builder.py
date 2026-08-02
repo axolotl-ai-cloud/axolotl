@@ -109,19 +109,21 @@ def chat_message_transform_builder(
             (
                 field
                 for field in message_field_content
-                if field in sample[conversations_field][0]
+                if any(field in message for message in sample[conversations_field])
             ),
             message_field_content[0],
         )
         if not any(
-            field in sample[conversations_field][0] for field in message_weight_fields
+            field in message
+            for message in sample[conversations_field]
+            for field in message_weight_fields
         ):
             message_weight_field = None
         else:
             message_weight_field = next(
                 field
                 for field in message_weight_fields
-                if field in sample[conversations_field][0]
+                if any(field in message for message in sample[conversations_field])
             )
 
         messages = []
@@ -129,7 +131,7 @@ def chat_message_transform_builder(
             role = role_value_mappings[message[role_field]]
             weight = (
                 int(message[message_weight_field])
-                if message_weight_field
+                if message_weight_field and message_weight_field in message
                 else role_default_weights_mappings[role]
             )
             messages.append(
