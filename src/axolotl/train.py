@@ -243,11 +243,17 @@ def execute_training(
                 )
             )
 
+        prev_default_dtype = None
         if cfg.bf16 and _bf16_default_dtype_safe(cfg):
+            prev_default_dtype = torch.get_default_dtype()
             torch.set_default_dtype(torch.bfloat16)
 
-        LOG.info("Starting trainer...")
-        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        try:
+            LOG.info("Starting trainer...")
+            trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        finally:
+            if prev_default_dtype is not None:
+                torch.set_default_dtype(prev_default_dtype)
 
         PLUGIN_MANAGER.post_train(cfg, trainer.model)
 
