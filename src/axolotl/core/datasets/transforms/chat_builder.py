@@ -3,6 +3,7 @@ This module contains a function that builds a transform that takes a row from th
 dataset and converts it to a Chat.
 """
 
+import json
 from typing import Any, Mapping
 
 
@@ -94,17 +95,26 @@ def chat_message_transform_builder(
             for role in message_field_role
             if role in sample[conversations_field][0]
         )
-        if not any(
-            field in sample[conversations_field][0] for field in message_field_content
-        ):
+        has_content_field = any(
+            field in message
+            for message in sample[conversations_field]
+            for field in message_field_content
+        )
+        has_tool_calls = any(
+            "tool_calls" in message for message in sample[conversations_field]
+        )
+        if not has_content_field and not has_tool_calls:
             raise ValueError("No message_content field found in message.")
         message_content_field = next(
-            field
-            for field in message_field_content
-            if field in sample[conversations_field][0]
+            (
+                field
+                for field in message_field_content
+                if field in sample[conversations_field][0]
+            ),
+            message_field_content[0],
         )
         if not any(
-            field in sample[conversations_field][0] for field in message_field_training
+            field in sample[conversations_field][0] for field in message_weight_fields
         ):
             message_weight_field = None
         else:
@@ -122,30 +132,77 @@ def chat_message_transform_builder(
                 if message_weight_field
                 else role_default_weights_mappings[role]
             )
-
-            # TODO if "tool_calls" in message[message_content_field]: then convert tool call to ToolCallContents
-            if isinstance(message[message_content_field], str):
-                messages.append(
-                    {
-                        "role": role,
-                        "content": [
-                            {
-                                "type": "text",
-                                "value": message[message_content_field],
-                            }
-                        ],
-                        "weight": weight,
-                    }
-                )
-            else:
-                messages.append(
-                    {
-                        "role": role,
-                        "content": message[message_content_field],
-                        "weight": weight,
-                    }
-                )
+            messages.append(
+                {
+                    "role": role,
+                    "content": _normalize_content(message, message_content_field, role),
+                    "weight": weight,
+                }
+            )
 
         return {"conversation": messages}
 
     return transform_builder
+
+
+def _convert_openai_tool_call(tool_call: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert a raw OpenAI tool call entry to the internal tool_call content format."""
+    function = tool_call.get("function", tool_call)
+    arguments = function.get("arguments", {})
+    if isinstance(arguments, str):
+        arguments = json.loads(arguments) if arguments else {}
+    value: dict[str, Any] = {"name": function.get("name", ""), "arguments": arguments}
+    tool_call_id = tool_call.get("id") or function.get("id")
+    if tool_call_id is not None:
+        value["id"] = tool_call_id
+    return {"type": "tool_call", "value": value}
+
+
+def _normalize_content(
+    message: Mapping[str, Any], message_content_field: str, role: str
+) -> list[dict[str, Any]]:
+    """Normalize raw dataset message content into the internal content format.
+
+    Handles OpenAI-style tool calls (top-level `tool_calls` field or
+    `{"type": "function", ...}` content items), string-encoded JSON arguments,
+    and tool messages with a `name`, which become `tool_response` contents.
+    """
+    content = message.get(message_content_field, [])
+    if content is None or content == "":
+        content = []
+    if isinstance(content, str):
+        content = [{"type": "text", "value": content}]
+    elif not isinstance(content, list):
+        content = [content]
+
+    normalized: list[dict[str, Any]] = []
+    for item in content:
+        if isinstance(item, Mapping) and item.get("type") == "function":
+            normalized.append(_convert_openai_tool_call(item))
+        else:
+            normalized.append(item)
+
+    if isinstance(message.get("tool_calls"), list):
+        normalized.extend(
+            _convert_openai_tool_call(tool_call) for tool_call in message["tool_calls"]
+        )
+
+    if role in ("tool", "ipython") and message.get("name"):
+        if len(normalized) == 1:
+            item = normalized[0]
+            if item.get("type") == "text":
+                response_content: Any = item.get("value", item.get("text", ""))
+            elif isinstance(item, Mapping) and "type" not in item:
+                response_content = item
+            else:
+                return normalized
+            tool_response: dict[str, Any] = {
+                "name": message["name"],
+                "content": response_content,
+            }
+            if message.get("tool_call_id"):
+                tool_response["id"] = message["tool_call_id"]
+            return [{"type": "tool_response", "value": tool_response}]
+        return normalized
+
+    return normalized
