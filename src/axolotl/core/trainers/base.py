@@ -934,8 +934,6 @@ class AxolotlTrainer(
 
         return result
 
-    # TODO(wing): drop the is_main_process forwarding below once
-    # https://github.com/huggingface/transformers/pull/39866/files is merged
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         # If we are executing this function, we are the process zero, so we don't check for that.
         output_dir = output_dir if output_dir is not None else self.args.output_dir
