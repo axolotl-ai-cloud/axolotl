@@ -56,8 +56,14 @@ _TORCHAO_LOW_BIT_OPTIMIZERS = frozenset(
 
 
 def _bf16_default_dtype_safe(cfg: DictDefault) -> bool:
-    """False for FSDP2 and torchao low-bit optimizers: they allocate state via
-    torch.empty, which silently picks up a bf16 default dtype."""
+    """False for FSDP2 and torchao low-bit optimizers.
+
+    The torchao low-bit optimizers (AdamW4Bit/8Bit/Fp8, and sinkgd, which
+    subclasses torchao's ``_AdamBase``) allocate the quantized-state ``scale``
+    tensor via ``torch.zeros(..., device=device)`` without an explicit dtype,
+    so it silently picks up a bf16 default dtype. ``fsdp_version: 2`` with an
+    empty or absent ``fsdp_config`` is not FSDP2 (FSDP is enabled by providing
+    a config), so it does not block the default dtype either."""
     is_fsdp2 = bool(
         str(getattr(cfg, "fsdp_version", "")) == "2"
         and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
