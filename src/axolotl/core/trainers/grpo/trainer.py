@@ -236,10 +236,18 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
                 dataloader_params["drop_last"] = self.args.dataloader_drop_last
 
             if not is_eval:
+                # Seed workers by SP group so every rank in a group gets identical
+                # worker RNG and therefore identical batches (required by ring
+                # attention, which splits the sequence at forward time).
+                worker_seed_rank = (
+                    self.args.process_index // self.args.context_parallel_size
+                    if self.args.context_parallel_size > 1
+                    else self.args.process_index
+                )
                 dataloader_params["worker_init_fn"] = partial(
                     seed_worker,
                     num_workers=self.args.dataloader_num_workers,
-                    rank=self.args.process_index,
+                    rank=worker_seed_rank,
                 )
 
         # Create the dataloader
@@ -251,10 +259,10 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         ):
             self.accelerator.even_batches = False
 
-        # Return unprepared dataloader if using sequence parallelism
-        # TODO(djsaunde): We might be able to use `accelerate`'s dataloader preparation
-        # if we use `dispatch_batches` and `slice_fn_for_dispatch` properly (i.e.,
-        # slice each batch along the sequence dimension).
+        # SP groups must all receive identical full batches: the sequence is split
+        # at attention time by ring attention. Accelerate's prepare_data_loader
+        # broadcasts from process 0 and slices by global rank, which would collapse
+        # every SP group onto group 0's data, so the raw dataloader is returned.
         if self.args.context_parallel_size > 1:
             return dataloader
 
