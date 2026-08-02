@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import inspect
 import json
 import math
 import os
@@ -67,6 +68,19 @@ REDUCTION_FNS = {
     "max": torch.max,
     "sum": torch.sum,
 }
+
+_SAVE_PRETRAINED_IS_MAIN_PROCESS_SUPPORTED: bool | None = None
+
+
+def _save_pretrained_supports_is_main_process() -> bool:
+    """True when the installed transformers save_pretrained accepts is_main_process."""
+    global _SAVE_PRETRAINED_IS_MAIN_PROCESS_SUPPORTED
+    if _SAVE_PRETRAINED_IS_MAIN_PROCESS_SUPPORTED is None:
+        _SAVE_PRETRAINED_IS_MAIN_PROCESS_SUPPORTED = (
+            "is_main_process"
+            in inspect.signature(PreTrainedModel.save_pretrained).parameters
+        )
+    return _SAVE_PRETRAINED_IS_MAIN_PROCESS_SUPPORTED
 
 
 class AxolotlTrainer(
@@ -920,12 +934,17 @@ class AxolotlTrainer(
 
         return result
 
-    # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged
+    # TODO(wing): drop the is_main_process forwarding below once
+    # https://github.com/huggingface/transformers/pull/39866/files is merged
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         # If we are executing this function, we are the process zero, so we don't check for that.
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
+
+        save_pretrained_kwargs = {}
+        if _save_pretrained_supports_is_main_process():
+            save_pretrained_kwargs["is_main_process"] = self.accelerator.is_main_process
 
         # fix for Context Parallel save: CP eval invalidates tensor storage
         # pointers, so clone to CPU to get fresh valid storage for safetensors
@@ -960,7 +979,7 @@ class AxolotlTrainer(
                 ).save_pretrained(
                     output_dir,
                     state_dict=state_dict,
-                    is_main_process=self.accelerator.is_main_process,
+                    **save_pretrained_kwargs,
                 )
             else:
                 LOG.info(
@@ -975,7 +994,7 @@ class AxolotlTrainer(
             self.model.save_pretrained(
                 output_dir,
                 state_dict=state_dict,
-                is_main_process=self.accelerator.is_main_process,
+                **save_pretrained_kwargs,
             )
 
         if self.processing_class is not None:
