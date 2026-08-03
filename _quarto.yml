@@ -457,6 +457,7 @@ website:
                 - docs/models/trinity.qmd
                 - docs/models/arcee.qmd
                 - docs/models/mistral-medium-3_5.qmd
+                - docs/models/mistral4.qmd
                 - section: "Ministral3"
                   contents:
                     - docs/models/ministral3.qmd
@@ -474,9 +475,14 @@ website:
                 - docs/models/mistral.qmd
                 - docs/models/llama-4.qmd
                 - docs/models/llama-2.qmd
+                - docs/models/qwen3.5.qmd
                 - docs/models/qwen3-next.qmd
                 - docs/models/qwen3.qmd
+                - docs/models/gemma4.qmd
                 - docs/models/gemma3n.qmd
+                - docs/models/glm47-flash.qmd
+                - docs/models/glm46v.qmd
+                - docs/models/glm45.qmd
                 - docs/models/apertus.qmd
                 - docs/models/gpt-oss.qmd
                 - docs/models/seed-oss.qmd

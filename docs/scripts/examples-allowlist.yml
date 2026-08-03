@@ -29,6 +29,8 @@ examples:
   # MistralAI
   - name: mistral-medium-3_5
     title: Mistral Medium 3.5
+  - name: mistral4
+    title: Mistral Small 4
   - name: ministral3/think
     title: Ministral 3 Thinking
   - name: ministral3/vision
@@ -55,14 +57,26 @@ examples:
     title: Llama 2
 
   # Alibaba
+  - name: qwen3.5
+    title: Qwen 3.5
   - name: qwen3-next
     title: Qwen 3 Next
   - name: qwen3
     title: Qwen 3
 
   # Google
+  - name: gemma4
+    title: Gemma 4
   - name: gemma3n
     title: Gemma 3n
+
+  # Z.ai
+  - name: glm47-flash
+    title: GLM-4.7-Flash
+  - name: glm46v
+    title: GLM-4.6V
+  - name: glm45
+    title: GLM-4.5-Air
 
   # Swiss AI
   - name: apertus
