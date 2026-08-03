@@ -17,8 +17,8 @@ examples:
     title: PaddleOCR-VL
 
   # CohereLabs
-  - name: cohere-compass
-    title: North Micro Vision
+  - name: cohere-north-micro-vision-instruct
+    title: North Micro Vision Instruct
 
   # AllenAI
   - name: olmo3

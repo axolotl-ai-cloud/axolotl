@@ -1,6 +1,6 @@
-# Finetune North Micro Vision with Axolotl
+# Finetune North Micro Vision Instruct with Axolotl
 
-[North Micro Vision Instruct](https://huggingface.co/CohereLabs/North-Micro-Vision-instruct-preview) is a 2.4B parameters (a 2B language decoder plus a 400M SigLIP-shaped vision encoder), with native-resolution image support. It is built for fine-tuning and document understanding, and is strongest on structured data extraction, scientific figure understanding, and document Q&A.
+[North Micro Vision Instruct](https://huggingface.co/CohereLabs/North-Micro-Vision-instruct-preview) is a 2.4B parameter model (a 2B language decoder plus a 400M SigLIP-shaped vision encoder) with native-resolution image support. It is built for fine-tuning and document understanding, and is strongest on structured data extraction, scientific figure understanding, and document Q&A.
 
 This guide shows how to fine-tune it with Axolotl's multimodal SFT path.
 
@@ -8,7 +8,7 @@ Thanks to the team at CohereLabs for giving us early access to prepare for this 
 
 ## Getting Started
 
-1. Install Axolotl following the main from the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
+1. Install Axolotl from main following the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
 
 2. Ensure Transformers is at least 5.15.0 via `uv pip install "transformers>=5.15.0"`.
 
@@ -18,13 +18,13 @@ Thanks to the team at CohereLabs for giving us early access to prepare for this 
 
     ```bash
     # 5.1 GiB VRAM, adapters on the language decoder
-    axolotl train examples/cohere-compass/north-micro-vision-qlora.yaml
+    axolotl train examples/cohere-north-micro-vision-instruct/qlora.yaml
 
     # 5.2 GiB VRAM, adapters on the decoder, vision tower and patch mergers
-    axolotl train examples/cohere-compass/north-micro-vision-qlora-vision.yaml
+    axolotl train examples/cohere-north-micro-vision-instruct/qlora-vision.yaml
 
     # 21.2 GiB VRAM
-    axolotl train examples/cohere-compass/north-micro-vision-fft.yaml
+    axolotl train examples/cohere-north-micro-vision-instruct/fft.yaml
     ```
 
 Let us know how it goes. Happy finetuning! 🚀
