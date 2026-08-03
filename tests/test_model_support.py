@@ -349,3 +349,39 @@ class TestPaddleOCRVLSupport:
             ValueError, match="not supported for model_type=paddleocr_vl"
         ):
             patch_manager._apply_self_attention_lora_patch()
+
+
+class TestCohereCompassSupport:
+    """Built-in CohereCompass descriptor (North Micro Vision and siblings)."""
+
+    def test_registered_and_multimodal(self):
+        support = get_model_support("cohere_compass")
+        assert support is not None
+        resolved = resolve_model_support(support)
+        assert resolved.is_multimodal is True
+        assert resolved.family == "image_text_to_text"
+        assert set(support.capabilities) == {
+            "cut_cross_entropy",
+            "liger",
+            "lora_kernels",
+        }
+
+    def test_auto_model_cls(self):
+        support = get_model_support("cohere_compass")
+        assert support.get_auto_model_cls() is AutoModelForImageTextToText
+
+    def test_processing_strategy_cls(self):
+        from axolotl.model_support.cohere_compass.processing import (
+            CohereCompassProcessingStrategy,
+        )
+
+        support = get_model_support("cohere_compass")
+        assert support.get_processing_strategy_cls() is CohereCompassProcessingStrategy
+
+    def test_verified_capabilities_not_marked_unsupported(self):
+        """CCE, LoRA kernels and Liger were all verified on hardware for this arch."""
+        from axolotl.model_support.base import Unsupported
+
+        caps = resolve_model_support(get_model_support("cohere_compass")).capabilities
+        for name in ("cut_cross_entropy", "lora_kernels", "liger"):
+            assert not isinstance(caps[name], Unsupported), name

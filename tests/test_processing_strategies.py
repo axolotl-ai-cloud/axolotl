@@ -8,6 +8,9 @@ import pytest
 import torch
 from pydantic import ValidationError
 
+from axolotl.model_support.cohere_compass.processing import (
+    CohereCompassProcessingStrategy,
+)
 from axolotl.model_support.paddleocr_vl.processing import PaddleOCRVLProcessingStrategy
 from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
@@ -720,6 +723,64 @@ def test_paddleocr_vl_user_boundary_matches_text_only_turns():
     # User content (" hello", " there", "\n") and assistant ("hi", eos) train;
     # bos and both role markers stay masked.
     assert labels == [-100, -100, -100, 23013, 883, 23, -100, -100, -100, 2488, 2]
+
+
+# Real ids from CohereLabs/North-Micro-Vision-instruct-preview.
+_COMPASS_VOCAB = {
+    "<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>": [255000, 255004],
+    "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>": [255000, 255002],
+    "<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>": [255000, 255003],
+    "<|END_OF_TURN_TOKEN|>": [255001],
+    "<|IMAGE_PAD|>": [255031],
+}
+_COMPASS_EOT = 255001
+# <bos> [system] sys <eot> [user] <vision_start> <img> <img> <vision_end> ask <eot>
+# [chatbot] ans1 ans2 <eot> <pad> <pad>
+_COMPASS_SEQ = [2, 255000, 255004, 700, 255001]
+_COMPASS_SEQ += [255000, 255002, 255028, 255031, 255031, 255029, 701, 255001]
+_COMPASS_SEQ += [255000, 255003, 702, 703, 255001, 0, 0]
+
+
+def _cohere_compass_fake_processor():
+    proc = _Processor(_Tokenizer(_COMPASS_VOCAB, pad_id=0, eos_id=_COMPASS_EOT))
+    proc.image_token = "<|IMAGE_PAD|>"
+    return proc
+
+
+def test_cohere_compass_masks_system_user_and_image_tokens():
+    strategy = CohereCompassProcessingStrategy(_cohere_compass_fake_processor())
+    labels = strategy.process_labels(torch.tensor([_COMPASS_SEQ])).tolist()[0]
+    # Only the chatbot turn's content plus its <|END_OF_TURN_TOKEN|> trains.
+    assert labels == [-100] * 15 + [702, 703, 255001, -100, -100]
+
+
+def test_cohere_compass_trains_user_turn_when_requested():
+    strategy = CohereCompassProcessingStrategy(
+        _cohere_compass_fake_processor(), roles_to_train=["user", "assistant"]
+    )
+    labels = strategy.process_labels(torch.tensor([_COMPASS_SEQ])).tolist()[0]
+    # User content trains, but <|IMAGE_PAD|> stays masked even inside a trained turn.
+    assert labels[7:13] == [255028, -100, -100, 255029, 701, 255001]
+    assert labels[1:5] == [-100, -100, -100, -100]  # system turn still masked
+
+
+def test_cohere_compass_role_boundaries_cover_all_three_roles():
+    strategy = CohereCompassProcessingStrategy(_cohere_compass_fake_processor())
+    assert {b.role for b in strategy.role_boundaries} == {"system", "user", "assistant"}
+    assistant = next(b for b in strategy.role_boundaries if b.role == "assistant")
+    assert assistant.start_tokens == [255000, 255003]
+    assert assistant.end_tokens == [_COMPASS_EOT]
+
+
+def test_dispatch_cohere_compass():
+    pytest.importorskip("transformers.models.cohere_compass")
+    from transformers.models.cohere_compass import CohereCompassProcessor
+
+    proc = MagicMock(spec=CohereCompassProcessor)
+    proc.tokenizer = _Tokenizer(_COMPASS_VOCAB, pad_id=0, eos_id=_COMPASS_EOT)
+    proc.image_token = "<|IMAGE_PAD|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, CohereCompassProcessingStrategy)
 
 
 def test_dispatch_paddleocr_vl():
