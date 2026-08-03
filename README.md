@@ -31,7 +31,7 @@
 ## 🎉 Latest Updates
 
 - 2026/08:
-  - New model support has been added in Axolotl for [Shieldstral](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/shieldstral).
+  - New model support has been added in Axolotl for [Shieldstral](https://docs.axolotl.ai/docs/models/shieldstral.html).
 - 2026/07:
   - [NVFP4 (4-bit) MoE LoRA training](https://docs.axolotl.ai/docs/nvfp4_lora.html) is now supported via ScatterMoE (W4A16) and SonicMoE (W4A4), including lossless adapter merge back into a plain NVFP4 checkpoint.
 - 2026/06:

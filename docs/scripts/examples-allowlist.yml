@@ -1,4 +1,8 @@
 examples:
+  # August 2026
+  - name: shieldstral
+    title: Shieldstral
+
   # December 2025
   - name: kimi-linear
     title: Kimi Linear
