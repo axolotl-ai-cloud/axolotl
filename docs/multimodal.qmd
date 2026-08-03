@@ -16,7 +16,7 @@ format:
 - [Mistral-Small-4](#sec-mistral-small-4)
 - [Magistral-Small-2509](#sec-magistral-small-2509)
 - [Voxtral](#sec-voxtral)
-- [Gemma-4](#sec-gemma-4) *(NEW)*
+- [Gemma-4](#sec-gemma-4)
 - [Gemma-3](#sec-gemma-3)
 - [Gemma-3n](#sec-gemma-3n)
 - [Qwen2-VL](#sec-qwen2-vl)
@@ -28,7 +28,7 @@ format:
 - [LFM2-VL](#sec-lfm2-vl)
 - [Intern-VL](#sec-intern-vl)
 - [PaddleOCR-VL](#sec-paddleocr-vl)
-- [North Micro Vision Instruct](#sec-north-micro-vision-instruct) *(NEW)*
+- [North Micro Vision Instruct](#sec-north-micro-vision-instruct)
 
 ## Usage
 
