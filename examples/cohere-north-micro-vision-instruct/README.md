@@ -55,9 +55,7 @@ Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.
 
 ## Related Resources
 
-- [North Micro Vision Instruct](https://huggingface.co/CohereLabs/North-Micro-Vision-instruct-preview)
 - [Introducing North Micro Vision Instruct](https://huggingface.co/blog/CohereLabs/introducing-north-micro-vision-instruct)
 - [Axolotl Docs](https://docs.axolotl.ai)
-- [Axolotl multimodal docs](https://docs.axolotl.ai/docs/multimodal.html)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
 - [Axolotl Discord](https://discord.gg/7m9sfhzaf3)
