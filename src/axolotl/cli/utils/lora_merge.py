@@ -554,6 +554,13 @@ def copy_non_model_files(
             filepath.name.startswith("model") and filepath.suffix == ".safetensors"
         ) or (filepath.name.startswith("pytorch_model") and filepath.suffix == ".bin"):
             continue
+        # Mistral repos duplicate the weights in native format; copying them would
+        # leave un-merged base weights that vLLM prefers over the merged shards.
+        if filepath.name.startswith("consolidated") and filepath.suffix in (
+            ".safetensors",
+            ".pth",
+        ):
+            continue
         if filepath.suffix == ".gguf":
             continue
         # Skip weight-map index files — they reference shard filenames that may

@@ -12,6 +12,7 @@ from axolotl.cli.utils.lora_merge import (
     _find_param_wrapper_lora,
     _merge_tensor_with_lora,
     _resolve_lora_alpha_for_key,
+    copy_non_model_files,
     find_lora_weights,
     merge_lora_sharded_efficient,
 )
@@ -868,6 +869,25 @@ class TestEfficientMerge:
         )
         assert a is not None
         assert a.shape == (8, 32)
+
+    def test_copy_non_model_files_skips_mistral_consolidated_weights(self, tmp_path):
+        """Copying consolidated* would leave base weights that vLLM loads over the merged shards."""
+        src = tmp_path / "base_model"
+        src.mkdir()
+        for name in (
+            "config.json",
+            "tekken.json",
+            "consolidated.safetensors",
+            "consolidated.safetensors.index.json",
+            "model-00001-of-00002.safetensors",
+        ):
+            (src / name).write_text("x")
+
+        dst = tmp_path / "merged"
+        dst.mkdir()
+        copy_non_model_files(src, dst, [src / "model-00001-of-00002.safetensors"])
+
+        assert sorted(p.name for p in dst.glob("*")) == ["config.json", "tekken.json"]
 
     def test_unmatched_tensors_pass_through(self):
         """Tensors with no matching LoRA are returned unchanged."""
