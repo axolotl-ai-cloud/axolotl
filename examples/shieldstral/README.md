@@ -69,7 +69,7 @@ The sample dataset [Nanobit/text-shieldstral-2k-test](https://huggingface.co/dat
 
 ### Vision
 
-Shieldstral moderates images and image+text as well, using the same setup as [Ministral3 vision fine-tuning](../ministral3/vision/README.md). The user turn holds the `<Instruct>`/`<Query>`/`<Document>` prefix, the image, then any trailing text such as a caption. Images are passed as `path`, `url` or `base64`; `PIL.Image` objects are not supported by the mistral-common tokenizer.
+Shieldstral supports images and image+text as well. The user turn holds the `<Instruct>`/`<Query>`/`<Document>` prefix, the image, then any trailing text such as a caption. Images are passed as `path`, `url` or `base64`; `PIL.Image` objects are not supported by the mistral-common tokenizer.
 
 ```json
 {
