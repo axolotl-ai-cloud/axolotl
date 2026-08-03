@@ -105,7 +105,6 @@ Sample Packing is not supported for multi-modality training currently.
 ## Related Resources
 
 - [MistralAI Shieldstral Blog](https://mistral.ai/news/shieldstral)
-- [Ministral3 fine-tuning guide](../ministral3/README.md)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl Website](https://axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
