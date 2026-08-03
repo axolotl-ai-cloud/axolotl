@@ -353,6 +353,51 @@ class LigerPlugin(BasePlugin):
                 f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
                 f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm}"
             )
+        elif cfg.model_config_type == "cohere_compass":
+            from transformers.models.cohere_compass import modeling_cohere_compass
+
+            if cfg.liger_rms_norm:
+                # in_place=False for gradient-checkpointing safety, as with gemma4.
+                class _LigerCohereCompassRMSNorm(LigerRMSNorm):
+                    """LigerRMSNorm for CohereCompass (constructed with keyword args)."""
+
+                    def __init__(self, hidden_size, eps=1e-6):
+                        super().__init__(
+                            hidden_size,
+                            eps,
+                            offset=0.0,
+                            casting_mode="llama",
+                            in_place=False,
+                        )
+
+                modeling_cohere_compass.CohereCompassRMSNorm = (
+                    _LigerCohereCompassRMSNorm
+                )
+            if cfg.liger_glu_activation:
+                modeling_cohere_compass.CohereCompassMLP = LigerSwiGLUMLP
+            if cfg.liger_layer_norm:
+                # Reaches the vision tower only. The decoder's own CohereCompassLayerNorm
+                # is a custom fp32 norm, not nn.LayerNorm, and is deliberately left alone.
+                modeling_cohere_compass.nn.LayerNorm = LigerLayerNorm
+            if cfg.liger_rope:
+                LOG.warning(
+                    "Liger RoPE is not compatible with CohereCompass (interleaved "
+                    "rope_style and 3D mrope). Skipping."
+                )
+            if cfg.liger_cross_entropy:
+                from transformers.loss.loss_utils import nn as loss_nn
+
+                loss_nn.functional.cross_entropy = liger_cross_entropy
+            if cfg.liger_fused_linear_cross_entropy:
+                LOG.warning(
+                    "Liger fused linear cross entropy is not implemented for "
+                    "CohereCompass. Use cut_cross_entropy instead. Skipping."
+                )
+            LOG.info(
+                f"Applied Liger kernels for cohere_compass: "
+                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
+                f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm} (vision tower)"
+            )
         elif cfg.liger_fused_linear_cross_entropy:
             try:
                 from .models.base import patch_lce_forward
