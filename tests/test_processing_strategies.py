@@ -744,6 +744,8 @@ _COMPASS_SEQ += [255000, 255003, 702, 703, 255001, 0, 0]
 def _cohere_compass_fake_processor():
     proc = _Processor(_Tokenizer(_COMPASS_VOCAB, pad_id=0, eos_id=_COMPASS_EOT))
     proc.image_token = "<|IMAGE_PAD|>"
+    proc.vision_start_token_id = 255028
+    proc.vision_end_token_id = 255029
     return proc
 
 
@@ -759,8 +761,8 @@ def test_cohere_compass_trains_user_turn_when_requested():
         _cohere_compass_fake_processor(), roles_to_train=["user", "assistant"]
     )
     labels = strategy.process_labels(torch.tensor([_COMPASS_SEQ])).tolist()[0]
-    # User content trains, but <|IMAGE_PAD|> stays masked even inside a trained turn.
-    assert labels[7:13] == [255028, -100, -100, 255029, 701, 255001]
+    # User content trains, but the image span stays masked even inside a trained turn.
+    assert labels[7:13] == [-100, -100, -100, -100, 701, 255001]
     assert labels[1:5] == [-100, -100, -100, -100]  # system turn still masked
 
 
