@@ -33,7 +33,7 @@ class CohereCompassSupport(ModelSupport):
         family=IMAGE_TEXT_TO_TEXT,
         capabilities={
             "cut_cross_entropy": Supported(
-                "Matches the unpatched loss to bf16 noise on North-Micro-Vision, including logit_scale."
+                "Matches the unpatched loss to bf16 noise on North-Micro-Vision-Instruct, including logit_scale."
             ),
             "lora_kernels": Supported(
                 "The QKV/O source rewrite preserves the rope_on_all_layers and sliding-window branches."

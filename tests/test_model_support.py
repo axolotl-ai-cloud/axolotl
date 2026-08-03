@@ -352,7 +352,7 @@ class TestPaddleOCRVLSupport:
 
 
 class TestCohereCompassSupport:
-    """Built-in CohereCompass descriptor (North Micro Vision and siblings)."""
+    """Built-in CohereCompass descriptor (North Micro Vision Instruct and siblings)."""
 
     def test_registered_and_multimodal(self):
         support = get_model_support("cohere_compass")
