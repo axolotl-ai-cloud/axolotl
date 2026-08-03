@@ -23,12 +23,12 @@ format:
 - [Qwen2.5-VL](#sec-qwen25-vl)
 - [Qwen3-VL](#sec-qwen3-vl)
 - [Qwen3.5](#sec-qwen3-5)
-- [North Micro Vision Instruct](#sec-north-micro-vision-instruct) *(NEW)*
-- [PaddleOCR-VL](#sec-paddleocr-vl)
 - [GLM-4.6V](#sec-glm-4-6v)
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
 - [Intern-VL](#sec-intern-vl)
+- [PaddleOCR-VL](#sec-paddleocr-vl)
+- [North Micro Vision Instruct](#sec-north-micro-vision-instruct) *(NEW)*
 
 ## Usage
 
@@ -238,22 +238,6 @@ base_model: Qwen/Qwen3.5-9B
 chat_template: qwen3_5
 ```
 
-### North Micro Vision Instruct {#sec-north-micro-vision-instruct}
-
-```yaml
-base_model: CohereLabs/North-Micro-Vision-instruct-preview
-processor_type: AutoProcessor
-```
-
-### PaddleOCR-VL {#sec-paddleocr-vl}
-
-```yaml
-base_model: PaddlePaddle/PaddleOCR-VL-1.6
-processor_type: AutoProcessor
-```
-
-Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See the [example configs and tips](https://docs.axolotl.ai/docs/models/paddleocr-vl.html) for details.
-
 ### GLM-4.6V {#sec-glm-4-6v}
 
 Both GLM-4.6V (106B MoE) and GLM-4.6V-Flash (9B) are supported.
@@ -294,6 +278,22 @@ Please make sure to install `timm` via `pip3 install timm==1.0.19`
 
 ```yaml
 base_model: OpenGVLab/InternVL3_5-8B
+```
+
+### PaddleOCR-VL {#sec-paddleocr-vl}
+
+```yaml
+base_model: PaddlePaddle/PaddleOCR-VL-1.6
+processor_type: AutoProcessor
+```
+
+Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See the [example configs and tips](https://docs.axolotl.ai/docs/models/paddleocr-vl.html) for details.
+
+### North Micro Vision Instruct {#sec-north-micro-vision-instruct}
+
+```yaml
+base_model: CohereLabs/North-Micro-Vision-instruct-preview
+processor_type: AutoProcessor
 ```
 
 ## Dataset Format
