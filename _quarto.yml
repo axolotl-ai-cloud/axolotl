@@ -447,13 +447,13 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/cohere-north-micro-vision-instruct.qmd
                 - docs/models/shieldstral.qmd
                 - docs/models/kimi-linear.qmd
                 - docs/models/plano.qmd
                 - docs/models/mimo.qmd
                 - docs/models/internvl3_5.qmd
                 - docs/models/paddleocr-vl.qmd
-                - docs/models/cohere-north-micro-vision-instruct.qmd
                 - docs/models/olmo3.qmd
                 - docs/models/trinity.qmd
                 - docs/models/arcee.qmd

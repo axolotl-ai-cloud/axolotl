@@ -1,5 +1,7 @@
 examples:
   # August 2026
+  - name: cohere-north-micro-vision-instruct
+    title: North Micro Vision Instruct
   - name: shieldstral
     title: Shieldstral
 
@@ -15,10 +17,6 @@ examples:
 
   - name: paddleocr-vl
     title: PaddleOCR-VL
-
-  # CohereLabs
-  - name: cohere-north-micro-vision-instruct
-    title: North Micro Vision Instruct
 
   # AllenAI
   - name: olmo3
