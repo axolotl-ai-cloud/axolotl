@@ -8,6 +8,7 @@ format:
 
 ## Supported Models
 
+- [North Micro Vision](#sec-north-micro-vision) *(NEW)*
 - [Gemma-4](#sec-gemma-4) *(NEW)*
 - [Mllama](#sec-mllama)
 - [Llama4](#sec-llama4)
@@ -235,6 +236,17 @@ base_model: Qwen/Qwen3.5-9B
 
 chat_template: qwen3_5
 ```
+
+### North Micro Vision {#sec-north-micro-vision}
+
+Axolotl now supports [CohereCompass](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/cohere-compass), the architecture behind Cohere Labs' North Micro Vision.
+
+```yaml
+base_model: CohereLabs/North-Micro-Vision-instruct-preview
+processor_type: AutoProcessor
+```
+
+Requires `transformers>=5.15.0`. Keep `sample_packing: false` for image data. Cut Cross Entropy is supported and recommended. See the [example configs and tips](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/cohere-compass) for details.
 
 ### PaddleOCR-VL {#sec-paddleocr-vl}
 
