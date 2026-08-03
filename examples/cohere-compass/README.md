@@ -10,7 +10,7 @@ Thanks to the team at CohereLabs for giving us early access to prepare for this 
 
 1. Install Axolotl following the main from the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
 
-2. Ensure `uv pip install transformers>=5.15.0`.
+2. Ensure Transformers is at least 5.15.0 via `uv pip install "transformers>=5.15.0"`.
 
 3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
 

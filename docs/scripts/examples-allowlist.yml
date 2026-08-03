@@ -16,6 +16,10 @@ examples:
   - name: paddleocr-vl
     title: PaddleOCR-VL
 
+  # CohereLabs
+  - name: cohere-compass
+    title: North Micro Vision
+
   # AllenAI
   - name: olmo3
     title: OLMo 3
