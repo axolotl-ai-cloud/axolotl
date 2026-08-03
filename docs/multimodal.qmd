@@ -8,8 +8,6 @@ format:
 
 ## Supported Models
 
-- [North Micro Vision Instruct](#sec-north-micro-vision-instruct) *(NEW)*
-- [Gemma-4](#sec-gemma-4) *(NEW)*
 - [Mllama](#sec-mllama)
 - [Llama4](#sec-llama4)
 - [Pixtral](#sec-pixtral)
@@ -18,16 +16,19 @@ format:
 - [Mistral-Small-4](#sec-mistral-small-4)
 - [Magistral-Small-2509](#sec-magistral-small-2509)
 - [Voxtral](#sec-voxtral)
+- [Gemma-4](#sec-gemma-4) *(NEW)*
 - [Gemma-3](#sec-gemma-3)
 - [Gemma-3n](#sec-gemma-3n)
 - [Qwen2-VL](#sec-qwen2-vl)
 - [Qwen2.5-VL](#sec-qwen25-vl)
+- [Qwen3-VL](#sec-qwen3-vl)
 - [Qwen3.5](#sec-qwen3-5)
+- [North Micro Vision Instruct](#sec-north-micro-vision-instruct) *(NEW)*
+- [PaddleOCR-VL](#sec-paddleocr-vl)
 - [GLM-4.6V](#sec-glm-4-6v)
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
 - [Intern-VL](#sec-intern-vl)
-- [PaddleOCR-VL](#sec-paddleocr-vl)
 
 ## Usage
 
@@ -239,14 +240,10 @@ chat_template: qwen3_5
 
 ### North Micro Vision Instruct {#sec-north-micro-vision-instruct}
 
-Axolotl now supports Cohere Labs' [North Micro Vision Instruct](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html), which uses the `cohere_compass` architecture.
-
 ```yaml
 base_model: CohereLabs/North-Micro-Vision-instruct-preview
 processor_type: AutoProcessor
 ```
-
-Requires `transformers>=5.15.0`. Keep `sample_packing: false` for image data. Cut Cross Entropy is supported and recommended. See the [example configs and tips](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html) for details.
 
 ### PaddleOCR-VL {#sec-paddleocr-vl}
 
