@@ -61,7 +61,7 @@ image_size: 512
 image_resize_algorithm: bilinear
 ```
 
-Please see [examples](https://github.com/axolotl-ai/axolotl/tree/main/examples) folder for full configs.
+Please see [examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples) folder for full configs.
 
 ::: {.callout-tip}
 Some of our chat_templates have been extended to support broader dataset types. This should not break any existing configs.
