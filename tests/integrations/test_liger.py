@@ -261,10 +261,10 @@ class TestKernelImplEnv:
         monkeypatch.setattr(liger_plugin, "_env_before_write", None)
         monkeypatch.setattr(liger_plugin, "_last_written", None)
 
-        # unset -> plugin cutile -> foreign cutedsl -> plugin ascend -> omitted
+        # unset -> plugin cutile -> foreign cutedsl -> plugin cutile -> omitted
         LigerPlugin().register(DictDefault({"liger_kernel_impl": "cutile"}))
         os.environ["LIGER_KERNEL_IMPL"] = "cutedsl"
-        LigerPlugin().register(DictDefault({"liger_kernel_impl": "ascend"}))
+        LigerPlugin().register(DictDefault({"liger_kernel_impl": "cutile"}))
         LigerPlugin().register(DictDefault({}))
         assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
 

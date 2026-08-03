@@ -24,7 +24,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-LIGER_KERNEL_IMPLS = ("cutile", "cutedsl", "ascend")
+LIGER_KERNEL_IMPLS = ("cutile", "cutedsl")
 
 
 class LigerArgs(BaseModel):
@@ -66,7 +66,7 @@ class LigerArgs(BaseModel):
             )
         },
     )
-    liger_kernel_impl: Literal["cutile", "cutedsl", "ascend"] | None = Field(
+    liger_kernel_impl: Literal["cutile", "cutedsl"] | None = Field(
         default=None,
         json_schema_extra={
             "description": (
@@ -74,9 +74,8 @@ class LigerArgs(BaseModel):
                 "LIGER_KERNEL_IMPL env var (liger-kernel >= 0.8.1). 'cutile' "
                 "(requires cuda-tile) covers cross_entropy/geglu/layer_norm/rope "
                 "and more; 'cutedsl' (requires nvidia-cutlass-dsl, tuned for "
-                "Blackwell) covers cross_entropy/rms_norm; 'ascend' is NPU-only "
-                "(auto-selected on NPU, so usually unnecessary). "
-                "fused_linear_cross_entropy stays Triton on the CUDA backends. "
+                "Blackwell) covers cross_entropy/rms_norm. "
+                "fused_linear_cross_entropy stays Triton on both backends. "
                 "Unset keeps liger's default kernels."
             )
         },
