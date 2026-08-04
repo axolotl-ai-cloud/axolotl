@@ -10,7 +10,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
 
-3. (Optional) For text + image only, install the vision lib and download the sample image:
+3. Only for the text + image config, install the vision lib and download the sample image:
 
     ```bash
     uv pip install 'mistral-common[opencv]==1.11.5'
@@ -24,13 +24,13 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     # text only (10.6 GiB VRAM)
     axolotl train examples/shieldstral/shieldstral-3b-lora.yaml
 
-    # text + image (8.5 GiB VRAM) [1]
+    # text + image (8.5 GiB VRAM)
     axolotl train examples/shieldstral/shieldstral-3b-vision-lora.yaml
     ```
 
-Let us know how it goes. Happy finetuning! 🚀
+    Note: loss for the vision config is near 0 because the model is correctly asserting the right answer. Swap with your dataset for real results.
 
-[1] loss for the vision config is near 0 because the model is correctly asserting the right answer. Swap with your dataset for real results.
+Let us know how it goes. Happy finetuning! 🚀
 
 ### Tips
 
