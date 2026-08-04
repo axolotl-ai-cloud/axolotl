@@ -219,13 +219,6 @@ class TrainingValidationMixin:
     @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
-        # This runs in mode="before", so field defaults have not been applied
-        # yet. Both `micro_batch_size` and `gradient_accumulation_steps` carry a
-        # documented default of 1, so a config that explicitly sets either one
-        # (relying on the other's default) is fully specified and must not be
-        # rejected. The deprecated `batch_size`, however, still has to be paired
-        # with an explicit `micro_batch_size` or `gradient_accumulation_steps`
-        # so that it can be split; on its own it stays ambiguous.
         if data.get("micro_batch_size") or data.get("gradient_accumulation_steps"):
             return data
 
