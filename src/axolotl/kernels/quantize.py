@@ -20,9 +20,6 @@ _NF4_DEQUANT_KERNELS = {
     torch.float32: cdequantize_blockwise_fp32_nf4,
 }
 
-# Cached per-device: per-call current_stream() measurably slows this hot path.
-CUDA_STREAM: dict[torch.device, torch.cuda.Stream] = {}
-
 
 def _ctypes_nf4_dequant(
     W: torch.Tensor,
@@ -43,11 +40,8 @@ def _ctypes_nf4_dequant(
         n_elements_absmax, dtype=torch.float32, device=target_device
     )
 
-    stream = CUDA_STREAM.get(target_device)
-    if stream is None:
-        stream = CUDA_STREAM.setdefault(
-            target_device, torch.cuda.current_stream(target_device)
-        )
+    # c_void_p is required: bnb sets no argtypes, so a bare int truncates to a C int.
+    stream = ctypes.c_void_p(torch._C._cuda_getCurrentRawStream(W.device.index))
 
     cdequantize_blockwise_fp32(
         get_ptr(code2),
