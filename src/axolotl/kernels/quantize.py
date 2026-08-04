@@ -5,7 +5,7 @@ from typing import List
 
 import bitsandbytes as bnb
 import torch
-from bitsandbytes.functional import QuantState, _get_tensor_stream, get_ptr
+from bitsandbytes.functional import QuantState, get_ptr
 
 cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32
 cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4
@@ -40,8 +40,8 @@ def _ctypes_nf4_dequant(
         n_elements_absmax, dtype=torch.float32, device=target_device
     )
 
-    # raw pointer: the live stream without building a Python Stream on this hot path
-    stream = _get_tensor_stream(W)
+    # c_void_p is required: bnb sets no argtypes, so a bare int truncates to a C int.
+    stream = ctypes.c_void_p(torch._C._cuda_getCurrentRawStream(W.device.index))
 
     cdequantize_blockwise_fp32(
         get_ptr(code2),
