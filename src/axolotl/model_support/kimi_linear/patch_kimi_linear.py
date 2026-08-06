@@ -37,6 +37,22 @@ def _load_local_module(module_name: str, filename: str):
     return None
 
 
+# Exact module stems mapped to (module_name, filename)
+KIMI_MODULE_MAP = {
+    "configuration_kimi": ("configuration_kimi", "configuration_kimi.py"),
+    "modeling_kimi": ("modeling_kimi", "modeling_kimi.py"),
+    "tokenization_kimi": ("tokenization_kimi", "tokenization_kimi.py"),
+}
+
+
+def _kimi_module_entry(module_path) -> tuple[str, str] | None:
+    """Exact-stem match: sibling remote modules such as ``modeling_kimi_vl``
+    (Kimi-VL) must fall through to the original loader."""
+    tail = str(module_path).replace("\\", "/").rsplit("/", 1)[-1]
+    stem = tail.removesuffix(".py").rsplit(".", 1)[-1]
+    return KIMI_MODULE_MAP.get(stem)
+
+
 def _patch_get_class_in_module():
     """
     Core patch function that hijacks Transformers' dynamic module loading.
@@ -48,21 +64,13 @@ def _patch_get_class_in_module():
 
     original_get_class_in_module = get_class_in_module
 
-    # Mapping of module path patterns to (module_name, filename)
-    KIMI_MODULE_MAP = {
-        "configuration_kimi": ("configuration_kimi", "configuration_kimi.py"),
-        "modeling_kimi": ("modeling_kimi", "modeling_kimi.py"),
-        "tokenization_kimi": ("tokenization_kimi", "tokenization_kimi.py"),
-    }
-
     def patched_get_class_in_module(class_name, module_path, **kwargs):
         """Patched version that returns our local modules instead of remote ones."""
-        for pattern, (module_name, filename) in KIMI_MODULE_MAP.items():
-            if pattern in module_path:
-                module = _load_local_module(module_name, filename)
-                if module:
-                    return getattr(module, class_name)
-                break  # Pattern matched but file not found, fall through
+        entry = _kimi_module_entry(module_path)
+        if entry is not None:
+            module = _load_local_module(*entry)
+            if module:
+                return getattr(module, class_name)
 
         return original_get_class_in_module(class_name, module_path, **kwargs)
 

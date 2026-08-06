@@ -36,11 +36,13 @@ def _compute_expert_block(
 ):
     K_block = tl.arange(0, BLOCK_K)
     X_blk_ptrs = X_ptr + M_in_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
+    # i64 expert offset: E_idx * stride_we overflows i32 once the expert stack exceeds
+    # 2^31 elements (e.g. nemotron-3-ultra [512, 5120, 2048] = 5.4e9).
     W_blk_ptrs = (
         W_ptr
         + K_block[:, None] * stride_wk
         + N_block[None, :] * stride_wn
-        + E_idx * stride_we
+        + E_idx.to(tl.int64) * stride_we
     )
     iters = tl.cdiv(K, BLOCK_K)
 
@@ -556,9 +558,10 @@ def _xty_and_bias(
         if compute_bias:
             db_acc += tl.sum(dy, axis=0)
 
+    # i64 expert offset: E_idx * stride_dwe overflows i32 on a >2^31-element dW stack
     DW_blk_ptrs = (
         DW_ptr
-        + E_idx * stride_dwe
+        + E_idx.to(tl.int64) * stride_dwe
         + K_block[:, None] * stride_dwk
         + N_block[None, :] * stride_dwn
     )
