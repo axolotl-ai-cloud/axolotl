@@ -1,0 +1,54 @@
+# SFT via a remote Arctic Platform training server (ArcticSFTClient).
+#
+# The axolotl process itself needs no GPUs — all forward/backward/step work is
+# dispatched to the server. Colocate a local server on this box with
+# `launch_local_server: true` + `server_cuda_visible_devices`, or point
+# host/port at a server running elsewhere.
+#
+# Usage (colocated, CPU-only client):
+#   CUDA_VISIBLE_DEVICES= axolotl train \
+#     src/axolotl/integrations/arctic_platform/sft/examples/arctic_sft.yaml
+
+base_model: NousResearch/Llama-3.2-1B
+
+plugins:
+  - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
+
+arctic_sft:
+  host: localhost
+  port: 8765
+  training_gpus: 2
+  launch_local_server: true
+  server_cuda_visible_devices: "0,1"
+  loss_fn: sft                 # or sft_ce for explicit cross-entropy
+  # sft_ce only: memory strategy for the vocab projection / CE. none (full
+  # logits), compute (chunked softmax follow-up), memory (tiled, never
+  # materializes [B,S,V]). Ignored by the default sft loss.
+  logits_optimization: none
+  logits_optimization_peak_mem_size_in_gib: 4
+  # Default is flash_attention_2 (matches DeepSpeedWorker). Use sdpa if FA is unavailable.
+  attn_implementation: flash_attention_2
+  # Keep checkpoints on /data-fast (not under the git checkout).
+  checkpoint_path: /data-fast/ap-axolotl/arctic-sft/server_ckpt
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    split: train[:64]
+    type: alpaca
+
+sequence_len: 256
+
+# Standard training knobs — forwarded to the server optimizer.
+learning_rate: 1.0e-5
+adam_beta1: 0.9
+adam_beta2: 0.999
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+num_epochs: 1
+max_steps: 5
+micro_batch_size: 2            # must be a multiple of training_gpus
+gradient_accumulation_steps: 1
+logging_steps: 1
+
+output_dir: /data-fast/ap-axolotl/arctic-sft
