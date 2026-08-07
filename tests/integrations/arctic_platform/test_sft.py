@@ -166,11 +166,15 @@ class TestBuildClientConfig:
         assert client_cfg.launch_local_server is True
         assert client_cfg.server_cuda_visible_devices == "0,1"
         assert client_cfg.seed == 7
-        assert client_cfg.training_config["optimizer"]["lr"] == 1e-5
+        # Optimizer + clipping are folded into ds_config (DeepSpeed config-json);
+        # there is no separate training_config on the client anymore.
+        assert not hasattr(client_cfg, "training_config")
+        assert client_cfg.ds_config["optimizer"]["type"] == "AdamW"
+        assert client_cfg.ds_config["optimizer"]["params"]["lr"] == 1e-5
         # No torch_adam → DeepSpeed builds its default FusedAdam.
-        assert "torch_adam" not in client_cfg.training_config["optimizer"]
-        assert client_cfg.training_config["optimizer"]["gradient_clipping"] == 1.0
-        assert client_cfg.training_config["optimizer"]["eps"] == 1e-8
+        assert "torch_adam" not in client_cfg.ds_config["optimizer"]["params"]
+        assert client_cfg.ds_config["gradient_clipping"] == 1.0
+        assert client_cfg.ds_config["optimizer"]["params"]["eps"] == 1e-8
         # Per-GPU micro batch = micro_batch_size / training_gpus (2 / 2 = 1).
         assert client_cfg.ds_config["train_micro_batch_size_per_gpu"] == 1
         # Global effective batch = per_gpu * gpus * gas == micro_bs * gas.
@@ -180,6 +184,12 @@ class TestBuildClientConfig:
         assert client_cfg.ds_config["bf16"] == {"enabled": True}
         # H5: default attention matches DeepSpeedWorker (FA2, not sdpa).
         assert client_cfg.ds_worker_config["attn_implementation"] == "flash_attention_2"
+
+    def test_attn_implementation_from_top_level(self):
+        cfg = self._cfg()
+        cfg.attn_implementation = "sdpa"
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        assert client_cfg.ds_worker_config["attn_implementation"] == "sdpa"
 
     def test_default_seed_when_missing(self):
         cfg = self._cfg()
@@ -214,22 +224,51 @@ class TestBuildClientConfig:
             == per_gpu * cfg.arctic_sft.training_gpus * cfg.gradient_accumulation_steps
         )
 
-    def test_training_horizon_prefers_max_steps(self):
+    def test_constant_schedule_has_no_scheduler(self):
+        # Default (constant LR, no warmup): DeepSpeed runs on the raw LR, so no
+        # ``scheduler`` block is emitted.
         cfg = self._cfg()
-        cfg.num_epochs = 3
-        cfg.max_steps = 5
         client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
-        # Fixed: horizon = total optimizer steps, so explicit max_steps wins.
-        assert client_cfg.training_config["training_horizon"] == 5
+        assert "scheduler" not in client_cfg.ds_config
 
-    def test_training_horizon_falls_back_to_epochs(self):
+    def test_cosine_schedule_uses_max_steps_horizon(self):
         cfg = self._cfg()
+        cfg.lr_scheduler = "cosine"
+        cfg.warmup_ratio = 0.1
         cfg.num_epochs = 3
+        cfg.max_steps = 10
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        sched = client_cfg.ds_config["scheduler"]
+        assert sched["type"] == "WarmupCosineLR"
+        # Explicit max_steps wins as the horizon; warmup = ratio * horizon.
+        assert sched["params"]["total_num_steps"] == 10
+        assert sched["params"]["warmup_num_steps"] == 1.0
+
+    def test_cosine_schedule_deferred_without_max_steps(self):
+        # Without max_steps the horizon is unknown at build time, so cosine
+        # cannot be baked yet; the trainer re-applies it with the resolved step
+        # count via ``_apply_scheduler``.
+        cfg = self._cfg()
+        cfg.lr_scheduler = "cosine"
+        cfg.warmup_ratio = 0.1
         cfg.max_steps = None
         client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
-        # Without max_steps the plugin seeds num_epochs; the trainer later
-        # patches this with the real per-epoch step count.
-        assert client_cfg.training_config["training_horizon"] == 3
+        assert "scheduler" not in client_cfg.ds_config
+        # Trainer patch path: resolved horizon → WarmupCosineLR baked in.
+        ArcticSFTPlugin._apply_scheduler(client_cfg.ds_config, cfg, 20)
+        sched = client_cfg.ds_config["scheduler"]
+        assert sched["type"] == "WarmupCosineLR"
+        assert sched["params"]["total_num_steps"] == 20
+        assert sched["params"]["warmup_num_steps"] == 2.0
+
+    def test_warmup_steps_absolute_uses_warmuplr(self):
+        cfg = self._cfg()
+        cfg.warmup_steps = 4
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        sched = client_cfg.ds_config["scheduler"]
+        assert sched["type"] == "WarmupLR"
+        assert sched["params"]["warmup_num_steps"] == 4.0
+        assert sched["params"]["warmup_max_lr"] == 1e-5
 
     def test_checkpoint_path_defaults_from_output_dir(self):
         cfg = self._cfg(checkpoint_path=None)

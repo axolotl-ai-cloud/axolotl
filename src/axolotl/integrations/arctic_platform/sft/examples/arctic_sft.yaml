@@ -26,8 +26,6 @@ arctic_sft:
   # materializes [B,S,V]). Ignored by the default sft loss.
   logits_optimization: none
   logits_optimization_peak_mem_size_in_gib: 4
-  # Default is flash_attention_2 (matches DeepSpeedWorker). Use sdpa if FA is unavailable.
-  attn_implementation: flash_attention_2
   # Keep checkpoints on /data-fast (not under the git checkout).
   checkpoint_path: /data-fast/ap-axolotl/arctic-sft/server_ckpt
 
@@ -37,6 +35,8 @@ datasets:
     type: alpaca
 
 sequence_len: 256
+# Top-level only (same as native axolotl). Default FA2 if unset; use sdpa if FA unavailable.
+attn_implementation: flash_attention_2
 
 # Standard training knobs — forwarded to the server optimizer.
 learning_rate: 1.0e-5

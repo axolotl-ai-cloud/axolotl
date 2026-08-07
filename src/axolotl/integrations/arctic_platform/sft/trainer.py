@@ -159,8 +159,8 @@ class ArcticSFTTrainer(AxolotlTrainer):
         """``(grad_accum, num_train_epochs, max_steps)``.
 
         Trailing partial GAS groups are dropped (DeepSpeed rejects short shards).
-        Patches ``training_horizon`` before the client is created (server bakes LR
-        schedule at engine init).
+        Re-applies the ds_config LR schedule with the resolved optimizer-step
+        horizon before the client is created (DeepSpeed bakes it at engine init).
         """
         grad_accum = max(int(self.args.gradient_accumulation_steps), 1)
         num_train_epochs = int(self.args.num_train_epochs)
@@ -185,9 +185,13 @@ class ArcticSFTTrainer(AxolotlTrainer):
             )
 
         if getattr(self, "_arctic_autoset_horizon", False):
-            tcfg = getattr(self._arctic_client_config, "training_config", None)
-            if isinstance(tcfg, dict):
-                tcfg["training_horizon"] = max_steps
+            ds_config = getattr(self._arctic_client_config, "ds_config", None)
+            if isinstance(ds_config, dict):
+                # Re-apply the LR schedule with the resolved optimizer-step horizon
+                # (num_epochs-only configs had no max_steps at config-build time).
+                from .plugin import ArcticSFTPlugin
+
+                ArcticSFTPlugin._apply_scheduler(ds_config, self.axolotl_cfg, max_steps)
 
         return grad_accum, num_train_epochs, max_steps
 

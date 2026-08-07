@@ -6,8 +6,9 @@
 The nested ``arctic_sft:`` block only carries the *connection / server*
 settings that map onto ``ArcticSFTClientConfig``. Standard training knobs
 (``learning_rate``, ``weight_decay``, ``adam_beta1/2``, ``max_grad_norm``,
-``gradient_accumulation_steps``, ``sequence_len`` …) are read from axolotl's
-top-level config so they don't need to be duplicated here.
+``gradient_accumulation_steps``, ``sequence_len``, ``attn_implementation`` …)
+are read from axolotl's top-level config so they don't need to be duplicated
+here.
 """
 
 from __future__ import annotations
@@ -63,8 +64,9 @@ class ArcticSFTConfig(BaseModel):
 
     # Escape hatches forwarded verbatim to ArcticSFTClientConfig. When unset the
     # plugin synthesizes sensible defaults from the top-level axolotl config.
+    # Optimizer + LR schedule are folded into ``ds_config`` (DeepSpeed config-json),
+    # matching current arctic-platform (no separate high-level training_config).
     ds_config: Optional[dict[str, Any]] = None
-    training_config: Optional[dict[str, Any]] = None
     ds_worker_config: Optional[dict[str, Any]] = None
 
     # Timeouts (seconds)
@@ -72,9 +74,8 @@ class ArcticSFTConfig(BaseModel):
     job_ready_timeout: float = 1800.0
     request_timeout: float = 1800.0
 
-    # Nested overrides for ds_worker_config when top-level attn_implementation /
-    # gradient_checkpointing are unset. Default FA2 matches DeepSpeedWorker.
-    attn_implementation: str = "flash_attention_2"
+    # Nested override for ds_worker_config when top-level gradient_checkpointing
+    # is unset. Attention comes from top-level ``attn_implementation`` only.
     gradient_checkpointing: bool = False
 
     # After each remote DS save, also write an HF-format directory under

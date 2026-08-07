@@ -154,26 +154,15 @@ def _run_arctic(output_dir: str, port: int) -> list[float]:
         "launch_local_server": True,
         "server_cuda_visible_devices": "0",
         "loss_fn": "sft",
-        "attn_implementation": ATTN_IMPLEMENTATION,
+        # attn_implementation is top-level only (set in _base_cfg); no longer nested.
         "gradient_checkpointing": False,
         "checkpoint_path": f"{output_dir}/server_ckpt",
         "startup_timeout": 600.0,
         "job_ready_timeout": 600.0,
-        # Same DeepSpeed config the axolotl baseline uses.
+        # Same DeepSpeed config the axolotl baseline uses. Optimizer / clipping /
+        # schedule are folded into ds_config (matches arctic-platform SFT), so no
+        # separate training_config is passed.
         "ds_config": deepcopy(shared_ds_config()),
-        "training_config": {
-            "optimizer": {
-                "lr": LEARNING_RATE,
-                "weight_decay": 0.0,
-                "betas": [0.9, 0.999],
-                "eps": 1e-8,
-                "gradient_clipping": MAX_GRAD_NORM,
-            },
-            "lr_scheduler": {"warmup_ratio": 0.0},
-            "training_horizon": MAX_STEPS,
-            "max_length": SEQUENCE_LEN,
-            "gradient_accumulation_steps": 1,
-        },
     }
     prepare_plugins(cfg)
     cfg = validate_config(cfg)

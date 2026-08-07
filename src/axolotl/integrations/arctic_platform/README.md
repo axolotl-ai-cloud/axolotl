@@ -80,12 +80,11 @@ python -m arctic_platform.common.http_server \
 | `loss_fn` | `sft` | `sft` (HF CE) or `sft_ce` (explicit CE) |
 | `model_name` | `null` | Override; else top-level `base_model` |
 | `checkpoint_path` | `null` | Server checkpoint dir (defaults from `output_dir` if unset) |
-| `attn_implementation` | `sdpa` | Passed into the server worker config |
 | `gradient_checkpointing` | `false` | Server-side activation checkpointing |
 | `sampling_gpus` | `0` | `>0` enables remote sample generation (vLLM) |
 | `colocate` | `false` | Share GPUs between training and sampling |
 | `training_job_id` / `sampling_job_id` | `null` | Reattach to existing jobs |
-| `ds_config` / `training_config` / `ds_worker_config` | `null` | Escape hatches; else synthesized from top-level knobs |
+| `ds_config` / `ds_worker_config` | `null` | Escape hatches; else synthesized from top-level knobs (optimizer + LR schedule fold into `ds_config`) |
 
 CLI nested overrides work as usual, e.g. `arctic_sft__port=9000`.
 
@@ -94,7 +93,7 @@ CLI nested overrides work as usual, e.g. `arctic_sft__port=9000`.
 Keep these at YAML top level — the plugin forwards them to the server optimizer /
 schedule:
 
-- `base_model`, `sequence_len`, `seed`
+- `base_model`, `sequence_len`, `seed`, `attn_implementation`
 - `learning_rate`, `adam_beta1`, `adam_beta2`, `weight_decay`, `warmup_ratio` / `warmup_steps`
 - `micro_batch_size`, `gradient_accumulation_steps`
 - `num_epochs` / `max_steps`, `logging_steps`, `output_dir`

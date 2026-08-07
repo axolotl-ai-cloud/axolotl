@@ -129,9 +129,9 @@ class ArcticSFTPlugin(BasePlugin):
             cfg.learning_rate if cfg.learning_rate is not None else 1e-5
         )
         trainer._arctic_export_hf = bool(acfg.export_hf)
-        # Only a plugin-synthesized training_config gets its horizon patched with
-        # the runtime step count; never clobber a user-supplied training_config.
-        trainer._arctic_autoset_horizon = acfg.training_config is None
+        # Only a plugin-synthesized ds_config gets its LR-schedule horizon patched
+        # with the runtime step count; never clobber a user-supplied ds_config.
+        trainer._arctic_autoset_horizon = acfg.ds_config is None
         trainer.axolotl_cfg = cfg
 
         self._install_generation_callback(cfg, trainer)
@@ -168,8 +168,10 @@ class ArcticSFTPlugin(BasePlugin):
         # Honor explicit overrides from the arctic_sft block, else synthesize
         # server configs from the top-level axolotl knobs.
         checkpoint_path = cls._resolve_checkpoint_path(cfg, acfg)
+        # Optimizer + LR schedule are folded directly into ds_config (DeepSpeed
+        # config-json), matching current arctic-platform which no longer accepts
+        # a separate high-level training_config on ArcticSFTClientConfig.
         ds_config = acfg.ds_config or cls._synth_ds_config(cfg, acfg, micro_bs, grad_accum)
-        training_config = acfg.training_config or cls._synth_training_config(cfg, max_length, grad_accum)
         ds_worker_config = acfg.ds_worker_config or cls._synth_ds_worker_config(cfg, acfg)
 
         return ArcticSFTClientConfig(
@@ -191,7 +193,6 @@ class ArcticSFTPlugin(BasePlugin):
             job_ready_timeout=acfg.job_ready_timeout,
             request_timeout=acfg.request_timeout,
             ds_config=ds_config,
-            training_config=training_config,
             ds_worker_config=ds_worker_config,
             checkpoint_path=checkpoint_path,
             training_job_id=acfg.training_job_id,
@@ -235,7 +236,7 @@ class ArcticSFTPlugin(BasePlugin):
         # post-shard size; `train_batch_size` is then the global effective
         # batch (per-gpu x gpus x grad_accum == micro_bs x grad_accum).
         micro_bs_per_gpu = micro_bs // acfg.training_gpus
-        return {
+        ds_config: dict = {
             "train_micro_batch_size_per_gpu": micro_bs_per_gpu,
             "train_batch_size": micro_bs_per_gpu * acfg.training_gpus * grad_accum,
             "gradient_accumulation_steps": grad_accum,
@@ -246,57 +247,83 @@ class ArcticSFTPlugin(BasePlugin):
             },
             **mixed_precision,
         }
+        # Optimizer + gradient clipping live in ds_config (DeepSpeed config-json),
+        # matching arctic-platform's SFT demos (the server no longer expands a
+        # separate high-level training_config).
+        ds_config["optimizer"] = ArcticSFTPlugin._synth_optimizer(cfg)
+        ds_config["gradient_clipping"] = float(
+            cfg.max_grad_norm if cfg.max_grad_norm is not None else 0.0
+        )
+        # LR schedule needs the total optimizer-step horizon. Prefer max_steps;
+        # when only num_epochs is set the horizon is unknown here, so the trainer
+        # re-applies the schedule with the resolved step count at train() start.
+        horizon = int(cfg.max_steps) if (cfg.max_steps and int(cfg.max_steps) > 0) else 0
+        ArcticSFTPlugin._apply_scheduler(ds_config, cfg, horizon)
+        return ds_config
 
     @staticmethod
-    def _synth_training_config(cfg: DictDefault, max_length: int, grad_accum: int) -> dict:
-        # Server-side optimizer / schedule from top-level axolotl knobs.
-        # DeepSpeed builds AdamW from this block; gradient_clipping mirrors
-        # max_grad_norm (DeepSpeed applies no clip otherwise).
-        optim: dict = {
+    def _synth_optimizer(cfg: DictDefault) -> dict:
+        """DeepSpeed AdamW optimizer block from top-level axolotl knobs."""
+        params: dict = {
             "lr": float(cfg.learning_rate if cfg.learning_rate is not None else 1e-5),
-            "weight_decay": float(cfg.weight_decay if cfg.weight_decay is not None else 0.0),
             "betas": [
                 float(cfg.adam_beta1 if cfg.adam_beta1 is not None else 0.9),
                 float(cfg.adam_beta2 if cfg.adam_beta2 is not None else 0.999),
             ],
             "eps": float(cfg.adam_epsilon if cfg.adam_epsilon is not None else 1e-8),
-            "gradient_clipping": float(
-                cfg.max_grad_norm if cfg.max_grad_norm is not None else 0.0
-            ),
+            "weight_decay": float(cfg.weight_decay if cfg.weight_decay is not None else 0.0),
         }
         # Map torch AdamW variants onto DeepSpeed's torch_adam flag (else FusedAdam).
         optimizer_name = str(cfg.optimizer or "").lower()
         if optimizer_name in ("adamw_torch", "adamw_torch_fused", "adamw_hf", "adamw_torch_8bit"):
-            optim["torch_adam"] = True
+            params["torch_adam"] = True
+        return {"type": "AdamW", "params": params}
 
-        lr_sched: dict = {"warmup_ratio": float(cfg.warmup_ratio or 0.0)}
+    @staticmethod
+    def _apply_scheduler(ds_config: dict, cfg: DictDefault, horizon: int) -> None:
+        """Set (or clear) ds_config["scheduler"] from axolotl warmup / LR-scheduler knobs.
+
+        ``horizon`` is the total number of optimizer steps. Idempotent: safe to
+        call again with a resolved ``horizon`` once the trainer knows the real
+        step count (num_epochs-only configs)."""
+        lr = float(cfg.learning_rate if cfg.learning_rate is not None else 1e-5)
         if cfg.warmup_steps is not None and int(cfg.warmup_steps) > 0:
-            lr_sched["warmup_steps"] = int(cfg.warmup_steps)
+            warmup_steps = float(int(cfg.warmup_steps))
+        else:
+            warmup_steps = float(cfg.warmup_ratio or 0.0) * horizon
         sched_name = str(cfg.lr_scheduler or "constant").lower()
-        if sched_name.startswith("cosine"):
-            lr_sched["type"] = "cosine"
-            if cfg.cosine_min_lr_ratio is not None:
-                lr_sched["min_lr_ratio"] = float(cfg.cosine_min_lr_ratio)
 
-        return {
-            "optimizer": optim,
-            "lr_scheduler": lr_sched,
-            # LR-scheduler horizon = total optimizer steps. Prefer max_steps;
-            # trainer patches this with the real count at train() start when
-            # only num_epochs is set.
-            "training_horizon": (
-                int(cfg.max_steps)
-                if (cfg.max_steps and int(cfg.max_steps) > 0)
-                else int(cfg.num_epochs or 1)
-            ),
-            "max_length": max_length,
-            "gradient_accumulation_steps": grad_accum,
-        }
+        if sched_name.startswith("cosine") and horizon > 0:
+            ds_config["scheduler"] = {
+                "type": "WarmupCosineLR",
+                "params": {
+                    "total_num_steps": horizon,
+                    "warmup_num_steps": warmup_steps,
+                    "warmup_min_ratio": 0.0,
+                    "cos_min_ratio": float(cfg.cosine_min_lr_ratio or 0.0),
+                    "warmup_type": "linear",
+                },
+            }
+        elif warmup_steps > 0:
+            ds_config["scheduler"] = {
+                "type": "WarmupLR",
+                "params": {
+                    "warmup_min_lr": 0.0,
+                    "warmup_max_lr": lr,
+                    "warmup_num_steps": warmup_steps,
+                    "warmup_type": "linear",
+                },
+            }
+        else:
+            # Constant LR (no warmup / no cosine): leave DeepSpeed on the raw LR.
+            ds_config.pop("scheduler", None)
 
     @staticmethod
     def _synth_ds_worker_config(cfg: DictDefault, acfg) -> dict:
-        # Top-level axolotl knobs win when set; nested arctic_sft.* are fallbacks.
-        attn = cfg.get("attn_implementation") or acfg.attn_implementation or "flash_attention_2"
+        # attn_implementation is top-level only (same as native axolotl). Default
+        # FA2 matches DeepSpeedWorker when unset.
+        attn = cfg.get("attn_implementation") or "flash_attention_2"
+        # Top-level gradient_checkpointing wins; nested arctic_sft.* is fallback.
         gc = cfg.get("gradient_checkpointing")
         if gc is None:
             enable_gc = bool(acfg.gradient_checkpointing)
