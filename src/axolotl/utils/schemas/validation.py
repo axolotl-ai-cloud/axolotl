@@ -1246,6 +1246,8 @@ class SystemValidationMixin:
             unsupported_npu_impls = {
                 "flash_attention_2",
                 "flash_attention_3",
+                "flash_attention_4",
+                "flash_attention_torch",
                 "sdpa",
             }
             attn_impl = data.get("attn_implementation")
