@@ -84,7 +84,7 @@ jobs:
           images: |
             axolotlai/axolotl-base-uv
       - name: Login to Docker Hub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
         if: ${{ github.event_name != 'pull_request' && env.HAS_DOCKERHUB_CREDS == 'true' }}
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
