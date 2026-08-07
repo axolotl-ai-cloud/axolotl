@@ -2,20 +2,23 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>monkeypatch.models.kimi_linear.patch_kimi_linear – Axolotl</title>
+<title>Qwen 3.5 – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -74,10 +77,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-38e438262e49c04e0d6134760b85b11b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -144,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/shieldstral.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/qwen3.5.html">Qwen 3.5</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -195,15 +198,27 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Support Matrix</span></a>
+  </div>
+</li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
  <span class="menu-text">Model Guides</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Shieldstral</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
@@ -230,6 +245,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PaddleOCR-VL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
@@ -250,6 +271,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
           <li class="sidebar-item sidebar-item-section">
@@ -354,6 +381,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Qwen 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
@@ -366,8 +399,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.7-Flash</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.6V</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -605,6 +662,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
@@ -625,6 +688,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -792,63 +861,187 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear" id="toc-axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear">monkeypatch.models.kimi_linear.patch_kimi_linear</a>
+  <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting started</a>
   <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.get_patch_file_path" id="toc-axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.get_patch_file_path" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.get_patch_file_path">get_patch_file_path</a></li>
-  <li><a href="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.patch_kimi" id="toc-axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.patch_kimi" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.patch_kimi">patch_kimi</a></li>
+  <li><a href="#gated-deltanet-linear-attention" id="toc-gated-deltanet-linear-attention" class="nav-link" data-scroll-target="#gated-deltanet-linear-attention">Gated DeltaNet Linear Attention</a></li>
+  <li><a href="#routed-experts-moe" id="toc-routed-experts-moe" class="nav-link" data-scroll-target="#routed-experts-moe">Routed Experts (MoE)</a></li>
+  <li><a href="#shared-experts-moe" id="toc-shared-experts-moe" class="nav-link" data-scroll-target="#shared-experts-moe">Shared Experts (MoE)</a></li>
+  <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">TIPS</a></li>
   </ul></li>
-  </ul></li>
+  <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
+  <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/shieldstral.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/qwen3.5.html">Qwen 3.5</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Qwen 3.5</h1>
+</div>
 
 
 
+<div class="quarto-title-meta">
 
-<section id="axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear" class="level1">
-<h1>monkeypatch.models.kimi_linear.patch_kimi_linear</h1>
-<p><code>monkeypatch.models.kimi_linear.patch_kimi_linear</code></p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p><a href="https://huggingface.co/collections/Qwen/qwen35">Qwen3.5</a> is a hybrid architecture model series combining Gated DeltaNet linear attention with standard Transformer attention. All Qwen3.5 models are early-fusion vision-language models: dense variants use <code>Qwen3_5ForConditionalGeneration</code> and MoE variants use <code>Qwen3_5MoeForConditionalGeneration</code>.</p>
+<section id="getting-started" class="level2">
+<h2 class="anchored" data-anchor-id="getting-started">Getting started</h2>
+<ol type="1">
+<li><p>Install Axolotl following the <a href="https://docs.axolotl.ai/docs/installation.html">installation guide</a>.</p></li>
+<li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
+<li><p>Install FLA for sample packing support with the Gated DeltaNet linear attention layers:</p></li>
+</ol>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip uninstall causal-conv1d <span class="kw">&amp;&amp;</span> <span class="ex">uv</span> pip install flash-linear-attention==0.4.1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<blockquote class="blockquote">
+<p>FLA is required when <code>sample_packing: true</code>. Without it, training raises a <code>RuntimeError</code> on packed sequences. Vision configs use <code>sample_packing: false</code> so FLA is optional there.</p>
+</blockquote>
+<ol start="4" type="1">
+<li><p>Pick any config from the table below and run:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/qwen3.5/<span class="op">&lt;</span>config<span class="op">&gt;</span>.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+</ol>
+<p>Available configs:</p>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
 <thead>
 <tr class="header">
-<th>Name</th>
-<th>Description</th>
+<th>Config</th>
+<th>Model</th>
+<th>Type</th>
+<th>Peak VRAM</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.get_patch_file_path">get_patch_file_path</a></td>
-<td>Gets the absolute path to a patch file using importlib.resources.files.</td>
+<td><code>9b-lora-vision.yaml</code></td>
+<td>Qwen3.5-9B</td>
+<td>Vision+text LoRA, single GPU</td>
+<td>—</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.patch_kimi">patch_kimi</a></td>
-<td>Apply all Kimi patches.</td>
+<td><code>9b-fft-vision.yaml</code></td>
+<td>Qwen3.5-9B</td>
+<td>Vision+text FFT, single GPU</td>
+<td>~61 GiB</td>
+</tr>
+<tr class="odd">
+<td><code>27b-qlora.yaml</code></td>
+<td>Qwen3.5-27B</td>
+<td>Dense, text-only QLoRA</td>
+<td>~47 GiB</td>
+</tr>
+<tr class="even">
+<td><code>27b-fft.yaml</code></td>
+<td>Qwen3.5-27B</td>
+<td>Dense, text-only FFT (vision frozen)</td>
+<td>~53 GiB</td>
+</tr>
+<tr class="odd">
+<td><code>27b-qlora-fsdp.yaml</code></td>
+<td>Qwen3.5-27B</td>
+<td>Dense, text-only QLoRA + FSDP2</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td><code>35b-a3b-moe-qlora.yaml</code></td>
+<td>Qwen3.5-35B-A3B</td>
+<td>MoE, text-only QLoRA</td>
+<td>—</td>
+</tr>
+<tr class="odd">
+<td><code>35b-a3b-moe-qlora-fsdp.yaml</code></td>
+<td>Qwen3.5-35B-A3B</td>
+<td>MoE, text-only QLoRA + FSDP2</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td><code>122b-a10b-moe-qlora.yaml</code></td>
+<td>Qwen3.5-122B-A10B</td>
+<td>MoE, text-only QLoRA</td>
+<td>—</td>
+</tr>
+<tr class="odd">
+<td><code>122b-a10b-moe-qlora-fsdp.yaml</code></td>
+<td>Qwen3.5-122B-A10B</td>
+<td>MoE, text-only QLoRA + FSDP2</td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.get_patch_file_path" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.get_patch_file_path">get_patch_file_path</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.kimi_linear.patch_kimi_linear.get_patch_file_path(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    package_dot_path,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    filename,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Gets the absolute path to a patch file using importlib.resources.files.</p>
+<section id="gated-deltanet-linear-attention" class="level3">
+<h3 class="anchored" data-anchor-id="gated-deltanet-linear-attention">Gated DeltaNet Linear Attention</h3>
+<p>Qwen3.5 interleaves standard attention with Gated DeltaNet linear attention layers. To apply LoRA to them, add to <code>lora_target_modules</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">  # ... standard projections ...</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> linear_attn.in_proj_qkv</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> linear_attn.in_proj_z</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> linear_attn.out_proj</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.patch_kimi" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear.patch_kimi">patch_kimi</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.kimi_linear.patch_kimi_linear.patch_kimi()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Apply all Kimi patches.
-Must be called BEFORE loading config/tokenizer/model.</p>
+<section id="routed-experts-moe" class="level3">
+<h3 class="anchored" data-anchor-id="routed-experts-moe">Routed Experts (MoE)</h3>
+<p>To apply LoRA to routed expert parameters, add <code>lora_target_parameters</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_parameters</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> mlp.experts.gate_up_proj</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> mlp.experts.down_proj</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">#  - mlp.gate.weight  # router</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="shared-experts-moe" class="level3">
+<h3 class="anchored" data-anchor-id="shared-experts-moe">Shared Experts (MoE)</h3>
+<p>Shared experts use <code>nn.Linear</code> (unlike routed experts which are 3D <code>nn.Parameter</code> tensors), so they can be targeted via <code>lora_target_modules</code>. To also train shared expert projections alongside attention, uncomment <code>gate_up_proj</code> and <code>down_proj</code> in <code>lora_target_modules</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> q_proj</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> k_proj</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> v_proj</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> o_proj</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">  # - gate_up_proj</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">  # - down_proj</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Use <code>lora_target_parameters</code> (see <a href="#routed-experts-moe">Routed Experts</a> above) to target routed experts separately.</p>
+</section>
+<section id="tips" class="level3">
+<h3 class="anchored" data-anchor-id="tips">TIPS</h3>
+<ul>
+<li>For inference hyp, please see the respective model card details.</li>
+<li>You can run a full finetuning of smaller configs by removing <code>adapter: qlora</code> and <code>load_in_4bit: true</code>. See <a href="#optimization-guides">Multi-GPU</a> below.</li>
+<li>Read more on loading your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
+<li>The dataset format follows the OpenAI Messages format as seen <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>.</li>
+<li>For <strong>multimodal</strong> finetuning, set <code>processor_type: AutoProcessor</code>, <code>skip_prepare_dataset: true</code>, and <code>remove_unused_columns: false</code> as shown in <code>9b-lora-vision.yaml</code>.</li>
+</ul>
+</section>
+</section>
+<section id="optimization-guides" class="level2">
+<h2 class="anchored" data-anchor-id="optimization-guides">Optimization Guides</h2>
+<ul>
+<li><a href="https://docs.axolotl.ai/docs/optimizations.html">Optimizations Guide</a></li>
+</ul>
+</section>
+<section id="related-resources" class="level2">
+<h2 class="anchored" data-anchor-id="related-resources">Related Resources</h2>
+<ul>
+<li><a href="https://qwenlm.github.io/blog/qwen3.5/">Qwen3.5 Blog</a></li>
+<li><a href="https://docs.axolotl.ai">Axolotl Docs</a></li>
+<li><a href="https://axolotl.ai">Axolotl Website</a></li>
+<li><a href="https://github.com/axolotl-ai-cloud/axolotl">Axolotl GitHub</a></li>
+<li><a href="https://discord.gg/7m9sfhzaf3">Axolotl Discord</a></li>
+</ul>
 
 
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->

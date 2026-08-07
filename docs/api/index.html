@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -12,10 +12,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -39,10 +42,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-38e438262e49c04e0d6134760b85b11b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -160,6 +163,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Support Matrix</span></a>
+  </div>
+</li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
@@ -169,6 +178,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Shieldstral</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
@@ -195,6 +210,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PaddleOCR-VL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
@@ -215,6 +236,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
           <li class="sidebar-item sidebar-item-section">
@@ -319,6 +346,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
@@ -331,8 +364,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.7-Flash</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.6V</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -570,6 +627,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
@@ -590,6 +653,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1432,7 +1501,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/monkeypatch.kernelize_fixes.html#axolotl.monkeypatch.kernelize_fixes">monkeypatch.kernelize_fixes</a></td>
-<td>Repairs for transformers’ <code>model.kernelize()</code> under <code>use_kernels=True</code>.</td>
+<td>Repairs for transformers’ kernelization under <code>use_kernels=True</code>.</td>
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/monkeypatch.moe_quant.html#axolotl.monkeypatch.moe_quant">monkeypatch.moe_quant</a></td>
@@ -1460,7 +1529,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/monkeypatch.attention.flash_attn_4.html#axolotl.monkeypatch.attention.flash_attn_4">monkeypatch.attention.flash_attn_4</a></td>
-<td>Transparently upgrade FA2 to FA4 when available on SM90+ hardware.</td>
+<td>Route flash attention through native FA4 when it is available on SM90+ hardware.</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/monkeypatch.attention.flex_attn.html#axolotl.monkeypatch.attention.flex_attn">monkeypatch.attention.flex_attn</a></td>
@@ -1503,8 +1572,24 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Sample-packing and context-parallelism patch for Granite MoE Hybrid (Mamba2/Attention/MoE).</td>
 </tr>
 <tr class="odd">
-<td><a href="../../docs/api/monkeypatch.models.kimi_linear.patch_kimi_linear.html#axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear">monkeypatch.models.kimi_linear.patch_kimi_linear</a></td>
+<td><a href="../../docs/api/model_support.base.html#axolotl.model_support.base">model_support.base</a></td>
+<td>Base interface for per-architecture model support descriptors.</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/model_support.profile.html#axolotl.model_support.profile">model_support.profile</a></td>
+<td>Composable model-family templates and per-model profiles.</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/model_support.templates.html#axolotl.model_support.templates">model_support.templates</a></td>
+<td>Reusable model-family templates for the vanilla loading path.</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/model_support.kimi_linear.patch_kimi_linear.html#axolotl.model_support.kimi_linear.patch_kimi_linear">model_support.kimi_linear.patch_kimi_linear</a></td>
 <td></td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/model_support.registry.html#axolotl.model_support.registry">model_support.registry</a></td>
+<td>Registry mapping <code>model_type</code> to its <code>ModelSupport</code> descriptor.</td>
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/monkeypatch.models.llama4.modeling.html#axolotl.monkeypatch.models.llama4.modeling">monkeypatch.models.llama4.modeling</a></td>
@@ -2023,14 +2108,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Jamba model with LigerFusedLinearCrossEntropyLoss</td>
 </tr>
 <tr class="odd">
-<td><a href="../../docs/api/integrations.liger.models.llama4.html#axolotl.integrations.liger.models.llama4">integrations.liger.models.llama4</a></td>
-<td>Liger FLCE for llama4</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/integrations.liger.models.qwen3.html#axolotl.integrations.liger.models.qwen3">integrations.liger.models.qwen3</a></td>
-<td>Liger FLCE for Qwen3. Based on transformers v4.51.3.</td>
-</tr>
-<tr class="odd">
 <td><a href="../../docs/api/integrations.liger.models.qwen3_5.html#axolotl.integrations.liger.models.qwen3_5">integrations.liger.models.qwen3_5</a></td>
 <td>Liger FLCE for Qwen3.5. Based on transformers v5.3.0.</td>
 </tr>
@@ -2039,86 +2116,82 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Liger FLCE for Qwen3.5 MoE. Based on transformers v5.3.0.</td>
 </tr>
 <tr class="odd">
-<td><a href="../../docs/api/integrations.liger.models.qwen3_moe.html#axolotl.integrations.liger.models.qwen3_moe">integrations.liger.models.qwen3_moe</a></td>
-<td>Liger FLCE for Qwen3 MoE. Based on transformers v4.51.3.</td>
-</tr>
-<tr class="even">
 <td><a href="../../docs/api/integrations.llm_compressor.args.html#axolotl.integrations.llm_compressor.args">integrations.llm_compressor.args</a></td>
 <td>LLMCompressor and Sparse Finetuning config models.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.llm_compressor.plugin.html#axolotl.integrations.llm_compressor.plugin">integrations.llm_compressor.plugin</a></td>
 <td>Sparse Finetuning plugin for Axolotl — enables handling of sparse neural networks</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.llm_compressor.utils.html#axolotl.integrations.llm_compressor.utils">integrations.llm_compressor.utils</a></td>
 <td>Utilities for llmcompressor integration with axolotl.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.lm_eval.args.html#axolotl.integrations.lm_eval.args">integrations.lm_eval.args</a></td>
 <td>Module for handling lm eval harness input arguments.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.lm_eval.cli.html#axolotl.integrations.lm_eval.cli">integrations.lm_eval.cli</a></td>
 <td>axolotl CLI for running lm_eval tasks</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.mora.args.html#axolotl.integrations.mora.args">integrations.mora.args</a></td>
 <td>Config args for MoRA / ReMoRA.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.mora.plugin.html#axolotl.integrations.mora.plugin">integrations.mora.plugin</a></td>
 <td>MoRA / ReMoRA plugin for Axolotl.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.args.html#axolotl.integrations.nemo_gym.args">integrations.nemo_gym.args</a></td>
 <td>Input arguments for the NeMo Gym integration plugin.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.data_producer.html#axolotl.integrations.nemo_gym.data_producer">integrations.nemo_gym.data_producer</a></td>
 <td>NeMo Gym Data Producer for async GRPO training.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.dataset.html#axolotl.integrations.nemo_gym.dataset">integrations.nemo_gym.dataset</a></td>
 <td>Dataset loading for NeMo Gym JSONL files.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.multi_turn.html#axolotl.integrations.nemo_gym.multi_turn">integrations.nemo_gym.multi_turn</a></td>
 <td>Multi-turn rollout function for NeMo Gym environments.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.plugin.html#axolotl.integrations.nemo_gym.plugin">integrations.nemo_gym.plugin</a></td>
 <td>NeMo Gym Plugin for Axolotl.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.rewards.html#axolotl.integrations.nemo_gym.rewards">integrations.nemo_gym.rewards</a></td>
 <td>NeMo Gym reward functions.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.server.html#axolotl.integrations.nemo_gym.server">integrations.nemo_gym.server</a></td>
 <td>NeMo Gym server lifecycle management.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.spectrum.html#axolotl.integrations.spectrum">integrations.spectrum</a></td>
 <td>Spectrum Plugin to automatically generate unfrozen parameters based on SNR data.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.spectrum.args.html#axolotl.integrations.spectrum.args">integrations.spectrum.args</a></td>
 <td>Module for handling Spectrum input arguments.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.swanlab.args.html#axolotl.integrations.swanlab.args">integrations.swanlab.args</a></td>
 <td>SwanLab configuration arguments</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.swanlab.callbacks.html#axolotl.integrations.swanlab.callbacks">integrations.swanlab.callbacks</a></td>
 <td>SwanLab callbacks for Axolotl trainers.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.swanlab.completion_logger.html#axolotl.integrations.swanlab.completion_logger">integrations.swanlab.completion_logger</a></td>
 <td>SwanLab completion logger for RLHF/DPO/KTO/ORPO/GRPO training.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.swanlab.plugins.html#axolotl.integrations.swanlab.plugins">integrations.swanlab.plugins</a></td>
 <td>SwanLab Plugin for Axolotl</td>
 </tr>

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -12,10 +12,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -74,10 +77,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-38e438262e49c04e0d6134760b85b11b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -195,6 +198,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Support Matrix</span></a>
+  </div>
+</li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
@@ -204,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Shieldstral</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
@@ -230,6 +245,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PaddleOCR-VL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
@@ -250,6 +271,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
           <li class="sidebar-item sidebar-item-section">
@@ -354,6 +381,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
@@ -366,8 +399,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.7-Flash</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.6V</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -605,6 +662,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
@@ -625,6 +688,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -794,6 +863,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul>
   <li><a href="#new-model-support-agent-reference" id="toc-new-model-support-agent-reference" class="nav-link active" data-scroll-target="#new-model-support-agent-reference">New Model Support — Agent Reference</a>
   <ul class="collapse">
+  <li><a href="#model-support-registry" id="toc-model-support-registry" class="nav-link" data-scroll-target="#model-support-registry">Model Support Registry</a>
+  <ul class="collapse">
+  <li><a href="#resolution-and-precedence" id="toc-resolution-and-precedence" class="nav-link" data-scroll-target="#resolution-and-precedence">Resolution and precedence</a></li>
+  <li><a href="#migrating-a-legacy-descriptor" id="toc-migrating-a-legacy-descriptor" class="nav-link" data-scroll-target="#migrating-a-legacy-descriptor">Migrating a legacy descriptor</a></li>
+  <li><a href="#hook-phases" id="toc-hook-phases" class="nav-link" data-scroll-target="#hook-phases">Hook phases</a></li>
+  <li><a href="#transformers-registry-declarations" id="toc-transformers-registry-declarations" class="nav-link" data-scroll-target="#transformers-registry-declarations">Transformers registry declarations</a></li>
+  <li><a href="#registration-and-fallback" id="toc-registration-and-fallback" class="nav-link" data-scroll-target="#registration-and-fallback">Registration and fallback</a></li>
+  </ul></li>
   <li><a href="#quick-validation-checklist" id="toc-quick-validation-checklist" class="nav-link" data-scroll-target="#quick-validation-checklist">Quick Validation Checklist</a></li>
   <li><a href="#loss-debugging" id="toc-loss-debugging" class="nav-link" data-scroll-target="#loss-debugging">Loss Debugging</a>
   <ul class="collapse">
@@ -839,6 +916,296 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="new-model-support-agent-reference" class="level1">
 <h1>New Model Support — Agent Reference</h1>
 <p>Guide for debugging and adding support for new model architectures in axolotl. Based on lessons learned from Gemma4, Gemma3, Qwen2-VL, and other multimodal/MoE models.</p>
+<section id="model-support-registry" class="level2">
+<h2 class="anchored" data-anchor-id="model-support-registry">Model Support Registry</h2>
+<p>New architectures are described by a <code>ModelSupport</code> descriptor in <code>src/axolotl/model_support/&lt;model_type&gt;/</code>. Its declarative <code>ModelProfile</code> starts from a reusable family template, then supplies only the capabilities, component strategies, discovery matchers, and lifecycle hooks where that model differs from the family path. Features query the registry instead of adding new <code>model_type</code> branches throughout loaders and integrations.</p>
+<p>Use <code>VANILLA_CAUSAL_LM</code> for a standard text causal-language-model path and <code>IMAGE_TEXT_TO_TEXT</code> for a standard multimodal conditional-generation path. If a run resolves as multimodal but the matched profile is not, the profile’s auto-model class is ignored (with a warning) in favor of the multimodal mapping. Strategy values are lazy zero-argument providers so optional or heavyweight classes are imported only when the pipeline needs them.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># src/axolotl/model_support/my_model/__init__.py</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.model_support <span class="im">import</span> (</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    IMAGE_TEXT_TO_TEXT,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    Experimental,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    ModelHookContext,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ModelHookPhase,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    ModelHooks,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    ModelMatchers,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    ModelProfile,</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    ModelRegistrationOverrides,</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    ModelStrategyOverrides,</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    ModelSupport,</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    Unsupported,</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    VANILLA_CAUSAL_LM,</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    register_model_support,</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _processing_strategy_cls():</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> .processing <span class="im">import</span> MyModelProcessingStrategy</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> MyModelProcessingStrategy</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _matches_processor(processor):</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> transformers <span class="im">import</span> MyModelProcessor</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">isinstance</span>(processor, MyModelProcessor)</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _before_model_build(context: ModelHookContext):</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> .patches <span class="im">import</span> patch_my_model</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    patch_my_model(context.cfg)</span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a><span class="at">@register_model_support</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyModelSupport(ModelSupport):</span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>    model_types <span class="op">=</span> (<span class="st">"my_model"</span>,)</span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>    profile <span class="op">=</span> ModelProfile(</span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>        family<span class="op">=</span>IMAGE_TEXT_TO_TEXT,</span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>        capabilities<span class="op">=</span>{</span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>            <span class="st">"cut_cross_entropy"</span>: Unsupported(<span class="st">"No conditional-generation CCE forward."</span>),</span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>            <span class="st">"sample_packing"</span>: Experimental(<span class="st">"Verify loss parity against unpacked batches."</span>),</span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>        },</span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>        strategies<span class="op">=</span>ModelStrategyOverrides(</span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>            processing_strategy_cls<span class="op">=</span>_processing_strategy_cls,</span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>        ),</span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a>        matchers<span class="op">=</span>ModelMatchers(processor<span class="op">=</span>_matches_processor),</span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a>        hooks<span class="op">=</span>ModelHooks(</span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a>            {</span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a>                ModelHookPhase.BEFORE_MODEL_BUILD: (_before_model_build,),</span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a>            }</span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a>        ),</span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>A missing capability means unknown and preserves the feature’s generic handling. <code>Unsupported(reason)</code> raises when the feature is enabled, <code>Experimental(note)</code> warns, and <code>Supported(note)</code> records verified coverage. A profile capability value of <code>None</code> removes an inherited family declaration and restores unknown handling.</p>
+<p>For an in-tree descriptor, add its module path to <code>_BUILTIN_MODULES</code> in <code>src/axolotl/model_support/registry.py</code>; the registry imports those modules lazily, which executes the decorator. An out-of-tree plugin must import the descriptor module while the plugin is registered and must not edit <code>_BUILTIN_MODULES</code>. Verify activation without importing the descriptor directly, so the test proves registry discovery rather than triggering registration itself:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.model_support <span class="im">import</span> get_model_support</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>support <span class="op">=</span> get_model_support(<span class="st">"my_model"</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> support <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">type</span>(support).<span class="va">__name__</span> <span class="op">==</span> <span class="st">"MyModelSupport"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="resolution-and-precedence" class="level3">
+<h3 class="anchored" data-anchor-id="resolution-and-precedence">Resolution and precedence</h3>
+<p><code>resolve_model_support()</code> produces an immutable effective profile. Values resolve in this order:</p>
+<ol type="1">
+<li>Family-template defaults.</li>
+<li>Per-model profile overrides.</li>
+<li>Attributes and methods explicitly declared by a legacy <code>ModelSupport</code> subclass.</li>
+</ol>
+<p>Capabilities merge by key, strategies, registrations, and matchers override field by field, and hooks run in family → profile → legacy order. Inherited defaults on <code>ModelSupport</code> do not erase profile values. This keeps existing descriptors compatible while allowing new descriptors to remain declarative.</p>
+<p><code>ModelStrategyOverrides</code> distinguishes omission from removal: an omitted field inherits its family provider, while explicit <code>None</code> removes that provider and restores the downstream generic fallback. <code>ModelMatchers</code> fields differ: <code>None</code> always means inherit — matchers have no removal form. Profile hooks append by default; include a phase in <code>ModelHooks.replace_phases</code> to replace its inherited family hooks, using an empty tuple to suppress them entirely. Legacy method hooks remain additive after the declarative result.</p>
+<p>Use <code>ModelFamilyTemplate</code> when several architectures share more than the built-in vanilla paths. Keep the template limited to genuinely shared behavior; model folders should add only their own matcher, strategy, capability differences, and localized patches.</p>
+</section>
+<section id="migrating-a-legacy-descriptor" class="level3">
+<h3 class="anchored" data-anchor-id="migrating-a-legacy-descriptor">Migrating a legacy descriptor</h3>
+<p>Move one concern at a time using this mapping:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Legacy declaration</th>
+<th>Profile equivalent</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>is_multimodal = True</code></td>
+<td><code>ModelProfile(family=IMAGE_TEXT_TO_TEXT)</code>, or <code>ModelProfile(family=custom_family, is_multimodal=True)</code></td>
+</tr>
+<tr class="even">
+<td><code>capabilities = {...}</code></td>
+<td><code>ModelProfile(capabilities={...})</code></td>
+</tr>
+<tr class="odd">
+<td><code>get_auto_model_cls()</code></td>
+<td><code>ModelStrategyOverrides(auto_model_cls=provider)</code></td>
+</tr>
+<tr class="even">
+<td><code>get_processing_strategy_cls()</code></td>
+<td><code>ModelStrategyOverrides(processing_strategy_cls=provider)</code></td>
+</tr>
+<tr class="odd">
+<td><code>matches_cfg()</code> / <code>matches_processor()</code></td>
+<td><code>ModelMatchers(cfg=...)</code> / <code>ModelMatchers(processor=...)</code></td>
+</tr>
+<tr class="even">
+<td><code>validate_cfg()</code></td>
+<td><code>CONFIGURE_RUN</code> hook</td>
+</tr>
+<tr class="odd">
+<td><code>pre_config_load()</code> / <code>pre_tokenizer_load()</code> / <code>pre_model_load()</code></td>
+<td><code>BEFORE_CONFIG_LOAD</code> / <code>BEFORE_TOKENIZER_LOAD</code> / <code>BEFORE_MODEL_BUILD</code> hook</td>
+</tr>
+<tr class="even">
+<td><code>post_model_load()</code></td>
+<td><code>AFTER_ADAPTER_LOAD</code> hook</td>
+</tr>
+</tbody>
+</table>
+<p>Unless a profile phase explicitly replaces its family hooks, hooks from the family, profile, and legacy method are additive. Remove a legacy method once its behavior moves into a profile hook, or the old and new implementations both run. The compatibility guard prevents a legacy method’s <code>super()</code> call from re-entering the declarative hook, but it cannot identify duplicate logic implemented in both places. <code>AFTER_BASE_MODEL_BUILD</code> has no legacy-method equivalent.</p>
+</section>
+<section id="hook-phases" class="level3">
+<h3 class="anchored" data-anchor-id="hook-phases">Hook phases</h3>
+<p>Hooks receive an immutable <code>ModelHookContext</code> containing the run config and the objects available at that phase. The <code>tokenizer</code> and <code>processor</code> fields are optional because early phases do not construct them and direct <code>ModelLoader</code> callers can omit a processor; hooks must handle <code>None</code> unless their phase and caller guarantee the object. Register hooks under <code>ModelHookPhase</code> rather than relying on an implied ordering.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 43%">
+<col style="width: 56%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Phase</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>BEFORE_CONFIG_LOAD</code></td>
+<td>Before <code>AutoConfig.from_pretrained</code>; discovery uses the config matcher because the Hugging Face <code>model_type</code> may not be known yet.</td>
+</tr>
+<tr class="even">
+<td><code>CONFIGURE_RUN</code></td>
+<td>After the model config and exact registry descriptor are known; use for model-specific validation or derived config values.</td>
+</tr>
+<tr class="odd">
+<td><code>BEFORE_TOKENIZER_LOAD</code></td>
+<td>Before tokenizer construction; discovery uses the config matcher or the already-resolved exact model type.</td>
+</tr>
+<tr class="even">
+<td><code>BEFORE_MODEL_BUILD</code></td>
+<td>At the established pre-load patch slot before checkpoint construction; use only for patches that must exist while the model class is imported or instantiated.</td>
+</tr>
+<tr class="odd">
+<td><code>AFTER_BASE_MODEL_BUILD</code></td>
+<td>Immediately after the raw base model is built and before adapters are applied.</td>
+</tr>
+<tr class="even">
+<td><code>AFTER_ADAPTER_LOAD</code></td>
+<td>After adapters and final load setup, before the remaining generic and plugin post-load hooks.</td>
+</tr>
+</tbody>
+</table>
+<p>The context fields available at each phase are:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 7%">
+<col style="width: 17%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 9%">
+<col style="width: 36%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Phase</th>
+<th><code>model_config</code></th>
+<th><code>tokenizer</code></th>
+<th><code>processor</code></th>
+<th><code>model</code></th>
+<th><code>inference</code> / <code>reference_model</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>BEFORE_CONFIG_LOAD</code></td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td><code>inference</code> from <code>cfg</code> when set; <code>reference_model</code> unavailable</td>
+</tr>
+<tr class="even">
+<td><code>CONFIGURE_RUN</code></td>
+<td>Available</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td><code>inference</code> from <code>cfg</code> when set; <code>reference_model</code> unavailable</td>
+</tr>
+<tr class="odd">
+<td><code>BEFORE_TOKENIZER_LOAD</code></td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td><code>inference</code> from <code>cfg</code> when set; <code>reference_model</code> unavailable</td>
+</tr>
+<tr class="even">
+<td><code>BEFORE_MODEL_BUILD</code></td>
+<td>Available</td>
+<td>Available</td>
+<td>Optional</td>
+<td>-</td>
+<td>Available</td>
+</tr>
+<tr class="odd">
+<td><code>AFTER_BASE_MODEL_BUILD</code></td>
+<td>Available</td>
+<td>Available</td>
+<td>Optional</td>
+<td>Raw base model</td>
+<td>Available</td>
+</tr>
+<tr class="even">
+<td><code>AFTER_ADAPTER_LOAD</code></td>
+<td>Available</td>
+<td>Available</td>
+<td>Optional</td>
+<td>Final loaded model</td>
+<td>Available</td>
+</tr>
+</tbody>
+</table>
+<p><code>cfg</code> is always available. Although the context dataclass prevents assigning different field values, the contained config and model objects remain mutable so hooks can apply their intended configuration or patch. At <code>BEFORE_TOKENIZER_LOAD</code>, the exact type may already be available as <code>cfg.model_config_type</code>, but the <code>model_config</code> object itself is not included in the context. The standard loading helper supplies a processor for multimodal runs; direct <code>ModelLoader</code> callers must pass one explicitly if their hooks require it.</p>
+<p>The hook runner deliberately does not suppress repeated calls. A long-lived process may load multiple models or need per-run reconfiguration, so module-level monkeypatch functions must be idempotent themselves: guard against re-wrapping, preserve the original callable when practical, and leave model-instance hooks safe to run for every model.</p>
+</section>
+<section id="transformers-registry-declarations" class="level3">
+<h3 class="anchored" data-anchor-id="transformers-registry-declarations">Transformers registry declarations</h3>
+<p><code>ModelRegistrations</code> declares payloads for transformers’ own extension registries. They are applied idempotently at the <code>BEFORE_MODEL_BUILD</code> boundary, before <code>from_pretrained</code> runs:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _weight_conversions():</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> transformers.core_model_loading <span class="im">import</span> Concatenate, WeightConverter</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">"my_model"</span>: [</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>            WeightConverter(</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>                [<span class="st">"experts.*.gate_proj.weight"</span>, <span class="st">"experts.*.up_proj.weight"</span>],</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>                [<span class="st">"experts.gate_up_proj"</span>],</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>                operations<span class="op">=</span>[Concatenate(dim<span class="op">=</span><span class="dv">0</span>)],</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>            ),</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>        ],</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _patch_mappings():</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> .modules <span class="im">import</span> FusedMyModelExperts</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">"MyModelExperts"</span>: FusedMyModelExperts}</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>profile <span class="op">=</span> ModelProfile(</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    family<span class="op">=</span>VANILLA_CAUSAL_LM,</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    registrations<span class="op">=</span>ModelRegistrationOverrides(</span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>        weight_conversions<span class="op">=</span>_weight_conversions,</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>        patch_mappings<span class="op">=</span>_patch_mappings,</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><code>weight_conversions</code> maps a <code>model_type</code> or model class name to <code>WeightTransform</code> entries (<code>WeightConverter</code>, <code>WeightRenaming</code>, …) passed to <code>transformers.conversion_mapping.register_checkpoint_conversion_mapping</code>. Class-name keys take priority over <code>model_type</code> keys inside transformers. Remote-code models receive only conversion mappings registered this way; transformers skips its built-in table for custom code.</li>
+<li><code>patch_mappings</code> maps class names (or regex patterns) to replacement <code>nn.Module</code> subclasses passed to <code>transformers.monkey_patching.register_patch_mapping</code>; transformers swaps the classes during <code>from_pretrained</code>/<code>from_config</code> module construction. Prefer exact class names: the registry is process-global, and a broad pattern such as <code>.*Attention</code> also patches every other architecture loaded later in the same process.</li>
+</ul>
+<p>These registries are two halves of one operation: a patch mapping that changes a module’s checkpoint layout must ship matching <code>weight_conversions</code>, or loading breaks; transformers’ own kernel-fusion machinery always registers them as a pair.</p>
+<p>Saving reverses conversions. <code>save_pretrained(save_original_format=True)</code> (the default) applies each registered transform’s reverse to emit the original checkpoint layout, so every <code>ConversionOps</code> in a registered <code>WeightConverter</code> must implement <code>reverse_op</code>. Axolotl warns at registration for any op missing a <code>reverse_op</code>; a transform carrying a quantization operation also cannot round-trip, though that only surfaces at save time. The reverse pass is skipped while a PEFT config is loaded, so merged and full-parameter saves are the affected path.</p>
+<p>Registrations resolve family → profile like strategies (an omitted field inherits, explicit <code>None</code> clears); there is no legacy-method equivalent.</p>
+</section>
+<section id="registration-and-fallback" class="level3">
+<h3 class="anchored" data-anchor-id="registration-and-fallback">Registration and fallback</h3>
+<p>Register out-of-tree descriptors by calling <code>register_model_support()</code> from an imported plugin module. Built-ins are loaded before an external registration is installed, so a plugin can intentionally override a built-in <code>model_type</code>. Config and processor matchers must identify at most one descriptor; ambiguous matches raise instead of depending on import order. Once <code>cfg.model_config_type</code> is known, exact registry lookup takes precedence over heuristic matchers.</p>
+<p>A matcher is a <em>global</em> predicate: <code>matches_cfg</code>/<code>matches_processor</code> run against every registered descriptor for every run, so scope them tightly (e.g.&nbsp;a specific model-name substring) and keep them side-effect-free. A matcher that returns <code>True</code> for a model it does not own will either shadow another descriptor or raise an ambiguity error and abort an otherwise-unrelated run. Because exact <code>model_config_type</code> lookup wins once the type is resolved, a matcher can only shadow a built-in during the pre-config/pre-tokenizer window before the config is loaded; to override a built-in for the whole run, register a descriptor under the same <code>model_type</code> instead of relying on a matcher.</p>
+<p>Descriptors without a profile retain neutral legacy behavior: their resolved family is <code>None</code>, no component provider is injected, and explicitly declared legacy attributes and methods are adapted into the resolved result. This preserves the existing generic and hardcoded loader and processing fallbacks, including for legacy multimodal descriptors. Unregistered models, missing capabilities, and unset strategy fields also continue through those fallback paths. Profile resolution does not yet replace trainer selection, optimizer construction, adapter loading, loss adaptation, batch preparation, or every legacy <code>model_type</code> branch; add those as typed strategies only when the vanilla staged pipeline has a stable replacement seam.</p>
+<p>See <code>model_support/paddleocr_vl/</code> for a multimodal profile and <code>model_support/kimi_linear/</code> for phase-specific idempotent patch hooks.</p>
+</section>
+</section>
 <section id="quick-validation-checklist" class="level2">
 <h2 class="anchored" data-anchor-id="quick-validation-checklist">Quick Validation Checklist</h2>
 <p>When testing a new model, run through these checks in order:</p>
@@ -859,22 +1226,17 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="direct-comparison-technique" class="level3">
 <h3 class="anchored" data-anchor-id="direct-comparison-technique">Direct comparison technique</h3>
 <p>The fastest way to isolate a loss issue — bypass the trainer entirely:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load model via axolotl's pipeline (applies all patches)</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.config <span class="im">import</span> load_cfg</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.utils.config <span class="im">import</span> normalize_config, prepare_plugins</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.loaders.tokenizer <span class="im">import</span> load_tokenizer</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.loaders.model <span class="im">import</span> ModelLoader</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>cfg <span class="op">=</span> load_cfg(<span class="st">"your_config.yaml"</span>)</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>normalize_config(cfg)</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>prepare_plugins(cfg)</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>tokenizer <span class="op">=</span> load_tokenizer(cfg)</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>model, _ <span class="op">=</span> ModelLoader(cfg, tokenizer).load()</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Forward pass on preprocessed data</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>model.train()</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>out <span class="op">=</span> model(input_ids, labels<span class="op">=</span>labels)</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Direct loss: </span><span class="sc">{</span>out<span class="sc">.</span>loss<span class="sc">.</span>item()<span class="sc">}</span><span class="ss">"</span>)  <span class="co"># Compare to trainer's reported loss</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load model via axolotl's pipeline (applies all patches)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.config <span class="im">import</span> load_cfg</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.utils.load <span class="im">import</span> load_model_and_tokenizer</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>cfg <span class="op">=</span> load_cfg(<span class="st">"your_config.yaml"</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>model, tokenizer, processor <span class="op">=</span> load_model_and_tokenizer(cfg<span class="op">=</span>cfg)</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Forward pass on preprocessed data</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>model.train()</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>out <span class="op">=</span> model(input_ids, labels<span class="op">=</span>labels)</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Direct loss: </span><span class="sc">{</span>out<span class="sc">.</span>loss<span class="sc">.</span>item()<span class="sc">}</span><span class="ss">"</span>)  <span class="co"># Compare to trainer's reported loss</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>If direct loss is correct (~1.0) but trainer reports 3–4x higher, check <code>model_accepts_loss_kwargs</code> (see below).</p>
 </section>
 <section id="model_accepts_loss_kwargs-inflation" class="level3">
@@ -982,22 +1344,22 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="how-packed-sequence-detection-works-transformers-5.x" class="level3">
 <h3 class="anchored" data-anchor-id="how-packed-sequence-detection-works-transformers-5.x">How packed sequence detection works (transformers ≥ 5.x)</h3>
 <p><code>transformers.masking_utils._preprocess_mask_arguments()</code> detects packed sequences from <code>position_ids</code> resets. But <strong>only when <code>attention_mask is None</code></strong>:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># From masking_utils.py:</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> position_ids <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="kw">and</span> attention_mask <span class="kw">is</span> <span class="va">None</span> <span class="kw">and</span> past_key_values <span class="kw">is</span> <span class="va">None</span>:</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    packed_sequence_mask <span class="op">=</span> find_packed_sequence_indices(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># From masking_utils.py:</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> position_ids <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="kw">and</span> attention_mask <span class="kw">is</span> <span class="va">None</span> <span class="kw">and</span> past_key_values <span class="kw">is</span> <span class="va">None</span>:</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    packed_sequence_mask <span class="op">=</span> find_packed_sequence_indices(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>If the collator provides an all-ones <code>attention_mask</code>, packing detection is <strong>skipped</strong> and the model builds a single causal mask spanning all packed sequences → cross-sequence attention leakage → very high loss.</p>
 </section>
 <section id="fix-for-models-using-create_causal_mask_mapping" class="level3">
 <h3 class="anchored" data-anchor-id="fix-for-models-using-create_causal_mask_mapping">Fix for models using <code>create_causal_mask_mapping</code></h3>
 <p>For Gemma3, Gemma4, and similar models that use the new transformers masking system, remove <code>attention_mask</code> from inputs when sample packing is active:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In compute_loss():</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.args.sample_packing</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> model_type <span class="kw">in</span> (<span class="st">"gemma4"</span>, <span class="st">"gemma3"</span>)</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> <span class="st">"attention_mask"</span> <span class="kw">in</span> inputs</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> <span class="st">"position_ids"</span> <span class="kw">in</span> inputs</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>):</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">del</span> inputs[<span class="st">"attention_mask"</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In compute_loss():</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.args.sample_packing</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> model_type <span class="kw">in</span> (<span class="st">"gemma4"</span>, <span class="st">"gemma3"</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> <span class="st">"attention_mask"</span> <span class="kw">in</span> inputs</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> <span class="st">"position_ids"</span> <span class="kw">in</span> inputs</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>):</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">del</span> inputs[<span class="st">"attention_mask"</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Fix location: <code>src/axolotl/core/trainers/base.py</code> <code>compute_loss()</code>.</p>
 </section>
 <section id="models-that-dont-need-this-fix" class="level3">
@@ -1034,10 +1396,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td>FA4</td>
-<td>auto with <code>attn_implementation: flash_attention_2</code></td>
-<td>256 (SM90+)</td>
+<td><code>attn_implementation: flash_attention_4</code> (or auto-upgrade from FA2)</td>
+<td>128 (SM90+)</td>
 <td>✅</td>
-<td>Auto-detected on H100+</td>
+<td>Auto-detected on H100+; needs <code>quack-kernels&gt;=0.6.0</code></td>
 </tr>
 <tr class="odd">
 <td>SDPA</td>
@@ -1098,15 +1460,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="scattermoe-kernels" class="level3">
 <h3 class="anchored" data-anchor-id="scattermoe-kernels">ScatterMoE kernels</h3>
 <p><code>use_scattermoe: true</code> with <code>experts_implementation: scattermoe</code> registers fused expert kernels via transformers’ <code>ExpertsInterface</code>. Significant speedup for MoE models. Requires the kernels plugin:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.kernels.KernelsPlugin</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">use_kernels</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_scattermoe</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">experts_implementation</span><span class="kw">:</span><span class="at"> scattermoe</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.kernels.KernelsPlugin</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">use_kernels</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_scattermoe</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">experts_implementation</span><span class="kw">:</span><span class="at"> scattermoe</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="where-to-add-model-specific-fixes" class="level2">
 <h2 class="anchored" data-anchor-id="where-to-add-model-specific-fixes">Where to Add Model-Specific Fixes</h2>
+<p>For a new architecture, start with a <code>ModelSupport</code> descriptor in <code>model_support/&lt;model_type&gt;/</code> (capabilities, processing strategy, load hooks, config validation). The locations below are for fixes the registry does not cover yet, and for architectures not yet ported to it:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 27%">
@@ -1147,7 +1510,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>FA4 tuple fix</td>
 </tr>
 <tr class="even">
-<td>Model-specific patches</td>
+<td>Legacy model-specific patches</td>
 <td><code>loaders/patch_manager.py</code> <code>_apply_model_specific_patches()</code></td>
 <td>Llama4, Kimi, NemotronH</td>
 </tr>
@@ -1162,7 +1525,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Validated YAML</td>
 </tr>
 <tr class="odd">
-<td>Config validation</td>
+<td>Config validation (generic)</td>
 <td><code>utils/schemas/validation.py</code></td>
 <td>Compatibility checks</td>
 </tr>

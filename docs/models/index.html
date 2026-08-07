@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -12,10 +12,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -39,10 +42,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-38e438262e49c04e0d6134760b85b11b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -160,6 +163,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Support Matrix</span></a>
+  </div>
+</li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
@@ -169,6 +178,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Shieldstral</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
@@ -195,6 +210,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PaddleOCR-VL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
@@ -215,6 +236,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
           <li class="sidebar-item sidebar-item-section">
@@ -319,6 +346,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
@@ -331,8 +364,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.7-Flash</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.6V</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -570,6 +627,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
@@ -590,6 +653,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -771,14 +840,17 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h1>Model Guides</h1>
 <p>Below are the curated examples for training various model architectures:</p>
 <ul>
+<li><a href="../../docs/models/shieldstral.html">Shieldstral</a></li>
 <li><a href="../../docs/models/kimi-linear.html">Kimi Linear</a></li>
 <li><a href="../../docs/models/plano.html">Plano Orchestrator</a></li>
 <li><a href="../../docs/models/mimo.html">MiMo</a></li>
 <li><a href="../../docs/models/internvl3_5.html">InternVL 3.5</a></li>
+<li><a href="../../docs/models/paddleocr-vl.html">PaddleOCR-VL</a></li>
 <li><a href="../../docs/models/olmo3.html">OLMo 3</a></li>
 <li><a href="../../docs/models/trinity.html">Trinity</a></li>
 <li><a href="../../docs/models/arcee.html">Arcee AFM</a></li>
 <li><a href="../../docs/models/mistral-medium-3_5.html">Mistral Medium 3.5</a></li>
+<li><a href="../../docs/models/mistral4.html">Mistral Small 4</a></li>
 <li><a href="../../docs/models/ministral3.html">Ministral3</a></li>
 <li><a href="../../docs/models/ministral3/think.html">Ministral 3 Thinking</a></li>
 <li><a href="../../docs/models/ministral3/vision.html">Ministral 3 Vision</a></li>
@@ -792,9 +864,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li><a href="../../docs/models/mistral.html">Mistral 7B</a></li>
 <li><a href="../../docs/models/llama-4.html">Llama 4</a></li>
 <li><a href="../../docs/models/llama-2.html">Llama 2</a></li>
+<li><a href="../../docs/models/qwen3.5.html">Qwen 3.5</a></li>
 <li><a href="../../docs/models/qwen3-next.html">Qwen 3 Next</a></li>
 <li><a href="../../docs/models/qwen3.html">Qwen 3</a></li>
+<li><a href="../../docs/models/gemma4.html">Gemma 4</a></li>
 <li><a href="../../docs/models/gemma3n.html">Gemma 3n</a></li>
+<li><a href="../../docs/models/glm47-flash.html">GLM-4.7-Flash</a></li>
+<li><a href="../../docs/models/glm46v.html">GLM-4.6V</a></li>
+<li><a href="../../docs/models/glm45.html">GLM-4.5-Air</a></li>
 <li><a href="../../docs/models/apertus.html">Apertus</a></li>
 <li><a href="../../docs/models/gpt-oss.html">GPT-OSS</a></li>
 <li><a href="../../docs/models/seed-oss.html">Seed-OSS</a></li>

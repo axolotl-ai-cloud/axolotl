@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -12,10 +12,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -74,10 +77,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="site_libs/quarto-html/anchor.min.js"></script>
 <link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-38e438262e49c04e0d6134760b85b11b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -195,6 +198,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Support Matrix</span></a>
+  </div>
+</li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
@@ -204,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Shieldstral</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
@@ -230,6 +245,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="./docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PaddleOCR-VL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="./docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
@@ -250,6 +271,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="./docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
           <li class="sidebar-item sidebar-item-section">
@@ -354,6 +381,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="./docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="./docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
@@ -366,8 +399,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="./docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="./docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.7-Flash</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.6V</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -605,6 +662,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="./docs/lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="./docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
@@ -625,6 +688,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="./docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -840,22 +909,42 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <a href="https://twitter.com/axolotl_ai"><img src="https://img.shields.io/twitter/follow/axolotl_ai?style=social" alt="twitter" style="height: 20px;"></a>
 <a href="https://colab.research.google.com/github/axolotl-ai-cloud/axolotl/blob/main/examples/colab-notebooks/colab-axolotl-example.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="google-colab" style="height: 20px;"></a>
 <br>
+<img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/docker-e2e.yml/badge.svg" alt="docker-e2e-tests">
 <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/tests-nightly.yml/badge.svg" alt="tests-nightly">
 <img src="https://github.com/axolotl-ai-cloud/axolotl/actions/workflows/multi-gpu-e2e.yml/badge.svg" alt="multigpu-semi-weekly tests">
 </p>
 <section id="latest-updates" class="level2">
 <h2 class="anchored" data-anchor-id="latest-updates">🎉 Latest Updates</h2>
 <ul>
+<li>2026/08:
+<ul>
+<li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/shieldstral.html">Shieldstral</a>.</li>
+</ul></li>
+<li>2026/07:
+<ul>
+<li><a href="https://docs.axolotl.ai/docs/nvfp4_lora.html">NVFP4 (4-bit) MoE LoRA training</a> is now supported via ScatterMoE (W4A16) and SonicMoE (W4A4), including adapter merge back into a plain NVFP4 checkpoint.</li>
+</ul></li>
+<li>2026/06:
+<ul>
+<li><a href="https://docs.axolotl.ai/docs/nd_parallelism.html">Expert Parallelism (EP)</a> for distributed MoE training via DeepEP, remote training through <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3614">Tinker-compatible APIs</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3572">Context Parallelism for hybrid SSM models</a> (Nemotron-H, Falcon-H1, Bamba), <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3634">BitNet 1.58-bit</a> fine-tuning, and a <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3625">multimodal assistant-only loss-masking fix</a>.</li>
+</ul></li>
 <li>2026/04:
 <ul>
-<li>New model support has been added in Axolotl for <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/mistral-medium-3_5">Mistral Medium 3.5</a> and <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/gemma4">Gemma 4</a>.</li>
+<li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/mistral-medium-3_5.html">Mistral Medium 3.5</a> and <a href="https://docs.axolotl.ai/docs/models/gemma4.html">Gemma 4</a>.</li>
+<li>New RL and kernels: <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3486">Async GRPO</a> (up to 58% faster steps), <a href="https://docs.axolotl.ai/docs/attention.html#flash-attention">Flash Attention 4</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3516">NeMo Gym</a>, and <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3527">EBFT</a>.</li>
 <li>Axolotl is now <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3545">uv-first</a> and has <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3519">SonicMoE fused LoRA</a> support.</li>
 </ul></li>
 <li>2026/03:
 <ul>
-<li>New model support has been added in Axolotl for <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/mistral4">Mistral Small 4</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/qwen3.5">Qwen3.5, Qwen3.5 MoE</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm47-flash">GLM-4.7-Flash</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm46v">GLM-4.6V</a>, and <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45">GLM-4.5-Air</a>.</li>
+<li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/mistral4.html">Mistral Small 4</a>, <a href="https://docs.axolotl.ai/docs/models/qwen3.5.html">Qwen3.5, Qwen3.5 MoE</a>, <a href="https://docs.axolotl.ai/docs/models/glm47-flash.html">GLM-4.7-Flash</a>, <a href="https://docs.axolotl.ai/docs/models/glm46v.html">GLM-4.6V</a>, and <a href="https://docs.axolotl.ai/docs/models/glm45.html">GLM-4.5-Air</a>.</li>
 <li><a href="https://docs.axolotl.ai/docs/expert_quantization.html">MoE expert quantization</a> support (via <code>quantize_moe_experts: true</code>) greatly reduces VRAM when training MoE models (FSDP2 compat).</li>
 </ul></li>
+</ul>
+<details>
+<summary>
+Expand older updates
+</summary>
+<ul>
 <li>2026/02:
 <ul>
 <li><a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3410">ScatterMoE LoRA</a> support. LoRA fine-tuning directly on MoE expert weights using custom Triton kernels.</li>
@@ -871,12 +960,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li><a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3264">Distributed Muon Optimizer</a> support has been added for FSDP2 pretraining.</li>
 </ul></li>
 <li>2025/10: New model support has been added in Axolotl for: <a href="https://docs.axolotl.ai/docs/models/qwen3-next.html">Qwen3 Next</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/qwen2_5-vl">Qwen2.5-vl, Qwen3-vl</a>, <a href="https://docs.axolotl.ai/docs/models/qwen3.html">Qwen3, Qwen3MoE</a>, <a href="https://docs.axolotl.ai/docs/models/granite4.html">Granite 4</a>, <a href="https://docs.axolotl.ai/docs/models/hunyuan.html">HunYuan</a>, <a href="https://docs.axolotl.ai/docs/models/magistral/vision.html">Magistral 2509</a>, <a href="https://docs.axolotl.ai/docs/models/apertus.html">Apertus</a>, and <a href="https://docs.axolotl.ai/docs/models/seed-oss.html">Seed-OSS</a>.</li>
-</ul>
-<details>
-<summary>
-Expand older updates
-</summary>
-<ul>
 <li>2025/09: Axolotl now has text diffusion training. Read more <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/diffusion">here</a>.</li>
 <li>2025/08: QAT has been updated to include NVFP4 support. See <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3107">PR</a>.</li>
 <li>2025/07:
@@ -904,8 +987,8 @@ Expand older updates
 <p>Features:</p>
 <ul>
 <li><strong>Multiple Model Support</strong>: Train various models like GPT-OSS, LLaMA, Mistral, Mixtral, Pythia, and many more models available on the Hugging Face Hub.</li>
-<li><strong>Multimodal Training</strong>: Fine-tune vision-language models (VLMs) including LLaMA-Vision, Qwen2-VL, Pixtral, LLaVA, SmolVLM2, GLM-4.6V, InternVL 3.5, Gemma 3n, and audio models like Voxtral with image, video, and audio support.</li>
-<li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, GPTQ, QAT, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO, GDPO), and Reward Modelling (RM) / Process Reward Modelling (PRM).</li>
+<li><strong>Multimodal Training</strong>: Fine-tune vision-language models (VLMs) including LLaMA-Vision, Qwen2-VL, Pixtral, LLaVA, SmolVLM2, GLM-4.6V, InternVL 3.5, Gemma 3n, PaddleOCR-VL, and audio models like Voxtral with image, video, and audio support.</li>
+<li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, GPTQ, QAT (int8/int4/FP8/NVFP4/MXFP4), FP8 mixed-precision training, NVFP4/MXFP4 MoE LoRA, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO, GDPO), and Reward Modelling (RM) / Process Reward Modelling (PRM).</li>
 <li><strong>Easy Configuration</strong>: Re-use a single YAML configuration file across the full fine-tuning pipeline: dataset preprocessing, training, evaluation, quantization, and inference.</li>
 <li><strong>Performance Optimizations</strong>: <a href="https://docs.axolotl.ai/docs/multipack.html">Multipacking</a>, <a href="https://docs.axolotl.ai/docs/attention.html#flash-attention">Flash Attention 2/3/4</a>, <a href="https://docs.axolotl.ai/docs/attention.html#xformers">Xformers</a>, <a href="https://docs.axolotl.ai/docs/attention.html#flex-attention">Flex Attention</a>, <a href="https://docs.axolotl.ai/docs/attention.html#sageattention">SageAttention</a>, <a href="https://docs.axolotl.ai/docs/custom_integrations.html#liger-kernels">Liger Kernel</a>, <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a>, <a href="https://docs.axolotl.ai/docs/custom_integrations.html#kernels-integration">ScatterMoE</a>, <a href="https://docs.axolotl.ai/docs/sequence_parallelism.html">Sequence Parallelism (SP)</a>, <a href="https://docs.axolotl.ai/docs/lora_optims.html">LoRA optimizations</a>, <a href="https://docs.axolotl.ai/docs/multi-gpu.html">Multi-GPU training (FSDP1, FSDP2, DeepSpeed)</a>, <a href="https://docs.axolotl.ai/docs/multi-node.html">Multi-node training (Torchrun, Ray)</a>, and many more!</li>
 <li><strong>Flexible Dataset Handling</strong>: Load from local, HuggingFace, and cloud (S3, Azure, GCP, OCI) datasets.</li>
@@ -985,6 +1068,7 @@ Expand older updates
 <h2 class="anchored" data-anchor-id="documentation">📚 Documentation</h2>
 <ul>
 <li><a href="https://docs.axolotl.ai/docs/installation.html">Installation Options</a> - Detailed setup instructions for different environments</li>
+<li><a href="https://docs.axolotl.ai/docs/support-matrix.html">Support Matrix</a> - Feature support, compatibility, and known gaps</li>
 <li><a href="https://docs.axolotl.ai/docs/config-reference.html">Configuration Guide</a> - Full configuration options and examples</li>
 <li><a href="https://docs.axolotl.ai/docs/dataset_loading.html">Dataset Loading</a> - Loading datasets from various sources</li>
 <li><a href="https://docs.axolotl.ai/docs/dataset-formats/">Dataset Guide</a> - Supported formats and how to use them</li>
@@ -997,7 +1081,7 @@ Expand older updates
 </section>
 <section id="ai-agent-support" class="level2">
 <h2 class="anchored" data-anchor-id="ai-agent-support">AI Agent Support</h2>
-<p>Axolotl ships with built-in documentation optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.). These docs are bundled with the pip package — no repo clone needed.</p>
+<p>Axolotl ships with built-in documentation optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.). These docs are bundled with the pip package, no repo clone needed.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Show overview and available training methods</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1031,7 +1115,7 @@ Expand older updates
 <h2 class="anchored" data-anchor-id="telemetry">📈 Telemetry</h2>
 <p>Axolotl has opt-out telemetry that helps us understand how the project is being used
 and prioritize improvements. We collect basic system information, model types, and
-error rates—never personal data or file paths. Telemetry is enabled by default. To
+error rates, never personal data or file paths. Telemetry is enabled by default. To
 disable it, set AXOLOTL_DO_NOT_TRACK=1. For more details, see our <a href="https://docs.axolotl.ai/docs/telemetry.html">telemetry documentation</a>.</p>
 </section>
 <section id="sponsors" class="level2">

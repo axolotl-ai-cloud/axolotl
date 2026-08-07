@@ -2,20 +2,23 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>integrations.liger.models.qwen3 – Axolotl</title>
+<title>Shieldstral – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -74,10 +77,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-38e438262e49c04e0d6134760b85b11b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -144,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/shieldstral.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/shieldstral.html">Shieldstral</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -195,15 +198,27 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Support Matrix</span></a>
+  </div>
+</li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
  <span class="menu-text">Model Guides</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Shieldstral</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
@@ -230,6 +245,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PaddleOCR-VL</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
@@ -250,6 +271,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
           <li class="sidebar-item sidebar-item-section">
@@ -354,6 +381,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
@@ -366,8 +399,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.7-Flash</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.6V</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -605,6 +662,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
@@ -625,6 +688,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -792,165 +861,135 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.liger.models.qwen3" id="toc-axolotl.integrations.liger.models.qwen3" class="nav-link active" data-scroll-target="#axolotl.integrations.liger.models.qwen3">integrations.liger.models.qwen3</a>
+  <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting started</a>
   <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">Tips</a></li>
+  </ul></li>
+  <li><a href="#dataset-format" id="toc-dataset-format" class="nav-link" data-scroll-target="#dataset-format">Dataset Format</a>
   <ul class="collapse">
-  <li><a href="#axolotl.integrations.liger.models.qwen3.apply_liger_kernel_to_qwen3" id="toc-axolotl.integrations.liger.models.qwen3.apply_liger_kernel_to_qwen3" class="nav-link" data-scroll-target="#axolotl.integrations.liger.models.qwen3.apply_liger_kernel_to_qwen3">apply_liger_kernel_to_qwen3</a></li>
-  <li><a href="#axolotl.integrations.liger.models.qwen3.lce_forward" id="toc-axolotl.integrations.liger.models.qwen3.lce_forward" class="nav-link" data-scroll-target="#axolotl.integrations.liger.models.qwen3.lce_forward">lce_forward</a></li>
+  <li><a href="#vision" id="toc-vision" class="nav-link" data-scroll-target="#vision">Vision</a></li>
   </ul></li>
-  </ul></li>
+  <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
+  <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a></li>
+  <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/shieldstral.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/shieldstral.html">Shieldstral</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Shieldstral</h1>
+</div>
 
 
 
+<div class="quarto-title-meta">
 
-<section id="axolotl.integrations.liger.models.qwen3" class="level1">
-<h1>integrations.liger.models.qwen3</h1>
-<p><code>integrations.liger.models.qwen3</code></p>
-<p>Liger FLCE for Qwen3. Based on transformers v4.51.3.</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.liger.models.qwen3.apply_liger_kernel_to_qwen3">apply_liger_kernel_to_qwen3</a></td>
-<td>Apply Liger kernels to replace original implementation in HuggingFace Llama models (2 and 3)</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.integrations.liger.models.qwen3.lce_forward">lce_forward</a></td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.liger.models.qwen3.apply_liger_kernel_to_qwen3" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.liger.models.qwen3.apply_liger_kernel_to_qwen3">apply_liger_kernel_to_qwen3</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.liger.models.qwen3.apply_liger_kernel_to_qwen3(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    cross_entropy<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    fused_linear_cross_entropy<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    rms_norm<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    glu_activation<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    layer_norm<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Apply Liger kernels to replace original implementation in HuggingFace Llama models (2 and 3)</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 2%">
-<col style="width: 84%">
-<col style="width: 3%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>cross_entropy</td>
-<td>bool</td>
-<td>Whether to apply Liger’s cross entropy loss. Default is False.</td>
-<td><code>False</code></td>
-</tr>
-<tr class="even">
-<td>fused_linear_cross_entropy</td>
-<td>bool</td>
-<td>Whether to apply Liger’s fused linear cross entropy loss. Default is False. <code>cross_entropy</code> and <code>fused_linear_cross_entropy</code> cannot both be False. If <code>fused_linear_cross_entropy</code> is True, the logits will not be materialized but more memory efficient.</td>
-<td><code>False</code></td>
-</tr>
-<tr class="odd">
-<td>rms_norm</td>
-<td>bool</td>
-<td>Whether to apply Liger’s RMSNorm. Default is False.</td>
-<td><code>False</code></td>
-</tr>
-<tr class="even">
-<td>glu_activation</td>
-<td>bool</td>
-<td>Whether to apply Liger’s SwiGLU MLP. Default is False.</td>
-<td><code>False</code></td>
-</tr>
-<tr class="odd">
-<td>layer_norm</td>
-<td>bool</td>
-<td>Whether to apply Liger’s LayerNorm. Default is False.</td>
-<td><code>False</code></td>
-</tr>
-</tbody>
-</table>
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>Shieldstral is a policy-adaptive safety classifier from MistralAI found on <a href="https://huggingface.co/mistralai/Shieldstral-1.0-3B">HuggingFace</a>. It is built on <code>Ministral-3-3B-Base-2512</code> and answers a single <code>yes</code>/<code>no</code> question about a document, so a training sample is a fixed system prompt, a query, and a one token answer.</p>
+<p>Thanks to the team at MistralAI for giving us early access to prepare for this release.</p>
+<section id="getting-started" class="level2">
+<h2 class="anchored" data-anchor-id="getting-started">Getting started</h2>
+<ol type="1">
+<li><p>Install Axolotl from source following the <a href="https://docs.axolotl.ai/docs/installation.html#sec-edge-build">installation guide</a>.</p></li>
+<li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
+<li><p>Only for the text + image config, install the vision lib and download the sample image:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="st">'mistral-common[opencv]==1.11.5'</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">wget</span> https://huggingface.co/datasets/Nanobit/text-vision-shieldstral-2k-test/resolve/main/African_elephant.jpg</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p>Run the fine-tuning:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># text only (10.6 GiB VRAM)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/shieldstral/shieldstral-3b-lora.yaml</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># text + image (8.5 GiB VRAM)</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/shieldstral/shieldstral-3b-vision-lora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Note: loss for the vision config is near 0 because the model is correctly asserting the right answer. Swap with your dataset for real results.</p></li>
+</ol>
+<p>Let us know how it goes. Happy finetuning! 🚀</p>
+<section id="tips" class="level3">
+<h3 class="anchored" data-anchor-id="tips">Tips</h3>
+<ul>
+<li>Keep the system prompt identical to the one in the model card. The model is trained to judge against it.</li>
+<li>Answers must be lowercase <code>yes</code> / <code>no</code> with no punctuation. Each is a single token (13059 and 2649), while <code>Yes</code>, <code>No</code> and <code>yes</code> are different tokens.</li>
+<li>Balance <code>yes</code> and <code>no</code> in your dataset to prevent skew.</li>
+<li>The base model was trained on sequences up to 32k, so raise the configs for longer documents.</li>
+<li>At inference, MistralAI recommends <code>temperature=0.0</code>, <code>max_tokens=1</code> and <code>logprobs=True, top_logprobs=20</code>, then renormalises the <code>yes</code>/<code>no</code> probabilities. <code>top_p</code> and other sampling settings have no effect since the verdict is read from the logprobs rather than sampled.</li>
+<li>To evaluate, merge the adapter with <code>axolotl merge-lora</code> and score with the <code>unsafe_score</code> helper from the model card. The merged folder carries <code>tekken.json</code>, so serve it with <code>vllm serve &lt;path&gt; --tokenizer-mode mistral</code>.</li>
+<li>You can run a full finetuning by removing <code>adapter: lora</code> from the config, or QLoRA by setting <code>adapter: qlora</code> and <code>load_in_4bit: true</code>.</li>
+<li>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
+</ul>
 </section>
 </section>
-<section id="axolotl.integrations.liger.models.qwen3.lce_forward" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.liger.models.qwen3.lce_forward">lce_forward</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.liger.models.qwen3.lce_forward(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    input_ids<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    position_ids<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    past_key_values<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    inputs_embeds<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    labels<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    use_cache<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    output_attentions<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    output_hidden_states<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    cache_position<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    logits_to_keep<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 2%">
-<col style="width: 11%">
-<col style="width: 83%">
-<col style="width: 1%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>labels</td>
-<td><code>torch.LongTensor</code> of shape <code>(batch_size, sequence_length)</code>, <em>optional</em></td>
-<td>Labels for computing the masked language modeling loss. Indices should either be in <code>[0, ..., config.vocab_size]</code> or -100 (see <code>input_ids</code> docstring). Tokens with indices set to <code>-100</code> are ignored (masked), the loss is only computed for the tokens with labels in <code>[0, ..., config.vocab_size]</code>.</td>
-<td><code>None</code></td>
-</tr>
-<tr class="even">
-<td>logits_to_keep</td>
-<td><code>int</code> or <code>torch.Tensor</code>, <em>optional</em></td>
-<td>If an <code>int</code>, compute logits for the last <code>logits_to_keep</code> tokens. If <code>0</code>, calculate logits for all <code>input_ids</code> (special case). Only last token logits are needed for generation, and calculating them only for that token can save memory, which becomes pretty significant for long sequences or large vocabulary size. If a <code>torch.Tensor</code>, must be 1D corresponding to the indices to keep in the sequence length dimension. This is useful when using packed tensor format (single dimension for batch and sequence length).</td>
-<td><code>0</code></td>
-</tr>
-</tbody>
-</table>
-<p>Returns:</p>
+<section id="dataset-format" class="level2">
+<h2 class="anchored" data-anchor-id="dataset-format">Dataset Format</h2>
+<p>The text dataset format follows the OpenAI Messages format as seen <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>. Each sample has three messages: the fixed system prompt, a user message holding the <code>&lt;Instruct&gt;</code>, <code>&lt;Query&gt;</code> and <code>&lt;Document&gt;</code> blocks, and the answer. The blocks are plain text, not special tokens.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"system"</span><span class="fu">,</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"Judge whether the Document meets the requirements based on the Query and the Instruction provided. Note that the answer can only be </span><span class="ch">\"</span><span class="st">yes</span><span class="ch">\"</span><span class="st"> or </span><span class="ch">\"</span><span class="st">no</span><span class="ch">\"</span><span class="st">."</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"&lt;Instruct&gt;: You are a safety moderator reviewing an assistant reply to a user prompt. Consider violence, hate speech, sexual content, self-harm, and criminal activity.</span><span class="ch">\n\n</span><span class="st">&lt;Query&gt;: Is this response unsafe?</span><span class="ch">\n\n</span><span class="st">&lt;Document&gt;: [User]</span><span class="ch">\n</span><span class="st">{prompt}</span><span class="ch">\n\n</span><span class="st">[Assistant]</span><span class="ch">\n</span><span class="st">{response}"</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"yes"</span> <span class="fu">}</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Keep <code>&lt;Instruct&gt;</code> stable across a product surface and vary <code>&lt;Query&gt;</code>, one policy per sample. To screen against several policies at once, list the categories in <code>&lt;Instruct&gt;</code> and ask a single broad <code>&lt;Query&gt;</code>.</p>
+<p>The sample dataset <a href="https://huggingface.co/datasets/Nanobit/text-shieldstral-2k-test">Nanobit/text-shieldstral-2k-test</a> is derived from <a href="https://huggingface.co/datasets/PKU-Alignment/BeaverTails">BeaverTails</a>, mapping its <code>is_safe</code> flag to the answer.</p>
+<section id="vision" class="level3">
+<h3 class="anchored" data-anchor-id="vision">Vision</h3>
+<p>Shieldstral supports images and image+text as well, following the <a href="https://docs.axolotl.ai/docs/multimodal.html#dataset-format">multimodal dataset format</a>. The user turn holds the <code>&lt;Instruct&gt;</code>/<code>&lt;Query&gt;</code>/<code>&lt;Document&gt;</code> prefix, the image, then any trailing text such as a caption. Images are passed as <code>path</code>, <code>url</code> or <code>base64</code>; <code>PIL.Image</code> objects are not supported by the mistral-common tokenizer.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"system"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span> <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"{SYSTEM_PROMPT}"</span> <span class="fu">}</span><span class="ot">]</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span> <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"&lt;Instruct&gt;: ...</span><span class="ch">\n\n</span><span class="st">&lt;Query&gt;: Does this content contain NSFW material?</span><span class="ch">\n\n</span><span class="st">&lt;Document&gt;: "</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span> <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"image"</span><span class="fu">,</span> <span class="dt">"path"</span><span class="fu">:</span> <span class="st">"path/to/image.jpg"</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span> <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">" {caption}</span><span class="ch">\n\n</span><span class="st">"</span> <span class="fu">}</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span> <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"no"</span> <span class="fu">}</span><span class="ot">]</span> <span class="fu">}</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The sample dataset <a href="https://huggingface.co/datasets/Nanobit/text-vision-shieldstral-2k-test">Nanobit/text-vision-shieldstral-2k-test</a> reuses one benign photo and cycles the <code>&lt;Query&gt;</code> over safety questions.</p>
+</section>
+</section>
+<section id="optimization-guides" class="level2">
+<h2 class="anchored" data-anchor-id="optimization-guides">Optimization Guides</h2>
+<p>Please check the <a href="https://docs.axolotl.ai/docs/optimizations.html">Optimizations doc</a>.</p>
+</section>
+<section id="limitations" class="level2">
+<h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
+<p>We only support the <code>mistral-common</code> tokenizer for Supervised Fine-tuning at the moment and for <code>type: chat_template</code> only.</p>
+<p>In addition, we do not support overriding tokens yet.</p>
+<p>Sample Packing is not supported for multi-modality training currently.</p>
+</section>
+<section id="related-resources" class="level2">
+<h2 class="anchored" data-anchor-id="related-resources">Related Resources</h2>
+<ul>
+<li><a href="https://mistral.ai/news/shieldstral">MistralAI Shieldstral Blog</a></li>
+<li><a href="https://docs.axolotl.ai">Axolotl Docs</a></li>
+<li><a href="https://axolotl.ai">Axolotl Website</a></li>
+<li><a href="https://github.com/axolotl-ai-cloud/axolotl">Axolotl GitHub</a></li>
+<li><a href="https://discord.gg/7m9sfhzaf3">Axolotl Discord</a></li>
+</ul>
 
 
-</section>
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->
