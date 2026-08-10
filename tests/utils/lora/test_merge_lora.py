@@ -12,6 +12,8 @@ from axolotl.cli.utils.lora_merge import (
     _find_param_wrapper_lora,
     _merge_tensor_with_lora,
     _resolve_lora_alpha_for_key,
+    _scope_renaming,
+    copy_non_model_files,
     find_lora_weights,
     merge_lora_sharded_efficient,
 )
@@ -230,6 +232,25 @@ class TestEfficientMerge:
         # Minimal config files
         (model_dir / "config.json").write_text("{}")
         return model_dir, weights
+
+    def test_copy_non_model_files_skips_mistral_consolidated_weights(self, tmp_path):
+        """Copying consolidated* would leave base weights that vLLM loads over the merged shards."""
+        src = tmp_path / "base_model"
+        src.mkdir()
+        for name in (
+            "config.json",
+            "tekken.json",
+            "consolidated.safetensors",
+            "consolidated.safetensors.index.json",
+            "model-00001-of-00002.safetensors",
+        ):
+            (src / name).write_text("x")
+
+        dst = tmp_path / "merged"
+        dst.mkdir()
+        copy_non_model_files(src, dst, [src / "model-00001-of-00002.safetensors"])
+
+        assert sorted(p.name for p in dst.glob("*")) == ["config.json", "tekken.json"]
 
     def test_find_lora_weights(self):
         lora_state = {
@@ -868,6 +889,58 @@ class TestEfficientMerge:
         )
         assert a is not None
         assert a.shape == (8, 32)
+
+    def test_find_lora_weights_composes_scoped_renamings(self):
+        """llava-family keys only resolve once both renamings apply in sequence."""
+        lora_state = {
+            "base_model.model.model.language_model.layers.0.mlp.up_proj.lora_A.weight": torch.randn(
+                8, 32
+            ),
+            "base_model.model.model.language_model.layers.0.mlp.up_proj.lora_B.weight": torch.randn(
+                32, 8
+            ),
+        }
+        # As resolved from transformers: the root rule, then the `model`-scoped one.
+        renamings = {
+            r"^language_model": "model.language_model",
+            r"^model\.language_model\.model": "model.language_model",
+        }
+        checkpoint_key = "language_model.model.layers.0.mlp.up_proj.weight"
+
+        # Either rule alone lands on the wrong name
+        assert find_lora_weights(lora_state, checkpoint_key) == (None, None)
+
+        a, b = find_lora_weights(lora_state, checkpoint_key, weight_renamings=renamings)
+        assert a is not None and b is not None
+        assert a.shape == (8, 32)
+
+    def test_renamings_never_override_a_direct_match(self):
+        """Renamings are only consulted after the unrenamed key misses."""
+        lora_state = {
+            "base_model.model.layers.0.mlp.up_proj.lora_A.weight": torch.randn(8, 32),
+            "base_model.model.layers.0.mlp.up_proj.lora_B.weight": torch.randn(32, 8),
+            "base_model.model.decoy.layers.0.mlp.up_proj.lora_A.weight": torch.randn(
+                4, 4
+            ),
+            "base_model.model.decoy.layers.0.mlp.up_proj.lora_B.weight": torch.randn(
+                4, 4
+            ),
+        }
+        lora_a, _ = find_lora_weights(
+            lora_state,
+            "layers.0.mlp.up_proj.weight",
+            weight_renamings={r"^layers": "decoy.layers"},
+        )
+        assert lora_a.shape == (8, 32)
+
+    def test_scope_renaming_anchors_to_prefix(self):
+        """Scoped patterns are re-anchored; unanchored ones are dropped."""
+        assert _scope_renaming(r"^language_model.model", "language_model", "model") == (
+            r"^model\.language_model.model",
+            "model.language_model",
+        )
+        assert _scope_renaming(r"^a", "b", None) == (r"^a", "b")
+        assert _scope_renaming(r"a", "b", "model") is None
 
     def test_unmatched_tensors_pass_through(self):
         """Tensors with no matching LoRA are returned unchanged."""
