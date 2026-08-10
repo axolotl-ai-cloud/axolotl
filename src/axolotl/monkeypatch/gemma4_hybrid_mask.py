@@ -27,6 +27,24 @@ text backbone's ``forward`` is always 4D/SDPA-compatible.
 ``create_sliding_window_causal_mask`` is left alone, so sliding-window
 layers continue to receive FA2-format masks.
 
+That last invariant needs one extra guard. ``create_masks_for_vision_model``
+— taken whenever ``mm_token_type_ids`` is supplied and the text config sets
+``use_bidirectional_attention="vision"``, which is every Gemma 4 batch under
+Axolotl — does *not* call ``create_sliding_window_causal_mask``. It builds
+the sliding mask through ``create_causal_mask`` as well, tagging it with
+``and_mask_function=sliding_window_overlay(...)``. Overriding the config on
+that call hands the FA2 sliding layers a 4D mask, which sends
+``_flash_attention_forward`` down its ``attention_mask is not None`` branch;
+``_get_unpad_data`` then flattens the 4D mask into indices up to ``B*S*S-1``
+and indexes a ``B*S``-row tensor::
+
+    File "transformers/modeling_flash_attention_utils.py", in _upad_input
+      key_layer = _index_first_axis(key_layer, indices_k)
+    torch.AcceleratorError: CUDA error: device-side assert triggered
+
+So the wrapper passes ``and_mask_function`` calls straight through: only the
+global mask is forced to SDPA.
+
 ``gemma4_unified`` reproduces the same mixed sliding/global architecture
 (``global_head_dim=512``) in its own ``modeling_gemma4_unified`` namespace,
 so both namespaces are patched when present.
@@ -167,6 +185,8 @@ def _patch_module_create_causal_mask(module: Any) -> bool:
         on a shallow copy so the caller's config is left intact (the
         sliding-window factory still reads FA2 from it).
         """
+        if kwargs.get("and_mask_function") is not None:
+            return original(config, *args, **kwargs)
         sdpa_config = copy.copy(config)
         sdpa_config._attn_implementation = "sdpa"
         return original(sdpa_config, *args, **kwargs)

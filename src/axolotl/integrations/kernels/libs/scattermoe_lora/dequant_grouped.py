@@ -38,7 +38,8 @@ def _dg():
     if _DG is None:
         from kernels import get_kernel
 
-        _DG = get_kernel("kernels-community/deep-gemm")
+        # kernels>=0.15 requires an explicit version; main has no torch 2.12 build, v1 does.
+        _DG = get_kernel("kernels-community/deep-gemm", version=1)
     return _DG
 
 

@@ -6,7 +6,7 @@ Sequences are padded to sequence_len for uniform batching.
 """
 
 
-def transform(cfg, *args, **kwargs):
+def transform(cfg, **kwargs):
     seq_len = cfg.sequence_len
 
     def transform_fn(example, tokenizer=None):

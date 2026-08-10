@@ -6,30 +6,16 @@ Please see [Thinking](#thinking) and [Vision](#vision) for their respective fine
 
 Thanks to the team at MistralAI for giving us early access to prepare for these releases.
 
-Note: This is still experimental given it is based on transformers v5 RC.
-
 ## Getting started
 
 1. Install Axolotl from source following the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
 
-3. Swap to the Axolotl transformers v5 branch
+3. Run the fine-tuning:
 
     ```bash
-    cp examples/ministral3/ministral3-3b-qlora.yaml ministral3-3b-qlora.yaml
-
-    git fetch
-    git checkout transformers-v5
-
-    # Install packages for transformers v5
-    uv pip install -e .
-    ```
-
-4. Run the fine-tuning:
-
-    ```bash
-    axolotl train ministral3-3b-qlora.yaml
+    axolotl train examples/ministral3/ministral3-3b-qlora.yaml
     ```
 
 Let us know how it goes. Happy finetuning! 🚀
