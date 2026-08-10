@@ -1246,6 +1246,8 @@ class SystemValidationMixin:
             unsupported_npu_impls = {
                 "flash_attention_2",
                 "flash_attention_3",
+                "flash_attention_4",
+                "flash_attention_torch",
                 "sdpa",
             }
             attn_impl = data.get("attn_implementation")
@@ -1806,7 +1808,7 @@ class EBFTValidationMixin:
         if (
             data.get("rl") == "ebft"
             and data.get("torch_compile") is True
-            and data.get("ebft", {}).get("mode") == "strided"
+            and (data.get("ebft") or {}).get("mode") == "strided"
         ):
             if data.get("gradient_checkpointing"):
                 raise ValueError(
@@ -1826,7 +1828,8 @@ class EBFTValidationMixin:
         """flex_attention + non-reentrant gradient checkpointing causes CheckpointError."""
         if (
             self.rl == "ebft"
-            and (self.ebft or {}).get("mode") == "strided"
+            and self.ebft is not None
+            and self.ebft.mode == "strided"
             and self.attn_implementation == "flex_attention"
             and self.gradient_checkpointing
         ):
@@ -1848,7 +1851,8 @@ class EBFTValidationMixin:
         which conflicts with flex_attention's use_reentrant requirement."""
         if (
             self.rl == "ebft"
-            and (self.ebft or {}).get("mode") == "strided"
+            and self.ebft is not None
+            and self.ebft.mode == "strided"
             and self.activation_offloading is True
             and self.attn_implementation == "flex_attention"
         ):
@@ -1866,9 +1870,9 @@ class EBFTValidationMixin:
     @classmethod
     def check_ebft_strided_sequence_len(cls, data):
         """Warn if sequence_len is too large for single-GPU strided EBFT."""
-        if data.get("rl") != "ebft" or data.get("ebft", {}).get("mode") != "strided":
+        ebft = data.get("ebft") or {}
+        if data.get("rl") != "ebft" or ebft.get("mode") != "strided":
             return data
-        ebft = data.get("ebft", {})
         seq_len = data.get("sequence_len", 512)
         n_samples = ebft.get("n_samples_per_prompt", 4)
         gen_len = ebft.get("generate_max_len", 8)
