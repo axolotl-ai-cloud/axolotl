@@ -49,7 +49,6 @@ lora_target_linear: true
 bf16: auto
 torch_dtype: bfloat16
 gradient_checkpointing: true
-torch_compile: true
 gradient_checkpointing_kwargs:
   use_reentrant: true
 ddp: false
