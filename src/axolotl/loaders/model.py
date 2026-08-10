@@ -821,6 +821,16 @@ class ModelLoader:
         if hf_impl == "flash_attention_4":
             configure_fa4()
             return hf_impl
+
+        # Ring attention only substitutes the `flash_attention_2` dispatch key.
+        if (self.cfg.context_parallel_size or 1) > 1:
+            LOG.info(
+                "Not upgrading %s to Flash Attention 4: no ring-attention "
+                "implementation is registered for it under context parallelism.",
+                hf_impl,
+            )
+            return hf_impl
+
         if fa4_usable(self.model_config):
             configure_fa4()
             LOG.info("Flash Attention 4 enabled (upgraded from %s).", hf_impl)
