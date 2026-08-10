@@ -157,7 +157,6 @@ class PatchManager:
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_sageattn_patches()
-        self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         # Must precede fused-RoPE patches: re-parses ``Attention.forward``
@@ -510,15 +509,6 @@ class PatchManager:
             from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
 
             patch_sageattn()
-
-    def _apply_flash_attn_4_patches(self):
-        """Auto-apply FA4 when flash_attention is enabled and FA4 is available on SM90+."""
-        if not self.cfg.attn_uses_flash_lib:
-            return
-
-        from axolotl.monkeypatch.attention.flash_attn_4 import patch_flash_attn_4
-
-        patch_flash_attn_4(self.model_config)
 
     _FUSED_ATTN_KERNEL_SUPPORTED = (
         "qwen3",
@@ -882,6 +872,16 @@ class PatchManager:
 
         if not varlen_available():
             return  # torch < 2.10; block-diagonal packing path is correct
+
+        # Every call would fall back anyway, and patching drops the shared 4D mask.
+        half = self.cfg.torch_dtype in (torch.float16, torch.bfloat16)
+        if not (half and torch.cuda.is_available()):
+            if explicit:
+                LOG.info(
+                    "sdpa_varlen: varlen_attn needs CUDA fp16/bf16; keeping stock SDPA "
+                    "(packing still isolated via the block-diagonal mask)."
+                )
+            return
 
         def _attr(name):
             mc = self.model_config
