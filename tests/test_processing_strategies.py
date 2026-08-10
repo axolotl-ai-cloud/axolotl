@@ -741,10 +741,11 @@ def test_dispatch_paddleocr_vl_chat_template_key():
 # --------------------------------------------------------------------------- #
 # Voxtral / Mistral3 / InternVL / Glm4v
 #
-# These four strategies do NOT declare role boundaries (mistral-common or
-# template-variant uncertainty); they fall back to pad + media masking.
-# Coverage focuses on the media-token masking surface plus role-boundary
-# override as the supported opt-in path.
+# Voxtral, InternVL and Glm4v do NOT declare role boundaries (mistral-common or
+# template-variant uncertainty); they fall back to pad + media masking. Mistral3
+# declares them from the tekken control ids, and falls back when those are
+# unreachable. Coverage focuses on the media-token masking surface plus
+# role-boundary override as the supported opt-in path.
 # --------------------------------------------------------------------------- #
 
 
@@ -797,18 +798,46 @@ def test_voxtral_role_boundaries_override_enables_role_masking():
     assert out == [-100, -100, 8, -100, 9, 60, -100]
 
 
-def _make_mistral3_strategy(**kwargs):
+_TEKKEN_CONTROL_IDS = {
+    "[SYSTEM_PROMPT]": 17,
+    "[/SYSTEM_PROMPT]": 18,
+    "[INST]": 3,
+    "[/INST]": 4,
+}
+
+
+def _make_mistral3_strategy(control_ids=None, **kwargs):
     tok = _Tokenizer({}, pad_id=0)
+    tok.eos_token_id = 2
     image_encoder = SimpleNamespace(
         special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
     )
+
+    def get_special_token(marker):
+        if control_ids is None or marker not in control_ids:
+            raise ValueError(f"Unknown control token {marker}")
+        return control_ids[marker]
+
     tok.tokenizer = SimpleNamespace(
-        instruct_tokenizer=SimpleNamespace(image_encoder=image_encoder)
+        instruct_tokenizer=SimpleNamespace(
+            image_encoder=image_encoder,
+            tokenizer=SimpleNamespace(get_special_token=get_special_token),
+        )
     )
     return Mistral3ProcessingStrategy(_Processor(tok), **kwargs)
 
 
-def test_mistral3_masks_pad_and_three_image_tokens():
+def test_mistral3_masks_everything_but_the_assistant_turn():
+    """Control ids reachable → only the post-[/INST] span trains."""
+    strategy = _make_mistral3_strategy(control_ids=_TEKKEN_CONTROL_IDS)
+    #    [SYS] sys [/SYS]  [INST] usr  [IMG]  [/INST] ans eos
+    seq = [17, 7, 18, 3, 8, 400, 4, 9, 2]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100, -100, -100, -100, -100, -100, -100, 9, 2]
+
+
+def test_mistral3_without_control_ids_falls_back_to_media_masking():
+    """Non-tekken tokenizer → legacy pad + image masking, everything else kept."""
     strategy = _make_mistral3_strategy()
     seq = [7, 0, 400, 8, 401, 9, 402, 10]
     out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
@@ -816,7 +845,9 @@ def test_mistral3_masks_pad_and_three_image_tokens():
 
 
 def test_mistral3_train_on_inputs_true_still_masks_image_markers():
-    strategy = _make_mistral3_strategy(train_on_inputs=True)
+    strategy = _make_mistral3_strategy(
+        control_ids=_TEKKEN_CONTROL_IDS, train_on_inputs=True
+    )
     seq = [7, 0, 400, 8, 401, 9, 402, 10]
     out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
     assert out == [7, -100, -100, 8, -100, 9, -100, 10]

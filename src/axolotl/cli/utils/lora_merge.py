@@ -19,6 +19,29 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _renamed_key_candidates(
+    clean_key: str, weight_renamings: Optional[Dict[str, str]]
+) -> list[str]:
+    """Runtime-key spellings to try for a checkpoint key.
+
+    Each renaming alone, then all composed in order. llava-family keys only reach
+    the runtime name once the root and the `model`-scoped rule have both applied.
+    """
+    if not weight_renamings:
+        return []
+
+    candidates = []
+    composed = clean_key
+    for src_pattern, tgt_pattern in weight_renamings.items():
+        renamed = re.sub(src_pattern, tgt_pattern, clean_key)
+        if renamed != clean_key:
+            candidates.append(renamed)
+        composed = re.sub(src_pattern, tgt_pattern, composed)
+    if composed != clean_key and composed not in candidates:
+        candidates.append(composed)
+    return candidates
+
+
 def _resolve_lora_alpha_for_key(
     weight_key: str,
     lora_config_dict: Dict,
@@ -38,53 +61,40 @@ def _resolve_lora_alpha_for_key(
     if matched_key in alpha_pattern:
         return alpha_pattern[matched_key]
     # Fall back to renamed path so alpha lookup follows the same key resolution as find_lora_weights.
-    if weight_renamings:
-        import re
-
-        for src_pattern, tgt_pattern in weight_renamings.items():
-            renamed = re.sub(src_pattern, tgt_pattern, module_path)
-            if renamed != module_path:
-                matched_key = get_pattern_key(pattern_keys, renamed)
-                if matched_key in alpha_pattern:
-                    return alpha_pattern[matched_key]
+    for renamed in _renamed_key_candidates(module_path, weight_renamings):
+        matched_key = get_pattern_key(pattern_keys, renamed)
+        if matched_key in alpha_pattern:
+            return alpha_pattern[matched_key]
     return None
 
 
-def _build_layer_type_map(
-    base_model_path: Path, trust_remote_code: bool = False
-) -> dict[str, str]:
-    """Build a map of module_name -> layer_type using a meta-device model.
-
-    Instantiates the model architecture on the meta device (zero memory)
-    to inspect which modules are Linear vs Conv1d/Conv2d/Conv3d.
-    This avoids relying on weight tensor ndim heuristics.
-    """
+def _build_meta_model(base_model_path: Path, trust_remote_code: bool = False):
+    """Instantiate the model architecture on the meta device (zero memory)."""
     import json as _json
 
-    import torch.nn as nn
     from transformers import AutoConfig
 
     config_path = base_model_path / "config.json"
     if not config_path.exists():
-        return {}
+        return None
 
     try:
         with open(config_path) as f:
             model_config = _json.load(f)
     except (OSError, _json.JSONDecodeError):
-        return {}
+        return None
 
     architectures = model_config.get("architectures", [])
     if not architectures:
-        return {}
+        return None
 
     try:
         config = AutoConfig.from_pretrained(
             str(base_model_path), trust_remote_code=trust_remote_code
         )
-    except Exception:
-        LOG.debug("Could not load config for layer type introspection")
-        return {}
+    except Exception:  # noqa: BLE001
+        LOG.debug("Could not load config for meta model instantiation")
+        return None
 
     # Determine the right Auto class from architectures
     from transformers import (
@@ -100,22 +110,34 @@ def _build_layer_type_map(
     except ImportError:
         pass
 
-    model = None
     for auto_cls in auto_classes:
         try:
             with torch.device("meta"):
-                model = auto_cls.from_config(
-                    config, trust_remote_code=trust_remote_code
-                )
-            break
+                return auto_cls.from_config(config, trust_remote_code=trust_remote_code)
         except Exception:  # noqa: BLE001
             LOG.debug(
                 "Could not instantiate meta model with %s, trying next",
                 auto_cls.__name__,
             )
 
+    LOG.debug("Could not instantiate meta model")
+    return None
+
+
+def _build_layer_type_map(
+    base_model_path: Path, trust_remote_code: bool = False, meta_model=None
+) -> dict[str, str]:
+    """Build a map of module_name -> layer_type using a meta-device model.
+
+    Inspects which modules are Linear vs Conv1d/Conv2d/Conv3d, which avoids
+    relying on weight tensor ndim heuristics.
+    """
+    import torch.nn as nn
+
+    model = meta_model or _build_meta_model(
+        base_model_path, trust_remote_code=trust_remote_code
+    )
     if model is None:
-        LOG.debug("Could not instantiate meta model for layer type introspection")
         return {}
 
     layer_types = {}
@@ -209,8 +231,6 @@ def find_lora_weights(
     conversion mappings) in case the checkpoint key names differ from the
     runtime model key names used by the LoRA adapter.
     """
-    import re
-
     clean_key = key[:-7] if key.endswith(".weight") else key
 
     # Try the direct key first
@@ -224,16 +244,13 @@ def find_lora_weights(
         return lora_a, lora_b
 
     # Try renamed keys (checkpoint format → runtime format)
-    if weight_renamings:
-        for src_pattern, tgt_pattern in weight_renamings.items():
-            renamed_key = re.sub(src_pattern, tgt_pattern, clean_key)
-            if renamed_key != clean_key:
-                a_key = f"base_model.model.{renamed_key}.lora_A.weight"
-                b_key = f"base_model.model.{renamed_key}.lora_B.weight"
-                lora_a = lora_state.get(a_key)
-                lora_b = lora_state.get(b_key)
-                if lora_a is not None and lora_b is not None:
-                    return lora_a, lora_b
+    for renamed_key in _renamed_key_candidates(clean_key, weight_renamings):
+        a_key = f"base_model.model.{renamed_key}.lora_A.weight"
+        b_key = f"base_model.model.{renamed_key}.lora_B.weight"
+        lora_a = lora_state.get(a_key)
+        lora_b = lora_state.get(b_key)
+        if lora_a is not None and lora_b is not None:
+            return lora_a, lora_b
 
     return None, None
 
@@ -554,6 +571,13 @@ def copy_non_model_files(
             filepath.name.startswith("model") and filepath.suffix == ".safetensors"
         ) or (filepath.name.startswith("pytorch_model") and filepath.suffix == ".bin"):
             continue
+        # Mistral repos duplicate the weights in native format; copying them would
+        # leave un-merged base weights that vLLM prefers over the merged shards.
+        if filepath.name.startswith("consolidated") and filepath.suffix in (
+            ".safetensors",
+            ".pth",
+        ):
+            continue
         if filepath.suffix == ".gguf":
             continue
         # Skip weight-map index files — they reference shard filenames that may
@@ -574,22 +598,17 @@ def _find_dora_magnitude(
     """
     Find DoRA magnitude vector for a given key.
     """
-    import re
-
     clean_key = key[:-7] if key.endswith(".weight") else key
     mag_key = f"base_model.model.{clean_key}.lora_magnitude_vector"
     result = lora_state.get(mag_key)
     if result is not None:
         return result
 
-    if weight_renamings:
-        for src_pattern, tgt_pattern in weight_renamings.items():
-            renamed_key = re.sub(src_pattern, tgt_pattern, clean_key)
-            if renamed_key != clean_key:
-                mag_key = f"base_model.model.{renamed_key}.lora_magnitude_vector"
-                result = lora_state.get(mag_key)
-                if result is not None:
-                    return result
+    for renamed_key in _renamed_key_candidates(clean_key, weight_renamings):
+        mag_key = f"base_model.model.{renamed_key}.lora_magnitude_vector"
+        result = lora_state.get(mag_key)
+        if result is not None:
+            return result
 
     return None
 
@@ -1512,7 +1531,11 @@ def _merge_tensor_with_lora(
         return tensor.detach().cpu(), False
 
 
-def _get_conversion_info(base_model_path: Path) -> tuple[Dict[str, str], list]:
+def _get_conversion_info(
+    base_model_path: Path,
+    trust_remote_code: bool = False,
+    meta_model=None,
+) -> tuple[Dict[str, str], list]:
     """
     Load the model's config.json and check if transformers has WeightRenaming
     or WeightConverter mappings for this model type.
@@ -1544,30 +1567,78 @@ def _get_conversion_info(base_model_path: Path) -> tuple[Dict[str, str], list]:
         return {}, []
 
     conversions = get_checkpoint_conversion_mapping(model_type)
-    if not conversions:
+
+    # The per-model walk also yields scoped sub-module renamings, which the
+    # model_type mapping omits. Converters stay on the model_type list so
+    # fuse/unfuse is unchanged.
+    rename_conversions = (
+        _get_model_conversion_mapping(base_model_path, trust_remote_code, meta_model)
+        or conversions
+    )
+    if not conversions and not rename_conversions:
         return {}, []
 
     renamings = {}
-    weight_converters = []
-    for conv in conversions:
-        if isinstance(conv, WeightRenaming):
-            # WeightRenaming stores patterns as lists internally
-            src_list = (
-                conv.source_patterns
-                if isinstance(conv.source_patterns, list)
-                else [conv.source_patterns]
+    for conv in rename_conversions:
+        if not isinstance(conv, WeightRenaming):
+            continue
+        # WeightRenaming stores patterns as lists internally
+        src_list = (
+            conv.source_patterns
+            if isinstance(conv.source_patterns, list)
+            else [conv.source_patterns]
+        )
+        tgt_list = (
+            conv.target_patterns
+            if isinstance(conv.target_patterns, list)
+            else [conv.target_patterns]
+        )
+        if len(src_list) == 1 and len(tgt_list) == 1:
+            scoped = _scope_renaming(
+                src_list[0], tgt_list[0], getattr(conv, "scope_prefix", None)
             )
-            tgt_list = (
-                conv.target_patterns
-                if isinstance(conv.target_patterns, list)
-                else [conv.target_patterns]
-            )
-            if len(src_list) == 1 and len(tgt_list) == 1:
-                renamings[src_list[0]] = tgt_list[0]
-        elif isinstance(conv, WeightConverter):
-            weight_converters.append(conv)
+            if scoped is not None:
+                renamings[scoped[0]] = scoped[1]
+
+    weight_converters = [c for c in conversions or [] if isinstance(c, WeightConverter)]
 
     return renamings, weight_converters
+
+
+def _scope_renaming(
+    source_pattern: str, target_pattern: str, scope_prefix: Optional[str]
+) -> Optional[tuple[str, str]]:
+    """Rewrite a sub-module renaming so it matches full checkpoint keys."""
+    if not scope_prefix:
+        return source_pattern, target_pattern
+    # Re-anchoring an unanchored pattern would let it match outside the scope.
+    if not source_pattern.startswith("^"):
+        return None
+    return (
+        f"^{re.escape(scope_prefix + '.')}{source_pattern[1:]}",
+        f"{scope_prefix}.{target_pattern}",
+    )
+
+
+def _get_model_conversion_mapping(
+    base_model_path: Path, trust_remote_code: bool = False, meta_model=None
+) -> Optional[list]:
+    """Resolve transformers' full conversion list, including sub-module scopes."""
+    try:
+        from transformers.conversion_mapping import get_model_conversion_mapping
+    except ImportError:
+        return None
+
+    model = meta_model or _build_meta_model(
+        base_model_path, trust_remote_code=trust_remote_code
+    )
+    if model is None:
+        return None
+    try:
+        return get_model_conversion_mapping(model)
+    except Exception:  # noqa: BLE001
+        LOG.debug("Could not resolve per-model weight conversion mapping")
+        return None
 
 
 def _get_expected_num_experts(base_model_path: Path) -> Optional[int]:
@@ -1919,8 +1990,12 @@ def merge_lora_sharded_efficient(
     if "/" in str(base_model_path) and not base_model_path.exists():
         base_model_path = Path(snapshot_download(str(base_model_path)))
 
+    meta_model = _build_meta_model(base_model_path, trust_remote_code=trust_remote_code)
+
     # Check for weight conversion requirements (transformers v5)
-    weight_renamings, weight_converters = _get_conversion_info(base_model_path)
+    weight_renamings, weight_converters = _get_conversion_info(
+        base_model_path, trust_remote_code=trust_remote_code, meta_model=meta_model
+    )
     if weight_renamings:
         LOG.debug(f"Found {len(weight_renamings)} weight renamings for this model type")
     expected_num_experts = None
@@ -1943,8 +2018,9 @@ def merge_lora_sharded_efficient(
 
     # Build layer type map via meta-device model introspection
     layer_type_map = _build_layer_type_map(
-        base_model_path, trust_remote_code=trust_remote_code
+        base_model_path, trust_remote_code=trust_remote_code, meta_model=meta_model
     )
+    del meta_model
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)

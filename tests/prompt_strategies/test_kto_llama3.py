@@ -1,20 +1,16 @@
 """
-Tests for KTO dataset transform strategies with chatml formatting
+Tests for KTO dataset transform strategies with llama-3 formatting
 """
 
-from axolotl.prompt_strategies.kto.chatml import argilla_chat
+from axolotl.prompt_strategies.kto.llama3 import argilla_chat
 
 
-class TestKTOChatml:
+class TestKTOLlama3:
     """
-    Test kto.chatml transforms
+    Test kto.llama3 transforms
     """
 
-    def test_argilla_chat_reads_completion_messages(self):
-        """argilla_chat builds the prompt from the conversation stored in the
-        `completion` column. argilla/kto-mix-15k has no `chosen` column, so
-        reading one raised KeyError during preprocessing; the llama-3 sibling
-        already reads `completion`."""
+    def test_argilla_chat_single_turn(self):
         transform_fn = argilla_chat(cfg=None)
         sample = transform_fn(
             {
@@ -26,11 +22,11 @@ class TestKTOChatml:
                 "label": True,
             }
         )
-        assert (
-            sample["prompt"]
-            == "<|im_start|>user\nWhat is 2 + 2?<|im_end|>\n<|im_start|>assistant\n"
+        assert sample["prompt"] == (
+            "<|start_header_id|>user<|end_header_id|>\n\nWhat is 2 + 2?<|eot_id|>"
+            "<|start_header_id|>assistant<|end_header_id|>\n\n"
         )
-        assert sample["completion"] == "4<|im_end|>"
+        assert sample["completion"] == "4<|eot_id|>"
 
     def test_argilla_chat_keeps_multi_turn_history(self):
         """argilla/kto-mix-15k is not uniformly single-turn, so earlier turns
@@ -49,9 +45,9 @@ class TestKTOChatml:
             }
         )
         assert sample["prompt"] == (
-            "<|im_start|>user\nWhat is 2 + 2?<|im_end|>\n"
-            "<|im_start|>assistant\n4<|im_end|>\n"
-            "<|im_start|>user\nAnd times 3?<|im_end|>\n"
-            "<|im_start|>assistant\n"
+            "<|start_header_id|>user<|end_header_id|>\n\nWhat is 2 + 2?<|eot_id|>"
+            "<|start_header_id|>assistant<|end_header_id|>\n\n4<|eot_id|>"
+            "<|start_header_id|>user<|end_header_id|>\n\nAnd times 3?<|eot_id|>"
+            "<|start_header_id|>assistant<|end_header_id|>\n\n"
         )
-        assert sample["completion"] == "12<|im_end|>"
+        assert sample["completion"] == "12<|eot_id|>"
