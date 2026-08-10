@@ -1,6 +1,7 @@
 """Dequantization utilities for `bitsandbytes` and FP8 integration."""
 
 import ctypes
+from collections.abc import Callable
 from typing import List
 
 import bitsandbytes as bnb
@@ -19,6 +20,24 @@ _NF4_DEQUANT_KERNELS = {
     torch.bfloat16: cdequantize_blockwise_bf16_nf4,
     torch.float32: cdequantize_blockwise_fp32_nf4,
 }
+
+# bnb >= 0.50.0 sets argtypes on the C dequant symbols, so ctypes coerces raw ints itself
+# and we skip a per-call c_void_p/c_int alloc; older bnb (no argtypes) still needs wrappers.
+_BNB_TYPED_CAPI = getattr(cdequantize_blockwise_fp32, "argtypes", None) is not None
+
+_ptr: Callable[..., object]
+_int: Callable[..., object]
+if _BNB_TYPED_CAPI:
+
+    def _ptr(tensor):
+        return None if tensor is None else tensor.data_ptr()
+
+    def _int(value):
+        return value
+
+else:
+    _ptr = get_ptr
+    _int = ctypes.c_int
 
 # Cached per-device: per-call current_stream() measurably slows this hot path.
 CUDA_STREAM: dict[torch.device, torch.cuda.Stream] = {}
@@ -50,12 +69,12 @@ def _ctypes_nf4_dequant(
         )
 
     cdequantize_blockwise_fp32(
-        get_ptr(code2),
-        get_ptr(absmax),
-        get_ptr(absmax2),
-        get_ptr(out_absmax),
-        ctypes.c_int(blocksize2),
-        ctypes.c_int(n_elements_absmax),
+        _ptr(code2),
+        _ptr(absmax),
+        _ptr(absmax2),
+        _ptr(out_absmax),
+        _int(blocksize2),
+        _int(n_elements_absmax),
         stream,
     )
     out_absmax += offset
@@ -64,12 +83,12 @@ def _ctypes_nf4_dequant(
     if fx is None:
         raise ValueError(f"NF4 dequantization unsupported for output dtype {dtype}")
     fx(
-        get_ptr(None),
-        get_ptr(W),
-        get_ptr(out_absmax),
-        get_ptr(out),
-        ctypes.c_int(blocksize),
-        ctypes.c_int(out.numel()),
+        _ptr(None),
+        _ptr(W),
+        _ptr(out_absmax),
+        _ptr(out),
+        _int(blocksize),
+        _int(out.numel()),
         stream,
     )
 

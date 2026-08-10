@@ -144,6 +144,27 @@ class LigerPlugin(BasePlugin):
                 kwargs["swiglu"] = cfg.liger_glu_activation
             LOG.info(f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}")
             apply_liger_fn(**kwargs)
+        elif cfg.model_config_type in ("mistral3", "ministral3"):
+            # liger 0.8.0 has no mistral3/ministral3 entry, and its `ministral`
+            # fn targets modeling_ministral, a module this arch does not use.
+            from transformers.models.ministral3 import modeling_ministral3
+
+            if cfg.liger_rope:
+                modeling_ministral3.apply_rotary_pos_emb = liger_rotary_pos_emb
+            if cfg.liger_rms_norm:
+                modeling_ministral3.Ministral3RMSNorm = LigerRMSNorm
+            if cfg.liger_glu_activation:
+                modeling_ministral3.Ministral3MLP = LigerSwiGLUMLP
+            if cfg.liger_cross_entropy:
+                from transformers.loss.loss_utils import nn
+
+                nn.functional.cross_entropy = liger_cross_entropy
+            if cfg.liger_fused_linear_cross_entropy:
+                LOG.warning(
+                    "Liger fused linear cross entropy is not implemented for the "
+                    "Mistral3 multimodal wrapper. Skipping; use the "
+                    "cut_cross_entropy plugin instead."
+                )
         elif cfg.model_config_type == "jamba":
             from transformers.models.jamba import modeling_jamba
 
