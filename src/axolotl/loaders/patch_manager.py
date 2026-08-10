@@ -3,21 +3,32 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
+from __future__ import annotations
+
 import importlib.util
 import os
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 import addict
 import torch
 import transformers
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import (
+    PretrainedConfig,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+)
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
 from axolotl.model_support import (
+    ModelHookContext,
+    ModelHookPhase,
     check_capability,
     get_model_support,
     get_model_support_for_cfg,
+    resolve_model_support,
+    run_model_support_hooks,
 )
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
@@ -25,6 +36,9 @@ from axolotl.monkeypatch.multipack import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -44,8 +58,11 @@ class PatchManager:
             cfg: Configuration dictionary with model and training settings.
         """
         support = get_model_support_for_cfg(cfg)
-        if support is not None:
-            support.pre_config_load(cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            ModelHookContext(cfg=cfg, inference=cfg.inference),
+        )
 
     @staticmethod
     def apply_pre_tokenizer_load_patches(cfg: DictDefault):
@@ -58,14 +75,20 @@ class PatchManager:
             cfg: Configuration dictionary with model and training settings.
         """
         support = get_model_support_for_cfg(cfg)
-        if support is not None:
-            support.pre_tokenizer_load(cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_TOKENIZER_LOAD,
+            ModelHookContext(cfg=cfg, inference=cfg.inference),
+        )
 
     def __init__(
         self,
         cfg: DictDefault,
         model_config: PretrainedConfig | addict.Dict,
         inference: bool = False,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        processor: ProcessorMixin | None = None,
+        reference_model: bool = False,
     ):
         """Initialize the `PatchManager`.
 
@@ -77,6 +100,20 @@ class PatchManager:
         self.cfg = cfg
         self.model_config = model_config
         self.inference = inference
+        self.tokenizer = tokenizer
+        self.processor = processor
+        self.reference_model = reference_model
+
+    def _hook_context(self, model: PreTrainedModel | None = None) -> ModelHookContext:
+        return ModelHookContext(
+            cfg=self.cfg,
+            model_config=self.model_config,
+            tokenizer=self.tokenizer,
+            processor=self.processor,
+            model=model,
+            inference=self.inference,
+            reference_model=self.reference_model,
+        )
 
     @cached_property
     def has_flash_attn(self) -> bool:
@@ -92,12 +129,12 @@ class PatchManager:
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_sageattn_patches()
-        self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         # Must precede fused-RoPE patches: re-parses ``Attention.forward``
         # via ``inspect.getsource``; the QKV regex misses on a patched body.
         self._apply_self_attention_lora_patch()
+        self._apply_model_support_registrations()
         self._apply_model_support_pre_load_hook()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
@@ -139,6 +176,13 @@ class PatchManager:
 
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""
+        support = get_model_support(self.cfg.model_config_type)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.AFTER_BASE_MODEL_BUILD,
+            self._hook_context(model),
+        )
+
         if self.cfg.model_config_type == "nemotron_h":
             # Must run after model build because NemotronHForCausalLM.__init__
             # calls register_nemotron_h_conversion_mapping() with overwrite=True,
@@ -157,16 +201,72 @@ class PatchManager:
         self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
 
+    def _apply_model_support_registrations(self):
+        support = get_model_support(self.cfg.model_config_type)
+        if support is None:
+            return
+        registrations = resolve_model_support(support).registrations
+
+        conversions_provider = registrations.weight_conversions
+        conversions = (
+            conversions_provider() if conversions_provider is not None else None
+        )
+        if conversions:
+            from transformers.conversion_mapping import (
+                register_checkpoint_conversion_mapping,
+            )
+
+            for key, entries in conversions.items():
+                entries = list(entries)
+                register_checkpoint_conversion_mapping(key, entries, overwrite=True)
+                self._warn_irreversible_weight_transforms(key, entries)
+
+        patch_provider = registrations.patch_mappings
+        patch_mapping = patch_provider() if patch_provider is not None else None
+        if patch_mapping:
+            from transformers.monkey_patching import register_patch_mapping
+
+            register_patch_mapping(dict(patch_mapping), overwrite=True)
+
+    @staticmethod
+    def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
+        """``save_pretrained(save_original_format=True)`` reverses registered
+        conversions; surface irreversible entries at registration instead of at
+        save time."""
+        for transform in transforms:
+            problems = []
+            if getattr(transform, "quantization_operation", None) is not None:
+                problems.append("a quantization operation")
+            for operation in getattr(transform, "operations", None) or ():
+                try:
+                    _ = operation.reverse_op
+                except Exception:  # pylint: disable=broad-exception-caught
+                    problems.append(f"no reverse for {type(operation).__name__}")
+            if problems:
+                LOG.warning(
+                    "Weight conversion registered for %s cannot be reversed at save "
+                    "time (%s); saving will fail or emit the converted (non-original) "
+                    "checkpoint layout.",
+                    key,
+                    "; ".join(problems),
+                )
+
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
-        if support is not None:
-            support.pre_model_load(self.cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+            self._hook_context(),
+        )
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
         support = get_model_support(self.cfg.model_config_type)
-        if support is not None:
-            support.post_model_load(self.cfg, model)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.AFTER_ADAPTER_LOAD,
+            self._hook_context(model),
+        )
         self._apply_llama_flash_attn_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
@@ -381,15 +481,6 @@ class PatchManager:
             from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
 
             patch_sageattn()
-
-    def _apply_flash_attn_4_patches(self):
-        """Auto-apply FA4 when flash_attention is enabled and FA4 is available on SM90+."""
-        if not self.cfg.attn_uses_flash_lib:
-            return
-
-        from axolotl.monkeypatch.attention.flash_attn_4 import patch_flash_attn_4
-
-        patch_flash_attn_4(self.model_config)
 
     _FUSED_ATTN_KERNEL_SUPPORTED = (
         "qwen3",
@@ -747,6 +838,16 @@ class PatchManager:
 
         if not varlen_available():
             return  # torch < 2.10; block-diagonal packing path is correct
+
+        # Every call would fall back anyway, and patching drops the shared 4D mask.
+        half = self.cfg.torch_dtype in (torch.float16, torch.bfloat16)
+        if not (half and torch.cuda.is_available()):
+            if explicit:
+                LOG.info(
+                    "sdpa_varlen: varlen_attn needs CUDA fp16/bf16; keeping stock SDPA "
+                    "(packing still isolated via the block-diagonal mask)."
+                )
+            return
 
         def _attr(name):
             mc = self.model_config

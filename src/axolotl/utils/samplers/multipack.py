@@ -365,11 +365,16 @@ class MultipackBatchSampler(BatchSampler):
         ]
 
         # Drop last batch if requested and it's incomplete
-        if self.drop_last and len(batches[-1]) < self.batch_size:
+        if self.drop_last and batches and len(batches[-1]) < self.batch_size:
+            dropped_batch = batches[-1]
             batches = batches[:-1]
-            # Adjust total_slots if we dropped a batch
-            if not self.sequential:
-                total_slots -= (self.batch_size - len(batches[-1])) * self.batch_max_len
+            # Exclude dropped bins from efficiency statistics
+            total_slots -= len(dropped_batch) * self.batch_max_len
+            total_used -= sum(
+                self.lengths[idx]
+                for bin_indices in dropped_batch
+                for idx in bin_indices
+            )
 
         # Update statistics if requested
         if set_stats:
