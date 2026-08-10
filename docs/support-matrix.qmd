@@ -139,7 +139,8 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Backend | Value / flag | Notes |
 |---|---|---|
 | Flash Attention 2/3 | `flash_attention_2` / `flash_attention_3` (`flash_attention: true`) | FA2 auto-upgrades to FA3 on SM90+; ⚪ Ampere or newer only (not Turing) |
-| Flash Attention 4 🟡 | auto-upgrade when available | pre-release; 🔵 backward not in pip on Hopper (build from source) |
+| Flash Attention 4 🟡 | `flash_attention_4` (auto-upgrade when available) | pre-release; requires `quack-kernels>=0.6.0` (older quack raises `cudaErrorIllegalInstruction` in the backward) |
+| Flash Attention (torch) 🟡 | `flash_attention_torch` | torch varlen kernels, no `flash_attn` dependency; needs a transformers release that registers it |
 | SDPA | `sdpa` (`sdp_attention: true`) | safe default; works everywhere |
 | SDPA varlen | `sdpa_varlen: true` | packing without a mask tensor, PyTorch >= 2.10 |
 | FlexAttention | `flex_attention` (`flex_attention: true`) | PyTorch >= 2.6; enables `scaling_softmax` |
@@ -297,7 +298,6 @@ Not in a tagged release yet:
 - EP + TP/CP
 - Multiple DPO loss types (RPO)
 - Sample packing across multiple streaming datasets
-- FA4 backward on Hopper via pip
 
 ### ⚪ Out-of-scope / won't-fix
 
