@@ -198,7 +198,7 @@ def convert(container_path: Path, out_dir: Path, tokenizer_repo: str):
         for i in range(len(shards))
     ]
     total = 0
-    for name, tensors in zip(names, shards):
+    for name, tensors in zip(names, shards, strict=True):
         total += sum(t.nbytes for t in tensors.values())
         save_file(tensors, str(out_dir / name), metadata={"format": "pt"})
         print(f"wrote {name} ({len(tensors)} tensors)")
