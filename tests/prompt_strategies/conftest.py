@@ -156,7 +156,9 @@ def fixture_gemma2_tokenizer():
 
 @pytest.fixture(name="muse_glimmer_tokenizer", scope="session")
 @enable_hf_offline
-def fixture_muse_glimmer_tokenizer():
+def fixture_muse_glimmer_tokenizer(
+    download_muse_glimmer_tokenizer_fixture,
+):
     tokenizer = AutoTokenizer.from_pretrained("meta-models/Muse-Glimmer-30B")
 
     return tokenizer

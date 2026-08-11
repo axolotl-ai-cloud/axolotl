@@ -74,6 +74,9 @@ class TestMuseGlimmerChatTemplate:
     """Muse Glimmer ships its own Harmony-style template; axolotl uses it as-is."""
 
     def test_assistant_only_masking(self, muse_glimmer_tokenizer, muse_glimmer_dataset):
+        """This path diffs on message content, so the ` to=user<|message|>` recipient
+        header stays masked. The multimodal collator trains it instead, since its span
+        starts at the bare `<|start|>assistant` marker."""
         strategy = _strategy(muse_glimmer_tokenizer, eot_tokens=EOT_TOKENS)
         trained = _trained_text(
             muse_glimmer_tokenizer, strategy, muse_glimmer_dataset[0]
@@ -85,8 +88,9 @@ class TestMuseGlimmerChatTemplate:
         self, muse_glimmer_tokenizer, muse_glimmer_dataset
     ):
         """The template closes turns with <|eot|>, which is not the tokenizer's
-        eos_token (<|end_of_text|>). Without eot_tokens the terminator is never
-        trained and the model never learns to stop."""
+        eos_token (<|end_of_text|>). Without eot_tokens this path never trains the
+        terminator, so a text-only config must set it. The multimodal collator is
+        unaffected: its assistant span runs to the next <|start|>."""
         strategy = _strategy(muse_glimmer_tokenizer)
         trained = _trained_text(
             muse_glimmer_tokenizer, strategy, muse_glimmer_dataset[0]

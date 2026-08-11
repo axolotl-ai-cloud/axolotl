@@ -435,8 +435,14 @@ class LigerPlugin(BasePlugin):
                 # NoPE layers never call this, so only the sliding layers are affected.
                 modeling_muse_glimmer.apply_rotary_pos_emb = liger_rotary_pos_emb
             if cfg.liger_layer_norm:
-                # Reaches the vision tower only; the text decoder has no nn.LayerNorm.
+                # Patches the vision tower's four nn.LayerNorm sites; the text decoder
+                # has none.
                 modeling_muse_glimmer.nn.LayerNorm = LigerLayerNorm
+            if cfg.liger_cross_entropy:
+                LOG.warning(
+                    "MuseGlimmer computes its loss through self.loss_function, not "
+                    "nn.CrossEntropyLoss, so the Liger swap would be a no-op. Skipping."
+                )
             if cfg.liger_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not compatible with MuseGlimmer: "
