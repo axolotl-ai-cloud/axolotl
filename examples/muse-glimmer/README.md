@@ -22,9 +22,6 @@ The architecture is unusual in a few ways that matter when you fine-tune it: att
 
     # QLoRA, language model + vision tower
     axolotl train examples/muse-glimmer/qlora-vision.yaml
-
-    # full finetune
-    axolotl train examples/muse-glimmer/fft.yaml
     ```
 
 Let us know how it goes. Happy finetuning! 🚀
