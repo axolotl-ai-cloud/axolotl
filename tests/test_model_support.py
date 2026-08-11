@@ -415,17 +415,11 @@ class TestMuseGlimmerSupport:
         support = get_model_support("muse_glimmer")
         assert support.get_processing_strategy_cls() is MuseGlimmerProcessingStrategy
 
-    def test_cut_cross_entropy_rejected(self):
-        """No MuseGlimmerForCausalLM exists for the llama-like fallback to patch,
-        and the logits are softcapped outside lm_head."""
-        from axolotl.integrations.cut_cross_entropy import CutCrossEntropyPlugin
-
-        cfg = DictDefault(
-            model_config_type="muse_glimmer",
-            cut_cross_entropy=True,
-        )
-        with pytest.raises(ValueError, match="muse_glimmer"):
-            CutCrossEntropyPlugin().pre_model_load(cfg)
+    def test_cut_cross_entropy_supported(self):
+        """The fork patches MuseGlimmerForConditionalGeneration directly and reproduces
+        the output_multiplier scaling plus the tanh softcap inside apply_lce."""
+        support = get_model_support("muse_glimmer")
+        check_capability(support, "cut_cross_entropy", "muse_glimmer")
 
     def test_lora_kernels_rejected(self):
         """The fused QKV/O rewrite cannot express the sigmoid-gated attention output."""

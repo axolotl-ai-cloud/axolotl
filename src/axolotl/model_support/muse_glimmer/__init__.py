@@ -32,10 +32,10 @@ class MuseGlimmerSupport(ModelSupport):
     profile = ModelProfile(
         family=IMAGE_TEXT_TO_TEXT,
         capabilities={
-            "cut_cross_entropy": Unsupported(
-                "There is no MuseGlimmerForCausalLM for the llama-like fallback to patch, "
-                "and the logits are scaled by output_multiplier then tanh-softcapped "
-                "outside lm_head, which CCE's fused head does not reproduce."
+            "cut_cross_entropy": Supported(
+                "Patched on MuseGlimmerForConditionalGeneration directly; the fork folds "
+                "output_multiplier into the hidden states and passes final_logit_softcapping "
+                "to apply_lce."
             ),
             "liger": Supported(
                 "GLU and vision-tower LayerNorm kernels only; RMSNorm, RoPE and FLCE are skipped."

@@ -1,6 +1,12 @@
 base_model: meta-models/Muse-Glimmer-30B
 processor_type: AutoProcessor
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+# The vocabulary is 202,048 tokens, so materialized logits dominate activation memory.
+cut_cross_entropy: true
+
 load_in_4bit: true
 
 skip_prepare_dataset: true

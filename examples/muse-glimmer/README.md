@@ -14,7 +14,9 @@ The architecture is unusual in a few ways that matter when you fine-tune it: att
     uv pip install 'transformers>=5.15.0'
     ```
 
-3. Run the fine-tuning:
+3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage. Both configs enable it.
+
+4. Run the fine-tuning:
 
     ```bash
     # QLoRA, language model only
@@ -39,7 +41,8 @@ Let us know how it goes. Happy finetuning! 🚀
 - There is no full-finetune config here yet. 30B in bf16 is ~60 GiB of weights before optimizer state, so it needs multiple GPUs with DeepSpeed ZeRO-3 rather than a single card.
 - Meta kept the perception encoder **frozen** during their own training, which is what `qlora.yaml` mirrors. Reach for `qlora-vision.yaml` only if your images differ substantially from natural photographs.
 - `lora_target_modules` is a regex over full module paths rather than suffixes on purpose. The text decoder's attention carries its own `self_attn.gate_proj` next to `mlp.gate_proj`, so a bare `gate_proj` suffix would also adapt the attention gate. The vision tower likewise names its output projection `attn.proj`, not `o_proj`.
-- Cut Cross Entropy and fused LoRA kernels are **not** available for this architecture. There is no `MuseGlimmerForCausalLM` for CCE's generic patch to attach to, and the logits are multiplied by `output_multiplier` then softcapped after `lm_head`, which a fused head does not reproduce. Axolotl raises if you enable either.
+- Cut Cross Entropy is supported and worth enabling: the vocabulary is 202,048 tokens, so the materialized logits dominate activation memory. The patch folds `output_multiplier` into the hidden states and applies the `tanh` softcap inside the fused kernel, matching the eager path.
+- Fused LoRA kernels are **not** available for this architecture: the fused QKV/O rewrite cannot express the sigmoid-gated attention output. Axolotl disables them automatically.
 - Liger wires up the SwiGLU MLP and the vision tower's LayerNorms. RMSNorm, RoPE and fused linear cross entropy are skipped: the text stack mixes two RMSNorm variants on two different epsilons, and the NoPE global layers receive no position embeddings at all.
 - The chat template is Harmony-style. Assistant turns render as `<|start|>assistant to=user<|message|>...<|eot|>`, and `add_generation_prompt` stops at `<|start|>assistant` so the model generates the ` to=user` recipient itself. Axolotl trains that recipient prefix as part of the assistant span; if you supply your own template, keep that property or the model will never learn to open its turn.
 - Reasoning traces go in a separate `reasoning_content` field on the assistant message and render as a `to=self` block closed by `<|eom|>`. They are trained on by default, as their own assistant span.
