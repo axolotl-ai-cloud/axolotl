@@ -1,6 +1,7 @@
 organizations:
   - "axolotl-ai-co"
   - "meta-llama"
+  - "meta-models"
   - "huggingface"
   - "nvidia"
   - "facebook"
