@@ -8,21 +8,15 @@ The architecture is unusual in a few ways that matter when you fine-tune it: att
 
 1. Install Axolotl from source following the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
 
-2. The architecture landed in `transformers` v5.15.0, so make sure you are on at least that version:
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage. Both configs enable it.
+
+3. Run the fine-tuning:
 
     ```bash
-    uv pip install 'transformers>=5.15.0'
-    ```
-
-3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage. Both configs enable it.
-
-4. Run the fine-tuning:
-
-    ```bash
-    # QLoRA, language model only
+    # QLoRA, language model only (~27 GiB VRAM)
     axolotl train examples/muse-glimmer/qlora.yaml
 
-    # QLoRA, language model + vision tower
+    # QLoRA, language model + vision tower (~23 GiB VRAM)
     axolotl train examples/muse-glimmer/qlora-vision.yaml
     ```
 
@@ -30,7 +24,7 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### Tips
 
-- Both configs were validated on a single RTX PRO 6000 Blackwell at ~40 GiB peak reserved VRAM, so a 48 GiB card should be enough for either.
+- Both configs were validated on a single RTX PRO 6000 Blackwell. With Cut Cross Entropy on they peak under 32 GiB reserved, so a 32 GiB card should be enough; without it, budget ~40 GiB.
 - On Blackwell (sm_120) there is no `flash-attn` wheel for current torch/CUDA builds, and `attn_implementation: flash_attention_2` raises rather than falling back. Point it at the hub kernel instead, which needs `kernels>=0.16.0`:
 
     ```yaml
