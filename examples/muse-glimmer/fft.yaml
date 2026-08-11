@@ -1,8 +1,6 @@
 base_model: meta-models/Muse-Glimmer-30B
 processor_type: AutoProcessor
 
-load_in_4bit: true
-
 skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
@@ -21,34 +19,23 @@ eot_tokens:
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
-output_dir: ./outputs/muse-glimmer-qlora-vision
-
-adapter: qlora
-lora_model_dir:
+output_dir: ./outputs/muse-glimmer-fft
 
 sequence_len: 4096
 pad_to_sequence_len: false
 
-lora_r: 32
-lora_alpha: 16
-lora_dropout: 0.05
-# Full module paths rather than suffixes: the text decoder's attention carries its own
-# `self_attn.gate_proj` alongside `mlp.gate_proj`, and the vision tower names its output
-# projection `attn.proj` rather than `o_proj`, so suffix matching would target the wrong set.
-lora_target_modules: '(model\.language_model\.layers\.\d+\.(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)|model\.vision_tower\.layers\.\d+\.(attn\.(q_proj|k_proj|v_proj|proj)|mlp\.fc[12])|model\.vision_adapter\.fc[12]|model\.vision_projection)'
-
 wandb_project: muse_glimmer
 wandb_entity:
 wandb_watch:
-wandb_name: "qlora-vision"
+wandb_name: "fft"
 wandb_log_model:
 
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 1
-optimizer: adamw_bnb_8bit
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
-learning_rate: 0.0002
+learning_rate: 0.00001
 
 bf16: auto
 fp16:

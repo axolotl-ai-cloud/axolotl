@@ -13,6 +13,12 @@ datasets:
     split: train[:1%]
     field_messages: messages
 
+# The template closes turns with <|eot|>, or <|eom|> on reasoning and tool-call turns.
+# Without these the terminator is never trained and the model does not learn to stop.
+eot_tokens:
+  - "<|eot|>"
+  - "<|eom|>"
+
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./outputs/muse-glimmer-qlora

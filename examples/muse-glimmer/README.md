@@ -35,6 +35,8 @@ Let us know how it goes. Happy finetuning! 🚀
     attn_implementation: kernels-community/flash-attn2
     ```
 
+- `eot_tokens: ["<|eot|>", "<|eom|>"]` is **required**, and the configs set it. The template closes turns with `<|eot|>`, which is not the tokenizer's `eos_token` (`<|end_of_text|>`). Leave it out and the terminator never enters the loss, so the model never learns to stop.
+- `fft.yaml` does not fit on one GPU: 30B in bf16 is ~60 GiB of weights before optimizer state. Run it multi-GPU with DeepSpeed ZeRO-3, or use the QLoRA configs on a single card.
 - Meta kept the perception encoder **frozen** during their own training, which is what `qlora.yaml` mirrors. Reach for `qlora-vision.yaml` only if your images differ substantially from natural photographs.
 - `lora_target_modules` is a regex over full module paths rather than suffixes on purpose. The text decoder's attention carries its own `self_attn.gate_proj` next to `mlp.gate_proj`, so a bare `gate_proj` suffix would also adapt the attention gate. The vision tower likewise names its output projection `attn.proj`, not `o_proj`.
 - Cut Cross Entropy and fused LoRA kernels are **not** available for this architecture. There is no `MuseGlimmerForCausalLM` for CCE's generic patch to attach to, and the logits are multiplied by `output_multiplier` then softcapped after `lm_head`, which a fused head does not reproduce. Axolotl raises if you enable either.
