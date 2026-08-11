@@ -28,6 +28,13 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### Tips
 
+- Both configs were validated on a single RTX PRO 6000 Blackwell at ~40 GiB peak reserved VRAM, so a 48 GiB card should be enough for either.
+- On Blackwell (sm_120) there is no `flash-attn` wheel for current torch/CUDA builds, and `attn_implementation: flash_attention_2` raises rather than falling back. Point it at the hub kernel instead, which needs `kernels>=0.16.0`:
+
+    ```yaml
+    attn_implementation: kernels-community/flash-attn2
+    ```
+
 - Meta kept the perception encoder **frozen** during their own training, which is what `qlora.yaml` mirrors. Reach for `qlora-vision.yaml` only if your images differ substantially from natural photographs.
 - `lora_target_modules` is a regex over full module paths rather than suffixes on purpose. The text decoder's attention carries its own `self_attn.gate_proj` next to `mlp.gate_proj`, so a bare `gate_proj` suffix would also adapt the attention gate. The vision tower likewise names its output projection `attn.proj`, not `o_proj`.
 - Cut Cross Entropy and fused LoRA kernels are **not** available for this architecture. There is no `MuseGlimmerForCausalLM` for CCE's generic patch to attach to, and the logits are multiplied by `output_multiplier` then softcapped after `lm_head`, which a fused head does not reproduce. Axolotl raises if you enable either.
