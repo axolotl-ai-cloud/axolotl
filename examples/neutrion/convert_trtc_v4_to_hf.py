@@ -172,7 +172,10 @@ def convert(container_path: Path, out_dir: Path, tokenizer_repo: str):
             ("self_attn.k_norm", head_dim),
         ):
             vec, off = _f32(mm, count, off)
-            emit(prefix + norm_name + ".weight", torch.from_numpy(vec.copy()).to(torch.bfloat16))
+            emit(
+                prefix + norm_name + ".weight",
+                torch.from_numpy(vec.copy()).to(torch.bfloat16),
+            )
         for proj in PROJS:
             rec, off = _trit_record(mm, off)
             assert (rec[0], rec[1]) == shapes[proj], f"L{li}.{proj}: {rec[:2]}"
@@ -190,7 +193,10 @@ def convert(container_path: Path, out_dir: Path, tokenizer_repo: str):
     assert off == mm.size, f"reader ended at {off}, file is {mm.size}"
     shards.append(shard_tensors)
 
-    names = [f"model-{i + 1:05d}-of-{len(shards):05d}.safetensors" for i in range(len(shards))]
+    names = [
+        f"model-{i + 1:05d}-of-{len(shards):05d}.safetensors"
+        for i in range(len(shards))
+    ]
     total = 0
     for name, tensors in zip(names, shards):
         total += sum(t.nbytes for t in tensors.values())
