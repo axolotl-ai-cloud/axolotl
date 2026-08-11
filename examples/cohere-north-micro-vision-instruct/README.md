@@ -10,13 +10,11 @@ Thanks to the Cohere team for providing early access ahead of the release.
 
 1. Install Axolotl from main following the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build).
 
-2. Install Transformers. This model lands in v5.16, which is not released yet, so install the 5.16 dev build from source for now:
+2. Install Transformers. This model lands in v5.16, which is not released yet, so install the commit that adds it:
 
     ```bash
-    uv pip install "transformers @ git+https://github.com/huggingface/transformers.git"
+    uv pip install "transformers @ git+https://github.com/huggingface/transformers.git@f93eb6dbec8c2f5563f6d69bd998771929e8263f"
     ```
-
-    Once v5.16 is released, `uv pip install "transformers>=5.16.0"` is enough.
 
 3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
 
