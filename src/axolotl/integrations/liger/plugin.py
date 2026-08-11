@@ -357,21 +357,9 @@ class LigerPlugin(BasePlugin):
             from transformers.models.cohere_compass import modeling_cohere_compass
 
             if cfg.liger_rms_norm:
-                # in_place=False for gradient-checkpointing safety, as with gemma4.
-                class _LigerCohereCompassRMSNorm(LigerRMSNorm):
-                    """LigerRMSNorm for CohereCompass (constructed with keyword args)."""
-
-                    def __init__(self, hidden_size, eps=1e-6):
-                        super().__init__(
-                            hidden_size,
-                            eps,
-                            offset=0.0,
-                            casting_mode="llama",
-                            in_place=False,
-                        )
-
-                modeling_cohere_compass.CohereCompassRMSNorm = (
-                    _LigerCohereCompassRMSNorm
+                LOG.warning(
+                    "CohereCompass has no RMSNorm; every norm is the mean-subtracting "
+                    "CohereCompassLayerNorm. Skipping."
                 )
             if cfg.liger_glu_activation:
                 modeling_cohere_compass.CohereCompassMLP = LigerSwiGLUMLP
@@ -395,7 +383,7 @@ class LigerPlugin(BasePlugin):
                 )
             LOG.info(
                 f"Applied Liger kernels for cohere_compass: "
-                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
+                f"rms_norm=False (no RMSNorm in the arch), glu={cfg.liger_glu_activation}, "
                 f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm} (vision tower)"
             )
         elif cfg.liger_fused_linear_cross_entropy:

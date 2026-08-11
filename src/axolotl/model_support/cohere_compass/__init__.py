@@ -36,10 +36,10 @@ class CohereCompassSupport(ModelSupport):
                 "Matches the unpatched loss to bf16 noise on North-Micro-Vision-Instruct, including logit_scale."
             ),
             "lora_kernels": Supported(
-                "The QKV/O source rewrite preserves the rope_on_all_layers and sliding-window branches."
+                "The QKV and O projections match the stock source patterns, so the rewrite applies unchanged."
             ),
             "liger": Supported(
-                "RMSNorm, GLU and vision-tower LayerNorm kernels only; RoPE and FLCE are skipped."
+                "GLU and vision-tower LayerNorm kernels only; RMSNorm, RoPE and FLCE are skipped."
             ),
         },
         strategies=ModelStrategyOverrides(

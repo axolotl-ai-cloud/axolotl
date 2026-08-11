@@ -37,7 +37,7 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### TIPS
 
-- Liger Kernels rope and FLCE are not supported.
+- Liger Kernels RMSNorm, RoPE and FLCE are not supported.
 - For inference, Cohere recommends `temperature: 1.0` and `top_p: 0.95`.
 - Images are processed at native resolution, so token count scales with pixel count and `sequence_len` does not bound it. Cap it with the image processor's `max_pixels`:
 

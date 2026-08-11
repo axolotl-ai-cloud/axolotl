@@ -5,7 +5,6 @@ plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.liger.LigerPlugin
 cut_cross_entropy: true
-liger_rms_norm: true
 liger_glu_activation: true
 liger_layer_norm: true
 
