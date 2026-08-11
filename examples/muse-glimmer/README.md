@@ -25,9 +25,7 @@ Let us know how it goes. Happy finetuning! 🚀
 ### Tips
 
 - Fused LoRA kernels are **not** available for this architecture: the fused QKV/O rewrite cannot express the sigmoid-gated attention output. Axolotl disables them automatically.
-- Liger wires up RMSNorm, the SwiGLU MLP, RoPE, and the vision tower's LayerNorms. Only fused linear cross entropy is skipped, because the logits are scaled and softcapped after `lm_head`; Cut Cross Entropy covers that case instead. RoPE is safe despite the NoPE global layers, which simply never call the rotary function.
-- The chat template is Harmony-style. Assistant turns render as `<|start|>assistant to=user<|message|>...<|eot|>`, and `add_generation_prompt` stops at `<|start|>assistant` so the model generates the ` to=user` recipient itself. The multimodal path used by these configs trains that recipient prefix as part of the assistant span. The text-only path masks it instead, since it diffs on message content, so a pure-text fine-tune reinforces the turn body but not the ` to=user` opener.
-- Reasoning traces go in a separate `reasoning_content` field on the assistant message and render as a `to=self` block closed by `<|eom|>`. They are trained on by default, as their own assistant span.
+- We added custom Liger Kernel support for RMSNorm, the SwiGLU MLP, RoPE, and the vision tower's LayerNorms.
 - Assistant turns do not all close with `<|eot|>`: an explicit `recipient` other than `user`, `end_turn: false`, or a non-final tool call closes with `<|eom|>` instead. The vision path therefore bounds assistant spans on the next `<|start|>` rather than on a terminator, which means `train_on_eos` cannot gate the assistant terminator: it is always trained. Terminators for `system`, `user` and `tool` turns still honor the setting.
 - Reasoning strength is set in the system prompt (`low` / `medium` / `high` / `xhigh`, defaulting to `high`). Keep it consistent between training and inference.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
