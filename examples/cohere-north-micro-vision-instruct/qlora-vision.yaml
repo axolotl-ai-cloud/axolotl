@@ -1,4 +1,4 @@
-base_model: CohereLabs/North-Micro-Vision-instruct-preview
+base_model: CohereLabs/North-Micro-Vision-Instruct
 processor_type: AutoProcessor
 
 plugins:

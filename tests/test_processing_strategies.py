@@ -725,7 +725,7 @@ def test_paddleocr_vl_user_boundary_matches_text_only_turns():
     assert labels == [-100, -100, -100, 23013, 883, 23, -100, -100, -100, 2488, 2]
 
 
-# Real ids from CohereLabs/North-Micro-Vision-instruct-preview.
+# Real ids from CohereLabs/North-Micro-Vision-Instruct.
 _COMPASS_VOCAB = {
     "<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>": [255000, 255004],
     "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>": [255000, 255002],

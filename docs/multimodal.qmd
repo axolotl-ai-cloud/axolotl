@@ -292,7 +292,7 @@ Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See t
 ### North Micro Vision Instruct {#sec-north-micro-vision-instruct}
 
 ```yaml
-base_model: CohereLabs/North-Micro-Vision-instruct-preview
+base_model: CohereLabs/North-Micro-Vision-Instruct
 processor_type: AutoProcessor
 ```
 
