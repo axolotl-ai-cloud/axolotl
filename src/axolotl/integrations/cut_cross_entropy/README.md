@@ -39,6 +39,7 @@ plugins:
 - cohere2_moe
 - cohere2_vision
 - cohere_compass
+- cohere_compass_text
 - deepseek_v2
 - deepseek_v3
 - deepseek_v4
