@@ -1,5 +1,7 @@
 examples:
   # August 2026
+  - name: muse-glimmer
+    title: Muse Glimmer
   - name: cohere-north-micro-vision-instruct
     title: North Micro Vision Instruct
   - name: shieldstral
