@@ -391,12 +391,24 @@ class LigerPlugin(BasePlugin):
             from transformers.models.muse_glimmer import modeling_muse_glimmer
 
             if cfg.liger_rms_norm:
-                LOG.warning(
-                    "MuseGlimmer mixes two RMSNorm variants (MuseGlimmerTextCenteredRMSNorm "
-                    "at offset 1 on two different epsilons, MuseGlimmerRMSNorm at offset 0, "
-                    "plus weightless with_scale=False instances for qk_norm and the normed "
-                    "embedding). Skipping."
+                from liger_kernel.transformers.rms_norm import (
+                    LigerRMSNormForGemma2,
+                    LigerRMSNormForGemma4,
                 )
+
+                class _LigerMuseGlimmerRMSNorm(LigerRMSNormForGemma4):
+                    """`dim` is omitted at the three with_scale=False call sites
+                    (qk_norm, embed_norm, perception_emb_norm)."""
+
+                    def __init__(self, dim=None, eps=1e-6, with_scale=True):
+                        super().__init__(dim, eps, with_scale=with_scale)
+
+                # The four decoder norms are Gemma2-shaped ((1 + w), zeros init); the
+                # final norm and the weightless norms are Gemma4-shaped (w, ones init).
+                modeling_muse_glimmer.MuseGlimmerTextCenteredRMSNorm = (
+                    LigerRMSNormForGemma2
+                )
+                modeling_muse_glimmer.MuseGlimmerRMSNorm = _LigerMuseGlimmerRMSNorm
             if cfg.liger_glu_activation:
 
                 class _LigerMuseGlimmerTextMLP(LigerSwiGLUMLP):
@@ -418,11 +430,10 @@ class LigerPlugin(BasePlugin):
 
                 modeling_muse_glimmer.MuseGlimmerTextMLP = _LigerMuseGlimmerTextMLP
             if cfg.liger_rope:
-                LOG.warning(
-                    "Liger RoPE is not compatible with MuseGlimmer: global layers are "
-                    "NoPE (layer_rope_theta == 0) and receive position_embeddings=None. "
-                    "Skipping."
-                )
+                from liger_kernel.transformers.rope import liger_rotary_pos_emb
+
+                # NoPE layers never call this, so only the sliding layers are affected.
+                modeling_muse_glimmer.apply_rotary_pos_emb = liger_rotary_pos_emb
             if cfg.liger_layer_norm:
                 # Reaches the vision tower only; the text decoder has no nn.LayerNorm.
                 modeling_muse_glimmer.nn.LayerNorm = LigerLayerNorm
@@ -430,12 +441,12 @@ class LigerPlugin(BasePlugin):
                 LOG.warning(
                     "Liger fused linear cross entropy is not compatible with MuseGlimmer: "
                     "logits are scaled by output_multiplier and tanh-softcapped after "
-                    "lm_head. Skipping."
+                    "lm_head. Use cut_cross_entropy instead. Skipping."
                 )
             LOG.info(
                 f"Applied Liger kernels for muse_glimmer: "
-                f"rms_norm=False (mixed variants), glu={cfg.liger_glu_activation}, "
-                f"rope=False (NoPE layers), layer_norm={cfg.liger_layer_norm} (vision tower)"
+                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
+                f"rope={cfg.liger_rope}, layer_norm={cfg.liger_layer_norm} (vision tower)"
             )
         elif cfg.liger_fused_linear_cross_entropy:
             try:
