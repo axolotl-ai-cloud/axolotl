@@ -1765,6 +1765,7 @@ _MG_VOCAB = {
     "<|start|>assistant": [200022, 140680],
     "<|start|>": [200022],
     "<|eot|>": [200008],
+    "<|eom|>": [200007],
     "<|patch|>": [200092],
 }
 _MG_EOT = 200008
@@ -1822,6 +1823,38 @@ def test_muse_glimmer_eom_terminated_turn_does_not_leak_tool_output():
 
     labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
     assert labels == [-100, -100, 328, 9999, 200023, 104, _MG_EOM] + [-100] * 6
+
+
+@pytest.mark.parametrize(
+    "train_on_eos, user_eot, first_eom, last_eot",
+    [
+        ("turn", -100, _MG_EOM, _MG_EOT),
+        ("all", _MG_EOT, _MG_EOM, _MG_EOT),
+        ("last", -100, -100, _MG_EOT),
+        ("none", -100, -100, -100),
+    ],
+)
+def test_muse_glimmer_train_on_eos_gates_assistant_terminators(
+    train_on_eos, user_eot, first_eom, last_eot
+):
+    """The assistant span ends on the next <|start|>, so its terminator sits in the span
+    body where the shared scanner cannot gate it. The strategy re-applies train_on_eos."""
+    strategy = MuseGlimmerProcessingStrategy(
+        _muse_glimmer_fake_processor(), train_on_eos=train_on_eos
+    )
+    seq = [200022, 1556, 200023, 101, _MG_EOT]  # user
+    seq += [200022, 140680, 328, 19669, 200023, 103, _MG_EOM]  # assistant to=self
+    seq += [200022, 140680, 328, 76976, 200023, 102, _MG_EOT]  # assistant to=user
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == (
+        [-100] * 4
+        + [user_eot]
+        + [-100, -100]
+        + [328, 19669, 200023, 103, first_eom]
+        + [-100, -100]
+        + [328, 76976, 200023, 102, last_eot]
+    )
 
 
 def test_muse_glimmer_media_tokens_masked_even_on_trainable_turns():

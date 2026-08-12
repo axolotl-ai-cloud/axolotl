@@ -8,15 +8,18 @@ from axolotl.processing_strategies import (
     _encode_markers,
 )
 
+IGNORE_INDEX = -100
+
 # Stops before the recipient: add_generation_prompt emits only "<|start|>assistant",
 # so the model generates " to=user<|message|>" and it must stay inside the trained span.
 _ASSISTANT_START_MARKER = "<|start|>assistant"
 
-# Assistant turns close with "<|eom|>" rather than "<|eot|>" on a non-"user" recipient,
-# `end_turn: false`, or a non-final tool call, so the span ends on the next "<|start|>"
-# to cover both. Cost: train_on_eos cannot gate the assistant terminator.
+# Assistant turns close with either "<|eot|>" or "<|eom|>", so the span ends on the next
+# "<|start|>" to cover both. That leaves the terminator inside the span body, where
+# `_gate_terminators` re-applies train_on_eos to it.
 _TURN_START_MARKER = "<|start|>"
 _TURN_END_MARKER = "<|eot|>"
+_TERMINATOR_MARKERS = (_TURN_END_MARKER, "<|eom|>")
 
 _ROLE_START_MARKERS = {
     "system": "<|start|>system<|message|>",
@@ -61,10 +64,44 @@ class MuseGlimmerProcessingStrategy(ProcessingStrategy):
         )
         return boundaries
 
+    def _gate_terminators(self, labels: Tensor, input_ids: Tensor) -> Tensor:
+        """Apply train_on_eos to the assistant terminators the scanner treats as content.
+
+        Only "none" and "last" need it. Other roles' terminators reach this point only
+        when train_on_inputs or roles_to_train trains them, and dropping those is what
+        the text-only ChatTemplateStrategy does too.
+        """
+        if self.train_on_eos not in ("none", "last"):
+            return labels
+
+        marker_ids = [
+            ids[0]
+            for ids in _encode_markers(
+                self.processor.tokenizer, list(_TERMINATOR_MARKERS)
+            )
+            if len(ids) == 1
+        ]
+        if not marker_ids:
+            return labels
+
+        is_terminator = input_ids == marker_ids[0]
+        for token_id in marker_ids[1:]:
+            is_terminator = is_terminator | (input_ids == token_id)
+        drop = is_terminator & (labels != IGNORE_INDEX)
+
+        if self.train_on_eos == "last":
+            for row in drop:
+                kept = row.nonzero()
+                if kept.numel():
+                    row[kept[-1]] = False
+
+        labels[drop] = IGNORE_INDEX
+        return labels
+
     def process_labels(self, input_ids: Tensor) -> Tensor:
         labels = super().process_labels(input_ids)
         for attr in _MEDIA_TOKEN_ID_ATTRS:
             token_id = getattr(self.processor, attr, None)
             if token_id is not None:
-                labels[input_ids == token_id] = -100
-        return labels
+                labels[input_ids == token_id] = IGNORE_INDEX
+        return self._gate_terminators(labels, input_ids)
