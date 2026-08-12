@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>cli.config – Axolotl</title>
+<title>North Micro Vision Instruct – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -147,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/cohere-north-micro-vision-instruct.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/cohere-north-micro-vision-instruct.html">North Micro Vision Instruct</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -206,16 +206,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
  <span class="menu-text">Model Guides</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">North Micro Vision Instruct</span></a>
   </div>
 </li>
@@ -867,352 +867,87 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.cli.config" id="toc-axolotl.cli.config" class="nav-link active" data-scroll-target="#axolotl.cli.config">cli.config</a>
+  <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting Started</a>
   <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.cli.config.check_remote_config" id="toc-axolotl.cli.config.check_remote_config" class="nav-link" data-scroll-target="#axolotl.cli.config.check_remote_config">check_remote_config</a></li>
-  <li><a href="#axolotl.cli.config.choose_config" id="toc-axolotl.cli.config.choose_config" class="nav-link" data-scroll-target="#axolotl.cli.config.choose_config">choose_config</a></li>
-  <li><a href="#axolotl.cli.config.gpu_capabilities" id="toc-axolotl.cli.config.gpu_capabilities" class="nav-link" data-scroll-target="#axolotl.cli.config.gpu_capabilities">gpu_capabilities</a></li>
-  <li><a href="#axolotl.cli.config.load_cfg" id="toc-axolotl.cli.config.load_cfg" class="nav-link" data-scroll-target="#axolotl.cli.config.load_cfg">load_cfg</a></li>
-  <li><a href="#axolotl.cli.config.prepare_plugins" id="toc-axolotl.cli.config.prepare_plugins" class="nav-link" data-scroll-target="#axolotl.cli.config.prepare_plugins">prepare_plugins</a></li>
+  <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">TIPS</a></li>
   </ul></li>
-  </ul></li>
+  <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
+  <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/cohere-north-micro-vision-instruct.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/cohere-north-micro-vision-instruct.html">North Micro Vision Instruct</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">North Micro Vision Instruct</h1>
+</div>
 
 
 
+<div class="quarto-title-meta">
 
-<section id="axolotl.cli.config" class="level1">
-<h1>cli.config</h1>
-<p><code>cli.config</code></p>
-<p>Configuration loading and processing.</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.cli.config.check_remote_config">check_remote_config</a></td>
-<td>First, determines if the passed config is a valid HTTPS URL. Then, attempts to query</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.cli.config.choose_config">choose_config</a></td>
-<td>Helper method for choosing a <code>axolotl</code> config YAML file (considering only files</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.cli.config.gpu_capabilities">gpu_capabilities</a></td>
-<td>Probe the local GPU and return <code>(capabilities, env_capabilities)</code> dicts</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.cli.config.load_cfg">load_cfg</a></td>
-<td>Loads the <code>axolotl</code> configuration stored at <code>config</code>, validates it, and performs</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.cli.config.prepare_plugins">prepare_plugins</a></td>
-<td>Registers the plugins for the given configuration.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.cli.config.check_remote_config" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.config.check_remote_config">check_remote_config</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.config.check_remote_config(config)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>First, determines if the passed config is a valid HTTPS URL. Then, attempts to query
-for it and parse its content, first as JSON, then as YAML (YAML is preferred).
-Finally, the parsed content is written to a local file and its path is returned.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 26%">
-<col style="width: 46%">
-<col style="width: 16%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>config</td>
-<td>Union[str, Path]</td>
-<td>HTTPS URL to a YAML or JSON file.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 7%">
-<col style="width: 18%">
-<col style="width: 74%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>Union[str, Path]</td>
-<td>Either the original <code>config</code> if it’s not a valid HTTPS URL, or the path to the</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>Union[str, Path]</td>
-<td>downloaded remote config.</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="raises" class="level4 doc-section doc-section-raises">
-<h4 class="doc-section doc-section-raises anchored" data-anchor-id="raises">Raises</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 15%">
-<col style="width: 75%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>ValueError</td>
-<td>If the remote configuration is neither valid JSON or YAML.</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>RuntimeError</td>
-<td>If some request-related exception occurs from the file download.</td>
-</tr>
-<tr class="odd">
-<td></td>
-<td>Exception</td>
-<td>Catch-all for any other exception.</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.cli.config.choose_config" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.config.choose_config">choose_config</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.config.choose_config(path)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Helper method for choosing a <code>axolotl</code> config YAML file (considering only files
-ending with <code>.yml</code> or <code>.yaml</code>). If more than one config file exists in the passed
-<code>path</code>, the user is prompted to choose one.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 10%">
-<col style="width: 62%">
-<col style="width: 16%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>path</td>
-<td>Path</td>
-<td>Directory in which config file(s) are stored.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-1" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 8%">
-<col style="width: 83%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>str</td>
-<td>Path to either (1) the sole YAML file, or (2) if more than one YAML files exist,</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>str</td>
-<td>the user-selected YAML file.</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="raises-1" class="level4 doc-section doc-section-raises">
-<h4 class="doc-section doc-section-raises anchored" data-anchor-id="raises-1">Raises</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 11%">
-<col style="width: 17%">
-<col style="width: 71%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>ValueError</td>
-<td>If no YAML files are found in the given <code>path</code>.</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.cli.config.gpu_capabilities" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.config.gpu_capabilities">gpu_capabilities</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.config.gpu_capabilities()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Probe the local GPU and return <code>(capabilities, env_capabilities)</code> dicts
-suitable for :func:<code>axolotl.utils.config.validate_config</code>.</p>
-<p>Must be called on a GPU-enabled host (e.g.&nbsp;a Ray worker), otherwise the
-detected values reflect the driver/CPU node and not the training device.</p>
-</section>
-<section id="axolotl.cli.config.load_cfg" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.config.load_cfg">load_cfg</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.config.load_cfg(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Loads the <code>axolotl</code> configuration stored at <code>config</code>, validates it, and performs
-various setup.</p>
-<section id="parameters-2" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 6%">
-<col style="width: 23%">
-<col style="width: 52%">
-<col style="width: 17%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>config</td>
-<td>str | Path | DictDefault</td>
-<td>Path (local or remote) to <code>axolotl</code> config YAML file.</td>
-<td><code>Path('examples/')</code></td>
-</tr>
-<tr class="even">
-<td>kwargs</td>
-<td></td>
-<td>Additional keyword arguments to override config file values.</td>
-<td><code>{}</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-2" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-2">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 17%">
-<col style="width: 71%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>DictDefault</td>
-<td><code>DictDefault</code> mapping configuration keys to values.</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.cli.config.prepare_plugins" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.config.prepare_plugins">prepare_plugins</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.config.prepare_plugins(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Registers the plugins for the given configuration.</p>
-<section id="parameters-3" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 15%">
-<col style="width: 61%">
-<col style="width: 13%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>cfg</td>
-<td>DictDefault</td>
-<td>Dictionary mapping <code>axolotl</code> config keys to values.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
+    
+  
+    
+  </div>
+  
 
 
+</header>
+
+
+<p><a href="https://huggingface.co/CohereLabs/North-Micro-Vision-Instruct">North Micro Vision Instruct</a> is a 2.4B-parameter open-weight vision-language model comprising a 2B language model and a custom-trained 400M native-resolution vision encoder. Its compact scale and broad image-understanding capabilities make it a practical foundation for task-specific customization.</p>
+<p>This guide shows how to fine-tune the model using Axolotl’s multimodal supervised fine-tuning (SFT) support. For architecture, training, and benchmark details, read the <a href="https://huggingface.co/blog/CohereLabs/meet-north-micro-vision-instruct">North Micro Vision technical blog post</a>.</p>
+<p>Thanks to the Cohere team for providing early access ahead of the release.</p>
+<section id="getting-started" class="level2">
+<h2 class="anchored" data-anchor-id="getting-started">Getting Started</h2>
+<ol type="1">
+<li><p>Install Axolotl from main following the <a href="https://docs.axolotl.ai/docs/installation.html#sec-edge-build">installation guide</a>.</p></li>
+<li><p>Install Transformers. This model lands in v5.16, which is not released yet, so install the commit that adds it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="st">"transformers @ git+https://github.com/huggingface/transformers.git@f93eb6dbec8c2f5563f6d69bd998771929e8263f"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
+<li><p>Run one of the finetuning examples:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 5.1 GiB VRAM, adapters on the language decoder</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/cohere-north-micro-vision-instruct/qlora.yaml</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 5.2 GiB VRAM, adapters on the decoder, vision tower and projector</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/cohere-north-micro-vision-instruct/qlora-vision.yaml</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 21.2 GiB VRAM</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/cohere-north-micro-vision-instruct/fft.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+</ol>
+<p>Let us know how it goes. Happy finetuning! 🚀</p>
+<section id="tips" class="level3">
+<h3 class="anchored" data-anchor-id="tips">TIPS</h3>
+<ul>
+<li><p>Liger Kernels RMSNorm, RoPE and FLCE are not supported.</p></li>
+<li><p>For Transformers inference, use the model’s generation defaults: <code>temperature=0.7</code>, <code>top_p=0.8</code>, and <code>top_k=20</code>.</p></li>
+<li><p>Public vLLM support is coming soon. For vLLM inference, use <code>temperature=0.7</code>, <code>top_p=0.8</code>, <code>top_k=20</code>, <code>min_p=0.0</code>, <code>presence_penalty=1.5</code>, and <code>repetition_penalty=1.0</code>.</p></li>
+<li><p>Images are processed at native resolution, so token count scales with pixel count and <code>sequence_len</code> does not bound it. Cap it with the image processor’s <code>max_pixels</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_kwargs</span><span class="kw">:</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_pixels</span><span class="kw">:</span><span class="at"> </span><span class="dv">1003520</span><span class="co">  # total pixels</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</p></li>
+<li><p>The dataset format follows the OpenAI Messages format as seen <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>.</p></li>
+</ul>
 </section>
 </section>
+<section id="optimization-guides" class="level2">
+<h2 class="anchored" data-anchor-id="optimization-guides">Optimization Guides</h2>
+<p>Please check the <a href="https://docs.axolotl.ai/docs/optimizations.html">Optimizations doc</a>.</p>
 </section>
+<section id="related-resources" class="level2">
+<h2 class="anchored" data-anchor-id="related-resources">Related Resources</h2>
+<ul>
+<li><a href="https://huggingface.co/CohereLabs/North-Micro-Vision-Instruct">North Micro Vision Instruct</a></li>
+<li><a href="https://huggingface.co/blog/CohereLabs/meet-north-micro-vision-instruct">North Micro Vision technical blog post</a></li>
+<li><a href="https://docs.axolotl.ai">Axolotl Docs</a></li>
+<li><a href="https://github.com/axolotl-ai-cloud/axolotl">Axolotl GitHub</a></li>
+<li><a href="https://discord.gg/7m9sfhzaf3">Axolotl Discord</a></li>
+</ul>
+
+
 </section>
 
 </main> <!-- /main -->
