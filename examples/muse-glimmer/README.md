@@ -24,9 +24,8 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### Tips
 
-- Fused LoRA kernels are **not** available for this architecture: the fused QKV/O rewrite cannot express the sigmoid-gated attention output. Axolotl disables them automatically.
+- Fused LoRA kernels are not available for this architecture.
 - We added custom Liger Kernel support for RMSNorm, the SwiGLU MLP, RoPE, and the vision tower's LayerNorms.
-- Assistant turns do not all close with `<|eot|>`: an explicit `recipient` other than `user`, `end_turn: false`, or a non-final tool call closes with `<|eom|>` instead. The vision path therefore bounds assistant spans on the next `<|start|>` rather than on a terminator, which means `train_on_eos` cannot gate the assistant terminator: it is always trained. Terminators for `system`, `user` and `tool` turns still honor the setting.
 - Reasoning strength is set in the system prompt (`low` / `medium` / `high` / `xhigh`, defaulting to `high`). Keep it consistent between training and inference.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 
@@ -122,8 +121,9 @@ Two things to watch:
   string, because the Jinja sandbox cannot parse one. `{"city": "Paris"}`, never `"{\"city\": \"Paris\"}"`.
 - **Use a text-only config for tool data.** The multimodal collator calls `apply_chat_template`
   without passing `tools`, so the tool definitions never reach the system block. Drop
-  `processor_type` and `skip_prepare_dataset` (and set `eot_tokens`, see Tips) so the
-  `chat_template` strategy handles it and `field_tools` is read.
+  `processor_type` and `skip_prepare_dataset` so the `chat_template` strategy handles it
+  and `field_tools` is read. That path needs `eot_tokens: ["<|eot|>", "<|eom|>"]`, since
+  neither terminator is the tokenizer's `eos_token`.
 
 The assistant tool-call turn is trained like any other assistant turn; only the `tool` role's
 `<tool_output>` is masked, since that is input the model receives rather than text it writes.
