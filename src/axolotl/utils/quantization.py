@@ -20,6 +20,10 @@ from torchao.quantization.quant_api import (
     Int8DynamicActivationIntxWeightConfig,
 )
 
+from axolotl.utils.quantization_ternary import (
+    convert_ternary_model,
+    prepare_model_for_ternary_qat,
+)
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 quantization_config_to_str = {
@@ -379,6 +383,14 @@ def prepare_model_for_qat(
     Raises:
         ValueError: If the activation/weight dtype combination is invalid.
     """
+    if weight_dtype == TorchAOQuantDType.ternary:
+        prepare_model_for_ternary_qat(
+            model,
+            quantize_activations=activation_dtype is not None,
+            quantize_embedding=quantize_embedding,
+        )
+        return
+
     base_config = get_quantization_config(
         weight_dtype=weight_dtype,
         activation_dtype=activation_dtype,
@@ -412,6 +424,7 @@ def convert_qat_model(
     """
     This function converts a QAT model which has fake quantized layers back to the original model.
     """
+    convert_ternary_model(model)
     config = QATConfig(step="convert")
     quantize_(model, config)
     if quantize_embedding:

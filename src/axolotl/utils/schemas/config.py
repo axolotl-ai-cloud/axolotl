@@ -2123,6 +2123,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("load_in_4bit"):
             raise ValueError("QAT and load_in_4bit cannot be used together.")
 
+        if qat_cfg.get("weight_dtype") == "ternary" and qat_cfg.get(
+            "activation_dtype"
+        ) not in (None, "int8"):
+            raise ValueError("Ternary QAT only supports activation_dtype: int8.")
+
         env_capabilities = data.get("env_capabilities", {})
         torch_version = env_capabilities.get("torch_version")
 

@@ -3,8 +3,6 @@
 from functools import partial
 
 from torch import nn
-from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
-from torchao.quantization.qat.linear import FakeQuantizedLinear
 from transformers import TrainerCallback
 
 from axolotl.utils.logging import get_logger
@@ -21,15 +19,10 @@ def toggle_fake_quant(mod: nn.Module, enable: bool):
         mod: The module to toggle fake quantization for.
         enable: Whether to enable or disable fake quantization.
     """
-    if isinstance(mod, (FakeQuantizedLinear, FakeQuantizedEmbedding)):
-        if (
-            isinstance(mod, FakeQuantizedLinear)
-            and mod.activation_fake_quantizer is not None
-            and hasattr(mod.activation_fake_quantizer, "enabled")
-        ):
-            mod.activation_fake_quantizer.enabled = enable
-        if hasattr(mod.weight_fake_quantizer, "enabled"):
-            mod.weight_fake_quantizer.enabled = enable
+    for attr in ("activation_fake_quantizer", "weight_fake_quantizer"):
+        fake_quantizer = getattr(mod, attr, None)
+        if fake_quantizer is not None and hasattr(fake_quantizer, "enabled"):
+            fake_quantizer.enabled = enable
 
 
 class QATCallback(TrainerCallback):
