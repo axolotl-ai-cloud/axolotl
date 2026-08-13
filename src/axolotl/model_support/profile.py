@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, overload
@@ -35,6 +35,7 @@ class ModelHookPhase(str, Enum):
     BEFORE_MODEL_BUILD = "before_model_build"
     AFTER_BASE_MODEL_BUILD = "after_base_model_build"
     AFTER_ADAPTER_LOAD = "after_adapter_load"
+    BEFORE_SAVE = "before_save"
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,48 @@ WeightConversionsProvider = Callable[
     [], "Mapping[str, Sequence[WeightTransform]] | None"
 ]
 PatchMappingsProvider = Callable[[], "Mapping[str, type[nn.Module]] | None"]
+InterfaceFunctionsProvider = Callable[[], "Mapping[str, Callable[..., Any]] | None"]
+QuantizersProvider = Callable[[], "Mapping[str, QuantizerRegistration] | None"]
+AutoClassesProvider = Callable[[], "Sequence[AutoClassRegistration] | None"]
+ModelClassAttrsProvider = Callable[[], "Mapping[type, Mapping[str, Any]] | None"]
+LossFunctionProvider = Callable[[], "Callable[..., Any] | None"]
+
+
+@dataclass(frozen=True)
+class QuantizerRegistration:
+    """One entry for transformers' quantizer registries.
+
+    Registered under its mapping key in ``AUTO_QUANTIZER_MAPPING`` (and
+    ``AUTO_QUANTIZATION_CONFIG_MAPPING`` when ``config_cls`` is set). An
+    existing different registration is overwritten with a warning; re-applying
+    the same classes is a no-op.
+    """
+
+    quantizer_cls: type
+    config_cls: type | None = None
+
+
+@dataclass(frozen=True)
+class AutoClassRegistration:
+    """One config class and its auto-class wiring.
+
+    ``model_classes`` maps auto-class names (``"AutoModelForCausalLM"``,
+    ``"AutoModelForImageTextToText"``, ...) to model classes; each must declare
+    ``config_class = config_cls``. Tokenizer and processor classes register
+    into their respective auto classes. All registrations use ``exist_ok`` so
+    repeated application is a no-op.
+    """
+
+    config_cls: type
+    model_classes: Mapping[str, type] = field(default_factory=dict)
+    slow_tokenizer_cls: type | None = None
+    fast_tokenizer_cls: type | None = None
+    processor_cls: type | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "model_classes", MappingProxyType(dict(self.model_classes))
+        )
 
 
 class _InheritStrategy:
@@ -89,23 +132,27 @@ class ModelStrategies:
 
     Each field is a zero-argument callable that returns a component class or ``None``.
     Providers should import optional or heavyweight implementations only when called.
+    ``loss_function`` instead returns a loss callable, set per model instance
+    (``model.loss_function``) right after the base model is built — no global
+    ``LOSS_MAPPING`` mutation.
     """
 
     auto_model_cls: AutoModelClassProvider | None = None
     processing_strategy_cls: ProcessingStrategyClassProvider | None = None
+    loss_function: LossFunctionProvider | None = None
 
     def with_overrides(self, overrides: ModelStrategyOverrides) -> ModelStrategies:
         return ModelStrategies(
-            auto_model_cls=(
-                self.auto_model_cls
-                if isinstance(overrides.auto_model_cls, _InheritStrategy)
-                else overrides.auto_model_cls
-            ),
-            processing_strategy_cls=(
-                self.processing_strategy_cls
-                if isinstance(overrides.processing_strategy_cls, _InheritStrategy)
-                else overrides.processing_strategy_cls
-            ),
+            **{
+                strategy_field.name: (
+                    getattr(self, strategy_field.name)
+                    if isinstance(
+                        getattr(overrides, strategy_field.name), _InheritStrategy
+                    )
+                    else getattr(overrides, strategy_field.name)
+                )
+                for strategy_field in fields(self)
+            }
         )
 
 
@@ -117,44 +164,66 @@ class ModelStrategyOverrides:
     inherited provider and restores the downstream generic fallback.
     """
 
-    auto_model_cls: AutoModelClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    auto_model_cls: AutoModelClassProvider | _InheritStrategy | None = _INHERIT_STRATEGY
     processing_strategy_cls: (
-        ProcessingStrategyClassProvider | None | _InheritStrategy
+        ProcessingStrategyClassProvider | _InheritStrategy | None
     ) = _INHERIT_STRATEGY
+    loss_function: LossFunctionProvider | _InheritStrategy | None = _INHERIT_STRATEGY
 
 
 @dataclass(frozen=True)
 class ModelRegistrations:
     """Lazy payloads for transformers' own extension registries.
 
-    ``weight_conversions`` maps a ``model_type`` or model class name to
-    ``WeightTransform`` entries registered via
-    ``transformers.conversion_mapping.register_checkpoint_conversion_mapping``;
-    ``patch_mappings`` maps class names (or regex patterns) to replacement
-    modules registered via
-    ``transformers.monkey_patching.register_patch_mapping``. Both are applied
-    idempotently before model build. A patch mapping that changes a module's
-    checkpoint layout must ship matching weight conversions, or loading and
-    saving break.
+    Every field is a zero-argument provider returning that registry's payload
+    (or ``None``); all are applied idempotently as soon as the run's
+    descriptor is discovered — at the pre-config boundary via matchers, and
+    again by exact ``model_type`` before model build:
+
+    - ``weight_conversions``: ``model_type`` or model class name to
+      ``WeightTransform`` entries, via
+      ``transformers.conversion_mapping.register_checkpoint_conversion_mapping``.
+    - ``patch_mappings``: class names (or regex patterns) to replacement
+      modules, via ``transformers.monkey_patching.register_patch_mapping``.
+      A patch mapping that changes a module's checkpoint layout must ship
+      matching weight conversions, or loading and saving break.
+    - ``attention_functions`` / ``attention_mask_functions``: implementation
+      name to callable, via ``ALL_ATTENTION_FUNCTIONS`` /
+      ``ALL_MASK_ATTENTION_FUNCTIONS``. Every attention implementation needs a
+      matching mask entry.
+    - ``experts_functions``: implementation name to callable, via
+      ``ALL_EXPERTS_FUNCTIONS`` (selected by ``config._experts_implementation``).
+    - ``quantizers``: quantization-method name to `QuantizerRegistration`.
+    - ``auto_classes``: `AutoClassRegistration` entries wiring config, model,
+      tokenizer, and processor classes into the transformers auto registries.
+    - ``model_class_attrs``: class to attribute overrides applied with
+      ``setattr`` (``_no_split_modules``, ``_keep_in_fp32_modules``,
+      config-side ``base_model_tp_plan``-style class vars, ...).
     """
 
     weight_conversions: WeightConversionsProvider | None = None
     patch_mappings: PatchMappingsProvider | None = None
+    attention_functions: InterfaceFunctionsProvider | None = None
+    attention_mask_functions: InterfaceFunctionsProvider | None = None
+    experts_functions: InterfaceFunctionsProvider | None = None
+    quantizers: QuantizersProvider | None = None
+    auto_classes: AutoClassesProvider | None = None
+    model_class_attrs: ModelClassAttrsProvider | None = None
 
     def with_overrides(
         self, overrides: ModelRegistrationOverrides
     ) -> ModelRegistrations:
         return ModelRegistrations(
-            weight_conversions=(
-                self.weight_conversions
-                if isinstance(overrides.weight_conversions, _InheritStrategy)
-                else overrides.weight_conversions
-            ),
-            patch_mappings=(
-                self.patch_mappings
-                if isinstance(overrides.patch_mappings, _InheritStrategy)
-                else overrides.patch_mappings
-            ),
+            **{
+                registry_field.name: (
+                    getattr(self, registry_field.name)
+                    if isinstance(
+                        getattr(overrides, registry_field.name), _InheritStrategy
+                    )
+                    else getattr(overrides, registry_field.name)
+                )
+                for registry_field in fields(self)
+            }
         )
 
 
@@ -163,13 +232,27 @@ class ModelRegistrationOverrides:
     """Per-model registration overrides layered over family registrations.
 
     An omitted field inherits its family provider. Explicit ``None`` removes
-    the inherited provider.
+    the inherited provider. Field names mirror `ModelRegistrations`.
     """
 
-    weight_conversions: WeightConversionsProvider | None | _InheritStrategy = (
+    weight_conversions: WeightConversionsProvider | _InheritStrategy | None = (
         _INHERIT_STRATEGY
     )
-    patch_mappings: PatchMappingsProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    patch_mappings: PatchMappingsProvider | _InheritStrategy | None = _INHERIT_STRATEGY
+    attention_functions: InterfaceFunctionsProvider | _InheritStrategy | None = (
+        _INHERIT_STRATEGY
+    )
+    attention_mask_functions: InterfaceFunctionsProvider | _InheritStrategy | None = (
+        _INHERIT_STRATEGY
+    )
+    experts_functions: InterfaceFunctionsProvider | _InheritStrategy | None = (
+        _INHERIT_STRATEGY
+    )
+    quantizers: QuantizersProvider | _InheritStrategy | None = _INHERIT_STRATEGY
+    auto_classes: AutoClassesProvider | _InheritStrategy | None = _INHERIT_STRATEGY
+    model_class_attrs: ModelClassAttrsProvider | _InheritStrategy | None = (
+        _INHERIT_STRATEGY
+    )
 
 
 @dataclass(frozen=True)

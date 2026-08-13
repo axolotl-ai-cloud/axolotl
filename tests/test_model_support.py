@@ -133,6 +133,20 @@ class TestKimiLinearSupport:
         assert _kimi_module_entry("transformers_modules/x/modeling_kimi_vl.py") is None
         assert _kimi_module_entry("modeling_kimi_vl") is None
 
+    def test_auto_classes_register_the_in_tree_classes(self):
+        pytest.importorskip("fla")
+        pytest.importorskip("tiktoken")
+        from axolotl.model_support.kimi_linear import _auto_classes
+
+        (registration,) = _auto_classes()
+        assert registration.config_cls.model_type == "kimi_linear"
+        assert set(registration.model_classes) == {"AutoModelForCausalLM"}
+        assert (
+            registration.model_classes["AutoModelForCausalLM"].config_class
+            is registration.config_cls
+        )
+        assert registration.slow_tokenizer_cls is not None
+
     def test_pre_config_load_patches_dynamic_module_loading(
         self, restore_dynamic_module_loader
     ):
@@ -157,6 +171,72 @@ class TestKimiLinearSupport:
             False,
         )
         assert restore_dynamic_module_loader.get_class_in_module is patched
+
+
+class TestNemotronHSupport:
+    """Built-in NemotronH descriptor: cfg-conditional packing patch and the
+    post-build conversion-mapping fix."""
+
+    def test_registered_with_lifecycle_hooks(self):
+        support = get_model_support("nemotron_h")
+        assert support is not None
+        resolved = resolve_model_support(support)
+        assert resolved.family == "vanilla_causal_lm"
+        assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_MODEL_BUILD)
+        assert resolved.hooks.for_phase(ModelHookPhase.AFTER_BASE_MODEL_BUILD)
+
+    def test_packing_patch_skipped_without_packing_or_context_parallel(self):
+        from transformers.models.nemotron_h.modeling_nemotron_h import (
+            NemotronHPreTrainedModel,
+        )
+
+        from axolotl.model_support.nemotron_h import _before_model_build
+
+        before = NemotronHPreTrainedModel.supports_gradient_checkpointing
+        _before_model_build(
+            ModelHookContext(
+                cfg=DictDefault(sample_packing=False, context_parallel_size=1)
+            )
+        )
+        assert NemotronHPreTrainedModel.supports_gradient_checkpointing is before
+
+    def test_conversion_mapping_fix_removes_spurious_renaming(self):
+        from transformers.conversion_mapping import (
+            WeightRenaming,
+            get_checkpoint_conversion_mapping,
+            register_checkpoint_conversion_mapping,
+        )
+
+        from axolotl.model_support.nemotron_h import (
+            fix_nemotron_h_conversion_mapping,
+        )
+
+        def spurious(entries):
+            return [
+                entry
+                for entry in entries
+                if isinstance(entry, WeightRenaming)
+                and entry.source_patterns == ["embedding.weight"]
+                and entry.target_patterns == ["embeddings.weight"]
+            ]
+
+        original = get_checkpoint_conversion_mapping("nemotron_h")
+        # the builtin transformers mapping may itself carry the spurious entry
+        seeded = [
+            *(original or []),
+            WeightRenaming(["embedding.weight"], ["embeddings.weight"]),
+        ]
+        register_checkpoint_conversion_mapping("nemotron_h", seeded, overwrite=True)
+        try:
+            fix_nemotron_h_conversion_mapping()
+            fixed = get_checkpoint_conversion_mapping("nemotron_h")
+            assert not spurious(fixed)
+            assert len(fixed) == len(seeded) - len(spurious(seeded))
+        finally:
+            if original is not None:
+                register_checkpoint_conversion_mapping(
+                    "nemotron_h", original, overwrite=True
+                )
 
 
 class TestPaddleOCRVLSupport:

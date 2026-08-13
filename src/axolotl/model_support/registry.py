@@ -15,6 +15,7 @@ LOG = get_logger(__name__)
 _BUILTIN_MODULES = (
     "axolotl.model_support.cohere_compass",
     "axolotl.model_support.kimi_linear",
+    "axolotl.model_support.nemotron_h",
     "axolotl.model_support.paddleocr_vl",
 )
 

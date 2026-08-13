@@ -15,8 +15,13 @@ from .base import (
     check_capability,
 )
 from .profile import (
+    AutoClassesProvider,
+    AutoClassRegistration,
     AutoModelClassProvider,
     ConfigMatcher,
+    InterfaceFunctionsProvider,
+    LossFunctionProvider,
+    ModelClassAttrsProvider,
     ModelFamilyTemplate,
     ModelHook,
     ModelHookContext,
@@ -31,6 +36,8 @@ from .profile import (
     PatchMappingsProvider,
     ProcessingStrategyClassProvider,
     ProcessorMatcher,
+    QuantizerRegistration,
+    QuantizersProvider,
     ResolvedModelProfile,
     WeightConversionsProvider,
     resolve_model_support,
@@ -45,10 +52,15 @@ from .registry import (
 from .templates import IMAGE_TEXT_TO_TEXT, VANILLA_CAUSAL_LM
 
 __all__ = [
+    "AutoClassRegistration",
+    "AutoClassesProvider",
     "AutoModelClassProvider",
     "Capability",
     "ConfigMatcher",
     "Experimental",
+    "InterfaceFunctionsProvider",
+    "LossFunctionProvider",
+    "ModelClassAttrsProvider",
     "ModelSupport",
     "ModelFamilyTemplate",
     "ModelHook",
@@ -64,6 +76,8 @@ __all__ = [
     "PatchMappingsProvider",
     "ProcessingStrategyClassProvider",
     "ProcessorMatcher",
+    "QuantizerRegistration",
+    "QuantizersProvider",
     "ResolvedModelProfile",
     "WeightConversionsProvider",
     "Supported",

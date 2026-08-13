@@ -58,6 +58,10 @@ class PatchManager:
             cfg: Configuration dictionary with model and training settings.
         """
         support = get_model_support_for_cfg(cfg)
+        if support is not None:
+            # Auto-class registrations must exist before AutoConfig resolves;
+            # idempotent, so the pre-model-build application re-runs safely.
+            PatchManager._apply_registrations_for_support(support)
         run_model_support_hooks(
             support,
             ModelHookPhase.BEFORE_CONFIG_LOAD,
@@ -182,12 +186,7 @@ class PatchManager:
             ModelHookPhase.AFTER_BASE_MODEL_BUILD,
             self._hook_context(model),
         )
-
-        if self.cfg.model_config_type == "nemotron_h":
-            # Must run after model build because NemotronHForCausalLM.__init__
-            # calls register_nemotron_h_conversion_mapping() with overwrite=True,
-            # which would clobber any earlier fix.
-            self._fix_nemotron_h_conversion_mapping()
+        self._apply_model_support_loss_function(model)
 
         # Gemma 4 hybrid attention runs here in post-build (NOT post-load):
         # the per-layer ``self_attn.config._attn_implementation="sdpa"``
@@ -205,6 +204,10 @@ class PatchManager:
         support = get_model_support(self.cfg.model_config_type)
         if support is None:
             return
+        self._apply_registrations_for_support(support)
+
+    @staticmethod
+    def _apply_registrations_for_support(support):
         registrations = resolve_model_support(support).registrations
 
         conversions_provider = registrations.weight_conversions
@@ -219,7 +222,7 @@ class PatchManager:
             for key, entries in conversions.items():
                 entries = list(entries)
                 register_checkpoint_conversion_mapping(key, entries, overwrite=True)
-                self._warn_irreversible_weight_transforms(key, entries)
+                PatchManager._warn_irreversible_weight_transforms(key, entries)
 
         patch_provider = registrations.patch_mappings
         patch_mapping = patch_provider() if patch_provider is not None else None
@@ -227,6 +230,11 @@ class PatchManager:
             from transformers.monkey_patching import register_patch_mapping
 
             register_patch_mapping(dict(patch_mapping), overwrite=True)
+
+        PatchManager._register_interface_functions(registrations)
+        PatchManager._register_quantizers(registrations)
+        PatchManager._register_auto_classes(registrations)
+        PatchManager._apply_model_class_attrs(registrations)
 
     @staticmethod
     def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
@@ -250,6 +258,103 @@ class PatchManager:
                     key,
                     "; ".join(problems),
                 )
+
+    @staticmethod
+    def _register_interface_functions(registrations):
+        def interface_entries(provider):
+            mapping = provider() if provider is not None else None
+            return mapping.items() if mapping else ()
+
+        for key, function in interface_entries(registrations.attention_functions):
+            from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+            ALL_ATTENTION_FUNCTIONS.register(key, function)
+        for key, function in interface_entries(registrations.attention_mask_functions):
+            from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
+
+            ALL_MASK_ATTENTION_FUNCTIONS.register(key, function)
+        for key, function in interface_entries(registrations.experts_functions):
+            from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+            ALL_EXPERTS_FUNCTIONS.register(key, function)
+
+    @staticmethod
+    def _register_quantizers(registrations):
+        provider = registrations.quantizers
+        quantizers = provider() if provider is not None else None
+        if not quantizers:
+            return
+        from transformers.quantizers.auto import (
+            AUTO_QUANTIZATION_CONFIG_MAPPING,
+            AUTO_QUANTIZER_MAPPING,
+        )
+
+        # register_quantizer() raises on any existing key, so write the
+        # mappings directly: same class is an idempotent no-op, a different
+        # class is a deliberate profile override.
+        for name, registration in quantizers.items():
+            existing = AUTO_QUANTIZER_MAPPING.get(name)
+            if existing is not None and existing is not registration.quantizer_cls:
+                LOG.warning(
+                    "Overriding quantizer %s: %s -> %s",
+                    name,
+                    existing.__name__,
+                    registration.quantizer_cls.__name__,
+                )
+            AUTO_QUANTIZER_MAPPING[name] = registration.quantizer_cls
+            if registration.config_cls is not None:
+                AUTO_QUANTIZATION_CONFIG_MAPPING[name] = registration.config_cls
+
+    @staticmethod
+    def _register_auto_classes(registrations):
+        provider = registrations.auto_classes
+        auto_classes = provider() if provider is not None else None
+        if not auto_classes:
+            return
+        import transformers
+        from transformers import AutoConfig, AutoProcessor, AutoTokenizer
+
+        for registration in auto_classes:
+            config_cls = registration.config_cls
+            AutoConfig.register(config_cls.model_type, config_cls, exist_ok=True)
+            for auto_name, model_cls in registration.model_classes.items():
+                auto_cls = getattr(transformers, auto_name, None)
+                if auto_cls is None or not hasattr(auto_cls, "register"):
+                    raise ValueError(
+                        f"Unknown transformers auto class {auto_name!r} in "
+                        f"auto_classes registration for {config_cls.__name__}"
+                    )
+                auto_cls.register(config_cls, model_cls, exist_ok=True)
+            if registration.slow_tokenizer_cls or registration.fast_tokenizer_cls:
+                AutoTokenizer.register(
+                    config_cls,
+                    slow_tokenizer_class=registration.slow_tokenizer_cls,
+                    fast_tokenizer_class=registration.fast_tokenizer_cls,
+                    exist_ok=True,
+                )
+            if registration.processor_cls is not None:
+                AutoProcessor.register(
+                    config_cls, registration.processor_cls, exist_ok=True
+                )
+
+    @staticmethod
+    def _apply_model_class_attrs(registrations):
+        provider = registrations.model_class_attrs
+        class_attrs = provider() if provider is not None else None
+        if not class_attrs:
+            return
+        for target_cls, attrs in class_attrs.items():
+            for attr_name, value in attrs.items():
+                setattr(target_cls, attr_name, value)
+
+    def _apply_model_support_loss_function(self, model: PreTrainedModel):
+        support = get_model_support(self.cfg.model_config_type)
+        if support is None:
+            return
+        provider = resolve_model_support(support).strategies.loss_function
+        loss_function = provider() if provider is not None else None
+        if loss_function is not None:
+            model.loss_function = loss_function
 
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
@@ -536,22 +641,6 @@ class PatchManager:
             self.cfg.sample_packing or self.cfg.context_parallel_size > 1
         )
 
-        if self.cfg.model_config_type == "nemotron_h" and ssm_hybrid_patch_needed:
-            from transformers.models.nemotron_h.modeling_nemotron_h import (
-                NemotronHPreTrainedModel,
-            )
-
-            from axolotl.monkeypatch.models.nemotron_h.modeling import (
-                patch_nemotron_h_modeling_packing,
-            )
-
-            patch_nemotron_h_modeling_packing()
-            # supports_gradient_checkpointing is only enabled after
-            # patch_nemotron_h_modeling_packing() installs the GC-compatible
-            # NemotronHBlock.forward. Without the patch, upstream marks this
-            # False because the original block forward is not GC-safe.
-            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
-
         if self.cfg.model_config_type == "falcon_h1" and ssm_hybrid_patch_needed:
             from axolotl.monkeypatch.models.falcon_h1.modeling import (
                 patch_falcon_h1_modeling_packing,
@@ -671,49 +760,6 @@ class PatchManager:
                 )
 
                 patch_qwen3_5_moe_fused_attn()
-
-    @staticmethod
-    def _fix_nemotron_h_conversion_mapping():
-        """Remove the spurious embedding→embeddings WeightRenaming from the
-        nemotron_h checkpoint conversion mapping.
-
-        The nvidia Hub model registers:
-            WeightRenaming("embedding.weight", "embeddings.weight")
-        to handle a legacy checkpoint variant. Its reverse (applied on save)
-        converts ``embeddings`` back to ``embedding``, which silently renames
-        ``backbone.embeddings.weight`` → ``backbone.embedding.weight`` when
-        merging LoRA adapters back into the base model.
-        """
-        try:
-            from transformers.conversion_mapping import (
-                WeightRenaming,
-                get_checkpoint_conversion_mapping,
-                register_checkpoint_conversion_mapping,
-            )
-        except ImportError:
-            return
-
-        mapping = get_checkpoint_conversion_mapping("nemotron_h")
-        if mapping is None:
-            return
-
-        filtered = [
-            entry
-            for entry in mapping
-            if not (
-                isinstance(entry, WeightRenaming)
-                and entry.source_patterns == ["embedding.weight"]
-                and entry.target_patterns == ["embeddings.weight"]
-            )
-        ]
-        if len(filtered) != len(mapping):
-            register_checkpoint_conversion_mapping(
-                "nemotron_h", filtered, overwrite=True
-            )
-            LOG.info(
-                "Removed embedding→embeddings WeightRenaming from nemotron_h "
-                "checkpoint conversion mapping"
-            )
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""

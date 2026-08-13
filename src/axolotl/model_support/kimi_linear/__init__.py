@@ -7,16 +7,32 @@ loading to these in-tree copies.
 
 from axolotl.model_support.base import ModelSupport
 from axolotl.model_support.profile import (
+    AutoClassRegistration,
     ModelHookContext,
     ModelHookPhase,
     ModelHooks,
     ModelMatchers,
     ModelProfile,
+    ModelRegistrationOverrides,
 )
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import VANILLA_CAUSAL_LM
 
 _KIMI_LINEAR_MARKER = "kimi-linear"
+
+
+def _auto_classes():
+    from .configuration_kimi import KimiLinearConfig
+    from .modeling_kimi import KimiLinearForCausalLM
+    from .tokenization_kimi import TikTokenTokenizer
+
+    return [
+        AutoClassRegistration(
+            config_cls=KimiLinearConfig,
+            model_classes={"AutoModelForCausalLM": KimiLinearForCausalLM},
+            slow_tokenizer_cls=TikTokenTokenizer,
+        )
+    ]
 
 
 def _field_matches_kimi(cfg, field: str) -> bool:
@@ -57,6 +73,11 @@ class KimiLinearSupport(ModelSupport):
     model_types = ("kimi_linear",)
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
+        # Registering the in-tree classes lets kimi runs work without
+        # trust_remote_code; the dynamic-module redirect hooks stay for
+        # configs that still set it (remote resolution then bypasses the
+        # registered classes).
+        registrations=ModelRegistrationOverrides(auto_classes=_auto_classes),
         matchers=ModelMatchers(cfg=_matches_kimi_cfg),
         hooks=ModelHooks(
             by_phase={
