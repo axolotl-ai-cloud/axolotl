@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="site_libs/bootstrap/bootstrap-5ed5d6ce6a6b0ff48bdc088d658ecc41.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -213,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Muse Glimmer</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
@@ -924,7 +930,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>2026/08:
 <ul>
-<li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html">North Micro Vision Instruct</a> and <a href="https://docs.axolotl.ai/docs/models/shieldstral.html">Shieldstral</a>.</li>
+<li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/muse-glimmer.html">Muse Glimmer</a>, <a href="https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html">North Micro Vision Instruct</a> and <a href="https://docs.axolotl.ai/docs/models/shieldstral.html">Shieldstral</a>.</li>
 </ul></li>
 <li>2026/07:
 <ul>
@@ -993,7 +999,7 @@ Expand older updates
 <p>Features:</p>
 <ul>
 <li><strong>Multiple Model Support</strong>: Train various models like GPT-OSS, LLaMA, Mistral, Mixtral, Pythia, and many more models available on the Hugging Face Hub.</li>
-<li><strong>Multimodal Training</strong>: Fine-tune vision-language models (VLMs) including LLaMA-Vision, Qwen2-VL, Pixtral, LLaVA, SmolVLM2, GLM-4.6V, InternVL 3.5, Gemma 3n, PaddleOCR-VL, and audio models like Voxtral with image, video, and audio support.</li>
+<li><strong>Multimodal Training</strong>: Fine-tune vision-language models (VLMs) including LLaMA-Vision, Qwen2-VL, Pixtral, LLaVA, SmolVLM2, GLM-4.6V, InternVL 3.5, Gemma 3n, PaddleOCR-VL, Muse Glimmer, and audio models like Voxtral with image, video, and audio support.</li>
 <li><strong>Training Methods</strong>: Full fine-tuning, LoRA, QLoRA, GPTQ, QAT (int8/int4/FP8/NVFP4/MXFP4), FP8 mixed-precision training, NVFP4/MXFP4 MoE LoRA, Preference Tuning (DPO, IPO, KTO, ORPO), RL (GRPO, GDPO), and Reward Modelling (RM) / Process Reward Modelling (PRM).</li>
 <li><strong>Easy Configuration</strong>: Re-use a single YAML configuration file across the full fine-tuning pipeline: dataset preprocessing, training, evaluation, quantization, and inference.</li>
 <li><strong>Performance Optimizations</strong>: <a href="https://docs.axolotl.ai/docs/multipack.html">Multipacking</a>, <a href="https://docs.axolotl.ai/docs/attention.html#flash-attention">Flash Attention 2/3/4</a>, <a href="https://docs.axolotl.ai/docs/attention.html#xformers">Xformers</a>, <a href="https://docs.axolotl.ai/docs/attention.html#flex-attention">Flex Attention</a>, <a href="https://docs.axolotl.ai/docs/attention.html#sageattention">SageAttention</a>, <a href="https://docs.axolotl.ai/docs/custom_integrations.html#liger-kernels">Liger Kernel</a>, <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a>, <a href="https://docs.axolotl.ai/docs/custom_integrations.html#kernels-integration">ScatterMoE</a>, <a href="https://docs.axolotl.ai/docs/sequence_parallelism.html">Sequence Parallelism (SP)</a>, <a href="https://docs.axolotl.ai/docs/lora_optims.html">LoRA optimizations</a>, <a href="https://docs.axolotl.ai/docs/multi-gpu.html">Multi-GPU training (FSDP1, FSDP2, DeepSpeed)</a>, <a href="https://docs.axolotl.ai/docs/multi-node.html">Multi-node training (Torchrun, Ray)</a>, and many more!</li>

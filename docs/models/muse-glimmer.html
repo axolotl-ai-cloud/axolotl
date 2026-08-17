@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>prompt_strategies.creative_acr – Axolotl</title>
+<title>Muse Glimmer – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -147,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/muse-glimmer.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/muse-glimmer.html">Muse Glimmer</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -206,16 +206,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
  <span class="menu-text">Model Guides</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Muse Glimmer</span></a>
   </div>
 </li>
@@ -873,125 +873,156 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.prompt_strategies.creative_acr" id="toc-axolotl.prompt_strategies.creative_acr" class="nav-link active" data-scroll-target="#axolotl.prompt_strategies.creative_acr">prompt_strategies.creative_acr</a>
+  <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting started</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.prompt_strategies.creative_acr.CreativeAnswerPrompter" id="toc-axolotl.prompt_strategies.creative_acr.CreativeAnswerPrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.creative_acr.CreativeAnswerPrompter">CreativeAnswerPrompter</a></li>
-  <li><a href="#axolotl.prompt_strategies.creative_acr.CreativeAnsweringPromptTokenizingStrategy" id="toc-axolotl.prompt_strategies.creative_acr.CreativeAnsweringPromptTokenizingStrategy" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.creative_acr.CreativeAnsweringPromptTokenizingStrategy">CreativeAnsweringPromptTokenizingStrategy</a></li>
-  <li><a href="#axolotl.prompt_strategies.creative_acr.CreativeCritiquePromptTokenizingStrategy" id="toc-axolotl.prompt_strategies.creative_acr.CreativeCritiquePromptTokenizingStrategy" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.creative_acr.CreativeCritiquePromptTokenizingStrategy">CreativeCritiquePromptTokenizingStrategy</a></li>
-  <li><a href="#axolotl.prompt_strategies.creative_acr.CreativeCritiquePrompter" id="toc-axolotl.prompt_strategies.creative_acr.CreativeCritiquePrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.creative_acr.CreativeCritiquePrompter">CreativeCritiquePrompter</a></li>
-  <li><a href="#axolotl.prompt_strategies.creative_acr.CreativePrompterBase" id="toc-axolotl.prompt_strategies.creative_acr.CreativePrompterBase" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.creative_acr.CreativePrompterBase">CreativePrompterBase</a></li>
-  <li><a href="#axolotl.prompt_strategies.creative_acr.CreativeRevisePromptTokenizingStrategy" id="toc-axolotl.prompt_strategies.creative_acr.CreativeRevisePromptTokenizingStrategy" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.creative_acr.CreativeRevisePromptTokenizingStrategy">CreativeRevisePromptTokenizingStrategy</a></li>
-  <li><a href="#axolotl.prompt_strategies.creative_acr.CreativeRevisePrompter" id="toc-axolotl.prompt_strategies.creative_acr.CreativeRevisePrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.creative_acr.CreativeRevisePrompter">CreativeRevisePrompter</a></li>
+  <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">Tips</a></li>
   </ul></li>
-  </ul></li>
+  <li><a href="#dataset-format" id="toc-dataset-format" class="nav-link" data-scroll-target="#dataset-format">Dataset Format</a></li>
+  <li><a href="#tool-calling" id="toc-tool-calling" class="nav-link" data-scroll-target="#tool-calling">Tool calling</a></li>
+  <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/muse-glimmer.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/muse-glimmer.html">Muse Glimmer</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Muse Glimmer</h1>
+</div>
 
 
 
+<div class="quarto-title-meta">
 
-<section id="axolotl.prompt_strategies.creative_acr" class="level1">
-<h1>prompt_strategies.creative_acr</h1>
-<p><code>prompt_strategies.creative_acr</code></p>
-<p>Module loading the CreativePromptTokenizingStrategy and similar classes</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.prompt_strategies.creative_acr.CreativeAnswerPrompter">CreativeAnswerPrompter</a></td>
-<td>Prompter for Creative Answering</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.prompt_strategies.creative_acr.CreativeAnsweringPromptTokenizingStrategy">CreativeAnsweringPromptTokenizingStrategy</a></td>
-<td>Tokenizing strategy for Creative Answering</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.prompt_strategies.creative_acr.CreativeCritiquePromptTokenizingStrategy">CreativeCritiquePromptTokenizingStrategy</a></td>
-<td>Tokenizing strategy for Creative Critique</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.prompt_strategies.creative_acr.CreativeCritiquePrompter">CreativeCritiquePrompter</a></td>
-<td>Prompter for Creative Critique</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.prompt_strategies.creative_acr.CreativePrompterBase">CreativePrompterBase</a></td>
-<td>Base class for Creative Prompters</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.prompt_strategies.creative_acr.CreativeRevisePromptTokenizingStrategy">CreativeRevisePromptTokenizingStrategy</a></td>
-<td>Tokenizing strategy for Creative Revise</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.prompt_strategies.creative_acr.CreativeRevisePrompter">CreativeRevisePrompter</a></td>
-<td>Prompter for Creative Revise</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.prompt_strategies.creative_acr.CreativeAnswerPrompter" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.creative_acr.CreativeAnswerPrompter">CreativeAnswerPrompter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.creative_acr.CreativeAnswerPrompter()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Prompter for Creative Answering</p>
-</section>
-<section id="axolotl.prompt_strategies.creative_acr.CreativeAnsweringPromptTokenizingStrategy" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.creative_acr.CreativeAnsweringPromptTokenizingStrategy">CreativeAnsweringPromptTokenizingStrategy</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.creative_acr.CreativeAnsweringPromptTokenizingStrategy(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Tokenizing strategy for Creative Answering</p>
-</section>
-<section id="axolotl.prompt_strategies.creative_acr.CreativeCritiquePromptTokenizingStrategy" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.creative_acr.CreativeCritiquePromptTokenizingStrategy">CreativeCritiquePromptTokenizingStrategy</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.creative_acr.CreativeCritiquePromptTokenizingStrategy(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Tokenizing strategy for Creative Critique</p>
-</section>
-<section id="axolotl.prompt_strategies.creative_acr.CreativeCritiquePrompter" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.creative_acr.CreativeCritiquePrompter">CreativeCritiquePrompter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.creative_acr.CreativeCritiquePrompter()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Prompter for Creative Critique</p>
-</section>
-<section id="axolotl.prompt_strategies.creative_acr.CreativePrompterBase" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.creative_acr.CreativePrompterBase">CreativePrompterBase</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.creative_acr.CreativePrompterBase()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Base class for Creative Prompters</p>
-</section>
-<section id="axolotl.prompt_strategies.creative_acr.CreativeRevisePromptTokenizingStrategy" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.creative_acr.CreativeRevisePromptTokenizingStrategy">CreativeRevisePromptTokenizingStrategy</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.creative_acr.CreativeRevisePromptTokenizingStrategy(</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Tokenizing strategy for Creative Revise</p>
-</section>
-<section id="axolotl.prompt_strategies.creative_acr.CreativeRevisePrompter" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.creative_acr.CreativeRevisePrompter">CreativeRevisePrompter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.creative_acr.CreativeRevisePrompter()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Prompter for Creative Revise</p>
+    
+  
+    
+  </div>
+  
 
 
+</header>
+
+
+<p>Muse Glimmer is a 30B open agentic model from Meta Superintelligence Labs, found on <a href="https://huggingface.co/meta-models/Muse-Glimmer-30B">HuggingFace</a>. It pairs a dense text decoder with a frozen ViT-G/14 perception encoder, and is built to run agent workloads locally on a single consumer GPU.</p>
+<p>The architecture is unusual in a few ways that matter when you fine-tune it: attention repeats a <code>[local, local, local, global]</code> pattern with a 2048 sliding window, RoPE is applied to the local layers only (the global layers are NoPE), attention output is sigmoid-gated, and the logits are scaled and <code>tanh</code>-softcapped after the LM head.</p>
+<section id="getting-started" class="level2">
+<h2 class="anchored" data-anchor-id="getting-started">Getting started</h2>
+<ol type="1">
+<li><p>Install Axolotl from source following the <a href="https://docs.axolotl.ai/docs/installation.html#sec-edge-build">installation guide</a>.</p></li>
+<li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage. Both configs enable it.</p></li>
+<li><p>Run the fine-tuning:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># QLoRA, language model only (~27 GiB VRAM)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/muse-glimmer/qlora.yaml</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"># QLoRA, language model + vision tower (~23 GiB VRAM)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/muse-glimmer/qlora-vision.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+</ol>
+<p>Let us know how it goes. Happy finetuning! 🚀</p>
+<section id="tips" class="level3">
+<h3 class="anchored" data-anchor-id="tips">Tips</h3>
+<ul>
+<li>Fused LoRA kernels are not available for this architecture.</li>
+<li>We added custom Liger Kernel support for RMSNorm, the SwiGLU MLP, RoPE, and the vision tower’s LayerNorms.</li>
+<li>Reasoning strength is set in the system prompt (<code>low</code> / <code>medium</code> / <code>high</code> / <code>xhigh</code>, defaulting to <code>high</code>). Keep it consistent between training and inference.</li>
+<li>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
+</ul>
 </section>
 </section>
+<section id="dataset-format" class="level2">
+<h2 class="anchored" data-anchor-id="dataset-format">Dataset Format</h2>
+<p>The configs use the OpenAI Messages format as described <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>. Image parts use <code>{"type": "image"}</code>, not <code>image_url</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"image"</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"What is in this image?"</span><span class="fu">}</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"A cat sitting on a windowsill."</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>To train reasoning traces, add <code>reasoning_content</code> alongside <code>content</code> on the assistant message:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"reasoning_content"</span><span class="fu">:</span> <span class="st">"The animal has pointed ears and whiskers."</span><span class="fu">,</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"A cat sitting on a windowsill."</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="tool-calling" class="level2">
+<h2 class="anchored" data-anchor-id="tool-calling">Tool calling</h2>
+<p>Tool definitions live in their own dataset column, not in the messages. The default column
+name is <code>tools</code> (override with <code>field_tools</code>), and it holds a list of
+<a href="https://json-schema.org/learn/getting-started-step-by-step">JSON schema</a> function definitions:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"tools"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"function"</span><span class="fu">,</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"function"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"get_weather"</span><span class="fu">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"description"</span><span class="fu">:</span> <span class="st">"Get the current weather in a city."</span><span class="fu">,</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        <span class="dt">"parameters"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>          <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"object"</span><span class="fu">,</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>          <span class="dt">"properties"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"city"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"string"</span><span class="fu">,</span> <span class="dt">"description"</span><span class="fu">:</span> <span class="st">"City name"</span><span class="fu">}},</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>          <span class="dt">"required"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"city"</span><span class="ot">]</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"What's the weather in Paris?"</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"tool_calls"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">"id"</span><span class="fu">:</span> <span class="st">"c1"</span><span class="fu">,</span> <span class="dt">"type"</span><span class="fu">:</span> <span class="st">"function"</span><span class="fu">,</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>         <span class="dt">"function"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"name"</span><span class="fu">:</span> <span class="st">"get_weather"</span><span class="fu">,</span> <span class="dt">"arguments"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"city"</span><span class="fu">:</span> <span class="st">"Paris"</span><span class="fu">}}}</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"tool"</span><span class="fu">,</span> <span class="dt">"tool_call_id"</span><span class="fu">:</span> <span class="st">"c1"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"18C, cloudy"</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"It's 18C and cloudy in Paris."</span><span class="fu">}</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The template turns that into Harmony turns with an ATEM XML call block, and adds each tool
+namespace to the system block’s valid-recipient list:</p>
+<pre><code># Valid recipients: "self", "get_weather.*", "user".&lt;|eot|&gt;
+&lt;|start|&gt;user&lt;|message|&gt;What's the weather in Paris?&lt;|eot|&gt;
+&lt;|start|&gt;assistant to=get_weather&lt;|message|&gt;&lt;atem:function_calls&gt;
+&lt;atem:invoke name="get_weather"&gt;
+&lt;atem:parameter name="city"&gt;Paris&lt;/atem:parameter&gt;
+&lt;/atem:invoke&gt;
+&lt;/atem:function_calls&gt;&lt;|eot|&gt;
+&lt;|start|&gt;tool get_weather&lt;|message|&gt;&lt;tool_output name="get_weather"&gt;
+18C, cloudy
+&lt;/tool_output&gt;&lt;|eot|&gt;
+&lt;|start|&gt;assistant to=user&lt;|message|&gt;It's 18C and cloudy in Paris.&lt;|eot|&gt;</code></pre>
+<p>Two things to watch:</p>
+<ul>
+<li><strong><code>arguments</code> must be a dict, not a JSON string.</strong> The template calls <code>raise_exception</code> on a
+string, because the Jinja sandbox cannot parse one. <code>{"city": "Paris"}</code>, never <code>"{\"city\": \"Paris\"}"</code>.</li>
+<li><strong>Use a text-only config for tool data.</strong> The multimodal collator calls <code>apply_chat_template</code>
+without passing <code>tools</code>, so the tool definitions never reach the system block. Drop
+<code>processor_type</code> and <code>skip_prepare_dataset</code> so the <code>chat_template</code> strategy handles it
+and <code>field_tools</code> is read. That path needs <code>eot_tokens: ["&lt;|eot|&gt;", "&lt;|eom|&gt;"]</code>, since
+neither terminator is the tokenizer’s <code>eos_token</code>.</li>
+</ul>
+<p>The assistant tool-call turn is trained like any other assistant turn; only the <code>tool</code> role’s
+<code>&lt;tool_output&gt;</code> is masked, since that is input the model receives rather than text it writes.</p>
+</section>
+<section id="related-resources" class="level2">
+<h2 class="anchored" data-anchor-id="related-resources">Related Resources</h2>
+<ul>
+<li><a href="https://huggingface.co/meta-models/Muse-Glimmer-30B">Muse Glimmer on HuggingFace</a></li>
+<li><a href="https://research.meta.ai/blog/introducing-muse-glimmer-open-agentic-model">Meta AI Research announcement</a></li>
+<li><a href="https://docs.axolotl.ai/docs/multimodal.html">Multimodal docs</a></li>
+</ul>
+
+
 </section>
 
 </main> <!-- /main -->

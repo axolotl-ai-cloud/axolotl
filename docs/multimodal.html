@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-14e28d6e25143e046c6083be1c4a5d0f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-5ed5d6ce6a6b0ff48bdc088d658ecc41.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -213,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Muse Glimmer</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
@@ -891,6 +897,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#sec-intern-vl" id="toc-sec-intern-vl" class="nav-link" data-scroll-target="#sec-intern-vl">Intern-VL</a></li>
   <li><a href="#sec-paddleocr-vl" id="toc-sec-paddleocr-vl" class="nav-link" data-scroll-target="#sec-paddleocr-vl">PaddleOCR-VL</a></li>
   <li><a href="#sec-north-micro-vision-instruct" id="toc-sec-north-micro-vision-instruct" class="nav-link" data-scroll-target="#sec-north-micro-vision-instruct">North Micro Vision Instruct</a></li>
+  <li><a href="#sec-muse-glimmer" id="toc-sec-muse-glimmer" class="nav-link" data-scroll-target="#sec-muse-glimmer">Muse Glimmer</a></li>
   </ul></li>
   <li><a href="#dataset-format" id="toc-dataset-format" class="nav-link" data-scroll-target="#dataset-format">Dataset Format</a>
   <ul class="collapse">
@@ -949,6 +956,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li><a href="#sec-intern-vl">Intern-VL</a></li>
 <li><a href="#sec-paddleocr-vl">PaddleOCR-VL</a></li>
 <li><a href="#sec-north-micro-vision-instruct">North Micro Vision Instruct</a></li>
+<li><a href="#sec-muse-glimmer">Muse Glimmer</a></li>
 </ul>
 </section>
 <section id="usage" class="level2">
@@ -1282,6 +1290,12 @@ Tip
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> CohereLabs/North-Micro-Vision-Instruct</span></span>
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> AutoProcessor</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="sec-muse-glimmer" class="level3">
+<h3 class="anchored" data-anchor-id="sec-muse-glimmer">Muse Glimmer</h3>
+<p>Requires <code>transformers&gt;=5.15.0</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> meta-models/Muse-Glimmer-30B</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> AutoProcessor</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
 </section>
 <section id="dataset-format" class="level2">
 <h2 class="anchored" data-anchor-id="dataset-format">Dataset Format</h2>
@@ -1378,31 +1392,31 @@ Warning
 <section id="example" class="level3">
 <h3 class="anchored" data-anchor-id="example">Example</h3>
 <p>Here is an example of a multi-modal dataset:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="ot">[</span></span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span></span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"system"</span><span class="fu">,</span></span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>              <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"You are a helpful assistant."</span><span class="fu">}</span></span>
-<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>              <span class="ot">]</span></span>
-<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
-<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span></span>
-<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a>                <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"image"</span><span class="fu">,</span> <span class="dt">"url"</span><span class="fu">:</span> <span class="st">"https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a>                <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"Describe this image in detail."</span><span class="fu">}</span></span>
-<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a>            <span class="ot">]</span></span>
-<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
-<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span></span>
-<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a>              <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"The image is a bee."</span><span class="fu">}</span></span>
-<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a>            <span class="ot">]</span></span>
-<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
-<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a>    <span class="ot">]</span></span>
-<span id="cb23-24"><a href="#cb23-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
-<span id="cb23-25"><a href="#cb23-25" aria-hidden="true" tabindex="-1"></a><span class="ot">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="ot">[</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"system"</span><span class="fu">,</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>              <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"You are a helpful assistant."</span><span class="fu">}</span></span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>              <span class="ot">]</span></span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span></span>
+<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a>                <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"image"</span><span class="fu">,</span> <span class="dt">"url"</span><span class="fu">:</span> <span class="st">"https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb24-14"><a href="#cb24-14" aria-hidden="true" tabindex="-1"></a>                <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"Describe this image in detail."</span><span class="fu">}</span></span>
+<span id="cb24-15"><a href="#cb24-15" aria-hidden="true" tabindex="-1"></a>            <span class="ot">]</span></span>
+<span id="cb24-16"><a href="#cb24-16" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb24-17"><a href="#cb24-17" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb24-18"><a href="#cb24-18" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span></span>
+<span id="cb24-19"><a href="#cb24-19" aria-hidden="true" tabindex="-1"></a>            <span class="dt">"content"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb24-20"><a href="#cb24-20" aria-hidden="true" tabindex="-1"></a>              <span class="fu">{</span><span class="dt">"type"</span><span class="fu">:</span> <span class="st">"text"</span><span class="fu">,</span> <span class="dt">"text"</span><span class="fu">:</span> <span class="st">"The image is a bee."</span><span class="fu">}</span></span>
+<span id="cb24-21"><a href="#cb24-21" aria-hidden="true" tabindex="-1"></a>            <span class="ot">]</span></span>
+<span id="cb24-22"><a href="#cb24-22" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb24-23"><a href="#cb24-23" aria-hidden="true" tabindex="-1"></a>    <span class="ot">]</span></span>
+<span id="cb24-24"><a href="#cb24-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb24-25"><a href="#cb24-25" aria-hidden="true" tabindex="-1"></a><span class="ot">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="faq" class="level2">
