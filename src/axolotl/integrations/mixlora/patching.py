@@ -88,9 +88,11 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
     num_experts = getattr(cfg, "mixlora_num_experts", None)
     if num_experts is None:
         num_experts = MIXLORA_DEFAULTS["mixlora_num_experts"]
+    num_experts = int(num_experts)
     top_k = getattr(cfg, "mixlora_top_k", None)
     if top_k is None:
         top_k = MIXLORA_DEFAULTS["mixlora_top_k"]
+    top_k = int(top_k)
     router_init_range = getattr(cfg, "mixlora_router_init_range", None)
     if router_init_range is None:
         router_init_range = MIXLORA_DEFAULTS["mixlora_router_init_range"]

@@ -256,9 +256,7 @@ class LoraConfig(BaseModel):
     def validate_mixlora(self):
         if self.adapter == "mixlora":
             if not self.lora_r:
-                raise ValueError(
-                    "lora_r is required when using the mixlora adapter"
-                )
+                raise ValueError("lora_r is required when using the mixlora adapter")
             if not self.lora_alpha:
                 raise ValueError(
                     "lora_alpha is required when using the mixlora adapter"
@@ -269,10 +267,14 @@ class LoraConfig(BaseModel):
 class MixLoraConfig(BaseModel):
     """MixLoRA configuration subset for MoE-style LoRA finetuning"""
 
-    DEFAULT_NUM_EXPERTS: ClassVar[int] = MIXLORA_DEFAULTS["mixlora_num_experts"]
-    DEFAULT_TOP_K: ClassVar[int] = MIXLORA_DEFAULTS["mixlora_top_k"]
-    DEFAULT_ROUTER_AUX_LOSS_COEF: ClassVar[float] = MIXLORA_DEFAULTS["mixlora_router_aux_loss_coef"]
-    DEFAULT_ROUTER_INIT_RANGE: ClassVar[float] = MIXLORA_DEFAULTS["mixlora_router_init_range"]
+    DEFAULT_NUM_EXPERTS: ClassVar[int] = int(MIXLORA_DEFAULTS["mixlora_num_experts"])
+    DEFAULT_TOP_K: ClassVar[int] = int(MIXLORA_DEFAULTS["mixlora_top_k"])
+    DEFAULT_ROUTER_AUX_LOSS_COEF: ClassVar[float] = MIXLORA_DEFAULTS[
+        "mixlora_router_aux_loss_coef"
+    ]
+    DEFAULT_ROUTER_INIT_RANGE: ClassVar[float] = MIXLORA_DEFAULTS[
+        "mixlora_router_init_range"
+    ]
     DEFAULT_JITTER_NOISE: ClassVar[float] = MIXLORA_DEFAULTS["mixlora_jitter_noise"]
 
     mixlora_num_experts: int | None = Field(
@@ -339,7 +341,9 @@ class MixLoraConfig(BaseModel):
             if self.mixlora_num_experts is not None
             else self.DEFAULT_NUM_EXPERTS
         )
-        top_k = self.mixlora_top_k if self.mixlora_top_k is not None else self.DEFAULT_TOP_K
+        top_k = (
+            self.mixlora_top_k if self.mixlora_top_k is not None else self.DEFAULT_TOP_K
+        )
 
         if top_k > num_experts:
             raise ValueError(

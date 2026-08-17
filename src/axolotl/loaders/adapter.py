@@ -22,12 +22,12 @@ from peft import (
 from transformers import PreTrainedModel
 
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders.utils import get_linear_embedding_layers
-from axolotl.telemetry.errors import send_errors
 from axolotl.integrations.mixlora.constants import (
     MIXLORA_FFN_MODULE_NAMES,
     MIXLORA_WEIGHTS_NAME,
 )
+from axolotl.loaders.utils import get_linear_embedding_layers
+from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -440,14 +440,17 @@ def load_adapter(
         # First, load standard LoRA for attention layers (q, k, v, o projections)
         peft_model, lora_config = load_lora(model, cfg, inference=inference)
         # Then, apply MixLoRA patching to FFN layers (router + LoRA experts)
-        from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
-        from axolotl.integrations.mixlora.model import load_mixlora_state_dict
         import safetensors.torch
+
+        from axolotl.integrations.mixlora.model import load_mixlora_state_dict
+        from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
 
         patch_model_with_mixlora(peft_model, cfg)
 
         if cfg.lora_model_dir:
-            mixlora_weights_path = os.path.join(cfg.lora_model_dir, MIXLORA_WEIGHTS_NAME)
+            mixlora_weights_path = os.path.join(
+                cfg.lora_model_dir, MIXLORA_WEIGHTS_NAME
+            )
             if os.path.exists(mixlora_weights_path):
                 load_mixlora_state_dict(
                     peft_model,

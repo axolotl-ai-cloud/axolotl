@@ -94,7 +94,9 @@ class MixLoraTrainer(AxolotlTrainer):
         """Add MixLoRA router auxiliary load-balance loss if applicable."""
         coef = getattr(self.axolotl_cfg, "mixlora_router_aux_loss_coef", None)
         router_aux_loss_coef = (
-            coef if coef is not None else MIXLORA_DEFAULTS["mixlora_router_aux_loss_coef"]
+            coef
+            if coef is not None
+            else MIXLORA_DEFAULTS["mixlora_router_aux_loss_coef"]
         )
 
         aux_loss = collect_mixlora_aux_loss(
@@ -104,7 +106,5 @@ class MixLoraTrainer(AxolotlTrainer):
         loss = loss + aux_loss.to(loss.device)
 
         train_eval = "train" if model.training else "eval"
-        self.store_metrics(
-            {"mixlora_aux_loss": aux_loss.item()}, train_eval=train_eval
-        )
+        self.store_metrics({"mixlora_aux_loss": aux_loss.item()}, train_eval=train_eval)
         return loss

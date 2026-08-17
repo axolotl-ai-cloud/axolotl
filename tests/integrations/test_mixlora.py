@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections import OrderedDict
 import sys
 import types
+from collections import OrderedDict
 
 import pytest
 import safetensors.torch
@@ -24,8 +24,8 @@ from transformers import AutoModelForCausalLM
 
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.mixlora import MixLoraPlugin
-from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
 from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
+from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
 from axolotl.integrations.mixlora.model import (
     MixLoraFFN,
     load_mixlora_state_dict,
@@ -223,7 +223,6 @@ class TestMixLora:
 
         # Test loss collection
         aux_loss = collect_mixlora_aux_loss(
-            patched_model,
-            router_aux_loss_coef=mock_cfg.mixlora_router_aux_loss_coef
+            patched_model, router_aux_loss_coef=mock_cfg.mixlora_router_aux_loss_coef
         )
         assert aux_loss.item() > 0

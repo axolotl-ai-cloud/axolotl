@@ -23,11 +23,12 @@ Architecture (from https://arxiv.org/abs/2404.15159):
 - Optimization: shared W1/W3 computation, only LoRA deltas are routed
 """
 
+from typing import Callable
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -158,7 +159,7 @@ class MixLoraExpert(nn.Module):
         lora_r: int,
         lora_alpha: int,
         lora_dropout: float = 0.0,
-        activation_fn: callable = F.silu,
+        activation_fn: Callable[[torch.Tensor], torch.Tensor] = F.silu,
     ):
         super().__init__()
         self.activation_fn = activation_fn
@@ -290,17 +291,19 @@ class MixLoraFFN(nn.Module):
         )
 
         # Experts
-        self.experts = nn.ModuleList([
-            MixLoraExpert(
-                hidden_dim=hidden_dim,
-                intermediate_dim=intermediate_dim,
-                lora_r=lora_r,
-                lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
-                activation_fn=self.activation_fn,
-            )
-            for _ in range(num_experts)
-        ])
+        self.experts = nn.ModuleList(
+            [
+                MixLoraExpert(
+                    hidden_dim=hidden_dim,
+                    intermediate_dim=intermediate_dim,
+                    lora_r=lora_r,
+                    lora_alpha=lora_alpha,
+                    lora_dropout=lora_dropout,
+                    activation_fn=self.activation_fn,
+                )
+                for _ in range(num_experts)
+            ]
+        )
 
         # Accumulated auxiliary loss (collected and reset each training step)
         self._aux_loss: torch.Tensor | None = None
@@ -324,10 +327,20 @@ class MixLoraFFN(nn.Module):
             state[f"experts.{name}"] = param.data
         return state
 
-    def load_mixlora_state_dict(self, state_dict: dict[str, torch.Tensor], strict: bool = True):
+    def load_mixlora_state_dict(
+        self, state_dict: dict[str, torch.Tensor], strict: bool = True
+    ):
         """Load MixLoRA-specific weights (router + experts) from a state dict."""
-        router_state = {k.removeprefix("router."): v for k, v in state_dict.items() if k.startswith("router.")}
-        expert_state = {k.removeprefix("experts."): v for k, v in state_dict.items() if k.startswith("experts.")}
+        router_state = {
+            k.removeprefix("router."): v
+            for k, v in state_dict.items()
+            if k.startswith("router.")
+        }
+        expert_state = {
+            k.removeprefix("experts."): v
+            for k, v in state_dict.items()
+            if k.startswith("experts.")
+        }
         self.router.load_state_dict(router_state, strict=strict)
         self.experts.load_state_dict(expert_state, strict=strict)
 
@@ -352,7 +365,7 @@ class MixLoraFFN(nn.Module):
 
         # Step 1: Compute shared base FFN outputs (optimization from paper)
         gate_out = self.base_ffn.gate_proj(x_flat)  # [T, I]
-        up_out = self.base_ffn.up_proj(x_flat)       # [T, I]
+        up_out = self.base_ffn.up_proj(x_flat)  # [T, I]
 
         # Step 2: Route tokens to experts
         router_weights, expert_indices, aux_loss = self.router(x_flat)
@@ -369,7 +382,7 @@ class MixLoraFFN(nn.Module):
         for expert_idx, expert in enumerate(self.experts):
             # Find which tokens are routed to this expert and their weights
             # expert_indices: [T, K], router_weights: [T, K]
-            mask = (expert_indices == expert_idx)  # [T, K]
+            mask = expert_indices == expert_idx  # [T, K]
             if not mask.any():
                 continue
 
@@ -467,7 +480,7 @@ def load_mixlora_state_dict(
                 # Extract the likely module prefix (everything before router./experts.)
                 for marker in ("router.", "experts."):
                     if marker in key:
-                        likely_prefix = key[:key.index(marker)].rstrip(".")
+                        likely_prefix = key[: key.index(marker)].rstrip(".")
                         checkpoint_prefixes.add(likely_prefix)
                         break
 
@@ -482,7 +495,7 @@ def load_mixlora_state_dict(
         module = model.get_submodule(module_name)
         prefix = f"{module_name}."
         module_state = {
-            key[len(prefix):]: value
+            key[len(prefix) :]: value
             for key, value in state_dict.items()
             if key.startswith(prefix)
         }
