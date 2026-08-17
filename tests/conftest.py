@@ -387,6 +387,17 @@ def download_llama3_8b_instruct_model_fixture():
     )
 
 
+# Not autouse: the weights are 56GB, so only the tests that ask for it pay the fetch.
+@pytest.fixture(scope="session")
+def download_muse_glimmer_tokenizer_fixture():
+    # tokenizer + the Harmony chat template only, never the weights
+    snapshot_download_w_retry(
+        "meta-models/Muse-Glimmer-30B",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json", "chat_template.jinja"],
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def download_phi_35_mini_model_fixture():
     # download the tokenizer only

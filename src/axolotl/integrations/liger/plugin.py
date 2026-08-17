@@ -4,6 +4,7 @@ Liger-Kernel Plugin for Axolotl
 
 import inspect
 import sys
+from types import SimpleNamespace
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.model_support import check_capability, get_model_support
@@ -385,6 +386,73 @@ class LigerPlugin(BasePlugin):
                 f"Applied Liger kernels for cohere_compass: "
                 f"rms_norm=False (no RMSNorm in the arch), glu={cfg.liger_glu_activation}, "
                 f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm} (vision tower)"
+            )
+        elif cfg.model_config_type == "muse_glimmer":
+            from transformers.models.muse_glimmer import modeling_muse_glimmer
+
+            if cfg.liger_rms_norm:
+                from liger_kernel.transformers.rms_norm import (
+                    LigerRMSNormForGemma2,
+                    LigerRMSNormForGemma4,
+                )
+
+                class _LigerMuseGlimmerRMSNorm(LigerRMSNormForGemma4):
+                    """`dim` is omitted at the three with_scale=False call sites
+                    (qk_norm, embed_norm, perception_emb_norm)."""
+
+                    def __init__(self, dim=None, eps=1e-6, with_scale=True):
+                        super().__init__(dim, eps, with_scale=with_scale)
+
+                # The four decoder norms are Gemma2-shaped ((1 + w), zeros init); the
+                # final norm and the weightless norms are Gemma4-shaped (w, ones init).
+                modeling_muse_glimmer.MuseGlimmerTextCenteredRMSNorm = (
+                    LigerRMSNormForGemma2
+                )
+                modeling_muse_glimmer.MuseGlimmerRMSNorm = _LigerMuseGlimmerRMSNorm
+            if cfg.liger_glu_activation:
+
+                class _LigerMuseGlimmerTextMLP(LigerSwiGLUMLP):
+                    """SwiGLU MLP for MuseGlimmer.
+
+                    MuseGlimmerTextConfig names the activation `hidden_activation`;
+                    Liger reads `hidden_act`, which only exists on the vision config.
+                    """
+
+                    def __init__(self, config):
+                        super().__init__(
+                            SimpleNamespace(
+                                hidden_size=config.hidden_size,
+                                intermediate_size=config.intermediate_size,
+                                hidden_act=config.hidden_activation,
+                            )
+                        )
+                        self.config = config
+
+                modeling_muse_glimmer.MuseGlimmerTextMLP = _LigerMuseGlimmerTextMLP
+            if cfg.liger_rope:
+                from liger_kernel.transformers.rope import liger_rotary_pos_emb
+
+                # NoPE layers never call this, so only the sliding layers are affected.
+                modeling_muse_glimmer.apply_rotary_pos_emb = liger_rotary_pos_emb
+            if cfg.liger_layer_norm:
+                # Patches the vision tower's four nn.LayerNorm sites; the text decoder
+                # has none.
+                modeling_muse_glimmer.nn.LayerNorm = LigerLayerNorm
+            if cfg.liger_cross_entropy:
+                LOG.warning(
+                    "MuseGlimmer computes its loss through self.loss_function, not "
+                    "nn.CrossEntropyLoss, so the Liger swap would be a no-op. Skipping."
+                )
+            if cfg.liger_fused_linear_cross_entropy:
+                LOG.warning(
+                    "Liger fused linear cross entropy is not compatible with MuseGlimmer: "
+                    "logits are scaled by output_multiplier and tanh-softcapped after "
+                    "lm_head. Use cut_cross_entropy instead. Skipping."
+                )
+            LOG.info(
+                f"Applied Liger kernels for muse_glimmer: "
+                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
+                f"rope={cfg.liger_rope}, layer_norm={cfg.liger_layer_norm} (vision tower)"
             )
         elif cfg.liger_fused_linear_cross_entropy:
             try:

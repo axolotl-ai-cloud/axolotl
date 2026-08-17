@@ -29,6 +29,7 @@ format:
 - [Intern-VL](#sec-intern-vl)
 - [PaddleOCR-VL](#sec-paddleocr-vl)
 - [North Micro Vision Instruct](#sec-north-micro-vision-instruct)
+- [Muse Glimmer](#sec-muse-glimmer)
 
 ## Usage
 
@@ -293,6 +294,15 @@ Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See t
 
 ```yaml
 base_model: CohereLabs/North-Micro-Vision-Instruct
+processor_type: AutoProcessor
+```
+
+### Muse Glimmer {#sec-muse-glimmer}
+
+Requires `transformers>=5.15.0`.
+
+```yaml
+base_model: meta-models/Muse-Glimmer-30B
 processor_type: AutoProcessor
 ```
 

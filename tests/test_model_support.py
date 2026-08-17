@@ -385,3 +385,44 @@ class TestCohereCompassSupport:
         caps = resolve_model_support(get_model_support("cohere_compass")).capabilities
         for name in ("cut_cross_entropy", "lora_kernels", "liger"):
             assert not isinstance(caps[name], Unsupported), name
+
+
+class TestMuseGlimmerSupport:
+    """Built-in Muse Glimmer descriptor and its declared capability guards."""
+
+    def test_registered_and_multimodal(self):
+        support = get_model_support("muse_glimmer")
+        assert support is not None
+        resolved = resolve_model_support(support)
+        assert resolved.is_multimodal is True
+        assert resolved.family == "image_text_to_text"
+        assert support.is_multimodal is True
+        assert set(support.capabilities) == {
+            "cut_cross_entropy",
+            "liger",
+            "lora_kernels",
+        }
+
+    def test_auto_model_cls(self):
+        support = get_model_support("muse_glimmer")
+        assert support.get_auto_model_cls() is AutoModelForImageTextToText
+
+    def test_processing_strategy_cls(self):
+        from axolotl.model_support.muse_glimmer.processing import (
+            MuseGlimmerProcessingStrategy,
+        )
+
+        support = get_model_support("muse_glimmer")
+        assert support.get_processing_strategy_cls() is MuseGlimmerProcessingStrategy
+
+    def test_cut_cross_entropy_supported(self):
+        """The fork patches MuseGlimmerForConditionalGeneration directly and reproduces
+        the output_multiplier scaling plus the tanh softcap inside apply_lce."""
+        support = get_model_support("muse_glimmer")
+        check_capability(support, "cut_cross_entropy", "muse_glimmer")
+
+    def test_lora_kernels_rejected(self):
+        """The fused QKV/O rewrite cannot express the sigmoid-gated attention output."""
+        support = get_model_support("muse_glimmer")
+        with pytest.raises(ValueError, match="muse_glimmer"):
+            check_capability(support, "lora_kernels", "muse_glimmer")
