@@ -219,9 +219,10 @@ class TrainingValidationMixin:
     @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
-        non_empty_count = sum(1 for field in fields if data.get(field))
+        if data.get("micro_batch_size") or data.get("gradient_accumulation_steps"):
+            return data
 
-        if non_empty_count < 2:
+        if data.get("batch_size"):
             raise ValueError(f"At least two of {', '.join(fields)} must be set")
         return data
 
