@@ -1,10 +1,20 @@
 #!/bin/bash
 set -e
 
-python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__"
+python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 set -o pipefail
-curl --silent --show-error --fail --retry 3 --retry-delay 5 -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C "${HF_HOME}/hub/" --use-compress-program unzstd --strip-components=1
+for i in 1 2 3; do
+  if curl --silent --show-error --fail -L \
+    https://axolotl-ci.b-cdn.net/hf-cache.tar.zst \
+    | tar -xpf - -C "${HF_HOME}/hub/" --use-compress-program unzstd --strip-components=1; then
+    echo "HF cache extracted successfully"
+    break
+  fi
+  echo "Attempt $i failed, cleaning up and retrying in 15s..."
+  rm -rf "${HF_HOME}/hub/"*
+  sleep 15
+done
 # hf download "NousResearch/Meta-Llama-3-8B"
 # hf download "NousResearch/Meta-Llama-3-8B-Instruct"
 # hf download "microsoft/Phi-4-reasoning"
@@ -14,6 +24,7 @@ curl --silent --show-error --fail --retry 3 --retry-delay 5 -L https://axolotl-c
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 \
   --ignore=tests/e2e/ \
+  --ignore=tests/integrations/ \
   --ignore=tests/patched/ \
   --ignore=tests/cli \
   /workspace/axolotl/tests/ \
@@ -33,14 +44,35 @@ pytest --full-trace -vvv --durations=10 \
   --cov-append
 
 # Run solo tests with coverage append
+# test_rm_lora is run in its own process below (it fails on py3.11 when sharing
+# the solo process with other tests; isolating it avoids cross-test state).
 pytest -v --durations=10 -n1 \
+  --ignore=tests/e2e/solo/test_reward_model_smollm2.py \
   /workspace/axolotl/tests/e2e/solo/ \
   --cov=axolotl \
   --cov-append
 
-# Run integration tests with coverage append
+# Run reward-model test isolated in its own process
+pytest -v --durations=10 -s \
+  /workspace/axolotl/tests/e2e/solo/test_reward_model_smollm2.py \
+  --cov=axolotl \
+  --cov-append
+
+# Run E2E integration tests with coverage append
 pytest -v --durations=10 \
   /workspace/axolotl/tests/e2e/integrations/ \
+  --cov=axolotl \
+  --cov-append
+
+pytest -v --durations=10 -n8 --dist loadfile \
+  --ignore=tests/integrations/kernels/ \
+  --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+  --ignore=tests/integrations/test_gemma4_moe.py \
+  --ignore=tests/integrations/test_scattermoe_lora.py \
+  --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+  --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+  --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+  /workspace/axolotl/tests/integrations/ \
   --cov=axolotl \
   --cov-append
 

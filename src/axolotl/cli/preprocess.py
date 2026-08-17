@@ -80,14 +80,15 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
             # "copying from a non-meta parameter in the checkpoint to a meta parameter in the current model"
             warnings.simplefilter("ignore")
             with init_empty_weights(include_buffers=True):
-                # fmt: off
                 try:
                     AutoModelForCausalLM.from_pretrained(
-                        model_name, trust_remote_code=True
+                        model_name,
+                        trust_remote_code=cfg.trust_remote_code or False,
                     )
-                except Exception:  # nosec B110
-                    pass
-                # fmt: on
+                except Exception as exc:
+                    LOG.warning(
+                        f"Skipping model pre-download for `{model_name}`: {exc}"
+                    )
 
     LOG.info(
         Fore.GREEN

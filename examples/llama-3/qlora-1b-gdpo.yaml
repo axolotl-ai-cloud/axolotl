@@ -56,7 +56,7 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 
-flash_attention: true
+attn_implementation: flash_attention_2
 logging_steps: 1
 save_steps: 50
 save_safetensors: true

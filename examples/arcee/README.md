@@ -13,12 +13,11 @@ Thanks to the team at Arcee.ai for using Axolotl in supervised fine-tuning the A
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-pip3 install packaging==26.0 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn]'
+uv pip install --no-build-isolation -e '.'
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
 python scripts/cutcrossentropy_install.py | sh

@@ -35,6 +35,7 @@ class RLType(str, Enum):
     ORPO = "orpo"
     KTO = "kto"
     SIMPO = "simpo"
+    EBFT = "ebft"
 
 
 class ChatTemplate(str, Enum):
@@ -61,6 +62,7 @@ class ChatTemplate(str, Enum):
     qwen3 = "qwen3"
     qwen3_5 = "qwen3_5"
     falcon_h1 = "falcon_h1"
+    nemotron_h = "nemotron_h"
     tokenizer_default = "tokenizer_default"
     exaone = "exaone"
     exaone4 = "exaone4"
@@ -70,6 +72,8 @@ class ChatTemplate(str, Enum):
     qwen2_vl = "qwen2_vl"
     gemma3 = "gemma3"
     gemma3n = "gemma3n"
+    gemma4 = "gemma4"
+    gemma4_unified = "gemma4_unified"
     command_a = "command_a"
     command_a_tool_use = "command_a_tool_use"
     command_a_rag = "command_a_rag"
@@ -87,11 +91,100 @@ class CustomSupportedOptimizers(str, Enum):
     came_pytorch = "came_pytorch"
     muon = "muon"
     dion = "dion"
+    sinkgd = "sinkgd"
     flash_adamw = "flash_adamw"
     flash_adam = "flash_adam"
     flash_sgd = "flash_sgd"
     flash_sgdw = "flash_sgdw"
     flash_lion = "flash_lion"
+    q_galore_adamw8bit = "q_galore_adamw8bit"
+
+
+# Accepted canonical names; hub-kernel paths (containing "/") bypass this set.
+CANONICAL_ATTN_IMPLS = frozenset(
+    {
+        "eager",
+        "sdpa",
+        "flash_attention_2",
+        "flash_attention_3",
+        "flash_attention_4",
+        "flash_attention_torch",
+        "flex_attention",
+        "xformers",
+        "sage",
+        "fp8",
+    }
+)
+
+# Legacy boolean flags → canonical attn_implementation. Priority: specific before generic.
+LEGACY_ATTN_FLAG_TO_IMPL = {
+    "xformers_attention": "xformers",
+    "sage_attention": "sage",
+    "flex_attention": "flex_attention",
+    "flash_attention": "flash_attention_2",
+    "sdp_attention": "sdpa",
+    "eager_attention": "eager",
+}
+
+# Short-form aliases rejected at validation; mapped to canonical names for error messages.
+SHORT_FORM_ALIAS_TO_CANONICAL = {
+    "flash": "flash_attention_2",
+    "flex": "flex_attention",
+    "sdp": "sdpa",
+}
+
+# Backends that support varlen sample packing via `position_ids`.
+ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
+    {
+        "flash_attention_2",
+        "flash_attention_3",
+        "flash_attention_4",
+        "flash_attention_torch",
+        "flex_attention",
+        "xformers",
+        "sage",
+        "kernels-community/flash-attn2",
+        "kernels-community/flash-attn3",
+        "kernels-community/sage-attention",
+    }
+)
+
+# Backends that require the flash_attn library for axolotl's own monkeypatches.
+ATTN_IMPLS_USING_FLASH_LIB = frozenset(
+    {
+        "flash_attention_2",
+        "flash_attention_3",
+        "kernels-community/flash-attn2",
+        "kernels-community/flash-attn3",
+    }
+)
+
+# Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
+ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
+
+
+def attn_impl_base(attn_implementation: str | None) -> str | None:
+    """Strip the `@revision` / `:kernel_name` suffix so `org/name@v2` still matches above."""
+    if attn_implementation is None:
+        return None
+    return attn_implementation.split(":", 1)[0].split("@", 1)[0].strip()
+
+
+# Narrow allowlist of real torch._inductor.config attrs (verified on torch 2.11; sentinel test guards renames).
+INDUCTOR_COMPILE_OPTIONS_ALLOWLIST = frozenset(
+    {
+        "coordinate_descent_tuning",
+        "coordinate_descent_check_all_directions",
+        "shape_padding",
+        "epilogue_fusion",
+        "max_autotune_gemm",
+        "fx_graph_cache",
+        "assume_aligned_inputs",
+        "comprehensive_padding",
+        "decompose_mem_bound_mm",
+        "triton.cudagraphs",
+    }
+)
 
 
 class RingAttnFunc(str, Enum):

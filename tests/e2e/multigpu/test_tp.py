@@ -8,7 +8,7 @@ from accelerate.test_utils import execute_subprocess_async, get_torch_dist_uniqu
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_7_0
+from tests.e2e.utils import check_tensorboard_loss_decreased, require_torch_2_7_0
 
 
 class TestTensorParallel:
@@ -21,7 +21,7 @@ class TestTensorParallel:
     def test_fft_sft(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -63,6 +63,6 @@ class TestTensorParallel:
             ]
         )
 
-        check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 1.0, "Train Loss (%s) is too high"
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs", max_initial=5.0, max_final=4.7
         )

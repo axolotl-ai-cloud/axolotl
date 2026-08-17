@@ -12,7 +12,7 @@ Before starting, ensure you have:
 
 1. Install the required vision lib:
     ```bash
-    pip install 'mistral-common[opencv]==1.8.6'
+    uv pip install 'mistral-common[opencv]==1.8.6'
     ```
 
 2. Download the example dataset image:

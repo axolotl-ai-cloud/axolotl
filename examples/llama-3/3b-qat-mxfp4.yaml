@@ -24,7 +24,7 @@ output_dir: ./outputs/qat_out/
 dataset_prepared_path: ./outputs/dataset_prepared
 
 sequence_len: 2048
-flash_attention: true
+attn_implementation: flash_attention_2
 
 qat:
   activation_dtype: mxfp4

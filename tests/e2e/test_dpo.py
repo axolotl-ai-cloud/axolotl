@@ -68,7 +68,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
-    def test_dpo_nll_lora(self, temp_dir):
+    def test_dpo_use_weighting(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -84,7 +84,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
-                "rpo_alpha": 0.5,
+                "dpo_use_weighting": True,
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
@@ -117,7 +117,9 @@ class TestDPOLlamaLora(unittest.TestCase):
         check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
-    def test_dpo_use_weighting(self, temp_dir):
+    def test_rpo(self, temp_dir):
+        # For TRL >= 0.29, loss_type=["sigmoid", "sft"], loss_weights=[1, alpha]
+        # replaces loss_type="rpo", rpo_alpha=alpha.
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -133,7 +135,8 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
-                "dpo_use_weighting": True,
+                "dpo_loss_type": ["sigmoid", "sft"],
+                "dpo_loss_weights": [1.0, 1.0],
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
@@ -230,7 +233,8 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
-                "rl": "ipo",
+                "rl": "dpo",
+                "dpo_loss_type": ["ipo"],
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
@@ -320,7 +324,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "tokenizer_type": "LlamaTokenizer",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -337,21 +341,24 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "kto_undesirable_weight": 1.0,
                 "remove_unused_columns": False,
                 "datasets": [
-                    # {
-                    #     "path": "argilla/kto-mix-15k",
-                    #     "type": "chatml.argilla_chat",
-                    #     "split": "train",
-                    # },
+                    {
+                        # this repo's test split carries a DPO schema that fails to cast
+                        "path": "argilla/kto-mix-15k",
+                        "data_files": ["data/train-*.parquet"],
+                        "type": "chatml.argilla_chat",
+                        "split": "train",
+                    },
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "chatml.ultra",
                         "split": "train",
                     },
-                    # {
-                    #     "path": "argilla/kto-mix-15k",
-                    #     "type": "llama3.argilla_chat",
-                    #     "split": "train",
-                    # },
+                    {
+                        "path": "argilla/kto-mix-15k",
+                        "data_files": ["data/train-*.parquet"],
+                        "type": "llama3.argilla_chat",
+                        "split": "train",
+                    },
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "llama3.ultra",

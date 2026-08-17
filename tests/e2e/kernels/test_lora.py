@@ -9,6 +9,7 @@ from axolotl.kernels.geglu import geglu_backward, geglu_forward
 from axolotl.kernels.lora import (
     LoRA_MLP,
     LoRA_O,
+    LoRA_QK,
     LoRA_QKV,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
@@ -16,6 +17,8 @@ from axolotl.kernels.lora import (
     matmul_lora,
 )
 from axolotl.kernels.swiglu import swiglu_backward, swiglu_forward
+
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 
 @pytest.fixture
@@ -144,11 +147,16 @@ def test_matmul_lora(sample_tensors):
     expected1 = matmul + b
     assert torch.allclose(out1, expected1, rtol=1e-3)
 
-    # Test with LoRA
+    # Test with LoRA. matmul_lora fuses the add via in-place addmm_ (fp32 accumulate,
+    # no [M, out] LoRA temp), so compare against an fp32 reference rather than a fp16
+    # one whose intermediate rounding the kernel intentionally no longer mirrors.
     out2 = matmul_lora(X, W, b, None, A, B, scale)
-    lora_term = scale * torch.matmul(torch.matmul(X, A.t()), B.t())
-    expected2 = matmul + lora_term + b
-    assert torch.allclose(out2, expected2, rtol=1e-3)
+    expected2 = (
+        X.float() @ W.float().t()
+        + scale * (X.float() @ A.float().t()) @ B.float().t()
+        + b.float()
+    )
+    assert torch.allclose(out2.float(), expected2, rtol=2e-3, atol=2e-2)
 
     # Test 3D input reshaping
     X_3d = X.clone()
@@ -176,24 +184,31 @@ def test_lora_mlp_direct(sample_tensors, activation_forward, activation_backward
     X.requires_grad = True
     output = LoRA_MLP.apply(
         X,
+        None,  # X_drop
         gate_proj.weight,
         gate_proj.bias,
         None,  # gate_quant
         None,  # gate_A
         None,  # gate_B
         None,  # gate_scale
+        None,  # gate_lora_bias
+        None,  # gate_magnitude
         up_proj.weight,
         up_proj.bias,
         None,  # up_quant
         None,  # up_A
         None,  # up_B
         None,  # up_scale
+        None,  # up_lora_bias
+        None,  # up_magnitude
         down_proj.weight,
         down_proj.bias,
         None,  # down_quant
         None,  # down_A
         None,  # down_B
         None,  # down_scale
+        None,  # down_lora_bias
+        None,  # down_magnitude
         activation_forward,
         activation_backward,
         True,  # inplace
@@ -247,24 +262,31 @@ def test_lora_mlp_with_adapters(
     # Forward pass with adapters
     output = LoRA_MLP.apply(
         X,
+        None,  # X_drop
         gate_proj.weight,
         gate_proj.bias,
         None,
         gate_A,
         gate_B,
         scale,
+        None,  # gate_lora_bias
+        None,  # gate_magnitude
         up_proj.weight,
         up_proj.bias,
         None,
         up_A,
         up_B,
         scale,
+        None,  # up_lora_bias
+        None,  # up_magnitude
         down_proj.weight,
         down_proj.bias,
         None,
         down_A,
         down_B,
         scale,
+        None,  # down_lora_bias
+        None,  # down_magnitude
         activation_forward,
         activation_backward,
         True,
@@ -334,25 +356,32 @@ def test_lora_qkv(sample_tensors):
 
     Q1, K1, V1 = LoRA_QKV.apply(
         X,
+        None,  # X_drop
         q_weight,
         None,
         None,
         None,
         None,
         None,
+        None,
+        None,  # Q: weight, bias, quant, A, B, scale, lora_bias, magnitude
         k_weight,
         None,
         None,
         None,
         None,
         None,
+        None,
+        None,  # K
         v_weight,
         None,
         None,
         None,
         None,
         None,
-        True,
+        None,
+        None,  # V
+        True,  # inplace
     )
 
     assert Q1.shape == K1.shape == V1.shape == X.shape
@@ -366,25 +395,32 @@ def test_lora_qkv(sample_tensors):
     # Test with LoRA adapters
     Q2, K2, V2 = LoRA_QKV.apply(
         X,
+        None,  # X_drop
         q_weight,
         None,
         None,
         q_A,
         q_B,
         scale,
+        None,
+        None,  # Q
         k_weight,
         None,
         None,
         k_A,
         k_B,
         scale,
+        None,
+        None,  # K
         v_weight,
         None,
         None,
         v_A,
         v_B,
         scale,
-        True,
+        None,
+        None,  # V
+        True,  # inplace
     )
 
     assert Q2.shape == K2.shape == V2.shape == X.shape
@@ -427,7 +463,9 @@ def test_lora_o(sample_tensors):
 
     # Test forward pass
     X.requires_grad = True
-    output = LoRA_O.apply(X, W, b, None, A, B, scale)
+    output = LoRA_O.apply(
+        X, None, W, b, None, A, B, scale, None, None
+    )  # X_drop, ..., lora_bias, magnitude
 
     assert output.shape == (X.shape[0], X.shape[1], W.shape[0])
 
@@ -542,6 +580,7 @@ def test_inplace_operations(sample_tensors, apply_function):
             "down_proj": nn.Linear(shapes["out"], shapes["hidden"]).to(
                 device="cuda", dtype=torch.float16
             ),
+            "training": False,
         },
     )
 
@@ -549,3 +588,83 @@ def test_inplace_operations(sample_tensors, apply_function):
     out2 = apply_function(mlp, X.clone(), inplace=False)
 
     assert torch.allclose(out1, out2, rtol=1e-3)
+
+
+class ViewOutputFunction(torch.autograd.Function):
+    """Returns a view created inside the Function, like liger RMSNorm does."""
+
+    @staticmethod
+    def forward(ctx, x):
+        flat = x.reshape(-1, x.shape[-1])
+        return (flat * 1.0).view(x.shape)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output
+
+
+def _fused_kernel_args(kernel, hidden, rank):
+    torch.manual_seed(42)
+    n_proj = {"qkv": 3, "qk": 2, "mlp": 3}[kernel]
+    args = []
+    for _ in range(n_proj):
+        weight = torch.randn(hidden, hidden, device="cuda", dtype=torch.float16) * 0.02
+        lora_a = torch.randn(
+            rank, hidden, device="cuda", dtype=torch.float16, requires_grad=True
+        )
+        lora_b = torch.randn(
+            hidden, rank, device="cuda", dtype=torch.float16, requires_grad=True
+        )
+        args += [weight, None, None, lora_a, lora_b, 1.0, None, None]
+    return args
+
+
+def _apply_fused_kernel(kernel, h, proj_args):
+    if kernel == "qkv":
+        return LoRA_QKV.apply(h, None, *proj_args, True)
+    if kernel == "qk":
+        return LoRA_QK.apply(h, None, *proj_args, True)
+    return LoRA_MLP.apply(h, None, *proj_args, swiglu_forward, swiglu_backward, True)
+
+
+@pytest.mark.parametrize("kernel", ["qkv", "qk", "mlp"])
+def test_backward_does_not_mutate_saved_activation(kernel):
+    """Input gradient must not be written into the saved activation buffer."""
+    hidden, rank = 64, 8
+    proj_args = _fused_kernel_args(kernel, hidden, rank)
+    X = torch.randn(
+        2, 3, hidden, device="cuda", dtype=torch.float16, requires_grad=True
+    )
+
+    h = ViewOutputFunction.apply(X)
+    h_before = h.detach().clone()
+    out = _apply_fused_kernel(kernel, h, proj_args)
+    outputs = out if isinstance(out, tuple) else (out,)
+    sum(o.float().sum() for o in outputs).backward()
+
+    assert torch.equal(h.detach(), h_before)
+
+
+def test_qkv_compile_traceable_with_view_input():
+    """LoRA_QKV must trace under fullgraph compile when its input is a custom-Function view."""
+    hidden, rank = 64, 8
+    proj_args = _fused_kernel_args("qkv", hidden, rank)
+    X = torch.randn(
+        2, 3, hidden, device="cuda", dtype=torch.float16, requires_grad=True
+    )
+
+    def fn(x):
+        h = ViewOutputFunction.apply(x)
+        return LoRA_QKV.apply(h, None, *proj_args, True)
+
+    torch._dynamo.reset()
+    suppress_prior = torch._dynamo.config.suppress_errors
+    torch._dynamo.config.suppress_errors = False
+    try:
+        q, k, v = torch.compile(fn, fullgraph=True)(X)
+        (q.float().sum() + k.float().sum() + v.float().sum()).backward()
+    finally:
+        torch._dynamo.config.suppress_errors = suppress_prior
+        torch._dynamo.reset()
+
+    assert X.grad is not None

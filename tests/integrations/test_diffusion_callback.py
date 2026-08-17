@@ -13,7 +13,7 @@ class DummyTrainer:
 
     def __init__(self, use_eval: bool):
         # Config used by callback
-        self.cfg = SimpleNamespace(
+        self.axolotl_cfg = SimpleNamespace(
             diffusion=SimpleNamespace(
                 generation_interval=1,
                 num_generation_samples=1,

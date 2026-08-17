@@ -4,7 +4,6 @@ Packed data loader for online teacher training supporting vllm and sglang.
 
 import hashlib
 import hmac
-import logging
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -14,8 +13,9 @@ from orjson import orjson
 from axolotl.integrations.kd.collator import KDBatchSamplerDataCollatorForSeq2Seq
 from axolotl.integrations.kd.utils import normalize_logprobs
 from axolotl.utils.data.utils import retry_on_request_exceptions
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def hmac_sha_from_int_list(int_list, key, hash_func=hashlib.sha256):

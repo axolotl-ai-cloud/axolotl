@@ -81,11 +81,6 @@ class KDPlugin(BasePlugin):
             return KDBatchSamplerDataCollatorForSeq2Seq, {}
         return DataCollatorForKD, {}
 
-    def pre_model_load(self, cfg):
-        from .kernels.models import apply_kernel
-
-        apply_kernel(cfg.model_config_type)
-
     def add_callbacks_post_trainer(self, cfg: Any, trainer: Trainer) -> list:
         """
         Adds temp scheduler callback to the Trainer instance.

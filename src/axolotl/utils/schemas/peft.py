@@ -2,7 +2,7 @@
 
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
 from axolotl.integrations.mixlora.constants import MIXLORA_DEFAULTS
 
@@ -40,10 +40,10 @@ class LoraConfig(BaseModel):
         default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
     )
 
-    adapter: Literal["lora", "qlora", "llama-adapter", "mixlora"] | None = Field(
+    adapter: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "If you want to use 'lora', 'qlora', 'llama-adapter', or 'mixlora', or leave blank to train all parameters in original model"
+            "description": "If you want to use a built-in or plugin adapter, or leave blank to train all parameters in original model"
         },
     )
     lora_model_dir: str | None = Field(
@@ -65,6 +65,18 @@ class LoraConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens. For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models. `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities."
+        },
+    )
+    lora_rank_pattern: dict[str, PositiveInt] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Per-module LoRA rank overrides (regex → int > 0). Forwarded to PEFT LoraConfig.rank_pattern."
+        },
+    )
+    lora_alpha_pattern: dict[str, PositiveInt] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Per-module LoRA alpha overrides (regex → int > 0). Forwarded to PEFT LoraConfig.alpha_pattern."
         },
     )
     lora_dropout: float | None = 0.0
@@ -157,6 +169,12 @@ class LoraConfig(BaseModel):
     )
 
     merge_lora: bool | None = None
+    merge_method: Literal["legacy", "memory_efficient"] | None = Field(
+        default="memory_efficient",
+        json_schema_extra={
+            "description": "Method to use for LoRA merging. 'memory_efficient' (default) processes shards individually to reduce memory usage, 'legacy' loads the full model into memory."
+        },
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -170,6 +188,16 @@ class LoraConfig(BaseModel):
                 "load_in_8bit and load_in_4bit are not supported without setting an adapter for training."
                 "If you want to full finetune, please turn off load_in_8bit and load_in_4bit."
             )
+        adapter = data.get("adapter")
+        if adapter and adapter not in ("lora", "qlora", "llama-adapter"):
+            from axolotl.integrations.base import PluginManager
+
+            plugin_manager = PluginManager.get_instance()
+            if not plugin_manager.supports_adapter(adapter):
+                raise ValueError(
+                    f"Adapter '{adapter}' is not built in and was not registered by "
+                    "a plugin. Add the plugin that provides this adapter to `plugins:`."
+                )
         return data
 
     @model_validator(mode="after")
@@ -332,8 +360,28 @@ class ReLoRAConfig(BaseModel):
     )
     relora_prune_ratio: float | None = Field(
         default=None,
+        ge=0.0,
+        le=1.0,
         json_schema_extra={
-            "description": "threshold for optimizer magnitude when pruning"
+            "description": (
+                "Fraction of optimizer state values to zero on each ReLoRA restart. "
+                "When relora_prune_method='reset' and this is omitted, defaults to "
+                "0.999 (paper-style near-full reset). For other methods, defaults to 0.9."
+            )
+        },
+    )
+    relora_prune_method: Literal["magnitude", "random", "reset"] | None = Field(
+        default="magnitude",
+        json_schema_extra={
+            "description": (
+                "Optimizer state pruning method on each ReLoRA restart. "
+                "'magnitude' (default) keeps top-k by absolute value; "
+                "'random' keeps a random subset at relora_prune_ratio; "
+                "'reset' uses near-full random pruning (default ratio 0.999, "
+                "honoring relora_prune_ratio when explicitly set). "
+                "Paper-style recipe: relora_prune_method='reset' with no "
+                "relora_prune_ratio, equivalent to 'random' with ratio=0.999."
+            )
         },
     )
     relora_cpu_offload: bool | None = Field(

@@ -37,6 +37,7 @@ from torch.nn import functional as F
 
 from .parallel_experts import flatten_sort_count, parallel_linear
 from .parallel_linear_lora import get_lora_params_from_wrapper, parallel_linear_lora
+from .selective_dequant import is_mxfp4_param
 
 # =============================================================================
 # LoRA layout conversion utilities (peft <-> scattermoe)
@@ -60,49 +61,14 @@ def peft_lora_B_to_scattermoe(peft_B, num_experts, rank):
 
 
 def peft_lora_to_scattermoe(peft_A, peft_B, num_experts, rank):
-    """Convert peft LoRA weights to scattermoe layout (with A<->B swap).
+    """Convert peft LoRA weights to scattermoe layout.
 
-    peft operates on the parameter in its native storage layout ``[E, dim1, dim2]``
-    where ``in_features=dim1, out_features=dim2``.  ScatterMoE transposes the
-    parameter (``W = param.transpose(2, 1)``) giving ``[E, dim2, dim1]`` with
-    ``K=dim2, N=dim1``.  Because of this transposition, peft's A and B roles
-    are swapped relative to scattermoe's convention.
-
-    peft gives:
-        lora_A ``[r*E, dim1]``, lora_B ``[dim2, r*E]``
-
-    scattermoe needs:
-        lora_A ``[r*E, K=dim2]``, lora_B ``[N=dim1, r*E]``
-
-    This function swaps A<->B and converts B from rank-major to expert-major.
-    Uses vectorized tensor operations (no Python loop over experts).
-
-    Works for **both** gate_up_proj and down_proj since the transposition
-    issue is the same for any parameter.
+    peft >=0.19.1 assigns in/out features for 3D params such that
+    A and B already align with scattermoe's convention (no A<->B swap).
+    Only B needs rank-major → expert-major layout conversion.
     """
-    peft_B_em = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
-
-    dim1 = peft_A.shape[1]  # peft in_features -> scattermoe N
-    dim2 = peft_B_em.shape[0]  # peft out_features -> scattermoe K
-
-    # smoe_A: per expert, transpose B_e [dim2, r] -> [r, dim2]
-    # [dim2, E*r] -> [dim2, E, r] -> [E, r, dim2] -> [E*r, dim2]
-    smoe_A = (
-        peft_B_em.reshape(dim2, num_experts, rank)
-        .permute(1, 2, 0)
-        .contiguous()
-        .reshape(rank * num_experts, dim2)
-    )
-
-    # smoe_B: per expert, transpose A_e [r, dim1] -> [dim1, r]
-    # [E*r, dim1] -> [E, r, dim1] -> [dim1, E, r] -> [dim1, E*r]
-    smoe_B = (
-        peft_A.reshape(num_experts, rank, dim1)
-        .permute(2, 0, 1)
-        .contiguous()
-        .reshape(dim1, num_experts * rank)
-    )
-
+    smoe_A = peft_A
+    smoe_B = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
     return smoe_A, smoe_B
 
 
@@ -492,14 +458,20 @@ class HFScatterMoEGatedMLP(nn.Module):
         # ====================================================================
         # Selective expert weight dequantization
         # ====================================================================
-        # When experts are BnB-quantized (quantize_moe_experts), dequantize
-        # only the active experts instead of all E. This saves ~97% memory
-        # for the transient dequant buffer when few experts are active.
-        use_selective = (
-            getattr(self, "_use_selective_dequant", False)
-            and hasattr(experts, "parametrizations")
+        # When experts are BnB-quantized (quantize_moe_experts) or MXFP4
+        # (torchao MXTensor), dequantize only the active experts instead of
+        # all E. This saves ~97% memory for the transient dequant buffer when
+        # few experts are active. MXFP4 always routes through selective
+        # dequant because the kernel needs bf16 weights and full-tensor
+        # dequant of 256-expert MX params is prohibitive.
+        has_bnb_param = (
+            hasattr(experts, "parametrizations")
             and "gate_up_proj" in experts.parametrizations
         )
+        has_mxfp4_param = is_mxfp4_param(getattr(experts, "gate_up_proj", None))
+        use_selective = (
+            getattr(self, "_use_selective_dequant", False) and has_bnb_param
+        ) or has_mxfp4_param
 
         if use_selective:
             from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import (

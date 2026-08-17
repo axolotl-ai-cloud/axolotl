@@ -1,6 +1,5 @@
 """Trainer callbacks for reporting runtime metrics at regular intervals."""
 
-import logging
 import time
 
 from transformers import (
@@ -12,8 +11,9 @@ from transformers import (
 
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.telemetry.runtime_metrics import RuntimeMetricsTracker
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 TIME_SINCE_LAST = 60
 

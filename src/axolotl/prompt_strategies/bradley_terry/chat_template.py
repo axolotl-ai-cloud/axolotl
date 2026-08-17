@@ -71,10 +71,10 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
             ]
 
         return {
-            "chosen_input_ids": chosen_tokenized["input_ids"],
+            "chosen_ids": chosen_tokenized["input_ids"],
             "attention_mask_chosen": chosen_tokenized["attention_mask"],
             "labels_chosen": 1.0,
-            "rejected_input_ids": rejected_tokenized["input_ids"],
+            "rejected_ids": rejected_tokenized["input_ids"],
             "attention_mask_rejected": rejected_tokenized["attention_mask"],
             "labels_rejected": 0.0,
         }

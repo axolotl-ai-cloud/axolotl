@@ -1,0 +1,64 @@
+# Axolotl + NeMo Gym: Multi-Environment RL Training Example
+#
+# Trains on multiple NeMo Gym environments simultaneously:
+# - Mini Sudoku (reasoning_gym)
+# - Instruction Following
+#
+# Prerequisites:
+#   - uv (https://github.com/astral-sh/uv) installed
+#   - Download instruction_following.jsonl from nvidia/Nemotron-RL-instruction_following
+#     and place it at ~/Gym/resources_servers/instruction_following/data/instruction_following.jsonl
+#
+# Usage:
+#   axolotl train examples/nemo_gym_multi_env.yaml
+
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+model_type: AutoModelForCausalLM
+
+sequence_len: 4096
+load_in_4bit: false
+
+# RL configuration
+rl: grpo
+chat_template: tokenizer_default
+
+# GRPO / TRL settings
+trl:
+  use_vllm: false
+  num_generations: 8
+  max_completion_length: 2048
+
+# NeMo Gym plugin
+plugins:
+  - axolotl.integrations.nemo_gym.NemoGymPlugin
+
+nemo_gym_enabled: true
+nemo_gym_dir: ~/Gym
+nemo_gym_auto_clone: true
+nemo_gym_auto_start: true
+nemo_gym_config_paths:
+  - resources_servers/reasoning_gym/configs/resources_only.yaml
+  - resources_servers/instruction_following/configs/instruction_following.yaml
+nemo_gym_datasets:
+  - path: resources_servers/reasoning_gym/data/train_mini_sudoku.jsonl
+    server_name: reasoning_gym
+    max_samples: 1000
+  - path: resources_servers/instruction_following/data/instruction_following.jsonl
+    server_name: instruction_following
+    max_samples: 1000
+
+# Training hyperparameters
+learning_rate: 1.0e-5
+weight_decay: 0.001
+lr_scheduler: linear
+warmup_ratio: 0.0
+optimizer: adamw_8bit
+
+num_epochs: 1
+max_steps: 100
+micro_batch_size: 1
+gradient_accumulation_steps: 64
+
+logging_steps: 1
+save_steps: 100
+output_dir: ./outputs/nemo_gym_multi_env

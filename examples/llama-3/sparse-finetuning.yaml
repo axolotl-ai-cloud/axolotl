@@ -44,8 +44,7 @@ gradient_checkpointing_kwargs:
 early_stopping_patience:
 resume_from_checkpoint:
 logging_steps: 1
-xformers_attention:
-flash_attention: true
+attn_implementation: flash_attention_2
 
 warmup_ratio: 0.1
 evals_per_epoch: 2

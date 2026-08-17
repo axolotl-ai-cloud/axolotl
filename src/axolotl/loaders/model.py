@@ -2,12 +2,14 @@
 Model loader class implementation for loading, configuring, and patching various models.
 """
 
+from __future__ import annotations
+
 import gc
 import math
 import os
 from functools import cached_property
 from importlib.util import find_spec
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import peft
 import torch
@@ -39,7 +41,7 @@ from transformers.integrations.deepspeed import (
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders.adapter import load_adapter, load_lora
+from axolotl.loaders.adapter import load_adapter
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.patch_manager import PatchManager
 from axolotl.loaders.utils import (
@@ -47,6 +49,7 @@ from axolotl.loaders.utils import (
     get_module_class_from_name,
     load_model_config,
 )
+from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -56,9 +59,17 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
 )
+from axolotl.utils.fp32_norms import (
+    _matches_norm_class,
+    get_fp32_norm_patterns,
+    tag_model_fp32_norms,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
+
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -100,6 +111,7 @@ class ModelLoader:
         cfg: DictDefault,
         tokenizer: PreTrainedTokenizerBase,
         *,
+        processor: ProcessorMixin | None = None,
         inference: bool = False,
         reference_model: bool = False,
         **kwargs,
@@ -118,6 +130,7 @@ class ModelLoader:
         """
         self.cfg = cfg
         self.tokenizer = tokenizer
+        self.processor = processor
         self.inference: bool = inference
         self.reference_model: bool = reference_model
 
@@ -141,6 +154,9 @@ class ModelLoader:
             cfg=cfg,
             model_config=self.model_config,
             inference=inference,
+            tokenizer=tokenizer,
+            processor=self.processor,
+            reference_model=reference_model,
         )
 
     @cached_property
@@ -191,6 +207,9 @@ class ModelLoader:
         self.patch_manager.apply_post_model_load_patches(self.model)
         PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
 
+        if self.cfg.fp32_norms:
+            tag_model_fp32_norms(self.model, self.cfg)
+
         return self.model, lora_config
 
     def _apply_pre_model_load_setup(self):
@@ -221,6 +240,18 @@ class ModelLoader:
         self._set_attention_config()
         self._check_model_requirements()
 
+        # MX-quantized checkpoints carry MXTensor weights but no HF quantizer, so
+        # transformers' load-time weight re-init would crash on them; this guards it.
+        # torchao is absent on macOS/aarch64, where MX checkpoints can't exist anyway.
+        try:
+            from axolotl.utils.quantization import (
+                patch_transformers_skip_quantized_init,
+            )
+
+            patch_transformers_skip_quantized_init()
+        except ImportError:
+            pass
+
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
         # Handle PeftModel if needed
@@ -231,24 +262,119 @@ class ModelLoader:
             self.model = self.model.merge_and_unload()
 
         self._configure_experts_implementation()
+        self._apply_selective_checkpointing()
         self._apply_activation_checkpointing()
         self._resize_token_embeddings()
+        self._reinitialize_classification_head()
         self._adjust_model_config()
         self._configure_embedding_dtypes()
         self._configure_qat()
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
 
+    def _reinitialize_classification_head(self):
+        """Re-init an uninitialized reward / PRM classification head.
+
+        The ``score``/``classifier`` head is missing from a base-LM checkpoint, so
+        transformers allocates it with ``torch.empty`` and is then supposed to
+        initialize it. But transformers 5.8's ``_init_weights`` does
+        ``init.normal_(module.weight.float(), ...)`` — the ``.float()`` copy makes
+        this a no-op on a ``bfloat16`` head, leaving uninitialized memory: harmless
+        zeros on some allocators, NaN/inf garbage on others (→ NaN grads, 0 loss).
+        Detect that state and initialize the head ourselves.
+        """
+        if not (self.cfg.reward_model or self.cfg.process_reward_model):
+            return
+
+        head = getattr(self.model, "score", None) or getattr(
+            self.model, "classifier", None
+        )
+        if not isinstance(head, torch.nn.Linear):
+            return
+
+        weight = head.weight
+        # A freshly-initialized head is all-zero (benign) or garbage (huge/non-finite);
+        # a head loaded from a real reward checkpoint is finite and reasonably scaled.
+        looks_uninitialized = (
+            not torch.isfinite(weight).all()
+            or weight.abs().max() > 100
+            or bool((weight == 0).all())
+        )
+        if not looks_uninitialized:
+            return
+
+        std = getattr(self.model.config, "initializer_range", 0.02) or 0.02
+        with torch.no_grad():
+            weight.normal_(mean=0.0, std=std)
+            if head.bias is not None:
+                head.bias.zero_()
+        LOG.info(
+            f"Re-initialized {type(self.model).__name__} classification head "
+            f"(std={std})."
+        )
+
     def _configure_experts_implementation(self):
-        if self.cfg.experts_implementation is not None:
-            self.model.set_experts_implementation(self.cfg.experts_implementation)
+        impl = self.cfg.experts_implementation
+        if impl is None:
+            return
+
+        if impl in ("scattermoe", "sonicmoe"):
+            model_classes = {
+                type(m) for m in self.model.modules() if isinstance(m, PreTrainedModel)
+            }
+            if not any(cls._can_set_experts_implementation() for cls in model_classes):
+                LOG.warning(
+                    f"experts_implementation={impl!r} requested, but no submodule of "
+                    f"{type(self.model).__name__} uses transformers' ExpertsInterface "
+                    "(@use_experts_implementation). The kernel will NOT be applied; "
+                    "training falls back to the model's native experts path."
+                )
+
+        self.model.set_experts_implementation(impl)
+
+    def _apply_selective_checkpointing(self):
+        sac = self.cfg.selective_checkpointing
+        if not sac:
+            return
+
+        from axolotl.monkeypatch.selective_checkpointing import (
+            apply_selective_checkpointing,
+        )
+
+        sac_kwargs = sac if isinstance(sac, dict) else {}
+        apply_selective_checkpointing(
+            self.model,
+            save=sac_kwargs.get("save"),
+            save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
+            recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
+            offload=bool(sac_kwargs.get("offload")),
+        )
 
     def _apply_activation_checkpointing(self):
-        if self.cfg.activation_offloading is True:
+        ao = self.cfg.activation_offloading
+        if ao == "hidden_states":
+            use_reentrant = (self.cfg.gradient_checkpointing_kwargs or {}).get(
+                "use_reentrant", False
+            )
+            if not use_reentrant:
+                return
+
+            from axolotl.monkeypatch.activation_offload_checkpoint import (
+                patch_hidden_states_offload,
+            )
+
+            patch_hidden_states_offload()
+            return
+        # TRL offloader is adapter-aware:
+        #   - LoRA/QLoRA: offload *replaces* recompute (pure offload is leaner/faster;
+        #     recompute would pin the offloaded tensors and balloon memory). No wrap.
+        #   - Full finetune: pure offload of every activation exceeds PCIe bandwidth
+        #     (backlogs on-GPU, OOMs at long seq), so keep recompute and offload only
+        #     the checkpoint boundaries — apply the manual wrap.
+        if ao and not self.cfg.adapter:
             from axolotl.core.trainers.mixins.activation_checkpointing import (
                 ac_wrap_hf_model,
             )
 
-            # ^^ importing this at the module level breaks plugins
             ac_wrap_hf_model(self.model)
 
     def _resize_token_embeddings(self):
@@ -343,12 +469,7 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (
-                    needs_fa2_dtype
-                    or self.cfg.flash_attention
-                    or self.cfg.flex_attention
-                    or self.cfg.sage_attention
-                )
+                (needs_fa2_dtype or self.cfg.attn_needs_dtype_cast)
                 and not self.is_qlora_and_fsdp_enabled
             )
             or (
@@ -391,8 +512,12 @@ class ModelLoader:
                 and self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO]
                 and not self.cfg.merge_lora
             ):
-                _, lora_config = load_lora(
-                    self.model, self.cfg, inference=False, config_only=True
+                _, lora_config = load_adapter(
+                    self.model,
+                    self.cfg,
+                    self.cfg.adapter,
+                    inference=False,
+                    config_only=True,
                 )
             else:
                 self.model, lora_config = load_adapter(
@@ -443,15 +568,46 @@ class ModelLoader:
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
-        (set at `__init__`). When using a multimodal model, `self.auto_model_loader`
-        should be set according to the type of the model.
+        (set at `__init__`). Registered model profiles can select another loader;
+        unregistered multimodal models use the legacy mapping.
         """
-        if self.cfg.is_multimodal:
-            self.auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
+        support = get_model_support(self.model_config.model_type)
+        resolved_support = (
+            resolve_model_support(support) if support is not None else None
+        )
+        auto_model_provider = (
+            resolved_support.strategies.auto_model_cls
+            if resolved_support is not None
+            else None
+        )
+        auto_model_loader = (
+            auto_model_provider() if auto_model_provider is not None else None
+        )
+        profile_conflicts_with_multimodal_run = (
+            auto_model_loader is not None
+            and self.cfg.is_multimodal
+            and resolved_support is not None
+            and not resolved_support.is_multimodal
+        )
+        if profile_conflicts_with_multimodal_run:
+            LOG.warning(
+                "Model support for %s is not multimodal but this run is; "
+                "ignoring its auto-model class %s in favor of the multimodal "
+                "mapping.",
+                self.model_config.model_type,
+                auto_model_loader.__name__,
+            )
+            auto_model_loader = None
+        if auto_model_loader is not None:
+            self.auto_model_loader = auto_model_loader
+        elif self.cfg.is_multimodal:
+            auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
                 self.model_config.model_type, AutoModelForImageTextToText
             )
-            if isinstance(self.auto_model_loader, str):
-                self.auto_model_loader = AutoModelForImageTextToText
+            # transformers' names mapping stores class names as strings
+            if isinstance(auto_model_loader, str):
+                auto_model_loader = AutoModelForImageTextToText
+            self.auto_model_loader = auto_model_loader
 
     def _set_device_map_config(self):
         """Setup `device_map` according to config"""
@@ -547,6 +703,16 @@ class ModelLoader:
                 mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
             self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
 
+        if self.cfg.model_quantization_config == "FineGrainedFP8Config":
+            from transformers import FineGrainedFP8Config
+
+            fp8_kwargs = {}
+            if self.cfg.model_quantization_config_kwargs:
+                fp8_kwargs = self.cfg.model_quantization_config_kwargs
+            self.model_kwargs["quantization_config"] = FineGrainedFP8Config(
+                **fp8_kwargs
+            )
+
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
                 LOG.warning(
@@ -590,9 +756,11 @@ class ModelLoader:
                 "bnb_4bit_quant_type": "nf4",
                 "bnb_4bit_quant_storage": torch.bfloat16,
             }
-            if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed or self.is_fsdp_enabled
-            ):
+            if self.cfg.model_config_type in [
+                "jamba",
+                "qwen2_moe",
+                "nemotron_h",
+            ] and not (self.cfg.deepspeed or self.is_fsdp_enabled):
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
@@ -621,31 +789,43 @@ class ModelLoader:
             )
 
     def _set_attention_config(self):
-        """Sample packing uses custom FA2 patch"""
+        # fp8 replaces sdpa post-load (load as sdpa).
+        _LOAD_TIME_OVERRIDE = {"fp8": "sdpa"}
         if self.cfg.attn_implementation:
-            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
-        elif self.cfg.flex_attention:
-            self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = "flex_attention"
-
-        elif self.cfg.flash_attention:
-            if not self.cfg.sample_packing and self.cfg.s2_attention:
-                pass
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.sdp_attention:
-            self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = "sdpa"
-        elif self.cfg.sage_attention:
-            # sets FA2 attention to re-use same internal handling like masking
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.eager_attention:
-            self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = "eager"
+            hf_impl = _LOAD_TIME_OVERRIDE.get(
+                self.cfg.attn_implementation, self.cfg.attn_implementation
+            )
+            hf_impl = self._resolve_flash_attention_4(hf_impl)
+            self.model_kwargs["attn_implementation"] = hf_impl
+            self.model_config._attn_implementation = hf_impl
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def _resolve_flash_attention_4(self, hf_impl):
+        """Prefer native FA4 over the FA2 path when FA4 is installed and usable.
+
+        transformers dispatches ``flash_attention_4`` natively; ``flash_attention_2`` only
+        reaches FA4 when the FA2 library is present, otherwise it resolves to an
+        unregistered hub kernel. Upgrade to the native name so FA4 is actually used.
+        """
+        if hf_impl not in (
+            "flash_attention_2",
+            "flash_attention_3",
+            "flash_attention_4",
+        ):
+            return hf_impl
+
+        from axolotl.monkeypatch.attention.flash_attn_4 import configure_fa4, fa4_usable
+
+        if hf_impl == "flash_attention_4":
+            configure_fa4()
+            return hf_impl
+        if fa4_usable(self.model_config):
+            configure_fa4()
+            LOG.info("Flash Attention 4 enabled (upgraded from %s).", hf_impl)
+            return "flash_attention_4"
+        return hf_impl
 
     def _check_model_requirements(self):
         if self.cfg.model_config_type in ["lfm2-vl", "lfm2"]:
@@ -827,6 +1007,17 @@ class ModelLoader:
             else:
                 self.model = self._load_model_from_pretrained(model_loader_class)
 
+        if self.cfg.use_onebitllms:
+            try:
+                from onebitllms import replace_linear_with_bitnet_linear
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'onebitllms' package is required for use_onebitllms. "
+                    "Install it with: `uv pip install onebitllms`"
+                ) from exc
+
+            self.model = replace_linear_with_bitnet_linear(self.model)
+
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 
@@ -903,8 +1094,11 @@ class ModelLoader:
         dest = {"dtype": dist_dtype}
         if self.cfg.lora_on_cpu:
             dest["device"] = "cpu"
+        fp32_norm_patterns = get_fp32_norm_patterns(self.cfg)
         for name, module in self.model.named_modules():
-            if "norm" in name:
+            if fp32_norm_patterns and _matches_norm_class(module, fp32_norm_patterns):
+                module.to(torch.float32)
+            elif "norm" in name:
                 module.to(dist_dtype)
             if before_kbit_train_or_finetune:
                 if name.endswith(".gate"):

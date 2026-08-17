@@ -36,11 +36,13 @@ def _compute_expert_block(
 ):
     K_block = tl.arange(0, BLOCK_K)
     X_blk_ptrs = X_ptr + M_in_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
+    # i64 expert offset: E_idx * stride_we overflows i32 once the expert stack exceeds
+    # 2^31 elements (e.g. nemotron-3-ultra [512, 5120, 2048] = 5.4e9).
     W_blk_ptrs = (
         W_ptr
         + K_block[:, None] * stride_wk
         + N_block[None, :] * stride_wn
-        + E_idx * stride_we
+        + E_idx.to(tl.int64) * stride_we
     )
     iters = tl.cdiv(K, BLOCK_K)
 
@@ -90,6 +92,9 @@ def _scatter2scatter(
     B_ptr,
     stride_be: tl.constexpr,
     stride_bn: tl.constexpr,
+    R_ptr,
+    stride_rm,
+    stride_rn,
     grouped_idx_ptr,
     expert_idxs_ptr,
     # block_start_idx_ptr,
@@ -108,6 +113,7 @@ def _scatter2scatter(
     y_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     pid = tl.program_id(axis=0)
 
@@ -116,6 +122,8 @@ def _scatter2scatter(
     N_block_id = pid % N_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
     N_mask = N_block < N
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -126,7 +134,10 @@ def _scatter2scatter(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=ACC_TYPE)
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
         E_M_idx = M_idx
@@ -162,8 +173,16 @@ def _scatter2scatter(
         M_out_idx = M_block
     else:
         M_out_idx = M_idx
+    out_mask = M_boundary_mask[:, None] & N_mask[None, :]
+    if R_ptr is not None:
+        # Fused per-row residual add (e.g. base expert GEMM output) so the LoRA-B GEMM writes
+        # (base + lora) directly, no separate add pass.
+        R_blk_ptrs = R_ptr + (
+            M_out_idx[:, None] * stride_rm + N_block[None, :] * stride_rn
+        )
+        acc += tl.load(R_blk_ptrs, mask=out_mask).to(ACC_TYPE)
     Y_blk_ptrs = Y_ptr + (M_out_idx[:, None] * stride_ym + N_block[None, :] * stride_yn)
-    tl.store(Y_blk_ptrs, acc, mask=M_boundary_mask[:, None] & N_mask[None, :])
+    tl.store(Y_blk_ptrs, acc, mask=out_mask)
 
 
 def scatter2scatter(
@@ -176,6 +195,8 @@ def scatter2scatter(
     x_grouped=False,
     y_grouped=False,
     out=None,
+    int64_indices=False,
+    residual=None,
 ):
     assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
     assert sorted_scattered_idxs.size(0) == X.size(0) * k
@@ -187,6 +208,8 @@ def scatter2scatter(
     else:
         assert out.size(0) == L_scattered and out.size(1) == y_dim
         output = out
+    if residual is not None:
+        assert residual.size(0) == L_scattered and residual.size(1) == y_dim
 
     scatter2scatter_compileable(
         output,
@@ -198,6 +221,8 @@ def scatter2scatter(
         b,
         x_grouped,
         y_grouped,
+        int64_indices,
+        residual,
     )
     return output
 
@@ -213,6 +238,8 @@ def scatter2scatter_compileable(
     b: Optional[torch.Tensor],
     x_grouped: bool,
     y_grouped: bool,
+    int64_indices: bool = False,
+    residual: Optional[torch.Tensor] = None,
 ) -> None:
     def grid(META):
         grid_num = (
@@ -226,6 +253,11 @@ def scatter2scatter_compileable(
         stride_be = stride_bn = 0
     else:
         stride_be, stride_bn = b.stride()
+
+    if residual is None:
+        stride_rm = stride_rn = 0
+    else:
+        stride_rm, stride_rn = residual.stride()
 
     _scatter2scatter[grid](
         # X_ptr, stride_xm, stride_xk,
@@ -245,6 +277,10 @@ def scatter2scatter_compileable(
         b,
         stride_be,
         stride_bn,
+        # R_ptr, stride_rm, stride_rn (per-row residual added in epilogue)
+        residual,
+        stride_rm,
+        stride_rn,
         grouped_idx_ptr=sorted_scattered_idxs,
         expert_idxs_ptr=sorted_expert_idxs,
         # block_start_idx_ptr=padded_block_idxs,
@@ -258,6 +294,7 @@ def scatter2scatter_compileable(
         allow_tf32=ALLOW_TF32,
         x_grouped=x_grouped,
         y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
     )
 
 
@@ -521,9 +558,10 @@ def _xty_and_bias(
         if compute_bias:
             db_acc += tl.sum(dy, axis=0)
 
+    # i64 expert offset: E_idx * stride_dwe overflows i32 on a >2^31-element dW stack
     DW_blk_ptrs = (
         DW_ptr
-        + E_idx * stride_dwe
+        + E_idx.to(tl.int64) * stride_dwe
         + K_block[:, None] * stride_dwk
         + N_block[None, :] * stride_dwn
     )

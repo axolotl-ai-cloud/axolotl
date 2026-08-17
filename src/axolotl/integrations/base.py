@@ -23,9 +23,10 @@ from __future__ import annotations
 import collections
 import importlib
 import traceback
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
-from peft import PeftModel
+from peft import PeftConfig, PeftMixedModel, PeftModel
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -39,6 +40,15 @@ LOG = get_logger(__name__)
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
+
+
+@dataclass(frozen=True)
+class AdapterCapabilities:
+    """Capabilities for an adapter contributed by a plugin."""
+
+    name: str
+    lora_like: bool = False
+    relora: bool = False
 
 
 class BasePlugin:
@@ -90,6 +100,26 @@ class BasePlugin:
         """
         Returns a dataclass model for the plugin's training arguments.
         """
+
+    def get_adapter_capabilities(self) -> list[AdapterCapabilities]:
+        """Returns adapter capabilities contributed by the plugin."""
+        return []
+
+    def get_lora_config_kwargs(self, cfg: DictDefault) -> dict:
+        """Returns extra PEFT LoraConfig kwargs for plugin LoRA-like adapters."""
+        return {}
+
+    def load_adapter(
+        self,
+        model: PreTrainedModel,
+        cfg: DictDefault,
+        inference: bool = False,
+        config_only: bool = False,
+    ) -> (
+        tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]
+        | None
+    ):
+        """Optionally load a plugin adapter instead of the generic loader."""
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False
@@ -242,6 +272,30 @@ class BasePlugin:
         """
         return []
 
+    def on_rollouts_scored(
+        self,
+        cfg: DictDefault,
+        trainer,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Called after rollouts are scored during online RL (GRPO/PPO).
+
+        Provides access to the full scored rollout data for logging, trace
+        storage, or analysis. Called once per scoring step with all samples
+        from that step.
+
+        Args:
+            cfg: The axolotl configuration.
+            trainer: The trainer instance.
+            prompts: List of prompt texts (one per sample).
+            completions: List of completion texts (one per sample).
+            rewards: Dict mapping reward function name to list of reward values.
+            advantages: List of advantage values (one per sample).
+        """
+
     def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         """Performs actions after training is complete.
 
@@ -389,6 +443,58 @@ class PluginManager:
             if training_args_from_plugin is not None:
                 training_args.append(training_args_from_plugin)
         return training_args
+
+    def adapter_capabilities(self) -> dict[str, AdapterCapabilities]:
+        """Returns adapter capabilities by adapter name."""
+        capabilities = {}
+        for plugin in self.plugins.values():
+            for adapter_capability in plugin.get_adapter_capabilities():
+                capabilities[adapter_capability.name] = adapter_capability
+        return capabilities
+
+    def get_adapter_capability(self, adapter: str) -> AdapterCapabilities | None:
+        """Returns capabilities for a registered plugin adapter."""
+        return self.adapter_capabilities().get(adapter)
+
+    def supports_adapter(self, adapter: str) -> bool:
+        """Returns whether a plugin has registered the adapter name."""
+        return adapter in self.adapter_capabilities()
+
+    def adapter_supports_relora(self, adapter: str) -> bool:
+        """Returns whether a plugin adapter supports ReLoRA restart semantics."""
+        capability = self.get_adapter_capability(adapter)
+        return bool(capability and capability.relora)
+
+    def get_lora_config_kwargs(self, cfg: DictDefault) -> dict:
+        """Returns extra LoraConfig kwargs from plugins for the configured adapter."""
+        lora_config_kwargs = {}
+        for plugin in self.plugins.values():
+            plugin_kwargs = plugin.get_lora_config_kwargs(cfg)
+            if plugin_kwargs:
+                lora_config_kwargs.update(plugin_kwargs)
+        return lora_config_kwargs
+
+    def load_adapter(
+        self,
+        model: PreTrainedModel,
+        cfg: DictDefault,
+        inference: bool = False,
+        config_only: bool = False,
+    ) -> (
+        tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]
+        | None
+    ):
+        """Returns the first plugin adapter loader result, if any."""
+        for plugin in self.plugins.values():
+            loaded = plugin.load_adapter(
+                model,
+                cfg,
+                inference=inference,
+                config_only=config_only,
+            )
+            if loaded is not None:
+                return loaded
+        return None
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False
@@ -612,6 +718,36 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_train(cfg, model)
+
+    def on_rollouts_scored(
+        self,
+        cfg: DictDefault,
+        trainer,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Calls the on_rollouts_scored method of all registered plugins.
+
+        Args:
+            cfg: The configuration for the plugins.
+            trainer: The trainer instance.
+            prompts: List of prompt texts.
+            completions: List of completion texts.
+            rewards: Dict mapping reward function name to list of rewards.
+            advantages: List of advantage values.
+        """
+        for plugin in self.plugins.values():
+            try:
+                plugin.on_rollouts_scored(
+                    cfg, trainer, prompts, completions, rewards, advantages
+                )
+            except Exception:
+                LOG.warning(
+                    f"Plugin {plugin.__class__.__name__}.on_rollouts_scored failed",
+                    exc_info=True,
+                )
 
     def post_train_unload(self, cfg: DictDefault):
         """Calls the post_train_unload method of all registered plugins.

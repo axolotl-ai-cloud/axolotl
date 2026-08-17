@@ -1,8 +1,7 @@
 """Module for TRL RL trainers"""
 
-from trl import RewardTrainer
+from trl import KTOTrainer, RewardTrainer
 from trl.experimental.cpo import CPOTrainer
-from trl.experimental.kto import KTOTrainer
 from trl.experimental.orpo import ORPOTrainer
 from trl.experimental.prm import PRMTrainer
 

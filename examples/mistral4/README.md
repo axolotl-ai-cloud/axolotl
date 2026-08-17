@@ -13,7 +13,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 3. Install transformers from main
 
   ```bash
-  pip install git+https://github.com/huggingface/transformers.git
+  uv pip install git+https://github.com/huggingface/transformers.git
   ```
 
 4. Run one of the example configs:

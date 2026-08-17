@@ -29,7 +29,7 @@ class GRPOStrategy:
     @classmethod
     def get_trainer_class(
         cls,
-        sequence_parallel: bool,
+        sequence_parallel: bool = False,
         async_grpo: bool = False,
     ) -> (
         type[AxolotlGRPOTrainer]
@@ -88,6 +88,8 @@ class GRPOStrategy:
 
         if trl.num_generations:
             grpo_args_kwargs["num_generations"] = trl.num_generations
+        if trl.generation_batch_size is not None:
+            grpo_args_kwargs["generation_batch_size"] = trl.generation_batch_size
 
         if trl.sync_ref_model:
             grpo_args_kwargs["sync_ref_model"] = trl.sync_ref_model
@@ -198,6 +200,10 @@ class GRPOStrategy:
             )
         if getattr(trl, "vllm_lora_sync", None) is not None:
             grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
+
+        # Batch flattening (top-level config, not under trl)
+        if getattr(cfg, "batch_flattening", None):
+            grpo_args_kwargs["batch_flattening"] = cfg.batch_flattening
 
         return grpo_args_kwargs
 

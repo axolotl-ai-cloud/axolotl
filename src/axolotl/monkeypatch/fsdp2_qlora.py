@@ -26,8 +26,15 @@ def apply_init_sharded_param_patch():
     original_source = inspect.getsource(FSDPParam._init_sharded_param)
     original_source, _ = detab_code(original_source)
 
-    # Define the replacement
-    original_param_creation = """    self.sharded_param = nn.Parameter(self.to_sharded_dtensor(sharded_param))
+    # torch 2.12 rewrote the sharded-param construction from a two-line
+    # form (Parameter() + requires_grad_()) to a single multi-line
+    # Parameter() call with requires_grad= as a kwarg. Try the 2.12
+    # anchor first, fall back to the 2.11 form.
+    anchors_2120 = """    self.sharded_param = nn.Parameter(
+        self.to_sharded_dtensor(sharded_param),
+        requires_grad=param.requires_grad,
+    )"""
+    anchors_2110 = """    self.sharded_param = nn.Parameter(self.to_sharded_dtensor(sharded_param))
     self.sharded_param.requires_grad_(param.requires_grad)"""
 
     patched_param_creation = """    import bitsandbytes as bnb
@@ -59,8 +66,13 @@ def apply_init_sharded_param_patch():
             requires_grad=param.requires_grad,
         )"""
 
+    original_param_creation = next(
+        (a for a in (anchors_2120, anchors_2110) if a in original_source),
+        None,
+    )
+
     # Apply the replacement
-    if original_param_creation in original_source:
+    if original_param_creation is not None:
         patched_source = original_source.replace(
             original_param_creation, patched_param_creation
         )
@@ -103,12 +115,48 @@ def apply_init_unsharded_param_patch():
     original_source = inspect.getsource(FSDPParam.init_unsharded_param)
     original_source, _ = detab_code(original_source)
 
-    # Define the replacement
-    original_param_creation = """        self._unsharded_param = nn.Parameter(
+    # torch 2.12 hoisted the unsharded-param construction out of the
+    # first-all-gather `else:` branch up to method-body level, so the 2.11
+    # anchor (8-space, inside else) no longer matches. The replacement must be
+    # indented to match whichever anchor is found, so each anchor carries its
+    # own. Try the 2.12 anchor first, fall back to the 2.11 form.
+    anchor_replacement_pairs = [
+        (
+            """    self._unsharded_param = nn.Parameter(
+        unsharded_param, requires_grad=self.sharded_param.requires_grad
+    )""",
+            """    import bitsandbytes as bnb
+    local_tensor = self.sharded_param._local_tensor
+    if isinstance(local_tensor, bnb.nn.modules.Params4bit):
+        self._unsharded_param = bnb.nn.modules.Params4bit(
+            data=unsharded_param,
+            requires_grad=self.sharded_param.requires_grad,
+            quant_state=local_tensor.quant_state,
+            blocksize=local_tensor.blocksize,
+            compress_statistics=local_tensor.compress_statistics,
+            quant_type=local_tensor.quant_type,
+            quant_storage=local_tensor.quant_storage,
+            module=local_tensor.module,
+            bnb_quantized=local_tensor.bnb_quantized,
+        )
+    elif isinstance(local_tensor, bnb.nn.modules.Int8Params):
+        self._unsharded_param = bnb.nn.modules.Int8Params(
+            data=unsharded_param,
+            requires_grad=self.sharded_param.requires_grad,
+            has_fp16_weights=local_tensor.has_fp16_weights,
+            CB=unsharded_param,
+            SCB=local_tensor.SCB,
+        )
+    else:
+        self._unsharded_param = nn.Parameter(
             unsharded_param, requires_grad=self.sharded_param.requires_grad
-        )"""
-
-    patched_param_creation = """        import bitsandbytes as bnb
+        )""",
+        ),
+        (
+            """        self._unsharded_param = nn.Parameter(
+            unsharded_param, requires_grad=self.sharded_param.requires_grad
+        )""",
+            """        import bitsandbytes as bnb
         local_tensor = self.sharded_param._local_tensor
         if isinstance(local_tensor, bnb.nn.modules.Params4bit):
             self._unsharded_param = bnb.nn.modules.Params4bit(
@@ -133,10 +181,17 @@ def apply_init_unsharded_param_patch():
         else:
             self._unsharded_param = nn.Parameter(
                 unsharded_param, requires_grad=self.sharded_param.requires_grad
-            )"""
+            )""",
+        ),
+    ]
+
+    original_param_creation, patched_param_creation = next(
+        ((a, p) for a, p in anchor_replacement_pairs if a in original_source),
+        (None, None),
+    )
 
     # Apply the replacement
-    if original_param_creation in original_source:
+    if original_param_creation is not None:
         patched_source = original_source.replace(
             original_param_creation, patched_param_creation
         )

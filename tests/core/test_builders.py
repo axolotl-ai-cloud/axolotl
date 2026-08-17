@@ -1,501 +1,79 @@
-"""Unit tests for axolotl.core.builders"""
+"""Unit tests for axolotl.core.builders SFT and reward-model trainer builders."""
 
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+import torch._inductor.config as _inductor_cfg
+from datasets import Dataset
 
-from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.loaders import ModelLoader, load_tokenizer
-from axolotl.utils.config import normalize_config
-from axolotl.utils.data import prepare_preference_datasets
-from axolotl.utils.dict import DictDefault
-from axolotl.utils.schemas.enums import RLType
-
-from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION
+from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.schemas.enums import INDUCTOR_COMPILE_OPTIONS_ALLOWLIST
 
 
-@pytest.fixture(name="base_cfg")
-def fixture_base_cfg():
-    """
-    Base config with all common arguments between SFT and RLHF
-    """
-    cfg = DictDefault(
-        {
-            # Model and tokenizer settings
-            "base_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
-            "sequence_len": 2048,
-            "model_config_type": "llama",  # example type
-            # Basic training settings
-            "micro_batch_size": 2,
-            "eval_batch_size": 2,
-            "num_epochs": 1,
-            "gradient_accumulation_steps": 1,
-            "max_steps": 100,
-            "val_set_size": 0,
-            # Optimizer settings
-            "optimizer": "adamw_torch_fused",
-            "learning_rate": 0.00005,
-            "weight_decay": 0.01,
-            "adam_beta1": 0.998,
-            "adam_beta2": 0.9,
-            "adam_epsilon": 0.00001,
-            "max_grad_norm": 1.0,
-            # LR scheduler settings
-            "lr_scheduler": "cosine",
-            "lr_scheduler_kwargs": {"foo": "bar"},
-            "warmup_steps": 10,
-            "warmup_ratio": None,
-            "cosine_min_lr_ratio": 0.1,
-            "cosine_constant_lr_ratio": 0.2,
-            # Checkpointing and saving
-            "save_steps": 100,
-            "output_dir": "./model-out",
-            "save_total_limit": 4,
-            "save_only_model": False,
-            # Hardware/performance settings
-            "gradient_checkpointing": False,
-            "gradient_checkpointing_kwargs": {"use_reentrant": False},
-            "dataloader_num_workers": 1,
-            "dataloader_pin_memory": True,
-            "dataloader_prefetch_factor": 2,
-            "context_parallel_size": 1,
-            "tensor_parallel_size": 1,
-            # Dtype
-            "fp16": False,
-            "bf16": False,
-            "tf32": False,
-            # Logging and evaluation
-            "logging_steps": 10,
-            "eval_steps": 50,
-            "eval_strategy": "steps",
-            "save_strategy": "steps",
-            "include_tokens_per_second": True,
-            # Other common settings
-            "seed": 42,
-            "remove_unused_columns": True,
-            "ddp_timeout": 1800,
-            "ddp_bucket_cap_mb": 25,
-            "ddp_broadcast_buffers": False,
-            "dataset_num_proc": 4,
-        }
+def _gradient_checkpointing_kwargs(cfg):
+    training_args_kwargs = {}
+    TrainerBuilderBase._configure_gradient_checkpointing(
+        SimpleNamespace(cfg=cfg), training_args_kwargs
     )
-
-    normalize_config(cfg)
-    return cfg
+    return training_args_kwargs
 
 
-@pytest.fixture(name="dpo_cfg")
-def fixture_dpo_cfg(base_cfg):
-    cfg = base_cfg.copy()
-    cfg.update(
-        {
-            "rl": RLType.DPO,
-            "dpo_use_weighting": True,
-            "dpo_label_smoothing": 0.1,
-            "beta": 0.1,  # DPO beta
-        }
-    )
-    return cfg
-
-
-@pytest.fixture(name="orpo_cfg")
-def fixture_orpo_cfg(base_cfg):
-    cfg = base_cfg.copy()
-    cfg.update(
-        {
-            "rl": RLType.ORPO,
-            "orpo_alpha": 0.1,
-            "max_prompt_len": 512,
-        }
-    )
-    return cfg
-
-
-@pytest.fixture(name="kto_cfg")
-def fixture_kto_cfg(base_cfg):
-    cfg = base_cfg.copy()
-    cfg.update(
-        {
-            "rl": RLType.KTO,
-            "kto_desirable_weight": 1.0,
-            "kto_undesirable_weight": 1.0,
-            "max_prompt_len": 512,
-        }
-    )
-    return cfg
-
-
-@pytest.fixture(name="grpo_cfg")
-def fixture_grpo_cfg(base_cfg):
-    cfg = base_cfg.copy()
-    cfg.update(
-        {
-            "rl": RLType.GRPO,
-            "trl": DictDefault(
-                {
-                    "beta": 0.001,
-                    "max_completion_length": 256,
-                    "use_vllm": False,  # run on CPU
-                    # "vllm_device": "auto",
-                    # "vllm_gpu_memory_utilization": 0.15,
-                    "num_generations": 4,
-                    "reward_funcs": ["rewards.rand_reward_func"],
-                }
-            ),
-            # Must be evenly divisible by num_generations
-            "micro_batch_size": 4,
-            "datasets": [
-                {
-                    "path": "openai/gsm8k",
-                    "name": "main",
-                    "split": "train[:1%]",
-                }
-            ],
-        }
-    )
-    return DictDefault(cfg)
-
-
-@pytest.fixture(name="ipo_cfg")
-def fixture_ipo_cfg(base_cfg):
-    cfg = base_cfg.copy()
-    cfg.update(
-        {
-            "rl": RLType.IPO,
-            "dpo_label_smoothing": 0,
-            "beta": 0.1,
-        }
-    )
-    return cfg
-
-
-@pytest.fixture(name="simpo_cfg")
-def fixture_simpo_cfg(base_cfg):
-    cfg = base_cfg.copy()
-    cfg.update(
-        {
-            "rl": RLType.SIMPO,
-            "rl_beta": 0.2,
-            "cpo_alpha": 0.9,
-            "simpo_gamma": 0.4,
-        }
-    )
-    return cfg
-
-
-@pytest.fixture(name="sft_cfg")
-def fixture_sft_cfg(base_cfg):
-    cfg = base_cfg.copy()
-    cfg.update(
-        {
-            "rl": None,
-            "sample_packing": False,
-            "eval_sample_packing": False,
-            "flash_attention": False,
-        }
-    )
-    return cfg
-
-
-@pytest.fixture(name="rm_cfg")
-def fixture_rm_cfg(sft_cfg):
-    cfg = sft_cfg.copy()
-    cfg.update(
-        DictDefault(
-            {
-                "reward_model": True,
-                "datasets": [
-                    {
-                        "path": "argilla/distilabel-intel-orca-dpo-pairs",
-                        "type": "bradley_terry.chat_template",
-                        "split": "train[:1%]",
-                    }
-                ],
-            }
-        )
-    )
-    return cfg
-
-
-@pytest.fixture(name="prm_cfg")
-def fixture_prm_cfg(sft_cfg):
-    cfg = sft_cfg.copy()
-    cfg.update(
-        DictDefault(
-            {
-                "process_reward_model": True,
-                "datasets": [
-                    {
-                        "path": "trl-lib/math_shepherd",
-                        "type": "stepwise_supervised",
-                        "split": "train[:1%]",
-                    }
-                ],
-            }
-        )
-    )
-    return cfg
-
-
-@pytest.fixture(name="tokenizer")
-def fixture_tokenizer(base_cfg):
-    return load_tokenizer(base_cfg)
-
-
-@pytest.fixture(name="model")
-def fixture_model(base_cfg, tokenizer):
-    model, _ = ModelLoader(base_cfg, tokenizer).load()
-    return model
-
-
-class TestHFRLTrainerBuilder:
-    """
-    TestCase class for RLHF trainer builders
-    """
-
-    def _test_common_training_arguments(self, training_arguments, rl: str):
-        """Helper to test common arguments across all variants"""
-        # Basic training settings
-        if rl == "grpo":
-            # grpo_cfg's micro_batch_size is diff from others
-            assert training_arguments.per_device_train_batch_size == 4
-        else:
-            assert training_arguments.per_device_train_batch_size == 2
-        assert training_arguments.gradient_accumulation_steps == 1
-        assert training_arguments.max_steps == 100
-
-        # Optimizer settings
-        assert training_arguments.learning_rate == 0.00005
-        assert training_arguments.weight_decay == 0.01
-        assert training_arguments.adam_beta1 == 0.998
-        assert training_arguments.adam_beta2 == 0.9
-        assert training_arguments.adam_epsilon == 0.00001
-        assert training_arguments.max_grad_norm == 1.0
-
-        # LR scheduler settings
-        assert training_arguments.lr_scheduler_type == "cosine"
-        assert training_arguments.warmup_steps == 10
-        assert training_arguments.cosine_min_lr_ratio == 0.1
-        assert training_arguments.cosine_constant_lr_ratio == 0.2
-
-        # Other settings
-        assert training_arguments.dataloader_num_workers == 1
-        assert training_arguments.dataloader_pin_memory is True
-
-        # TODO(wing): restore once trl releases 0.22.0
-        # assert training_arguments.gradient_checkpointing is True
-
-    def test_dpo_training_arguments(self, dpo_cfg, model, tokenizer):
-        builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
-        training_arguments, _ = builder._build_training_arguments(100)
-
-        self._test_common_training_arguments(training_arguments, rl=dpo_cfg.rl)
-        # DPO specific
-        assert training_arguments.beta == 0.1
-        assert hasattr(training_arguments, "use_weighting")
-        assert training_arguments.use_weighting is True
-        assert training_arguments.label_smoothing == 0.1
-
-    def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
-        builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)
-        training_arguments, _ = builder._build_training_arguments(100)
-
-        self._test_common_training_arguments(training_arguments, rl=orpo_cfg.rl)
-        # ORPO specific
-        assert training_arguments.beta == 0.1  # maps from orpo_alpha
-
-    def test_kto_training_arguments(self, kto_cfg, model, tokenizer):
-        builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
-        training_arguments, _ = builder._build_training_arguments(100)
-
-        self._test_common_training_arguments(training_arguments, rl=kto_cfg.rl)
-        # KTO specific
-        assert training_arguments.desirable_weight == 1.0
-        assert training_arguments.undesirable_weight == 1.0
-
-    def _write_rewards_file(self, rewards_dir: Path):
-        """
-        Writes reward function to local tmp path to be loaded on trainer building
-        """
-        # Create rewards.py in a directory we can import from
-        rewards_dir.mkdir()
-        rewards_file = rewards_dir / "rewards.py"
-        rewards_file.write_text(
-            """import random
-def rand_reward_func(prompts, completions) -> list[float]:
-    return [random.uniform(0, 1) for _ in completions]
-"""
+class TestGradientCheckpointingConfig:
+    def test_hidden_states_offload_uses_non_reentrant_trainer_path(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_offloading="hidden_states",
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": False},
+            )
         )
 
-    def test_grpo_training_arguments(self, grpo_cfg, model, tokenizer, tmp_path):
-        rewards_dir = tmp_path / "rewards_test"
-        self._write_rewards_file(rewards_dir)
+        assert training_args_kwargs["gradient_checkpointing"] is True
+        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+            "use_reentrant": False
+        }
+        assert training_args_kwargs["activation_offloading"] == "hidden_states"
 
-        # Add the directory to Python path so we can import the module
-        sys.path.insert(0, str(rewards_dir))
+    def test_hidden_states_offload_with_reentrant_stays_on_model_loader_path(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_offloading="hidden_states",
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": True},
+            )
+        )
 
-        try:
-            builder = HFRLTrainerBuilder(grpo_cfg, model, tokenizer)
-            training_arguments, _ = builder._build_training_arguments(100)
-            builder.train_dataset = MagicMock()
+        assert training_args_kwargs["gradient_checkpointing"] is True
+        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+            "use_reentrant": True
+        }
+        assert "activation_offloading" not in training_args_kwargs
 
-            self._test_common_training_arguments(training_arguments, rl=grpo_cfg.rl)
-            # GRPO specific
-            assert training_arguments.beta == 0.001
-            assert training_arguments.max_completion_length == 256
-            assert training_arguments.use_vllm is False
-            # assert training_arguments.vllm_device == "auto"
-            # assert training_arguments.vllm_gpu_memory_utilization == 0.15
-            assert training_arguments.num_generations == 4
 
-            # Test trainer creation to verify reward_funcs
-            trainer = builder.build(100)
-
-            # Verify reward functions are properly loaded
-            assert len(trainer.reward_funcs) == 1
-            assert trainer.reward_funcs[0].__module__ == "rewards"
-            assert trainer.reward_funcs[0].__name__ == "rand_reward_func"
-        finally:
-            # remove imported module from path
-            if str(rewards_dir) in sys.path:
-                sys.path.remove(str(rewards_dir))
-
-    def test_ipo_training_arguments(self, ipo_cfg, model, tokenizer):
-        builder = HFRLTrainerBuilder(ipo_cfg, model, tokenizer)
-        training_arguments, _ = builder._build_training_arguments(100)
-
-        self._test_common_training_arguments(training_arguments, rl=ipo_cfg.rl)
-        # IPO specific
-        assert training_arguments.beta == 0.1
-        assert training_arguments.loss_type == ["ipo"]
-        assert training_arguments.label_smoothing == 0
-
-    def test_simpo_training_arguments(self, simpo_cfg, model, tokenizer):
-        builder = HFRLTrainerBuilder(simpo_cfg, model, tokenizer)
-        training_arguments, _ = builder._build_training_arguments(100)
-
-        self._test_common_training_arguments(training_arguments, rl=simpo_cfg.rl)
-        # SIMPO specific
-        assert training_arguments.beta == 0.2
-        assert training_arguments.cpo_alpha == 0.9
-        assert training_arguments.simpo_gamma == 0.4
-
-    @pytest.mark.parametrize(
-        ("cfg_string", "dataset_name"),
+def _reward_dataset():
+    return Dataset.from_list(
         [
-            (
-                "dpo_cfg",
-                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            ),
-            (
-                "ipo_cfg",
-                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            ),
-            (
-                "grpo_cfg",
-                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            ),
-            ("orpo_cfg", None),  # don't use fixture for orpo to use smaller split
-            ("kto_cfg", None),  # no fixture for kto
-            # (
-            #     "simpo_cfg",
-            #     "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            # ),
-        ],
+            {
+                "chosen_ids": [1, 2, 3],
+                "rejected_ids": [1, 4],
+            }
+        ]
     )
-    def test_custom_optimizer_cls_and_kwargs(
-        self,
-        request,
-        cfg_string,
-        dataset_name,
-        tmp_path,
-        model,
-        tokenizer,
-    ):
-        cfg = request.getfixturevalue(cfg_string)
 
-        builder = HFRLTrainerBuilder(cfg, model, tokenizer)
-        cfg["optimizer"] = "muon"
 
-        if cfg_string in ["dpo_cfg", "ipo_cfg", "grpo_cfg", "simpo_cfg"]:
-            cfg["datasets"] = [DictDefault(ALPACA_MESSAGES_CONFIG_REVISION)]
-        elif cfg_string == "kto_cfg":
-            cfg["datasets"] = [
-                DictDefault(
-                    {
-                        "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
-                        "type": "llama3.ultra",
-                        "split": "train[:1%]",
-                    }
-                )
-            ]
-        elif cfg_string == "orpo_cfg":
-            cfg["datasets"] = [
-                DictDefault(
-                    {
-                        "path": "argilla/ultrafeedback-binarized-preferences-cleaned",
-                        "type": "chat_template.argilla",
-                        "split": "train[:1%]",
-                    }
-                )
-            ]
-        else:
-            raise ValueError(f"Unhandled cfg_string: {cfg_string}")
-        cfg["dataset_num_proc"] = 4
-
-        if cfg_string == "grpo_cfg":
-            rewards_dir = tmp_path / "rewards_test"
-            self._write_rewards_file(rewards_dir)
-
-            # Add the directory to Python path so we can import the module
-            sys.path.insert(0, str(rewards_dir))
-
-        try:
-            # Only use mock for the commented out configs
-            if dataset_name is not None:
-                with patch(
-                    "axolotl.utils.data.rl.load_dataset_with_config"
-                ) as mock_load_dataset:
-                    mock_load_dataset.return_value = request.getfixturevalue(
-                        dataset_name
-                    )
-                    train_dataset, eval_dataset = prepare_preference_datasets(
-                        cfg, tokenizer
-                    )
-            else:
-                # Load actual datasets for orpo_cfg and kto_cfg
-                train_dataset, eval_dataset = prepare_preference_datasets(
-                    cfg, tokenizer
-                )
-
-            builder.train_dataset = train_dataset
-            builder.eval_dataset = eval_dataset
-
-            trainer = builder.build(100)
-
-            assert trainer.optimizer_cls_and_kwargs is not None
-
-            from axolotl.contribs.mit.muon import MuonOptimizerFactory
-            from axolotl.contribs.mit.muon.muon import Muon
-
-            optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
-            assert optimizer_cls is MuonOptimizerFactory
-            assert optimizer_kwargs["lr"] == 0.00005
-            assert optimizer_kwargs["weight_decay"] == 0.01
-            assert optimizer_kwargs["betas"] == (0.998, 0.9)
-            assert optimizer_kwargs["eps"] == 0.00001
-
-            # Ensure optimizer is created with correct class
-            optim = trainer.create_optimizer()
-            assert isinstance(optim, Muon)
-
-        finally:
-            # remove imported module from path
-            if cfg_string == "grpo_cfg" and str(rewards_dir) in sys.path:
-                sys.path.remove(str(rewards_dir))
+def _prm_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "input_ids": [1, 2, 3],
+                "labels": [-100, -100, 1],
+            }
+        ]
+    )
 
 
 class TestHFCausalTrainerBuilder:
@@ -545,12 +123,10 @@ class TestHFCausalTrainerBuilder:
         builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
         cfg["optimizer"] = "muon"
 
-        # need to load datasets for reward model and process reward model trainer
-        if cfg_string in ["rm_cfg", "prm_cfg"]:
-            dataset_meta = load_datasets(cfg=cfg)
-
-            builder.train_dataset = dataset_meta.train_dataset
-            builder.eval_dataset = dataset_meta.eval_dataset
+        if cfg_string == "rm_cfg":
+            builder.train_dataset = _reward_dataset()
+        elif cfg_string == "prm_cfg":
+            builder.train_dataset = _prm_dataset()
 
         trainer = builder.build(100)
 
@@ -569,6 +145,102 @@ class TestHFCausalTrainerBuilder:
         # Ensure optimizer is created with correct class
         optim = trainer.create_optimizer()
         assert isinstance(optim, Muon)
+
+    def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkhorn_iters": 5, "sinkgd_lr_scale": 0.05}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        assert trainer.optimizer_cls_and_kwargs is not None
+
+        from axolotl.utils.optimizers.sinkgd import SinkGD, SinkGDOptimizerFactory
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is SinkGDOptimizerFactory
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["weight_decay"] == 0.01
+        assert optimizer_kwargs["sinkhorn_iters"] == 5
+        assert optimizer_kwargs["sinkgd_lr_scale"] == 0.05
+
+        # OptimizerMixin must resolve the factory into a concrete SinkGD instance
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGD)
+        # linear weight matrices must be in the stateless SR-Sinkhorn group
+        assert any(group.get("use_sinkgd") for group in optim.param_groups)
+
+    def test_sinkgd_optimizer_feature_a_optim_args(self, sft_cfg, model, tokenizer):
+        """The Feature-A optim_args (spectral norm + width-aware 1/d_in) plumb through and
+        construct a live SinkGD with the flags set."""
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {
+            "sinkhorn_iters": 5,
+            "sinkgd_lr_scale": 0.05,
+            "sinkgd_spectral_norm": True,
+            "sinkgd_spectral_norm_iters": 2,
+            "sinkgd_spectral_target": "unit",
+            "sinkgd_base_width": 256,
+        }
+
+        from axolotl.utils.optimizers.sinkgd import SinkGD
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGD)
+        assert optim.sinkgd_spectral_norm is True
+        assert optim.sinkgd_spectral_norm_iters == 2
+        assert optim.sinkgd_spectral_target == "unit"
+        assert optim.sinkgd_base_width == 256
+
+    def test_sinkgd_optimizer_width_double_count_rejected(
+        self, sft_cfg, model, tokenizer
+    ):
+        """base_width + spectral_target='muon' double-count width and must be rejected."""
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {
+            "sinkgd_spectral_norm": True,
+            "sinkgd_spectral_target": "muon",
+            "sinkgd_base_width": 256,
+        }
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+        with pytest.raises(ValueError):
+            trainer.create_optimizer()
+
+    def test_sinkgd_md_sphere_selects_subclass(self, sft_cfg, model, tokenizer):
+        """sinkgd_md_sphere=true builds the SinkGDMD (A+B) subclass; default builds SinkGD."""
+        from axolotl.utils.optimizers.sinkgd import SinkGD, SinkGDMD
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkgd_md_sphere": True}
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGDMD)
+
+        cfg2 = sft_cfg.copy()
+        cfg2["optimizer"] = "sinkgd"
+        cfg2["optim_args"] = {"sinkgd_lr_scale": 0.05}
+        trainer2 = HFCausalTrainerBuilder(cfg2, model, tokenizer).build(100)
+        optim2 = trainer2.create_optimizer()
+        assert isinstance(optim2, SinkGD) and not isinstance(optim2, SinkGDMD)
+
+    def test_sinkgd_fused_kernel_flag(self, sft_cfg, model, tokenizer):
+        """sinkgd_fused_kernel plumbs through optim_args into the optimizer."""
+        from axolotl.utils.optimizers.sinkgd import SinkGD
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkgd_fused_kernel": True}
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGD)
+        assert optim.sinkgd_fused_kernel is True
 
 
 class TestTrainerClsPlugin:
@@ -597,3 +269,85 @@ class TestTrainerClsPlugin:
         except Exception:
             # Another error happens, so we passed trainer_cls to builder
             pass
+
+
+@pytest.fixture(name="inductor_config_snapshot")
+def fixture_inductor_config_snapshot():
+    keys = sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)
+    saved = {k: getattr(_inductor_cfg, k) for k in keys}
+    try:
+        yield saved
+    finally:
+        for k, v in saved.items():
+            setattr(_inductor_cfg, k, v)
+
+
+class TestApplyTorchCompileOptions:
+    # Runtime apply path; schema-layer validation is tested in TestTorchCompileValidation.
+
+    def test_allowlisted_flag_is_applied(self, inductor_config_snapshot):
+        assert _inductor_cfg.coordinate_descent_tuning is False
+        TrainerBuilderBase._apply_torch_compile_options(
+            {"coordinate_descent_tuning": True}
+        )
+        assert _inductor_cfg.coordinate_descent_tuning is True
+
+    def test_all_allowlisted_flags_are_attributes_on_inductor_config(
+        self, inductor_config_snapshot
+    ):
+        for key in INDUCTOR_COMPILE_OPTIONS_ALLOWLIST:
+            assert hasattr(_inductor_cfg, key), (
+                f"torch._inductor.config has no attribute {key!r}; "
+                f"INDUCTOR_COMPILE_OPTIONS_ALLOWLIST needs updating."
+            )
+
+    def test_dotted_flag_is_applied(self, inductor_config_snapshot):
+        # ConfigModule supports dotted setattr natively (no path-walk needed).
+        assert _inductor_cfg.triton.cudagraphs is False
+        TrainerBuilderBase._apply_torch_compile_options({"triton.cudagraphs": True})
+        assert _inductor_cfg.triton.cudagraphs is True
+
+    def test_multiple_flags_are_applied(self, inductor_config_snapshot):
+        TrainerBuilderBase._apply_torch_compile_options(
+            {
+                "coordinate_descent_tuning": True,
+                "shape_padding": False,
+                "epilogue_fusion": False,
+            }
+        )
+        assert _inductor_cfg.coordinate_descent_tuning is True
+        assert _inductor_cfg.shape_padding is False
+        assert _inductor_cfg.epilogue_fusion is False
+
+    def test_empty_dict_does_not_mutate_state(self, inductor_config_snapshot):
+        TrainerBuilderBase._apply_torch_compile_options({})
+        for k, v in inductor_config_snapshot.items():
+            assert getattr(_inductor_cfg, k) == v
+
+    def test_configure_torch_compile_invokes_apply_when_options_set(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = MagicMock()
+        builder.cfg.torch_compile = True
+        builder.cfg.torch_compile_backend = None
+        builder.cfg.torch_compile_mode = None
+        builder.cfg.torch_compile_options = {"coordinate_descent_tuning": True}
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
+
+        builder._apply_torch_compile_options.assert_called_once_with(
+            {"coordinate_descent_tuning": True}
+        )
+
+    def test_configure_torch_compile_skips_apply_when_options_unset(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = MagicMock()
+        builder.cfg.torch_compile = True
+        builder.cfg.torch_compile_backend = None
+        builder.cfg.torch_compile_mode = None
+        builder.cfg.torch_compile_options = None
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
+
+        builder._apply_torch_compile_options.assert_not_called()

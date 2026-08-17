@@ -22,8 +22,7 @@ class TestModelPatches(unittest.TestCase):
     def test_mixtral_multipack(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
+                "base_model": "axolotl-ai-co/tiny-mixtral-30m",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
@@ -57,7 +56,7 @@ class TestModelPatches(unittest.TestCase):
     def test_mistral_multipack(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
+                "base_model": "axolotl-ai-co/tiny-mistral-25m",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
@@ -87,7 +86,9 @@ class TestModelPatches(unittest.TestCase):
         tokenizer = load_tokenizer(cfg)
         ModelLoader(cfg, tokenizer, inference=False).load()
 
+        # In-tree HF models pack natively via position_ids, so we no longer
+        # override `_get_unpad_data` for them; the stock function must remain.
         assert (
-            "torch.jit"
-            in transformers.modeling_flash_attention_utils._get_unpad_data.__module__
+            transformers.modeling_flash_attention_utils._get_unpad_data.__module__
+            == "transformers.modeling_flash_attention_utils"
         )

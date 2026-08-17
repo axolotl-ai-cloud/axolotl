@@ -98,6 +98,56 @@ class SaveModelOnFirstStepCallback(TrainerCallback):
         return control
 
 
+class SkipEvalOnResumeCallback(TrainerCallback):
+    """Skip the redundant evaluation that fires when resuming from a checkpoint
+    whose step aligns with ``eval_steps``.
+
+    When HuggingFace Trainer resumes, it restores ``global_step`` from the
+    checkpoint and immediately triggers ``_maybe_log_save_evaluate`` for that
+    step.  Because the evaluation was already performed during the original
+    run, repeating it wastes time and pollutes metric logs.
+
+    This callback records the ``global_step`` at the start of training (i.e.
+    the checkpoint step when resuming, or 0 for a fresh run) and suppresses
+    any evaluation request on that exact step.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._resume_step: int | None = None
+
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ):
+        # ``global_step`` is already restored from the checkpoint at this
+        # point.  For a fresh run it will be 0, so the guard below becomes a
+        # no-op.
+        self._resume_step = state.global_step
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ) -> TrainerControl:
+        if (
+            self._resume_step
+            and state.global_step <= self._resume_step
+            and control.should_evaluate
+        ):
+            LOG.info(
+                "Skipping evaluation at step %d (already completed before resume)",
+                state.global_step,
+            )
+            control.should_evaluate = False
+        return control
+
+
 def bench_eval_callback_factory(trainer, tokenizer):
     accuracy = evaluate.load("accuracy")
     abcd_idx = [
@@ -691,8 +741,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         ].append(pred_step_text)
                         row_index += 1
                 if logger == "wandb":
-                    # type: ignore[attr-defined]
-                    wandb.run.log(
+                    wandb.run.log(  # type: ignore[attr-defined]
                         {
                             f"{name} - Predictions vs Ground Truth": pd.DataFrame(
                                 table_data
@@ -748,12 +797,13 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                     mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
                 ) as temp_file:
                     copyfile(self.axolotl_config_path, temp_file.name)
-                    artifact = wandb.Artifact(
-                        f"config-{wandb.run.id}", type="axolotl-config"
+                    artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                        f"config-{wandb.run.id}",  # type: ignore[attr-defined]
+                        type="axolotl-config",
                     )
                     artifact.add_file(temp_file.name)
-                    wandb.log_artifact(artifact)
-                    wandb.save(temp_file.name)
+                    wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                    wandb.save(temp_file.name)  # type: ignore[attr-defined]
                     LOG.info(
                         "The Axolotl config has been saved to the WandB run under files."
                     )
@@ -779,12 +829,13 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                             temp_ct_file.write(str(chat_tpl))
                             temp_ct_file.flush()
 
-                        artifact = wandb.Artifact(
-                            f"chat-template-{wandb.run.id}", type="jinja-template"
+                        artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                            f"chat-template-{wandb.run.id}",  # type: ignore[attr-defined]
+                            type="jinja-template",
                         )
                         artifact.add_file(temp_ct_file.name)
-                        wandb.log_artifact(artifact)
-                        wandb.save(temp_ct_file.name)
+                        wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                        wandb.save(temp_ct_file.name)  # type: ignore[attr-defined]
                         LOG.info(
                             "The chat_template_jinja has been saved to the WandB run under files."
                         )
@@ -810,13 +861,13 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                         else:
                             skip_upload = True
                         if not skip_upload:
-                            artifact = wandb.Artifact(
-                                f"deepspeed-config-{wandb.run.id}",
+                            artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                                f"deepspeed-config-{wandb.run.id}",  # type: ignore[attr-defined]
                                 type="deepspeed-config",
                             )
                             artifact.add_file(temp_file.name)
-                            wandb.log_artifact(artifact)
-                            wandb.save(temp_file.name)
+                            wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                            wandb.save(temp_file.name)  # type: ignore[attr-defined]
                             LOG.info(
                                 "The DeepSpeed config has been saved to the WandB run under files."
                             )
@@ -827,15 +878,21 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 
 
 class GCCallback(TrainerCallback):
-    """Callback to garbage collect torch cache"""
+    """Runs ``gc.collect()`` + ``torch.cuda.empty_cache()`` on
+    ``gc_collect_steps`` intervals and on eval/save/epoch boundaries that
+    the Trainer's native ``torch_empty_cache_steps`` doesn't cover. The two
+    settings are complementary; overlapping intervals just double-clear.
+    """
 
-    def __init__(self, gc_steps: int | None = -1):
-        self.gc_steps: int = gc_steps or -1
+    def __init__(self, gc_collect_steps: int | None = -1, gc_steps: int | None = None):
+        if gc_steps is not None and gc_collect_steps in (-1, None):
+            gc_collect_steps = gc_steps
+        self.gc_collect_steps: int = gc_collect_steps or -1
         self.next_gc_on_begin_step: int = -1
 
     def _gc(self):
-        torch.cuda.empty_cache()
         gc.collect()
+        torch.cuda.empty_cache()
 
     def on_train_begin(
         self,
@@ -868,7 +925,9 @@ class GCCallback(TrainerCallback):
             self._gc()
             # also GC on the start of the next step after the eval
             self.next_gc_on_begin_step = state.global_step + 1
-        elif self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
+        elif (
+            self.gc_collect_steps > 0 and state.global_step % self.gc_collect_steps == 0
+        ):
             self._gc()
         elif (
             args.save_strategy == SaveStrategy.STEPS
@@ -904,7 +963,10 @@ def colab_inference_post_train_callback(trainer: Trainer):
             """
             handle T4 gpu, we need to convert attention to eager for inference
             """
-            if "Tesla T4" in self.gpu_name and self.cfg.xformers_attention:
+            if (
+                "Tesla T4" in self.gpu_name
+                and self.cfg.attn_implementation == "xformers"
+            ):
                 trainer.model.config._attn_implementation = "eager"
             trainer.model.gradient_checkpointing_disable()
             trainer.model.config.use_cache = True

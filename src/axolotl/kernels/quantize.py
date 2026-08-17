@@ -1,18 +1,128 @@
 """Dequantization utilities for `bitsandbytes` and FP8 integration."""
 
 import ctypes
+from collections.abc import Callable
+from typing import List
 
 import bitsandbytes as bnb
 import torch
 from bitsandbytes.functional import QuantState, get_ptr
-from packaging.version import Version
 
 cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32
 cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4
 cdequantize_blockwise_bf16_nf4 = bnb.functional.lib.cdequantize_blockwise_bf16_nf4
+cdequantize_blockwise_fp32_nf4 = bnb.functional.lib.cdequantize_blockwise_fp32_nf4
 
-CUDA_STREAM: torch.cuda.Stream | None = None
-HAS_CUDA_STREAM: bool = Version(bnb.__version__) > Version("0.43.3")
+# NF4 dequant kernel per output dtype; the buffer dtype must match or the kernel
+# writes past/short of each element (e.g. a bf16 kernel into an fp32 buffer = garbage).
+_NF4_DEQUANT_KERNELS = {
+    torch.float16: cdequantize_blockwise_fp16_nf4,
+    torch.bfloat16: cdequantize_blockwise_bf16_nf4,
+    torch.float32: cdequantize_blockwise_fp32_nf4,
+}
+
+# bnb >= 0.50.0 sets argtypes on the C dequant symbols, so ctypes coerces raw ints itself
+# and we skip a per-call c_void_p/c_int alloc; older bnb (no argtypes) still needs wrappers.
+_BNB_TYPED_CAPI = getattr(cdequantize_blockwise_fp32, "argtypes", None) is not None
+
+_ptr: Callable[..., object]
+_int: Callable[..., object]
+if _BNB_TYPED_CAPI:
+
+    def _ptr(tensor):
+        return None if tensor is None else tensor.data_ptr()
+
+    def _int(value):
+        return value
+
+else:
+    _ptr = get_ptr
+    _int = ctypes.c_int
+
+# Cached per-device: per-call current_stream() measurably slows this hot path.
+CUDA_STREAM: dict[torch.device, torch.cuda.Stream] = {}
+
+
+def _ctypes_nf4_dequant(
+    W: torch.Tensor,
+    absmax: torch.Tensor,
+    code2: torch.Tensor,
+    absmax2: torch.Tensor,
+    offset: torch.Tensor,
+    blocksize: int,
+    blocksize2: int,
+    shape,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Direct-ctypes NF4 double-dequant body (Unsloth-derived fast path)."""
+    target_device = W.device
+    out = torch.empty(tuple(shape), dtype=dtype, device=target_device)
+    n_elements_absmax = absmax.numel()
+    out_absmax = torch.empty(
+        n_elements_absmax, dtype=torch.float32, device=target_device
+    )
+
+    stream = CUDA_STREAM.get(target_device)
+    if stream is None:
+        stream = CUDA_STREAM.setdefault(
+            target_device, torch.cuda.current_stream(target_device)
+        )
+
+    cdequantize_blockwise_fp32(
+        _ptr(code2),
+        _ptr(absmax),
+        _ptr(absmax2),
+        _ptr(out_absmax),
+        _int(blocksize2),
+        _int(n_elements_absmax),
+        stream,
+    )
+    out_absmax += offset
+
+    fx = _NF4_DEQUANT_KERNELS.get(dtype)
+    if fx is None:
+        raise ValueError(f"NF4 dequantization unsupported for output dtype {dtype}")
+    fx(
+        _ptr(None),
+        _ptr(W),
+        _ptr(out_absmax),
+        _ptr(out),
+        _int(blocksize),
+        _int(out.numel()),
+        stream,
+    )
+
+    # bnb convention: leading-dim-1 packed weight signals a transposed view.
+    if W.shape[0] == 1:
+        return out.t()
+    return out
+
+
+@torch.library.custom_op("axolotl::nf4_dequantize", mutates_args=())
+def _nf4_dequantize_op(
+    W: torch.Tensor,
+    absmax: torch.Tensor,
+    code2: torch.Tensor,
+    absmax2: torch.Tensor,
+    offset: torch.Tensor,
+    blocksize: int,
+    blocksize2: int,
+    shape: List[int],
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Opaque-to-Dynamo wrapper around the direct-ctypes NF4 dequant body."""
+    return _ctypes_nf4_dequant(
+        W, absmax, code2, absmax2, offset, blocksize, blocksize2, shape, dtype
+    )
+
+
+@_nf4_dequantize_op.register_fake
+def _(W, absmax, code2, absmax2, offset, blocksize, blocksize2, shape, dtype):
+    """FakeTensor shape/dtype inference for the registered op (trace-time only)."""
+    out = torch.empty(tuple(shape), dtype=dtype, device=W.device)
+    if W.shape[0] == 1:
+        return out.t()
+    return out
 
 
 def dequantize_fp8(
@@ -20,17 +130,7 @@ def dequantize_fp8(
     scale_inv: torch.Tensor,
     dtype: torch.dtype = torch.bfloat16,
 ) -> torch.Tensor:
-    """Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv.
-
-    Args:
-        W: FP8 weight tensor [out_features, in_features] in float8_e4m3fn.
-        scale_inv: Per-block inverse scale [ceil(out/block), ceil(in/block)]
-            or per-tensor scalar.
-        dtype: Output dtype (default bf16).
-
-    Returns:
-        Dequantized tensor in the specified dtype.
-    """
+    """Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv."""
     W_float = W.to(dtype)
     if scale_inv.numel() == 1:
         return W_float * scale_inv.to(dtype)
@@ -38,14 +138,12 @@ def dequantize_fp8(
         sr, sc = scale_inv.shape
         br = W.shape[0] // sr
         bc = W.shape[1] // sc
-        # If dimensions are exactly divisible, use fast reshape path
         if sr * br == W.shape[0] and sc * bc == W.shape[1]:
             return (
                 W_float.reshape(sr, br, sc, bc) * scale_inv[:, None, :, None].to(dtype)
             ).reshape(W.shape)
-        # Tail-block handling: compute actual block size (ceil division),
-        # tile scale_inv to cover full shape, then crop to W's dimensions
-        br_ceil = -(-W.shape[0] // sr)  # ceil(rows / scale_rows) = block_size
+        # Tail blocks: ceil-div the block size, tile scale_inv, crop to W.
+        br_ceil = -(-W.shape[0] // sr)
         bc_ceil = -(-W.shape[1] // sc)
         scale_expanded = (
             scale_inv.to(dtype)
@@ -56,147 +154,79 @@ def dequantize_fp8(
     return W_float * scale_inv.to(dtype)
 
 
+_FLOAT8_CLS: type | None = None
+_FLOAT8_CHECKED = False
+
+
+def _is_float8_tensor(W: torch.Tensor) -> bool:
+    """A torchao ``Float8Tensor`` (blockwise-FP8 base weight, e.g. DSV4 non-experts).
+
+    It reports a logical bf16 ``dtype`` and carries its own block scale, so the fused
+    LoRA kernels pass it as ``W`` with ``quant_state=None`` — detect it by class."""
+    global _FLOAT8_CLS, _FLOAT8_CHECKED
+    if not _FLOAT8_CHECKED:
+        _FLOAT8_CHECKED = True
+        try:
+            from torchao.quantization import Float8Tensor as _F8
+
+            _FLOAT8_CLS = _F8
+        except Exception:
+            _FLOAT8_CLS = None
+    return _FLOAT8_CLS is not None and isinstance(W, _FLOAT8_CLS)
+
+
 def dequantize(
     W: torch.Tensor,
-    quant_state: QuantState | list | torch.Tensor | None = None,
-    out: torch.Tensor | None = None,
+    quant_state: QuantState | torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """
-    Fast NF4 dequantization using `bitsandbytes` CUDA kernels.
+    """NF4 / FP8 dequantization; under `torch.compile` NF4 dispatches via `torch.ops.axolotl.nf4_dequantize`."""
+    # torchao Float8Tensor carries its own scale (a transposed view is still a Float8Tensor),
+    # so dequant to bf16 here and let the downstream matmul/addmm_ stay a plain bf16 GEMM.
+    if _is_float8_tensor(W):
+        return W.dequantize().to(torch.bfloat16)
 
-    Performs efficient dequantization of weights from NF4 format using `bitsandbytes`'
-    optimized CUDA implementations. Supports both legacy list and new `QuantState`
-    formats.
-
-    Args:
-        W: Quantized weight tensor to dequantize
-        quant_state: Quantization state containing metadata needed for
-            dequantization. Can be either a `QuantState` object or legacy list format.
-            If None, returns `W` unchanged.
-        out: Optional output tensor for storing dequantized results. Must match
-            expected shape and dtype if provided.
-
-    Returns:
-        Dequantized tensor in the specified dtype (fp16 or bf16). Will be transposed if
-        input `W` was transposed.
-
-    Raises:
-        AssertionError: If provided output tensor doesn't match expected shape / dtype.
-
-    Note:
-        Uses CUDA streams for better performance when available in newer `bitsandbytes`
-        versions (>0.43.3).
-    """
     if quant_state is None:
         return W
 
-    # FP8 path: quant_state is actually scale_inv tensor
     if W.dtype == torch.float8_e4m3fn:
         scale_inv = quant_state
-        # Caller may pass W.t() (non-contiguous) — dequantize in original
-        # layout then transpose back so the result shape matches the input.
+        # Caller may pass W.t() (non-contiguous); dequant in original layout, transpose back.
         if not W.is_contiguous() and W.dim() == 2:
             return dequantize_fp8(W.t(), scale_inv).t()
         return dequantize_fp8(W, scale_inv)
 
-    # Get the target device from input tensor W
+    # Non-double-quant: fall back to bnb's wrapper (rare in axolotl QLoRA).
+    if quant_state.offset is None or quant_state.state2 is None:
+        return bnb.functional.dequantize_4bit(W, quant_state, quant_type="nf4")
+
     target_device = W.device
+    state2 = quant_state.state2
+    absmax = quant_state.absmax.to(target_device)
+    code2 = state2.code.to(target_device)
+    absmax2 = state2.absmax.to(target_device)
+    offset = quant_state.offset.to(target_device)
 
-    # Extract quantization state
-    if not isinstance(quant_state, list):
-        # New style quant_state class
-        # Non-double-quantized models have offset=None and state2=None
-        if quant_state.offset is None or quant_state.state2 is None:
-            # Fall back to bitsandbytes standard dequantize
-            return bnb.functional.dequantize_4bit(W, quant_state, quant_type="nf4")
-        absmax = quant_state.absmax.to(target_device)
-        shape = quant_state.shape
-        dtype = quant_state.dtype
-        blocksize = quant_state.blocksize
-        offset = quant_state.offset.to(target_device)
-        state2 = quant_state.state2
-        absmax2 = state2.absmax.to(target_device)
-        code2 = state2.code.to(target_device)
-        blocksize2 = state2.blocksize
-    else:
-        # Legacy list format
-        absmax, shape, dtype, blocksize, compressed_stats, _, _ = quant_state
-        absmax = absmax.to(target_device)
-        offset, state2 = compressed_stats
-        offset = offset.to(target_device)
-        absmax2, code2, blocksize2, _, _, _, _ = state2
-        absmax2 = absmax2.to(target_device)
-        code2 = code2.to(target_device)
+    if torch.compiler.is_compiling():
+        return torch.ops.axolotl.nf4_dequantize.default(
+            W,
+            absmax,
+            code2,
+            absmax2,
+            offset,
+            quant_state.blocksize,
+            state2.blocksize,
+            list(quant_state.shape),
+            quant_state.dtype,
+        )
 
-    # Setup output tensor on the same device as input
-    if out is None:
-        out = torch.empty(shape, dtype=dtype, device=target_device)
-    else:
-        assert out.shape == shape and out.dtype == dtype
-        out = out.to(target_device)
-
-    # Dequantize statistics on the target device
-    n_elements_absmax: int = absmax.numel()
-    out_absmax: torch.Tensor = torch.empty(
-        n_elements_absmax, dtype=torch.float32, device=target_device
+    return _ctypes_nf4_dequant(
+        W,
+        absmax,
+        code2,
+        absmax2,
+        offset,
+        quant_state.blocksize,
+        state2.blocksize,
+        quant_state.shape,
+        quant_state.dtype,
     )
-    ptr_out_absmax: int = get_ptr(out_absmax)
-
-    # Use CUDA stream if available
-    if HAS_CUDA_STREAM:
-        global CUDA_STREAM
-        if CUDA_STREAM is None:
-            CUDA_STREAM = torch.cuda.current_stream(target_device)
-
-        cdequantize_blockwise_fp32(
-            get_ptr(code2),
-            get_ptr(absmax),
-            get_ptr(absmax2),
-            ptr_out_absmax,
-            ctypes.c_int(blocksize2),
-            ctypes.c_int(n_elements_absmax),
-            CUDA_STREAM,
-        )
-    else:
-        cdequantize_blockwise_fp32(
-            get_ptr(code2),
-            get_ptr(absmax),
-            get_ptr(absmax2),
-            ptr_out_absmax,
-            ctypes.c_int(blocksize2),
-            ctypes.c_int(n_elements_absmax),
-        )
-
-    out_absmax += offset
-
-    # Choose appropriate dequantization function
-    fx = (
-        cdequantize_blockwise_fp16_nf4
-        if dtype == torch.float16
-        else cdequantize_blockwise_bf16_nf4
-    )
-
-    # Dequantize weights
-    if HAS_CUDA_STREAM:
-        fx(
-            get_ptr(None),
-            get_ptr(W),
-            ptr_out_absmax,
-            get_ptr(out),
-            ctypes.c_int(blocksize),
-            ctypes.c_int(out.numel()),
-            CUDA_STREAM,
-        )
-    else:
-        fx(
-            get_ptr(None),
-            get_ptr(W),
-            ptr_out_absmax,
-            get_ptr(out),
-            ctypes.c_int(blocksize),
-            ctypes.c_int(out.numel()),
-        )
-
-    # Handle transposed data
-    is_transposed: bool = W.shape[0] == 1
-    return out.t() if is_transposed else out

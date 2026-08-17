@@ -4,14 +4,20 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-    # Run the workflow only when one of these files changes
+    # Run the workflow only when one of these files changes. src/axolotl is
+    # included because quartodoc renders API docs from the whole package —
+    # removing a module it tracks breaks the build (see _quarto.yml sections)
     paths:
       - '**/*.md'      # any Markdown file
       - '**/*.qmd'     # any Quarto file
       - '_quarto.yml'
-      - docs/scripts/generate_config_docs.py
-      - src/axolotl/utils/schemas/**.py
+      - 'docs/**'
+      - 'src/axolotl/**.py'
       - .github/workflows/preview-docs.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -27,15 +33,16 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Quarto
-        uses: quarto-dev/quarto-actions/setup@v2
+        uses: quarto-dev/quarto-actions/setup@8a96df13519ee81fd526f2dfca5962811136661b # v2.2.0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
 
@@ -50,8 +57,11 @@ jobs:
       - name: Quarto render
         run: quarto render
 
+      # everything above runs credential-free on every PR (including forks) so
+      # a broken docs build fails CI; publishing needs the Netlify secrets,
+      # which only same-repo branches get
       - name: Netlify Publish
-        uses: nwtgck/actions-netlify@v3.0
+        uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4.0.0
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         id: netlify
         with:
@@ -68,7 +78,7 @@ jobs:
 
       - name: Update PR with preview link
         if: ${{ steps.netlify.outcome == 'success' }}
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           message: |

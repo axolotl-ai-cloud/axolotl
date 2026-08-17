@@ -2,22 +2,25 @@ name: docker-multigpu-tests-biweekly
 
 on:
   pull_request:
+    # on PRs the job is gated behind the `run-gpu-tests` label; `labeled`
+    # picks the PR up when a maintainer applies it. schedule/dispatch runs
+    # are not gated.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
-      - 'tests/e2e/multigpu/**.py'
-      - 'requirements.txt'
-      - 'setup.py'
-      - 'pyproject.toml'
-      - '.github/workflows/multi-gpu-e2e.yml'
-      - 'scripts/cutcrossentropy_install.py'
-      - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
-      - 'src/axolotl/utils/distributed.py'
+      - "tests/e2e/multigpu/**.py"
+      - "pyproject.toml"
+      - ".github/workflows/multi-gpu-e2e.yml"
+      - "scripts/cutcrossentropy_install.py"
+      - "src/axolotl/core/trainers/mixins/sequence_parallel.py"
+      - "src/axolotl/utils/distributed.py"
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
+    - cron: "0 0 * * 1,4" # Runs at 00:00 UTC every monday & thursday
 
-# Cancel jobs on the same ref if a new one is triggered
+# Cancel jobs on the same ref if a new one is triggered. `labeled` events for
+# unrelated labels get their own no-op group so they can't cancel a live run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'run-gpu-tests') && 'label-noop' || 'e2e' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -28,45 +31,36 @@ env:
 
 jobs:
   test-axolotl-multigpu:
-    if: ${{ ! contains(github.event.commits[0].message, '[skip e2e]') && github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      (
+        github.event_name != 'pull_request' ||
+        (
+          !github.event.pull_request.draft &&
+          contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
+          (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
+        )
+      )
     strategy:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.8.0
-            axolotl_extras: fbgemm-gpu
-            num_gpus: 2
-#          - cuda: 129
-#            cuda_version: 12.9.1
-#            python_version: "3.12"
-#            pytorch: 2.9.1
-#            axolotl_extras: "fbgemm-gpu"
-#            num_gpus: 2
-#            dockerfile: "Dockerfile-uv.jinja"
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.11"
-            pytorch: 2.9.1
+            python_version: "3.12"
+            pytorch: 2.12.1
             axolotl_extras:
-#            axolotl_extras: fbgemm-gpu
+            # axolotl_extras: fbgemm-gpu
             num_gpus: 2
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.10.0
-            axolotl_extras: "fbgemm-gpu"
-            num_gpus: 2
-            dockerfile: "Dockerfile-uv.jinja"
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install Modal
@@ -81,7 +75,7 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

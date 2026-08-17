@@ -181,6 +181,10 @@ class TestMoeAdapterTrainMergeRoundtrip:
                 # Model definition order: gate_up_proj first, then down_proj.
                 self.gate_up_proj = nn.Parameter(torch.randn(4, 16, 8))
                 self.down_proj = nn.Parameter(torch.randn(4, 8, 16))
+                # peft >= 0.19 reads base_layer.weight.device unconditionally
+                # in _maybe_shard_state_dict_for_tp; target_parameters-style
+                # modules legitimately don't have .weight, so stub a buffer.
+                self.register_buffer("weight", torch.empty(0), persistent=False)
 
             def forward(self, x):
                 x = torch.matmul(x, self.gate_up_proj[0].T)  # (batch, 16)

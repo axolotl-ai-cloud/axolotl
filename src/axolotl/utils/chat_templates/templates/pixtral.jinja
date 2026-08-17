@@ -1,5 +1,19 @@
 {%- if messages[0]["role"] == "system" %}
-    {%- set system_message = messages[0]["content"] %}
+    {%- if messages[0]["content"] is string %}
+        {%- set system_message = messages[0]["content"] %}
+    {%- else %}
+        {%- set ns = namespace(system_message="") %}
+        {%- for chunk in messages[0]["content"] %}
+            {%- if chunk["type"] == "text" %}
+                {%- if "content" in chunk %}
+                    {%- set ns.system_message = ns.system_message + chunk["content"] %}
+                {%- elif "text" in chunk %}
+                    {%- set ns.system_message = ns.system_message + chunk["text"] %}
+                {%- endif %}
+            {%- endif %}
+        {%- endfor %}
+        {%- set system_message = ns.system_message %}
+    {%- endif %}
     {%- set loop_messages = messages[1:] %}
 {%- else %}
     {%- set loop_messages = messages %}
@@ -12,16 +26,18 @@
     {%- endif %}
     {%- if message["role"] == "user" %}
         {%- if loop.last and system_message is defined %}
-            {{- "[INST]" + system_message + "
-
-" }}
+            {{- "[INST]" + system_message + "\n\n" }}
         {%- else %}
             {{- "[INST]" }}
         {%- endif %}
         {%- if message["content"] is not string %}
             {%- for chunk in message["content"] %}
                 {%- if chunk["type"] == "text" %}
-                    {{- chunk["text"] }}
+                    {%- if "content" in chunk %}
+                        {{- chunk["content"] }}
+                    {%- elif "text" in chunk %}
+                        {{- chunk["text"] }}
+                    {%- endif %}
                 {%- elif chunk["type"] == "image" %}
                     {{- "[IMG]" }}
                 {%- else %}
@@ -33,20 +49,24 @@
         {%- endif %}
         {{- "[/INST]" }}
     {%- elif message["role"] == "assistant" %}
- {%- if message["content"] is not string %}
- {%- for chunk in message["content"] %}
- {%- if chunk["type"] == "text" %}
- {{- chunk["text"] }}
- {%- elif chunk["type"] == "image" %}
- {{- "[IMG]" }}
- {%- else %}
- {{- raise_exception("Unrecognized content type!") }}
-{%- endif %}
-{%- endfor %}
-{{- eos_token }}
-{%- else %}
-{{- message["content"] + eos_token }}
-{%- endif %}
+        {%- if message["content"] is not string %}
+            {%- for chunk in message["content"] %}
+                {%- if chunk["type"] == "text" %}
+                    {%- if "content" in chunk %}
+                        {{- chunk["content"] }}
+                    {%- elif "text" in chunk %}
+                        {{- chunk["text"] }}
+                    {%- endif %}
+                {%- elif chunk["type"] == "image" %}
+                    {{- "[IMG]" }}
+                {%- else %}
+                    {{- raise_exception("Unrecognized content type!") }}
+                {%- endif %}
+            {%- endfor %}
+            {{- eos_token }}
+        {%- else %}
+            {{- message["content"] + eos_token }}
+        {%- endif %}
     {%- else %}
         {{- raise_exception("Only user and assistant roles are supported, with the exception of an initial optional system message!") }}
     {%- endif %}

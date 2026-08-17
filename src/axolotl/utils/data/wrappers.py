@@ -1,6 +1,5 @@
 """Data handling specific to SFT."""
 
-import logging
 from typing import Any, NoReturn, cast
 
 from datasets import (
@@ -38,8 +37,9 @@ from axolotl.prompters import (
     UnsupportedPrompter,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 def handle_unknown_dataset_strategy(dataset_config: DictDefault) -> NoReturn:

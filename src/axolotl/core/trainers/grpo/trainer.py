@@ -190,7 +190,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             // self.args.context_parallel_size,
             repeat_count=self.num_iterations * self.args.gradient_accumulation_steps,
             context_parallel_size=self.args.context_parallel_size,
-            shuffle=True,
+            shuffle=not self.args.curriculum_sampling,
             seed=self.args.seed,
             drop_last=True,
         )

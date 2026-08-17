@@ -57,7 +57,7 @@ description: Frequently asked questions
 
 **Q: vLLM is not working with Axolotl**
 
-> A: We currently recommend torch 2.6.0 for use with `vllm`. Please ensure you use the right version. For Docker, please use the `main-py3.11-cu124-2.6.0` tag.
+> A: We currently recommend torch 2.12 for use with `vllm`. Please ensure you use the right version. For Docker, please use a `-vllm` tagged image such as `main-py3.12-cu130-2.12.0-vllm`.
 
 **Q: FA2 2.8.0 `undefined symbol` runtime error on CUDA 12.4**
 

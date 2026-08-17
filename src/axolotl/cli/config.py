@@ -13,7 +13,6 @@ import torch
 import yaml
 from transformers.utils import is_torch_bf16_gpu_available, is_torch_tf32_available
 
-from axolotl.integrations.base import PluginManager
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.comet_ import setup_comet_env_vars
@@ -213,6 +212,8 @@ def prepare_plugins(cfg: DictDefault):
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
@@ -222,6 +223,8 @@ def prepare_plugins(cfg: DictDefault):
 
 def plugin_set_cfg(cfg: DictDefault):
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         plugin_manager.cfg = cfg
 
@@ -297,26 +300,18 @@ def load_cfg(
             existing_child = cfg[parent].get(child_key)
             cfg[parent][child_key] = _coerce_value(child_value, existing_child)
 
-    try:
-        device_props = torch.cuda.get_device_properties("cuda")
-        gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
-    except (RuntimeError, AssertionError):
-        gpu_version = None
-
     prepare_plugins(cfg)
+
+    if cfg.use_ray:
+        # Ray drivers typically have no GPU; defer capability checks to the worker.
+        capabilities, env_capabilities = None, None
+    else:
+        capabilities, env_capabilities = gpu_capabilities()
 
     cfg = validate_config(
         cfg,
-        capabilities={
-            "bf16": is_torch_bf16_gpu_available(),
-            "fp8": compute_supports_fp8(),
-            "tf32": is_torch_tf32_available(),
-            "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
-            "compute_capability": gpu_version,
-        },
-        env_capabilities={
-            "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
-        },
+        capabilities=capabilities,
+        env_capabilities=env_capabilities,
     )
 
     # NOTE(djsaunde): We start outputting to output_dir/debug.log at this point since we
@@ -350,5 +345,31 @@ def compute_supports_fp8() -> bool:
     try:
         compute_capability = torch.cuda.get_device_capability()
         return compute_capability >= (9, 0)
-    except RuntimeError:
+    except (RuntimeError, AssertionError):
         return False
+
+
+def gpu_capabilities() -> tuple[dict, dict]:
+    """Probe the local GPU and return ``(capabilities, env_capabilities)`` dicts
+    suitable for :func:`axolotl.utils.config.validate_config`.
+
+    Must be called on a GPU-enabled host (e.g. a Ray worker), otherwise the
+    detected values reflect the driver/CPU node and not the training device.
+    """
+    try:
+        device_props = torch.cuda.get_device_properties("cuda")
+        gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
+    except (RuntimeError, AssertionError):
+        gpu_version = None
+
+    capabilities = {
+        "bf16": is_torch_bf16_gpu_available(),
+        "fp8": compute_supports_fp8(),
+        "tf32": is_torch_tf32_available(),
+        "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
+        "compute_capability": gpu_version,
+    }
+    env_capabilities = {
+        "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
+    }
+    return capabilities, env_capabilities

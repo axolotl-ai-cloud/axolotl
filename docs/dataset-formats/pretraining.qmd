@@ -4,29 +4,9 @@ description: Data format for a pre-training completion task.
 order: 1
 ---
 
-For pretraining, there is no prompt template or roles.  The only required field is `text`:
+::: {.callout-note}
+Pre-training documentation has been consolidated:
 
-```{.json filename="data.jsonl"}
-{"text": "first row"}
-{"text": "second row"}
-...
-```
-
-:::{.callout-note}
-
-### Streaming is recommended for large datasets
-
-Axolotl usually loads the entire dataset into memory. This will be challenging for large datasets. Use the following config to enable streaming:
-
-```{.yaml filename="config.yaml"}
-pretraining_dataset:
-  - name:
-    path:
-    split:
-    text_column: # column in dataset with the data, usually `text`
-    type: pretrain
-    trust_remote_code:
-    skip: # number of rows of data to skip over from the beginning
-```
-
+- **Streaming pretraining** (large datasets): See [Streaming Datasets](../streaming.qmd#pretraining-with-streaming)
+- **Non-streaming pretraining** (`type: completion`): See [Dataset Formats](index.qmd#pre-training)
 :::

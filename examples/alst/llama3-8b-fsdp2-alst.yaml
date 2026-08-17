@@ -39,7 +39,7 @@ activation_offloading: legacy
 
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: true
+attn_implementation: flash_attention_2
 
 warmup_steps: 100
 saves_per_epoch: 1

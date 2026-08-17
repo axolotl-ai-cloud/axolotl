@@ -1,0 +1,85 @@
+# See examples/nemotron-h/README.md for architecture notes and requirements.
+base_model: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_layer_norm: true
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_rms_norm_gated: true
+
+# LoRA kernel patches are incompatible with this architecture — see README.
+lora_mlp_kernel: false
+lora_qkv_kernel: false
+lora_o_kernel: false
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:20%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
+val_set_size: 0.0
+output_dir: ./outputs/out
+dataset_prepared_path: last_run_prepared
+
+sequence_len: 4096
+sample_packing: true
+
+context_parallel_size: 2
+
+load_in_4bit: true
+quantize_moe_experts: true
+adapter: qlora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+# To also train MoE expert weights, add them via lora_target_parameters
+# (they are 3D nn.Parameter tensors, not nn.Linear — no gate_proj):
+# lora_target_parameters:
+#   - up_proj
+#   - down_proj
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 2
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_4bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+resume_from_checkpoint:
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+
+special_tokens:

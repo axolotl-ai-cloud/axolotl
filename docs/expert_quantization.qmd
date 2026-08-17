@@ -12,6 +12,12 @@ It intercepts the weight loading process, quantizes each expert tensor on the fl
 immediately frees the original bf16 tensor from VRAM. This dramatically reduces peak memory.
 For example, GLM-4.7-Flash QLoRA drops from ~127GiB to ~23GiB reserved memory.
 
+::: {.callout-tip}
+
+For checkpoints that ship *already* quantized to NVFP4 (ModelOpt exports), see [NVFP4 MoE LoRA](nvfp4_lora.qmd) instead: the experts stay 4-bit-packed and the adapter can merge back into a plain NVFP4 model.
+
+:::
+
 ## Usage
 
 Enable expert quantization in your Axolotl config:

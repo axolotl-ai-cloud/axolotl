@@ -42,7 +42,7 @@ class TestStreamingDatasets:
                 ],
                 # Streaming config
                 "streaming": True,
-                "max_steps": 3,
+                "max_steps": 10,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
                 "val_set_size": 0.0,

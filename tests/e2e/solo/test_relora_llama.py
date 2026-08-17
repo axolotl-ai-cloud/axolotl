@@ -56,7 +56,72 @@ class TestReLoraLlama(unittest.TestCase):
                 ],
                 "warmup_steps": 10,
                 "num_epochs": 2,
-                "max_steps": 105,  # at least 2x relora_steps
+                "max_steps": 105,  # at least 2x restart cadence
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_8bit",
+                "lr_scheduler": "cosine",
+                "use_tensorboard": True,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-100/adapter", cfg)
+        assert (Path(temp_dir) / "checkpoint-100/relora/model.safetensors").exists(), (
+            "Relora model checkpoint not found"
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/grad_norm", 0.2, "grad_norm is too high"
+        )
+
+    @with_temp_dir
+    def test_relora_reset_method(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 2048,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
+                "flash_attention": True,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_modules": ["q_proj", "v_proj"],
+                "relora": True,
+                "jagged_restart_steps": 50,
+                "jagged_restart_warmup_steps": 10,
+                "jagged_restart_anneal_steps": 10,
+                "relora_prune_ratio": 0.5,  # explicitly honored by reset (not ignored)
+                "relora_prune_method": "reset",
+                "relora_cpu_offload": True,
+                "val_set_size": 0.0,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "chat_template": "chatml",
+                "datasets": [
+                    {
+                        "path": "mlabonne/FineTome-100k",
+                        "type": "chat_template",
+                        "split": "train[:10%]",
+                        "field_messages": "conversations",
+                        "message_field_role": "from",
+                        "message_field_content": "value",
+                    },
+                ],
+                "warmup_steps": 10,
+                "num_epochs": 2,
+                "max_steps": 105,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,

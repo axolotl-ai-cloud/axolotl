@@ -2,7 +2,6 @@
 
 import atexit
 import importlib
-import logging
 import os
 import platform
 import uuid
@@ -14,7 +13,9 @@ import psutil
 import torch
 import yaml
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
@@ -160,41 +161,32 @@ class TelemetryManager:
         if not is_main_process():
             return False
 
-        # Parse relevant env vars
-        axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
-        do_not_track = os.getenv("DO_NOT_TRACK")
+        def is_truthy_env(var_name: str) -> bool:
+            value = os.getenv(var_name)
+            if value is None:
+                return False
+            return value.strip().lower() in ("1", "true")
 
-        # Default to enabled (opt-out model)
-        if axolotl_do_not_track is None or axolotl_do_not_track.lower() not in (
-            "0",
-            "1",
-            "false",
-            "true",
-        ):
-            return True
-
-        if do_not_track is None:
-            do_not_track = "0"
-
-        # Respect AXOLOTL_DO_NOT_TRACK, DO_NOT_TRACK if enabled
-        enabled = axolotl_do_not_track.lower() not in (
-            "1",
-            "true",
-        ) and do_not_track.lower() not in ("1", "true")
-
-        return enabled
+        # Telemetry is enabled by default unless either opt-out var is set
+        return not (
+            is_truthy_env("AXOLOTL_DO_NOT_TRACK") or is_truthy_env("DO_NOT_TRACK")
+        )
 
     def _load_whitelist(self) -> dict:
         """Load HuggingFace Hub organization whitelist"""
-        with open(WHITELIST_PATH, encoding="utf-8") as f:
-            whitelist = yaml.safe_load(f)
+        try:
+            with open(WHITELIST_PATH, encoding="utf-8") as f:
+                whitelist = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as e:
+            # A missing/unreadable whitelist must never break `import axolotl`.
+            # Empty whitelist => nothing is whitelisted => all orgs get redacted.
+            LOG.warning(f"Could not load telemetry whitelist ({e}); redacting all orgs")
+            return {"organizations": set()}
 
-            # Send org strings to lowercase since model names are case insensitive
-            whitelist["organizations"] = {
-                org.lower() for org in whitelist["organizations"]
-            }
+        # Send org strings to lowercase since model names are case insensitive
+        whitelist["organizations"] = {org.lower() for org in whitelist["organizations"]}
 
-            return whitelist
+        return whitelist
 
     def _is_whitelisted(self, value: str) -> bool:
         """
@@ -255,7 +247,7 @@ class TelemetryManager:
             if isinstance(value, dict):
                 return {k: redact_value(v, k) for k, v in value.items()}
             if isinstance(value, list):
-                return [redact_value(item) for item in value]
+                return [redact_value(item, key) for item in value]
 
             return value
 

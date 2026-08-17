@@ -13,6 +13,7 @@ from axolotl.utils.dict import DictDefault
 
 from .utils import (
     check_model_output_exists,
+    check_tensorboard_loss_decreased,
     require_torch_2_5_1,
     require_torch_2_6_0,
     require_torch_2_7_0,
@@ -27,6 +28,7 @@ class TestCustomOptimizers(unittest.TestCase):
 
     @with_temp_dir
     def test_optimi_adamw(self, temp_dir):
+        pytest.importorskip("optimi")
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -161,6 +163,110 @@ class TestCustomOptimizers(unittest.TestCase):
         assert "Muon" in trainer.optimizer.optimizer.__class__.__name__
 
     @with_temp_dir
+    @require_torch_2_5_1
+    def test_sinkgd(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "model_type": "AutoModelForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "val_set_size": 0.02,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                        "split": "train[:200]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 5,
+                "micro_batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "sinkgd",
+                "optim_args": {"sinkhorn_iters": 5, "sinkgd_lr_scale": 0.05},
+                "lr_scheduler": "cosine",
+                "weight_decay": 0.01,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        assert "SinkGD" in trainer.optimizer.optimizer.__class__.__name__
+
+    @with_temp_dir
+    @require_torch_2_5_1
+    def test_sinkgd_spectral_norm(self, temp_dir):
+        """Feature A: spectral-norm (Muon target) trains end-to-end without NaN/divergence."""
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "model_type": "AutoModelForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "val_set_size": 0.02,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                        "split": "train[:200]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 5,
+                "micro_batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.001,
+                "optimizer": "sinkgd",
+                "optim_args": {
+                    "sinkhorn_iters": 5,
+                    "sinkgd_lr_scale": 0.05,
+                    "sinkgd_spectral_norm": True,
+                    "sinkgd_spectral_target": "muon",
+                    "sinkgd_spectral_norm_iters": 2,
+                },
+                "lr_scheduler": "cosine",
+                "weight_decay": 0.0,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        assert "SinkGD" in trainer.optimizer.optimizer.__class__.__name__
+
+    @pytest.mark.skip(
+        reason="Dion's internal torch.compile hits a dynamo cache-limit error"
+    )
+    @with_temp_dir
     @require_torch_2_7_0
     def test_dion(self, temp_dir):
         cfg = DictDefault(
@@ -203,6 +309,48 @@ class TestCustomOptimizers(unittest.TestCase):
         assert "Dion" in trainer.optimizer.optimizer.__class__.__name__
 
     @with_temp_dir
+    def test_q_galore_adamw8bit(self, temp_dir):
+        pytest.importorskip("q_galore_torch")
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "model_type": "AutoModelForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "val_set_size": 0.0,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 5,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "q_galore_adamw8bit",
+                "bf16": True,
+                # Tiny rank/group_size so it fits SmolLM's hidden dim cleanly.
+                "qgalore_rank": 32,
+                "qgalore_update_proj_gap": 2,
+                "qgalore_proj_group_size": 64,
+                "lr_scheduler": "cosine",
+                "save_first_step": False,
+            }
+        )
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+        _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        assert "AdamW8bit" in trainer.optimizer.optimizer.__class__.__name__
+
+    @with_temp_dir
     def test_fft_schedule_free_adamw(self, temp_dir):
         cfg = DictDefault(
             {
@@ -241,22 +389,21 @@ class TestCustomOptimizers(unittest.TestCase):
     @with_temp_dir
     @require_torch_2_6_0
     def test_came_pytorch(self, temp_dir):
+        pytest.importorskip("came_pytorch")
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "axolotl-ai-co/tiny-llama-50m",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
-                "lora_dropout": 0.05,
+                "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -265,16 +412,22 @@ class TestCustomOptimizers(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 1e-4,
                 "optimizer": "came_pytorch",
                 "adam_beta3": 0.9999,
                 "adam_epsilon2": 1e-16,
-                "max_steps": 5,
+                "max_steps": 80,
+                "warmup_steps": 5,
+                "logging_steps": 1,
                 "lr_scheduler": "cosine",
                 "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
 
@@ -284,6 +437,13 @@ class TestCustomOptimizers(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=10,
+            final_window=10,
+            max_initial=4.0,
+            max_final=3.0,
+        )
 
 
 @require_torch_2_7_0

@@ -16,7 +16,6 @@
 
 import abc
 import importlib
-import logging
 import sys
 from abc import abstractmethod
 from contextlib import suppress
@@ -41,12 +40,14 @@ from axolotl.utils.callbacks import (
     GCCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveModelOnFirstStepCallback,
+    SkipEvalOnResumeCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 with suppress(ImportError):
     import torch._dynamo
@@ -118,8 +119,12 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
-        if self.cfg.gc_steps:
-            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
+        if self.cfg.resume_from_checkpoint:
+            callbacks.append(SkipEvalOnResumeCallback())
+
+        gc_collect_steps = self.cfg.gc_collect_steps or self.cfg.gc_steps
+        if gc_collect_steps:
+            callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -176,6 +181,20 @@ class TrainerBuilderBase(abc.ABC):
         telemetry_manager = TelemetryManager.get_instance()
         if telemetry_manager.enabled:
             callbacks.append(TelemetryCallback())
+
+            # Report the fused RMSNorm+RoPE autotune selection + GPU identity so
+            # per-hardware tuning can be aggregated (mirrors scattermoe-lora).
+            if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
+            ):
+                from axolotl.kernels.autotune_telemetry import (
+                    FusedRopeAutotuneReportCallback,
+                )
+
+                callbacks.append(FusedRopeAutotuneReportCallback())
 
         return callbacks
 
@@ -322,6 +341,21 @@ class TrainerBuilderBase(abc.ABC):
                 _, device_mesh = build_parallelism_config(self.cfg)
                 if device_mesh is not None:
                     optimizer_kwargs["device_mesh"] = device_mesh
+            elif self.cfg.optimizer == "sinkgd":
+                _, device_mesh = build_parallelism_config(self.cfg)
+
+                if device_mesh is not None:
+                    from axolotl.utils.optimizers.sinkgd import (
+                        DistSinkGDOptimizerFactory,
+                    )
+
+                    optimizer_cls = DistSinkGDOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                else:
+                    from axolotl.utils.optimizers.sinkgd import SinkGDOptimizerFactory
+
+                    optimizer_cls = SinkGDOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
@@ -329,7 +363,7 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = AdamW
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "ao_adamw_fp8":
-                from torchao.prototype.low_bit_optim import AdamWFp8
+                from torchao.optim.adam import AdamWFp8
 
                 optimizer_cls = AdamWFp8
                 optimizer_kwargs.update(adam_kwargs)
@@ -351,6 +385,32 @@ class TrainerBuilderBase(abc.ABC):
                 eps2 = training_args_kwargs.get("adam_epsilon2", 1e-16)
                 adam_kwargs["betas"] = (beta1, beta2, beta3)
                 adam_kwargs["eps"] = (eps1, eps2)
+
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "q_galore_adamw8bit":
+                from axolotl.utils.optimizers.qgalore import (
+                    build_qgalore_param_groups,
+                    patch_q_galore_for_modern_bnb,
+                )
+
+                patch_q_galore_for_modern_bnb()
+                from q_galore_torch import QGaLoreAdamW8bit
+
+                optimizer_cls = QGaLoreAdamW8bit
+                optimizer_kwargs["params"] = build_qgalore_param_groups(
+                    self.model,
+                    self.cfg.optim_target_modules,
+                    rank=self.cfg.qgalore_rank,
+                    update_proj_gap=self.cfg.qgalore_update_proj_gap,
+                    scale=self.cfg.qgalore_scale,
+                    proj_type=self.cfg.qgalore_proj_type,
+                    proj_quant=self.cfg.qgalore_proj_quant,
+                    proj_bits=self.cfg.qgalore_proj_bits,
+                    proj_group_size=self.cfg.qgalore_proj_group_size,
+                    cos_threshold=self.cfg.qgalore_cos_threshold,
+                    gamma_proj=self.cfg.qgalore_gamma_proj,
+                    queue_size=self.cfg.qgalore_queue_size,
+                )
 
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "flash_adamw":
@@ -498,6 +558,17 @@ class TrainerBuilderBase(abc.ABC):
                 )
             if self.cfg.torch_compile_mode:
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
+            if self.cfg.torch_compile_options:
+                self._apply_torch_compile_options(self.cfg.torch_compile_options)
+
+    @staticmethod
+    def _apply_torch_compile_options(options: dict[str, Any]) -> None:
+        """Apply allowlisted torch._inductor.config flags before torch.compile runs."""
+        # HF Trainer doesn't forward inductor options; mutate global config directly.
+        import torch._inductor.config as inductor_cfg
+
+        for key, value in options.items():
+            setattr(inductor_cfg, key, value)
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
         if self.cfg.accelerator_config:
@@ -510,10 +581,21 @@ class TrainerBuilderBase(abc.ABC):
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.layer_offloading:
             training_args_kwargs["layer_offloading"] = True
-        if self.cfg.activation_offloading is True:
-            # don't use the HF gradient checkpointing, manually wrap
+        if self.cfg.activation_offloading == "hidden_states":
+            training_args_kwargs["gradient_checkpointing"] = True
+            gc_kwargs = dict(self.cfg.gradient_checkpointing_kwargs or {})
+            training_args_kwargs["gradient_checkpointing_kwargs"] = gc_kwargs
+            if gc_kwargs["use_reentrant"] is False:
+                training_args_kwargs["activation_offloading"] = (
+                    self.cfg.activation_offloading
+                )
+        elif self.cfg.activation_offloading:
+            # TRL offloader replaces HF recompute (re-added for full finetune in the
+            # model loader), so disable HF checkpointing and pass the mode through.
             training_args_kwargs["gradient_checkpointing"] = False
-            training_args_kwargs["activation_offloading"] = True
+            training_args_kwargs["activation_offloading"] = (
+                self.cfg.activation_offloading
+            )
         elif self.cfg.gradient_checkpointing is not None:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
@@ -569,6 +651,8 @@ class TrainerBuilderBase(abc.ABC):
             "dion_rank_fraction",
             "dion_rank_multiple_of",
             "dataset_num_proc",
+            # memory management
+            "torch_empty_cache_steps",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
