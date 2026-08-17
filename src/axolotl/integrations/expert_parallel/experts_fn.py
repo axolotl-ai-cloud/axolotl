@@ -145,6 +145,12 @@ def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
     )
 
 
+def _pow2_bucket(n: int, floor: int = 1024) -> int:
+    """Smallest power of two >= ``n``, floored at ``floor`` so tiny counts still land in
+    one of a handful of cached autotuner shape keys instead of minting a new one."""
+    return max(floor, 1 << (n - 1).bit_length()) if n else floor
+
+
 def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
     from axolotl.integrations.kernels.libs.sonicmoe.experts import (
         sonicmoe_experts_forward_with_lora,
@@ -153,25 +159,51 @@ def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
     # The sonic-moe build treats expert_id == E_local as the EP sentinel (dropped from the
     # histogram/GEMM and guarded in the router backward); DeepEP tags remote slots -1.
     E_local = getattr(experts, "num_local_experts", experts.num_experts)
-    safe_idx = torch.where(
-        recv_topk_idx >= 0, recv_topk_idx, torch.full_like(recv_topk_idx, E_local)
+    num_recv, num_top_k = recv_topk_idx.shape
+    device = recv_x.device
+
+    # A received row is only real because >=1 of its top-k slots is local; the rest of that
+    # row's slots are commonly -1 (non-local). Padding whole rows to a pow2 recv_count (as
+    # before) still pays for every -1 slot in every kept row. Compact at (row, k)-slot
+    # granularity instead: gather just the locally-valid slots (duplicating a row's hidden
+    # state once per valid slot), pad *that* count to its own pow2 bucket, run the kernel with
+    # top_k=1 per gathered row, then scatter-add the per-slot outputs back to per-token rows.
+    # At high EP degree valid_count << recv_count, so this bucket -- and the memory behind it
+    # -- is materially smaller, while still collapsing to a few cached autotuner shape keys.
+    flat_idx = recv_topk_idx.reshape(-1)
+    flat_w = recv_topk_weights.reshape(-1)
+    flat_tok = (
+        torch.arange(num_recv, device=device)
+        .unsqueeze(1)
+        .expand(-1, num_top_k)
+        .reshape(-1)
     )
 
-    # The quack autotuner caches per exact tensor shape and the DeepEP recv count changes
-    # every step/layer, so unpadded calls re-trigger a full compile+benchmark sweep per MoE
-    # call. Pad to pow2 buckets with all-sentinel rows (zero-compute, dropped from every GEMM
-    # range) so shapes collapse to a handful of keys tuned once.
-    num_recv = recv_x.size(0)
-    padded = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
-    if padded != num_recv:
-        pad = padded - num_recv
-        recv_x = F.pad(recv_x, (0, 0, 0, pad))
-        safe_idx = F.pad(safe_idx, (0, 0, 0, pad), value=E_local)
-        recv_topk_weights = F.pad(recv_topk_weights, (0, 0, 0, pad))
-    out = sonicmoe_experts_forward_with_lora(
-        experts, recv_x, safe_idx, recv_topk_weights
+    valid_mask = flat_idx >= 0
+    valid_pos = valid_mask.nonzero(as_tuple=True)[0]
+    valid_count = valid_pos.numel()
+
+    gather_tok = flat_tok[valid_pos]
+    gather_idx = flat_idx[valid_pos]
+    gather_w = flat_w[valid_pos]
+
+    padded = _pow2_bucket(valid_count)
+    if padded != valid_count:
+        pad = padded - valid_count
+        gathered_x = F.pad(recv_x[gather_tok], (0, 0, 0, pad))
+        gather_idx = F.pad(gather_idx, (0, pad), value=E_local)
+        gather_w = F.pad(gather_w, (0, pad))
+    else:
+        gathered_x = recv_x[gather_tok]
+
+    out_compact = sonicmoe_experts_forward_with_lora(
+        experts, gathered_x, gather_idx.unsqueeze(1), gather_w.unsqueeze(1)
     )
-    return out[:num_recv] if padded != num_recv else out
+    out = torch.zeros(
+        num_recv, out_compact.size(-1), dtype=out_compact.dtype, device=device
+    )
+    out.index_add_(0, gather_tok, out_compact[:valid_count])
+    return out
 
 
 _LOCAL_KERNELS = {

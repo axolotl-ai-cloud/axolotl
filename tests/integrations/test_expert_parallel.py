@@ -878,3 +878,97 @@ class TestEpLoraSaveGating:
 
         assert shard_expert_lora(m, 1) == 0
         assert getattr(m.wrapper, "_ep_lora_sharded", False) is False
+
+
+# --------------------------------------------------------------------------- #
+# sonicmoe compact-then-pad
+# --------------------------------------------------------------------------- #
+
+
+class TestSonicmoeCompactThenPad:
+    """`_sonicmoe_local` gathers only locally-valid (row, k)-slots, pads that smaller
+    count to a pow2 bucket, and scatter-adds the kernel's per-slot output back to
+    per-token rows. These tests fake out the CUTLASS kernel with a deterministic
+    CPU stand-in so the gather/pad/scatter bookkeeping can be checked without CUDA
+    or the real sonicmoe/DeepEP dependencies.
+    """
+
+    def _fake_kernel(self, _experts, x, top_k_index, top_k_weights):
+        # top_k_index/weights are [n, 1] post-compaction (num_top_k == 1). Sentinel
+        # rows (index == E_local) must contribute zero, mirroring the real kernel's
+        # sentinel-drop behavior.
+        idx = top_k_index.squeeze(1)
+        w = top_k_weights.squeeze(1)
+        sentinel = idx.max()  # E_local passed as the padded index value
+        y = x * (idx.clamp(min=0).unsqueeze(1) + 1) * w.unsqueeze(1)
+        y = torch.where((idx == sentinel).unsqueeze(1), torch.zeros_like(y), y)
+        return y
+
+    def _reference(self, recv_x, recv_topk_idx, recv_topk_weights):
+        num_recv, num_top_k = recv_topk_idx.shape
+        out = torch.zeros_like(recv_x)
+        for i in range(num_recv):
+            for k in range(num_top_k):
+                e = recv_topk_idx[i, k].item()
+                if e < 0:
+                    continue
+                out[i] += recv_x[i] * (e + 1) * recv_topk_weights[i, k]
+        return out
+
+    def test_matches_reference_with_partial_sentinels(self, monkeypatch):
+        import axolotl.integrations.kernels.libs.sonicmoe.experts as sonicmoe_experts
+        from axolotl.integrations.expert_parallel.experts_fn import _sonicmoe_local
+
+        monkeypatch.setattr(
+            sonicmoe_experts, "sonicmoe_experts_forward_with_lora", self._fake_kernel
+        )
+
+        torch.manual_seed(0)
+        num_recv, num_top_k, hidden, e_local = 37, 3, 5, 4
+        recv_x = torch.randn(num_recv, hidden)
+        recv_topk_idx = torch.randint(-1, e_local, (num_recv, num_top_k))
+        # guarantee every row has >=1 valid slot, matching real dispatch semantics
+        recv_topk_idx[:, 0] = torch.randint(0, e_local, (num_recv,))
+        recv_topk_weights = torch.rand(num_recv, num_top_k)
+
+        experts = type(
+            "E", (), {"num_local_experts": e_local, "num_experts": e_local}
+        )()
+        out = _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights)
+        expected = self._reference(recv_x, recv_topk_idx, recv_topk_weights)
+        torch.testing.assert_close(out, expected)
+
+    def test_zero_recv_rows(self, monkeypatch):
+        import axolotl.integrations.kernels.libs.sonicmoe.experts as sonicmoe_experts
+        from axolotl.integrations.expert_parallel.experts_fn import _sonicmoe_local
+
+        monkeypatch.setattr(
+            sonicmoe_experts, "sonicmoe_experts_forward_with_lora", self._fake_kernel
+        )
+
+        hidden, e_local = 5, 4
+        recv_x = torch.randn(0, hidden)
+        recv_topk_idx = torch.randint(-1, e_local, (0, 3))
+        recv_topk_weights = torch.rand(0, 3)
+
+        experts = type(
+            "E", (), {"num_local_experts": e_local, "num_experts": e_local}
+        )()
+        out = _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights)
+        assert out.shape == (0, hidden)
+
+
+class TestPow2Bucket:
+    def test_floors_small_counts(self):
+        from axolotl.integrations.expert_parallel.experts_fn import _pow2_bucket
+
+        assert _pow2_bucket(0) == 1024
+        assert _pow2_bucket(1) == 1024
+        assert _pow2_bucket(1024) == 1024
+
+    def test_rounds_up_to_next_pow2_above_floor(self):
+        from axolotl.integrations.expert_parallel.experts_fn import _pow2_bucket
+
+        assert _pow2_bucket(1025) == 2048
+        assert _pow2_bucket(4096) == 4096
+        assert _pow2_bucket(4097) == 8192
