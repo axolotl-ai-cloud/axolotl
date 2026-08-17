@@ -80,7 +80,7 @@ def _patched_decoder_forward(
     residual = hidden_states
     hidden_states = self.input_layernorm(hidden_states)
 
-    if self.layer_type == "linear_attention":
+    if self.block_type == "linear_attention":
         hidden_states = self.linear_attn(
             hidden_states=hidden_states,
             cache_params=past_key_values,
@@ -88,7 +88,7 @@ def _patched_decoder_forward(
             attention_mask=attention_mask,
             position_ids=position_ids,
         )
-    elif self.layer_type == "full_attention":
+    elif self.block_type == "full_attention":
         hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
