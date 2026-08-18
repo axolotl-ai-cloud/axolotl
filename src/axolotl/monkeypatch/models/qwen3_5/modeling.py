@@ -7,6 +7,10 @@ import torch
 import torch.nn.functional as F
 
 from axolotl.monkeypatch.lora_kernels import LINEAR_ATTN_IN_PROJS
+from axolotl.monkeypatch.models.fla_compiled_loop import (
+    call_self_attn_disabled as _call_self_attn_disabled,
+    init_fla_compiled_ops as _init_fla_compiled_ops,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -20,6 +24,9 @@ except ImportError:
         from fla.modules.conv import causal_conv1d as fla_causal_conv1d  # FLA < 0.4.1
     except ImportError:
         fla_causal_conv1d = None
+
+# True when the FLA opaque custom-op wrappers registered; they keep the decoder loop free of graph breaks (one break anywhere in the loop makes dynamo skip the whole frame).
+_FLA_COMPILED_OPS = False
 
 
 def get_cu_seqlens(position_ids):
@@ -47,7 +54,7 @@ def get_cu_seqlens(position_ids):
     )
 
 
-def _inject_fla_kernels(module) -> None:
+def _inject_fla_kernels(module, *, compile_boundary: bool = False) -> None:
     """Inject FLA kernels into a modeling module, bypassing is_flash_linear_attention_available."""
     try:
         from fla.modules import FusedRMSNormGated
@@ -55,6 +62,13 @@ def _inject_fla_kernels(module) -> None:
             chunk_gated_delta_rule,
             fused_recurrent_gated_delta_rule,
         )
+
+        if compile_boundary:
+            from axolotl.monkeypatch.models import gated_delta_net_ops
+
+            gated_delta_net_ops.install_rmsnorm_gated_compile_boundary(
+                FusedRMSNormGated, logger=LOG
+            )
 
         module.FusedRMSNormGated = FusedRMSNormGated
         module.chunk_gated_delta_rule = chunk_gated_delta_rule
@@ -89,15 +103,29 @@ def _patched_decoder_forward(
             position_ids=position_ids,
         )
     elif self.layer_type == "full_attention":
-        hidden_states, _ = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            cache_position=cache_position,
-            position_embeddings=position_embeddings,
-            **kwargs,
-        )
+        if getattr(self, "gradient_checkpointing", False) and self.training:
+            # Under gradient checkpointing the fusion hazard (see below) doesn't occur, so keep attention in-graph — any graph break in the loop body makes dynamo skip the whole frame.
+            hidden_states, _ = self.self_attn(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                cache_position=cache_position,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        else:
+            # Intentional dynamo.disable boundary (non-GC path, incl. model.eval() under compile): on torch 2.11 + flash-attn, Inductor fused the FA2 backward with the gated o_proj dgrad and corrupted packed-sequence gradients; unreproduced on torch 2.9/2.10 + kernels-FA2 (toy and 0.8B real ckpt, boundary removed = noise floor), guarded by test_fa2_compiled_matches_eager_grads.
+            hidden_states, _ = _call_self_attn_disabled(
+                self.self_attn,
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                cache_position=cache_position,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
 
     hidden_states = residual + hidden_states
 
@@ -148,9 +176,17 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             and cache_position is not None
         )
 
+        # Training, no cache: route the FLA kernels through opaque ops that take position_ids and derive cu_seqlens eagerly, so aten.nonzero never enters the traced loop.
+        use_compiled_ops = (
+            _FLA_COMPILED_OPS and cache_params is None and not use_precomputed_states
+        )
         cu_seqlens = None
+        pos_for_varlen = None
         if not use_precomputed_states and position_ids is not None:
-            cu_seqlens = get_cu_seqlens(position_ids=position_ids)
+            if use_compiled_ops:
+                pos_for_varlen = position_ids
+            else:
+                cu_seqlens = get_cu_seqlens(position_ids=position_ids)
 
         if cache_params is not None:
             conv_state = cache_params.conv_states[self.layer_idx]
@@ -183,7 +219,16 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
                     (self.conv_kernel_size - mixed_qkv_t.shape[-1], 0),
                 )
 
-            if fla_causal_conv1d is not None and cu_seqlens is not None:
+            if fla_causal_conv1d is not None and pos_for_varlen is not None:
+                # Opaque op (same FLA varlen kernels): traceable, unlike the raw entry whose data-dependent .item() graph-breaks the loop.
+                mixed_qkv = torch.ops.axolotl_gdn.gdn_conv(
+                    mixed_qkv,
+                    self.conv1d.weight.squeeze(1),
+                    self.conv1d.bias,
+                    self.activation,
+                    pos_for_varlen,
+                )
+            elif fla_causal_conv1d is not None and cu_seqlens is not None:
                 # FLA varlen kernel for packed sequences; input must be contiguous [B, T, D]
                 mixed_qkv, _ = fla_causal_conv1d(
                     x=mixed_qkv,
@@ -218,18 +263,33 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
         if not use_precomputed_states:
-            core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
-                query,
-                key,
-                value,
-                g=g.to(dtype=query.dtype),
-                beta=beta,
-                initial_state=None,
-                output_final_state=cache_params is not None,
-                use_qk_l2norm_in_kernel=True,
-                # torch_chunk_gated_delta_rule fallback does not accept cu_seqlens
-                **({"cu_seqlens": cu_seqlens} if cu_seqlens is not None else {}),
-            )
+            if use_compiled_ops:
+                # Opaque op mirroring ChunkGatedDeltaRuleFunction: FLA's public entry is @torch.compiler.disable and would graph-break the loop. pos_for_varlen None = dense.
+                # Contiguize here: setup_context saves the op's inputs, so split views would re-pay this copy every backward.
+                core_attn_out = torch.ops.axolotl_gdn.gdn_chunk(
+                    query.contiguous(),
+                    key.contiguous(),
+                    value.contiguous(),
+                    g,
+                    beta,
+                    key.shape[-1] ** -0.5,  # FLA's default scale
+                    pos_for_varlen,
+                    True,  # qwen3_5 eager casts g to the input dtype
+                )[0]
+                last_recurrent_state = None
+            else:
+                core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    g=g.to(dtype=query.dtype),
+                    beta=beta,
+                    initial_state=None,
+                    output_final_state=cache_params is not None,
+                    use_qk_l2norm_in_kernel=True,
+                    # torch_chunk_gated_delta_rule fallback does not accept cu_seqlens
+                    **({"cu_seqlens": cu_seqlens} if cu_seqlens is not None else {}),
+                )
         else:
             core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
                 query,
@@ -255,7 +315,14 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
     return patched_forward
 
 
-def _apply_packing_patches(model_type: str, cls_prefix: str, forward_factory) -> None:
+def _apply_packing_patches(
+    model_type: str,
+    cls_prefix: str,
+    forward_factory,
+    *,
+    torch_compile: bool = False,
+) -> None:
+    global _FLA_COMPILED_OPS
     module_name = f"transformers.models.{model_type}.modeling_{model_type}"
 
     try:
@@ -264,24 +331,47 @@ def _apply_packing_patches(model_type: str, cls_prefix: str, forward_factory) ->
         LOG.warning(f"{model_type} not found in transformers, skipping packing patches")
         return
 
-    _inject_fla_kernels(module)
+    # Under torch_compile, route FusedRMSNormGated through its custom-op wrapper too: its eager entry is untraceable (un-meta-able as_strided backward) and would graph-break the loop.
+    _inject_fla_kernels(module, compile_boundary=torch_compile)
+    _FLA_COMPILED_OPS = _init_fla_compiled_ops(torch_compile)
+    if torch_compile and not _FLA_COMPILED_OPS:
+        from axolotl.monkeypatch.models import gated_delta_net_ops as fla_ops
+
+        # On FA2 the broken-loop compile regime benches slower than plain eager, so this must be loud.
+        LOG.warning(
+            f"torch_compile is enabled but the FLA custom ops failed to build "
+            f"({fla_ops.fla_ops_build_error()}); the {cls_prefix} decoder loop "
+            f"will NOT compile and will fall back to the eager kernels. With "
+            f"flash_attention_2 this is typically slower than disabling "
+            f"torch_compile entirely."
+        )
     getattr(module, f"{cls_prefix}DecoderLayer").forward = _patched_decoder_forward
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
     gated_cls.forward = forward_factory(module.apply_mask_to_padding_states)
 
     LOG.info(
         f"Applied {cls_prefix} packing patch "
-        f"(fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'})"
+        f"(fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'}, "
+        f"torch_compile={torch_compile}, "
+        f"compiled_loop_fla_ops={_FLA_COMPILED_OPS})"
     )
 
 
-def patch_qwen3_5_modeling_packing():
-    _apply_packing_patches("qwen3_5", "Qwen3_5", _make_qwen3_5_gated_delta_forward)
-
-
-def patch_qwen3_5_moe_modeling_packing():
+def patch_qwen3_5_modeling_packing(*, torch_compile: bool = False):
     _apply_packing_patches(
-        "qwen3_5_moe", "Qwen3_5Moe", _make_qwen3_5_gated_delta_forward
+        "qwen3_5",
+        "Qwen3_5",
+        _make_qwen3_5_gated_delta_forward,
+        torch_compile=torch_compile,
+    )
+
+
+def patch_qwen3_5_moe_modeling_packing(*, torch_compile: bool = False):
+    _apply_packing_patches(
+        "qwen3_5_moe",
+        "Qwen3_5Moe",
+        _make_qwen3_5_gated_delta_forward,
+        torch_compile=torch_compile,
     )
 
 

@@ -5,6 +5,10 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 
+from axolotl.monkeypatch.models.fla_compiled_loop import (
+    call_self_attn_disabled as _call_self_attn_disabled,
+    init_fla_compiled_ops as _init_fla_compiled_ops,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -13,6 +17,9 @@ try:
     from fla.modules.convolution import causal_conv1d as fla_causal_conv1d
 except ImportError:
     fla_causal_conv1d = None
+
+# True when the shared FLA GatedDeltaNet opaque ops registered (keeps the decoder loop break-free under compile).
+_FLA_COMPILED_OPS = False
 
 
 def get_cu_seqlens(position_ids):
@@ -65,16 +72,16 @@ def patch_qwen3_next_decoder_layer():
 
         # Token Mixer
         if self.layer_type == "linear_attention":
+            # GatedDeltaNet.forward takes (hidden_states, cache_params, attention_mask, position_ids);
+            # it does not accept cache_position (HF doesn't pass it either).
             hidden_states = self.linear_attn(
                 hidden_states=hidden_states,
                 cache_params=past_key_values,
-                cache_position=cache_position,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
             )
         elif self.layer_type == "full_attention":
-            # Self Attention
-            hidden_states, _ = self.self_attn(
+            attn_kwargs = dict(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -83,6 +90,14 @@ def patch_qwen3_next_decoder_layer():
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
+            if getattr(self, "gradient_checkpointing", False) and self.training:
+                hidden_states, _ = self.self_attn(**attn_kwargs)
+            else:
+                # Match qwen3_5: keep non-GC self-attn behind a dynamo.disable boundary (a no-op when not
+                # compiling) so an Inductor FA2-backward fusion can't corrupt packed-sequence gradients.
+                hidden_states, _ = _call_self_attn_disabled(
+                    self.self_attn, **attn_kwargs
+                )
 
         hidden_states = residual + hidden_states
 
@@ -107,7 +122,7 @@ def patch_qwen3_next_decoder_layer():
     return unpatch
 
 
-def patch_qwen3_next_gateddelta_layer():
+def patch_qwen3_next_gateddelta_layer(*, torch_compile: bool = False):
     """Patch Qwen3NextGatedDeltaNet to parse cu_seqlens and pass to chunk_gated_delta_rule"""
     try:
         from transformers.models.qwen3_next.modeling_qwen3_next import (
@@ -142,10 +157,19 @@ def patch_qwen3_next_gateddelta_layer():
             and seq_len == 1
         )
 
+        # Training, no cache: route the FLA kernels through opaque ops that derive cu_seqlens
+        # eagerly inside the op, so aten.nonzero never enters the traced loop.
+        use_compiled_ops = (
+            _FLA_COMPILED_OPS and cache_params is None and not use_precomputed_states
+        )
         # Compute cu_seqlens early for use by both causal_conv1d and chunk_gated_delta_rule
         cu_seqlens = None
+        pos_for_varlen = None
         if not use_precomputed_states and position_ids is not None:
-            cu_seqlens = get_cu_seqlens(position_ids=position_ids)
+            if use_compiled_ops:
+                pos_for_varlen = position_ids
+            else:
+                cu_seqlens = get_cu_seqlens(position_ids=position_ids)
 
         # getting projected states from cache if it exists
         if use_precomputed_states:
@@ -180,7 +204,18 @@ def patch_qwen3_next_gateddelta_layer():
                 )
                 cache_params.update_conv_state(conv_state, self.layer_idx)
 
-            if fla_causal_conv1d is not None:
+            if use_compiled_ops and fla_causal_conv1d is not None:
+                # Opaque op (same FLA varlen kernel): traceable, unlike the raw entry whose data-dependent op graph-breaks the loop.
+                mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, T, D] for FLA
+                mixed_qkv = torch.ops.axolotl_gdn.gdn_conv(
+                    mixed_qkv,
+                    self.conv1d.weight.squeeze(1),
+                    self.conv1d.bias,
+                    self.activation,
+                    pos_for_varlen,
+                )
+                mixed_qkv = mixed_qkv.transpose(1, 2)  # back to [B, D, T]
+            elif fla_causal_conv1d is not None:
                 # FLA Triton causal_conv1d: [B, T, D] in/out, with cu_seqlens support
                 mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, T, D] for FLA
                 mixed_qkv, _ = fla_causal_conv1d(
@@ -232,7 +267,21 @@ def patch_qwen3_next_gateddelta_layer():
             query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
-        if not use_precomputed_states:
+        if use_compiled_ops:
+            # Opaque op mirroring ChunkGatedDeltaRuleFunction. cast_g=False: qwen3_next passes g (f32)
+            # to the kernel unchanged (unlike qwen3_5, which casts g to the input dtype).
+            core_attn_out = torch.ops.axolotl_gdn.gdn_chunk(
+                query.contiguous(),
+                key.contiguous(),
+                value.contiguous(),
+                g,
+                beta,
+                key.shape[-1] ** -0.5,  # FLA's default scale
+                pos_for_varlen,
+                False,
+            )[0]
+            last_recurrent_state = None
+        elif not use_precomputed_states:
             core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
                 query,
                 key,
@@ -284,7 +333,7 @@ def patch_qwen3_next_gateddelta_layer():
     return unpatch
 
 
-def patch_qwen3_next_imports():
+def patch_qwen3_next_imports(*, torch_compile: bool = False):
     """Patch Qwen3Next imports to use try/except instead of is_flash_linear_attention_available."""
     try:
         import transformers.models.qwen3_next.modeling_qwen3_next as qwen3_modeling
@@ -310,6 +359,14 @@ def patch_qwen3_next_imports():
             chunk_gated_delta_rule,
             fused_recurrent_gated_delta_rule,
         )
+
+        if torch_compile:
+            # Under compile, route FusedRMSNormGated through its opaque-op wrapper: its eager backward is un-meta-able and would graph-break the loop.
+            from axolotl.monkeypatch.models import gated_delta_net_ops
+
+            gated_delta_net_ops.install_rmsnorm_gated_compile_boundary(
+                FusedRMSNormGated, logger=LOG
+            )
 
         qwen3_modeling.FusedRMSNormGated = FusedRMSNormGated
         qwen3_modeling.chunk_gated_delta_rule = chunk_gated_delta_rule
@@ -337,10 +394,23 @@ def patch_qwen3_next_imports():
     return unpatch
 
 
-def patch_qwen3_next_modeling_packing():
+def patch_qwen3_next_modeling_packing(*, torch_compile: bool = False):
     """Apply all Qwen3Next model patches."""
-    patch_qwen3_next_imports()
+    global _FLA_COMPILED_OPS
+    patch_qwen3_next_imports(torch_compile=torch_compile)
     patch_qwen3_next_decoder_layer()
-    patch_qwen3_next_gateddelta_layer()
+    patch_qwen3_next_gateddelta_layer(torch_compile=torch_compile)
+    _FLA_COMPILED_OPS = _init_fla_compiled_ops(torch_compile)
+    if torch_compile and not _FLA_COMPILED_OPS:
+        from axolotl.monkeypatch.models import gated_delta_net_ops
 
-    LOG.info("Applied Qwen3Next patch for packing")
+        LOG.warning(
+            f"torch_compile is enabled but the FLA custom ops failed to build "
+            f"({gated_delta_net_ops.fla_ops_build_error()}); the Qwen3Next decoder loop "
+            f"will NOT compile and will fall back to the eager kernels."
+        )
+
+    LOG.info(
+        f"Applied Qwen3Next patch for packing "
+        f"(torch_compile={torch_compile}, compiled_loop_fla_ops={_FLA_COMPILED_OPS})"
+    )
