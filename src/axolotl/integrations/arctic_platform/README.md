@@ -20,51 +20,45 @@ Without `arctic_platform` installed, enabling the plugin raises an
 
 ## Activate
 
-There is no auto-discovery. Opt in from your Axolotl YAML with the plugin
-dotted path (same mechanism as Hatchery / Liger / …):
+There is no auto-discovery. Opt in from your Axolotl YAML with the plugin dotted path (same mechanism as Hatchery / Liger / …).
+
+**On-prem** (`backend: onprem`) — local server, `http` or `ray`. No `host` / `port`. Blank `CUDA_VISIBLE_DEVICES` on the Axolotl process so only the child uses GPUs.
 
 ```yaml
 plugins:
   - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
 
 arctic_sft:
-  host: localhost
-  port: 8765
+  backend: onprem
+  comm_protocol: http
   training_gpus: 2
   launch_local_server: true
   server_cuda_visible_devices: "0,1"
-  checkpoint_path: ./arctic_sft_ckpt   # server-side; required for new jobs
+  checkpoint_path: ./arctic_sft_ckpt
 ```
-
-Full worked example:
-[`sft/examples/arctic_sft.yaml`](sft/examples/arctic_sft.yaml).
-
-### Colocated HTTP server (CPU-only client)
 
 ```bash
 CUDA_VISIBLE_DEVICES= axolotl train path/to/your_config.yaml
 ```
 
-- Empty `CUDA_VISIBLE_DEVICES` keeps Axolotl off the GPUs.
-- `launch_local_server: true` starts `arctic_platform.common.http_server` as a child.
-- `server_cuda_visible_devices` is the GPU list for that child.
-
-### Already-running server
+**Remote** (`backend: remote`) — `host` / `port`, `http` or `cortex`. Shape only; not accepted until `TODO(arctic-sft-backends)`.
 
 ```yaml
+plugins:
+  - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
+
 arctic_sft:
-  host: training-node.example.com
+  backend: remote
+  comm_protocol: http
+  host: dss-gpu-host.example.com
   port: 8765
-  training_gpus: 4
-  launch_local_server: false
-  # training_job_id: 1   # optional: reconnect instead of creating a job
+  training_gpus: 2
+  checkpoint_path: ./arctic_sft_ckpt
 ```
 
-```bash
-python -m arctic_platform.common.http_server \
-  --host 0.0.0.0 --port 8765 \
-  --training-gpus 4 --sampling-gpus 0 --log-prob-gpus 0
-```
+- Worked YAML: [`sft/examples/arctic_sft.yaml`](sft/examples/arctic_sft.yaml)
+- Every `arctic_sft:` field and default: [`sft/args.py`](sft/args.py) (`ArcticSFTConfig`)
+- Server client (`ArcticSFTClientConfig`): arctic-platform `docs/sft.md`
 
 ## Config
 
@@ -72,18 +66,24 @@ python -m arctic_platform.common.http_server \
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `host` / `port` | `localhost` / `8000` | Server address |
+| `backend` | `onprem` | `onprem` now. `remote` is `TODO(arctic-sft-backends)` |
+| `comm_protocol` | `http` | onprem: `http` / `ray`. remote (later): `http` / `cortex` |
+| `host` / `port` | `localhost` / `8000` | Remote only. Do not set on `backend: onprem` |
 | `training_gpus` | **required** (≥1) | GPUs on the server for training |
-| `comm_protocol` | `http` | `http` or `ray` |
 | `launch_local_server` | `false` | Spawn a local HTTP server from the client |
 | `server_cuda_visible_devices` | `null` | GPU list for that subprocess (e.g. `"0,1"`) |
 | `loss_fn` | `sft` | `sft` (HF CE) or `sft_ce` (explicit CE) |
+| `logits_optimization` | `none` | `sft_ce` only: `none` / `compute` / `memory` |
+| `logits_optimization_peak_mem_size_in_gib` | `4` | Tile/chunk budget for `compute` / `memory` |
 | `model_name` | `null` | Override; else top-level `base_model` |
 | `checkpoint_path` | `null` | Server checkpoint dir (defaults from `output_dir` if unset) |
+| `export_hf` | `false` | Also write HF weights under `{checkpoint}/hf/` |
 | `gradient_checkpointing` | `false` | Server-side activation checkpointing |
 | `sampling_gpus` | `0` | `>0` enables remote sample generation (vLLM) |
 | `colocate` | `false` | Share GPUs between training and sampling |
+| `vllm_config` | `null` | Forwarded to the sampling job |
 | `training_job_id` / `sampling_job_id` | `null` | Reattach to existing jobs |
+| `startup_timeout` / `job_ready_timeout` / `request_timeout` | `600` / `1800` / `1800` | Seconds |
 | `ds_config` / `ds_worker_config` | `null` | Escape hatches; else synthesized from top-level knobs (optimizer + LR schedule fold into `ds_config`) |
 
 CLI nested overrides work as usual, e.g. `arctic_sft__port=9000`.

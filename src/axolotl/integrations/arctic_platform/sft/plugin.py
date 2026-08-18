@@ -19,17 +19,10 @@ LOG = get_logger(__name__)
 class ArcticSFTPlugin(BasePlugin):
     """Replaces local SFT forward/backward/step with ``ArcticSFTClient`` calls.
 
-    Activated from the axolotl YAML::
-
-        plugins:
-          - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
-
-        arctic_sft:
-          host: localhost
-          port: 8765
-          training_gpus: 2
-          launch_local_server: true
-          server_cuda_visible_devices: "0,1"
+    Opt in with ``plugins: [axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin]``
+    and an ``arctic_sft:`` block. Full usage is in the package README
+    (``integrations/arctic_platform/README.md``); every ``arctic_sft:`` field
+    is on ``ArcticSFTConfig`` in ``args.py``.
     """
 
     def get_input_args(self) -> str:

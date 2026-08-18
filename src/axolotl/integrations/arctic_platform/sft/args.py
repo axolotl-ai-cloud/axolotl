@@ -9,6 +9,10 @@ settings that map onto ``ArcticSFTClientConfig``. Standard training knobs
 ``gradient_accumulation_steps``, ``sequence_len``, ``attn_implementation`` …)
 are read from axolotl's top-level config so they don't need to be duplicated
 here.
+
+Usage (colocated vs Ray, pitfalls, top-level knobs the plugin forwards):
+``axolotl/integrations/arctic_platform/README.md``. Server client fields:
+arctic-platform ``docs/sft.md``.
 """
 
 from __future__ import annotations
@@ -21,7 +25,12 @@ from pydantic import BaseModel, Field
 class ArcticSFTConfig(BaseModel):
     """Nested config under ``arctic_sft:`` in the axolotl YAML."""
 
-    # Transport / backend
+    # TODO(arctic-sft-backends): AP will expose backend+protocol pairs
+    #   onprem -> http | ray
+    #   remote -> http | cortex
+    # Widen these Literals, plugin._build_client_config, and the usage
+    # snippets in __init__.py / README once ArcticSFTClientConfig accepts
+    # them. Until then YAML may only set backend=onprem.
     backend: Literal["onprem"] = "onprem"
     comm_protocol: Literal["http", "ray"] = "http"
 
