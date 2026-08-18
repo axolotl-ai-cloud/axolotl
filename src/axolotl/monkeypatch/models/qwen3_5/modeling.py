@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+from transformers.integrations.accelerate import force_accelerate_hooks
 
 from axolotl.monkeypatch.lora_kernels import LINEAR_ATTN_IN_PROJS
 from axolotl.utils.logging import get_logger
@@ -20,6 +21,13 @@ except ImportError:
         from fla.modules.conv import causal_conv1d as fla_causal_conv1d  # FLA < 0.4.1
     except ImportError:
         fla_causal_conv1d = None
+
+try:
+    from fla.ops.gated_delta_rule import (
+        chunk_gated_delta_rule as fla_chunk_gated_delta_rule,
+    )
+except ImportError:
+    fla_chunk_gated_delta_rule = None
 
 
 def get_cu_seqlens(position_ids):
@@ -45,25 +53,6 @@ def get_cu_seqlens(position_ids):
             torch.tensor(position_ids.size(), **tensor_kwargs),
         )
     )
-
-
-def _inject_fla_kernels(module) -> None:
-    """Inject FLA kernels into a modeling module, bypassing is_flash_linear_attention_available."""
-    try:
-        from fla.modules import FusedRMSNormGated
-        from fla.ops.gated_delta_rule import (
-            chunk_gated_delta_rule,
-            fused_recurrent_gated_delta_rule,
-        )
-
-        module.FusedRMSNormGated = FusedRMSNormGated
-        module.chunk_gated_delta_rule = chunk_gated_delta_rule
-        module.fused_recurrent_gated_delta_rule = fused_recurrent_gated_delta_rule
-        module.is_fast_path_available = True
-    except ImportError:
-        module.chunk_gated_delta_rule = None
-        module.fused_recurrent_gated_delta_rule = None
-        module.FusedRMSNormGated = None
 
 
 def _patched_decoder_forward(
@@ -126,9 +115,10 @@ def _la_in_proj_fwd(module, x):
     return {name: getattr(module, name)(x) for name in LINEAR_ATTN_IN_PROJS}
 
 
-def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
+def _make_qwen3_5_gated_delta_forward(module):
     """Factory for patched Qwen3_5/Qwen3_5Moe GatedDeltaNet forward with packing support."""
 
+    @force_accelerate_hooks("conv1d")
     def patched_forward(
         self,
         hidden_states: torch.Tensor,
@@ -136,25 +126,32 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
         cache_position: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
+        **kwargs,
     ):
-        hidden_states = apply_mask_fn(hidden_states, attention_mask)
+        hidden_states = module.apply_mask_to_padding_states(
+            hidden_states, attention_mask
+        )
 
         batch_size, seq_len, _ = hidden_states.shape
 
         use_precomputed_states = (
-            cache_params is not None
-            and cache_params.has_previous_state
-            and seq_len == 1
-            and cache_position is not None
+            cache_params is not None and cache_params.has_previous_state(self.layer_idx)
         )
 
         cu_seqlens = None
         if not use_precomputed_states and position_ids is not None:
             cu_seqlens = get_cu_seqlens(position_ids=position_ids)
 
-        if cache_params is not None:
-            conv_state = cache_params.conv_states[self.layer_idx]
-            recurrent_state = cache_params.recurrent_states[self.layer_idx]
+        if cu_seqlens is not None and (
+            fla_causal_conv1d is None or fla_chunk_gated_delta_rule is None
+        ):
+            # the transformers fallbacks accept cu_seqlens but ignore it, which would
+            # silently mix tokens across packed samples
+            raise RuntimeError(
+                "Packed sequences require flash-linear-attention (cu_seqlens support "
+                "in causal_conv1d and chunk_gated_delta_rule). Install "
+                "flash-linear-attention or disable packing."
+            )
 
         # All in-projections share hidden_states; fuse into one autograd node.
         # mixed_qkv stays [B, T, D]; only transposed inside paths that require [B, D, T]
@@ -167,40 +164,49 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
         b = in_proj["in_proj_b"]
         a = in_proj["in_proj_a"]
 
-        if use_precomputed_states:
-            mixed_qkv = self.causal_conv1d_update(
+        if (
+            use_precomputed_states
+            and seq_len == 1
+            and not cache_params.layers[self.layer_idx].record_past
+        ):
+            conv_state = cache_params.layers[self.layer_idx].conv_states[0]
+            mixed_qkv = module.causal_conv1d_update(
                 mixed_qkv.transpose(1, 2),
                 conv_state,
                 self.conv1d.weight.squeeze(1),
                 self.conv1d.bias,
                 self.activation,
             ).transpose(1, 2)
-        else:
+        elif cu_seqlens is not None:
             if cache_params is not None:
-                mixed_qkv_t = mixed_qkv.transpose(1, 2)
-                cache_params.conv_states[self.layer_idx] = F.pad(
-                    mixed_qkv_t,
-                    (self.conv_kernel_size - mixed_qkv_t.shape[-1], 0),
+                cache_params.update_conv_state(
+                    mixed_qkv.transpose(1, 2),
+                    self.layer_idx,
+                    conv_kernel_size=self.conv_kernel_size,
                 )
-
-            if fla_causal_conv1d is not None and cu_seqlens is not None:
-                # FLA varlen kernel for packed sequences; input must be contiguous [B, T, D]
-                mixed_qkv, _ = fla_causal_conv1d(
-                    x=mixed_qkv,
-                    weight=self.conv1d.weight.squeeze(1),
-                    bias=self.conv1d.bias,
-                    activation=self.activation,
-                    cu_seqlens=cu_seqlens,
+            # FLA varlen kernel for packed sequences; input must be contiguous [B, T, D]
+            mixed_qkv, _ = fla_causal_conv1d(
+                x=mixed_qkv,
+                weight=self.conv1d.weight.squeeze(1),
+                bias=self.conv1d.bias,
+                activation=self.activation,
+                cu_seqlens=cu_seqlens,
+            )
+        else:
+            mixed_qkv = mixed_qkv.transpose(1, 2)
+            if cache_params is not None:
+                mixed_qkv = cache_params.update_conv_state(
+                    mixed_qkv, self.layer_idx, conv_kernel_size=self.conv_kernel_size
                 )
-            else:
-                if cu_seqlens is not None and fla_causal_conv1d is None:
-                    raise RuntimeError(
-                        "Packed sequences require fla.modules.convolution.causal_conv1d "
-                        "(cu_seqlens support). Install flash-linear-attention or disable packing."
-                    )
-                mixed_qkv = F.silu(
-                    self.conv1d(mixed_qkv.transpose(1, 2))[:, :, :seq_len]
-                ).transpose(1, 2)
+            mixed_qkv = module.causal_conv1d_fn(
+                mixed_qkv,
+                self.conv1d.weight.squeeze(1),
+                self.conv1d.bias,
+                activation=self.activation,
+            )
+            if cache_params is not None:
+                mixed_qkv = mixed_qkv[:, :, -seq_len:]
+            mixed_qkv = mixed_qkv.transpose(1, 2)
 
         query, key, value = torch.split(
             mixed_qkv,
@@ -217,21 +223,26 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
-        if not use_precomputed_states:
-            core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
-                query,
-                key,
-                value,
-                g=g.to(dtype=query.dtype),
-                beta=beta,
-                initial_state=None,
-                output_final_state=cache_params is not None,
-                use_qk_l2norm_in_kernel=True,
-                # torch_chunk_gated_delta_rule fallback does not accept cu_seqlens
-                **({"cu_seqlens": cu_seqlens} if cu_seqlens is not None else {}),
+        recurrent_state = (
+            cache_params.layers[self.layer_idx].recurrent_states[0]
+            if use_precomputed_states
+            else None
+        )
+        if use_precomputed_states and seq_len == 1:
+            core_attn_out, last_recurrent_state = (
+                module.torch_recurrent_gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    g=g,
+                    beta=beta,
+                    initial_state=recurrent_state,
+                    output_final_state=cache_params is not None,
+                    use_qk_l2norm_in_kernel=True,
+                )
             )
-        else:
-            core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
+        elif cu_seqlens is not None:
+            core_attn_out, last_recurrent_state = fla_chunk_gated_delta_rule(
                 query,
                 key,
                 value,
@@ -240,10 +251,22 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
                 initial_state=recurrent_state,
                 output_final_state=cache_params is not None,
                 use_qk_l2norm_in_kernel=True,
+                cu_seqlens=cu_seqlens,
+            )
+        else:
+            core_attn_out, last_recurrent_state = module.torch_chunk_gated_delta_rule(
+                query,
+                key,
+                value,
+                g=g,
+                beta=beta,
+                initial_state=recurrent_state,
+                output_final_state=cache_params is not None,
+                use_qk_l2norm_in_kernel=True,
             )
 
         if cache_params is not None:
-            cache_params.recurrent_states[self.layer_idx] = last_recurrent_state
+            cache_params.update_recurrent_state(last_recurrent_state, self.layer_idx)
 
         core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
         z = z.reshape(-1, self.head_v_dim)
@@ -264,10 +287,9 @@ def _apply_packing_patches(model_type: str, cls_prefix: str, forward_factory) ->
         LOG.warning(f"{model_type} not found in transformers, skipping packing patches")
         return
 
-    _inject_fla_kernels(module)
     getattr(module, f"{cls_prefix}DecoderLayer").forward = _patched_decoder_forward
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
-    gated_cls.forward = forward_factory(module.apply_mask_to_padding_states)
+    gated_cls.forward = forward_factory(module)
 
     LOG.info(
         f"Applied {cls_prefix} packing patch "
