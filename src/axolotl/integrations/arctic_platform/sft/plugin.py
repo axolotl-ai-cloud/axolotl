@@ -41,6 +41,12 @@ class ArcticSFTPlugin(BasePlugin):
         if cfg.get("remove_unused_columns") is None:
             cfg["remove_unused_columns"] = False
 
+    def get_training_args(self, cfg):
+        # Local HF TrainingArguments run on the CPU client. Do not pass the
+        # client's (or YAML's) bf16/fp16 into them — that requires a GPU.
+        # Server AMP is set separately in _synth_ds_config (always bf16).
+        return {"bf16": False, "fp16": False, "use_cpu": True}
+
     def pre_model_load(self, cfg: DictDefault):
         """Skip local weight loading — the server owns the model weights."""
         LOG.info(
@@ -223,13 +229,11 @@ class ArcticSFTPlugin(BasePlugin):
 
     @staticmethod
     def _synth_ds_config(cfg: DictDefault, acfg, micro_bs: int, grad_accum: int) -> dict:
-        # ZeRO-2 default sized from the axolotl batch knobs, with bf16 (or fp16)
-        # mixed precision enabled to mirror axolotl's DeepSpeed training path
-        # (BF16_Optimizer / fp32 master weights).
-        if cfg.get("fp16") and not cfg.get("bf16"):
-            mixed_precision = {"fp16": {"enabled": True}}
-        else:
-            mixed_precision = {"bf16": {"enabled": True}}
+        # AP workers load weights as bfloat16. Do not copy the Axolotl client's
+        # fp16/bf16 probe: with CUDA_VISIBLE_DEVICES= (the intended CPU client)
+        # Axolotl reports capabilities.bf16=False and sets fp16=True, which
+        # DeepSpeed then rejects next to the server's bf16 default.
+        mixed_precision = {"bf16": {"enabled": True}, "fp16": {"enabled": False}}
         # `micro_batch_size` is the axolotl per-step batch *before* the server
         # shards it across `training_gpus` DP ranks. DeepSpeed's
         # `train_micro_batch_size_per_gpu` is per-rank, so it must be the
@@ -288,17 +292,19 @@ class ArcticSFTPlugin(BasePlugin):
         step count (num_epochs-only configs)."""
         lr = float(cfg.learning_rate if cfg.learning_rate is not None else 1e-5)
         if cfg.warmup_steps is not None and int(cfg.warmup_steps) > 0:
-            warmup_steps = float(int(cfg.warmup_steps))
+            warmup_steps = int(cfg.warmup_steps)
         else:
-            warmup_steps = float(cfg.warmup_ratio or 0.0) * horizon
+            warmup_steps = int(round(float(cfg.warmup_ratio or 0.0) * horizon))
         sched_name = str(cfg.lr_scheduler or "constant").lower()
 
         if sched_name.startswith("cosine") and horizon > 0:
+            # DeepSpeed WarmupCosineLR rejects warmup_num_steps=0 (and floats).
+            # Axolotl defaults to cosine with warmup_ratio=0 on the example YAML.
             ds_config["scheduler"] = {
                 "type": "WarmupCosineLR",
                 "params": {
-                    "total_num_steps": horizon,
-                    "warmup_num_steps": warmup_steps,
+                    "total_num_steps": int(horizon),
+                    "warmup_num_steps": max(1, warmup_steps),
                     "warmup_min_ratio": 0.0,
                     "cos_min_ratio": float(cfg.cosine_min_lr_ratio or 0.0),
                     "warmup_type": "linear",

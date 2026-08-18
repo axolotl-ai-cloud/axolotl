@@ -36,6 +36,8 @@ datasets:
 
 sequence_len: 256
 # Top-level only (same as native axolotl). Default FA2 if unset; use sdpa if FA unavailable.
+# Do not set bf16/fp16 here: the client is CPU-only (HF TrainingArguments would
+# reject bf16). The plugin always sends bf16 AMP to the AP server.
 attn_implementation: flash_attention_2
 
 # Standard training knobs — forwarded to the server optimizer.

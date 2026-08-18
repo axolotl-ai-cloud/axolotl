@@ -116,6 +116,13 @@ class TestArcticSFTPluginHooks:
 
         assert ArcticSFTPlugin().get_trainer_cls(DictDefault()) is ArcticSFTTrainer
 
+    def test_get_training_args_cpu_no_local_amp(self):
+        assert ArcticSFTPlugin().get_training_args(DictDefault()) == {
+            "bf16": False,
+            "fp16": False,
+            "use_cpu": True,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Client-config mapping + trainer wire batch (needs arctic_platform)
@@ -180,8 +187,18 @@ class TestBuildClientConfig:
         # Global effective batch = per_gpu * gpus * gas == micro_bs * gas.
         assert client_cfg.ds_config["train_batch_size"] == 2
         assert client_cfg.ds_config["gradient_accumulation_steps"] == 1
-        # DeepSpeed bf16 mixed precision on by default (mirrors axolotl bf16).
+        # DeepSpeed bf16 mixed precision on by default (AP worker is bf16).
         assert client_cfg.ds_config["bf16"] == {"enabled": True}
+        assert client_cfg.ds_config["fp16"] == {"enabled": False}
+
+    def test_ds_config_bf16_when_client_probed_fp16(self):
+        # CPU-blanked Axolotl sets fp16=True / bf16=False. Still send bf16.
+        cfg = self._cfg()
+        cfg.fp16 = True
+        cfg.bf16 = False
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        assert client_cfg.ds_config["bf16"] == {"enabled": True}
+        assert client_cfg.ds_config["fp16"] == {"enabled": False}
         # H5: default attention matches DeepSpeedWorker (FA2, not sdpa).
         assert client_cfg.ds_worker_config["attn_implementation"] == "flash_attention_2"
 
@@ -242,7 +259,7 @@ class TestBuildClientConfig:
         assert sched["type"] == "WarmupCosineLR"
         # Explicit max_steps wins as the horizon; warmup = ratio * horizon.
         assert sched["params"]["total_num_steps"] == 10
-        assert sched["params"]["warmup_num_steps"] == 1.0
+        assert sched["params"]["warmup_num_steps"] == 1
 
     def test_cosine_schedule_deferred_without_max_steps(self):
         # Without max_steps the horizon is unknown at build time, so cosine
@@ -259,7 +276,19 @@ class TestBuildClientConfig:
         sched = client_cfg.ds_config["scheduler"]
         assert sched["type"] == "WarmupCosineLR"
         assert sched["params"]["total_num_steps"] == 20
-        assert sched["params"]["warmup_num_steps"] == 2.0
+        assert sched["params"]["warmup_num_steps"] == 2
+
+    def test_cosine_zero_warmup_uses_min_one_step(self):
+        # Axolotl default after normalize: cosine + warmup_ratio 0. DeepSpeed
+        # requires a positive integer warmup_num_steps.
+        cfg = self._cfg()
+        cfg.lr_scheduler = "cosine"
+        cfg.warmup_ratio = 0.0
+        cfg.max_steps = 5
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        sched = client_cfg.ds_config["scheduler"]
+        assert sched["type"] == "WarmupCosineLR"
+        assert sched["params"]["warmup_num_steps"] == 1
 
     def test_warmup_steps_absolute_uses_warmuplr(self):
         cfg = self._cfg()
@@ -267,7 +296,7 @@ class TestBuildClientConfig:
         client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
         sched = client_cfg.ds_config["scheduler"]
         assert sched["type"] == "WarmupLR"
-        assert sched["params"]["warmup_num_steps"] == 4.0
+        assert sched["params"]["warmup_num_steps"] == 4
         assert sched["params"]["warmup_max_lr"] == 1e-5
 
     def test_checkpoint_path_defaults_from_output_dir(self):
