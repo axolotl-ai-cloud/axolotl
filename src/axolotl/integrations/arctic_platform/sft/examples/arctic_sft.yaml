@@ -26,8 +26,7 @@ arctic_sft:
   loss_fn: sft_ce
   logits_optimization: memory
   logits_optimization_peak_mem_size_in_gib: 4
-  # Keep checkpoints on /data-fast (not under the git checkout).
-  checkpoint_path: /data-fast/ap-axolotl/arctic-sft/server_ckpt
+  checkpoint_path: /tmp/arctic-sft/server_ckpt
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test
@@ -53,4 +52,4 @@ micro_batch_size: 2            # must be a multiple of training_gpus
 gradient_accumulation_steps: 1
 logging_steps: 1
 
-output_dir: /data-fast/ap-axolotl/arctic-sft
+output_dir: /tmp/arctic-sft
