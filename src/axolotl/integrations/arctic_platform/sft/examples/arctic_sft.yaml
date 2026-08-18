@@ -20,11 +20,11 @@ arctic_sft:
   training_gpus: 2
   launch_local_server: true
   server_cuda_visible_devices: "0,1"
-  loss_fn: sft                 # or sft_ce for explicit cross-entropy
-  # sft_ce only: memory strategy for the vocab projection / CE. none (full
-  # logits), compute (chunked softmax follow-up), memory (tiled, never
-  # materializes [B,S,V]). Ignored by the default sft loss.
-  logits_optimization: none
+  # sft_ce + memory: tile hidden through the LM head (never materializes
+  # [B,S,V]). Peak-mem is the tile budget; unused if logits_optimization=none.
+  # Alternatives: none (full logits), compute (chunked softmax).
+  loss_fn: sft_ce
+  logits_optimization: memory
   logits_optimization_peak_mem_size_in_gib: 4
   # Keep checkpoints on /data-fast (not under the git checkout).
   checkpoint_path: /data-fast/ap-axolotl/arctic-sft/server_ckpt
