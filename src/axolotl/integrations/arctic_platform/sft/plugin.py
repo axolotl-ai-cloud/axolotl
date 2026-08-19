@@ -107,16 +107,20 @@ class ArcticSFTPlugin(BasePlugin):
         if trainer is not None and step > 0 and not getattr(
             trainer, "_arctic_final_saved", False
         ):
-            trainer._save_remote_checkpoint(export_hf=True)
+            trainer._save_remote_checkpoint()
             trainer._arctic_final_saved = True
         if path:
+            extra = (
+                f"HuggingFace weights are at {path}/hf/."
+                if acfg.export_hf
+                else (
+                    f"Set arctic_sft.export_hf: true to also write "
+                    f"HuggingFace weights under {path}/hf/."
+                )
+            )
             LOG.info(
-                "ArcticSFT: skipped saving the local stub. Server checkpoints "
-                "are at %s. HuggingFace weights: %s/hf/ after training "
-                "(and on every save_steps checkpoint if arctic_sft.export_hf "
-                "is true).",
-                path,
-                path,
+                f"ArcticSFT: skipped saving the local stub. Server "
+                f"checkpoints are at {path}. {extra}"
             )
         else:
             LOG.info(

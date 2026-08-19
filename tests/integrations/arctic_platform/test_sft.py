@@ -139,7 +139,23 @@ class TestArcticSFTPluginHooks:
         with caplog.at_level("INFO"):
             ArcticSFTPlugin().post_train(cfg, MagicMock())
         assert "/tmp/arctic-sft/server_ckpt" in caplog.text
-        assert "/hf/" in caplog.text
+        assert "arctic_sft.export_hf: true" in caplog.text
+
+    def test_post_train_logs_hf_path_when_export_hf(self, caplog):
+        cfg = DictDefault(
+            {
+                "output_dir": "/tmp/out",
+                "arctic_sft": ArcticSFTConfig(
+                    training_gpus=1,
+                    checkpoint_path="/tmp/arctic-sft/server_ckpt",
+                    export_hf=True,
+                ),
+            }
+        )
+        with caplog.at_level("INFO"):
+            ArcticSFTPlugin().post_train(cfg, MagicMock())
+        assert "HuggingFace weights are at /tmp/arctic-sft/server_ckpt/hf/" in caplog.text
+        assert "export_hf: true" not in caplog.text
 
     def test_get_training_args_cpu_no_local_amp(self):
         assert ArcticSFTPlugin().get_training_args(DictDefault()) == {

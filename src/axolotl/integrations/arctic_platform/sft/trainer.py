@@ -174,14 +174,12 @@ class ArcticSFTTrainer(AxolotlTrainer):
         remainder = num_batches % grad_accum
         if remainder:
             LOG.warning(
-                "Arctic SFT: dropping the trailing %d batch(es) this epoch "
-                "(num_batches=%d not a multiple of gradient_accumulation_steps=%d). "
-                "The server's fixed gradient_accumulation_steps requires full "
-                "accumulation groups; size the dataset/batching to avoid a remainder "
-                "if you need every sample.",
-                remainder,
-                num_batches,
-                grad_accum,
+                f"Arctic SFT: dropping the trailing {remainder} batch(es) this "
+                f"epoch (num_batches={num_batches} not a multiple of "
+                f"gradient_accumulation_steps={grad_accum}). The server's fixed "
+                f"gradient_accumulation_steps requires full accumulation groups; "
+                f"size the dataset/batching to avoid a remainder if you need "
+                f"every sample."
             )
 
         if getattr(self, "_arctic_autoset_horizon", False):
@@ -314,7 +312,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
                 break
 
         if global_step > 0:
-            self._save_remote_checkpoint(export_hf=True)
+            self._save_remote_checkpoint()
             self._arctic_final_saved = True
             if self.args.load_best_model_at_end and self.state.best_global_step:
                 self._load_best_checkpoint()
@@ -390,7 +388,10 @@ class ArcticSFTTrainer(AxolotlTrainer):
                 export_hf=bool(do_export),
                 save_total_limit=int(limit) if limit else None,
             )
-            LOG.info("Arctic SFT: remote checkpoint saved (step=%s).", self.state.global_step)
+            LOG.info(
+                f"Arctic SFT: remote checkpoint saved "
+                f"(step={self.state.global_step})."
+            )
         except Exception:  # noqa: BLE001 — best-effort; don't crash the run on save
             LOG.exception("Arctic SFT: remote checkpoint save failed.")
 
@@ -400,7 +401,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
             return
         try:
             self._get_client().load_checkpoint(step=best)
-            LOG.info("Arctic SFT: loaded best checkpoint (step=%s).", best)
+            LOG.info(f"Arctic SFT: loaded best checkpoint (step={best}).")
         except Exception:  # noqa: BLE001
             LOG.exception("Arctic SFT: loading best checkpoint failed.")
 
