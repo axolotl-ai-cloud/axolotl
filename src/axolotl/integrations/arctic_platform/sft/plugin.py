@@ -188,18 +188,16 @@ class ArcticSFTPlugin(BasePlugin):
 
         _, ArcticSFTClientConfig = require_arctic_sft_client()
 
-        model_name = acfg.model_name or cfg.base_model
-        max_length = cfg.sequence_len
-        grad_accum = cfg.gradient_accumulation_steps
-        micro_bs = cfg.micro_batch_size
-        cls._validate_micro_batch(micro_bs, acfg.training_gpus)
+        cls._validate_micro_batch(cfg.micro_batch_size, acfg.training_gpus)
 
         # Honor explicit overrides from the arctic_sft block, else synthesize
         # server configs from the top-level axolotl knobs.
         checkpoint_path = cls._resolve_checkpoint_path(cfg, acfg)
         # Optimizer + LR schedule fold into ds_config (DeepSpeed config-json).
-        ds_config = acfg.ds_config or cls._synth_ds_config(cfg, acfg, micro_bs, grad_accum)
-        ds_worker_config = acfg.ds_worker_config or cls._synth_ds_worker_config(cfg, acfg)
+        ds_config = acfg.ds_config or cls._synth_ds_config(cfg, acfg)
+        ds_worker_config = acfg.ds_worker_config or cls._synth_ds_worker_config(
+            cfg, acfg
+        )
 
         if acfg.backend != "onprem":
             raise ValueError(
@@ -210,9 +208,9 @@ class ArcticSFTPlugin(BasePlugin):
         return ArcticSFTClientConfig(
             backend=acfg.backend,
             comm_protocol=acfg.protocol,
-            model_name=model_name,
+            model_name=acfg.model_name or cfg.base_model,
             seed=cfg.seed,
-            max_seq_len=max_length,
+            max_seq_len=cfg.sequence_len,
             training_gpus=acfg.training_gpus,
             sampling_gpus=acfg.sampling_gpus,
             colocate=acfg.colocate,
@@ -232,14 +230,18 @@ class ArcticSFTPlugin(BasePlugin):
         )
 
     @staticmethod
-    def _validate_micro_batch(micro_bs: int, training_gpus: int) -> None:
+    def _validate_micro_batch(micro_batch_size: int, training_gpus: int) -> None:
         # The server shards each batch across `training_gpus` DP ranks and then
         # splits each rank's shard into `grad_accum` microbatches, so the
         # micro-batch must divide evenly across the training GPUs.
-        if micro_bs < training_gpus or micro_bs % training_gpus != 0:
+        if (
+            micro_batch_size < training_gpus
+            or micro_batch_size % training_gpus != 0
+        ):
             raise ValueError(
-                f"arctic_sft: micro_batch_size ({micro_bs}) must be a positive multiple of "
-                f"training_gpus ({training_gpus}) so the server can split it across DP ranks."
+                f"arctic_sft: micro_batch_size ({micro_batch_size}) must be a "
+                f"positive multiple of training_gpus ({training_gpus}) so the "
+                f"server can split it across DP ranks."
             )
 
     @staticmethod
@@ -253,28 +255,32 @@ class ArcticSFTPlugin(BasePlugin):
         return checkpoint_path
 
     @staticmethod
-    def _synth_ds_config(cfg: DictDefault, acfg, micro_bs: int, grad_accum: int) -> dict:
+    def _synth_ds_config(cfg: DictDefault, acfg) -> dict:
         # AP workers load weights as bfloat16. Do not copy the Axolotl client's
         # fp16/bf16 probe: with CUDA_VISIBLE_DEVICES= (the intended CPU client)
         # Axolotl reports capabilities.bf16=False and sets fp16=True, which
         # DeepSpeed then rejects next to the server's bf16 default.
-        mixed_precision = {"bf16": {"enabled": True}, "fp16": {"enabled": False}}
         # `micro_batch_size` is the axolotl per-step batch *before* the server
         # shards it across `training_gpus` DP ranks. DeepSpeed's
         # `train_micro_batch_size_per_gpu` is per-rank, so it must be the
         # post-shard size; `train_batch_size` is then the global effective
-        # batch (per-gpu x gpus x grad_accum == micro_bs x grad_accum).
-        micro_bs_per_gpu = micro_bs // acfg.training_gpus
+        # batch (per-gpu x gpus x grad_accum == micro_batch_size x grad_accum).
+        micro_bs_per_gpu = cfg.micro_batch_size // acfg.training_gpus
         ds_config: dict = {
             "train_micro_batch_size_per_gpu": micro_bs_per_gpu,
-            "train_batch_size": micro_bs_per_gpu * acfg.training_gpus * grad_accum,
-            "gradient_accumulation_steps": grad_accum,
+            "train_batch_size": (
+                micro_bs_per_gpu
+                * acfg.training_gpus
+                * cfg.gradient_accumulation_steps
+            ),
+            "gradient_accumulation_steps": cfg.gradient_accumulation_steps,
             "zero_optimization": {
                 "stage": 2,
                 "offload_optimizer": {"device": "none"},
                 "offload_param": {"device": "none"},
             },
-            **mixed_precision,
+            "bf16": {"enabled": True},
+            "fp16": {"enabled": False},
         }
         # Optimizer + gradient clipping live in ds_config.
         ds_config["optimizer"] = ArcticSFTPlugin._synth_optimizer(cfg)
@@ -353,17 +359,15 @@ class ArcticSFTPlugin(BasePlugin):
     @staticmethod
     def _synth_ds_worker_config(cfg: DictDefault, acfg) -> dict:
         # attn_implementation is top-level only (same as native axolotl). Default
-        # FA2 matches DeepSpeedWorker when unset.
-        attn = cfg.attn_implementation or "flash_attention_2"
-        # Top-level gradient_checkpointing wins; nested arctic_sft.* is fallback.
-        gc = cfg.gradient_checkpointing
-        if gc is None:
-            enable_gc = acfg.gradient_checkpointing
-        else:
-            # axolotl may use True / "offload" / "offload_disk".
-            enable_gc = bool(gc) and str(gc).lower() not in ("false", "0", "none", "")
+        # FA2 matches DeepSpeedWorker when unset. Top-level
+        # gradient_checkpointing wins; nested arctic_sft.* is fallback. bool()
+        # maps Axolotl's True / "offload" / "offload_disk" onto the AP flag.
         return {
-            "attn_implementation": attn,
-            "enable_gradient_checkpointing": enable_gc,
+            "attn_implementation": cfg.attn_implementation or "flash_attention_2",
+            "enable_gradient_checkpointing": (
+                acfg.gradient_checkpointing
+                if cfg.gradient_checkpointing is None
+                else bool(cfg.gradient_checkpointing)
+            ),
             "zorro_train_enable": False,
         }
