@@ -91,7 +91,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Soft dependency for AP/SFT remote training (also checked at runtime with a pip hint).
-arctic-sft = ["arctic_platform"]
+arctic-sft = ["arctic-platform"]
 flash-attn = ["flash-attn==2.8.3"]
 ring-flash-attn = [
     "flash-attn==2.8.3",

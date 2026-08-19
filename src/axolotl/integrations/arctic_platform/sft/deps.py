@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 _INSTALL_HINT = (
-    "Arctic SFT requires the arctic_platform package.\n\n"
+    "Arctic SFT requires the arctic-platform package.\n\n"
     "Install with:\n"
-    "  pip install arctic_platform\n\n"
+    "  pip install arctic-platform\n\n"
     "Or from a checkout of the arctic-platform repo:\n"
-    "  pip install -e /path/to/arctic-platform\n"
+    "  git clone https://github.com/Snowflake-AI-Research/arctic-platform\n"
+    "  cd arctic-platform\n"
+    "  pip install -e .\n"
 )
 
 
