@@ -40,12 +40,12 @@ class TestSoftDependency:
     def test_require_arctic_platform_hint(self, monkeypatch):
         """Missing package → ImportError that tells the user how to pip install."""
         monkeypatch.setitem(sys.modules, "arctic_platform", None)
-        with pytest.raises(ImportError, match=r"pip install arctic-platform"):
+        with pytest.raises(ImportError, match=r"pip install -e \.\[arctic-sft\]"):
             require_arctic_platform()
 
     def test_require_arctic_sft_client_hint(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "arctic_platform", None)
-        with pytest.raises(ImportError, match=r"pip install arctic-platform"):
+        with pytest.raises(ImportError, match=r"pip install \"axolotl\[arctic-sft\]\""):
             require_arctic_sft_client()
 
 

@@ -8,11 +8,9 @@ from __future__ import annotations
 _INSTALL_HINT = (
     "Arctic SFT requires the arctic-platform package.\n\n"
     "Install with:\n"
-    "  pip install arctic-platform\n\n"
-    "Or from a checkout of the arctic-platform repo:\n"
-    "  git clone https://github.com/Snowflake-AI-Research/arctic-platform\n"
-    "  cd arctic-platform\n"
-    "  pip install -e .\n"
+    "  pip install -e .[arctic-sft]\n"
+    "or:\n"
+    "  pip install \"axolotl[arctic-sft]\"\n"
 )
 
 

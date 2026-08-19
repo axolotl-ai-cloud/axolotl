@@ -8,13 +8,12 @@ runs on the server. The Axolotl process can be **CPU-only**.
 ## Install
 
 ```bash
-# Axolotl, then the soft dependency:
-pip install -e .                        # or: pip install axolotl
-pip install "axolotl[arctic-sft]"       # pulls arctic-platform
-# or from a checkout:
-git clone https://github.com/Snowflake-AI-Research/arctic-platform
-cd arctic-platform
-pip install -e .
+# from an Axolotl checkout:
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
+cd axolotl
+pip install -e .[arctic-sft]
+# or from PyPI:
+pip install "axolotl[arctic-sft]"
 ```
 
 Without `arctic_platform` installed, enabling the plugin raises an
