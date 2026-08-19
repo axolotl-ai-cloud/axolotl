@@ -69,7 +69,7 @@ arctic_sft:
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `backend` | `onprem` | `onprem` or `remote` |
-| `protocol` | `http` | onprem: `http` / `ray`. remote: `http` / `cortex` (`cortex` is a protocol, not a backend) |
+| `protocol` | `http` | onprem: `http` / `ray`. remote: `http` / `cortex` |
 | `host` / `port` | `localhost` / `8000` | AP client defaults |
 | `training_gpus` | **required** (≥1) | GPUs on the server for training |
 | `launch_local_server` | `false` | Spawn a local HTTP server from the client |

@@ -29,7 +29,7 @@ class ArcticSFTConfig(BaseModel):
     """Nested config under ``arctic_sft:`` in the axolotl YAML."""
 
     # AP layout: ``backend`` is the deployment, ``protocol`` is the
-    # transport on that backend. ``cortex`` is a protocol, not a backend.
+    # transport on that backend.
     #   onprem -> http | ray
     #   remote -> http | cortex
     # ArcticSFTClient still only constructs onprem (maps ``protocol`` onto
