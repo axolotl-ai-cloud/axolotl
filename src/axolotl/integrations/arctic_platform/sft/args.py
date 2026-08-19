@@ -28,8 +28,8 @@ _REMOTE_PROTOCOLS = frozenset({"http", "cortex"})
 class ArcticSFTConfig(BaseModel):
     """Nested config under ``arctic_sft:`` in the axolotl YAML."""
 
-    # Matches AP ``OnPremConfig`` / ``CortexConfig``: backend selects the
-    # deployment, protocol selects the transport on that backend.
+    # AP layout: ``backend`` is the deployment, ``protocol`` is the
+    # transport on that backend. ``cortex`` is a protocol, not a backend.
     #   onprem -> http | ray
     #   remote -> http | cortex
     # ArcticSFTClient still only constructs onprem (maps ``protocol`` onto
