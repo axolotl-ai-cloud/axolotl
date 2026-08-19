@@ -65,11 +65,21 @@ class TestArcticSFTConfig:
 
     def test_defaults(self):
         cfg = ArcticSFTConfig(training_gpus=2)
-        assert cfg.comm_protocol == "http"
+        assert cfg.backend == "onprem"
+        assert cfg.protocol == "http"
         assert cfg.loss_fn == "sft"
         assert cfg.host == "localhost"
         assert cfg.port == 8000
         assert cfg.launch_local_server is False
+
+    def test_backend_protocol_pairs(self):
+        assert ArcticSFTConfig(training_gpus=1, backend="onprem", protocol="ray").protocol == "ray"
+        assert ArcticSFTConfig(training_gpus=1, backend="remote", protocol="http").backend == "remote"
+        assert ArcticSFTConfig(training_gpus=1, backend="remote", protocol="cortex").protocol == "cortex"
+        with pytest.raises(ValidationError, match=r"does not support"):
+            ArcticSFTConfig(training_gpus=1, backend="onprem", protocol="cortex")
+        with pytest.raises(ValidationError, match=r"does not support"):
+            ArcticSFTConfig(training_gpus=1, backend="remote", protocol="ray")
 
     def test_loss_fn_literal(self):
         assert ArcticSFTConfig(training_gpus=1, loss_fn="sft_ce").loss_fn == "sft_ce"
@@ -172,6 +182,8 @@ class TestBuildClientConfig:
         assert client_cfg.port == 8765
         assert client_cfg.launch_local_server is True
         assert client_cfg.server_cuda_visible_devices == "0,1"
+        assert client_cfg.backend == "onprem"
+        assert client_cfg.comm_protocol == "http"
         assert client_cfg.seed == 7
         # Optimizer + clipping are folded into ds_config (DeepSpeed config-json);
         # there is no separate training_config on the client anymore.
@@ -218,6 +230,16 @@ class TestBuildClientConfig:
         cfg = self._cfg(model_name="other/model")
         client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
         assert client_cfg.model_name == "other/model"
+
+    def test_protocol_maps_to_client_comm_protocol(self):
+        cfg = self._cfg(protocol="ray")
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        assert client_cfg.comm_protocol == "ray"
+
+    def test_remote_backend_not_wired(self):
+        cfg = self._cfg(backend="remote", protocol="http")
+        with pytest.raises(ValueError, match=r"backend='remote' is not wired"):
+            ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
 
     def test_micro_batch_must_divide_across_gpus(self):
         cfg = self._cfg()

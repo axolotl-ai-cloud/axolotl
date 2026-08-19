@@ -173,9 +173,15 @@ class ArcticSFTPlugin(BasePlugin):
         ds_config = acfg.ds_config or cls._synth_ds_config(cfg, acfg, micro_bs, grad_accum)
         ds_worker_config = acfg.ds_worker_config or cls._synth_ds_worker_config(cfg, acfg)
 
+        if acfg.backend != "onprem":
+            raise ValueError(
+                "arctic_sft: ArcticSFTClient only supports backend='onprem' "
+                "(protocol http|ray). backend='remote' is not wired yet."
+            )
+
         return ArcticSFTClientConfig(
             backend=acfg.backend,
-            comm_protocol=acfg.comm_protocol,
+            comm_protocol=acfg.protocol,
             model_name=model_name,
             # Server JobConfig.seed is a required int (defaults to 42); never pass None.
             seed=int(cfg.seed) if cfg.seed is not None else 42,

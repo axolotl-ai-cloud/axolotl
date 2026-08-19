@@ -19,20 +19,24 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+_ONPREM_PROTOCOLS = frozenset({"http", "ray"})
+_REMOTE_PROTOCOLS = frozenset({"http", "cortex"})
 
 
 class ArcticSFTConfig(BaseModel):
     """Nested config under ``arctic_sft:`` in the axolotl YAML."""
 
-    # TODO(arctic-sft-backends): AP will expose backend+protocol pairs
+    # Matches AP ``OnPremConfig`` / ``CortexConfig``: backend selects the
+    # deployment, protocol selects the transport on that backend.
     #   onprem -> http | ray
     #   remote -> http | cortex
-    # Widen these Literals, plugin._build_client_config, and the usage
-    # snippets in __init__.py / README once ArcticSFTClientConfig accepts
-    # them. Until then YAML may only set backend=onprem.
-    backend: Literal["onprem"] = "onprem"
-    comm_protocol: Literal["http", "ray"] = "http"
+    # ArcticSFTClient still only constructs onprem (maps ``protocol`` onto
+    # ``comm_protocol``). ``backend: remote`` validates here; the plugin
+    # rejects it at client-build until the SFT facade accepts remote.
+    backend: Literal["onprem", "remote"] = "onprem"
+    protocol: Literal["http", "ray", "cortex"] = "http"
 
     # Connection
     host: str = "localhost"
@@ -99,6 +103,16 @@ class ArcticSFTConfig(BaseModel):
 
     # Reconnect to an existing server training job instead of creating one.
     training_job_id: Optional[int] = None
+
+    @model_validator(mode="after")
+    def _backend_protocol_pair(self) -> ArcticSFTConfig:
+        allowed = _ONPREM_PROTOCOLS if self.backend == "onprem" else _REMOTE_PROTOCOLS
+        if self.protocol not in allowed:
+            raise ValueError(
+                f"arctic_sft: backend={self.backend!r} does not support "
+                f"protocol={self.protocol!r} (allowed: {sorted(allowed)})"
+            )
+        return self
 
 
 class ArcticSFTArgs(BaseModel):

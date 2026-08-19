@@ -17,7 +17,7 @@ On-prem (``backend: onprem``) — local server, ``http`` or ``ray``.
 
     arctic_sft:
       backend: onprem
-      comm_protocol: http
+      protocol: http
       host: localhost
       port: 8000
       training_gpus: 2
@@ -25,15 +25,15 @@ On-prem (``backend: onprem``) — local server, ``http`` or ``ray``.
       server_cuda_visible_devices: "0,1"
       checkpoint_path: ./arctic_sft_ckpt
 
-Remote (``backend: remote``) — ``host`` / ``port``, ``http`` or ``cortex``.
-Not accepted until ``TODO(arctic-sft-backends)``; do not copy-paste yet::
+Remote (``backend: remote``) — ``http`` or ``cortex``. YAML validates;
+``ArcticSFTClient`` still only runs onprem::
 
     plugins:
       - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
 
     arctic_sft:
       backend: remote
-      comm_protocol: http
+      protocol: http
       host: dss-gpu-host.example.com
       port: 8765
       training_gpus: 2

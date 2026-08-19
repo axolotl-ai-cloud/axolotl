@@ -22,7 +22,7 @@ Without `arctic_platform` installed, enabling the plugin raises an
 
 There is no auto-discovery. Opt in from your Axolotl YAML with the plugin dotted path (same mechanism as Hatchery / Liger / …).
 
-**On-prem** (`backend: onprem`) — local server, `http` or `ray`. No `host` / `port`. Blank `CUDA_VISIBLE_DEVICES` on the Axolotl process so only the child uses GPUs.
+**On-prem** (`backend: onprem`) — local server, `protocol: http` or `ray`. `host` / `port` default to AP's `localhost` / `8000`. Blank `CUDA_VISIBLE_DEVICES` on the Axolotl process so only the child uses GPUs.
 
 ```yaml
 plugins:
@@ -30,7 +30,9 @@ plugins:
 
 arctic_sft:
   backend: onprem
-  comm_protocol: http
+  protocol: http
+  host: localhost
+  port: 8000
   training_gpus: 2
   launch_local_server: true
   server_cuda_visible_devices: "0,1"
@@ -41,7 +43,7 @@ arctic_sft:
 CUDA_VISIBLE_DEVICES= axolotl train path/to/your_config.yaml
 ```
 
-**Remote** (`backend: remote`) — `host` / `port`, `http` or `cortex`. Shape only; not accepted until `TODO(arctic-sft-backends)`.
+**Remote** (`backend: remote`) — `protocol: http` or `cortex`, plus `host` / `port`. YAML validates; `ArcticSFTClient` still only runs `backend: onprem`.
 
 ```yaml
 plugins:
@@ -49,7 +51,7 @@ plugins:
 
 arctic_sft:
   backend: remote
-  comm_protocol: http
+  protocol: http
   host: dss-gpu-host.example.com
   port: 8765
   training_gpus: 2
@@ -66,9 +68,9 @@ arctic_sft:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `backend` | `onprem` | `onprem` now. `remote` is `TODO(arctic-sft-backends)` |
-| `comm_protocol` | `http` | onprem: `http` / `ray`. remote (later): `http` / `cortex` |
-| `host` / `port` | `localhost` / `8000` | Remote only. Do not set on `backend: onprem` |
+| `backend` | `onprem` | `onprem` or `remote` (AP `OnPremConfig.type` / `CortexConfig.type`) |
+| `protocol` | `http` | onprem: `http` / `ray`. remote: `http` / `cortex` |
+| `host` / `port` | `localhost` / `8000` | AP client defaults |
 | `training_gpus` | **required** (≥1) | GPUs on the server for training |
 | `launch_local_server` | `false` | Spawn a local HTTP server from the client |
 | `server_cuda_visible_devices` | `null` | GPU list for that subprocess (e.g. `"0,1"`) |
@@ -121,7 +123,7 @@ The plugin replaces the stock local `SFTGenerationCallback` with a remote one.
 
 ```yaml
 arctic_sft:
-  comm_protocol: ray
+  protocol: ray
   training_gpus: 2
   launch_local_server: false   # Ray is in-process; no HTTP child
 ```
