@@ -34,7 +34,7 @@ def _count_valid_targets(batch: dict[str, torch.Tensor]) -> int:
     labels = batch.get("labels")
     if labels is None:
         return 0
-    return int((labels[:, 1:] != -100).sum().item())
+    return (labels[:, 1:] != -100).sum().item()
 
 
 class ArcticSFTTrainer(AxolotlTrainer):
@@ -47,13 +47,10 @@ class ArcticSFTTrainer(AxolotlTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._arctic_client_config = None
-        self._arctic_loss_fn = "sft"
-        self._arctic_logits_optimization = "none"
-        self._arctic_logits_optimization_peak_mem_gib = 4
-        self._arctic_learning_rate = 1e-5
-        self._arctic_export_hf = False
         self._client = None
         self._pad_token_id: Optional[int] = None
+        self._arctic_autoset_horizon = False
+        self._arctic_final_saved = False
 
     # ------------------------------------------------------------------ client
     def _get_client(self):
@@ -86,7 +83,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
         pad = getattr(tok, "pad_token_id", None) if tok is not None else None
         if pad is None:
             pad = getattr(tok, "eos_token_id", 0) if tok is not None else 0
-        self._pad_token_id = int(pad)
+        self._pad_token_id = pad
         return self._pad_token_id
 
     # ------------------------------------------------------------------- batch
@@ -143,7 +140,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
 
         processing: dict = {"loss_fn": self._arctic_loss_fn}
         # Only "compute"/"memory" change server behavior; default "sft" ignores this.
-        if getattr(self, "_arctic_logits_optimization", "none") != "none":
+        if self._arctic_logits_optimization != "none":
             processing["config"] = {
                 "logits_optimization": self._arctic_logits_optimization,
                 "logits_optimization_peak_mem_size_in_gib": self._arctic_logits_optimization_peak_mem_gib,
@@ -162,8 +159,15 @@ class ArcticSFTTrainer(AxolotlTrainer):
         Re-applies the ds_config LR schedule with the resolved optimizer-step
         horizon before the client is created (DeepSpeed bakes it at engine init).
         """
-        grad_accum = max(int(self.args.gradient_accumulation_steps), 1)
-        num_train_epochs = int(self.args.num_train_epochs)
+        grad_accum = self.args.gradient_accumulation_steps
+        requested_epochs = self.args.num_train_epochs
+        num_train_epochs = int(requested_epochs)
+        if num_train_epochs != requested_epochs:
+            LOG.warning(
+                f"Arctic SFT: num_epochs={requested_epochs} truncated to "
+                f"{num_train_epochs}; this loop only runs whole epochs. Set "
+                f"max_steps for a fractional step horizon."
+            )
         steps_per_epoch = max(num_batches // grad_accum, 1)
         max_steps = (
             self.args.max_steps
@@ -182,14 +186,12 @@ class ArcticSFTTrainer(AxolotlTrainer):
                 f"every sample."
             )
 
-        if getattr(self, "_arctic_autoset_horizon", False):
-            ds_config = getattr(self._arctic_client_config, "ds_config", None)
-            if isinstance(ds_config, dict):
-                # Re-apply the LR schedule with the resolved optimizer-step horizon
-                # (num_epochs-only configs had no max_steps at config-build time).
-                from .plugin import ArcticSFTPlugin
+        if self._arctic_autoset_horizon:
+            from .plugin import ArcticSFTPlugin
 
-                ArcticSFTPlugin._apply_scheduler(ds_config, self.axolotl_cfg, max_steps)
+            ArcticSFTPlugin._apply_scheduler(
+                self._arctic_client_config.ds_config, self.axolotl_cfg, max_steps
+            )
 
         return grad_accum, num_train_epochs, max_steps
 
@@ -254,8 +256,8 @@ class ArcticSFTTrainer(AxolotlTrainer):
             self.state.global_step = global_step
             self.state.epoch = epoch + (batch_idx + 1) / num_batches
 
-            log_interval = self.args.logging_steps or 1
-            if global_step % max(int(log_interval), 1) == 0:
+            log_interval = self.args.logging_steps
+            if log_interval and global_step % log_interval == 0:
                 grad_norm = (step_out or {}).get("metrics", {}).get("grad_norm")
                 logs = {
                     "loss": step_loss,
@@ -271,7 +273,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
             )
             # DefaultFlowCallback sets should_save / should_evaluate from save_steps / eval_steps.
             self._maybe_save_and_evaluate()
-            return bool(self.control.should_training_stop)
+            return self.control.should_training_stop
 
         for epoch in range(num_train_epochs):
             if global_step >= max_steps:
@@ -346,7 +348,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
             self.control.should_save = False
 
     def _has_eval_dataset(self) -> bool:
-        return getattr(self, "eval_dataset", None) is not None
+        return self.eval_dataset is not None
 
     def _save_step_checkpoint(self) -> None:
         """Remote engine save + local ``trainer_state.json`` + ``on_save`` + rotation."""
@@ -369,24 +371,24 @@ class ArcticSFTTrainer(AxolotlTrainer):
 
     def _prune_local_checkpoints(self) -> None:
         """Honor ``save_total_limit`` on local ``checkpoint-*`` dirs under ``output_dir``."""
-        limit = getattr(self.args, "save_total_limit", None)
-        if not limit or int(limit) <= 0 or not self.args.output_dir:
+        limit = self.args.save_total_limit
+        if not limit or limit <= 0 or not self.args.output_dir:
             return
         try:
             from arctic_platform.common.utils.checkpoint import prune_checkpoint_dirs
 
-            prune_checkpoint_dirs(self.args.output_dir, int(limit))
+            prune_checkpoint_dirs(self.args.output_dir, limit)
         except Exception:  # noqa: BLE001 — best-effort rotation
             LOG.exception("Arctic SFT: pruning local checkpoints failed.")
 
     def _save_remote_checkpoint(self, *, export_hf: bool | None = None) -> None:
         try:
             do_export = self._arctic_export_hf if export_hf is None else export_hf
-            limit = getattr(self.args, "save_total_limit", None)
+            limit = self.args.save_total_limit
             self._get_client().save_checkpoint(
-                step=int(self.state.global_step),
-                export_hf=bool(do_export),
-                save_total_limit=int(limit) if limit else None,
+                step=self.state.global_step,
+                export_hf=do_export,
+                save_total_limit=limit,
             )
             LOG.info(
                 f"Arctic SFT: remote checkpoint saved "
@@ -396,7 +398,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
             LOG.exception("Arctic SFT: remote checkpoint save failed.")
 
     def _load_best_checkpoint(self) -> None:
-        best = int(self.state.best_global_step or 0)
+        best = self.state.best_global_step or 0
         if best <= 0:
             return
         try:
@@ -455,23 +457,23 @@ class ArcticSFTTrainer(AxolotlTrainer):
 
     def _maybe_update_best_metric(self, metrics: dict, metric_key_prefix: str) -> None:
         """Track ``TrainerState.best_*`` for ``load_best_model_at_end``."""
-        if not getattr(self.args, "load_best_model_at_end", False):
+        if not self.args.load_best_model_at_end:
             return
-        key = getattr(self.args, "metric_for_best_model", None) or f"{metric_key_prefix}_loss"
+        key = self.args.metric_for_best_model or f"{metric_key_prefix}_loss"
         if key not in metrics:
             alt = f"{metric_key_prefix}_{key}" if not key.startswith(metric_key_prefix) else key
             if alt not in metrics:
                 return
             key = alt
-        value = float(metrics[key])
-        greater = getattr(self.args, "greater_is_better", None)
+        value = metrics[key]
+        greater = self.args.greater_is_better
         if greater is None:
             greater = "loss" not in key
         best = self.state.best_metric
         improved = best is None or (value > best if greater else value < best)
         if improved:
             self.state.best_metric = value
-            self.state.best_global_step = int(self.state.global_step)
+            self.state.best_global_step = self.state.global_step
             self.state.best_model_checkpoint = f"checkpoint-{self.state.global_step}"
 
     def save_model(self, output_dir=None, _internal_call=False):

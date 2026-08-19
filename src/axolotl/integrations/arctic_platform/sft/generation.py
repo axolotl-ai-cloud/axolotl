@@ -36,9 +36,9 @@ def _prompt_texts_from_dataloader(
                 break
             sequence = input_ids[idx]
             if attention_mask is not None:
-                seq_len = int(attention_mask[idx].sum().item())
+                seq_len = attention_mask[idx].sum().item()
             else:
-                seq_len = int(sequence.shape[0])
+                seq_len = sequence.shape[0]
             if seq_len < 5:
                 continue
             prompt_len = max(1, int(seq_len * prompt_ratio))
@@ -54,14 +54,14 @@ def generate_samples_remote(
     tokenizer: Any,
     dataloader: Any,
     *,
-    num_generation_samples: int = 3,
-    max_new_tokens: int = 50,
-    temperature: float = 0.7,
-    top_p: float | None = None,
-    top_k: int | None = None,
-    do_sample: bool = True,
-    prompt_ratio: float = 0.5,
-    colocate: bool = False,
+    num_generation_samples: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float | None,
+    top_k: int | None,
+    do_sample: bool,
+    prompt_ratio: float,
+    colocate: bool,
 ) -> list[dict]:
     """Sync training→sampling, then vLLM-generate. Same return shape as stock SFT."""
     prompts = _prompt_texts_from_dataloader(

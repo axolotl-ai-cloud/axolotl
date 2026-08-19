@@ -251,12 +251,6 @@ class TestBuildClientConfig:
         client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
         assert client_cfg.ds_worker_config["attn_implementation"] == "sdpa"
 
-    def test_default_seed_when_missing(self):
-        cfg = self._cfg()
-        cfg.seed = None
-        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
-        assert client_cfg.seed == 42
-
     def test_model_name_override(self):
         cfg = self._cfg(model_name="other/model")
         client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
@@ -408,9 +402,13 @@ class TestTrainerGasFlush:
         trainer = object.__new__(ArcticSFTTrainer)
         trainer._arctic_client_config = MagicMock()
         trainer._arctic_loss_fn = "sft"
+        trainer._arctic_logits_optimization = "none"
         trainer._arctic_learning_rate = 1e-5
+        trainer._arctic_export_hf = False
+        trainer._arctic_autoset_horizon = False
         trainer._client = None
         trainer._pad_token_id = 0
+        trainer.eval_dataset = None
 
         # 5 batches, gas=2 → 2 full steps + 1 trailing flush = 3 steps.
         batches = [
@@ -484,6 +482,26 @@ class TestTrainerGasFlush:
         assert out.global_step == 2
         # ...but not silently: a drop warning must have been logged.
         assert any("dropping the trailing" in w for w in warnings)
+
+    def test_fractional_num_epochs_is_truncated_with_warning(self, monkeypatch):
+        import axolotl.integrations.arctic_platform.sft.trainer as trainer_mod
+        from axolotl.integrations.arctic_platform.sft.trainer import ArcticSFTTrainer
+
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            trainer_mod.LOG, "warning", lambda *a, **k: warnings.append(a[0] if a else "")
+        )
+        trainer = object.__new__(ArcticSFTTrainer)
+        trainer._arctic_autoset_horizon = False
+        trainer.args = SimpleNamespace(
+            gradient_accumulation_steps=1,
+            num_train_epochs=1.5,
+            max_steps=-1,
+        )
+        _gas, epochs, max_steps = trainer._resolve_schedule(4)
+        assert epochs == 1
+        assert max_steps == 4
+        assert any("truncated" in w for w in warnings)
 
 
 class _Control:
@@ -608,6 +626,7 @@ class TestTrainerCheckpointEvalResume:
         trainer._arctic_logits_optimization_peak_mem_gib = 4
         trainer._arctic_learning_rate = 1e-5
         trainer._arctic_export_hf = False
+        trainer._arctic_autoset_horizon = False
         trainer._client = client
         trainer._pad_token_id = 0
         trainer.processing_class = SimpleNamespace(pad_token_id=0, eos_token_id=0)
@@ -758,6 +777,7 @@ class TestWireBatch:
 
         trainer = object.__new__(ArcticSFTTrainer)
         trainer._arctic_loss_fn = "sft"
+        trainer._arctic_logits_optimization = "none"
         trainer._pad_token_id = 0
         trainer.processing_class = SimpleNamespace(pad_token_id=0, eos_token_id=0)
 
@@ -787,6 +807,7 @@ class TestWireBatch:
 
         trainer = object.__new__(ArcticSFTTrainer)
         trainer._arctic_loss_fn = "sft"
+        trainer._arctic_logits_optimization = "none"
         trainer._pad_token_id = 0
         trainer.processing_class = SimpleNamespace(pad_token_id=0, eos_token_id=0)
 

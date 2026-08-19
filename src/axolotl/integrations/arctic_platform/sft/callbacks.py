@@ -29,7 +29,7 @@ class ArcticSFTGenerationCallback(TrainerCallback):
         **kwargs,
     ):
         cfg = getattr(self.trainer, "axolotl_cfg", None)
-        if cfg is None or not getattr(cfg, "generate_samples", False):
+        if cfg is None or not cfg.generate_samples:
             return
 
         client = getattr(self.trainer, "_client", None)
@@ -41,8 +41,8 @@ class ArcticSFTGenerationCallback(TrainerCallback):
                 return
             client = get_client()
 
-        acfg = getattr(self.trainer, "_arctic_client_config", None)
-        if acfg is None or int(getattr(acfg, "sampling_gpus", 0) or 0) <= 0:
+        acfg = self.trainer._arctic_client_config
+        if acfg is None or acfg.sampling_gpus <= 0:
             LOG.warning(
                 "Arctic SFT generate_samples requires arctic_sft.sampling_gpus > 0; skipping"
             )
@@ -50,7 +50,7 @@ class ArcticSFTGenerationCallback(TrainerCallback):
 
         dataloader = None
         try:
-            if getattr(self.trainer, "eval_dataset", None) is not None:
+            if self.trainer.eval_dataset is not None:
                 dataloader = self.trainer.get_eval_dataloader()
         except Exception as e:  # noqa: BLE001
             LOG.warning(f"Could not get eval dataloader: {e}")
@@ -61,14 +61,14 @@ class ArcticSFTGenerationCallback(TrainerCallback):
             client,
             self.trainer.processing_class,
             dataloader,
-            num_generation_samples=getattr(cfg, "num_generation_samples", 3),
-            max_new_tokens=getattr(cfg, "generation_max_new_tokens", 50),
-            temperature=getattr(cfg, "generation_temperature", 0.7),
-            top_p=getattr(cfg, "generation_top_p", None),
-            top_k=getattr(cfg, "generation_top_k", None),
-            do_sample=getattr(cfg, "generation_do_sample", True),
-            prompt_ratio=getattr(cfg, "generation_prompt_ratio", 0.5),
-            colocate=bool(getattr(acfg, "colocate", False)),
+            num_generation_samples=cfg.num_generation_samples,
+            max_new_tokens=cfg.generation_max_new_tokens,
+            temperature=cfg.generation_temperature,
+            top_p=cfg.generation_top_p,
+            top_k=cfg.generation_top_k,
+            do_sample=cfg.generation_do_sample,
+            prompt_ratio=cfg.generation_prompt_ratio,
+            colocate=acfg.colocate,
         )
         self._log_samples(samples, state.global_step)
 
