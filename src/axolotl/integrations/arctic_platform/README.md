@@ -9,7 +9,7 @@ runs on the server. The Axolotl process can be **CPU-only**.
 
 ```bash
 # from an Axolotl checkout:
-git clone https://github.com/axolotl-ai-cloud/axolotl.git
+git clone https://github.com/axolotl-ai-cloud/axolotl
 cd axolotl
 pip install -e .[arctic-sft]
 # or from PyPI:
@@ -142,13 +142,13 @@ Do **not** blank `CUDA_VISIBLE_DEVICES` for Ray (actors need visible GPUs).
 
 ## Pitfalls
 
-| Symptom | Fix |
-|---------|-----|
+| Symptom                                                  | Fix                                                            |
+| -------------------------------------------------------- | -------------------------------------------------------------- |
 | `micro_batch_size … must be a multiple of training_gpus` | Raise `micro_batch_size` (e.g. 2 GPUs → `micro_batch_size: 2`) |
-| `/initialize` 422 / seed errors | Set top-level `seed:` (plugin defaults to `42` if omitted) |
-| Client OOM / CUDA init on Axolotl | `CUDA_VISIBLE_DEVICES=` + `server_cuda_visible_devices` |
-| `generate_samples` without sampling | Set `arctic_sft.sampling_gpus > 0` |
-| Port already in use | Change `arctic_sft.port` or stop the leftover server |
+| `/initialize` 422 / seed errors                          | Set top-level `seed:` (plugin defaults to `42` if omitted)     |
+| Client OOM / CUDA init on Axolotl                        | `CUDA_VISIBLE_DEVICES=` + `server_cuda_visible_devices`        |
+| `generate_samples` without sampling                      | Set `arctic_sft.sampling_gpus > 0`                             |
+| Port already in use                                      | Change `arctic_sft.port` or stop the leftover server           |
 
 ## Layout
 
