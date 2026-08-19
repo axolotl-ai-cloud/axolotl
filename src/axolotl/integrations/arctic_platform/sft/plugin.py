@@ -203,7 +203,7 @@ class ArcticSFTPlugin(BasePlugin):
 
         if acfg.backend != "onprem":
             raise ValueError(
-                "arctic_sft: ArcticSFTClient only supports backend='onprem' "
+                "arctic_sft: this integration only supports backend='onprem' "
                 "(protocol http|ray). backend='remote' is not wired yet."
             )
 

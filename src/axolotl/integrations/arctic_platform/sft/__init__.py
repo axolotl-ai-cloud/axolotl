@@ -26,7 +26,7 @@ On-prem (``backend: onprem``) — local server, ``http`` or ``ray``.
       checkpoint_path: ./arctic_sft_ckpt
 
 Remote (``backend: remote``) — ``http`` or ``cortex``. YAML validates;
-``ArcticSFTClient`` still only runs onprem::
+this integration still only runs onprem::
 
     plugins:
       - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin

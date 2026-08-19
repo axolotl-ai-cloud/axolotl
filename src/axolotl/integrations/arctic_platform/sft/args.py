@@ -32,9 +32,9 @@ class ArcticSFTConfig(BaseModel):
     # transport on that backend.
     #   onprem -> http | ray
     #   remote -> http | cortex
-    # ArcticSFTClient still only constructs onprem (maps ``protocol`` onto
-    # ``comm_protocol``). ``backend: remote`` validates here; the plugin
-    # rejects it at client-build until the SFT facade accepts remote.
+    # ``protocol`` maps onto client ``comm_protocol``. ``backend: remote``
+    # validates here; the plugin rejects it at client-build until this
+    # integration wires remote.
     backend: Literal["onprem", "remote"] = "onprem"
     protocol: Literal["http", "ray", "cortex"] = "http"
 

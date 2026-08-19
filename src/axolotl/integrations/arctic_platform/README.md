@@ -45,7 +45,7 @@ arctic_sft:
 CUDA_VISIBLE_DEVICES= axolotl train path/to/your_config.yaml
 ```
 
-**Remote** (`backend: remote`) — `protocol: http` or `cortex`, plus `host` / `port`. YAML validates; `ArcticSFTClient` still only runs `backend: onprem`.
+**Remote** (`backend: remote`) — `protocol: http` or `cortex`, plus `host` / `port`. YAML validates; this integration still only runs `backend: onprem`.
 
 ```yaml
 plugins:

@@ -263,7 +263,10 @@ class TestBuildClientConfig:
 
     def test_remote_backend_not_wired(self):
         cfg = self._cfg(backend="remote", protocol="http")
-        with pytest.raises(ValueError, match=r"backend='remote' is not wired"):
+        with pytest.raises(
+            ValueError,
+            match=r"this integration only supports backend='onprem'.*backend='remote' is not wired",
+        ):
             ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
 
     def test_micro_batch_must_divide_across_gpus(self):
