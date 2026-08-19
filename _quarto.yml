@@ -447,6 +447,8 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/muse-glimmer.qmd
+                - docs/models/cohere-north-micro-vision-instruct.qmd
                 - docs/models/shieldstral.qmd
                 - docs/models/kimi-linear.qmd
                 - docs/models/plano.qmd
