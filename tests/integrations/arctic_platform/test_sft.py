@@ -126,6 +126,21 @@ class TestArcticSFTPluginHooks:
 
         assert ArcticSFTPlugin().get_trainer_cls(DictDefault()) is ArcticSFTTrainer
 
+    def test_post_train_logs_server_checkpoint_path(self, caplog):
+        cfg = DictDefault(
+            {
+                "output_dir": "/tmp/out",
+                "arctic_sft": ArcticSFTConfig(
+                    training_gpus=1,
+                    checkpoint_path="/tmp/arctic-sft/server_ckpt",
+                ),
+            }
+        )
+        with caplog.at_level("INFO"):
+            ArcticSFTPlugin().post_train(cfg, MagicMock())
+        assert "/tmp/arctic-sft/server_ckpt" in caplog.text
+        assert "/hf/" in caplog.text
+
     def test_get_training_args_cpu_no_local_amp(self):
         assert ArcticSFTPlugin().get_training_args(DictDefault()) == {
             "bf16": False,

@@ -77,6 +77,9 @@ class ArcticSFTPlugin(BasePlugin):
                 def get_output_embeddings(self):
                     return None
 
+                def save_pretrained(self, *args, **kwargs):
+                    return
+
             loader_self.model = _Stub(config)
             return True
 
@@ -91,10 +94,35 @@ class ArcticSFTPlugin(BasePlugin):
         model._arctic_sft_remote = True
 
     def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
-        LOG.info(
-            "ArcticSFT: skipping local model save (weights live on the remote "
-            "server). Checkpoints are written server-side under checkpoint_path."
-        )
+        from .args import ArcticSFTConfig
+
+        acfg = cfg.arctic_sft
+        if isinstance(acfg, dict):
+            acfg = ArcticSFTConfig(**acfg)
+        path = self._resolve_checkpoint_path(cfg, acfg) if acfg is not None else None
+        trainer = getattr(self, "_trainer", None)
+        step = 0
+        if trainer is not None and getattr(trainer, "state", None) is not None:
+            step = int(trainer.state.global_step or 0)
+        if trainer is not None and step > 0 and not getattr(
+            trainer, "_arctic_final_saved", False
+        ):
+            trainer._save_remote_checkpoint(export_hf=True)
+            trainer._arctic_final_saved = True
+        if path:
+            LOG.info(
+                "ArcticSFT: skipped saving the local stub. Server checkpoints "
+                "are at %s. HuggingFace weights: %s/hf/ after training "
+                "(and on every save_steps checkpoint if arctic_sft.export_hf "
+                "is true).",
+                path,
+                path,
+            )
+        else:
+            LOG.info(
+                "ArcticSFT: skipped saving the local stub. Weights live on "
+                "the server under arctic_sft.checkpoint_path."
+            )
 
     def post_trainer_create(self, cfg: DictDefault, trainer: Trainer):
         """Build the ArcticSFTClientConfig and attach it to the trainer."""
@@ -132,6 +160,7 @@ class ArcticSFTPlugin(BasePlugin):
         # with the runtime step count; never clobber a user-supplied ds_config.
         trainer._arctic_autoset_horizon = acfg.ds_config is None
         trainer.axolotl_cfg = cfg
+        self._trainer = trainer
 
         self._install_generation_callback(cfg, trainer)
 

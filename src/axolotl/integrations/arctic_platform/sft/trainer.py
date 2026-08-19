@@ -315,6 +315,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
 
         if global_step > 0:
             self._save_remote_checkpoint(export_hf=True)
+            self._arctic_final_saved = True
             if self.args.load_best_model_at_end and self.state.best_global_step:
                 self._load_best_checkpoint()
 
