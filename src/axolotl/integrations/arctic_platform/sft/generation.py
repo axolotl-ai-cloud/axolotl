@@ -84,7 +84,8 @@ def generate_samples_remote(
         if top_k is not None:
             sampling_params["top_k"] = top_k
 
-    # Match RL e2e colocate staging when sharing GPUs.
+    # When sharing GPUs with training, sleep the training engine around the
+    # weight sync so sampling can use those devices.
     if colocate:
         client.sleep_training(mode="non_lp")
         client.sync_weights(cuda_ipc=True)

@@ -1,6 +1,6 @@
 # Arctic Platform integration for Axolotl
 
-Remote SFT (and later RL) against an [Arctic Platform](https://github.com/Snowflake-AI-Research/arctic-platform)
+Remote SFT against an [Arctic Platform](https://github.com/Snowflake-AI-Research/arctic-platform)
 training server. Axolotl keeps its full data pipeline (tokenize, chat templates,
 packing, collation, logging); GPU work — weights, forward/backward, optimizer —
 runs on the server. The Axolotl process can be **CPU-only**.
@@ -20,7 +20,7 @@ Without `arctic_platform` installed, enabling the plugin raises an
 
 ## Activate
 
-There is no auto-discovery. Opt in from your Axolotl YAML with the plugin dotted path (same mechanism as Hatchery / Liger / …).
+There is no auto-discovery. Opt in from your Axolotl YAML with the plugin dotted path:
 
 **On-prem** (`backend: onprem`) — local server, `protocol: http` or `ray`. `host` / `port` default to AP's `localhost` / `8000`. Blank `CUDA_VISIBLE_DEVICES` on the Axolotl process so only the child uses GPUs.
 
@@ -74,7 +74,7 @@ arctic_sft:
 | `training_gpus` | **required** (≥1) | GPUs on the server for training |
 | `launch_local_server` | `false` | Spawn a local HTTP server from the client |
 | `server_cuda_visible_devices` | `null` | GPU list for that subprocess (e.g. `"0,1"`) |
-| `loss_fn` | `sft` | `sft` (HF CE) or `sft_ce` (explicit CE) |
+| `loss_fn` | `sft` | `sft`: HF fused CE, per-shard mean. `sft_ce`: explicit fp32 CE, global token-mean when DP token counts differ |
 | `logits_optimization` | `none` | `sft_ce` only: `none` / `compute` / `memory` |
 | `logits_optimization_peak_mem_size_in_gib` | `4` | Tile/chunk budget for `compute` / `memory` |
 | `model_name` | `null` | Override; else top-level `base_model` |
@@ -86,7 +86,7 @@ arctic_sft:
 | `vllm_config` | `null` | Forwarded to the sampling job |
 | `training_job_id` / `sampling_job_id` | `null` | Reattach to existing jobs |
 | `startup_timeout` / `job_ready_timeout` / `request_timeout` | `600` / `1800` / `1800` | Seconds |
-| `ds_config` / `ds_worker_config` | `null` | Escape hatches; else synthesized from top-level knobs (optimizer + LR schedule fold into `ds_config`) |
+| `ds_config` / `ds_worker_config` | `null` | Passed through to the Arctic client as-is; if unset, built from top-level knobs (optimizer and LR schedule go in `ds_config`) |
 
 CLI nested overrides work as usual, e.g. `arctic_sft__port=9000`.
 
@@ -116,7 +116,7 @@ arctic_sft:
   # … plus a vllm_config if you need non-defaults
 ```
 
-Requires `arctic_platform[rl]` (vLLM) and ArcticInference on the server side.
+Requires vLLM and ArcticInference on the server side.
 The plugin replaces the stock local `SFTGenerationCallback` with a remote one.
 
 ### Ray transport
@@ -161,5 +161,4 @@ arctic_platform/
     generation.py    remote sample generation
     callbacks.py     ArcticSFTGenerationCallback
     examples/        worked YAML
-  # rl/              (future)
 ```

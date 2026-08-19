@@ -117,7 +117,7 @@ class ArcticSFTPlugin(BasePlugin):
         if getattr(cfg, "generate_samples", False) and int(getattr(acfg, "sampling_gpus", 0) or 0) <= 0:
             raise ValueError(
                 "arctic_sft: generate_samples=true requires arctic_sft.sampling_gpus > 0 "
-                "(vLLM sampling job, same topology as RL)."
+                "(vLLM sampling job)."
             )
 
         trainer._arctic_client_config = client_config
@@ -167,9 +167,7 @@ class ArcticSFTPlugin(BasePlugin):
         # Honor explicit overrides from the arctic_sft block, else synthesize
         # server configs from the top-level axolotl knobs.
         checkpoint_path = cls._resolve_checkpoint_path(cfg, acfg)
-        # Optimizer + LR schedule are folded directly into ds_config (DeepSpeed
-        # config-json), matching current arctic-platform which no longer accepts
-        # a separate high-level training_config on ArcticSFTClientConfig.
+        # Optimizer + LR schedule fold into ds_config (DeepSpeed config-json).
         ds_config = acfg.ds_config or cls._synth_ds_config(cfg, acfg, micro_bs, grad_accum)
         ds_worker_config = acfg.ds_worker_config or cls._synth_ds_worker_config(cfg, acfg)
 
@@ -250,9 +248,7 @@ class ArcticSFTPlugin(BasePlugin):
             },
             **mixed_precision,
         }
-        # Optimizer + gradient clipping live in ds_config (DeepSpeed config-json),
-        # matching arctic-platform's SFT demos (the server no longer expands a
-        # separate high-level training_config).
+        # Optimizer + gradient clipping live in ds_config.
         ds_config["optimizer"] = ArcticSFTPlugin._synth_optimizer(cfg)
         ds_config["gradient_clipping"] = float(
             cfg.max_grad_norm if cfg.max_grad_norm is not None else 0.0

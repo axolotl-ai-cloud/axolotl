@@ -113,7 +113,7 @@ def _base_cfg(output_dir: str) -> DictDefault:
             "bf16": True,
             "tf32": False,
             # Required once ArcticSFTPlugin installs a stub model whose forward
-            # signature does not declare input_ids/labels (same as Hatchery).
+            # signature does not declare input_ids/labels.
             "remove_unused_columns": False,
         }
     )

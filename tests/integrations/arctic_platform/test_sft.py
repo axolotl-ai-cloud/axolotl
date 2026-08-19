@@ -185,8 +185,8 @@ class TestBuildClientConfig:
         assert client_cfg.backend == "onprem"
         assert client_cfg.comm_protocol == "http"
         assert client_cfg.seed == 7
-        # Optimizer + clipping are folded into ds_config (DeepSpeed config-json);
-        # there is no separate training_config on the client anymore.
+        # Optimizer + clipping are in ds_config; ArcticSFTClientConfig has no
+        # training_config field.
         assert not hasattr(client_cfg, "training_config")
         assert client_cfg.ds_config["optimizer"]["type"] == "AdamW"
         assert client_cfg.ds_config["optimizer"]["params"]["lr"] == 1e-5

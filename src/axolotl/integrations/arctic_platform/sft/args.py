@@ -59,11 +59,17 @@ class ArcticSFTConfig(BaseModel):
     # Overrides the axolotl `base_model` sent to the server when set.
     model_name: Optional[str] = None
 
-    # Loss selection on the server: HF outputs.loss ("sft") or explicit CE ("sft_ce").
+    # Server loss. Both are causal-LM CE on labels != -100.
+    #   sft    -> HF ``outputs.loss`` (fused CE, per-shard token-mean). Default;
+    #             bit-exact vs native Axolotl SFT.
+    #   sft_ce -> explicit fp32 CE on logits (labels not passed into HF). Mean
+    #             is global across DP when the worker injects
+    #             ``global_num_tokens``; needed when ranks see unequal valid
+    #             token counts. ``logits_optimization`` applies only here.
     loss_fn: Literal["sft", "sft_ce"] = "sft"
 
-    # Memory strategy for the sft_ce vocab projection / cross-entropy (ignored by
-    # the "sft" loss, which uses HF's fused CE). Mirrors the RL knob:
+    # Memory strategy for the sft_ce vocab projection / cross-entropy (ignored
+    # by ``sft``, which uses HF's fused CE):
     #   none    -> full [B, S, V] logits + fp32 CE (classic sft_ce).
     #   compute -> full logits once, softmax follow-up chunked under the peak-mem
     #              budget so full-size intermediates are never materialized.
@@ -75,10 +81,9 @@ class ArcticSFTConfig(BaseModel):
     # Server-side checkpoint dir (required by the server for training jobs).
     checkpoint_path: Optional[str] = None
 
-    # Escape hatches forwarded verbatim to ArcticSFTClientConfig. When unset the
-    # plugin synthesizes sensible defaults from the top-level axolotl config.
-    # Optimizer + LR schedule are folded into ``ds_config`` (DeepSpeed config-json),
-    # matching current arctic-platform (no separate high-level training_config).
+    # Optional DeepSpeed dicts passed through to the Arctic client as-is. If
+    # left unset, the plugin builds them from top-level axolotl knobs.
+    # Optimizer and LR schedule go in ``ds_config``.
     ds_config: Optional[dict[str, Any]] = None
     ds_worker_config: Optional[dict[str, Any]] = None
 
@@ -95,7 +100,7 @@ class ArcticSFTConfig(BaseModel):
     # ``{checkpoint}/hf/`` (rank-0 conversion via zero_to_fp32 / save_pretrained).
     export_hf: bool = False
 
-    # Sampling job for generate_samples (mirrors ArcticRLClientConfig defaults).
+    # Optional vLLM sampling job for generate_samples.
     sampling_gpus: int = 0
     colocate: bool = False
     vllm_config: Optional[dict[str, Any]] = None
