@@ -9,8 +9,8 @@ locally. The axolotl process itself needs no GPUs — all GPU work happens on
 the server (HTTP now, Ray optional). Model weights, the optimizer, and
 gradient updates all live on the server.
 
-On-prem (``backend: onprem``) — local server, ``http`` or ``ray``. No
-``host`` / ``port``::
+On-prem (``backend: onprem``) — local server, ``http`` or ``ray``.
+``host`` / ``port`` are the AP client defaults (localhost:8000)::
 
     plugins:
       - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
@@ -18,6 +18,8 @@ On-prem (``backend: onprem``) — local server, ``http`` or ``ray``. No
     arctic_sft:
       backend: onprem
       comm_protocol: http
+      host: localhost
+      port: 8000
       training_gpus: 2
       launch_local_server: true
       server_cuda_visible_devices: "0,1"
