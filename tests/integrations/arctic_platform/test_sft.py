@@ -483,14 +483,9 @@ class TestTrainerGasFlush:
         # ...but not silently: a drop warning must have been logged.
         assert any("dropping the trailing" in w for w in warnings)
 
-    def test_fractional_num_epochs_is_truncated_with_warning(self, monkeypatch):
-        import axolotl.integrations.arctic_platform.sft.trainer as trainer_mod
+    def test_fractional_num_epochs_runs_partial_last_epoch(self, monkeypatch):
         from axolotl.integrations.arctic_platform.sft.trainer import ArcticSFTTrainer
 
-        warnings: list[str] = []
-        monkeypatch.setattr(
-            trainer_mod.LOG, "warning", lambda *a, **k: warnings.append(a[0] if a else "")
-        )
         trainer = object.__new__(ArcticSFTTrainer)
         trainer._arctic_autoset_horizon = False
         trainer.args = SimpleNamespace(
@@ -499,9 +494,8 @@ class TestTrainerGasFlush:
             max_steps=-1,
         )
         _gas, epochs, max_steps = trainer._resolve_schedule(4)
-        assert epochs == 1
-        assert max_steps == 4
-        assert any("truncated" in w for w in warnings)
+        assert epochs == 2
+        assert max_steps == 6
 
 
 class _Control:
@@ -665,6 +659,17 @@ class TestTrainerCheckpointEvalResume:
         assert handler.on_save_calls == 1
         # HF-layout local state written for the periodic checkpoint.
         assert os.path.isfile(os.path.join(tmp_path, "checkpoint-2", "trainer_state.json"))
+
+    def test_fractional_num_epochs_stops_at_partial_last_epoch(self, tmp_path):
+        control = _Control()
+        handler = _FlowCallbackHandler(control)
+        client = _RecordingClient()
+        trainer = self._make_trainer(
+            tmp_path, client, handler, num_batches=4, num_epochs=1.5
+        )
+        out = trainer.train()
+        assert out.global_step == 6
+        assert client.fwd_calls == 6
 
     def test_eval_runs_forward_only_and_fires_on_evaluate(self, tmp_path):
         control = _Control()

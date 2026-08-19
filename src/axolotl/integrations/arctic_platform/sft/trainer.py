@@ -9,6 +9,7 @@ GAS microbatches are sent as a list on the wire (no client concat / server re-sp
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from typing import Any, Optional
@@ -160,20 +161,15 @@ class ArcticSFTTrainer(AxolotlTrainer):
         horizon before the client is created (DeepSpeed bakes it at engine init).
         """
         grad_accum = self.args.gradient_accumulation_steps
-        requested_epochs = self.args.num_train_epochs
-        num_train_epochs = int(requested_epochs)
-        if num_train_epochs != requested_epochs:
-            LOG.warning(
-                f"Arctic SFT: num_epochs={requested_epochs} truncated to "
-                f"{num_train_epochs}; this loop only runs whole epochs. Set "
-                f"max_steps for a fractional step horizon."
-            )
         steps_per_epoch = max(num_batches // grad_accum, 1)
-        max_steps = (
-            self.args.max_steps
-            if self.args.max_steps and self.args.max_steps > 0
-            else steps_per_epoch * num_train_epochs
-        )
+        # Same as HF Trainer: max_steps wins; otherwise ceil(num_epochs * steps/epoch)
+        # so a fractional last epoch is a partial pass, not a truncated whole epoch.
+        if self.args.max_steps and self.args.max_steps > 0:
+            max_steps = self.args.max_steps
+            num_train_epochs = math.ceil(max_steps / steps_per_epoch)
+        else:
+            max_steps = math.ceil(self.args.num_train_epochs * steps_per_epoch)
+            num_train_epochs = math.ceil(self.args.num_train_epochs)
 
         remainder = num_batches % grad_accum
         if remainder:

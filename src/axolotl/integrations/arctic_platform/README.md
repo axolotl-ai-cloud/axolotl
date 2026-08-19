@@ -100,7 +100,7 @@ schedule:
 - `base_model`, `sequence_len`, `seed`, `attn_implementation`
 - `learning_rate`, `adam_beta1`, `adam_beta2`, `weight_decay`, `warmup_ratio` / `warmup_steps`
 - `micro_batch_size`, `gradient_accumulation_steps`
-- `num_epochs` / `max_steps`, `logging_steps`, `output_dir`. Fractional `num_epochs` is truncated to a whole epoch (the loop cannot run 1.5 epochs); a warning is logged. Use `max_steps` for a fractional step horizon.
+- `num_epochs` / `max_steps`, `logging_steps`, `output_dir`
 - Datasets, chat templates, packing — unchanged from normal Axolotl SFT
 
 `micro_batch_size` must be a positive multiple of `training_gpus` (server DP split).
