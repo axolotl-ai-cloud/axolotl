@@ -1,6 +1,7 @@
 """DPO trainer for axolotl"""
 
 import gc
+import inspect
 from functools import wraps
 from typing import Any, Dict, Union
 
@@ -59,12 +60,20 @@ class AxolotlDPOTrainer(
         self,
         processing_class: PreTrainedTokenizerBase | ProcessorMixin,
         input: str | list,
+        is_vlm: bool | None = None,
         **kwargs,
     ) -> dict[str, list]:
         """
         Override TRL's tokenization in DPO trainer to fix double bos_token bug (eg. llama).
         """
-        result = super()._tokenize(
+        parent_tokenize = super()._tokenize
+        try:
+            accepts_is_vlm = "is_vlm" in inspect.signature(parent_tokenize).parameters
+        except (TypeError, ValueError):
+            accepts_is_vlm = False
+        if accepts_is_vlm:
+            kwargs["is_vlm"] = is_vlm
+        result = parent_tokenize(
             processing_class=processing_class, input=input, **kwargs
         )
 

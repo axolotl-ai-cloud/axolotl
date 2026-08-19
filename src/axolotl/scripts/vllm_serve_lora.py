@@ -24,8 +24,12 @@ from typing import Any
 from trl.scripts.vllm_serve import (
     ScriptArguments,
     chunk_list,
-    extract_logprobs,
 )
+
+try:
+    from trl.generation.vllm_generation import extract_logprobs
+except ImportError:
+    from trl.scripts.vllm_serve import extract_logprobs
 
 try:
     from trl.scripts.vllm_serve import get_open_port

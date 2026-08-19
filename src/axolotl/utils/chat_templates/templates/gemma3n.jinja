@@ -5,7 +5,13 @@
 
 ' -%}
     {%- else -%}
-        {%- set first_user_prefix = messages[0]['content'][0]['text'] + '
+        {%- set ns = namespace(system_text='') -%}
+        {%- for item in messages[0]['content'] -%}
+            {%- if 'text' in item -%}
+                {%- set ns.system_text = ns.system_text + item['text'] -%}
+            {%- endif -%}
+        {%- endfor -%}
+        {%- set first_user_prefix = ns.system_text + '
 
 ' -%}
     {%- endif -%}

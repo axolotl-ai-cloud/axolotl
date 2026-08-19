@@ -32,10 +32,15 @@ def argilla_chat(
     """
 
     def transform_fn(sample):
+        history, response = sample["completion"][:-1], sample["completion"][-1]
         sample["prompt"] = (
-            f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
+            "".join(
+                f"<|im_start|>{turn['role']}\n{turn['content']}<|im_end|>\n"
+                for turn in history
+            )
+            + "<|im_start|>assistant\n"
         )
-        sample["completion"] = f"{sample['completion'][1]['content']}<|im_end|>"
+        sample["completion"] = f"{response['content']}<|im_end|>"
         return sample
 
     return transform_fn

@@ -1,0 +1,57 @@
+---
+title: "LoRA"
+description: "Per-module LoRA rank and alpha overrides"
+---
+
+## Per-module rank and alpha (`lora_rank_pattern` / `lora_alpha_pattern`)
+
+By default `lora_r` and `lora_alpha` apply uniformly to every targeted module.
+Two optional config fields let you override them on a per-module basis:
+
+- `lora_rank_pattern` — `dict[str, int]` mapping a module-name regex to a rank
+  that overrides `lora_r` for the matched modules.
+- `lora_alpha_pattern` — `dict[str, int]` mapping the same kind of regex to an
+  alpha that overrides `lora_alpha`.
+
+Both fields are forwarded directly to PEFT (`LoraConfig.rank_pattern` /
+`LoraConfig.alpha_pattern`). Pattern keys are matched against module paths using
+the same suffix-anchored rule PEFT uses internally, so a key like
+`"layers.0.self_attn.q_proj"` matches any module path ending in that suffix.
+
+### When to use it
+
+- **Asymmetric attention vs MLP ranks.** Raise the rank on attention projections
+  while keeping MLPs at a smaller rank, or vice versa.
+- **Multimodal towers.** Use a larger rank on a vision tower than on the language
+  tower when one modality benefits from more adapter capacity than the other.
+
+### Example
+
+```yaml
+adapter: lora
+lora_r: 8
+lora_alpha: 16
+lora_target_modules:
+  - q_proj
+  - v_proj
+  - up_proj
+  - down_proj
+
+# Bump attention projections to rank 32 / alpha 64, leave MLPs at the global 8/16.
+lora_rank_pattern:
+  ".*\\.(q_proj|v_proj)$": 32
+lora_alpha_pattern:
+  ".*\\.(q_proj|v_proj)$": 64
+```
+
+### Resuming and continuing training
+
+- `resume_from_checkpoint` rebuilds the model from your YAML, so keep the patterns identical to the original run; a changed `lora_rank_pattern` fails at load with a shape mismatch.
+- `lora_model_dir` (continue-training from a saved adapter) takes per-module rank/alpha from the adapter's saved `adapter_config.json`; YAML patterns cannot override it, and axolotl warns if they differ.
+
+### Merging adapters trained with patterns
+
+`axolotl merge-lora` (default `merge_method: memory_efficient`) honors both
+fields when merging: each module is merged with its own rank (inferred from
+the adapter weight shapes) and its own alpha (resolved against
+`alpha_pattern`). No extra flags are needed.

@@ -4,7 +4,7 @@ FSDP Configuration Schema
 
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 
 class FSDPConfig(BaseModel):
@@ -66,6 +66,12 @@ class FSDPConfig(BaseModel):
         description="Class name of transformer layers to wrap (e.g., 'LlamaDecoderLayer')",
     )
 
+    min_num_params: int | None = Field(
+        default=None,
+        ge=1,
+        description="Minimum parameter count a module must have to be wrapped under the SIZE_BASED_WRAP policy",
+    )
+
     reshard_after_forward: bool | None = Field(
         default=None,
         description="Reshard parameters after forward pass to save memory",
@@ -74,3 +80,11 @@ class FSDPConfig(BaseModel):
         default=None,
         description="Mixed precision policy for FSDP (e.g., 'fp16', 'bf16')",
     )
+
+    @model_validator(mode="after")
+    def validate_size_based_wrap(self):
+        if self.auto_wrap_policy == "SIZE_BASED_WRAP" and self.min_num_params is None:
+            raise ValueError(
+                "fsdp_config.min_num_params is required when auto_wrap_policy is SIZE_BASED_WRAP"
+            )
+        return self

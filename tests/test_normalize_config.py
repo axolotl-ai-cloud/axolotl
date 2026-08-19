@@ -134,6 +134,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
                 "fsdp_config": {
                     "fsdp_auto_wrap_policy": "SIZE_BASED_WRAP",
                     "fsdp_offload_params": True,
+                    "fsdp_min_num_params": 100000000,
                 }
             }
         )
@@ -146,9 +147,11 @@ class NormalizeConfigTestCase(unittest.TestCase):
             cfg_without_version.fsdp_config.auto_wrap_policy, "SIZE_BASED_WRAP"
         )
         self.assertEqual(cfg_without_version.fsdp_config.offload_params, True)
+        self.assertEqual(cfg_without_version.fsdp_config.min_num_params, 100000000)
 
         self.assertNotIn("fsdp_auto_wrap_policy", cfg_without_version.fsdp_config)
         self.assertNotIn("fsdp_offload_params", cfg_without_version.fsdp_config)
+        self.assertNotIn("fsdp_min_num_params", cfg_without_version.fsdp_config)
 
     def test_migrate_fsdp_config_no_fsdp_config(self):
         """Test that function doesn't crash when no fsdp_config is present"""

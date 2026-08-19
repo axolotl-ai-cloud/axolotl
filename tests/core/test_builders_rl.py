@@ -5,12 +5,46 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from datasets import Dataset
 
 from axolotl.core.builders import HFRLTrainerBuilder
 from axolotl.utils.data import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 
-from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION
+from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION, alpaca_messages_dpo_rows
+
+
+def _preference_dataset(cfg_string: str) -> Dataset:
+    if cfg_string in {"dpo_cfg", "ipo_cfg", "grpo_cfg", "simpo_cfg"}:
+        return Dataset.from_list(alpaca_messages_dpo_rows())
+    if cfg_string == "orpo_cfg":
+        return Dataset.from_list(
+            [
+                {
+                    "chosen": [
+                        {"role": "user", "content": f"Question {idx}?"},
+                        {"role": "assistant", "content": f"Chosen answer {idx}."},
+                    ],
+                    "rejected": [
+                        {"role": "user", "content": f"Question {idx}?"},
+                        {"role": "assistant", "content": f"Rejected answer {idx}."},
+                    ],
+                }
+                for idx in range(16)
+            ]
+        )
+    if cfg_string == "kto_cfg":
+        return Dataset.from_list(
+            [
+                {
+                    "prompt": f"Question {idx}?",
+                    "completion": f"Answer {idx}.",
+                    "label": idx % 2 == 0,
+                }
+                for idx in range(16)
+            ]
+        )
+    raise ValueError(f"Unhandled cfg_string: {cfg_string}")
 
 
 class TestHFRLTrainerBuilder:
@@ -150,33 +184,19 @@ def rand_reward_func(prompts, completions) -> list[float]:
         assert training_arguments.simpo_gamma == 0.4
 
     @pytest.mark.parametrize(
-        ("cfg_string", "dataset_name"),
+        "cfg_string",
         [
-            (
-                "dpo_cfg",
-                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            ),
-            (
-                "ipo_cfg",
-                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            ),
-            (
-                "grpo_cfg",
-                "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            ),
-            ("orpo_cfg", None),  # don't use fixture for orpo to use smaller split
-            ("kto_cfg", None),  # no fixture for kto
-            # (
-            #     "simpo_cfg",
-            #     "dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff",
-            # ),
+            "dpo_cfg",
+            "ipo_cfg",
+            "grpo_cfg",
+            "orpo_cfg",
+            "kto_cfg",
         ],
     )
     def test_custom_optimizer_cls_and_kwargs(
         self,
         request,
         cfg_string,
-        dataset_name,
         tmp_path,
         model,
         tokenizer,
@@ -194,7 +214,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "llama3.ultra",
-                        "split": "train[:1%]",
+                        "split": "train[:32]",
                     }
                 )
             ]
@@ -204,13 +224,13 @@ def rand_reward_func(prompts, completions) -> list[float]:
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned",
                         "type": "chat_template.argilla",
-                        "split": "train[:1%]",
+                        "split": "train[:32]",
                     }
                 )
             ]
         else:
             raise ValueError(f"Unhandled cfg_string: {cfg_string}")
-        cfg["dataset_num_proc"] = 1
+        cfg["dataset_num_proc"] = None
 
         if cfg_string == "grpo_cfg":
             rewards_dir = tmp_path / "rewards_test"
@@ -220,19 +240,13 @@ def rand_reward_func(prompts, completions) -> list[float]:
             sys.path.insert(0, str(rewards_dir))
 
         try:
-            # Only use mock for the commented out configs
-            if dataset_name is not None:
-                with patch(
+            with (
+                patch(
                     "axolotl.utils.data.rl.load_dataset_with_config"
-                ) as mock_load_dataset:
-                    mock_load_dataset.return_value = request.getfixturevalue(
-                        dataset_name
-                    )
-                    train_dataset, eval_dataset = prepare_preference_datasets(
-                        cfg, tokenizer
-                    )
-            else:
-                # Load actual datasets for orpo_cfg and kto_cfg
+                ) as mock_load_dataset,
+                patch("axolotl.utils.data.rl.load_tokenizer", return_value=tokenizer),
+            ):
+                mock_load_dataset.return_value = _preference_dataset(cfg_string)
                 train_dataset, eval_dataset = prepare_preference_datasets(
                     cfg, tokenizer
                 )

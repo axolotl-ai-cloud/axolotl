@@ -2,8 +2,9 @@
 capability flags, backend registration, and downstream validators.
 """
 
-import logging
-from contextlib import contextmanager
+import subprocess
+import sys
+from functools import lru_cache
 
 import pytest
 
@@ -17,32 +18,29 @@ from axolotl.utils.schemas.enums import (
     CANONICAL_ATTN_IMPLS,
 )
 
-
-@contextmanager
-def _capture_axolotl_warnings(caplog):
-    """Capture WARNINGs from `axolotl.*` loggers via caplog.
-
-    `axolotl.cli` calls `configure_logging()` at import time, which sets
-    `propagate=False` on the `axolotl` logger so records do not reach the root
-    logger that pytest's `caplog` hooks. This helper temporarily re-enables
-    propagation for the duration of the block.
-    """
-    ax_logger = logging.getLogger("axolotl")
-    old_propagate = ax_logger.propagate
-    ax_logger.propagate = True
-    try:
-        with caplog.at_level(logging.WARNING, logger="axolotl"):
-            yield
-    finally:
-        ax_logger.propagate = old_propagate
+from tests.conftest import capture_axolotl_warnings as _capture_axolotl_warnings
 
 
+@lru_cache(maxsize=1)
 def _xformers_available():
     try:
-        import xformers.ops  # noqa: F401
-
-        return True
-    except (ImportError, OSError):
+        result = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import warnings; "
+                    "warnings.filterwarnings('ignore', category=DeprecationWarning); "
+                    "import xformers.ops"
+                ),
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:  # pylint: disable=broad-except
         return False
 
 
@@ -54,6 +52,8 @@ class TestCapabilityTables:
         [
             "flash_attention_2",
             "flash_attention_3",
+            "flash_attention_4",
+            "flash_attention_torch",
             "flex_attention",
             "xformers",
             "sage",
@@ -71,7 +71,17 @@ class TestCapabilityTables:
         assert impl in ATTN_IMPLS_USING_FLASH_LIB
 
     @pytest.mark.parametrize(
-        "impl", ["eager", "sdpa", "xformers", "flex_attention", "sage", "fp8"]
+        "impl",
+        [
+            "eager",
+            "sdpa",
+            "xformers",
+            "flex_attention",
+            "sage",
+            "fp8",
+            "flash_attention_4",
+            "flash_attention_torch",
+        ],
     )
     def test_does_not_use_flash_lib(self, impl):
         assert impl not in ATTN_IMPLS_USING_FLASH_LIB
@@ -85,6 +95,8 @@ class TestCapabilityTables:
         [
             "flash_attention_2",
             "flash_attention_3",
+            "flash_attention_4",
+            "flash_attention_torch",
             "flex_attention",
             "xformers",
             "sage",
@@ -106,6 +118,25 @@ class TestCapabilityTables:
         assert validated.attn_supports_packing is False
         assert validated.attn_uses_flash_lib is False
         assert validated.attn_needs_dtype_cast is False
+
+    @pytest.mark.parametrize(
+        "impl,expected",
+        [
+            ("flash_attention_2", True),
+            ("flex_attention", True),
+            (
+                "sdpa",
+                True,
+            ),  # not varlen, but isolates via block-diagonal from position_ids
+            ("eager", True),
+            ("fp8", False),
+        ],
+    )
+    def test_decontaminates_packing(self, min_base_cfg, impl, expected):
+        validated = validate_config(
+            min_base_cfg | DictDefault(attn_implementation=impl)
+        )
+        assert validated.attn_decontaminates_packing is expected
 
     def test_computed_flags_not_overridable_from_yaml(self, min_base_cfg):
         """YAML attempts to override a computed field must not win."""
@@ -308,6 +339,53 @@ class TestCanonicalValueAcceptance:
         assert validated.attn_uses_flash_lib is True
         assert validated.attn_supports_packing is True
 
+    @pytest.mark.parametrize(
+        "impl",
+        [
+            "kernels-community/flash-attn2@v2",
+            "kernels-community/flash-attn2:flash_attn_varlen_func",
+            "kernels-community/flash-attn2@v2:flash_attn_varlen_func",
+        ],
+    )
+    def test_pinned_hub_kernel_keeps_capabilities(self, min_base_cfg, impl):
+        validated = validate_config(
+            min_base_cfg | DictDefault(attn_implementation=impl)
+        )
+        assert validated.attn_implementation == impl
+        assert validated.attn_supports_packing is True
+        assert validated.attn_uses_flash_lib is True
+
+    def test_flash_attention_torch_accepted_when_registered(
+        self, min_base_cfg, monkeypatch
+    ):
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+        monkeypatch.setitem(
+            ALL_ATTENTION_FUNCTIONS, "flash_attention_torch", lambda *a, **kw: None
+        )
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_torch")
+        validated = validate_config(cfg)
+        assert validated.attn_supports_packing is True
+        assert validated.attn_uses_flash_lib is False
+
+    def test_flash_attention_torch_rejected_when_unregistered(
+        self, min_base_cfg, monkeypatch
+    ):
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+        monkeypatch.setattr(
+            type(ALL_ATTENTION_FUNCTIONS),
+            "_global_mapping",
+            {
+                key: value
+                for key, value in ALL_ATTENTION_FUNCTIONS._global_mapping.items()
+                if key != "flash_attention_torch"
+            },
+        )
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_torch")
+        with pytest.raises(ValueError, match="varlen attention backend"):
+            validate_config(cfg)
+
     def test_short_form_alias_rejected_on_full_validation(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(attn_implementation="flash")
         with pytest.raises(ValueError, match="is not accepted"):
@@ -344,26 +422,30 @@ class TestGemma4HybridMode:
 
 
 class TestSamplePackingValidation:
-    """`sample_packing` warns for non-varlen backends; s2 raises outright."""
+    """`sample_packing` warns only for backends that can't isolate documents.
 
-    def test_eager_warns(self, min_base_cfg, caplog):
+    sdpa/eager decontaminate via the dropped-mask block-diagonal (sdpa additionally
+    through cu_seqlens varlen when available), so they must not warn.
+    """
+
+    def test_eager_does_not_warn(self, min_base_cfg, caplog):
         cfg = min_base_cfg | DictDefault(
             attn_implementation="eager", sample_packing=True
         )
         with _capture_axolotl_warnings(caplog):
             validate_config(cfg)
-        assert any(
+        assert not any(
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )
 
-    def test_sdpa_warns(self, min_base_cfg, caplog):
+    def test_sdpa_does_not_warn(self, min_base_cfg, caplog):
         cfg = min_base_cfg | DictDefault(
             attn_implementation="sdpa", sample_packing=True
         )
         with _capture_axolotl_warnings(caplog):
             validate_config(cfg)
-        assert any(
+        assert not any(
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )
@@ -375,6 +457,15 @@ class TestSamplePackingValidation:
         with _capture_axolotl_warnings(caplog):
             validate_config(cfg)
         assert not any(
+            "does not handle cross-sample decontamination" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_non_decontaminating_backend_warns(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(attn_implementation="fp8", sample_packing=True)
+        with _capture_axolotl_warnings(caplog):
+            validate_config(cfg)
+        assert any(
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )

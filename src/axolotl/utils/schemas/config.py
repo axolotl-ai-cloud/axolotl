@@ -34,11 +34,13 @@ from axolotl.utils.schemas.enums import (
     ATTN_IMPLS_USING_FLASH_LIB,
     ATTN_IMPLS_WITHOUT_DTYPE_CAST,
     CANONICAL_ATTN_IMPLS,
+    INDUCTOR_COMPILE_OPTIONS_ALLOWLIST,
     LEGACY_ATTN_FLAG_TO_IMPL,
     SHORT_FORM_ALIAS_TO_CANONICAL,
     ChatTemplate,
     RingAttnFunc,
     RLType,
+    attn_impl_base,
 )
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
@@ -60,7 +62,11 @@ from axolotl.utils.schemas.model import (
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
-from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
+from axolotl.utils.schemas.training import (
+    HyperparametersConfig,
+    JaggedLRConfig,
+    SelectiveCheckpointingConfig,
+)
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
@@ -604,15 +610,26 @@ class AxolotlInputConfig(
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
         },
     )
+    selective_checkpointing: SelectiveCheckpointingConfig | bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Selective activation checkpointing: within each gradient-checkpointed "
+                "layer, save the listed ops during forward instead of recomputing them "
+                "in backward. `true` saves attention (SDPA/flash-attention). Requires "
+                "gradient_checkpointing with non-reentrant checkpointing."
+            )
+        },
+    )
     activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
         Field(
             default=False,
             json_schema_extra={
                 "description": (
                     "Whether to offload activations. Options: true/false, 'legacy', "
-                    "'disk' (TRL offloader), or 'hidden_states' (ALST-style: gradient "
-                    "checkpointing that offloads only the per-layer input to CPU, "
-                    "overlapped with compute; best for long-context full finetuning)."
+                    "'disk' (TRL offloader), or 'hidden_states' (checkpoint input "
+                    "offload; non-reentrant by default, ALST-style when "
+                    "gradient_checkpointing_kwargs.use_reentrant is true)."
                 )
             },
         )
@@ -825,9 +842,10 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
-                "flash_attention_3, flex_attention, xformers, sage, fp8. Hub-kernel "
-                "paths (e.g. kernels-community/flash-attn3) are also accepted and passed "
-                "through to transformers."
+                "flash_attention_3, flash_attention_4, flash_attention_torch, "
+                "flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. "
+                "kernels-community/flash-attn3) are also accepted and passed through to "
+                "transformers."
             )
         },
     )
@@ -838,6 +856,43 @@ class AxolotlInputConfig(
             "description": "Use hybrid attention for Gemma 4: flash_attention_2 for sliding window layers "
             "and sdpa for global (full_attention) layers. Global layers have head_dim=512 which "
             "exceeds flash attention's supported size."
+        },
+    )
+
+    large_head_attention: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Generic capability for attention layers with head_dim > 256 (which flash/cuDNN "
+                "SDPA can't serve): 'sdpa' (stock SDPA, default) | 'auto' (Triton flash kernel on "
+                "packed rows, SDPA otherwise) | 'triton_flash' (prefer the Triton kernel). Applies "
+                "to any SDPA model; Gemma-4's head_dim=512 global layers use it automatically."
+            )
+        },
+    )
+    # Deprecated alias for `large_head_attention` (True -> 'auto'); kept for backwards compatibility.
+    flash_attn_d512: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Deprecated: use `large_head_attention: auto`. Routes head_dim>256 attention "
+                "through the Triton flash kernel."
+            )
+        },
+    )
+
+    sdpa_varlen: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "With sample packing + attn_implementation=sdpa, route packed rows through "
+                "torch.nn.attention.varlen.varlen_attn (cu_seqlens) instead of an explicit 4D "
+                "block-diagonal mask. Skips cross-document blocks (faster + lower memory) with no "
+                "flash_attn dependency. Left unset (null) it auto-enables when supported (torch >= "
+                "2.10, head_dim <= 256, no sliding window); set true/false to force. When it can't "
+                "be used, packed rows still isolate documents via the block-diagonal mask. "
+                "Sliding-window attention needs torch >= 2.11 (varlen_attn window_size)."
+            )
         },
     )
 
@@ -1104,6 +1159,22 @@ class AxolotlInputConfig(
     )
     torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
         None
+    )
+    torch_compile_options: dict[str, bool | int | float | str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Mapping of allowlisted torch._inductor.config flags to set before "
+                "torch.compile runs. Only honored when torch_compile is truthy. "
+                "Allowed keys (see INDUCTOR_COMPILE_OPTIONS_ALLOWLIST in "
+                "axolotl.utils.schemas.enums): coordinate_descent_tuning, "
+                "coordinate_descent_check_all_directions, shape_padding, "
+                "epilogue_fusion, max_autotune_gemm, fx_graph_cache, "
+                "assume_aligned_inputs, comprehensive_padding, "
+                "decompose_mem_bound_mm, triton.cudagraphs. Disallowed keys are "
+                "rejected at config-validation time."
+            )
+        },
     )
 
     max_steps: int | None = Field(
@@ -1411,12 +1482,20 @@ class AxolotlInputConfig(
     @computed_field  # type: ignore[misc]
     @property
     def attn_supports_packing(self) -> bool:
-        return self.attn_implementation in ATTN_IMPLS_SUPPORTING_PACKING
+        return attn_impl_base(self.attn_implementation) in ATTN_IMPLS_SUPPORTING_PACKING
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_decontaminates_packing(self) -> bool:
+        # sdpa/eager isolate packed docs via the dropped-mask block-diagonal; others can't.
+        if self.attn_supports_packing:
+            return True
+        return self.attn_implementation in ("sdpa", "eager")
 
     @computed_field  # type: ignore[misc]
     @property
     def attn_uses_flash_lib(self) -> bool:
-        return self.attn_implementation in ATTN_IMPLS_USING_FLASH_LIB
+        return attn_impl_base(self.attn_implementation) in ATTN_IMPLS_USING_FLASH_LIB
 
     @computed_field  # type: ignore[misc]
     @property
@@ -1497,6 +1576,19 @@ class AxolotlInputConfig(
 
         return data
 
+    @field_validator("large_head_attention", mode="before")
+    @classmethod
+    def validate_large_head_attention(cls, value):
+        """Only the three known policies are valid (a typo must not silently opt into Triton)."""
+        if value is None:
+            return None
+        valid = {"auto", "sdpa", "triton_flash"}
+        if str(value).lower() not in valid:
+            raise ValueError(
+                f"large_head_attention must be one of {sorted(valid)}, got {value!r}"
+            )
+        return str(value).lower()
+
     @field_validator("attn_implementation", mode="before")
     @classmethod
     def validate_attn_implementation(cls, value):
@@ -1524,6 +1616,47 @@ class AxolotlInputConfig(
             f"path containing '/'."
         )
 
+    @field_validator("torch_compile_options")
+    @classmethod
+    def validate_torch_compile_options(cls, value):
+        """Reject torch_compile_options keys not in INDUCTOR_COMPILE_OPTIONS_ALLOWLIST."""
+        if value is None:
+            return None
+        bad = sorted(set(value.keys()) - INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)
+        if bad:
+            raise ValueError(
+                f"torch_compile_options contains disallowed inductor flags: {bad}. "
+                f"Allowed: {sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)}."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def check_torch_compile_options_requires_compile(self):
+        """Require torch_compile enabled when torch_compile_options is set."""
+        if self.torch_compile_options is not None and not self.torch_compile:
+            raise ValueError(
+                "torch_compile_options is set but torch_compile is not enabled. "
+                "Set torch_compile: true (or torch_compile: auto) to use these flags."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_cudagraphs_wo_static_shapes(self):
+        """Warn on triton.cudagraphs + sample_packing: cudagraphs need static shapes, packed seqs are dynamic."""
+        if (
+            self.torch_compile_options
+            and self.torch_compile_options.get("triton.cudagraphs")
+            and self.sample_packing
+        ):
+            LOG.warning(
+                "torch_compile_options has `triton.cudagraphs: true` together with "
+                "`sample_packing: true`. CUDA graphs require static shapes, but "
+                "packed variable-length sequences are dynamic and will trigger graph "
+                "re-capture or fallback. Disable one of them to get the cudagraphs "
+                "speedup."
+            )
+        return self
+
     @model_validator(mode="after")
     def check_fp32_norms(self):
         if self.fp32_norms:
@@ -1549,6 +1682,22 @@ class AxolotlInputConfig(
         return self
 
     @model_validator(mode="after")
+    def check_sdpa_varlen(self):
+        if self.sdpa_varlen:
+            if not self.sample_packing:
+                LOG.warning(
+                    "`sdpa_varlen` only affects packed rows; enable `sample_packing` or it is a no-op."
+                )
+            try:
+                from torch.nn.attention.varlen import varlen_attn  # noqa: F401
+            except ImportError:
+                LOG.warning(
+                    "`sdpa_varlen` needs torch >= 2.10 (torch.nn.attention.varlen); it will be "
+                    "ignored and stock SDPA used."
+                )
+        return self
+
+    @model_validator(mode="after")
     def check_sageattn_wo_sample_packing(self):
         if (
             self.attn_implementation == "sage"
@@ -1568,6 +1717,25 @@ class AxolotlInputConfig(
                 "SageAttention full finetuning has been observed to drop loss to 0. "
                 "Monitor the loss, or switch to LoRA/QLoRA or another attention method."
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_flash_attention_torch_preflight(self):
+        """`flash_attention_torch` is only usable once transformers registers the backend."""
+        if self.attn_implementation != "flash_attention_torch":
+            return self
+
+        import transformers
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+        if "flash_attention_torch" not in ALL_ATTENTION_FUNCTIONS:
+            raise ValueError(
+                "attn_implementation=flash_attention_torch requires a transformers "
+                "release that registers torch's varlen attention backend "
+                "(https://github.com/huggingface/transformers/pull/45153). Installed "
+                f"transformers is {transformers.__version__}."
+            )
+
         return self
 
     @model_validator(mode="before")
@@ -1756,6 +1924,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("rl"):
             # RL trainers not tested so don't enable kernels by default
             return data
+        if data.get("nvfp4_merge_aware"):
+            # fused LoRA kernels bypass lora.Linear.forward, so NVFP4 non-expert
+            # projections would train un-snapped and the merge identity is void
+            return data
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set or using 8-bit
             kernel_fields = [
@@ -1773,6 +1945,22 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
             # Skip if trust_remote_code is enabled, as lora kernels are not compatible
             if data.get("trust_remote_code"):
+                return data
+
+            # Skip architectures that declare the fused kernels unsupported.
+            # model_config_type is usually resolved later (normalize_config),
+            # which disables any kernels auto-enabled here.
+            from axolotl.model_support import (
+                Unsupported,
+                get_model_support,
+                resolve_model_support,
+            )
+
+            support = get_model_support(data.get("model_config_type"))
+            if support is not None and isinstance(
+                resolve_model_support(support).capabilities.get("lora_kernels"),
+                Unsupported,
+            ):
                 return data
 
             # Skip auto-enable for MoE models when native grouped_mm is unavailable
@@ -1892,6 +2080,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["torch_compile"] = False
             else:
                 data["torch_compile"] = False
+            if data["torch_compile"] is False and data.get("torch_compile_options"):
+                LOG.warning(
+                    "torch_compile: auto resolved to False on this environment "
+                    "(torch < 2.5.1); ignoring torch_compile_options."
+                )
+                data["torch_compile_options"] = None
         return data
 
     @model_validator(mode="before")

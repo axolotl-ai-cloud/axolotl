@@ -71,7 +71,8 @@ class JinjaTemplateAnalyzer:
 
     def __init__(self, template: str):
         self.env: Environment = Environment(
-            autoescape=True, extensions=[GenerationTagIgnore]
+            autoescape=True,
+            extensions=[GenerationTagIgnore, "jinja2.ext.loopcontrols"],
         )
         self.property_access: Dict[str, Set[str]] = {}
         self.iteration_targets: Dict[str, Union[str, list[str]]] = {}

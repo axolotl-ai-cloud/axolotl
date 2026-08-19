@@ -2,6 +2,7 @@ include README.md
 include LICENSE
 include VERSION
 include src/axolotl/utils/chat_templates/templates/*.jinja
+include src/axolotl/integrations/kernels/libs/scattermoe_lora/metadata.json
 recursive-include src/axolotl *.yaml
 include AGENTS.md
 recursive-include docs/agents *.md

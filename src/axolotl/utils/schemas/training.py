@@ -3,8 +3,6 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
-from transformers import SchedulerType
-from transformers.training_args import OptimizerNames
 
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
@@ -18,6 +16,53 @@ class LrGroup(BaseModel):
     name: str
     modules: list[str]
     lr: float
+
+
+class SelectiveCheckpointingConfig(BaseModel):
+    """Selective activation checkpointing (SAC) configuration"""
+
+    save: list[str] = Field(
+        default_factory=lambda: ["attention"],
+        json_schema_extra={
+            "description": (
+                "Ops to save during forward instead of recomputing in backward. "
+                "'attention' matches SDPA and flash-attention forward ops; other "
+                "entries are substring-matched against qualified torch op names "
+                "(e.g. 'aten::mm')."
+            )
+        },
+    )
+    save_sliding_window: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "In hybrid full/sliding-window attention models, also save "
+                "sliding-window attention calls. Default false: SWA is cheap to "
+                "recompute, so only full-attention calls are saved."
+            )
+        },
+    )
+    recompute_layer_types: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Layer types (config.layer_types values) whose attention is "
+                "recomputed instead of saved. Defaults to ['sliding_attention', "
+                "'chunked_attention']. Ignored when save_sliding_window is true. "
+                "Linear-attention layers never dispatch a matchable attention op, "
+                "so they need no entry."
+            )
+        },
+    )
+    offload: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Offload saved tensors to pinned CPU memory (side-stream copies "
+                "with backward prefetch) instead of keeping them on GPU."
+            )
+        },
+    )
 
 
 class HyperparametersConfig(BaseModel):
@@ -74,8 +119,8 @@ class HyperparametersConfig(BaseModel):
     weight_decay: float | None = Field(
         default=0.0, json_schema_extra={"description": "Specify weight decay"}
     )
-    optimizer: (OptimizerNames | CustomSupportedOptimizers) | None = Field(
-        default=OptimizerNames.ADAMW_TORCH_FUSED,
+    optimizer: (str | CustomSupportedOptimizers) | None = Field(
+        default="adamw_torch_fused",
         json_schema_extra={"description": "Specify optimizer"},
     )
     optim_args: (str | dict[str, Any]) | None = Field(
@@ -96,9 +141,7 @@ class HyperparametersConfig(BaseModel):
             "description": "Path to torch distx for optim 'adamw_anyprecision'"
         },
     )
-    lr_scheduler: (
-        SchedulerType | Literal["one_cycle"] | Literal["rex"]
-    ) | None = SchedulerType.COSINE
+    lr_scheduler: str | None = "cosine"
     lr_scheduler_kwargs: dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={

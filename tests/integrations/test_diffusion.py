@@ -128,6 +128,27 @@ class TestDiffusionTrainer:
         assert mask.shape == expected_shape
         assert mask.all()
 
+    def test_bidirectional_attention_mask_excludes_padding(
+        self, diffusion_trainer_instance
+    ):
+        """With a binary padding mask (non-packed batch), real tokens must not
+        attend to padding and padding must not attend to real tokens."""
+        input_ids = torch.tensor([[1, 10, 20, 0]], dtype=torch.long)
+        attention_mask = torch.tensor([[1, 1, 1, 0]], dtype=torch.long)
+
+        # sample_packing=False mirrors the trainer's default call path
+        mask = create_bidirectional_attention_mask(
+            input_ids, attention_mask, sample_packing=False
+        )
+
+        assert mask.shape == (1, 1, 4, 4)
+        # Real tokens (0..2) attend to each other
+        assert mask[0, 0, 0, 1].item()
+        assert mask[0, 0, 2, 0].item()
+        # No attention to or from the padding position (index 3)
+        assert not mask[0, 0, :, 3].any().item()
+        assert not mask[0, 0, 3, :].any().item()
+
     def test_bidirectional_attention_mask_with_packing(
         self, diffusion_trainer_instance
     ):

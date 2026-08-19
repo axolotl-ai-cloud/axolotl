@@ -185,12 +185,12 @@ class AttentionValidationMixin:
 
     @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
-        if self.sample_packing and not self.attn_supports_packing:
+        if self.sample_packing and not self.attn_decontaminates_packing:
             if self.attn_implementation:
                 LOG.warning(
                     "`sample_packing` with `attn_implementation=%r` does not handle "
-                    "cross-sample decontamination. Use a varlen-capable backend "
-                    "(e.g. flash_attention_2, flex_attention, xformers, sage) to "
+                    "cross-sample decontamination. Use a packing-capable backend "
+                    "(e.g. flash_attention_2, flex_attention, sdpa, eager) to "
                     "isolate samples.",
                     self.attn_implementation,
                 )
@@ -198,7 +198,7 @@ class AttentionValidationMixin:
                 LOG.warning(
                     "`sample_packing` without an attention backend does not handle "
                     "cross-sample decontamination. Set `attn_implementation` to a "
-                    "varlen-capable backend (e.g. flash_attention_2)."
+                    "packing-capable backend (e.g. flash_attention_2)."
                 )
         return self
 
@@ -219,9 +219,10 @@ class TrainingValidationMixin:
     @classmethod
     def check_batch_size_fields(cls, data):
         fields = ("micro_batch_size", "gradient_accumulation_steps", "batch_size")
-        non_empty_count = sum(1 for field in fields if data.get(field))
+        if data.get("micro_batch_size") or data.get("gradient_accumulation_steps"):
+            return data
 
-        if non_empty_count < 2:
+        if data.get("batch_size"):
             raise ValueError(f"At least two of {', '.join(fields)} must be set")
         return data
 
@@ -1129,13 +1130,11 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and self.fsdp_config.offload_params
             and str(self.fsdp_version) != "2"
         ):
-            raise ValueError(
-                f"FSDP Offload not compatible with {str(self.optimizer.value)}"
-            )
+            raise ValueError(f"FSDP Offload not compatible with {str(self.optimizer)}")
         return self
 
     @model_validator(mode="after")
@@ -1144,13 +1143,13 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and str(self.fsdp_version) == "2"
         ):
             if self.optimizer in ["adamw_8bit", "adamw_bnb_8bit"]:
                 # CUDA ops errors with bnb 8bit optimizer + FSDP2
                 raise ValueError(
-                    f"FSDP2 not compatible with {self.optimizer.value}, use `adamw_torch_8bit` instead"
+                    f"FSDP2 not compatible with {self.optimizer}, use `adamw_torch_8bit` instead"
                 )
 
         return self
@@ -1248,6 +1247,8 @@ class SystemValidationMixin:
             unsupported_npu_impls = {
                 "flash_attention_2",
                 "flash_attention_3",
+                "flash_attention_4",
+                "flash_attention_torch",
                 "sdpa",
             }
             attn_impl = data.get("attn_implementation")
@@ -1297,7 +1298,8 @@ class ChatTemplateValidationMixin:
             "chat_template_jinja"
         ):
             raise ValueError(
-                "chat_template_jinja is required when chat_template is set to jinja"
+                "chat_template_jinja is required when chat_template is set to 'jinja'. "
+                "Please provide the Jinja template string in chat_template_jinja field."
             )
 
         # If chat_template_jinja is set, set chat_template to jinja
@@ -1449,33 +1451,68 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_selective_checkpointing(self):
+        if not self.selective_checkpointing:
+            self.selective_checkpointing = None
+            return self
+        if self.selective_checkpointing is True:
+            from axolotl.utils.schemas.training import SelectiveCheckpointingConfig
+
+            self.selective_checkpointing = SelectiveCheckpointingConfig()
+        if not self.gradient_checkpointing:
+            raise ValueError("selective_checkpointing requires gradient_checkpointing")
+        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
+            raise ValueError(
+                "selective_checkpointing requires non-reentrant checkpointing "
+                "(gradient_checkpointing_kwargs.use_reentrant: false)"
+            )
+        if self.activation_offloading and self.activation_offloading != "hidden_states":
+            raise ValueError(
+                "selective_checkpointing is only compatible with "
+                "activation_offloading: hidden_states (or false); the TRL offloader "
+                "paths bypass HF gradient checkpointing"
+            )
+        if self.adapter:
+            # PEFT adds the adapter delta into the base linear output in-place,
+            # mutating cached mm outputs; SAC's cache-mutation guard errors at runtime
+            matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
+            bad = [
+                spec
+                for spec in self.selective_checkpointing.save
+                if spec != "attention" and any(spec in op for op in matmul_ops)
+            ]
+            if bad:
+                raise ValueError(
+                    f"selective_checkpointing.save entries {bad} match matmul ops, "
+                    "which cannot be saved when training with a LoRA/QLoRA adapter: "
+                    "PEFT mutates the base linear output in-place to add the adapter "
+                    "delta, which invalidates the cached tensor. Use save: [attention] "
+                    "or train without an adapter."
+                )
+        if self.torch_compile:
+            LOG.warning(
+                "selective_checkpointing with torch_compile is untested in axolotl; "
+                "the SAC context_fn targets the eager checkpointing path"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_hidden_states_offloading(self):
         if self.activation_offloading != "hidden_states":
             return self
-        # Forcing reentrant (below) on a partially frozen model is the broken combo
-        # check_use_reentrant_mismatch guards — but that before-validator ran before
-        # we forced it, so catch it here. https://github.com/huggingface/transformers/issues/21381
-        if self.unfrozen_parameters:
-            raise ValueError(
-                "activation_offloading: hidden_states forces reentrant checkpointing, "
-                "which is incompatible with `unfrozen_parameters` (partially frozen "
-                "model)."
-            )
-        # ALST-style offloading replaces torch's reentrant CheckpointFunction, so it
-        # needs use_reentrant=True. Force it on (warn if the user asked otherwise).
         gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
-        if gc_kwargs.get("use_reentrant") is False:
-            LOG.warning(
-                "activation_offloading: hidden_states requires reentrant checkpointing; "
-                "overriding gradient_checkpointing_kwargs.use_reentrant to true."
-            )
-        gc_kwargs["use_reentrant"] = True
+        use_reentrant = gc_kwargs.setdefault("use_reentrant", False)
         self.gradient_checkpointing_kwargs = gc_kwargs
+        if use_reentrant and self.unfrozen_parameters:
+            raise ValueError(
+                "activation_offloading: hidden_states with reentrant checkpointing "
+                "is incompatible with `unfrozen_parameters` (partially frozen model)."
+            )
         if self.adapter:
             LOG.warning(
-                "activation_offloading: hidden_states is designed for full-parameter "
-                "training; with LoRA/QLoRA the frozen base may break reentrant "
-                "checkpointing. Prefer activation_offloading: true for adapters."
+                "activation_offloading: hidden_states uses gradient checkpointing; "
+                "with LoRA/QLoRA, activation_offloading: true can be faster because "
+                "it avoids recompute while offloading smaller adapter activations."
             )
         return self
 
@@ -1605,6 +1642,16 @@ class ComplexValidationMixin:
             self.context_parallel_size = self.sequence_parallel_degree
         if not self.context_parallel_size:
             self.context_parallel_size = 1
+        elif self.context_parallel_size > 1 and getattr(
+            self, "use_glm_dsa_kernels", False
+        ):
+            # The GLM DSA kernels provide their own context-parallel attention (the sequence is sharded
+            # on the cp axis with a compressed-KV all-gather + per-rank q_offset), so the flash /
+            # ring_flash_attn stack the generic CP path below requires does not apply.
+            LOG.warning(
+                "context_parallel_size > 1 with use_glm_dsa_kernels: the DSA kernels handle context "
+                "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
+            )
         elif self.context_parallel_size > 1:
             if not self.attn_uses_flash_lib:
                 raise ValueError(
@@ -1693,6 +1740,11 @@ class ComplexValidationMixin:
 
         if self.ring_attn_func is not None:
             self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
+        elif getattr(self, "use_glm_dsa_kernels", False):
+            # The GLM DSA kernels own attention (including the context-parallel compressed-KV gather),
+            # so leave ring_attn_func None: the SP context manager still shards the sequence by chunking,
+            # but skips the ring_flash_attn substitution (which GLM doesn't use and isn't installed).
+            pass
         else:
             # Default ring attention function selection
             sample_packing = getattr(self, "sample_packing", False)
@@ -1757,7 +1809,7 @@ class EBFTValidationMixin:
         if (
             data.get("rl") == "ebft"
             and data.get("torch_compile") is True
-            and data.get("ebft", {}).get("mode") == "strided"
+            and (data.get("ebft") or {}).get("mode") == "strided"
         ):
             if data.get("gradient_checkpointing"):
                 raise ValueError(
@@ -1777,7 +1829,8 @@ class EBFTValidationMixin:
         """flex_attention + non-reentrant gradient checkpointing causes CheckpointError."""
         if (
             self.rl == "ebft"
-            and (self.ebft or {}).get("mode") == "strided"
+            and self.ebft is not None
+            and self.ebft.mode == "strided"
             and self.attn_implementation == "flex_attention"
             and self.gradient_checkpointing
         ):
@@ -1799,7 +1852,8 @@ class EBFTValidationMixin:
         which conflicts with flex_attention's use_reentrant requirement."""
         if (
             self.rl == "ebft"
-            and (self.ebft or {}).get("mode") == "strided"
+            and self.ebft is not None
+            and self.ebft.mode == "strided"
             and self.activation_offloading is True
             and self.attn_implementation == "flex_attention"
         ):
@@ -1817,9 +1871,9 @@ class EBFTValidationMixin:
     @classmethod
     def check_ebft_strided_sequence_len(cls, data):
         """Warn if sequence_len is too large for single-GPU strided EBFT."""
-        if data.get("rl") != "ebft" or data.get("ebft", {}).get("mode") != "strided":
+        ebft = data.get("ebft") or {}
+        if data.get("rl") != "ebft" or ebft.get("mode") != "strided":
             return data
-        ebft = data.get("ebft", {})
         seq_len = data.get("sequence_len", 512)
         n_samples = ebft.get("n_samples_per_prompt", 4)
         gen_len = ebft.get("generate_max_len", 8)

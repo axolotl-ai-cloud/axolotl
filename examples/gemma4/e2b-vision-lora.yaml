@@ -12,6 +12,8 @@ remove_unused_columns: false
 sample_packing: false
 
 chat_template: gemma4
+eot_tokens:
+  - "<turn|>"
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template

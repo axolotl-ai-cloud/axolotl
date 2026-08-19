@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
 
 class LoftQConfig(BaseModel):
@@ -63,6 +63,18 @@ class LoraConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "If you added new tokens to the tokenizer, you may need to save some LoRA modules because they need to know the new tokens. For LLaMA and Mistral, you need to save `embed_tokens` and `lm_head`. It may vary for other models. `embed_tokens` converts tokens to embeddings, and `lm_head` converts embeddings to token probabilities."
+        },
+    )
+    lora_rank_pattern: dict[str, PositiveInt] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Per-module LoRA rank overrides (regex → int > 0). Forwarded to PEFT LoraConfig.rank_pattern."
+        },
+    )
+    lora_alpha_pattern: dict[str, PositiveInt] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Per-module LoRA alpha overrides (regex → int > 0). Forwarded to PEFT LoraConfig.alpha_pattern."
         },
     )
     lora_dropout: float | None = 0.0

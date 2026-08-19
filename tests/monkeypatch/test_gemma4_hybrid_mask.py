@@ -378,3 +378,33 @@ def test_patch_covers_unified_namespace(restore_gemma4_hybrid_mask_both):
 
     assert modeling_unified.create_causal_mask is not original
     assert modeling_unified.create_causal_mask._axolotl_original is original
+
+
+def test_gqa_guard_accepts_both_transformers_signatures():
+    """transformers 5.13 added a `value` positional to use_gqa_in_sdpa."""
+    import torch
+    import transformers.integrations.sdpa_attention as sdpa_mod
+
+    from axolotl.monkeypatch.gemma4_hybrid_mask import _patch_use_gqa_head_dim_guard
+
+    original = sdpa_mod.use_gqa_in_sdpa
+    unwrapped = getattr(original, "_axolotl_original", original)
+    try:
+        assert _patch_use_gqa_head_dim_guard()
+        guarded = sdpa_mod.use_gqa_in_sdpa
+        key_small = torch.zeros(1, 2, 4, 128)
+        key_large = torch.zeros(1, 2, 4, 512)
+
+        # the head_dim guard must reject under BOTH call conventions without
+        # touching the wrapped original
+        assert guarded(None, key_large) is False
+        assert guarded(None, key_large, key_large) is False
+
+        # pass-through must forward whatever the installed transformers accepts
+        import inspect
+
+        n_params = len(inspect.signature(unwrapped).parameters)
+        args = (None, key_small, key_small)[:n_params]
+        assert isinstance(guarded(*args), bool)
+    finally:
+        sdpa_mod.use_gqa_in_sdpa = unwrapped

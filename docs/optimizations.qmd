@@ -82,17 +82,19 @@ fused_attn_kernel: true
 ```
 
 - **Compile-safe:** the kernel is wrapped as a `torch.library.triton_op` and traces under `torch.compile(fullgraph=True)`.
-- **Hardware note:** on sm_120 (Blackwell) combining with `torch_compile: true` is a net win; on sm_86 (Ampere consumer) `torch_compile: true` currently regresses the surrounding Inductor-generated kernels — keep compile off there.
+- **Baseline perf:** stacking `torch_compile: true` is a steady-state win that scales with arch — ~−14% to −16.5% on sm_86 (vanilla RTX 3090 / 3090 Ti), ~−19% on sm_120 (Blackwell/RTX 5090), measured on Qwen3-8B + LoRA r=16 + torch 2.11. Also trims peak memory ~2%.
+- **Compile cold-start:** adds 5–15 min on the first step.
+- **Tuning (`torch_compile_options`):** optionally sets allowlisted `torch._inductor.config` flags (disallowed keys are rejected at validation; see the config reference for the list). Payoff is arch-specific: the only measured win is `max_autotune_gemm: true` on sm_120 with ≥32 GB (~−2.6% over plain compile) — the same flag *regresses* ~+13% on sm_86, and every other flag tested was within noise. `triton.cudagraphs` needs static shapes and is incompatible with `sample_packing`.
 
 ### Expert Kernels
 
 Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
 
 - **ScatterMoE**: Triton, any CUDA GPU.
-- **SonicMoE**: CUTLASS / cute-DSL, Hopper+ only.
+- **SonicMoE**: CUTLASS / cute-DSL, Hopper (H100/H200) or Blackwell (B200/GB200).
 
 - **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
-- **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration)
+- **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration), [NVFP4 MoE LoRA](nvfp4_lora.qmd) for 4-bit checkpoints
 
 ## Long Context Models
 
@@ -147,6 +149,16 @@ The recommended approach for quantization-based training. It loads the base mode
 Enables training with 8-bit floating point precision on supported hardware (e.g., NVIDIA Hopper series GPUs) for significant speed and memory gains.
 
 - **Example:** [Llama 3 FP8 FSDP Example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/3b-fp8-fsdp2.yaml)
+
+### NVFP4 (W4A4) LoRA
+
+Train LoRA adapters on a ModelOpt NVFP4 MoE checkpoint (the experts stay 4-bit-packed; LoRA `A` / `B` train in bf16).
+Two kernels support it: **SonicMoE** (`use_sonicmoe: true`, W4A4 native on Blackwell SM100+ or W4A16 elsewhere) and **ScatterMoE** (`use_scattermoe: true`, W4A16 on any CUDA GPU).
+With SonicMoE, `nvfp4_merge_aware: true` trains against the merge quantizer so the adapter bakes back into a plain NVFP4 checkpoint losslessly.
+
+- **Config:** `use_sonicmoe: true` or `use_scattermoe: true` with a ModelOpt NVFP4 `base_model` (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`)
+- **Examples:** [Qwen3-30B-A3B (SonicMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml), [GLM-5.2 (ScatterMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/glm_moe_dsa/glm-5.2-nvfp4-lora.yaml)
+- **Learn more:** [NVFP4 MoE LoRA](nvfp4_lora.qmd)
 
 ### Quantization Aware Training (QAT)
 

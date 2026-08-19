@@ -1,9 +1,10 @@
+# syntax=docker/dockerfile:1
 ARG BASE_TAG=main
 FROM axolotlai/axolotl-uv:$BASE_TAG
 
 ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
 ENV HF_HUB_CACHE="/workspace/data/huggingface-cache/hub"
-ENV HF_HOME="/workspace/data/huggingface-cache/hub"
+ENV HF_HOME="/workspace/data/huggingface-cache"
 ENV HF_XET_HIGH_PERFORMANCE="1"
 
 EXPOSE 8888
@@ -12,7 +13,8 @@ EXPOSE 22
 COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
 COPY scripts/motd /etc/motd
 
-RUN uv pip install jupyterlab notebook ipywidgets && \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install jupyterlab notebook ipywidgets && \
     jupyter lab clean
 RUN apt update && \
     apt install --yes --no-install-recommends openssh-server tmux iproute2 nvtop && \

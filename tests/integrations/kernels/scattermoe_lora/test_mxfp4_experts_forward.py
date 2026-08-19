@@ -112,14 +112,9 @@ def test_mxfp4_forward_uses_fused_kernel_matches_dequant(monkeypatch):
 
 
 def test_mxfp4_ep_matches_dequant(monkeypatch):
-    """Fused MXFP4 through the EP (sentinel-skip) forward matches the bf16-dequant ref,
-    and _sonicmoe_local routes there on a device the sonic-moe kernel can't run."""
-    from axolotl.integrations.expert_parallel.experts_fn import _sonicmoe_local
+    """Fused MXFP4 through the EP (sentinel-skip) forward matches the bf16-dequant ref."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
         scattermoe_experts_forward_ep,
-    )
-    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
-        _sonicmoe_kernel_supported,
     )
 
     dt = torch.bfloat16
@@ -184,14 +179,6 @@ def test_mxfp4_ep_matches_dequant(monkeypatch):
         (3, (slice(None), row)),
     ):
         assert rel(gl_mx[i][slc], gl_bf[i][slc]) < 6e-2, f"lora grad {i}"
-
-    if (
-        not _sonicmoe_kernel_supported()
-    ):  # e.g. sm_120: sonicmoe+EP falls back to scattermoe
-        out = _sonicmoe_local(
-            _module(gu_mx, dn_mx), torch.randn(N, H, device=DEV, dtype=dt), idx, w
-        )
-        assert out.shape == (N, H) and torch.isfinite(out).all()
 
 
 def test_mxfp4_without_lora_falls_back_to_dequant(monkeypatch):

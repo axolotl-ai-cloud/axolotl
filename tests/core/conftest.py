@@ -144,7 +144,7 @@ def fixture_grpo_cfg(base_cfg):
                 {
                     "path": "openai/gsm8k",
                     "name": "main",
-                    "split": "train[:1%]",
+                    "split": "train[:16]",
                 }
             ],
         }
@@ -205,7 +205,7 @@ def fixture_rm_cfg(sft_cfg):
                     {
                         "path": "argilla/distilabel-intel-orca-dpo-pairs",
                         "type": "bradley_terry.chat_template",
-                        "split": "train[:1%]",
+                        "split": "train[:16]",
                     }
                 ],
             }
@@ -225,7 +225,7 @@ def fixture_prm_cfg(sft_cfg):
                     {
                         "path": "trl-lib/math_shepherd",
                         "type": "stepwise_supervised",
-                        "split": "train[:1%]",
+                        "split": "train[:16]",
                     }
                 ],
             }

@@ -12,8 +12,6 @@ reduce to plain grouped Gram products: dA[g] = scaling * YB_g^T @ X_g,
 dB[g] = scaling * DY_g^T @ XA_g (reduction over the group's tokens).
 """
 
-from itertools import product
-
 import torch
 import triton
 import triton.language as tl
@@ -22,19 +20,46 @@ from . import lora_ops
 from .lora_ops import _block_r_for_rank, _bucket_m
 
 
+def _device_shared_mem_optin() -> int:
+    """Opt-in max dynamic shared memory per block for the current CUDA device (bytes). Returns a
+    large sentinel when CUDA is unavailable so the big-SMEM config is chosen by default."""
+    try:
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_properties(
+                torch.cuda.current_device()
+            ).shared_memory_per_block_optin
+    except Exception:  # pylint: disable=broad-except
+        pass
+    return 1 << 30
+
+
+# The large tile (BLOCK_M=128, BLOCK_WIDE=128, num_stages=3) needs ~144 KiB of shared memory per
+# block: it fits sm_80 (A100, ~163 KiB) and sm_90/sm_100 (H100/B200, ~228 KiB) but NOT sm_89 (L40S)
+# or consumer sm_120 (RTX 6000 / 5090, ~99 KiB), where Triton raises OutOfResources.
+_GRAM_LARGE_CONFIG_SMEM = 147456  # bytes
+
+
 def _grouped_gram_configs():
-    configs = []
-    for block_wide, block_m, warps, stages in product(
-        [32, 64, 128, 256], [32, 64, 128], [4, 8], [3, 4]
-    ):
-        configs.append(
-            triton.Config(
-                {"BLOCK_WIDE": block_wide, "BLOCK_M": block_m},
-                num_warps=warps,
-                num_stages=stages,
-            )
+    # ONE config sized to the device's shared memory. A single config keeps the autotune "sweep"
+    # instant — sweeping across configs re-times per rank at scattered layers and trips DeepEP's
+    # combine barrier (why this isn't a full per-shape search). Big-SMEM GPUs (H100/B200/A100) run
+    # the larger tile; small-SMEM GPUs (L40S / RTX 6000 / 5090) run a halved BLOCK_WIDE + double
+    # buffering that fits ~99 KiB (<= ~64 KiB even at BLOCK_R=128) instead of OOM-ing.
+    if _device_shared_mem_optin() >= _GRAM_LARGE_CONFIG_SMEM:
+        cfg = triton.Config(
+            {"BLOCK_WIDE": 128, "BLOCK_M": 128},
+            num_warps=4,
+            num_stages=3,
+            num_ctas=1,
         )
-    return configs
+    else:
+        cfg = triton.Config(
+            {"BLOCK_WIDE": 64, "BLOCK_M": 128},
+            num_warps=4,
+            num_stages=2,
+            num_ctas=1,
+        )
+    return [cfg]
 
 
 @triton.autotune(configs=_grouped_gram_configs(), key=["M_BUCKET", "WIDE", "RANK_IS_I"])

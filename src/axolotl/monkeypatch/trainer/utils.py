@@ -17,6 +17,8 @@ import torch.nn.functional as F
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 
 @triton.jit
 def _entropy_online_kernel(
@@ -105,19 +107,13 @@ def _entropy_online_kernel_strided(
     tl.store(output_ptr + local_row, entropy)
 
 
-def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Tensor:
-    """Triton-fused entropy (online single-pass). Handles non-contiguous tensors without copying."""
-    original_shape = logits.shape[:-1]
+@register_kernel_op("entropy_from_logits")
+def _entropy_from_logits_op(logits: torch.Tensor, chunk_size: int) -> torch.Tensor:
+    """CUDA entropy launches; returns flat float32 `(N,)` output."""
     V = logits.shape[-1]
     N = 1
-    for s in original_shape:
+    for s in logits.shape[:-1]:
         N *= s
-
-    if not logits.is_cuda:
-        # CPU fallback: stable entropy via log_softmax
-        logp = F.log_softmax(logits.float(), dim=-1)
-        ent = -(logp.exp() * logp).sum(dim=-1)
-        return ent.to(logits.dtype).reshape(original_shape)
 
     output = torch.empty(N, device=logits.device, dtype=torch.float32)
 
@@ -163,6 +159,28 @@ def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Te
                 flat_logits[start], output[start], stride, V=V, BLOCK_V=BLOCK_V
             )
 
+    return output
+
+
+@_entropy_from_logits_op.register_fake
+def _(logits, chunk_size):
+    N = 1
+    for s in logits.shape[:-1]:
+        N *= s
+    return torch.empty(N, device=logits.device, dtype=torch.float32)
+
+
+def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Tensor:
+    """Triton-fused entropy (online single-pass). Handles non-contiguous tensors without copying."""
+    original_shape = logits.shape[:-1]
+
+    if not logits.is_cuda:
+        # CPU fallback: stable entropy via log_softmax
+        logp = F.log_softmax(logits.float(), dim=-1)
+        ent = -(logp.exp() * logp).sum(dim=-1)
+        return ent.to(logits.dtype).reshape(original_shape)
+
+    output = _entropy_from_logits_op(logits, chunk_size)
     return output.to(logits.dtype).reshape(original_shape)
 
 
@@ -317,28 +335,101 @@ def _selective_logsoftmax_bwd_kernel(
         tl.store(grad_logits_row_ptr + offs, grad_j, mask=mask)
 
 
+@register_kernel_op("selective_log_softmax_fwd")
+def _selective_log_softmax_fwd_op(
+    flat_logits: torch.Tensor,
+    flat_index: torch.Tensor,
+    K: int,
+    K_BLOCK: int,
+    V: int,
+    BLOCK_V: int,
+    MAX_GRID: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    N = flat_logits.shape[0]
+    output = torch.empty(N, K_BLOCK, device=flat_logits.device, dtype=torch.float32)
+    logsumexp = torch.empty(N, device=flat_logits.device, dtype=torch.float32)
+
+    for start in range(0, N, MAX_GRID):
+        n_rows = min(MAX_GRID, N - start)
+        _selective_logsoftmax_fwd_kernel[(n_rows,)](
+            flat_logits[start],
+            flat_index[start],
+            output[start],
+            logsumexp[start],
+            flat_logits.stride(0),
+            flat_index.stride(0),
+            output.stride(0),
+            K,
+            K_BLOCK=K_BLOCK,
+            V=V,
+            BLOCK_V=BLOCK_V,
+        )
+
+    return output, logsumexp
+
+
+@_selective_log_softmax_fwd_op.register_fake
+def _(flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID):
+    N = flat_logits.shape[0]
+    return (
+        torch.empty(N, K_BLOCK, device=flat_logits.device, dtype=torch.float32),
+        torch.empty(N, device=flat_logits.device, dtype=torch.float32),
+    )
+
+
+@register_kernel_op("selective_log_softmax_bwd")
+def _selective_log_softmax_bwd_op(
+    grad_output: torch.Tensor,
+    flat_logits: torch.Tensor,
+    flat_index: torch.Tensor,
+    logsumexp: torch.Tensor,
+    K: int,
+    K_BLOCK: int,
+    V: int,
+    BLOCK_V: int,
+    MAX_GRID: int,
+) -> torch.Tensor:
+    N = flat_logits.shape[0]
+
+    grad_logits = torch.empty_like(flat_logits)
+
+    # grad_output may have K_BLOCK cols; backward kernel reads actual_K
+    grad_output_contig = grad_output.contiguous()
+
+    for start in range(0, N, MAX_GRID):
+        n_rows = min(MAX_GRID, N - start)
+        _selective_logsoftmax_bwd_kernel[(n_rows,)](
+            grad_output_contig[start],
+            flat_logits[start],
+            flat_index[start],
+            logsumexp[start],
+            grad_logits[start],
+            grad_output_contig.stride(0),
+            flat_logits.stride(0),
+            flat_index.stride(0),
+            grad_logits.stride(0),
+            K,
+            K_BLOCK=K_BLOCK,
+            V=V,
+            BLOCK_V=BLOCK_V,
+        )
+
+    return grad_logits
+
+
+@_selective_log_softmax_bwd_op.register_fake
+def _(
+    grad_output, flat_logits, flat_index, logsumexp, K, K_BLOCK, V, BLOCK_V, MAX_GRID
+):
+    return torch.empty_like(flat_logits)
+
+
 class _SelectiveLogSoftmaxTriton(torch.autograd.Function):
     @staticmethod
     def forward(ctx, flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID):
-        N = flat_logits.shape[0]
-        output = torch.empty(N, K_BLOCK, device=flat_logits.device, dtype=torch.float32)
-        logsumexp = torch.empty(N, device=flat_logits.device, dtype=torch.float32)
-
-        for start in range(0, N, MAX_GRID):
-            n_rows = min(MAX_GRID, N - start)
-            _selective_logsoftmax_fwd_kernel[(n_rows,)](
-                flat_logits[start],
-                flat_index[start],
-                output[start],
-                logsumexp[start],
-                flat_logits.stride(0),
-                flat_index.stride(0),
-                output.stride(0),
-                K,
-                K_BLOCK=K_BLOCK,
-                V=V,
-                BLOCK_V=BLOCK_V,
-            )
+        output, logsumexp = _selective_log_softmax_fwd_op(
+            flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID
+        )
 
         ctx.save_for_backward(flat_logits, flat_index, logsumexp)
         ctx.K = K
@@ -358,30 +449,17 @@ class _SelectiveLogSoftmaxTriton(torch.autograd.Function):
             ctx.BLOCK_V,
             ctx.MAX_GRID,
         )
-        N = flat_logits.shape[0]
-
-        grad_logits = torch.empty_like(flat_logits)
-
-        # grad_output may have K_BLOCK cols; backward kernel reads actual_K
-        grad_output_contig = grad_output.contiguous()
-
-        for start in range(0, N, MAX_GRID):
-            n_rows = min(MAX_GRID, N - start)
-            _selective_logsoftmax_bwd_kernel[(n_rows,)](
-                grad_output_contig[start],
-                flat_logits[start],
-                flat_index[start],
-                logsumexp[start],
-                grad_logits[start],
-                grad_output_contig.stride(0),
-                flat_logits.stride(0),
-                flat_index.stride(0),
-                grad_logits.stride(0),
-                K,
-                K_BLOCK=K_BLOCK,
-                V=V,
-                BLOCK_V=BLOCK_V,
-            )
+        grad_logits = _selective_log_softmax_bwd_op(
+            grad_output,
+            flat_logits,
+            flat_index,
+            logsumexp,
+            K,
+            K_BLOCK,
+            V,
+            BLOCK_V,
+            MAX_GRID,
+        )
 
         # Return grads for: flat_logits, flat_index, K, K_BLOCK, V, BLOCK_V, MAX_GRID
         return grad_logits, None, None, None, None, None, None

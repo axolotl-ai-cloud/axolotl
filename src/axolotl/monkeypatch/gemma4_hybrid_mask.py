@@ -27,6 +27,24 @@ text backbone's ``forward`` is always 4D/SDPA-compatible.
 ``create_sliding_window_causal_mask`` is left alone, so sliding-window
 layers continue to receive FA2-format masks.
 
+That last invariant needs one extra guard. ``create_masks_for_vision_model``
+— taken whenever ``mm_token_type_ids`` is supplied and the text config sets
+``use_bidirectional_attention="vision"``, which is every Gemma 4 batch under
+Axolotl — does *not* call ``create_sliding_window_causal_mask``. It builds
+the sliding mask through ``create_causal_mask`` as well, tagging it with
+``and_mask_function=sliding_window_overlay(...)``. Overriding the config on
+that call hands the FA2 sliding layers a 4D mask, which sends
+``_flash_attention_forward`` down its ``attention_mask is not None`` branch;
+``_get_unpad_data`` then flattens the 4D mask into indices up to ``B*S*S-1``
+and indexes a ``B*S``-row tensor::
+
+    File "transformers/modeling_flash_attention_utils.py", in _upad_input
+      key_layer = _index_first_axis(key_layer, indices_k)
+    torch.AcceleratorError: CUDA error: device-side assert triggered
+
+So the wrapper passes ``and_mask_function`` calls straight through: only the
+global mask is forced to SDPA.
+
 ``gemma4_unified`` reproduces the same mixed sliding/global architecture
 (``global_head_dim=512``) in its own ``modeling_gemma4_unified`` namespace,
 so both namespaces are patched when present.
@@ -46,6 +64,89 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 _PATCH_APPLIED = False
+
+# Attention-interface name for Gemma-4 global (full_attention) layers. They have head_dim=512, so FA2
+# can't serve them and the model (FA2 at the top level) hands them no mask, relying on cu_seqlens that
+# only the FA2 sliding layers consume. With sample packing that means the global layers would attend
+# ACROSS document boundaries (pure causal). This impl rebuilds the block-diagonal-causal mask from
+# position_ids so the globals respect doc boundaries, on the memory-efficient SDPA backend.
+GLOBAL_PACKED_SDPA = "sdpa_global_packed"
+
+
+# When set, the head_dim=512 global layers use the Triton flash_d512 kernel (fwd+bwd, varlen) instead
+# of the SDPA efficient backend (~2x faster at head_dim 512). Set from cfg.flash_attn_d512.
+def set_flash_d512(enabled: bool) -> None:
+    """Backwards-compat shim: the head_dim>256 routing is now the generic large_head_attention
+    capability. True -> 'auto' (flash only on packed rows, the proven win)."""
+    from axolotl.monkeypatch.attention.large_head import set_large_head_policy
+
+    set_large_head_policy("auto" if enabled else "sdpa")
+
+
+def _packing_block_causal_mask(position_ids, dtype, device):
+    """Block-diagonal causal additive mask [B,1,S,S] from packed position_ids (which reset to 0 at
+    each document start). -inf across document boundaries and for non-causal positions, 0 elsewhere."""
+    import torch
+
+    if position_ids.dim() == 1:
+        position_ids = position_ids[None]
+    Bz, Sz = position_ids.shape
+    doc = (position_ids == 0).cumsum(-1)  # [B,S] document index (1-based)
+    same_doc = doc[:, :, None] == doc[:, None, :]  # [B,S,S]
+    causal = torch.ones(Sz, Sz, dtype=torch.bool, device=device).tril()[None]  # [1,S,S]
+    allow = same_doc & causal
+    mask = torch.zeros(Bz, 1, Sz, Sz, dtype=dtype, device=device)
+    mask.masked_fill_(~allow[:, None], torch.finfo(dtype).min)
+    return mask
+
+
+def _register_global_packed_sdpa() -> None:
+    """Register the packing-aware global-layer attention impl (block-diagonal mask + efficient SDPA)."""
+    from transformers.integrations.sdpa_attention import sdpa_attention_forward
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    if GLOBAL_PACKED_SDPA in ALL_ATTENTION_FUNCTIONS.valid_keys():
+        return
+
+    def sdpa_global_packed_forward(module, query, key, value, attention_mask, **kwargs):
+        # The top-level FA2 path leaves these layers maskless and carries packing only via cu_seqlens
+        # (consumed by FA2, not SDPA). Rebuild the block-diagonal mask from position_ids so the global
+        # layers don't cross document boundaries. Single-document rows stay maskless (is_causal).
+        from axolotl.monkeypatch.attention.large_head import flash_d512_route
+
+        position_ids = kwargs.get("position_ids")
+        # The generic large-head router takes head_dim>256 packed rows through the Triton flash
+        # kernel (per the large_head_attention policy); ~2.7x the 4D-mask SDPA, ~3x less memory than
+        # nested-tensor SDPA. It declines (returns None) for single-doc/policy=sdpa -> SDPA below.
+        if attention_mask is None:
+            routed = flash_d512_route(
+                module, query, key, value, kwargs.get("scaling"), position_ids
+            )
+            if routed is not None:
+                return routed
+        # Packing detection: static under a declared config (compile-clean), runtime probe otherwise.
+        pid = None
+        if attention_mask is None:
+            from axolotl.monkeypatch.attention.large_head import (
+                _multidoc_position_ids,
+            )
+
+            pid = _multidoc_position_ids(position_ids)
+        # Packed without the kernel -> block-diagonal mask so globals respect doc boundaries.
+        # Single-document -> mask stays None (SDPA is_causal, the fast path).
+        if pid is not None:
+            attention_mask = _packing_block_causal_mask(pid, query.dtype, query.device)
+        return sdpa_attention_forward(
+            module, query, key, value, attention_mask, **kwargs
+        )
+
+    ALL_ATTENTION_FUNCTIONS.register(GLOBAL_PACKED_SDPA, sdpa_global_packed_forward)
+    LOG.info(
+        "gemma4_hybrid_mask: registered '%s' (block-diagonal packing mask for head_dim=512 global "
+        "layers so they respect document boundaries under sample packing)",
+        GLOBAL_PACKED_SDPA,
+    )
+
 
 # Each Gemma 4 variant fully redefines ``create_causal_mask`` in its own module
 # namespace (gemma4_unified does NOT modular-import from gemma4), so both must be
@@ -84,6 +185,8 @@ def _patch_module_create_causal_mask(module: Any) -> bool:
         on a shallow copy so the caller's config is left intact (the
         sliding-window factory still reads FA2 from it).
         """
+        if kwargs.get("and_mask_function") is not None:
+            return original(config, *args, **kwargs)
         sdpa_config = copy.copy(config)
         sdpa_config._attn_implementation = "sdpa"
         return original(sdpa_config, *args, **kwargs)
@@ -95,6 +198,41 @@ def _patch_module_create_causal_mask(module: Any) -> bool:
         "gemma4_hybrid_mask: patched %s.create_causal_mask to force SDPA-format "
         "masks for full-attention layers",
         module.__name__,
+    )
+    return True
+
+
+def _patch_use_gqa_head_dim_guard() -> bool:
+    """Stop ``enable_gqa`` from forcing the MATH SDPA backend on large-head-dim layers.
+
+    ``sdpa_attention_forward`` enables ``enable_gqa=True`` whenever ``attention_mask is None``
+    (``use_gqa_in_sdpa``), with no head_dim check. But SDPA's flash/efficient GQA path only
+    supports head_dim <= 256; at head_dim > 256 ``enable_gqa`` silently falls back to the MATH
+    kernel, which materializes the full [H, S, S] scores. Repeating KV instead keeps the
+    memory-efficient backend. For Gemma-4's head_dim=512 global layers this is ~2.9 GiB -> ~0.2 GiB
+    per layer with identical math (repeat_kv == GQA).
+    """
+    try:
+        import transformers.integrations.sdpa_attention as sdpa_mod
+    except ImportError:
+        return False
+    original = sdpa_mod.use_gqa_in_sdpa
+    if getattr(original, "_axolotl_head_dim_guarded", False):
+        return True
+
+    # *args/**kwargs: transformers 5.13 adds a `value` positional arg
+    def use_gqa_in_sdpa_guarded(attention_mask, key, *args, **kwargs):
+        # head_dim > 256 -> enable_gqa drops to the MATH backend; force repeat_kv (efficient) instead.
+        if key.shape[-1] > 256:
+            return False
+        return original(attention_mask, key, *args, **kwargs)
+
+    use_gqa_in_sdpa_guarded._axolotl_head_dim_guarded = True  # type: ignore[attr-defined]
+    use_gqa_in_sdpa_guarded._axolotl_original = original  # type: ignore[attr-defined]
+    sdpa_mod.use_gqa_in_sdpa = use_gqa_in_sdpa_guarded
+    LOG.info(
+        "gemma4_hybrid_mask: guarded use_gqa_in_sdpa (head_dim>256 -> repeat_kv, not enable_gqa) "
+        "to keep the memory-efficient SDPA backend on head_dim=512 global layers"
     )
     return True
 
@@ -125,9 +263,15 @@ def patch_gemma4_hybrid_mask() -> bool:
         if _patch_module_create_causal_mask(module):
             patched_any = True
 
-    if patched_any:
-        _PATCH_APPLIED = True
-    return patched_any
+    if not patched_any:
+        return False
+
+    # Only touch global SDPA state once we know a Gemma4 namespace was actually patched —
+    # otherwise _PATCH_APPLIED stays False and unpatch() would skip cleaning these up.
+    _patch_use_gqa_head_dim_guard()
+    _register_global_packed_sdpa()
+    _PATCH_APPLIED = True
+    return True
 
 
 def unpatch_gemma4_hybrid_mask() -> None:
@@ -135,6 +279,15 @@ def unpatch_gemma4_hybrid_mask() -> None:
     global _PATCH_APPLIED
     if not _PATCH_APPLIED:
         return
+    try:
+        import transformers.integrations.sdpa_attention as sdpa_mod
+
+        guarded = getattr(sdpa_mod, "use_gqa_in_sdpa", None)
+        original = getattr(guarded, "_axolotl_original", None)
+        if original is not None:
+            sdpa_mod.use_gqa_in_sdpa = original
+    except ImportError:
+        pass
     for module_path in _TARGET_MODULES:
         try:
             module = importlib.import_module(module_path)

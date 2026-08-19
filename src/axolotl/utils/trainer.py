@@ -10,6 +10,8 @@ from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
 import torch
 import torch.cuda
 from datasets import IterableDataset, disable_caching, enable_caching
@@ -25,7 +27,6 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 LOG = get_logger(__name__)
 
 
-@torch.jit.script
 def weighted_cross_entropy(
     logits: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor
 ):
@@ -43,34 +44,26 @@ def weighted_cross_entropy(
     return (weights * losses).sum()
 
 
-@torch.jit.script
 def create_weighted_mask(labels: torch.Tensor):
-    # Check if the tensor is 2D. If not, unsqueeze it to make it 2D
+    """Weight each contiguous run of unmasked (!= -100) labels so it sums to 1."""
     if len(labels.shape) == 1:
         labels = labels.unsqueeze(0)
+    batch_size, seq_len = labels.shape
 
-    weights = torch.zeros_like(labels).float()
-    for i in range(labels.shape[0]):
-        mask = labels[i] != -100
+    mask = labels != -100
+    # a group starts at an unmasked position whose predecessor is masked
+    starts = mask.clone()
+    starts[:, 1:] &= ~mask[:, :-1]
 
-        # Create a tensor to track group ids
-        group_ids = torch.zeros_like(labels[i]).int()
-        curr_group_id = 0
+    # 0-based group id per row, only meaningful at unmasked positions
+    group_ids = starts.cumsum(dim=1) - 1
+    max_groups = seq_len // 2 + 1
+    row_offsets = torch.arange(batch_size, device=labels.device).unsqueeze(1)
+    flat_ids = (group_ids + row_offsets * max_groups)[mask]
 
-        for j in range(1, len(labels[i])):
-            if mask[j] and not mask[j - 1]:  # switch from masked to unmasked label
-                curr_group_id += 1  # start new group
-            group_ids[j] = (
-                curr_group_id if mask[j] else 0
-            )  # assign group id if unmasked label
-
-        # Count only unmasked labels in each group
-        group_counts = torch.bincount(group_ids[mask])
-
-        mask_weights = torch.zeros_like(labels[i]).float()
-        mask_weights[mask] = 1.0 / group_counts[group_ids[mask]]
-
-        weights[i] = mask_weights
+    group_counts = torch.bincount(flat_ids, minlength=batch_size * max_groups)
+    weights = torch.zeros_like(labels, dtype=torch.float32)
+    weights[mask] = 1.0 / group_counts[flat_ids].float()
 
     return weights.squeeze()  # squeeze the output to match the input dimension
 
@@ -411,12 +404,17 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         and not cfg.skip_prepare_dataset
         and not cfg.reward_model
     ):
-        total_num_tokens = np.sum(
-            train_dataset.select_columns("input_ids")
-            .to_pandas()["input_ids"]
-            .apply(len)
-            .values
-        )
+        if "length" in train_dataset.column_names:
+            total_num_tokens = int(
+                pc.sum(train_dataset.data.column("length"), min_count=0).as_py()
+            )
+        else:
+            total_num_tokens = int(
+                pc.sum(
+                    pc.list_value_length(train_dataset.data.column("input_ids")),
+                    min_count=0,
+                ).as_py()
+            )
         LOG.debug(f"total_num_tokens: {total_num_tokens:_}")
         if update:
             cfg.total_num_tokens = total_num_tokens
@@ -429,13 +427,17 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         and not cfg.skip_prepare_dataset
         and not cfg.reward_model
     ):
-        total_supervised_tokens = (
-            train_dataset.data.column("labels")
-            .to_pandas()
-            .apply(lambda x: np.sum(np.array(x) != -100))
-            .sum()
-        )
-        LOG.debug(f"`total_supervised_tokens: {total_supervised_tokens:_}`")
+        # Stream the labels column in record-batch chunks instead of
+        # .to_pandas(), which materializes one Python list per row.
+        total_supervised_tokens = 0
+        for batch in train_dataset.data.to_batches(max_chunksize=1024):
+            labels = batch.column("labels")
+            if pa.types.is_list(labels.type) or pa.types.is_large_list(labels.type):
+                flat = labels.flatten().to_numpy(zero_copy_only=False)
+            else:
+                flat = labels.to_numpy(zero_copy_only=False)
+            total_supervised_tokens += int((flat != -100).sum())
+        LOG.debug(f"total_supervised_tokens: {total_supervised_tokens:_}")
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
 
@@ -614,6 +616,8 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_TRANSFORMER_CLS_TO_WRAP"] = (
             cfg.fsdp_config.transformer_layer_cls_to_wrap
         )
+    if cfg.fsdp_config.min_num_params:
+        os.environ["FSDP_MIN_NUM_PARAMS"] = str(cfg.fsdp_config.min_num_params)
     if cfg.fsdp_config.reshard_after_forward:
         os.environ["FSDP_RESHARD_AFTER_FORWARD"] = "true"
 

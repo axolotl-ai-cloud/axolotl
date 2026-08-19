@@ -29,9 +29,11 @@ class TestKernelsArgs:
         assert result.use_sonicmoe is None
 
     def test_disables_mlp_kernel_when_sonicmoe(self):
+        # lora_mlp_kernel is kept (it fuses only the DENSE shared MLP; routed experts are handled
+        # by the MoE kernel); the non-LoRA mlp_kernel is still force-disabled under custom MoE.
         data = {"use_sonicmoe": True, "lora_mlp_kernel": True}
         result = KernelsArgs.disable_mlp_kernel(data)
-        assert result["lora_mlp_kernel"] is False
+        assert result["lora_mlp_kernel"] is True
         assert result["mlp_kernel"] is False
 
     def test_experts_implementation_auto_sonicmoe(self):

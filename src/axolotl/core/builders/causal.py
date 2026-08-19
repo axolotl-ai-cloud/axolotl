@@ -273,7 +273,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
         training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
-            self.cfg.attn_supports_packing
+            self.cfg.attn_decontaminates_packing
         )
         training_arguments_kwargs["multipack_real_batches"] = (
             self.cfg.multipack_real_batches

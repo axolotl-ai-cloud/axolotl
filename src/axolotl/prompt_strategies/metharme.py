@@ -2,6 +2,8 @@
 
 from typing import Tuple
 
+from transformers import BatchEncoding
+
 from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
 from axolotl.utils.logging import get_logger
@@ -35,6 +37,8 @@ class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         )
         if len(result["input_ids"]) == 0:
             LOG.warning("Tokenizer result is empty. You may want to audit your dataset")
+            # A no-BOS tokenizer yields zero tokens for an empty field.
+            return BatchEncoding(data={"input_ids": [], "attention_mask": []})
         # If there's already an EOS token there, subtract from the number added
         if result["input_ids"][-1] == self.tokenizer.eos_token_id:
             num_eos_tokens -= 1

@@ -122,7 +122,9 @@ def setup_model_and_tokenizer(
 
 
 def setup_reference_model(
-    cfg: DictDefault, tokenizer: PreTrainedTokenizer
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None = None,
 ) -> PreTrainedModel | None:
     """
     Set up the reference model for RL training if needed.
@@ -130,6 +132,7 @@ def setup_reference_model(
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         tokenizer: The tokenizer to use for the reference model.
+        processor: The processor to use for a multimodal reference model.
 
     Returns:
         Reference model if needed for RL training, `None` otherwise.
@@ -149,7 +152,12 @@ def setup_reference_model(
             ):
                 reference_model = False
             # load the model again for model_ref/baseline
-            model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
+            model_loader = ModelLoader(
+                cfg,
+                tokenizer,
+                processor=processor,
+                reference_model=reference_model,
+            )
             model_ref, _ = model_loader.load()
     return model_ref
 
@@ -293,6 +301,29 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
+    # EP-sharded expert LoRA: the adapter is split across the EP axis, so the normal
+    # FSDP/PEFT save would persist only the local rank's experts. Gather across EP and
+    # write a complete adapter.
+    if cfg.adapter and (getattr(cfg, "expert_parallel_size", 1) or 1) > 1:
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+        from axolotl.integrations.expert_parallel.shard import save_ep_lora_adapter
+
+        ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+        if save_ep_lora_adapter(model, cfg.output_dir, ep_group):
+            return
+
+    # FSDP2 (no EP) LoRA: the DCP sharded save fails ("Failed to validate global plan") on the
+    # frozen NVFP4 base DTensors, so gather just the adapter and write it directly.
+    if (
+        cfg.adapter
+        and (trainer.is_fsdp_enabled or cfg.fsdp_config)
+        and str(cfg.fsdp_version) == "2"
+    ):
+        from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
+
+        if save_fsdp2_lora_adapter(model, cfg.output_dir):
+            return
+
     if trainer.is_fsdp_enabled or cfg.fsdp_config:
         if cfg.fsdp_config or cfg.fsdp:
             if cfg.fsdp_config.final_state_dict_type:
@@ -341,9 +372,10 @@ def save_trained_model(
             ) as config_file_io:
                 # read the model config as an OrderedDict
                 config = json.load(config_file_io, object_pairs_hook=OrderedDict)
-                config["architectures"] = [
-                    name.lstrip("FSDP") for name in config["architectures"]
-                ]
+                if config.get("architectures"):
+                    config["architectures"] = [
+                        name.lstrip("FSDP") for name in config["architectures"]
+                    ]
             # write the updated model config back
             with open(
                 os.path.join(cfg.output_dir, "config.json"), "w", encoding="utf-8"
@@ -550,7 +582,7 @@ def setup_model_and_trainer(
     model, tokenizer, peft_config, processor = setup_model_and_tokenizer(cfg)
 
     # Set up reference model for RL if needed
-    model_ref = setup_reference_model(cfg, tokenizer)
+    model_ref = setup_reference_model(cfg, tokenizer, processor)
 
     # Get datasets from metadata
     train_dataset = dataset_meta.train_dataset

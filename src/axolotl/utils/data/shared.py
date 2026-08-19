@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import functools
+import json
 import os
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator
 
@@ -36,6 +38,66 @@ if TYPE_CHECKING:
     from s3fs import S3FileSystem
 
 LOG = get_logger(__name__)
+
+DATASET_HASH_BASE_DATASET_FIELDS = (
+    "path",
+    "type",
+    "shards",
+    "conversation",
+    "split",
+    "temperature",
+)
+
+DATASET_HASH_CONFIG_EXTRA_FIELDS = (
+    "added_tokens_overrides",
+    "chat_template",
+    "chat_template_jinja",
+    "chat_template_kwargs",
+    "default_system_message",
+    "eot_tokens",
+    "sample_packing_bin_size",
+    "sample_packing_group_size",
+    "sample_packing_sequentially",
+    "special_tokens",
+    "train_on_inputs",
+)
+
+DATASET_HASH_DATASET_EXTRA_FIELDS = (
+    "chat_template",
+    "chat_template_jinja",
+    "data_files",
+    "drop_system_message",
+    "ds_type",
+    "field",
+    "field_chosen",
+    "field_human",
+    "field_messages",
+    "field_model",
+    "field_rejected",
+    "field_thinking",
+    "field_tools",
+    "input_format",
+    "input_transform",
+    "max_completion_length",
+    "message_field_content",
+    "message_field_role",
+    "message_field_training",
+    "message_field_training_detail",
+    "message_property_mappings",
+    "name",
+    "preprocess_shards",
+    "revision",
+    "roles",
+    "roles_to_train",
+    "shards_idx",
+    "split_thinking",
+    "step_separator",
+    "template_thinking_key",
+    "text_column",
+    "train_on_eos",
+    "train_on_eot",
+    "train_on_last_step_only",
+)
 
 EXTENSIONS_TO_DATASET_TYPES = {
     ".parquet": "parquet",
@@ -469,8 +531,7 @@ def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | 
     prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
 
     if (
-        cfg.dataset_prepared_path
-        and any(prepared_ds_path.glob("*"))
+        any(prepared_ds_path.glob("*"))
         and not cfg.skip_prepare_dataset
         and not cfg.is_preprocess
     ):
@@ -505,6 +566,70 @@ def try_load_from_hub(
         return None
 
 
+def _get_hash_field(value: Any, field: str) -> Any:
+    if hasattr(value, "get"):
+        return value.get(field)
+    return getattr(value, field, None)
+
+
+def _normalize_hash_value(value: Any) -> Any:
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            value = model_dump(mode="json", exclude_none=True)
+        except TypeError:
+            value = model_dump(exclude_none=True)
+
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        normalized = {}
+        for key, item in sorted(value.items(), key=lambda entry: str(entry[0])):
+            item = _normalize_hash_value(item)
+            if item is not None:
+                normalized[str(key)] = item
+        return normalized
+    if isinstance(value, (list, tuple)):
+        return [_normalize_hash_value(item) for item in value]
+    if isinstance(value, set):
+        return sorted(_normalize_hash_value(item) for item in value)
+
+    return value
+
+
+def _is_empty_hash_value(value: Any) -> bool:
+    return value is None or value is False or value == {} or value == []
+
+
+def _selected_hash_fields(value: Any, fields: tuple[str, ...]) -> dict[str, Any]:
+    selected = {}
+    for field in fields:
+        field_value = _normalize_hash_value(_get_hash_field(value, field))
+        if not _is_empty_hash_value(field_value):
+            selected[field] = field_value
+    return selected
+
+
+def _stable_json(value: Any) -> str:
+    return json.dumps(
+        _normalize_hash_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _base_dataset_hash_string(dataset: Any) -> str:
+    values = []
+    for field in DATASET_HASH_BASE_DATASET_FIELDS:
+        value = _get_hash_field(dataset, field)
+        if field == "temperature":
+            value = value or 1.0
+        values.append(str(value))
+    return ":".join(values)
+
+
 def generate_dataset_hash_from_config(
     cfg: DictDefault, cfg_datasets: list, tokenizer_name: str
 ) -> str:
@@ -527,13 +652,34 @@ def generate_dataset_hash_from_config(
     else:
         tokenizer_fingerprint = tokenizer_name
 
+    dataset_config_str = "|".join(
+        sorted(_base_dataset_hash_string(dataset) for dataset in cfg_datasets)
+    )
+
+    extra_payload: dict[str, Any] = {}
+    cfg_extra = _selected_hash_fields(cfg, DATASET_HASH_CONFIG_EXTRA_FIELDS)
+    if cfg_extra:
+        extra_payload["cfg"] = cfg_extra
+
+    dataset_extra = []
+    for dataset in cfg_datasets:
+        extra_fields = _selected_hash_fields(dataset, DATASET_HASH_DATASET_EXTRA_FIELDS)
+        if extra_fields:
+            dataset_extra.append(
+                {"id": _base_dataset_hash_string(dataset), "extra": extra_fields}
+            )
+    if dataset_extra:
+        extra_payload["datasets"] = sorted(dataset_extra, key=_stable_json)
+
     config_str = (
         f"{cfg.sequence_len}@{cfg.sample_packing}@{cfg.eval_sample_packing}@"
         f"{cfg.group_by_length}@{cfg.kd_temperature or 1.0}@"
         f"{cfg.dataset_exact_deduplication or False}|"
-        f"{'|'.join(sorted([f'{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}' for d in cfg_datasets]))}"
+        f"{dataset_config_str}"
         f"|{tokenizer_fingerprint}"
     )
+    if extra_payload:
+        config_str = f"{config_str}|{_stable_json(extra_payload)}"
     return str(md5(config_str))
 
 

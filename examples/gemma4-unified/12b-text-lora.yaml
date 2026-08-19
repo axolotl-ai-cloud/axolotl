@@ -9,6 +9,8 @@ liger_layer_norm: true
 strict: false
 
 chat_template: gemma4_unified
+eot_tokens:
+  - "<turn|>"
 datasets:
   - path: mlabonne/FineTome-100k
     type: chat_template

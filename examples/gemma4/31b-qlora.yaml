@@ -11,6 +11,8 @@ liger_rms_norm_gated: true
 strict: false
 
 chat_template: gemma4
+eot_tokens:
+  - "<turn|>"
 datasets:
   - path: mlabonne/FineTome-100k
     type: chat_template

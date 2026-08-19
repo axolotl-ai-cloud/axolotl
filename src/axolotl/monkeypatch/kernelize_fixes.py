@@ -1,13 +1,13 @@
-"""Repairs for transformers' ``model.kernelize()`` under ``use_kernels=True``.
+"""Repairs for transformers' kernelization under ``use_kernels=True``.
 
-``kernelize()`` swaps each module's ``_hidden_kernels`` entries for hub
-kernels, but two upstream defects crash it (transformers 5.10): ~30
-architectures (gemma4, qwen3.5, glm4, olmo, ...) stash a bare function it
+``set_use_kernels(True)`` calls ``kernelize()``, which swaps each module's
+``_hidden_kernels`` entries for hub kernels, but two upstream defects crash it:
+~30 architectures (gemma4, qwen3.5, glm4, olmo, ...) stash a bare function it
 refuses to register, and gpt-oss's rotary ``Func`` keeps a deprecated
 ``position_ids`` parameter that fails the kernels library's signature check
 against ``kernels-community/rotary``.
 
-Wraps ``PreTrainedModel.kernelize`` to repair the stashes right before the
+Wraps ``PreTrainedModel.set_use_kernels`` to repair the stashes right before the
 swap: bare functions are dropped (the model's forward still calls them
 directly) and ``position_ids`` is removed from rotary signature *metadata*
 (call behavior unchanged). Both repairs no-op once fixed upstream.
@@ -19,7 +19,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-_ORIG_KERNELIZE = None
+_ORIG_SET_USE_KERNELS = None
 
 
 def _fix_hidden_kernels(module):
@@ -42,32 +42,35 @@ def _fix_hidden_kernels(module):
 
 
 def patch_kernelize_fixes() -> bool:
-    global _ORIG_KERNELIZE
-    if _ORIG_KERNELIZE is not None:
+    global _ORIG_SET_USE_KERNELS
+    if _ORIG_SET_USE_KERNELS is not None:
         return True
 
     from transformers.modeling_utils import PreTrainedModel
 
-    orig = getattr(PreTrainedModel, "kernelize", None)
+    orig = getattr(PreTrainedModel, "set_use_kernels", None)
     if orig is None:
-        LOG.warning("kernelize_fixes: PreTrainedModel.kernelize not found, skipping")
+        LOG.warning(
+            "kernelize_fixes: PreTrainedModel.set_use_kernels not found, skipping"
+        )
         return False
 
-    def kernelize(self, *args, **kwargs):
-        self.apply(_fix_hidden_kernels)
-        return orig(self, *args, **kwargs)
+    def set_use_kernels(self, use_kernels, *args, **kwargs):
+        if use_kernels:
+            self.apply(_fix_hidden_kernels)
+        return orig(self, use_kernels, *args, **kwargs)
 
-    PreTrainedModel.kernelize = kernelize
-    _ORIG_KERNELIZE = orig
-    LOG.info("kernelize_fixes: patched PreTrainedModel.kernelize")
+    PreTrainedModel.set_use_kernels = set_use_kernels
+    _ORIG_SET_USE_KERNELS = orig
+    LOG.info("kernelize_fixes: patched PreTrainedModel.set_use_kernels")
     return True
 
 
 def unpatch_kernelize_fixes() -> None:
-    global _ORIG_KERNELIZE
-    if _ORIG_KERNELIZE is None:
+    global _ORIG_SET_USE_KERNELS
+    if _ORIG_SET_USE_KERNELS is None:
         return
     from transformers.modeling_utils import PreTrainedModel
 
-    PreTrainedModel.kernelize = _ORIG_KERNELIZE
-    _ORIG_KERNELIZE = None
+    PreTrainedModel.set_use_kernels = _ORIG_SET_USE_KERNELS
+    _ORIG_SET_USE_KERNELS = None

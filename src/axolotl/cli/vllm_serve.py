@@ -65,15 +65,19 @@ def do_vllm_serve(
     )
     dtype = cli_args.get("dtype") or cfg.vllm.dtype
     max_model_len = cli_args.get("max_model_len") or cfg.vllm.max_model_len
+    # Booleans check for None so an explicit CLI False can disable a config-
+    # enabled option (`cli or cfg` would let a falsy CLI value fall through).
+    cli_prefix = cli_args.get("enable_prefix_caching")
     enable_prefix_caching = (
-        cli_args.get("enable_prefix_caching") or cfg.vllm.enable_prefix_caching
+        cfg.vllm.enable_prefix_caching if cli_prefix is None else cli_prefix
     )
     reasoning_parser = (
         cli_args.get("reasoning_parser") or cfg.vllm.reasoning_parser or ""
     )
+    cli_reasoning = cli_args.get("enable_reasoning")
     enable_reasoning = (
-        cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
-    )
+        cfg.vllm.enable_reasoning if cli_reasoning is None else cli_reasoning
+    ) or False
 
     cli_enforce_eager = cli_args.get("enforce_eager")
     cfg_enforce_eager = getattr(cfg.vllm, "enforce_eager", None)
