@@ -1,4 +1,4 @@
-"""Factory for the PoLoRA optimizer (optional third-party dependency)."""
+"""Factory for the PoLoRA optimizer."""
 
 from __future__ import annotations
 
