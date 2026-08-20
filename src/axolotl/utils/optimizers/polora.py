@@ -16,7 +16,7 @@ LOG = get_logger(__name__)
 
 _INSTALL_HINT = (
     "optimizer: polora requires the `polora` package, which is not installed. "
-    "It is not published on PyPI, so install it from source:\n"
+    "Install via:\n"
     "    pip install git+https://github.com/nikhilgsh/polora.git"
 )
 
