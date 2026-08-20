@@ -880,7 +880,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.monkeypatch.models.qwen3_next.modeling.get_cu_seqlens" id="toc-axolotl.monkeypatch.models.qwen3_next.modeling.get_cu_seqlens" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.qwen3_next.modeling.get_cu_seqlens">get_cu_seqlens</a></li>
   <li><a href="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_decoder_layer" id="toc-axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_decoder_layer" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_decoder_layer">patch_qwen3_next_decoder_layer</a></li>
   <li><a href="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_gateddelta_layer" id="toc-axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_gateddelta_layer" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_gateddelta_layer">patch_qwen3_next_gateddelta_layer</a></li>
-  <li><a href="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_imports" id="toc-axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_imports" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_imports">patch_qwen3_next_imports</a></li>
   <li><a href="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing" id="toc-axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing">patch_qwen3_next_modeling_packing</a></li>
   </ul></li>
   </ul></li>
@@ -920,10 +919,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Patch Qwen3NextGatedDeltaNet to parse cu_seqlens and pass to chunk_gated_delta_rule</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_imports">patch_qwen3_next_imports</a></td>
-<td>Patch Qwen3Next imports to use try/except instead of is_flash_linear_attention_available.</td>
-</tr>
-<tr class="odd">
 <td><a href="#axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing">patch_qwen3_next_modeling_packing</a></td>
 <td>Apply all Qwen3Next model patches.</td>
 </tr>
@@ -945,14 +940,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_gateddelta_layer()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Patch Qwen3NextGatedDeltaNet to parse cu_seqlens and pass to chunk_gated_delta_rule</p>
 </section>
-<section id="axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_imports" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_imports">patch_qwen3_next_imports</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_imports()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Patch Qwen3Next imports to use try/except instead of is_flash_linear_attention_available.</p>
-</section>
 <section id="axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing">patch_qwen3_next_modeling_packing</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply all Qwen3Next model patches.</p>
 
 
