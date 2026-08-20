@@ -92,6 +92,7 @@ class CustomSupportedOptimizers(str, Enum):
     muon = "muon"
     dion = "dion"
     sinkgd = "sinkgd"
+    polora = "polora"
     flash_adamw = "flash_adamw"
     flash_adam = "flash_adam"
     flash_sgd = "flash_sgd"

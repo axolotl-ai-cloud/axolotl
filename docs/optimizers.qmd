@@ -278,3 +278,50 @@ qgalore_cos_threshold: 0.4         # skip SVD if P_t is this similar to P_{t-1}
 qgalore_gamma_proj: 2              # grow update_proj_gap by this factor when stable
 qgalore_queue_size: 5
 ```
+
+### polora
+
+PoLoRA (Preconditioned Orthogonalized LoRA) is a **LoRA-only** optimizer. It extends
+Muon-style spectral descent to the LoRA setting: each adapter pair `(A, B)` is whitened
+in a diagonal-Kronecker curvature metric, passed through the matrix sign, unwhitened, and
+rescaled to spectral norm `rho = lr / (sigma_max(A) + sigma_max(B))`. State per pair is a
+first moment plus two diagonal preconditioners, roughly half of Adam's optimizer state.
+
+GitHub: [https://github.com/nikhilgsh/polora](https://github.com/nikhilgsh/polora)
+Docs: [https://nikhilgsh.github.io/polora/](https://nikhilgsh.github.io/polora/)
+
+Install from source:
+
+```bash
+pip install git+https://github.com/nikhilgsh/polora.git
+```
+
+Requires `adapter: lora` or `adapter: qlora`. Single-GPU and DDP only for now; DeepSpeed,
+FSDP, and tensor parallelism are not supported. Config options that PoLoRA cannot honor
+are rejected at validation time.
+
+Every LoRA factor must receive a gradient on every step, so exclude layers that do not run
+on every batch (a vision tower, unrouted MoE experts) via `lora_exclude_modules`.
+
+With `lora_target_parameters` on an MoE model, PEFT builds each factor at rank
+`lora_r * num_experts`, so PoLoRA's per-pair spectral work grows with the expert count and
+the update is one joint step across block-concatenated experts rather than per-expert. Keep
+`lora_r` small there.
+
+```yaml
+optimizer: polora
+adapter: lora
+# lr is a spectral-norm target, not an Adam step size. The paper uses 1e-2 (math) and
+# 3e-3 (code), and reports that the best lr transfers across lora_r.
+learning_rate: 0.01
+
+# optional, defaults shown
+optim_args:
+  beta1: 0.9             # momentum coefficient
+  curvature_beta: 0.99   # EMA coefficient for the diagonal preconditioners
+  epsilon: 1.0e-12       # numerical floor
+  delta: 1.0e-4          # relative damping of the inverse square roots
+  ns_steps: 8            # PolarExpress matrix-sign iterations
+  higham_iters: 8        # Newton-Schulz iterations for the inverse square roots
+  compile: false         # torch.compile the two spectral kernels
+```

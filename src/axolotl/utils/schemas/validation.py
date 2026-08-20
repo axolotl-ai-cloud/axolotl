@@ -904,6 +904,74 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_polora(cls, data):
+        if data.get("optimizer") != "polora":
+            return data
+        if data.get("adapter") not in ("lora", "qlora"):
+            raise ValueError(
+                "polora only updates LoRA (A, B) factors and requires "
+                "adapter: lora or qlora."
+            )
+        if (
+            data.get("deepspeed")
+            or data.get("fsdp")
+            or data.get("fsdp_config")
+            or (data.get("tensor_parallel_size") or 1) > 1
+        ):
+            # The update stacks pairs by shape and rebuilds curvature from whole weights.
+            raise ValueError(
+                "polora is not compatible with DeepSpeed, FSDP, or tensor parallelism. "
+                "Use single-GPU or DDP."
+            )
+
+        untrained = [
+            key
+            for key in (
+                "lora_modules_to_save",
+                "unfrozen_parameters",
+                "peft_use_dora",
+                "peft_trainable_token_indices",
+                "lisa_step_interval",
+                "reward_model",
+                "process_reward_model",
+            )
+            if data.get(key)
+        ]
+        if untrained:
+            raise ValueError(
+                f"polora has no fallback optimizer, so the parameters added by {untrained} "
+                "would never be trained. Remove them or pick a different optimizer."
+            )
+
+        # The factory builds the optimizer straight from the model, bypassing axolotl's
+        # parameter grouping, so per-group learning rates never take effect.
+        ignored_lrs = [
+            key
+            for key in (
+                "loraplus_lr_ratio",
+                "lr_groups",
+                "embedding_lr",
+                "embedding_lr_scale",
+            )
+            if data.get(key)
+        ]
+        if ignored_lrs:
+            raise ValueError(
+                f"polora sets its own per-factor step size, so {ignored_lrs} would be "
+                "silently ignored. Remove them or pick a different optimizer."
+            )
+
+        if data.get("relora_steps"):
+            raise ValueError(
+                "relora resets optimizer state through Optimizer.state, which polora "
+                "does not use, so its momentum would survive every merge."
+            )
+        if data.get("weight_decay"):
+            LOG.warning("polora has no weight decay term; weight_decay is ignored.")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_qgalore(cls, data):
         if data.get("optimizer") != "q_galore_adamw8bit":
             return data
