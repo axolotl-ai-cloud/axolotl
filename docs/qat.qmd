@@ -38,12 +38,15 @@ We support the following quantization schemas:
 - `NVFP4`
 - `Ternary` (BitNet b1.58 style)
 
-## Ternary QAT
+## Ternary QAT {#ternary-qat}
 
 `weight_dtype: ternary` trains every linear outside the LM head with weights restricted to `{-1, 0, 1}`,
 scaled by a per-row (per output channel) absmean, as in [BitNet b1.58](https://arxiv.org/abs/2402.17764).
 Activations are quantized to int8 with a per-token absmax scale, norms and the LM head stay in high precision,
 and `quantize_embedding` uses int8 per-row rather than ternary. `group_size` does not apply.
+
+The [`use_onebitllms`](./1_58bit_finetuning.qmd) path trains the same scheme through an external library, for
+checkpoints that are already ternary.
 
 ```yaml
 qat:
