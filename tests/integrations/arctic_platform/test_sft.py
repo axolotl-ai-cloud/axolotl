@@ -674,6 +674,45 @@ class TestTrainerCheckpointEvalResume:
         assert out.global_step == 6
         assert client.fwd_calls == 6
 
+    def test_train_logs_full_backend_metrics(self, tmp_path):
+        """Plugin forwards the merged backend metrics dict through ``self.log``."""
+
+        class ExtraMetricsClient(_RecordingClient):
+            def fwd_bwd(self, wire):
+                self.fwd_calls += 1
+                return {
+                    "metrics": {
+                        "loss": 1.25,
+                        "entropy": 0.4,
+                        "_profile_ms": {"fwd": 3.0},
+                    },
+                    "avg_loss": 1.25,
+                }
+
+            def step(self, learning_rate=None):
+                self.step_calls += 1
+                return {"metrics": {"grad_norm": 0.3, "loss": 99.0}}
+
+        control = _Control()
+        handler = _FlowCallbackHandler(control)
+        client = ExtraMetricsClient()
+        trainer = self._make_trainer(tmp_path, client, handler, num_batches=1)
+        trainer.train()
+
+        train_logs = [
+            c.args[0]
+            for c in trainer.log.call_args_list
+            if "loss" in c.args[0] and "eval_loss" not in c.args[0]
+        ]
+        assert train_logs
+        logs = train_logs[0]
+        assert logs["loss"] == 1.25
+        assert logs["entropy"] == 0.4
+        assert logs["grad_norm"] == 0.3
+        assert "_profile_ms" not in logs
+        assert "learning_rate" in logs
+        assert "epoch" in logs
+
     def test_eval_runs_forward_only_and_fires_on_evaluate(self, tmp_path):
         control = _Control()
         handler = _FlowCallbackHandler(control, eval_on={2})

@@ -135,7 +135,7 @@ Do **not** blank `CUDA_VISIBLE_DEVICES` for Ray (actors need visible GPUs).
 
 - Logs: plugin active → stub model (no local weight load) →
   `Arctic SFT training session created: … transport=http, job=…`.
-- Step metrics look like normal Axolotl (`loss`, `learning_rate`, `grad_norm`).
+- Each train step `self.log`s the full numeric backend metrics dict (`loss`, `grad_norm`, plus any other scalars the worker emits) together with client `learning_rate` / `epoch`. Axolotl core forwards that to wandb / tensorboard.
   Client-side `memory/*` stays near zero — compute is remote.
 - Checkpoints land under `arctic_sft.checkpoint_path` on the **server**.
   Local `output_dir` may still get a tiny stub write; ignore it for weight recovery.

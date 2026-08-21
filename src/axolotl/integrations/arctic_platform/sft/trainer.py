@@ -30,6 +30,19 @@ def _metric_scalar(x: Any) -> float:
     return float(x)
 
 
+def _loggable_metrics(metrics: dict) -> dict[str, float]:
+    """Numeric backend metrics that HF Trainer / wandb accept as scalars."""
+    logs: dict[str, float] = {}
+    for key, value in metrics.items():
+        if key.startswith("_") or value is None or isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            logs[key] = float(value)
+        elif isinstance(value, (list, tuple)):
+            logs[key] = _metric_scalar(value)
+    return logs
+
+
 def _count_valid_targets(batch: dict[str, torch.Tensor]) -> int:
     """HF-shifted valid targets (``labels[:, 1:] != -100``) for token-weighted eval."""
     labels = batch.get("labels")
@@ -239,13 +252,18 @@ class ArcticSFTTrainer(AxolotlTrainer):
                 self.args, self.state, self.control
             )
 
+            from arctic_platform.sft.client import merge_sft_step_metrics
+
             wire = self._build_wire_batch(pending)
             out = client.fwd_bwd(wire)
             # LR is server-side; ``lr`` is logging-only.
             step_out = client.step()
-
-            metrics = out.get("metrics") or {}
-            step_loss = _metric_scalar(metrics.get("loss", out.get("avg_loss", 0.0)))
+            # Same merge as RL ``update_actor``: loss-fn + optimizer metrics.
+            metrics = merge_sft_step_metrics(out, step_out)
+            logs = _loggable_metrics(metrics)
+            if "loss" not in logs:
+                logs["loss"] = _metric_scalar(out.get("avg_loss", 0.0))
+            step_loss = logs["loss"]
 
             global_step += 1
             total_loss += step_loss
@@ -254,14 +272,8 @@ class ArcticSFTTrainer(AxolotlTrainer):
 
             log_interval = self.args.logging_steps
             if log_interval and global_step % log_interval == 0:
-                grad_norm = (step_out or {}).get("metrics", {}).get("grad_norm")
-                logs = {
-                    "loss": step_loss,
-                    "learning_rate": lr,
-                    "epoch": self.state.epoch,
-                }
-                if grad_norm is not None:
-                    logs["grad_norm"] = _metric_scalar(grad_norm)
+                logs["learning_rate"] = lr
+                logs["epoch"] = self.state.epoch
                 self.log(logs)
 
             self.control = self.callback_handler.on_step_end(
