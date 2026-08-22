@@ -1,6 +1,16 @@
 """Tests for trainable-token throughput accounting."""
 
+import json
+import os
+from unittest.mock import MagicMock
+
+from transformers import TrainerState
+
+from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.core.trainers.utils import trainable_tokens_per_sec_per_gpu
+from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.train import determine_last_checkpoint
 
 
 def _cumulative_after_window(microbatch_token_counts, world_size, start=0.0):
@@ -48,3 +58,84 @@ class TestTrainableTokensPerSec:
         fast = trainable_tokens_per_sec_per_gpu(0.0, 800.0, 1, 10.0)
         slow = trainable_tokens_per_sec_per_gpu(0.0, 800.0, 1, 20.0)
         assert slow < fast
+
+
+def _write_checkpoint(output_dir, step, total, trainable):
+    checkpoint = os.path.join(output_dir, f"checkpoint-{step}")
+    os.makedirs(checkpoint, exist_ok=True)
+    with open(
+        os.path.join(checkpoint, TOKENS_STATE_FILE), "w", encoding="utf-8"
+    ) as fout:
+        json.dump({"total": total, "trainable": trainable}, fout)
+    return checkpoint
+
+
+def _restored_tokens(callback):
+    """Run on_train_begin and report the counters the trainer would see.
+
+    The trainer gates on ``hasattr(state, "tokens")``, so an untouched state
+    must not grow the attribute at all.
+    """
+    state = TrainerState()
+    callback.on_train_begin(MagicMock(), state, MagicMock())
+    return getattr(state, "tokens", None)
+
+
+class TestTokensPerSecondResume:
+    """Counter restore must survive auto-resume, which resolves the path late."""
+
+    def test_restores_on_auto_resume(self, tmp_path):
+        output_dir = str(tmp_path)
+        _write_checkpoint(output_dir, 10, total=1234, trainable=567)
+        cfg = DictDefault(
+            {
+                "output_dir": output_dir,
+                "auto_resume_from_checkpoints": True,
+                "resume_from_checkpoint": None,
+            }
+        )
+
+        # the builder runs first, while the path is still unresolved
+        callback = TokensPerSecondCallback(
+            resume_from_checkpoint=cfg.resume_from_checkpoint, cfg=cfg
+        )
+        determine_last_checkpoint(cfg)
+
+        tokens = _restored_tokens(callback)
+        assert tokens is not None
+        assert tokens["total"].item() == 1234
+        assert tokens["trainable"].item() == 567
+
+    def test_explicit_checkpoint_still_restores(self, tmp_path):
+        output_dir = str(tmp_path)
+        checkpoint = _write_checkpoint(output_dir, 5, total=42, trainable=7)
+        cfg = DictDefault(
+            {"output_dir": output_dir, "resume_from_checkpoint": checkpoint}
+        )
+
+        callback = TokensPerSecondCallback(
+            resume_from_checkpoint=cfg.resume_from_checkpoint, cfg=cfg
+        )
+        assert _restored_tokens(callback)["total"].item() == 42
+
+    def test_fresh_run_leaves_counters_alone(self, tmp_path):
+        cfg = DictDefault(
+            {
+                "output_dir": str(tmp_path),
+                "auto_resume_from_checkpoints": True,
+                "resume_from_checkpoint": None,
+            }
+        )
+
+        callback = TokensPerSecondCallback(
+            resume_from_checkpoint=cfg.resume_from_checkpoint, cfg=cfg
+        )
+        determine_last_checkpoint(cfg)
+
+        assert _restored_tokens(callback) is None
+
+    def test_no_cfg_falls_back_to_constructor_value(self, tmp_path):
+        checkpoint = _write_checkpoint(str(tmp_path), 3, total=99, trainable=9)
+
+        callback = TokensPerSecondCallback(resume_from_checkpoint=checkpoint)
+        assert _restored_tokens(callback)["total"].item() == 99

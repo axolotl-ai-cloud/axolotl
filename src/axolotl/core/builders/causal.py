@@ -90,6 +90,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks.append(
                 TokensPerSecondCallback(
                     resume_from_checkpoint=self.cfg.resume_from_checkpoint,
+                    cfg=self.cfg,
                 )
             )
         return callbacks
