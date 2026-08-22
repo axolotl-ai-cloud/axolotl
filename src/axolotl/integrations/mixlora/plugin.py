@@ -16,13 +16,16 @@
 Plugin for MixLoRA.
 """
 
-from axolotl.integrations.base import BasePlugin
+from axolotl.integrations.base import AdapterCapabilities, BasePlugin
 
 
 class MixLoraPlugin(BasePlugin):
     """
     Plugin for MixLoRA support in Axolotl.
     """
+
+    def get_adapter_capabilities(self):
+        return [AdapterCapabilities(name="mixlora", lora_like=True)]
 
     def get_trainer_cls(self, cfg):
         if hasattr(cfg, "adapter") and cfg.adapter == "mixlora":
