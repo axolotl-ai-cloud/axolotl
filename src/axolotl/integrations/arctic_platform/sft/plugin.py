@@ -163,23 +163,30 @@ class ArcticSFTPlugin(BasePlugin):
         trainer.axolotl_cfg = cfg
         self._trainer = trainer
 
-        self._install_generation_callback(cfg, trainer)
+    def mutate_callbacks_post_trainer(
+        self,
+        cfg: DictDefault,
+        trainer: Trainer,
+        callbacks: list | None,
+    ) -> list:
+        """Swap stock local ``SFTGenerationCallback`` on the pending list.
 
-    @staticmethod
-    def _install_generation_callback(cfg: DictDefault, trainer: Trainer) -> None:
-        """Replace stock local ``SFTGenerationCallback`` with remote Arctic one."""
+        ``callbacks`` is the stack the builder will add next — not
+        ``trainer.callback_handler.callbacks``.
+        """
         from axolotl.utils.callbacks.generation import SFTGenerationCallback
 
         from .callbacks import ArcticSFTGenerationCallback
 
-        handler = getattr(trainer, "callback_handler", None)
-        if handler is not None and getattr(handler, "callbacks", None) is not None:
-            handler.callbacks = [
-                cb for cb in handler.callbacks if not isinstance(cb, SFTGenerationCallback)
-            ]
+        pending = [
+            cb
+            for cb in (callbacks or [])
+            if not isinstance(cb, SFTGenerationCallback)
+        ]
         if cfg.generate_samples:
-            trainer.add_callback(ArcticSFTGenerationCallback(trainer))
+            pending.append(ArcticSFTGenerationCallback(trainer))
             LOG.info("Arctic SFT sample generation enabled (remote sampling job)")
+        return pending
 
     @classmethod
     def _build_client_config(cls, cfg: DictDefault, acfg):

@@ -81,6 +81,8 @@ class BasePlugin:
             training.
         - add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after
             training.
+        - mutate_callbacks_post_trainer(cfg, trainer, callbacks): Mutates the pending
+            post-trainer callback list before the builder appends it.
     """
 
     def __init__(self):
@@ -271,6 +273,24 @@ class BasePlugin:
             A list of callback functions to be added
         """
         return []
+
+    def mutate_callbacks_post_trainer(
+        self, cfg: DictDefault, trainer: Trainer, callbacks: list | None
+    ) -> list[Callable] | None:
+        """Mutate the pending post-trainer callback list before it is appended.
+
+        ``callbacks`` is the stack the builder will add next — it is not yet on
+        ``trainer.callback_handler``.
+
+        Args:
+            cfg: The configuration for the plugin.
+            trainer: The trainer object for training.
+            callbacks: Stack of existing trainer callbacks.
+
+        Returns:
+            The mutated list, or ``None`` if this plugin does not mutate.
+        """
+        return None
 
     def on_rollouts_scored(
         self,
@@ -707,6 +727,29 @@ class PluginManager:
             plugin_callbacks = plugin.add_callbacks_post_trainer(cfg, trainer)
             if plugin_callbacks:
                 callbacks.extend(plugin_callbacks)
+        return callbacks
+
+    def mutate_callbacks_post_trainer(
+        self,
+        cfg: DictDefault,
+        trainer: Trainer,
+        callbacks: list | None,
+    ) -> list[Callable]:
+        """Calls ``mutate_callbacks_post_trainer`` on every registered plugin.
+
+        Args:
+            cfg: The configuration for the plugins.
+            trainer: The trainer object for training.
+            callbacks: Pending callbacks the builder has not appended yet.
+
+        Returns:
+            The mutated pending callback list.
+        """
+        callbacks = callbacks or []
+        for plugin in self.plugins.values():
+            mutation = plugin.mutate_callbacks_post_trainer(cfg, trainer, callbacks)
+            if mutation is not None:
+                callbacks = mutation
         return callbacks
 
     def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):

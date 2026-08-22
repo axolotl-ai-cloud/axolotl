@@ -118,7 +118,7 @@ arctic_sft:
 ```
 
 Requires vLLM and ArcticInference on the server side.
-The plugin replaces the stock local `SFTGenerationCallback` with a remote one.
+The plugin replaces the stock local `SFTGenerationCallback` with a remote one via `mutate_callbacks_post_trainer` (the pending builder list, before those callbacks are appended to the trainer).
 
 ### Ray transport
 

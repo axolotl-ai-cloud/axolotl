@@ -126,6 +126,44 @@ class TestArcticSFTPluginHooks:
 
         assert ArcticSFTPlugin().get_trainer_cls(DictDefault()) is ArcticSFTTrainer
 
+    def test_mutate_callbacks_replaces_stock_generation(self):
+        """Pending list is mutated; stock is not yet on the trainer."""
+        from axolotl.integrations.arctic_platform.sft.callbacks import (
+            ArcticSFTGenerationCallback,
+        )
+        from axolotl.utils.callbacks.generation import SFTGenerationCallback
+
+        trainer = MagicMock()
+        stock = SFTGenerationCallback(trainer)
+        other = object()
+        cfg = DictDefault(
+            {
+                "generate_samples": True,
+                "arctic_sft": ArcticSFTConfig(
+                    training_gpus=1, sampling_gpus=1
+                ),
+            }
+        )
+        out = ArcticSFTPlugin().mutate_callbacks_post_trainer(
+            cfg, trainer, [stock, other]
+        )
+        assert other in out
+        assert not any(isinstance(cb, SFTGenerationCallback) for cb in out)
+        arctic = [cb for cb in out if isinstance(cb, ArcticSFTGenerationCallback)]
+        assert len(arctic) == 1
+        assert arctic[0].trainer is trainer
+
+    def test_mutate_callbacks_noop_without_generate_samples(self):
+        from axolotl.utils.callbacks.generation import SFTGenerationCallback
+
+        trainer = MagicMock()
+        stock = SFTGenerationCallback(trainer)
+        cfg = DictDefault({"generate_samples": False})
+        out = ArcticSFTPlugin().mutate_callbacks_post_trainer(
+            cfg, trainer, [stock]
+        )
+        assert out == []
+
     def test_post_train_logs_server_checkpoint_path(self, caplog):
         cfg = DictDefault(
             {
