@@ -191,13 +191,14 @@ class TestEnableWrap:
         else:
             assert "respect_saved_tensors_hooks" not in model.seen_kwargs
 
-    def test_overrides_respect_saved_tensors_hooks_to_preserve_sac_behavior(
-        self, monkeypatch
+    @pytest.mark.parametrize("supports_kwarg", [False, True])
+    def test_handles_caller_provided_respect_saved_tensors_hooks(
+        self, monkeypatch, supports_kwarg
     ):
         monkeypatch.setattr(
             selective_checkpointing,
             "_SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS",
-            True,
+            supports_kwarg,
         )
         model = self._FakeModel()
         original_kwargs = {"respect_saved_tensors_hooks": True}
@@ -206,7 +207,10 @@ class TestEnableWrap:
             gradient_checkpointing_kwargs=original_kwargs
         )
 
-        assert model.seen_kwargs["respect_saved_tensors_hooks"] is False
+        if supports_kwarg:
+            assert model.seen_kwargs["respect_saved_tensors_hooks"] is False
+        else:
+            assert "respect_saved_tensors_hooks" not in model.seen_kwargs
         assert original_kwargs["respect_saved_tensors_hooks"] is True
 
     def test_idempotent(self):
