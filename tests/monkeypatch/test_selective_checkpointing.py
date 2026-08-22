@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.checkpoint import CheckpointPolicy, checkpoint
 
+import axolotl.monkeypatch.selective_checkpointing as selective_checkpointing
 from axolotl.monkeypatch.selective_checkpointing import (
     SacPolicyState,
     apply_selective_checkpointing,
@@ -167,6 +168,46 @@ class TestEnableWrap:
         model.gradient_checkpointing_enable()
         assert model.seen_kwargs["use_reentrant"] is False
         assert callable(model.seen_kwargs["context_fn"])
+
+    @pytest.mark.parametrize("supports_kwarg", [False, True])
+    def test_respect_saved_tensors_hooks_is_feature_gated(
+        self, monkeypatch, supports_kwarg
+    ):
+        monkeypatch.setattr(
+            selective_checkpointing,
+            "_SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS",
+            supports_kwarg,
+        )
+        model = self._FakeModel()
+        original_kwargs = {"preserve_rng_state": False}
+        apply_selective_checkpointing(model)
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs=original_kwargs
+        )
+
+        assert original_kwargs == {"preserve_rng_state": False}
+        if supports_kwarg:
+            assert model.seen_kwargs["respect_saved_tensors_hooks"] is False
+        else:
+            assert "respect_saved_tensors_hooks" not in model.seen_kwargs
+
+    def test_overrides_respect_saved_tensors_hooks_to_preserve_sac_behavior(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            selective_checkpointing,
+            "_SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS",
+            True,
+        )
+        model = self._FakeModel()
+        original_kwargs = {"respect_saved_tensors_hooks": True}
+        apply_selective_checkpointing(model)
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs=original_kwargs
+        )
+
+        assert model.seen_kwargs["respect_saved_tensors_hooks"] is False
+        assert original_kwargs["respect_saved_tensors_hooks"] is True
 
     def test_idempotent(self):
         model = self._FakeModel()
