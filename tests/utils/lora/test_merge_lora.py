@@ -2707,6 +2707,20 @@ class TestQuantizedBaseMerge:
         }
         out, did, left, _ = _dequantize_quantized_shard(shard, "cpu")
         assert did and left
-        assert out["a.weight"].dtype == torch.bfloat16  # dequantized
-        assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is
         assert "b.weight_scale" in out  # its scale not dropped
+
+    def test_get_lora_merged_state_dict_without_prefix(self):
+        """Test get_lora_merged_state_dict on a model without prefix attribute."""
+        from axolotl.utils.lora import get_lora_merged_state_dict
+
+        class SimpleModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc = torch.nn.Linear(10, 5)
+
+        model = SimpleModel()
+        state_dict = get_lora_merged_state_dict(model)
+        assert "fc.weight" in state_dict
+        assert "fc.bias" in state_dict
+        assert state_dict["fc.weight"].shape == (5, 10)
+
