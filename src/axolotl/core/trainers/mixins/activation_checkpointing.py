@@ -113,8 +113,9 @@ class ActivationOffloadingMixin(Trainer):
         if self.args.activation_offloading:
             # "legacy" uses the previous synchronous implementation (no CUDA
             # streams), which keeps far fewer activations resident on-GPU than
-            # the stream-overlapped path (True/"disk"); the streams path stashes
-            # several activations to overlap copies, inflating peak reserved.
+            # the stream-overlapped path (True); the streams path stashes several
+            # activations to overlap copies, inflating peak reserved. ("disk" never
+            # reaches here — it uses the Disco checkpoint patch, not this offloader.)
             use_streams = self.args.activation_offloading != "legacy"
             if use_streams:
                 _patch_trl_offload_current_stream()
