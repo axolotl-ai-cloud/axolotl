@@ -87,9 +87,9 @@ arctic_sft:
 | `vllm_config` | `null` | Forwarded to the sampling job |
 | `training_job_id` / `sampling_job_id` | `null` | Reattach to existing jobs |
 | `startup_timeout` / `job_ready_timeout` / `request_timeout` | `600` / `1800` / `1800` | Seconds |
-| `ds_config` / `ds_worker_config` | `null` | Passed through to the Arctic client as-is; if unset, built from top-level knobs (optimizer and LR schedule go in `ds_config`) |
+| `ds_config` / `ds_worker_config` | `null` | Passed through to the Arctic client as-is (mapped onto `training.ds_config` / `training.ds_worker_config`); if unset, built from top-level knobs (optimizer and LR schedule go in `ds_config`) |
 
-CLI nested overrides work as usual, e.g. `arctic_sft__port=9000`.
+CLI nested overrides work as usual, e.g. `arctic_sft__port=9000`. The plugin maps this flat YAML block onto AP's nested `ArcticSFTClientConfig` (`backend` / `training` / `sampling`).
 
 ### Top-level knobs (still required)
 

@@ -44,7 +44,7 @@ class ArcticSFTConfig(BaseModel):
         json_schema_extra={
             "description": (
                 "Transport on that backend. onprem: http|ray. remote: "
-                "http|cortex. Mapped onto ArcticSFTClientConfig.comm_protocol."
+                "http|cortex. Mapped onto OnPremConfig.protocol."
             )
         },
     )

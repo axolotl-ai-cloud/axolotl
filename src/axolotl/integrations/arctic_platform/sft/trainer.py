@@ -85,7 +85,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
             f"Arctic SFT training session created: "
             f"model={self._arctic_client_config.model_name}, "
             f"training_gpus={self._arctic_client_config.training_gpus}, "
-            f"transport={self._arctic_client_config.comm_protocol}, "
+            f"transport={self._arctic_client_config.backend.protocol}, "
             f"job={self._client.jobs.training}"
         )
         return self._client
@@ -199,7 +199,9 @@ class ArcticSFTTrainer(AxolotlTrainer):
             from .plugin import ArcticSFTPlugin
 
             ArcticSFTPlugin._apply_scheduler(
-                self._arctic_client_config.ds_config, self.axolotl_cfg, max_steps
+                self._arctic_client_config.training.ds_config,
+                self.axolotl_cfg,
+                max_steps,
             )
 
         return grad_accum, num_train_epochs, max_steps
@@ -252,7 +254,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
                 self.args, self.state, self.control
             )
 
-            from arctic_platform.sft.client import merge_sft_step_metrics
+            from arctic_platform.sft import merge_sft_step_metrics
 
             wire = self._build_wire_batch(pending)
             out = client.fwd_bwd(wire)

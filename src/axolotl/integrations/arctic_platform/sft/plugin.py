@@ -194,6 +194,9 @@ class ArcticSFTPlugin(BasePlugin):
         from .deps import require_arctic_sft_client
 
         _, ArcticSFTClientConfig = require_arctic_sft_client()
+        from arctic_platform.client.config import OnPremConfig
+        from arctic_platform.client.config import SamplingConfig
+        from arctic_platform.client.config import TrainingConfig
 
         cls._validate_micro_batch(cfg.micro_batch_size, acfg.training_gpus)
 
@@ -213,27 +216,30 @@ class ArcticSFTPlugin(BasePlugin):
             )
 
         return ArcticSFTClientConfig(
-            backend=acfg.backend,
-            comm_protocol=acfg.protocol,
             model_name=acfg.model_name or cfg.base_model,
             seed=cfg.seed,
             max_seq_len=cfg.sequence_len,
             training_gpus=acfg.training_gpus,
             sampling_gpus=acfg.sampling_gpus,
-            colocate=acfg.colocate,
-            vllm_config=acfg.vllm_config,
-            host=acfg.host,
-            port=acfg.port,
-            launch_local_server=acfg.launch_local_server,
-            server_cuda_visible_devices=acfg.server_cuda_visible_devices,
-            startup_timeout=acfg.startup_timeout,
             job_ready_timeout=acfg.job_ready_timeout,
             request_timeout=acfg.request_timeout,
-            ds_config=ds_config,
-            ds_worker_config=ds_worker_config,
-            checkpoint_path=checkpoint_path,
             training_job_id=acfg.training_job_id,
             sampling_job_id=acfg.sampling_job_id,
+            backend=OnPremConfig(
+                protocol=acfg.protocol,
+                host=acfg.host,
+                port=acfg.port,
+                colocate=acfg.colocate,
+                launch_local_server=acfg.launch_local_server,
+                server_cuda_visible_devices=acfg.server_cuda_visible_devices,
+                startup_timeout=acfg.startup_timeout,
+            ),
+            training=TrainingConfig(
+                checkpoint_path=checkpoint_path,
+                ds_config=ds_config,
+                ds_worker_config=ds_worker_config,
+            ),
+            sampling=SamplingConfig(vllm=acfg.vllm_config or {}),
         )
 
     @staticmethod
