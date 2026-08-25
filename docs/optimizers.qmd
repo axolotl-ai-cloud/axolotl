@@ -301,9 +301,9 @@ tensor parallelism are rejected at validation (ZeRO partitions the optimizer ste
 shards the LoRA rank dim), along with any other option PoLoRA cannot honor.
 
 Upstream PoLoRA is single-device only, so under FSDP2 axolotl gathers each factor, runs the
-dense update on every rank, and scatters the local shard back. The result matches single-GPU
-exactly, at the cost of one all-gather per step; FSDP2 saves memory on the frozen base, not
-on the adapter.
+dense update on every rank, and scatters the local shard back. Loss matches DDP, at the cost
+of one all-gather per step. Use FSDP2 only when the frozen base does not fit: it saves
+memory on the base, not the adapter, and on a 1B model it measured 2.2x slower than DDP.
 
 Every LoRA factor needs a gradient every step, so exclude layers that skip batches (vision
 towers, unrouted MoE experts) via `lora_exclude_modules`. On MoE, `lora_target_parameters`
