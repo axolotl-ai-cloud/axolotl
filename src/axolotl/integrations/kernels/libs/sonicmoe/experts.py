@@ -1,8 +1,8 @@
 """LoRA-aware sonicmoe experts forward for the transformers ExpertsInterface.
 
-Dense experts wrap upstream ``_sonicmoe_wrapper``, materializing expert LoRA via
-``MoELoRAMaterialize`` before the CUTLASS call. NVFP4 experts (which that kernel
-cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
+Dense experts call the sonic-moe CUTLASS kernel through ``_sonicmoe_call`` below,
+materializing expert LoRA via ``MoELoRAMaterialize`` first. NVFP4 experts (which that
+kernel cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
 """
 
 from __future__ import annotations
@@ -18,6 +18,79 @@ from .lora import (
     materialize_expert_lora,
     unwrap_experts_lora,
 )
+
+# Activation name (HF config ``hidden_act``) -> sonic-moe epilogue name.
+ACT_MAP = {"silu": "swiglu", "gelu": "geglu", "relu": "reglu"}
+
+
+def _load_sonicmoe():
+    """Return the loaded sonic-moe kernel bundle from ``transformers``.
+
+    ``load_sonicmoe_kernel`` is the current public entry point; before
+    huggingface/transformers#47334 (2026-07-28) only the private
+    ``_load_sonicmoe_kernel`` existed and it returned the bundle directly.
+    """
+    try:
+        from transformers.integrations.sonicmoe import load_sonicmoe_kernel
+    except ImportError:  # transformers < 2026-07-28
+        from transformers.integrations.sonicmoe import (  # type: ignore[attr-defined]
+            _load_sonicmoe_kernel as load_sonicmoe_kernel,
+        )
+
+    return load_sonicmoe_kernel()
+
+
+@torch._dynamo.allow_in_graph
+def _sonicmoe_call(
+    hidden_states: torch.Tensor,
+    router_scores: torch.Tensor,
+    expert_ids: torch.Tensor,
+    token_idx: torch.Tensor,
+    w1: torch.Tensor,
+    b1: torch.Tensor | None,
+    w2: torch.Tensor,
+    b2: torch.Tensor | None,
+    act_name: str,
+    num_experts: int,
+    concat_layout: bool,
+    is_inference_mode_enabled: bool,
+) -> torch.Tensor:
+    """Module-level shim around ``moe_general_routing_inputs`` so ``allow_in_graph`` can wrap it.
+
+    sonic-moe asserts ``not torch.compiler.is_compiling()`` internally because it dispatches
+    CuteDSL kernels, which Dynamo can't trace. ``allow_in_graph`` keeps the call in the FX
+    graph as a single opaque node (no tracing into the body, no graph break) while still
+    running the real Python at runtime — autograd through the kernel's projections flows
+    normally. The decorator must be applied at module load time, not inside the compiled
+    function — hence this shim.
+
+    This mirrors the ``_sonicmoe_wrapper`` that transformers removed in #47334; we keep our
+    own copy because we call the kernel with LoRA-materialized weights rather than through
+    upstream's ``sonicmoe_experts_forward``.
+    """
+    sonicmoe = _load_sonicmoe()
+    activation_type_enum = sonicmoe.activation_type_enum
+    activation_type = getattr(
+        activation_type_enum,
+        ACT_MAP.get(act_name, "swiglu").upper(),
+        activation_type_enum.SWIGLU,
+    )
+    output, _ = sonicmoe.moe_general_routing_inputs(
+        hidden_states,
+        router_scores,
+        token_idx,
+        expert_ids,
+        w1,
+        b1,
+        w2,
+        b2,
+        E=num_experts,
+        activation_type=activation_type,
+        is_inference_mode_enabled=is_inference_mode_enabled,
+        concat_layout=concat_layout,
+        stream_id=None,
+    )
+    return output
 
 
 def _maybe_unwrap_param_wrapper(param):
@@ -122,8 +195,6 @@ def sonicmoe_experts_forward_with_lora(
             lora_w2,
         )
 
-    from transformers.integrations.sonicmoe import _sonicmoe_wrapper
-
     device = hidden_states.device
     num_top_k = top_k_index.size(-1)
     num_tokens = hidden_states.size(0)
@@ -154,7 +225,7 @@ def sonicmoe_experts_forward_with_lora(
 
     act_name = getattr(self.config, "hidden_act", "silu").lower()
 
-    return _sonicmoe_wrapper(
+    return _sonicmoe_call(
         hidden_states=hidden_states,
         router_scores=router_scores,
         expert_ids=expert_ids,

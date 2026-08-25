@@ -235,3 +235,125 @@ class TestExpertsClassMetadata:
             sonicmoe_experts_forward_with_lora(
                 fake_self, hidden, top_k_index, top_k_weights
             )
+
+
+class TestSonicmoeKernelLoaderCompat:
+    """`_load_sonicmoe` must work against both the current transformers entry point
+    (`load_sonicmoe_kernel`) and the pre-#47334 private one (`_load_sonicmoe_kernel`),
+    without importing the `_sonicmoe_wrapper` that #47334 removed."""
+
+    @staticmethod
+    def _install_fake_sonicmoe_module(monkeypatch, *, public: bool):
+        import sys
+        from types import ModuleType
+
+        bundle = SimpleNamespace(
+            activation_type_enum=SimpleNamespace(SWIGLU="SWIGLU", GEGLU="GEGLU"),
+            moe_general_routing_inputs=lambda *a, **kw: (torch.zeros(1), None),
+        )
+        mod = ModuleType("transformers.integrations.sonicmoe")
+        name = "load_sonicmoe_kernel" if public else "_load_sonicmoe_kernel"
+        setattr(mod, name, lambda: bundle)
+        monkeypatch.setitem(sys.modules, "transformers.integrations.sonicmoe", mod)
+        return bundle
+
+    @pytest.mark.parametrize("public", [True, False])
+    def test_load_sonicmoe_resolves_either_entry_point(self, monkeypatch, public):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import _load_sonicmoe
+
+        bundle = self._install_fake_sonicmoe_module(monkeypatch, public=public)
+        assert _load_sonicmoe() is bundle
+
+    def test_no_import_of_removed_private_wrapper(self):
+        """#47334 deleted `_sonicmoe_wrapper`; importing it breaks on current transformers."""
+        from pathlib import Path
+
+        import axolotl.integrations.kernels.libs.sonicmoe.experts as experts_mod
+
+        source = Path(experts_mod.__file__).read_text(encoding="utf-8")
+        assert "import _sonicmoe_wrapper" not in source
+        assert "_sonicmoe_wrapper(" not in source
+
+    def test_call_forwards_expected_kernel_arguments(self, monkeypatch):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import _sonicmoe_call
+
+        captured = {}
+
+        def fake_kernel(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return torch.full((2, 3), 7.0), None
+
+        bundle = SimpleNamespace(
+            activation_type_enum=SimpleNamespace(SWIGLU="SWIGLU", GEGLU="GEGLU"),
+            moe_general_routing_inputs=fake_kernel,
+        )
+        monkeypatch.setattr(
+            "axolotl.integrations.kernels.libs.sonicmoe.experts._load_sonicmoe",
+            lambda: bundle,
+        )
+
+        hidden = torch.zeros(2, 3)
+        scores = torch.zeros(4)
+        expert_ids = torch.zeros(4, dtype=torch.int32)
+        token_idx = torch.zeros(4, dtype=torch.int32)
+        w1, w2 = torch.zeros(3, 3, 2), torch.zeros(3, 3, 2)
+
+        out = _sonicmoe_call(
+            hidden_states=hidden,
+            router_scores=scores,
+            expert_ids=expert_ids,
+            token_idx=token_idx,
+            w1=w1,
+            b1=None,
+            w2=w2,
+            b2=None,
+            act_name="gelu",
+            num_experts=2,
+            concat_layout=True,
+            is_inference_mode_enabled=False,
+        )
+
+        # Only the output tensor is returned; the kernel's second value is dropped.
+        assert torch.equal(out, torch.full((2, 3), 7.0))
+        # Positional order is (hidden, scores, token_idx, expert_ids, w1, b1, w2, b2) —
+        # token_idx and expert_ids are NOT in keyword order here.
+        assert captured["args"][2] is token_idx
+        assert captured["args"][3] is expert_ids
+        assert captured["kwargs"]["E"] == 2
+        assert captured["kwargs"]["activation_type"] == "GEGLU"
+        assert captured["kwargs"]["concat_layout"] is True
+        assert captured["kwargs"]["is_inference_mode_enabled"] is False
+        assert captured["kwargs"]["stream_id"] is None
+
+    def test_unknown_activation_falls_back_to_swiglu(self, monkeypatch):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import _sonicmoe_call
+
+        captured = {}
+        bundle = SimpleNamespace(
+            activation_type_enum=SimpleNamespace(SWIGLU="SWIGLU"),
+            moe_general_routing_inputs=lambda *a, **kw: (
+                captured.update(kw) or torch.zeros(1),
+                None,
+            ),
+        )
+        monkeypatch.setattr(
+            "axolotl.integrations.kernels.libs.sonicmoe.experts._load_sonicmoe",
+            lambda: bundle,
+        )
+
+        _sonicmoe_call(
+            hidden_states=torch.zeros(1, 2),
+            router_scores=torch.zeros(1),
+            expert_ids=torch.zeros(1, dtype=torch.int32),
+            token_idx=torch.zeros(1, dtype=torch.int32),
+            w1=torch.zeros(2, 2, 1),
+            b1=None,
+            w2=torch.zeros(2, 2, 1),
+            b2=None,
+            act_name="not_a_real_activation",
+            num_experts=1,
+            concat_layout=False,
+            is_inference_mode_enabled=True,
+        )
+        assert captured["activation_type"] == "SWIGLU"
