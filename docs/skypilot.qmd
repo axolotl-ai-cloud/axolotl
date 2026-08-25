@@ -1,0 +1,122 @@
+---
+title: SkyPilot
+description: How to launch Axolotl on any cloud or Kubernetes with SkyPilot
+---
+
+[SkyPilot](https://github.com/skypilot-org/skypilot) is an open-source framework for running workloads on any cloud or Kubernetes cluster. Instead of provisioning an instance and setting up Docker yourself, you describe the job in a short YAML and SkyPilot finds a GPU across your enabled infrastructure (AWS, GCP, Azure, RunPod, Vast.ai, Kubernetes, and [more](https://docs.skypilot.co/en/latest/getting-started/installation.html)), pulls the Axolotl image, and runs training.
+
+## Setup
+
+Install SkyPilot with the providers you use, then confirm your credentials work:
+
+```bash
+pip install "skypilot[aws,gcp,kubernetes]"
+sky check
+```
+
+## Single node
+
+Create a SkyPilot task file, e.g. `axolotl-skypilot.yaml`:
+
+```yaml
+resources:
+  accelerators: A100:1  # or L40S:1, H100:8, ...
+  image_id: docker:axolotlai/axolotl-uv:main-latest
+
+run: |
+  # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint
+  source /workspace/axolotl/scripts/cuda13_env.sh
+
+  axolotl fetch examples
+  axolotl train examples/llama-3/lora-1b.yml
+```
+
+Note the image choice: SkyPilot sources `~/.bashrc` when running `setup` and `run`, and the `-cloud` image's `.bashrc` attaches a tmux session and exits, which terminates the command. Use the plain image as above, or `axolotlai/axolotl-cloud-term:main-latest` if you want the cloud image's HuggingFace cache defaults without tmux.
+
+Launch it, stream logs, and clean up when done:
+
+```bash
+sky launch -c axolotl axolotl-skypilot.yaml
+sky logs axolotl
+sky down axolotl
+```
+
+Training outputs live on the cluster and disappear with `sky down`. Without a `workdir`, the `run` block executes in `$HOME`, so copy outputs off first (`rsync -Pavz axolotl:outputs/ ./outputs/`) or mount a bucket as shown in the spot section below.
+
+The example configs referenced here use ungated models. For gated models, launch with `--secret HF_TOKEN`: the value is read from your local environment and exposed to the `run` commands.
+
+To train with your own config, add `workdir: .` to the task file and drop the `axolotl fetch examples` line. Your current directory is synced to the cluster and the `run` commands then execute inside it (`~/sky_workdir`), so `axolotl train my_training.yml` works as-is and outputs land there instead of `$HOME`.
+
+## Multi-node
+
+Set `num_nodes` and pass SkyPilot's runtime environment variables to the torchrun launcher described in the [multi-node guide](multi-node.qmd). SkyPilot runs the `run` block on every node, and the image already ships Axolotl, so nothing needs installing per node. In a separate task file, e.g. `axolotl-multinode.yaml`:
+
+```yaml
+num_nodes: 2
+
+resources:
+  accelerators: H100:8
+  image_id: docker:axolotlai/axolotl-uv:main-latest
+
+run: |
+  # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint
+  source /workspace/axolotl/scripts/cuda13_env.sh
+
+  # NCCL tuning for Infiniband, from the multi-node guide; adjust for your fabric
+  export NCCL_IB_DISABLE=0
+  export NCCL_SOCKET_IFNAME="eth0,en,eth,em,bond"
+  export NCCL_BUFFSIZE=2097152
+
+  axolotl fetch examples
+  HEAD_IP=$(echo "$SKYPILOT_NODE_IPS" | head -n1)
+  axolotl train examples/llama-3/fft-8b-liger-fsdp.yaml --launcher torchrun -- \
+    --nnodes $SKYPILOT_NUM_NODES \
+    --nproc_per_node $SKYPILOT_NUM_GPUS_PER_NODE \
+    --rdzv_id $SKYPILOT_TASK_ID \
+    --rdzv_backend c10d \
+    --rdzv_endpoint "$HEAD_IP:29400"
+```
+
+```bash
+sky launch -c axolotl-2n axolotl-multinode.yaml
+```
+
+On AWS, GCP, Nebius, and RDMA-capable Kubernetes clusters, add `network_tier: best` under `resources` to get the fastest inter-node networking available; clouds without the feature reject the option.
+
+Each node tokenizes the dataset independently on first run. For large datasets, mount a bucket with `file_mounts`, point `dataset_prepared_path` in the Axolotl config at it, and run `axolotl preprocess` once so all nodes reuse the tokenized data.
+
+To scale out, launch a new cluster with more nodes: `sky launch -c axolotl-4n --num-nodes 4 axolotl-multinode.yaml`.
+
+## Spot instances
+
+To run on spot (preemptible) instances, add `use_spot: true` under `resources` in your task file:
+
+```yaml
+resources:
+  accelerators: A100:1
+  image_id: docker:axolotlai/axolotl-uv:main-latest
+  use_spot: true
+```
+
+For long runs, use managed jobs instead of `sky launch`: SkyPilot then auto-recovers the job if the spot instance is preempted. If the task has a `workdir` or local `file_mounts`, managed jobs stage them through cloud object storage, which needs an object store (S3, GCS, etc.) enabled or `jobs.bucket` set in `~/.sky/config.yaml`.
+
+```bash
+sky jobs launch -n axolotl axolotl-skypilot.yaml
+```
+
+Mount a bucket for checkpoints so recovery resumes instead of restarting:
+
+```yaml
+file_mounts:
+  /checkpoints:
+    name: my-axolotl-checkpoints  # bucket is created if it doesn't exist
+    mode: MOUNT_CACHED
+```
+
+Point `output_dir` in your Axolotl config at `/checkpoints` and set `auto_resume_from_checkpoints: true` so a recovered job picks up where it left off. `MOUNT_CACHED` uploads asynchronously, so the newest checkpoint may be incomplete after an abrupt preemption.
+
+## Further reading
+
+- [SkyPilot docs](https://docs.skypilot.co/)
+- [Task YAML reference](https://docs.skypilot.co/en/latest/reference/yaml-spec.html)
+- [Managed jobs](https://docs.skypilot.co/en/latest/examples/managed-jobs.html)

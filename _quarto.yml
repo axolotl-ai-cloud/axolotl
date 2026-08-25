@@ -513,6 +513,7 @@ website:
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
+            - docs/skypilot.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 
