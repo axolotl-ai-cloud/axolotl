@@ -27,7 +27,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.0
+            pytorch: 2.12.1
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
@@ -82,7 +82,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.0
+            pytorch: 2.12.1
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:

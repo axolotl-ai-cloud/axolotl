@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 
 dependencies = [
     # Core ML stack
-    "torch>=2.11.0,<=2.12.1",
+    "torch>=2.11.0,<=2.13.0",
     "packaging==26.0",
     "huggingface_hub==1.17.0",
     "peft==0.20.0",

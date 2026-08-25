@@ -124,7 +124,7 @@ jobs:
           axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.1' }}
         run: |
           axolotl generate-cli-config-options --check
 
@@ -228,7 +228,7 @@ jobs:
           axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.1' }}
         run: |
           axolotl generate-cli-config-options --check
 

@@ -1286,6 +1286,38 @@ class SystemValidationMixin:
 
         return data
 
+    @model_validator(mode="after")
+    def check_flash_attn_available(self):
+        if self.attn_implementation not in ("flash_attention_2", "flash_attention_3"):
+            return self
+
+        import torch
+
+        # CPU-only boxes may just be preprocessing for a GPU box; don't block them.
+        if not torch.cuda.is_available():
+            return self
+
+        from transformers.utils import (
+            is_flash_attn_2_available,
+            is_flash_attn_3_available,
+        )
+
+        # kernels_fallback_ok mirrors runtime resolution: the flash-attn package OR a
+        # kernels-hub binary matching this torch build.
+        if self.attn_implementation == "flash_attention_3":
+            available = is_flash_attn_3_available(kernels_fallback_ok=True)
+        else:
+            available = is_flash_attn_2_available(kernels_fallback_ok=True)
+        if not available:
+            raise ValueError(
+                f"attn_implementation: {self.attn_implementation} is set, but no "
+                "flash-attn build is available in this environment: the flash-attn "
+                "package is not installed and the kernels hub has no prebuilt binary "
+                f"for torch {torch.__version__}. Install a flash-attn build matching "
+                "your torch version, or set `attn_implementation: sdpa`."
+            )
+        return self
+
 
 class ChatTemplateValidationMixin:
     """Validation methods related to chat template configuration."""
