@@ -47,11 +47,20 @@ class _PoloraCompat:
     saves nothing and a resumed run silently restarts from zero. It also raises a bare
     ``ValueError`` when a factor has no gradient, which the Trainer triggers whenever a
     LoRA layer sits out a step.
+
+    Under FSDP2 the factors arrive as DTensors sharded on dim 0, which for ``A`` is the
+    LoRA rank itself. The algorithm is built on ``r x r`` Gram matrices and global
+    spectral norms, so ``_sharded_pairs`` holds the real params and the optimizer runs
+    over gathered stand-ins instead; see :func:`_gathered_pairs`.
     """
 
+    _sharded_pairs: list | None = None
+
     def step(self, closure=None):
+        if self._sharded_pairs is not None:
+            _gather_into(self._sharded_pairs, self.pairs)  # type: ignore[attr-defined]
         try:
-            return super().step(closure)  # type: ignore[misc]
+            loss = super().step(closure)  # type: ignore[misc]
         except ValueError as exc:
             if "Gradients are required" not in str(exc):
                 raise
@@ -61,6 +70,9 @@ class _PoloraCompat:
                 "this: a vision tower under lora_target_linear on a multimodal model, "
                 "or an unrouted MoE expert. Exclude those with lora_exclude_modules."
             ) from exc
+        if self._sharded_pairs is not None:
+            _scatter_from(self.pairs, self._sharded_pairs)  # type: ignore[attr-defined]
+        return loss
 
     def state_dict(self) -> dict:
         state_dict = super().state_dict()  # type: ignore[misc]
@@ -105,6 +117,57 @@ def _pair_state_matches(saved_pairs: dict, current: dict) -> bool:
         )
         for idx, saved in saved_pairs.items()
     )
+
+
+def _is_sharded(tensor) -> bool:
+    from torch.distributed.tensor import DTensor
+
+    return isinstance(tensor, DTensor) and any(
+        placement.is_shard() for placement in tensor.placements
+    )
+
+
+def _gathered_pairs(pairs: list) -> list:
+    """Dense full-shape stand-ins for sharded factors, sharing storage when replicated."""
+    import torch
+
+    gathered = []
+    for pair in pairs:
+        stand_ins = []
+        for param in pair:
+            if _is_sharded(param):
+                stand_ins.append(
+                    torch.nn.Parameter(param.full_tensor().detach().clone())
+                )
+            else:
+                stand_ins.append(param)
+        gathered.append(tuple(stand_ins))
+    return gathered
+
+
+def _gather_into(real_pairs: list, stand_ins: list) -> None:
+    for real_pair, stand_in_pair in zip(real_pairs, stand_ins, strict=True):
+        for real, stand_in in zip(real_pair, stand_in_pair, strict=True):
+            if real is stand_in:
+                continue
+            stand_in.data.copy_(real.full_tensor().detach())
+            grad = real.grad
+            stand_in.grad = grad.full_tensor().detach() if _is_sharded(grad) else grad
+
+
+def _scatter_from(stand_ins: list, real_pairs: list) -> None:
+    from torch.distributed.tensor import distribute_tensor
+
+    for stand_in_pair, real_pair in zip(stand_ins, real_pairs, strict=True):
+        for stand_in, real in zip(stand_in_pair, real_pair, strict=True):
+            if real is stand_in:
+                continue
+            # Every rank ran the same update on the same gathered inputs, so each can
+            # slice its own shard out without a further collective.
+            sharded = distribute_tensor(
+                stand_in.data, real.device_mesh, real.placements
+            )
+            real.data.to_local().copy_(sharded.to_local())
 
 
 @lru_cache(maxsize=1)
@@ -172,5 +235,14 @@ class PoloraOptimizerFactory(BaseOptimizerFactory):
                 f"Supported: {sorted(_POLORA_ARGS)}."
             )
 
-        LOG.info(f"polora: optimizing {len(pairs)} LoRA (A, B) pairs.")
-        return _polora_cls()(pairs=pairs, lr=lr, **kwargs)
+        sharded = any(_is_sharded(param) for pair in pairs for param in pair)
+        step_pairs = _gathered_pairs(pairs) if sharded else pairs
+        LOG.info(
+            f"polora: optimizing {len(pairs)} LoRA (A, B) pairs"
+            f"{' (FSDP2-sharded, gathered per step)' if sharded else ''}."
+        )
+
+        optimizer = _polora_cls()(pairs=step_pairs, lr=lr, **kwargs)
+        if sharded:
+            optimizer._sharded_pairs = pairs  # pylint: disable=protected-access
+        return optimizer

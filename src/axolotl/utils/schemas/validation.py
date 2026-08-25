@@ -912,17 +912,18 @@ class OptimizationValidationMixin:
                 "polora only updates LoRA (A, B) factors and requires "
                 "adapter: lora or qlora."
             )
-        if (
-            data.get("deepspeed")
-            or data.get("fsdp")
-            or data.get("fsdp_config")
-            or (data.get("tensor_parallel_size") or 1) > 1
-        ):
-            # The update stacks pairs by shape and rebuilds curvature from whole weights.
+        if data.get("deepspeed") or (data.get("tensor_parallel_size") or 1) > 1:
+            # ZeRO partitions the optimizer step itself, and TP shards the rank dim;
+            # polora needs whole factors to build its r x r curvature matrices.
             raise ValueError(
-                "polora is not compatible with DeepSpeed, FSDP, or tensor parallelism. "
-                "Use single-GPU or DDP."
+                "polora is not compatible with DeepSpeed or tensor parallelism. "
+                "Use single-GPU, DDP, or FSDP2."
             )
+        if data.get("fsdp") or data.get("fsdp_config"):
+            if str(cls._resolve_fsdp_version(data)) != "2":
+                raise ValueError(
+                    "polora requires FSDP2. Set fsdp_version: 2 to use polora with FSDP."
+                )
 
         untrained = [
             key

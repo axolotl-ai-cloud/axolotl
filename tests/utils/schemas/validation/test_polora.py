@@ -36,13 +36,29 @@ class TestPoloraValidation:
         "overrides",
         [
             {"deepspeed": "deepspeed_configs/zero2.json"},
-            {"fsdp_version": 2, "fsdp_config": {"reshard_after_forward": True}},
             {"tensor_parallel_size": 2},
         ],
     )
     def test_sharded_backends_rejected(self, min_base_cfg, overrides):
         with pytest.raises(ValueError, match="not compatible with DeepSpeed"):
             validate_config(_polora_cfg(min_base_cfg, **overrides))
+
+    def test_fsdp2_accepted(self, min_base_cfg):
+        cfg = _polora_cfg(
+            min_base_cfg,
+            fsdp_version=2,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        assert validate_config(cfg).optimizer == "polora"
+
+    def test_fsdp1_rejected(self, min_base_cfg):
+        cfg = _polora_cfg(
+            min_base_cfg,
+            fsdp_version=1,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        with pytest.raises(ValueError, match="requires FSDP2"):
+            validate_config(cfg)
 
     @pytest.mark.parametrize(
         "overrides",
