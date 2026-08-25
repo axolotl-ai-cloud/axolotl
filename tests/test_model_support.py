@@ -123,15 +123,17 @@ class TestKimiLinearSupport:
         assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_MODEL_BUILD)
 
     def test_dynamic_module_redirect_requires_exact_module_stem(self):
-        from axolotl.model_support.kimi_linear.patch_kimi_linear import (
-            _kimi_module_entry,
-        )
+        from axolotl.model_support.kimi_linear.patch_kimi_linear import KIMI_MODULES
+        from axolotl.model_support.remote_code import owned_stem
 
-        assert _kimi_module_entry("transformers_modules/x/repo/modeling_kimi.py")
-        assert _kimi_module_entry("transformers_modules.x.repo.modeling_kimi")
-        assert _kimi_module_entry("tokenization_kimi.py")
-        assert _kimi_module_entry("transformers_modules/x/modeling_kimi_vl.py") is None
-        assert _kimi_module_entry("modeling_kimi_vl") is None
+        def entry(module_path):
+            return owned_stem(KIMI_MODULES, module_path)
+
+        assert entry("transformers_modules/x/repo/modeling_kimi.py")
+        assert entry("transformers_modules.x.repo.modeling_kimi")
+        assert entry("tokenization_kimi.py")
+        assert entry("transformers_modules/x/modeling_kimi_vl.py") is None
+        assert entry("modeling_kimi_vl") is None
 
     def test_pre_config_load_patches_dynamic_module_loading(
         self, restore_dynamic_module_loader
@@ -426,3 +428,70 @@ class TestMuseGlimmerSupport:
         support = get_model_support("muse_glimmer")
         with pytest.raises(ValueError, match="muse_glimmer"):
             check_capability(support, "lora_kernels", "muse_glimmer")
+
+
+class TestBailingHybridSupport:
+    """Built-in Ling 3.0 descriptor: cfg matching, remote-code redirect, conversions."""
+
+    def test_registered_and_vanilla_family(self):
+        support = get_model_support("bailing_hybrid")
+        assert support is not None
+        assert type(support).__name__ == "BailingHybridSupport"
+        assert resolve_model_support(support).family == "vanilla_causal_lm"
+
+    def test_matches_cfg_by_model_name(self):
+        from axolotl.model_support.registry import get_model_support_for_cfg
+
+        cfg = DictDefault(base_model_config="inclusionAI/Ling-3.0-flash")
+        assert get_model_support_for_cfg(cfg) is get_model_support("bailing_hybrid")
+
+    def test_no_match_for_other_models(self):
+        from axolotl.model_support.registry import get_model_support_for_cfg
+
+        cfg = DictDefault(base_model_config="Qwen/Qwen3-30B-A3B")
+        assert get_model_support_for_cfg(cfg) is None
+
+    def test_redirects_remote_code_at_every_pre_load_phase(self):
+        support = get_model_support("bailing_hybrid")
+        hooks = resolve_model_support(support).hooks
+        for phase in (
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            ModelHookPhase.BEFORE_TOKENIZER_LOAD,
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+        ):
+            assert hooks.for_phase(phase)
+
+    def test_remote_code_resolves_to_the_in_tree_config(self):
+        import transformers.dynamic_module_utils as dynamic_module_utils
+
+        from axolotl.model_support.bailing_hybrid.configuration_bailing_moe_v3 import (
+            BailingMoeV3Config,
+        )
+
+        original = dynamic_module_utils.get_class_in_module
+        try:
+            run_model_support_hooks(
+                get_model_support("bailing_hybrid"),
+                ModelHookPhase.BEFORE_CONFIG_LOAD,
+                ModelHookContext(
+                    cfg=DictDefault(base_model_config="inclusionAI/Ling-3.0-flash")
+                ),
+            )
+            resolved = dynamic_module_utils.get_class_in_module(
+                "BailingMoeV3Config",
+                "transformers_modules/inclusionAI/Ling-3.0-flash/abc/configuration_bailing_moe_v3.py",
+            )
+        finally:
+            dynamic_module_utils.get_class_in_module = original
+
+        assert resolved is BailingMoeV3Config
+
+    def test_weight_conversions_are_reversible(self):
+        """``save_pretrained`` reverses these to re-emit the published layout."""
+        from axolotl.model_support.bailing_hybrid import _weight_conversions
+
+        transforms = _weight_conversions()["bailing_hybrid"]
+        assert transforms
+        for transform in transforms:
+            for operation in getattr(transform, "operations", None) or []:
+                assert operation.reverse_op is not None
