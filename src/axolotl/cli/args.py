@@ -119,6 +119,36 @@ class QuantizeCliArgs:
 
 
 @dataclass
+class ExportCliArgs:
+    """Dataclass with CLI arguments for `axolotl export` command."""
+
+    model_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Checkpoint to export. Defaults to the merged/trained output dir."
+        },
+    )
+    output_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Where to write exported files. Default: {output_dir}/gguf."},
+    )
+    outtype: Optional[str] = field(
+        default=None,
+        metadata={"help": "Weight type of the unquantized GGUF conversion."},
+    )
+    quantize: Optional[str] = field(
+        default=None,
+        metadata={"help": "Comma-separated llama.cpp quant types, e.g. Q4_K_M,Q8_0."},
+    )
+    llama_cpp_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Path to a built llama.cpp checkout. Default: $LLAMA_CPP_DIR."
+        },
+    )
+
+
+@dataclass
 class EvaluateCliArgs:
     """Dataclass with CLI arguments for `axolotl evaluate` command."""
 
