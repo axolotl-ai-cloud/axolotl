@@ -9,6 +9,8 @@ quartodoc:
   package: axolotl
   title: API Reference
   parser: google
+  renderer:
+    style: docs.scripts._renderer.py
 
   sections:
     - title: Core
