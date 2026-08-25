@@ -278,3 +278,56 @@ qgalore_cos_threshold: 0.4         # skip SVD if P_t is this similar to P_{t-1}
 qgalore_gamma_proj: 2              # grow update_proj_gap by this factor when stable
 qgalore_queue_size: 5
 ```
+
+### gefenx
+
+Drop-in AdamW replacement that quantizes optimizer state to ≈1 byte/parameter
+(≈8× smaller than AdamW's fp32 moments) at AdamW-level loss. Wires up the
+[Gefen-X](https://github.com/thad0ctor/Gefen-X) fork
+([paper](https://arxiv.org/abs/2606.13894)) in two variants:
+
+- `optimizer: gefenx` — core quantized AdamW replacement (`Gefen`).
+- `optimizer: gefenx_muon` — whole-model Muon hybrid (`GefenMuonHybrid`): Muon
+  on 2D hidden weights, Gefen on everything else. Same memory; slower per step
+  (Newton-Schulz), so use it only when you want Muon updates.
+
+::: {.callout-important}
+Install the `gefenx` extra — this pulls the `gefen-x` package. Don't use
+`pip install gefen`: that's *upstream* Gefen, which lacks this fork's
+modern-arch memory fallback, fused kernels, and `GefenMuonHybrid`. Fused CUDA
+kernels JIT-build on first step (needs `nvcc`) and fall back to pure-PyTorch if
+the build fails.
+
+```bash
+pip install "axolotl[gefenx]"   # or, standalone: pip install gefen-x
+```
+:::
+
+Use **≈0.6× your AdamW LR** (Gefen takes larger effective steps).
+
+```yaml
+optimizer: gefenx        # or: gefenx_muon
+learning_rate: 6.0e-6    # ≈0.6× your AdamW LR (gefenx_muon tolerates ~5e-5)
+bf16: true
+optim_args:
+  fused: true
+```
+
+Tune behavior through `optim_args` (dict form, so booleans keep their type).
+The most-used levers are below; `gefenx_muon` ships the fork's recommended
+recipe as its defaults. See the
+[Gefen-X README](https://github.com/thad0ctor/Gefen-X#readme) for the full set.
+
+| `optim_args` lever | Optimizer | Default | Effect |
+|---|---|---|---|
+| `fused` | both | `true` | step through the fused CUDA kernels — ≈2× faster `opt.step`, identical results |
+| `capturable` | both | `false` | keep the step host-sync-free so it can be captured in a `torch.cuda.CUDAGraph` |
+| `factored_v_2d` | `gefenx` | `true` | Adafactor-style factored 2D 2nd moment — the AdamW-parity default (fair LR ≈0.6×); `false` = legacy block-shared (fair LR ≈0.4×) |
+| `force_1d_period_one` | `gefenx` | `false` | per-element (AdamW-like) 2nd moment on 1D norms/biases — steadies the high-leverage norm weights, ~free (tiny tensors) |
+| `stochastic_round` | `gefenx` | `false` | unbiased stochastic rounding of the momentum→codebook quantization, cancelling EMA bias over long runs (fused path only) |
+| `backup_lr` | `gefenx_muon` | `0.5 × lr` | LR for the Gefen (non-Muon) backup half — embeddings, LM head, norms, biases |
+| `backup_1d_period_one` | `gefenx_muon` | `true` | per-element 2nd moment on the 1D backup tensors (norms/biases); free on throughput |
+| `backup_2d_period_one` | `gefenx_muon` | `false` | per-element 2nd moment on the embed / LM head — closes the last AdamW loss gap at extra memory |
+| `adjust_lr_fn` | `gefenx_muon` | `match_rms_adamw` | rescales the shared `lr` between the Muon matrices and the Gefen backup (they want different scales) |
+| `ns_steps` | `gefenx_muon` | `5` | Newton-Schulz orthogonalization iterations per Muon update |
+| `sharded_mode` | `gefenx_muon` | `exact` | `distributed` splits the Newton-Schulz work across GPUs under FSDP2 at identical results (vs redundant on every rank) |

@@ -242,6 +242,105 @@ class TestHFCausalTrainerBuilder:
         assert isinstance(optim, SinkGD)
         assert optim.sinkgd_fused_kernel is True
 
+    def test_gefenx_optimizer(self, sft_cfg, model, tokenizer):
+        pytest.importorskip("gefen")
+        from gefen import Gefen
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "gefenx"
+        # fused kernels need CUDA; keep the CPU test on the pure-torch path
+        cfg["optim_args"] = {"fused": False}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is Gefen
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["weight_decay"] == 0.01
+        assert optimizer_kwargs["fused"] is False
+
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, Gefen)
+
+    def test_gefenx_string_optim_args_coerced(self, sft_cfg, model, tokenizer):
+        pytest.importorskip("gefen")
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "gefenx"
+        # string ("key=value") form must reach Gefen as a real bool, not "false"
+        cfg["optim_args"] = "fused=false"
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        _, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_kwargs["fused"] is False
+
+    def test_gefenx_muon_optimizer(self, sft_cfg, model, tokenizer):
+        pytest.importorskip("gefen")
+        from gefen import GefenMuonHybrid
+
+        from axolotl.utils.optimizers.gefenx import GefenXMuonHybridOptimizerFactory
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "gefenx_muon"
+        cfg["optim_args"] = {"fused": False}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is GefenXMuonHybridOptimizerFactory
+        assert optimizer_kwargs["lr"] == 0.00005
+
+        # factory needs the model to split params -> whole-model hybrid instance
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, GefenMuonHybrid)
+
+
+def test_gefenx_optim_args_coercion():
+    """String-form optim_args (key=value) must coerce back to native types."""
+    from axolotl.utils.optimizers.gefenx import coerce_optim_arg
+
+    assert coerce_optim_arg("false") is False
+    assert coerce_optim_arg("True") is True
+    assert coerce_optim_arg("none") is None
+    assert coerce_optim_arg("5") == 5
+    assert coerce_optim_arg("2.5e-5") == 2.5e-5
+    assert coerce_optim_arg("match_rms_adamw") == "match_rms_adamw"
+    assert coerce_optim_arg(True) is True  # already-typed values pass through
+
+
+def test_gefenx_muon_recipe_defaults(monkeypatch):
+    """The factory must apply the Gefen-X recommended recipe, overridable by optim_args."""
+    pytest.importorskip("gefen")
+    import gefen
+
+    from axolotl.utils.optimizers.gefenx import GefenXMuonHybridOptimizerFactory
+
+    captured: dict = {}
+
+    def _fake_hybrid(model, **kwargs):
+        captured.update(kwargs)
+        return "sentinel"
+
+    monkeypatch.setattr(gefen, "GefenMuonHybrid", _fake_hybrid)
+
+    out = GefenXMuonHybridOptimizerFactory()(object(), None, lr=1e-4, weight_decay=0.0)
+    assert out == "sentinel"
+    assert captured["backup_lr"] == 0.5e-4  # derived from lr
+    assert captured["backup_1d_period_one"] is True
+    assert captured["adjust_lr_fn"] == "match_rms_adamw"
+    assert captured["fused"] is True
+
+    # explicit optim_args (incl. string form) override the recipe defaults
+    captured.clear()
+    GefenXMuonHybridOptimizerFactory()(
+        object(), None, lr=1e-4, backup_lr=7e-5, fused="false"
+    )
+    assert captured["backup_lr"] == 7e-5
+    assert captured["fused"] is False
+
 
 class TestTrainerClsPlugin:
     """

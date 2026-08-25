@@ -445,6 +445,88 @@ class TestCustomOptimizers(unittest.TestCase):
             max_final=3.0,
         )
 
+    @with_temp_dir
+    def test_fft_gefenx(self, temp_dir):
+        pytest.importorskip("gefen")
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "model_type": "AutoModelForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "val_set_size": 0.02,
+                "bf16": True,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 1,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.000006,  # ≈0.6× the AdamW LR
+                "optimizer": "gefenx",
+                "optim_args": {"fused": False},
+                "max_steps": 5,
+                "lr_scheduler": "cosine",
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        assert trainer.optimizer.optimizer.__class__.__name__ == "Gefen"
+
+    @with_temp_dir
+    def test_fft_gefenx_muon(self, temp_dir):
+        pytest.importorskip("gefen")
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "model_type": "AutoModelForCausalLM",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "val_set_size": 0.02,
+                "bf16": True,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 1,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00005,
+                "optimizer": "gefenx_muon",
+                "optim_args": {"fused": False},
+                "max_steps": 5,
+                "lr_scheduler": "cosine",
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        assert trainer.optimizer.optimizer.__class__.__name__ == "GefenMuonHybrid"
+
 
 @require_torch_2_7_0
 @pytest.mark.parametrize(
