@@ -59,6 +59,11 @@ def _rms_norm_gated_forward_kernel(
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
+    # fp32 casts: inductor passes python floats as fp64, which would promote
+    # the whole fp32 chain to fp64 (~6x slower on consumer GPUs).
+    eps = eps.to(tl.float32)
+    offset = offset.to(tl.float32)
+
     X_row = tl.load(X_ptr + row_idx * X_row_stride + col_offsets, mask=mask, other=0)
     G_row = tl.load(G_ptr + row_idx * G_row_stride + col_offsets, mask=mask, other=0)
     W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0)
@@ -134,7 +139,8 @@ def _rms_norm_gated_backward_kernel(
     dW_acc = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
 
     W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0.0)
-    W_row = W_row.to(tl.float32) + offset
+    # fp32 cast: inductor passes python floats as fp64 (see forward kernel).
+    W_row = W_row.to(tl.float32) + offset.to(tl.float32)
 
     for row_idx in range(row_start, row_end):
         dY_row = tl.load(

@@ -1,0 +1,63 @@
+# NVFP4 training is a THROUGHPUT play that only pays off for large GEMM dims.
+# The per-GEMM quant prologue dominates below ~hidden 1024, so do NOT use this on
+# sub-3B models — 3B+ is the target, and the speedup only materializes compiled.
+base_model: Qwen/Qwen2.5-3B
+
+# NVFP4 FP4-GEMM training ships as a plugin.
+plugins:
+  - axolotl.integrations.nvfp4.NVFP4Plugin
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+# Full fine-tune mode: no `adapter:` here, so every eligible base nn.Linear is
+# swapped for an FP4-GEMM linear. For LoRA/QLoRA variants see qwen-nvfp4-qlora.yaml.
+
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+
+output_dir: ./outputs/nvfp4_out/
+
+sequence_len: 1024
+sample_packing: true
+pad_to_sequence_len: true
+
+# sample_packing needs a varlen-capable backend. On Blackwell (sm_120) sdpa with
+# a packed block-diagonal mask cannot use the fused flash kernel and falls back to
+# the materialized-softmax math path (6-13x slower attention, and it leaks across
+# packed samples). flash_attention_2 does varlen packing via position_ids — fast
+# AND sample-isolated. Keep it on whenever sample_packing is true.
+attn_implementation: flash_attention_2
+
+bf16: true
+
+# Real FP4 forward/backward GEMMs on Blackwell. The 2.9-3.6x speedup over bf16
+# ONLY materializes under torch.compile — keep it on.
+torch_compile: true
+
+nvfp4_training:
+  enabled: true
+  # `quantize` is the single opt-in list — it quantizes exactly what you name.
+  # [all] = every eligible body nn.Linear (the full-throughput FFT default). To
+  # also quantize the head: [all, lm_head]. To quantize only some projections:
+  # [q_proj, k_proj, v_proj, o_proj]. The recipe (stochastic_rounding/hadamard)
+  # defaults on.
+  quantize: [all]
+
+gradient_accumulation_steps: 1
+micro_batch_size: 8
+num_epochs: 1
+optimizer: adamw_torch_fused
+learning_rate: 2e-5
+
+logging_steps: 1
+warmup_steps: 10
+weight_decay: 0.0
+
+evals_per_epoch: 1
+saves_per_epoch: 1
+save_only_model: true
+
+special_tokens:

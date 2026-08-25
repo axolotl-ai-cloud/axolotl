@@ -75,6 +75,11 @@ def _rms_norm_rope_forward_kernel(
     half_rot = n_rot // 2
 
     # Load input row
+    # Inductor types python-float kernel args as fp64 (eager triton uses fp32);
+    # without this cast `mean_sq + eps` promotes the whole normalize/rope chain
+    # to fp64 — ~6x slower on consumer GPUs and numerics that diverge from eager.
+    eps = eps.to(tl.float32)
+
     X_row = tl.load(X_ptr + row_idx * X_row_stride + col_offsets, mask=mask, other=0)
     X_dtype = X_row.dtype
     X_fp32 = X_row.to(tl.float32)
@@ -457,6 +462,9 @@ def _rms_norm_forward_kernel(
     row_idx = tl.program_id(0).to(tl.int64)
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
+
+    # fp32 cast: inductor passes python floats as fp64 (see rope fwd kernel).
+    eps = eps.to(tl.float32)
 
     X_row = tl.load(X_ptr + row_idx * X_row_stride + col_offsets, mask=mask, other=0)
     X_dtype = X_row.dtype

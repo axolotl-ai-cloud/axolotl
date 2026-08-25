@@ -111,14 +111,19 @@ def require_torch_2_7_0(test_case):
 
 def require_torch_2_8_0(test_case):
     """
-    Decorator marking a test that requires torch >= 2.7.0
+    Decorator marking a test that requires torch >= 2.8.0
+
+    pytest mark, not unittest.skipUnless: the latter silently no-ops at class
+    level on plain (non-TestCase) classes.
     """
 
     def is_min_2_8_0():
         torch_version = version.parse(torch.__version__)
         return torch_version >= version.parse("2.8.0")
 
-    return unittest.skipUnless(is_min_2_8_0(), "test requires torch>=2.8.0")(test_case)
+    return pytest.mark.skipif(not is_min_2_8_0(), reason="test requires torch>=2.8.0")(
+        test_case
+    )
 
 
 def require_torch_lt_2_6_0(test_case):
@@ -160,12 +165,15 @@ def require_llmcompressor(test_case):
 
 
 def requires_sm_ge_100(test_case):
-    is_sm_ge_100 = (
+    # pytest mark: unittest.skipUnless no-ops at class level on plain classes
+    is_sm_ge_100 = bool(
         torch.cuda.is_available()
         and torch.version.cuda
         and torch.cuda.get_device_capability() >= (10, 0)
     )
-    return unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+    return pytest.mark.skipif(not is_sm_ge_100, reason="test requires sm>=100")(
+        test_case
+    )
 
 
 def requires_cuda_ge_8_9(test_case):
