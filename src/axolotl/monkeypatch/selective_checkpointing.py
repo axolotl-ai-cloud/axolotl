@@ -24,7 +24,7 @@ LOG = get_logger(__name__)
 
 ATTENTION_GROUP = "attention"
 
-# Older supported PyTorch releases reject this keyword.
+# PyTorch releases before 2.14 reject this keyword.
 _SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS = (
     "respect_saved_tensors_hooks" in inspect.signature(_torch_checkpoint).parameters
 )
@@ -328,7 +328,7 @@ def apply_selective_checkpointing(
         gc_kwargs["use_reentrant"] = False
         gc_kwargs["context_fn"] = context_fn
         if _SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS:
-            gc_kwargs["respect_saved_tensors_hooks"] = False
+            gc_kwargs.setdefault("respect_saved_tensors_hooks", False)
         else:
             gc_kwargs.pop("respect_saved_tensors_hooks", None)
         return orig_enable(gradient_checkpointing_kwargs=gc_kwargs, **kwargs)

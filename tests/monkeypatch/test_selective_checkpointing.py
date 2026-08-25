@@ -170,8 +170,15 @@ class TestEnableWrap:
         assert callable(model.seen_kwargs["context_fn"])
 
     @pytest.mark.parametrize("supports_kwarg", [False, True])
+    @pytest.mark.parametrize(
+        "caller_kwargs",
+        [
+            {"preserve_rng_state": False},
+            {"respect_saved_tensors_hooks": True},
+        ],
+    )
     def test_respect_saved_tensors_hooks_is_feature_gated(
-        self, monkeypatch, supports_kwarg
+        self, monkeypatch, supports_kwarg, caller_kwargs
     ):
         monkeypatch.setattr(
             selective_checkpointing,
@@ -179,39 +186,16 @@ class TestEnableWrap:
             supports_kwarg,
         )
         model = self._FakeModel()
-        original_kwargs = {"preserve_rng_state": False}
+        original_kwargs = dict(caller_kwargs)
         apply_selective_checkpointing(model)
-        model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs=original_kwargs
-        )
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=caller_kwargs)
 
-        assert original_kwargs == {"preserve_rng_state": False}
+        assert caller_kwargs == original_kwargs
         if supports_kwarg:
-            assert model.seen_kwargs["respect_saved_tensors_hooks"] is False
+            expected = caller_kwargs.get("respect_saved_tensors_hooks", False)
+            assert model.seen_kwargs["respect_saved_tensors_hooks"] is expected
         else:
             assert "respect_saved_tensors_hooks" not in model.seen_kwargs
-
-    @pytest.mark.parametrize("supports_kwarg", [False, True])
-    def test_handles_caller_provided_respect_saved_tensors_hooks(
-        self, monkeypatch, supports_kwarg
-    ):
-        monkeypatch.setattr(
-            selective_checkpointing,
-            "_SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS",
-            supports_kwarg,
-        )
-        model = self._FakeModel()
-        original_kwargs = {"respect_saved_tensors_hooks": True}
-        apply_selective_checkpointing(model)
-        model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs=original_kwargs
-        )
-
-        if supports_kwarg:
-            assert model.seen_kwargs["respect_saved_tensors_hooks"] is False
-        else:
-            assert "respect_saved_tensors_hooks" not in model.seen_kwargs
-        assert original_kwargs["respect_saved_tensors_hooks"] is True
 
     def test_idempotent(self):
         model = self._FakeModel()
