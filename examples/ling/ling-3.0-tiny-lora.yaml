@@ -20,7 +20,7 @@ pad_to_sequence_len: true
 adapter: lora
 lora_r: 16
 lora_alpha: 32
-lora_dropout: 0.05
+lora_dropout: 0.0
 # tiny sets q_lora_rank, so its multi-latent layers project through q_a/q_b/kv_*;
 # linear-attention layers project through q/k/v. Experts are left untrained here —
 # add lora_target_parameters to reach them (see README).
