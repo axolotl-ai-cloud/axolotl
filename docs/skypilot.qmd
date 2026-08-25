@@ -98,7 +98,7 @@ resources:
   use_spot: true
 ```
 
-For long runs, use managed jobs instead of `sky launch`: SkyPilot then auto-recovers the job if the spot instance is preempted. If the task has a `workdir` or local `file_mounts`, managed jobs stage them through cloud object storage, which needs an object store (S3, GCS, etc.) enabled or `jobs.bucket` set in `~/.sky/config.yaml`.
+For long runs, use managed jobs instead of `sky launch`: SkyPilot then auto-recovers the job if the spot instance is preempted. If the task has a `workdir` or local `file_mounts`, managed jobs stage them through a temporary object-store bucket (or one you pick with `jobs.bucket` in `~/.sky/config.yaml`); without object store access, files are streamed through the jobs controller instead.
 
 ```bash
 sky jobs launch -n axolotl axolotl-skypilot.yaml
@@ -113,7 +113,7 @@ file_mounts:
     mode: MOUNT_CACHED
 ```
 
-Point `output_dir` in your Axolotl config at `/checkpoints` and set `auto_resume_from_checkpoints: true` so a recovered job picks up where it left off. `MOUNT_CACHED` uploads asynchronously, so the newest checkpoint may be incomplete after an abrupt preemption.
+Point `output_dir` in your Axolotl config at `/checkpoints` and set `auto_resume_from_checkpoints: true` so a recovered job resumes from the newest checkpoint in the bucket. One caveat: `MOUNT_CACHED` uploads asynchronously and Axolotl resumes from the highest-numbered checkpoint without validating it, so an abrupt preemption can leave that checkpoint incomplete and the resume failing. If that happens, delete the incomplete checkpoint directory from the bucket and the job will resume from the previous one.
 
 ## Further reading
 
