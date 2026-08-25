@@ -54,11 +54,63 @@ class _PoloraCompat:
     over gathered stand-ins instead; see :func:`_gathered_pairs`.
     """
 
+    # set by polora.Polora.__init__ / torch.optim.Optimizer
+    pairs: list
+    pair_state: dict
+    param_groups: list
+
+    _model = None
     _sharded_pairs: list | None = None
+    _bound = False
+
+    def _bind_live_pairs(self) -> None:
+        """Rebind onto the model's current parameters.
+
+        FSDP2 replaces module parameters with DTensors *after* the optimizer is built, so
+        the pairs captured at construction go stale and never receive gradients. Global
+        shapes are unchanged, so the already-allocated ``pair_state`` stays valid.
+        """
+        self._bound = True
+        if self._model is None:
+            return
+        from polora.optim import collect_lora_pairs
+
+        live = collect_lora_pairs(self._model)
+        current = self.pairs
+        if len(live) != len(current):
+            return
+        if all(
+            new is old
+            for live_pair, cur_pair in zip(live, current, strict=True)
+            for new, old in zip(live_pair, cur_pair, strict=True)
+        ):
+            return
+        if any(
+            new.shape != old.shape
+            for live_pair, cur_pair in zip(live, current, strict=True)
+            for new, old in zip(live_pair, cur_pair, strict=True)
+        ):
+            return
+
+        if any(_is_sharded(param) for pair in live for param in pair):
+            self._sharded_pairs = live
+            self.pairs = _gathered_pairs(live)
+        else:
+            self.pairs = live
+        self.param_groups[0]["params"] = [
+            param for pair in self.pairs for param in pair
+        ]
+        # State was allocated against the pre-shard params, which sit on CPU.
+        for idx, pair in enumerate(self.pairs):
+            self.pair_state[idx] = {
+                key: val.to(pair[0].device) for key, val in self.pair_state[idx].items()
+            }
 
     def step(self, closure=None):
+        if not self._bound:
+            self._bind_live_pairs()
         if self._sharded_pairs is not None:
-            _gather_into(self._sharded_pairs, self.pairs)  # type: ignore[attr-defined]
+            _gather_into(self._sharded_pairs, self.pairs)
         try:
             loss = super().step(closure)  # type: ignore[misc]
         except ValueError as exc:
@@ -71,19 +123,18 @@ class _PoloraCompat:
                 "or an unrouted MoE expert. Exclude those with lora_exclude_modules."
             ) from exc
         if self._sharded_pairs is not None:
-            _scatter_from(self.pairs, self._sharded_pairs)  # type: ignore[attr-defined]
+            _scatter_from(self.pairs, self._sharded_pairs)
         return loss
 
     def state_dict(self) -> dict:
         state_dict = super().state_dict()  # type: ignore[misc]
         state_dict["pair_state"] = {
-            idx: dict(state)
-            for idx, state in self.pair_state.items()  # type: ignore[attr-defined]
+            idx: dict(state) for idx, state in self.pair_state.items()
         }
         return state_dict
 
     def load_state_dict(self, state_dict: dict) -> None:
-        current = self.pair_state  # type: ignore[attr-defined]
+        current = self.pair_state
         saved_pairs = state_dict.get("pair_state")
         # Checked before super(), which raises on a param-count change of its own.
         if not isinstance(saved_pairs, dict) or not _pair_state_matches(
@@ -97,7 +148,7 @@ class _PoloraCompat:
 
         super().load_state_dict(state_dict)  # type: ignore[misc]
         for idx, saved in saved_pairs.items():
-            device = self.pairs[int(idx)][0].device  # type: ignore[attr-defined]
+            device = self.pairs[int(idx)][0].device
             current[int(idx)] = {key: val.to(device) for key, val in saved.items()}
 
 
@@ -235,14 +286,9 @@ class PoloraOptimizerFactory(BaseOptimizerFactory):
                 f"Supported: {sorted(_POLORA_ARGS)}."
             )
 
-        sharded = any(_is_sharded(param) for pair in pairs for param in pair)
-        step_pairs = _gathered_pairs(pairs) if sharded else pairs
-        LOG.info(
-            f"polora: optimizing {len(pairs)} LoRA (A, B) pairs"
-            f"{' (FSDP2-sharded, gathered per step)' if sharded else ''}."
-        )
-
-        optimizer = _polora_cls()(pairs=step_pairs, lr=lr, **kwargs)
-        if sharded:
-            optimizer._sharded_pairs = pairs  # pylint: disable=protected-access
+        LOG.info(f"polora: optimizing {len(pairs)} LoRA (A, B) pairs.")
+        optimizer = _polora_cls()(pairs=pairs, lr=lr, **kwargs)
+        # Sharding is resolved on the first step, not here: under FSDP2 the params are
+        # still unsharded at this point.
+        optimizer._model = opt_model  # pylint: disable=protected-access
         return optimizer
