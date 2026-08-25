@@ -929,7 +929,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_token_capacity">expert_parallel_token_capacity</a></td>
-<td>Max tokens routed to any single expert per forward; the lowest-weight excess (token,expert)</td>
+<td>Max tokens routed to any single expert per forward; the lowest-weight excess (token,expert) assignments are dropped. DeepEP’s intranode combine deadlocks once one expert is overloaded, and GLM-style routers concentrate more with depth — set this (e.g.&nbsp;1024) for them. <code>None</code> = no cap.</td>
 </tr>
 </tbody>
 </table>
