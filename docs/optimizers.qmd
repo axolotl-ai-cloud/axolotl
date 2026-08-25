@@ -312,8 +312,9 @@ builds factors at `lora_r * num_experts`, so keep `lora_r` small there.
 ```yaml
 optimizer: polora
 adapter: lora
-# spectral-norm target, not an Adam step size (paper: 1e-2 math, 3e-3 code)
-learning_rate: 0.01
+# spectral-norm target, not an Adam step size. Paper uses 1e-2 (math) and 3e-3 (code);
+# 3e-3 was best on a short 1B/r32 SFT run. Sweep it, the optimum is task-dependent.
+learning_rate: 0.003
 
 # optional, defaults shown
 optim_args:
