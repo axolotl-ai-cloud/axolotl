@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from contextlib import contextmanager
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
@@ -112,7 +113,8 @@ class _PoloraCompat:
         if self._sharded_pairs is not None:
             _gather_into(self._sharded_pairs, self.pairs)
         try:
-            loss = super().step(closure)  # type: ignore[misc]
+            with _no_tf32():
+                loss = super().step(closure)  # type: ignore[misc]
         except ValueError as exc:
             if "Gradients are required" not in str(exc):
                 raise
@@ -150,6 +152,25 @@ class _PoloraCompat:
         for idx, saved in saved_pairs.items():
             device = self.pairs[int(idx)][0].device
             current[int(idx)] = {key: val.to(device) for key, val in saved.items()}
+
+
+@contextmanager
+def _no_tf32():
+    """Keeps polora's spectral iterations in true fp32.
+
+    Upstream guards them by writing ``allow_tf32 = False`` inside the kernels, but that is a
+    Python side effect ``torch.compile`` does not replay, so with ``compile=true`` the
+    Newton-Schulz iteration silently runs in TF32 and diverges to NaN within a step or two.
+    Hoisting the guard outside the compiled region restores it.
+    """
+    import torch
+
+    prev = torch.backends.cuda.matmul.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    try:
+        yield
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = prev
 
 
 def _pair_state_matches(saved_pairs: dict, current: dict) -> bool:
