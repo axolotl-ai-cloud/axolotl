@@ -153,6 +153,17 @@ class TestSonicMoELoRATraining:
         model = _build_sonic_model()
         model = _apply_lora(model, ["gate_up_proj", "down_proj"])
 
+        lora_params = [
+            p for n, p in model.named_parameters() if "lora_" in n and p.requires_grad
+        ]
+
+        # lora_B is zero-initialized and dL/dA is proportional to B, so lora_A gets an
+        # exactly-zero gradient on the first backward. Step once to move B off zero.
+        model(input_ids, labels=input_ids).loss.backward()
+        optimizer = torch.optim.SGD(lora_params, lr=1e-2)
+        optimizer.step()
+        optimizer.zero_grad()
+
         out = model(input_ids, labels=input_ids)
         out.loss.backward()
 
