@@ -65,7 +65,7 @@ run: |
   # Pin collectives to the node's real NIC. Without this, Gloo resolves the
   # hostname to 127.0.1.1 (the Debian/Ubuntu loopback alias in /etc/hosts) and
   # startup fails with "Gloo connectFullMesh failed ... Connection refused".
-  IFACE=$(ls /sys/class/net | grep -vE '^(lo|docker.*|veth.*)$' | head -n1)
+  IFACE=$(awk '$2=="00000000" {print $1; exit}' /proc/net/route)
   export GLOO_SOCKET_IFNAME=$IFACE
   export NCCL_SOCKET_IFNAME=$IFACE
   export NCCL_IB_DISABLE=0
