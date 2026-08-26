@@ -21,9 +21,7 @@ adapter: qlora
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.0
-# flash leaves q_lora_rank null, so its MLA layers project the query through the same
-# q_proj name the KDA layers use — there is no q_a_proj/q_b_proj pair to target here,
-# unlike ling-3.0-tiny-lora.yaml
+# q_lora_rank is null on flash, so its multi-latent layers reuse the plain q_proj name
 lora_target_modules:
   - q_proj
   - k_proj
