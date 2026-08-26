@@ -267,6 +267,14 @@ class TestFacadeActivationResolution:
         assert self._facade_act(SimpleNamespace(hidden_act="gelu")) == "gelu"
         assert self._facade_act(SimpleNamespace(hidden_act="relu")) == "relu"
 
+    def test_unaliased_activation_still_raises_upstream(self):
+        """The `.get(act, act)` fallback must not coerce unknown names to a default."""
+        from transformers.integrations.sonicmoe import ACT_MAP
+
+        assert (
+            self._facade_act(SimpleNamespace(hidden_act="quadratic_glu")) not in ACT_MAP
+        )
+
     def test_resolved_name_is_accepted_by_upstream(self):
         """Upstream raises on anything outside its ACT_MAP, so aliases must land in it."""
         from transformers.integrations.sonicmoe import ACT_MAP
