@@ -39,6 +39,17 @@ class TestExportConfig:
         with pytest.raises(ValidationError):
             ExportConfig(**{field: value})
 
+    def test_q8_0_outtype_rejects_quantize(self):
+        with pytest.raises(ValidationError, match="cannot requantize from q8_0"):
+            ExportConfig(outtype="q8_0", quantize=["Q4_K_M"])
+
+    @pytest.mark.parametrize("outtype", ["f16", "bf16", "f32", "auto"])
+    def test_dequantizable_outtypes_allow_quantize(self, outtype):
+        assert ExportConfig(outtype=outtype, quantize=["Q4_K_M"]).quantize == ["Q4_K_M"]
+
+    def test_q8_0_outtype_alone_is_allowed(self):
+        assert ExportConfig(outtype="q8_0").outtype == "q8_0"
+
 
 class TestExportConfigInAxolotlConfig:
     """The `export` block round-trips through full config validation."""

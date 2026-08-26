@@ -4,7 +4,7 @@ Export Config Schema
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Weight types accepted by llama.cpp's `llama-quantize`. Validated up front so a typo
 # fails immediately rather than after the (slow) f16 conversion has already run.
@@ -56,3 +56,15 @@ class ExportConfig(BaseModel):
                 f"Must be one of: {sorted(GGUF_QUANT_TYPES)}"
             )
         return quant_types
+
+    @model_validator(mode="after")
+    def validate_requantize(self):
+        # llama.cpp refuses to dequantize an already-quantized source, so a q8_0
+        # conversion cannot feed the quantize step.
+        if self.quantize and self.outtype == "q8_0":
+            raise ValueError(
+                "`export.outtype: q8_0` cannot be combined with `export.quantize` - "
+                "llama.cpp cannot requantize from q8_0. Use an f16/bf16/f32 outtype, "
+                "or drop `quantize` and use the q8_0 conversion directly."
+            )
+        return self

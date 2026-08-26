@@ -135,9 +135,14 @@ def preflight(model_dir: Path, output_dir: Path) -> None:
         )
 
 
-def _run(cmd: list[str]) -> None:
+def _run(cmd: list[str], output: Path) -> None:
     LOG.info("Running: %s", " ".join(cmd))
-    subprocess.run(cmd, check=True)  # nosec B603
+    try:
+        subprocess.run(cmd, check=True)  # nosec B603
+    except BaseException:
+        # A half-written .gguf is indistinguishable from a good one on disk.
+        output.unlink(missing_ok=True)
+        raise
 
 
 def export_gguf(
@@ -177,14 +182,15 @@ def export_gguf(
             str(converted),
             "--outtype",
             outtype,
-        ]
+        ],
+        converted,
     )
 
     outputs = [converted]
     for quant_type in quantize:
         quantized = output_dir / f"{name}-{quant_type}.gguf"
         LOG.info("Quantizing to %s...", quant_type)
-        _run([str(quantize_bin), str(converted), str(quantized), quant_type])
+        _run([str(quantize_bin), str(converted), str(quantized), quant_type], quantized)
         outputs.append(quantized)
 
     return outputs
