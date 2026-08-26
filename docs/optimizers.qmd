@@ -297,22 +297,13 @@ pip install git+https://github.com/nikhilgsh/polora.git
 ```
 
 Requires `adapter: lora` or `adapter: qlora`, and single-GPU, DDP, or FSDP2. DeepSpeed and
-tensor parallelism are rejected at validation (ZeRO partitions the optimizer step itself, TP
-shards the LoRA rank dim), along with any other option PoLoRA cannot honor.
+tensor parallelism are rejected at validation, along with any other option PoLoRA cannot
+honor.
 
-Upstream PoLoRA is single-device only, so under FSDP2 axolotl gathers each factor, runs the
-dense update on every rank, and scatters the local shard back. Loss matches DDP, at the cost
-of one all-gather per step. Use FSDP2 only when the frozen base does not fit: it saves
-memory on the base, not the adapter, and on a 1B model it measured 2.2x slower than DDP.
-
-Every LoRA factor needs a gradient every step, so exclude layers that skip batches (vision
-towers, unrouted MoE experts) via `lora_exclude_modules`. On MoE, `lora_target_parameters`
-builds factors at `lora_r * num_experts`, so keep `lora_r` small there.
-
-Cost scales with `lora_r`: the update batches same-shape pairs into fp32 temporaries and
-does `r x r` Newton-Schulz work per pair. Measured on 7B against `adamw_torch`, at `lora_r:
-32` it was 16% slower and saved 0.4 GiB peak, but at `lora_r: 256` it was 46% slower and
-used 6.8 GiB *more*. Prefer low rank, and budget memory before raising it.
+Use `sample_packing` and `gradient_accumulation_steps` with it. The step adds a fixed cost
+regardless of batch size, so a large batch is what keeps that cost small: on 1B at 32k
+tokens per optimizer step it added 1.6% at `lora_r: 32` and 4.0% at `lora_r: 256`. Memory is
+about the same as AdamW.
 
 ```yaml
 optimizer: polora
@@ -329,5 +320,25 @@ optim_args:
   delta: 1.0e-4          # relative damping of the inverse square roots
   ns_steps: 8            # PolarExpress matrix-sign iterations
   higham_iters: 8        # Newton-Schulz iterations for the inverse square roots
-  compile: false         # torch.compile the spectral kernels
+  compile: false         # torch.compile the spectral kernels; measured worth ~0.3pp
 ```
+
+::: {.callout-note}
+
+**Batch size.** The step cost is fixed per optimizer step, so overhead is that cost divided
+by the work in one step. A small unpacked debug run will look far slower than a real one.
+
+**Rank.** The update stacks same-shape pairs into fp32 temporaries that peak near 6x the
+size of the LoRA factors, scaling with `lora_r` times model width. At high rank on a wide
+model, budget for them.
+
+**Gradients.** Every LoRA factor needs a gradient every step. Exclude layers that skip
+batches (vision towers, unrouted MoE experts) via `lora_exclude_modules`. On MoE,
+`lora_target_parameters` builds factors at `lora_r * num_experts`, so keep `lora_r` small.
+
+**FSDP2.** Upstream PoLoRA is single-device only, so axolotl gathers each factor, updates on
+every rank, and scatters the local shard back. Loss matches DDP, at one all-gather per step.
+Use it only when the frozen base does not fit: on a 1B model it measured 2.2x slower than
+DDP.
+
+:::
