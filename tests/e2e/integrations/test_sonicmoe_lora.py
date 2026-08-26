@@ -85,13 +85,21 @@ def _build_sonic_model():
     return AutoModelForCausalLM.from_config(config).cuda().bfloat16()
 
 
-def _apply_lora(model, target_modules):
+def _apply_lora(model, target_modules=None, target_parameters=None):
+    """Wrap ``model`` in LoRA.
+
+    Expert weights are ``nn.Parameter`` on the Experts module, so they need
+    ``target_parameters``; the router ``gate`` is a real ``nn.Linear`` and uses
+    ``target_modules``. ``target_modules=[]`` rather than ``None`` keeps PEFT from
+    falling back to its per-architecture default (q_proj/v_proj).
+    """
     from peft import LoraConfig, get_peft_model
 
     lora_config = LoraConfig(
         r=8,
         lora_alpha=16,
-        target_modules=target_modules,
+        target_modules=target_modules if target_modules is not None else [],
+        target_parameters=target_parameters,
         lora_dropout=0.0,
         bias="none",
     )
@@ -104,7 +112,7 @@ class TestSonicMoELoRATraining:
     def test_loss_decreases(self):
         input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
         model = _build_sonic_model()
-        model = _apply_lora(model, ["gate_up_proj", "down_proj"])
+        model = _apply_lora(model, target_parameters=["gate_up_proj", "down_proj"])
 
         optimizer = torch.optim.AdamW(
             [p for p in model.parameters() if p.requires_grad], lr=1e-3
@@ -127,7 +135,7 @@ class TestSonicMoELoRATraining:
     def test_base_weights_frozen(self):
         input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
         model = _build_sonic_model()
-        model = _apply_lora(model, ["gate_up_proj", "down_proj"])
+        model = _apply_lora(model, target_parameters=["gate_up_proj", "down_proj"])
 
         frozen_before = {
             name: param.data.clone()
@@ -151,7 +159,7 @@ class TestSonicMoELoRATraining:
     def test_lora_adapters_receive_gradients(self):
         input_ids = torch.randint(0, 1000, (1, 16), device="cuda")
         model = _build_sonic_model()
-        model = _apply_lora(model, ["gate_up_proj", "down_proj"])
+        model = _apply_lora(model, target_parameters=["gate_up_proj", "down_proj"])
 
         lora_params = [
             p for n, p in model.named_parameters() if "lora_" in n and p.requires_grad
@@ -181,7 +189,7 @@ class TestSonicMoELoRATraining:
     def test_lora_adapters_update(self):
         input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
         model = _build_sonic_model()
-        model = _apply_lora(model, ["gate_up_proj", "down_proj"])
+        model = _apply_lora(model, target_parameters=["gate_up_proj", "down_proj"])
 
         lora_before = {
             name: param.data.clone()
@@ -213,7 +221,7 @@ class TestSonicMoEGateOnlyLoRA:
     def test_gate_only_lora_loss_decreases(self):
         input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
         model = _build_sonic_model()
-        model = _apply_lora(model, ["gate"])
+        model = _apply_lora(model, target_modules=["gate"])
 
         optimizer = torch.optim.AdamW(
             [p for p in model.parameters() if p.requires_grad], lr=1e-3
