@@ -1,8 +1,8 @@
 """LoRA-aware sonicmoe experts forward for the transformers ExpertsInterface.
 
-Dense experts wrap upstream ``_sonicmoe_wrapper``, materializing expert LoRA via
-``MoELoRAMaterialize`` before the CUTLASS call. NVFP4 experts (which that kernel
-cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
+Dense experts materialize expert LoRA via ``MoELoRAMaterialize`` and hand the result
+to upstream's ``sonicmoe_experts_forward`` through a facade. NVFP4 experts (which the
+CUTLASS kernel cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
 """
 
 from __future__ import annotations
@@ -75,6 +75,64 @@ def _resolve_weights_and_lora(experts_module):
     return w1, b1, w2, b2, lora_w1, lora_w2
 
 
+# sonic-moe's GEGLU epilogue is itself tanh-approximate (quack ``activation.geglu``), so these
+# map onto it exactly. Without this Gemma resolves to no ``hidden_act`` and silently runs SwiGLU.
+_ACT_ALIASES = {
+    "gelu_pytorch_tanh": "gelu",
+    "gelu_tanh": "gelu",
+    "gelu_new": "gelu",
+}
+
+
+class _FacadeConfig:
+    __slots__ = ("hidden_act",)
+
+    def __init__(self, hidden_act: str):
+        self.hidden_act = hidden_act
+
+
+class _LoRAExpertsFacade:
+    """Stand-in module exposing ``W_eff`` where upstream reads the raw expert weights.
+
+    Upstream reads all of these as plain attributes, so reusing its forward beats
+    duplicating the unwrap, permute and kernel call. Activation resolves via
+    ``resolve_gated_activation`` because Gemma stores its own under ``hidden_activation``,
+    where upstream's ``hidden_act`` lookup silently yields SwiGLU.
+
+    Must stay a plain class: ``SimpleNamespace`` is constructed inside the compiled region
+    and Dynamo cannot trace its ``__new__``, which breaks ``fullgraph=True``.
+    """
+
+    __slots__ = (
+        "config",
+        "down_proj",
+        "down_proj_bias",
+        "gate_up_proj",
+        "gate_up_proj_bias",
+        "has_bias",
+        "has_gate",
+        "is_concatenated",
+        "is_transposed",
+        "num_experts",
+    )
+
+    def __init__(self, experts_module, w1, b1, w2, b2):
+        from .nvfp4 import resolve_gated_activation
+
+        act = resolve_gated_activation(experts_module.config)
+
+        self.has_gate = True
+        self.gate_up_proj = w1
+        self.down_proj = w2
+        self.has_bias = b1 is not None or b2 is not None
+        self.gate_up_proj_bias = b1
+        self.down_proj_bias = b2
+        self.is_transposed = getattr(experts_module, "is_transposed", False)
+        self.is_concatenated = getattr(experts_module, "is_concatenated", True)
+        self.num_experts = experts_module.num_experts
+        self.config = _FacadeConfig(_ACT_ALIASES.get(act, act))
+
+
 def sonicmoe_experts_forward_with_lora(
     self,
     hidden_states: torch.Tensor,
@@ -87,6 +145,8 @@ def sonicmoe_experts_forward_with_lora(
     into W_eff first). NVFP4 experts, which the opaque CUTLASS kernel cannot
     read, take the grouped reference path (dequant base + fused low-rank LoRA).
     """
+    from transformers.integrations.sonicmoe import sonicmoe_experts_forward
+
     from .nvfp4 import is_nvfp4_param
 
     if not getattr(self, "has_gate", True):
@@ -122,51 +182,17 @@ def sonicmoe_experts_forward_with_lora(
             lora_w2,
         )
 
-    from transformers.integrations.sonicmoe import _sonicmoe_wrapper
-
-    device = hidden_states.device
-    num_top_k = top_k_index.size(-1)
-    num_tokens = hidden_states.size(0)
-
-    # sonic-moe requires int32 token indices sorted ascending.
-    token_idx = (
-        torch.arange(num_tokens, device=device)
-        .unsqueeze(1)
-        .expand(-1, num_top_k)
-        .reshape(-1)
-        .int()
-    )
-    router_scores = top_k_weights.reshape(-1).to(hidden_states.dtype)
-    expert_ids = top_k_index.reshape(-1).int()
-
     # Materialize W_eff = W + scaling * (B @ A) per expert. No-op when no LoRA.
     if lora_w1 is not None:
         w1 = MoELoRAMaterialize.apply(w1, *lora_w1)
     if lora_w2 is not None:
         w2 = MoELoRAMaterialize.apply(w2, *lora_w2)
 
-    # Match upstream layout expectations:
-    #   is_transposed=False: gate_up [E, 2*I, H] / down [E, H, I] -> permute(1, 2, 0)
-    #   is_transposed=True:  gate_up [E, H, 2*I] / down [E, I, H] -> permute(2, 1, 0)
-    perm = (2, 1, 0) if getattr(self, "is_transposed", False) else (1, 2, 0)
-    w1 = w1.permute(*perm)
-    w2 = w2.permute(*perm)
-
-    act_name = getattr(self.config, "hidden_act", "silu").lower()
-
-    return _sonicmoe_wrapper(
-        hidden_states=hidden_states,
-        router_scores=router_scores,
-        expert_ids=expert_ids,
-        token_idx=token_idx,
-        w1=w1,
-        b1=b1,
-        w2=w2,
-        b2=b2,
-        act_name=act_name,
-        num_experts=self.num_experts,
-        concat_layout=getattr(self, "is_concatenated", True),
-        is_inference_mode_enabled=not torch.is_grad_enabled(),
+    return sonicmoe_experts_forward(
+        _LoRAExpertsFacade(self, w1, b1, w2, b2),
+        hidden_states,
+        top_k_index,
+        top_k_weights,
     )
 
 
@@ -253,33 +279,10 @@ def _sonicmoe_nvfp4_forward(
     )
 
 
-def redirect_sonicmoe_kernel_repo() -> None:
-    """Point transformers' ``sonic-moe`` hub kernel at our org build (quack 0.6.1 on cutlass-dsl
-    4.6.0); the upstream ``kernels-community/sonic-moe`` prebuilt still bundles an older quack that
-    breaks on cutlass-dsl 4.6.0. No-op if the hub mapping is absent (e.g. CPU / no kernels)."""
-    try:
-        from transformers.integrations import hub_kernels
-    except ImportError:
-        return
-    mapping = getattr(hub_kernels, "_HUB_KERNEL_MAPPING", None)
-    if isinstance(mapping, dict) and "sonic-moe" in mapping:
-        mapping["sonic-moe"] = {
-            "repo_id": "axolotl-ai-co/sonic-moe",
-            "revision": "main",
-        }
-        # Our repo is outside kernels-community, which the lazy expert-kernel load blocks unless
-        # this global is set. The loader's context-managed allow only covers model init, not the
-        # forward-time load, so set it directly (harmless: sonicmoe is an explicit opt-in).
-        hub_kernels.ALLOW_ALL_KERNELS = True
-
-
 def register_sonicmoe_experts() -> None:
     """Register the LoRA-aware ``"sonicmoe"`` forward, overriding upstream. Idempotent."""
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
 
-    # Any caller (plugin, e2e tests) must load our sonic-moe build, not the stale upstream prebuilt;
-    # the kernel loads lazily on first forward, so redirect before that, at registration time.
-    redirect_sonicmoe_kernel_repo()
     ALL_EXPERTS_FUNCTIONS.register("sonicmoe", sonicmoe_experts_forward_with_lora)
 
     # Route PEFT target_parameters expert LoRA past the parametrization merge (which cannot

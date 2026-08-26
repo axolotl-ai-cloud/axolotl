@@ -173,7 +173,6 @@ class KernelsPlugin(BasePlugin):
                 register_sonicmoe_experts,
             )
 
-            # register_sonicmoe_experts() redirects the sonic-moe hub kernel to our build.
             register_sonicmoe_experts()
             if not ep_active:
                 cfg.experts_implementation = "sonicmoe"
