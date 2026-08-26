@@ -92,7 +92,3 @@ Please make sure to substitute the placeholder variables:
 The new CLI approach (Option 1) is recommended as it provides consistent argument handling and works seamlessly with other Axolotl CLI features.
 
 More info on the available configs can be found on the Pytorch docs [here](https://pytorch.org/docs/stable/elastic/run.html)
-
-::: {.callout-tip}
-[SkyPilot](skypilot.qmd) can provision the nodes on any cloud or Kubernetes and run this torchrun launcher on each of them automatically.
-:::
