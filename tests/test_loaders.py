@@ -102,6 +102,53 @@ class TestModelsUtils:
                 is True
             )
 
+    @pytest.mark.parametrize("model_config_type", ["falcon_h1", "nemotron_h"])
+    def test_qlora_skips_out_proj_for_mamba2_fused_architectures(
+        self, model_config_type
+    ):
+        """The Mamba2 fused kernels read ``out_proj.weight`` directly, so it must
+        not be packed to 4-bit. ``lm_head`` rides along because passing
+        ``llm_int8_skip_modules`` suppresses the default transformers computes."""
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = True
+        self.cfg.adapter = "qlora"
+        self.cfg.model_config_type = model_config_type
+
+        self.model_loader._set_quantization_config()
+
+        assert self.model_loader.model_kwargs[
+            "quantization_config"
+        ].llm_int8_skip_modules == ["out_proj", "lm_head"]
+
+    def test_qlora_leaves_skip_modules_unset_for_other_architectures(self):
+        """Architectures without the fused-kernel constraint keep transformers'
+        own default, which is computed from the model at load time."""
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = True
+        self.cfg.adapter = "qlora"
+        self.cfg.model_config_type = "llama"
+
+        self.model_loader._set_quantization_config()
+
+        assert (
+            self.model_loader.model_kwargs["quantization_config"].llm_int8_skip_modules
+            is None
+        )
+
+    def test_bnb_config_kwargs_still_overrides_the_skip_modules(self):
+        """``bnb_config_kwargs`` is applied last and stays authoritative."""
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = True
+        self.cfg.adapter = "qlora"
+        self.cfg.model_config_type = "nemotron_h"
+        self.cfg.bnb_config_kwargs = {"llm_int8_skip_modules": ["out_proj"]}
+
+        self.model_loader._set_quantization_config()
+
+        assert self.model_loader.model_kwargs[
+            "quantization_config"
+        ].llm_int8_skip_modules == ["out_proj"]
+
     def test_message_property_mapping(self):
         """Test message property mapping configuration validation"""
         from axolotl.utils.schemas.datasets import SFTDataset
