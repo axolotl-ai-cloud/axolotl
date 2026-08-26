@@ -309,6 +309,11 @@ Every LoRA factor needs a gradient every step, so exclude layers that skip batch
 towers, unrouted MoE experts) via `lora_exclude_modules`. On MoE, `lora_target_parameters`
 builds factors at `lora_r * num_experts`, so keep `lora_r` small there.
 
+Cost scales with `lora_r`: the update batches same-shape pairs into fp32 temporaries and
+does `r x r` Newton-Schulz work per pair. Measured on 7B against `adamw_torch`, at `lora_r:
+32` it was 16% slower and saved 0.4 GiB peak, but at `lora_r: 256` it was 46% slower and
+used 6.8 GiB *more*. Prefer low rank, and budget memory before raising it.
+
 ```yaml
 optimizer: polora
 adapter: lora
