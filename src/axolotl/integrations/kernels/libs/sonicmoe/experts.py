@@ -129,6 +129,8 @@ class _LoRAExpertsFacade:
         self.is_transposed = getattr(experts_module, "is_transposed", False)
         self.is_concatenated = getattr(experts_module, "is_concatenated", True)
         self.num_experts = experts_module.num_experts
+        # Unaliased names pass through as-is, not to a default, so upstream still raises
+        # on activations the kernel has no epilogue for.
         self.config = _FacadeConfig(_ACT_ALIASES.get(act, act))
 
 
