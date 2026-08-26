@@ -235,3 +235,46 @@ class TestExpertsClassMetadata:
             sonicmoe_experts_forward_with_lora(
                 fake_self, hidden, top_k_index, top_k_weights
             )
+
+
+class TestFacadeActivationResolution:
+    """The facade must hand upstream an activation name its ACT_MAP accepts.
+
+    Gemma4 declares ``hidden_activation="gelu_pytorch_tanh"`` and has no ``hidden_act``
+    key at all, so reading ``hidden_act`` alone silently yields SwiGLU on a GeGLU model.
+    """
+
+    @staticmethod
+    def _facade_act(config):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            _LoRAExpertsFacade,
+        )
+
+        module = SimpleNamespace(config=config, num_experts=8)
+        facade = _LoRAExpertsFacade(module, torch.zeros(1), None, torch.zeros(1), None)
+        return facade.config.hidden_act
+
+    def test_gemma4_resolves_to_geglu(self):
+        from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
+        config = Gemma4TextConfig()
+        assert not hasattr(config, "hidden_act")
+        assert config.hidden_activation == "gelu_pytorch_tanh"
+        assert self._facade_act(config) == "gelu"
+
+    def test_hidden_act_models_unchanged(self):
+        assert self._facade_act(SimpleNamespace(hidden_act="silu")) == "silu"
+        assert self._facade_act(SimpleNamespace(hidden_act="gelu")) == "gelu"
+        assert self._facade_act(SimpleNamespace(hidden_act="relu")) == "relu"
+
+    def test_resolved_name_is_accepted_by_upstream(self):
+        """Upstream raises on anything outside its ACT_MAP, so aliases must land in it."""
+        from transformers.integrations.sonicmoe import ACT_MAP
+        from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
+        for config in (
+            Gemma4TextConfig(),
+            SimpleNamespace(hidden_activation="gelu_tanh"),
+            SimpleNamespace(hidden_act="silu"),
+        ):
+            assert self._facade_act(config) in ACT_MAP
