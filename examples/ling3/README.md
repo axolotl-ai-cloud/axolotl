@@ -10,10 +10,8 @@ fine-grained MoE with a shared expert and sigmoid `noaux_tc` routing.
 | [Ling-3.0-tiny](https://huggingface.co/inclusionAI/Ling-3.0-tiny) | 7.9B / 1.3B | 128 | 24 | 18 : 6 |
 | [Ling-3.0-flash](https://huggingface.co/inclusionAI/Ling-3.0-flash) | 124B / 5.1B | 512 | 42 (+1 MTP) | 35 : 7 |
 
-**Note:** Axolotl trains Ling 3.0 with its own modeling code. The published remote code is
-inference-only: it hardcodes the eager attention interface (so `flash_attention_2` would train
-without a causal mask), builds masks with the pre-v5 helpers, and discards the padding mask before
-the linear-attention kernels.
+**Note:** Axolotl trains Ling 3.0 with its own modeling code — the published remote code is
+inference-only. See [Limitations](#limitations) for what differs.
 
 ## Getting started
 
@@ -22,14 +20,14 @@ the linear-attention kernels.
 2. Run the finetuning example:
 
     ```bash
-    axolotl train examples/ling/ling-3.0-tiny-lora.yaml
+    axolotl train examples/ling3/ling-3.0-tiny-lora.yaml
     ```
 
    Ling-3.0-flash needs multiple GPUs; its config quantizes both the linear layers and the expert
    tensors:
 
     ```bash
-    axolotl train examples/ling/ling-3.0-flash-qlora.yaml
+    axolotl train examples/ling3/ling-3.0-flash-qlora.yaml
     ```
 
 VRAM for these configs has not been measured yet — please report what you see.
@@ -53,6 +51,10 @@ VRAM for these configs has not been measured yet — please report what you see.
 
 ## Limitations
 
+- The remote code published with the checkpoints is inference-only, so Axolotl loads the in-tree
+  copy instead: the published version hardcodes the eager attention interface (so
+  `flash_attention_2` would train without a causal mask), builds masks with the pre-v5 helpers, and
+  discards the padding mask before the linear-attention kernels.
 - Ling-3.0-flash ships one multi-token-prediction layer. It is not built for training, so its
   weights are ignored on load and absent from a full-parameter save. LoRA runs are unaffected.
 - Ling-3.0-flash caps the SwiGLU activation on its last few layers (`expert_swiglu_limit_list`,

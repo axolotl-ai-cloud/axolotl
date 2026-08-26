@@ -13,8 +13,3 @@ def patch_kimi():
     """Apply all Kimi patches. Must be called BEFORE loading config/tokenizer/model."""
     redirect_dynamic_modules(KIMI_PATCH_PACKAGE, KIMI_MODULES)
     LOG.info("Kimi patches applied successfully!")
-
-
-patch_kimi_config = patch_kimi
-patch_kimi_tokenizer = patch_kimi
-patch_kimi_model = patch_kimi

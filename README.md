@@ -31,7 +31,7 @@
 ## 🎉 Latest Updates
 
 - 2026/08:
-  - New model support has been added in Axolotl for [Ling 3.0](https://docs.axolotl.ai/docs/models/ling.html), [Muse Glimmer](https://docs.axolotl.ai/docs/models/muse-glimmer.html), [North Micro Vision Instruct](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html) and [Shieldstral](https://docs.axolotl.ai/docs/models/shieldstral.html).
+  - New model support has been added in Axolotl for [Ling 3.0](https://docs.axolotl.ai/docs/models/ling3.html), [Muse Glimmer](https://docs.axolotl.ai/docs/models/muse-glimmer.html), [North Micro Vision Instruct](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html) and [Shieldstral](https://docs.axolotl.ai/docs/models/shieldstral.html).
 - 2026/07:
   - [NVFP4 (4-bit) MoE LoRA training](https://docs.axolotl.ai/docs/nvfp4_lora.html) is now supported via ScatterMoE (W4A16) and SonicMoE (W4A4), including adapter merge back into a plain NVFP4 checkpoint.
 - 2026/06:

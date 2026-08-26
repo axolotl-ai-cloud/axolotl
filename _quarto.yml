@@ -450,7 +450,7 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
-                - docs/models/ling.qmd
+                - docs/models/ling3.qmd
                 - docs/models/muse-glimmer.qmd
                 - docs/models/cohere-north-micro-vision-instruct.qmd
                 - docs/models/shieldstral.qmd

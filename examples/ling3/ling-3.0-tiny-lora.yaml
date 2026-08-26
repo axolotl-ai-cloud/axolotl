@@ -1,4 +1,3 @@
-# See examples/ling/README.md for architecture notes and requirements.
 base_model: inclusionAI/Ling-3.0-tiny
 
 trust_remote_code: true
@@ -9,7 +8,6 @@ datasets:
     type: chat_template
     split: train
 
-dataset_prepared_path: last_run_prepared
 val_set_size: 0.05
 output_dir: ./outputs/ling-3.0-tiny-lora
 
@@ -21,9 +19,9 @@ adapter: lora
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.05
-# tiny sets q_lora_rank, so its multi-latent layers project through q_a/q_b/kv_*;
-# linear-attention layers project through q/k/v. Experts are left untrained here —
-# add lora_target_parameters to reach them (see README).
+# tiny sets q_lora_rank, so its MLA layers project the query through a q_a_proj/q_b_proj
+# pair rather than the plain q_proj the KDA layers use — both names have to be listed.
+# Experts are left untrained here; add lora_target_parameters to reach them (see README).
 lora_target_modules:
   - q_proj
   - k_proj

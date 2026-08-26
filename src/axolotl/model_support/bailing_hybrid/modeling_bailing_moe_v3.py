@@ -54,7 +54,7 @@ try:
     from fla.ops.kda import chunk_kda, fused_recurrent_kda
     from fla.ops.kda.gate import fused_kda_gate
 except ImportError as err:
-    raise ImportError("Please run `pip install fla-core`") from err
+    raise ImportError("Please run `pip install fla-core==0.4.1`") from err
 
 LOG = get_logger(__name__)
 
