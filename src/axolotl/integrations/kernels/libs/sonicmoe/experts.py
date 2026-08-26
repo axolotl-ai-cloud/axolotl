@@ -80,7 +80,6 @@ def _resolve_weights_and_lora(experts_module):
 _ACT_ALIASES = {
     "gelu_pytorch_tanh": "gelu",
     "gelu_tanh": "gelu",
-    "gelu_new": "gelu",
 }
 
 
