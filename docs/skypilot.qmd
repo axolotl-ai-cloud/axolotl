@@ -41,11 +41,11 @@ sky logs axolotl
 sky down axolotl
 ```
 
-Training outputs live on the cluster and disappear with `sky down`. Without a `workdir`, the `run` block executes in `$HOME`, so copy outputs off first (`rsync -Pavz axolotl:outputs/ ./outputs/`) or mount a bucket as shown in the spot section below.
+Training outputs live on the cluster and disappear with `sky down`. The `run` block always executes in `~/sky_workdir`, so copy outputs off first (`rsync -Pavz axolotl:sky_workdir/outputs/ ./outputs/`) or mount a bucket as shown in the spot section below.
 
 The example configs referenced here use ungated models. For gated models, launch with `--secret HF_TOKEN`: the value is read from your local environment and exposed to the `run` commands.
 
-To train with your own config, add `workdir: .` to the task file and drop the `axolotl fetch examples` line. Your current directory is synced to the cluster and the `run` commands then execute inside it (`~/sky_workdir`), so `axolotl train my_training.yml` works as-is and outputs land there instead of `$HOME`.
+To train with your own config, add `workdir: .` to the task file and drop the `axolotl fetch examples` line. Your current directory is then synced to `~/sky_workdir`, which is where the `run` commands already execute, so `axolotl train my_training.yml` works as-is.
 
 ## Multi-node
 
@@ -62,9 +62,13 @@ run: |
   # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint
   source /workspace/axolotl/scripts/cuda13_env.sh
 
-  # NCCL tuning for Infiniband, from the multi-node guide; adjust for your fabric
+  # Pin collectives to the node's real NIC. Without this, Gloo resolves the
+  # hostname to 127.0.1.1 (the Debian/Ubuntu loopback alias in /etc/hosts) and
+  # startup fails with "Gloo connectFullMesh failed ... Connection refused".
+  IFACE=$(ls /sys/class/net | grep -vE '^(lo|docker.*|veth.*)$' | head -n1)
+  export GLOO_SOCKET_IFNAME=$IFACE
+  export NCCL_SOCKET_IFNAME=$IFACE
   export NCCL_IB_DISABLE=0
-  export NCCL_SOCKET_IFNAME="eth0,en,eth,em,bond"
   export NCCL_BUFFSIZE=2097152
 
   axolotl fetch examples
