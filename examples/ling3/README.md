@@ -30,7 +30,18 @@ inference-only. See [Limitations](#limitations) for what differs.
     axolotl train examples/ling3/ling-3.0-flash-qlora.yaml
     ```
 
-VRAM for these configs has not been measured yet — please report what you see.
+Measured on a single H100 80GB at `sequence_len: 4096` and `micro_batch_size: 1`:
+
+| Config | Peak VRAM (torch reserved) | Peak VRAM (device) | Speed |
+|--------|---------------------------|--------------------|-------|
+| `ling-3.0-tiny-lora.yaml` | 25.0 GiB | 29.0 GiB | 12.3 s/step |
+| `ling-3.0-flash-qlora.yaml` | does not fit on 80 GiB | — | — |
+
+Ling-3.0-flash as configured needs more than one 80 GiB card. The 4-bit weights plus the expert
+adapters settle at 75.9 GiB, and each MoE layer then builds a bf16 LoRA delta for its fused
+`gate_up_proj` — `512 x 2560 x 1536` in bf16, 3.75 GiB — so the first forward runs out of memory.
+Dropping `lora_target_parameters` to train the attention projections alone fits in 71.3 GiB reserved
+(73.3 GiB device) at 45 s/step.
 
 ### Tips
 
@@ -64,6 +75,9 @@ VRAM for these configs has not been measured yet — please report what you see.
 - Cut Cross Entropy, Liger kernels and the LoRA MLP/QKV kernels do not cover this architecture.
 - `kda_safe_gate` is applied outside the kernel: `fla-core` 0.4.1 has no fused equivalent, so
   Axolotl evaluates `lower_bound * sigmoid(exp(A_log) * (g + dt_bias))` in plain PyTorch.
+- `fla-core` 0.4.1's KDA backward kernel faults with an illegal memory access when Triton compiles
+  it at 3.6 or 3.7 — the version `torch` 2.12.1 and 2.13.0 pin. Only the backward is affected, so a
+  run loads and evaluates cleanly and then dies inside step 1; `triton==3.5.1` compiles it correctly.
 
 ## Related Resources
 
