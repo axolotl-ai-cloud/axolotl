@@ -302,15 +302,18 @@ honor.
 
 Use `sample_packing` and `gradient_accumulation_steps` with it. The step adds a fixed cost
 regardless of batch size, so a large batch is what keeps that cost small: on 1B at 32k
-tokens per optimizer step it added 1.6% at `lora_r: 32` and 4.0% at `lora_r: 256`. Memory is
-about the same as AdamW.
+tokens per optimizer step it added 1.6% at `lora_r: 32` and 4.0% at `lora_r: 256`.
+
+`learning_rate` is the usual key and schedulers/warmup apply as normal, but the value sets a
+target spectral norm rather than an Adam step size, so useful values sit 1-2 orders of
+magnitude higher. Sweep it instead of carrying one over from an AdamW config.
 
 ```yaml
 optimizer: polora
 adapter: lora
-# spectral-norm target, not an Adam step size. Paper uses 1e-2 (math) and 3e-3 (code);
-# 3e-3 was best on a short 1B/r32 SFT run. Sweep it, the optimum is task-dependent.
-learning_rate: 0.003
+# sets a target spectral norm, not an Adam step size, so it runs 1-2 orders of
+# magnitude higher. Sweep it; we measured optima from 3e-3 to 3e-2.
+learning_rate: 0.01
 
 # optional, defaults shown
 optim_args:
@@ -328,9 +331,11 @@ optim_args:
 **Batch size.** The step cost is fixed per optimizer step, so overhead is that cost divided
 by the work in one step. A small unpacked debug run will look far slower than a real one.
 
-**Rank.** The update stacks same-shape pairs into fp32 temporaries that peak near 6x the
-size of the LoRA factors, scaling with `lora_r` times model width. At high rank on a wide
-model, budget for them.
+**Memory.** PoLoRA carries one momentum where Adam carries two, but stacks same-shape pairs
+into fp32 temporaries peaking near 6x the size of the LoRA factors. At 1B those transients
+fit under the activation peak and it came out slightly cheaper than AdamW at both `lora_r:
+32` and `256`. They scale with `lora_r` times model width, so on a wide model at high rank,
+budget for them.
 
 **Gradients.** Every LoRA factor needs a gradient every step. Exclude layers that skip
 batches (vision towers, unrouted MoE experts) via `lora_exclude_modules`. On MoE,
