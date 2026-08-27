@@ -137,7 +137,7 @@ The check is numeric -- the declared `_apply_gate` is probed against the epilogu
 
 ### Blackwell (sm_120) note
 
-`use_sonicmoe` runs on consumer Blackwell (sm_120) when the loaded `sonic-moe` kernel bundles quack 0.6.1 (on nvidia-cutlass-dsl 4.6.0). The upstream `kernels-community/sonic-moe` prebuilt may still bundle quack 0.3.11 (no sm_120 GEMM) until the rebuild lands; point at a quack 0.6.1 build or use `use_scattermoe`. NVFP4 experts on sm_120 take the dequant path (no native W4A4: `fp4_cute` is SM100/SM110-only).
+`use_sonicmoe` runs on consumer Blackwell (sm_120): the `kernels-community/sonic-moe` prebuilt bundles quack 0.6.1 (on nvidia-cutlass-dsl 4.6.0), which carries the sm_120 GEMM. NVFP4 experts on sm_120 take the dequant path (no native W4A4: `fp4_cute` is SM100/SM110-only).
 
 ## Feature comparison
 
