@@ -289,10 +289,8 @@ class TestFacadeActivationResolution:
 
 
 class TestEpilogueCheck:
-    """sonicmoe selects its fused epilogue from `hidden_act` and never calls
-    `_apply_gate`, so models declaring an epilogue the kernel cannot express must be
-    rejected instead of silently running plain SwiGLU.
-    """
+    """sonicmoe picks its epilogue from `hidden_act` and never calls `_apply_gate`, so an
+    epilogue the kernel cannot express must raise rather than silently run SwiGLU."""
 
     @staticmethod
     def _experts(model_type, cls_name, **overrides):
@@ -359,19 +357,15 @@ class TestEpilogueCheck:
         self._check(experts, limit=experts.limit, path="NVFP4 grouped")
 
     def test_sigmoid_glu_rejected_on_nvfp4_path(self):
-        """The clamp alone is not enough: a sigmoid-GLU also needs alpha and (up + 1).
-
-        `minimax_m3_vl` is a fixture, not a supported model: it is the only upstream
-        sigmoid-GLU arch with `is_transposed=False`, so it is the only one that reaches
-        this path rather than the layout guard above it.
-        """
+        """`minimax_m3_vl` is a fixture, not a supported model: it is the only upstream
+        sigmoid-GLU arch with `is_transposed=False`, so the only one reaching this path."""
         experts = self._experts("minimax_m3_vl", "MiniMaxM3VLExperts")
         with pytest.raises(ValueError, match="wrong expert math"):
             self._check(experts, limit=experts.limit, path="NVFP4 grouped")
 
     def test_verdict_is_per_instance(self):
-        """`_apply_gate` closes over instance state, so a class-keyed cache would hand
-        one module's verdict to another that computes something else."""
+        """`_apply_gate` closes over instance state, so a class-keyed cache would leak
+        one module's verdict to another."""
         ok = self._experts("qwen3_moe", "Qwen3MoeExperts")
         self._check(ok, limit=None, path="dense")
 
