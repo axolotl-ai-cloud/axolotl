@@ -78,7 +78,7 @@ dependencies = [
     "mistral-common==1.11.5",
 
     # Platform-specific (Linux only)
-    "bitsandbytes==0.50.0 ; sys_platform != 'darwin'",
+    "bitsandbytes==0.50.2 ; sys_platform != 'darwin'",
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.33.post2 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
     "liger-kernel==0.8.0 ; sys_platform != 'darwin'",
