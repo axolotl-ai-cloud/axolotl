@@ -286,3 +286,96 @@ class TestFacadeActivationResolution:
             SimpleNamespace(hidden_act="silu"),
         ):
             assert self._facade_act(config) in ACT_MAP
+
+
+class TestEpilogueCheck:
+    """sonicmoe selects its fused epilogue from `hidden_act` and never calls
+    `_apply_gate`, so models declaring an epilogue the kernel cannot express must be
+    rejected instead of silently running plain SwiGLU.
+    """
+
+    @staticmethod
+    def _experts(model_type, cls_name, **overrides):
+        import importlib
+
+        from transformers import AutoConfig
+
+        config = AutoConfig.for_model(model_type)
+        config = getattr(config, "text_config", config)
+        for key, value in overrides.items():
+            setattr(config, key, value)
+        config._experts_implementation = None
+        module = importlib.import_module(
+            f"transformers.models.{model_type}.modeling_{model_type}"
+        )
+        with torch.device("meta"):
+            return getattr(module, cls_name)(config)
+
+    @staticmethod
+    def _check(experts, *, limit, path):
+        from axolotl.integrations.kernels.libs.sonicmoe.epilogue import check_epilogue
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4 import (
+            resolve_gated_activation,
+        )
+
+        check_epilogue(
+            experts,
+            resolve_gated_activation(experts.config),
+            concat=getattr(experts, "is_concatenated", True),
+            limit=limit,
+            path=path,
+        )
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name,overrides",
+        [
+            ("qwen3_moe", "Qwen3MoeExperts", {}),
+            (
+                "gemma4",
+                "Gemma4TextExperts",
+                {"num_experts": 8, "moe_intermediate_size": 64},
+            ),
+        ],
+    )
+    def test_representable_epilogues_pass(self, model_type, cls_name, overrides):
+        experts = self._experts(model_type, cls_name, **overrides)
+        self._check(experts, limit=None, path="dense")
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name",
+        [
+            ("gpt_oss", "GptOssExperts"),
+            ("deepseek_v4", "DeepseekV4Experts"),
+        ],
+    )
+    def test_custom_apply_gate_rejected_on_dense_path(self, model_type, cls_name):
+        experts = self._experts(model_type, cls_name)
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(experts, limit=None, path="dense")
+
+    def test_clamped_swiglu_accepted_on_nvfp4_path(self):
+        """DeepSeek-V4 is plain SwiGLU plus a clamp, which `gated_activation` honors."""
+        experts = self._experts("deepseek_v4", "DeepseekV4Experts")
+        self._check(experts, limit=experts.limit, path="NVFP4 grouped")
+
+    def test_sigmoid_glu_rejected_on_nvfp4_path(self):
+        """The clamp alone is not enough: a sigmoid-GLU also needs alpha and (up + 1).
+
+        `minimax_m3_vl` is a fixture, not a supported model: it is the only upstream
+        sigmoid-GLU arch with `is_transposed=False`, so it is the only one that reaches
+        this path rather than the layout guard above it.
+        """
+        experts = self._experts("minimax_m3_vl", "MiniMaxM3VLExperts")
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(experts, limit=experts.limit, path="NVFP4 grouped")
+
+    def test_verdict_is_per_instance(self):
+        """`_apply_gate` closes over instance state, so a class-keyed cache would hand
+        one module's verdict to another that computes something else."""
+        ok = self._experts("qwen3_moe", "Qwen3MoeExperts")
+        self._check(ok, limit=None, path="dense")
+
+        bad = self._experts("qwen3_moe", "Qwen3MoeExperts")
+        bad._apply_gate = lambda gate_up: gate_up.chunk(2, dim=-1)[0]
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(bad, limit=None, path="dense")

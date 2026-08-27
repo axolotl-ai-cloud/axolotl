@@ -230,6 +230,12 @@ class KernelsPlugin(BasePlugin):
             adapter.pre_lora_load(cfg, model)
 
     def post_model_load(self, cfg, model):
+        if cfg.use_sonicmoe:
+            from axolotl.integrations.kernels.libs.sonicmoe.epilogue import (
+                check_model_epilogues,
+            )
+
+            check_model_epilogues(model)
         for adapter in self._adapters(cfg):
             adapter.post_model_load(cfg, model)
 

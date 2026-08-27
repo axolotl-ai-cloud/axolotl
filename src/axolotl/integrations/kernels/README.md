@@ -123,11 +123,17 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `ernie4_5_moe`    |    Yes    |   Yes    |  -  |  -  |
 | `hunyuan_v1_moe`  |    Yes    |   Yes    |  -  |  -  |
 | `gemma4_text`     |    Yes    |   Yes    | Yes |  -  |
-| `gpt_oss`         |    Yes    |   Yes    |  -  |  -  |
+| `gpt_oss`         |    Yes    |   No     |  -  |  -  |
 
 NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its own fused-kernel path), so it is not a row above.
 
-`gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a sigmoid-GLU activation with clamping. Both forwards read these flags off `self` and dispatch accordingly: the ScatterMoE forward handles the transposed/interleaved/biased layout and clamped sigmoid-GLU via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM); the SonicMoE forward uses the upstream CUTLASS kernel.
+`gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a clamped sigmoid-GLU activation. The ScatterMoE forward handles the transposed/interleaved/biased layout and that epilogue via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM).
+
+### Epilogue check (why `gpt_oss` is No on SonicMoE)
+
+`@use_experts_implementation` installs `_apply_gate` as the model's declared expert epilogue, and every transformers experts backend calls it except SonicMoE, which selects a fused epilogue from `config.hidden_act` instead. The kernel offers only `swiglu`/`geglu`/`reglu`: no clamp, no sigmoid scaling factor, no `(up + 1)` bias. `GptOssConfig.hidden_act` is `"silu"`, so `gpt_oss` resolved to plain SwiGLU with no error. On `openai/gpt-oss-20b` that measured 10.4% top-1 agreement and teacher-forced NLL 2.30 -> 8.12 against the correct epilogue. It now raises at model load, pointing at `expert_backend: scattermoe`.
+
+The check is numeric -- the declared `_apply_gate` is probed against the epilogue the chosen path would compute -- rather than a `gpt_oss` special case, because the same trap is live for any architecture with a clamped or otherwise non-plain GLU (`deepseek_v4` and, upstream, `minimax_m3_vl` / `openai_privacy_filter`), and `hidden_act` cannot be the signal even in principle: `MiniMaxM3VLTextConfig` overwrites the checkpoint's `"swigluoai"` with `"silu"` because the field must be a real `ACT2FN` key. The SonicMoE NVFP4 path applies `limit`, so it additionally accepts clamped SwiGLU.
 
 ### Blackwell (sm_120) note
 

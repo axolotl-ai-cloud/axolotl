@@ -116,9 +116,13 @@ class _LoRAExpertsFacade:
     )
 
     def __init__(self, experts_module, w1, b1, w2, b2):
+        from .epilogue import check_epilogue
         from .nvfp4 import resolve_gated_activation
 
         act = resolve_gated_activation(experts_module.config)
+        concat = getattr(experts_module, "is_concatenated", True)
+        # The fused kernel has no clamp, so the dense path can only ever compute limit=None.
+        check_epilogue(experts_module, act, concat=concat, limit=None, path="dense")
 
         self.has_gate = True
         self.gate_up_proj = w1
@@ -127,7 +131,7 @@ class _LoRAExpertsFacade:
         self.gate_up_proj_bias = b1
         self.down_proj_bias = b2
         self.is_transposed = getattr(experts_module, "is_transposed", False)
-        self.is_concatenated = getattr(experts_module, "is_concatenated", True)
+        self.is_concatenated = concat
         self.num_experts = experts_module.num_experts
         # Unaliased names pass through as-is, not to a default, so upstream still raises
         # on activations the kernel has no epilogue for.
@@ -237,6 +241,7 @@ def _sonicmoe_nvfp4_forward(
     in-kernel W4A4 grouped GEMM (``fp4_cute``); elsewhere it is dequantized to
     dense per matmul (``dequant``).
     """
+    from .epilogue import check_epilogue
     from .nvfp4 import resolve_gated_activation
     from .nvfp4_lora import grouped_moe_reference_forward
 
@@ -255,6 +260,12 @@ def _sonicmoe_nvfp4_forward(
             "(EP-sharded base with global-id routing/LoRA is unfinished and untested)"
         )
 
+    act = resolve_gated_activation(self.config)
+    limit = getattr(self, "limit", None)
+    concat = getattr(self, "is_concatenated", True)
+    # `gated_activation` honors `limit`, so this path additionally accepts clamped SwiGLU.
+    check_epilogue(self, act, concat=concat, limit=limit, path="NVFP4 grouped")
+
     lora1 = (lora_w1[0], lora_w1[1]) if lora_w1 is not None else None
     lora2 = (lora_w2[0], lora_w2[1]) if lora_w2 is not None else None
     scaling1 = lora_w1[2] if lora_w1 is not None else 1.0
@@ -271,10 +282,10 @@ def _sonicmoe_nvfp4_forward(
         lora1,
         lora2,
         self.num_experts,
-        act=resolve_gated_activation(self.config),
+        act=act,
         backend=_select_nvfp4_backend(w1, w2),
-        limit=getattr(self, "limit", None),
-        concat=getattr(self, "is_concatenated", True),
+        limit=limit,
+        concat=concat,
         scaling1=scaling1,
         scaling2=scaling2,
     )
