@@ -31,7 +31,13 @@ _SCATTERMOE_IMPLS = frozenset({"scattermoe", "deep_ep_scattermoe"})
 def _is_scattermoe_experts(module) -> bool:
     cfg = getattr(module, "config", None)
     impl = getattr(cfg, "_experts_implementation", None)
-    return impl in _SCATTERMOE_IMPLS and hasattr(module, "gate_up_proj")
+    if impl not in _SCATTERMOE_IMPLS:
+        return False
+    # gated experts, or the non-gated up/down layout (nemotron_h); num_experts guards
+    # against dense-MLP modules that also carry an up_proj attr.
+    return hasattr(module, "gate_up_proj") or (
+        hasattr(module, "up_proj") and hasattr(module, "num_experts")
+    )
 
 
 def patch_paramwrapper_fastpath() -> None:

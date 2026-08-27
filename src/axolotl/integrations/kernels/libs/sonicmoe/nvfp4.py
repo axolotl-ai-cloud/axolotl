@@ -98,22 +98,34 @@ def resolve_gated_activation(config) -> str:
     """Canonical gated-activation name from an HF text config.
 
     Honors ``hidden_activation`` (Gemma's key, e.g. ``gelu_pytorch_tanh``) before
-    ``hidden_act`` (most other models). Reading only ``hidden_act`` would miss
-    Gemma and silently run SwiGLU where the model wants tanh-GeGLU.
+    ``hidden_act`` (most other models), then ``mlp_hidden_act`` (nemotron_h, which
+    has NO ``hidden_act`` — reading only that would silently run SwiGLU where the
+    model wants relu²).
     """
-    act = getattr(config, "hidden_activation", None) or getattr(
-        config, "hidden_act", None
+    act = (
+        getattr(config, "hidden_activation", None)
+        or getattr(config, "hidden_act", None)
+        or getattr(config, "mlp_hidden_act", None)
     )
     return (act or "silu").lower()
 
 
 def gated_activation(
-    h: torch.Tensor, act: str, *, concat: bool, limit: float | None = None
+    h: torch.Tensor,
+    act: str,
+    *,
+    concat: bool,
+    limit: float | None = None,
+    gated: bool = True,
 ) -> torch.Tensor:
     """Apply a GLU gated activation to a ``[..., 2*I]`` pre-activation.
 
     Returns ``[..., I]``. ``concat=True`` (HF default) splits gate/up as the
     first/second half; ``concat=False`` (interleaved) takes even/odd lanes.
+
+    ``gated=False`` (non-gated experts, e.g. nemotron_h): ``h`` is ``[..., I]``
+    and the activation applies elementwise with no gate/up split — supported
+    ``act``: ``relu2``/``relu_squared`` (relu²), ``relu``, ``silu``, ``gelu``.
 
     Supported ``act`` (``up * f(gate)``):
       - swiglu / silu -> ``f = silu``
@@ -127,6 +139,24 @@ def gated_activation(
     a clamped model blow up. The gate nonlinearity is computed in fp32 then cast
     back, matching upstream sonic-moe's ``_swiglu`` / ``_geglu``.
     """
+    if not gated:
+        compute_dtype = (
+            torch.float32 if h.dtype in (torch.bfloat16, torch.float16) else h.dtype
+        )
+        g = h.to(compute_dtype)
+        a = act.lower()
+        if a in ("relu2", "relu_squared"):
+            out = F.relu(g).square()
+        elif a == "relu":
+            out = F.relu(g)
+        elif a in ("silu", "swiglu"):
+            out = F.silu(g)
+        elif a in ("gelu", "gelu_tanh", "gelu_pytorch_tanh"):
+            out = F.gelu(g, approximate="tanh" if "tanh" in a else "none")
+        else:
+            raise ValueError(f"unsupported non-gated activation: {act!r}")
+        return out.to(h.dtype)
+
     if concat:
         i = h.shape[-1] // 2
         gate = h[..., :i]

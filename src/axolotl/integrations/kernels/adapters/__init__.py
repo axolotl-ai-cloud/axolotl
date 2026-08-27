@@ -59,9 +59,9 @@ def load_base_model_config(cfg):
         return None
 
 
-def modelopt_nvfp4_model_config(cfg):
-    """The base model's HF config iff it declares a modelopt-NVFP4 quantization
-    (``quant_method=modelopt`` / ``quant_algo=NVFP4``), else None. Callers narrow by model_type."""
+def modelopt_quant_model_config(cfg, algos=("NVFP4",)):
+    """The base model's HF config iff it declares a modelopt quantization whose
+    ``quant_algo`` is in ``algos``, else None. Callers narrow by model_type."""
     model_config = load_base_model_config(cfg)
     if model_config is None:
         return None
@@ -71,15 +71,22 @@ def modelopt_nvfp4_model_config(cfg):
     else:
         quant_method = getattr(qcfg, "quant_method", None)
         quant_algo = getattr(qcfg, "quant_algo", None)
-    if quant_method != "modelopt" or quant_algo != "NVFP4":
+    if quant_method != "modelopt" or quant_algo not in algos:
         return None
     return model_config
+
+
+def modelopt_nvfp4_model_config(cfg):
+    """The base model's HF config iff it declares a modelopt-NVFP4 quantization
+    (``quant_method=modelopt`` / ``quant_algo=NVFP4``), else None. Callers narrow by model_type."""
+    return modelopt_quant_model_config(cfg, algos=("NVFP4",))
 
 
 def _all_adapters() -> list[ModelAdapter]:
     from axolotl.integrations.kernels.adapters.dsv4 import DSV4Adapter
     from axolotl.integrations.kernels.adapters.gemma4 import Gemma4Adapter
     from axolotl.integrations.kernels.adapters.glm_moe_dsa import GlmMoeDsaAdapter
+    from axolotl.integrations.kernels.adapters.nemotron_h import NemotronHAdapter
     from axolotl.integrations.kernels.adapters.nvfp4_moe import MoeNvfp4Adapter
     from axolotl.integrations.kernels.adapters.qwen3_moe import Qwen3MoeAdapter
 
@@ -90,6 +97,7 @@ def _all_adapters() -> list[ModelAdapter]:
         Gemma4Adapter(),
         GlmMoeDsaAdapter(),
         Qwen3MoeAdapter(),
+        NemotronHAdapter(),
         MoeNvfp4Adapter(),
     ]
 

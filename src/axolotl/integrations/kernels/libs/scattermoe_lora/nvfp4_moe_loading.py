@@ -146,12 +146,24 @@ def inspect_nvfp4_layout(repo_id: str) -> dict:
     routed_projs: list[str] = []
     routed_sample: dict[str, tuple | None] = {}
     nonrouted: dict[str, dict] = {}
+    fp8: dict[str, dict] = {}
     qdata_names: set[str] = set()
     per_tensor_names: set[str] = set()
     for base, parts in bases.items():
         qd = _qdata(parts)
         is_nvfp4 = qd is not None and any(g in parts for g in _GROUP_SCALE_LEAVES)
-        if not is_nvfp4:  # bf16 (excluded) or fp8 module — not NVFP4
+        if not is_nvfp4:  # bf16 (excluded), fp8, or unscaled module — not NVFP4
+            # static-FP8 linear (modelopt MIXED_PRECISION group_0): e4m3 weight + weight_scale.
+            # Collected so the caller can register bf16-dequant converters — without them the
+            # raw (unscaled) fp8 values would load into the bf16 skeleton.
+            wmeta = parts.get("weight")
+            if (
+                wmeta is not None
+                and str(wmeta[0]).upper().startswith("F8")
+                and "weight_scale" in parts
+                and not routed_re.search(base)
+            ):
+                fp8.setdefault(layer_re.sub("", base), parts)
             continue
         qdata_names.add(qd)
         for leaf in _PER_TENSOR_LEAVES:
@@ -180,6 +192,7 @@ def inspect_nvfp4_layout(repo_id: str) -> dict:
         "routed_sample_shapes": routed_sample,
         "nonrouted_suffixes": sorted(nonrouted),
         "nonrouted_sample_shapes": nonrouted,
+        "fp8_suffixes": sorted(fp8),
         "qdata_names": sorted(qdata_names),
         "per_tensor_names": sorted(per_tensor_names),
         "naming": naming,
