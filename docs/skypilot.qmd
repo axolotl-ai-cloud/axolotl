@@ -21,7 +21,7 @@ Create a SkyPilot task file, e.g. `axolotl-skypilot.yaml`:
 ```yaml
 resources:
   accelerators: A100:1  # or L40S:1, H100:8, ...
-  image_id: docker:axolotlai/axolotl-uv:main-latest
+  image_id: docker:axolotlai/axolotl:main-latest
 
 run: |
   # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint
@@ -43,7 +43,7 @@ sky down axolotl
 
 Training outputs live on the cluster and disappear with `sky down`. The `run` block always executes in `~/sky_workdir`, so copy outputs off first (`rsync -Pavz axolotl:sky_workdir/outputs/ ./outputs/`) or mount a bucket as shown in the spot section below.
 
-The example configs referenced here use ungated models. For gated models, launch with `--secret HF_TOKEN`: the value is read from your local environment and exposed to the `run` commands.
+The example configs referenced here use ungated models. For gated models, launch with `--secret HF_TOKEN`, written literally like that with no value attached: the bare name tells SkyPilot to read `$HF_TOKEN` from your local shell and expose it to the `run` commands. You can also list it in the task file as an empty `secrets:` entry, but the value still has to come from `--secret` at launch. Writing `HF_TOKEN: $HF_TOKEN` there does not work: SkyPilot passes that through as the literal string rather than expanding it.
 
 To train with your own config, add `workdir: .` to the task file and drop the `axolotl fetch examples` line. Your current directory is then synced to `~/sky_workdir`, which is where the `run` commands already execute, so `axolotl train my_training.yml` works as-is.
 
@@ -56,7 +56,7 @@ num_nodes: 2
 
 resources:
   accelerators: H100:8
-  image_id: docker:axolotlai/axolotl-uv:main-latest
+  image_id: docker:axolotlai/axolotl:main-latest
 
 run: |
   # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint
@@ -98,7 +98,7 @@ To run on spot (preemptible) instances, add `use_spot: true` under `resources` i
 ```yaml
 resources:
   accelerators: A100:1
-  image_id: docker:axolotlai/axolotl-uv:main-latest
+  image_id: docker:axolotlai/axolotl:main-latest
   use_spot: true
 ```
 
