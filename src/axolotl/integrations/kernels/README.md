@@ -131,13 +131,9 @@ NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its
 
 ### Epilogue check (why `gpt_oss` is No on SonicMoE)
 
-`@use_experts_implementation` installs `_apply_gate` as the model's declared expert epilogue, and every transformers experts backend calls it except SonicMoE, which selects a fused epilogue from `config.hidden_act` instead. The kernel offers only `swiglu`/`geglu`/`reglu`: no clamp, no sigmoid scaling factor, no `(up + 1)` bias. `GptOssConfig.hidden_act` is `"silu"`, so `gpt_oss` resolved to plain SwiGLU with no error. On `openai/gpt-oss-20b` that measured 10.4% top-1 agreement and teacher-forced NLL 2.30 -> 8.12 against the correct epilogue. It now raises at model load, pointing at `expert_backend: scattermoe`.
+SonicMoE picks its fused epilogue from `config.hidden_act`, which cannot express a clamped or otherwise non-plain GLU. `GptOssConfig.hidden_act` is `"silu"`, so `gpt_oss` silently ran plain SwiGLU (10.4% top-1 agreement, teacher-forced NLL 2.30 -> 8.12 on `openai/gpt-oss-20b`).
 
-The check is numeric -- the declared `_apply_gate` is probed against the epilogue the chosen path would compute -- rather than a `gpt_oss` special case, because the same trap is live for any architecture with a clamped or otherwise non-plain GLU (`deepseek_v4` and, upstream, `minimax_m3_vl` / `openai_privacy_filter`), and `hidden_act` cannot be the signal even in principle: `MiniMaxM3VLTextConfig` overwrites the checkpoint's `"swigluoai"` with `"silu"` because the field must be a real `ACT2FN` key. The SonicMoE NVFP4 path applies `limit`, so it additionally accepts clamped SwiGLU.
-
-### Blackwell (sm_120) note
-
-`use_sonicmoe` runs on consumer Blackwell (sm_120): the `kernels-community/sonic-moe` prebuilt bundles quack 0.6.1 (on nvidia-cutlass-dsl 4.6.0), which carries the sm_120 GEMM. NVFP4 experts on sm_120 take the dequant path (no native W4A4: `fp4_cute` is SM100/SM110-only).
+Axolotl now probes each model's declared `_apply_gate` numerically at load and raises if the chosen path cannot reproduce it, pointing at `expert_backend: scattermoe`.
 
 ## Feature comparison
 
