@@ -764,8 +764,11 @@ class ModelLoader:
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
-            if self.cfg.model_config_type == "falcon_h1":
-                # output projection cannot be quantized for Falcon-H1 models
+            if self.cfg.model_config_type in ["falcon_h1", "nemotron_h"]:
+                # output projection cannot be quantized: the fused mamba
+                # kernel for these architectures reads `out_proj.weight`
+                # directly instead of calling the module, so it must stay
+                # unquantized
                 bnb_config["llm_int8_skip_modules"] = ["out_proj"]
 
             if self.cfg.bnb_config_kwargs:
@@ -781,8 +784,11 @@ class ModelLoader:
             # Exclude mamba blocks from int8 quantization for jamba
             if self.cfg.model_config_type == "jamba":
                 bnb_config["llm_int8_skip_modules"] = ["mamba"]
-            if self.cfg.model_config_type == "falcon_h1":
-                # output projection cannot be quantized for Falcon-H1 models
+            if self.cfg.model_config_type in ["falcon_h1", "nemotron_h"]:
+                # output projection cannot be quantized: the fused mamba
+                # kernel for these architectures reads `out_proj.weight`
+                # directly instead of calling the module, so it must stay
+                # unquantized
                 bnb_config["llm_int8_skip_modules"] = ["out_proj"]
             self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 **bnb_config,

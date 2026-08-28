@@ -102,6 +102,29 @@ class TestModelsUtils:
                 is True
             )
 
+    @pytest.mark.parametrize("model_config_type", ["falcon_h1", "nemotron_h"])
+    @pytest.mark.parametrize("load_in_8bit", [True, False])
+    @pytest.mark.parametrize("load_in_4bit", [True, False])
+    def test_quantization_config_skips_out_proj_for_mamba_hybrid_models(
+        self, model_config_type, load_in_8bit, load_in_4bit
+    ):
+        """`out_proj` must be excluded from bnb quantization for architectures
+        whose fused mamba kernel reads `out_proj.weight` directly (falcon_h1,
+        nemotron_h) -- quantizing it silently corrupts the mamba block.
+        """
+        self.cfg.model_config_type = model_config_type
+        self.cfg.load_in_8bit = load_in_8bit
+        self.cfg.load_in_4bit = load_in_4bit
+        self.cfg.adapter = "qlora" if load_in_4bit else "lora"
+
+        self.model_loader._set_quantization_config()
+
+        if (self.cfg.adapter == "qlora" and load_in_4bit) or (
+            self.cfg.adapter == "lora" and load_in_8bit
+        ):
+            quantization_config = self.model_loader.model_kwargs["quantization_config"]
+            assert quantization_config.llm_int8_skip_modules == ["out_proj"]
+
     def test_message_property_mapping(self):
         """Test message property mapping configuration validation"""
         from axolotl.utils.schemas.datasets import SFTDataset
