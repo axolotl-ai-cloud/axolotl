@@ -115,25 +115,11 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     )
 
     if parsed_cfg.use_ray:
-        from ray.train import RunConfig, ScalingConfig
-        from ray.train.torch import TorchTrainer
+        # legacy path for direct `python -m axolotl.cli.train cfg --use-ray`; the
+        # axolotl CLI dispatches to the ray launcher before reaching this module
+        from axolotl.cli.launchers.ray_ import fit_torchtrainer
 
-        train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
-        trainer = TorchTrainer(
-            ray_train_func,
-            train_loop_config=train_loop_config,
-            scaling_config=ScalingConfig(
-                num_workers=parsed_cfg.ray_num_workers,
-                resources_per_worker=parsed_cfg.resources_per_worker.to_dict(),
-                use_gpu=True,
-            ),
-            run_config=RunConfig(
-                name=parsed_cfg.ray_run_name,
-                storage_path=Path(parsed_cfg.output_dir).absolute().as_posix(),
-            ),
-        )
-
-        trainer.fit()
+        fit_torchtrainer(parsed_cfg, parsed_cli_args)
         return
 
     do_train(parsed_cfg, parsed_cli_args)

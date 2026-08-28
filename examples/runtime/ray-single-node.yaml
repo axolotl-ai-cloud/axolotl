@@ -1,0 +1,10 @@
+# Run on all GPUs of the local (or already-running) Ray cluster:
+#   axolotl train recipe.yaml --runtime examples/runtime/ray-single-node.yaml
+# With no `address`, axolotl uses an `axolotl ray up`/`ray start` cluster when
+# one is running, else an isolated local instance (concurrent runs on the same
+# machine stay independent).
+launcher: ray
+ray:
+  num_workers: auto # one worker per available GPU
+  resources_per_worker:
+    GPU: 1

@@ -13,6 +13,87 @@ You will also need to have the same configuration file for your model on each ma
 Make sure the main machine is reachable by other machines.
 :::
 
+::: {.callout-tip}
+Launcher and cluster settings can live in a reusable [runtime config](runtime-config.qmd)
+(`axolotl train config.yaml --runtime cluster.yaml`) instead of per-node
+accelerate configs or long `--` passthrough strings. The runtime file contains
+no machine ranks, so the identical file works on every node.
+:::
+
+## Ray (recommended)
+
+Ray needs no rank bookkeeping at all: bring up a Ray cluster once (or let
+`axolotl ray up --hostfile hostfile` do it over ssh), then launch from the head
+node — or submit from anywhere with the Jobs API:
+
+```yaml
+# cluster.yaml
+launcher: ray
+ray:
+  num_workers: auto  # every GPU in the cluster
+  # address: http://head:8265   # to submit remotely via the Ray Jobs API
+```
+
+```bash
+axolotl train config.yaml --runtime cluster.yaml
+```
+
+See the [Ray integration guide](ray-integration.qmd) for cluster setup, remote
+job submission, and GPU-type constraints.
+
+## Torchrun
+
+If you are using Infiniband, we recommend torchrun to utilize the full bandwidth.
+
+Set the following env (change buffersize/socketname depending on your system):
+
+```bash
+export NCCL_IB_DISABLE=0
+export NCCL_SOCKET_IFNAME="eth0,en,eth,em,bond"
+export NCCL_BUFFSIZE=2097152
+```
+
+### Option 1: Runtime config (Recommended)
+
+Write the rendezvous details once and run the same command on every node:
+
+```yaml
+# torchrun-cluster.yaml (identical on all nodes)
+launcher: torchrun
+torchrun:
+  nnodes: 2
+  nproc_per_node: 8
+  rdzv_id: my-run
+  rdzv_backend: c10d
+  rdzv_endpoint: 10.0.0.4:29400
+```
+
+```bash
+axolotl train config.yaml --runtime torchrun-cluster.yaml
+```
+
+### Option 2: Launcher args passthrough
+
+```bash
+axolotl train config.yaml --launcher torchrun -- --nnodes $num_nodes --nproc_per_node $gpu_per_node --rdzv_id $rdzv_id --rdzv_backend c10d --rdzv_endpoint "$head_node_ip:$head_node_port"
+```
+
+### Option 3: Direct torchrun (Legacy)
+
+```bash
+torchrun --nnodes $num_nodes --nproc_per_node $gpu_per_node --rdzv_id $rdzv_id --rdzv_backend c10d --rdzv_endpoint "$head_node_ip:$head_node_port" -m axolotl.cli.train config.yaml
+```
+
+Please make sure to substitute the placeholder variables:
+
+- `num_nodes`: Number of nodes (containing GPUs)
+- `gpu_per_node`: Number of gpus per node
+- `head_node_ip`: IP of the head node (make sure other machines can connect to this)
+- `head_node_port`: Port of the head node (make sure other machines can connect to this. Default 29400)
+- `rdzv_id`: A unique job ID that is used by the job across nodes.
+
+More info on the available configs can be found on the Pytorch docs [here](https://pytorch.org/docs/stable/elastic/run.html)
+
 ## Accelerate
 
 You will need to create a configuration for accelerate, either by using `accelerate config` and follow the instructions or you can use one of the preset below:
@@ -38,6 +119,16 @@ tpu_use_sudo: false
 use_cpu: false
 ```
 
+Alternatively, keep the shared settings in a runtime config and pass only the
+per-node rank on the command line:
+
+```bash
+# node 0
+axolotl train config.yaml --runtime examples/runtime/accelerate-2node.yaml -- --machine_rank 0
+# node 1
+axolotl train config.yaml --runtime examples/runtime/accelerate-2node.yaml -- --machine_rank 1
+```
+
 Configure your model to use FSDP in the Axolotl yaml. For example:
 ```yaml
 fsdp_version: 2
@@ -49,46 +140,8 @@ fsdp_config:
   reshard_after_forward: true
 ```
 
-All you have to do now is launch using accelerate as you would usually do on each machine and voila, the processes will start once you have launched accelerate on every machine.
-
-## Raytrain
-
-Please see ray train doc [here](ray-integration.qmd).
-
-## Torchrun
-
-If you are using Infiniband, we recommend torchrun to utilize the full bandwidth.
-
-Set the following env (change buffersize/socketname depending on your system):
-
-```bash
-export NCCL_IB_DISABLE=0
-export NCCL_SOCKET_IFNAME="eth0,en,eth,em,bond"
-export NCCL_BUFFSIZE=2097152
-```
-
-Run the following on each node:
-
-### Option 1: New Axolotl CLI with launcher args (Recommended)
-
-```bash
-axolotl train config.yaml --launcher torchrun -- --nnodes $num_nodes --nproc_per_node $gpu_per_node --rdzv_id $rdzv_id --rdzv_backend c10d --rdzv_endpoint "$head_node_ip:$head_node_port"
-```
-
-### Option 2: Direct torchrun (Legacy)
-
-```bash
-torchrun --nnodes $num_nodes --nproc_per_node $gpu_per_node --rdzv_id $rdzv_id --rdzv_backend c10d --rdzv_endpoint "$head_node_ip:$head_node_port" -m axolotl.cli.train config.yaml
-```
-
-Please make sure to substitute the placeholder variables:
-
-- `num_nodes`: Number of nodes (containing GPUs)
-- `gpu_per_node`: Number of gpus per node
-- `head_node_ip`: IP of the head node (make sure other machines can connect to this)
-- `head_node_port`: Port of the head node (make sure other machines can connect to this. Default 29400)
-- `rdzv_id`: A unique job ID that is used by the job across nodes.
-
-The new CLI approach (Option 1) is recommended as it provides consistent argument handling and works seamlessly with other Axolotl CLI features.
-
-More info on the available configs can be found on the Pytorch docs [here](https://pytorch.org/docs/stable/elastic/run.html)
+If you went the `default_config.yaml` route, all you have to do now is launch
+using accelerate as you would usually do on each machine — the processes start
+once accelerate is running on every machine. The runtime-config commands above
+need no separate accelerate invocation: `axolotl train` performs the launch
+itself.

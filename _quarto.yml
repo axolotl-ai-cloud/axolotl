@@ -512,6 +512,7 @@ website:
             - docs/docker.qmd
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
+            - docs/runtime-config.qmd
             - docs/ray-integration.qmd
             - docs/skypilot.qmd
             - docs/amd_hpc.qmd

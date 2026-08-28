@@ -3,89 +3,130 @@ title: Ray Train
 description: How to use Axolotl with Ray Train
 ---
 
-Axolotl supports using Ray as an alternative to `accelerate` for orchestrating training. This is especially useful for multi-node training since you only have to setup code and dependencies in a single node and launch training as if you were using a single node.
+Axolotl supports Ray as a first-class launcher, as an alternative to
+`accelerate` for orchestrating training. This is especially useful for
+multi-node training: you declare cluster-global resources once and Ray derives
+the topology — there are no machine ranks, rendezvous endpoints, or per-node
+config files to manage.
 
-With the `--use-ray` CLI flag, Axolotl will use Ray Train's [`TorchTrainer`](https://docs.ray.io/en/latest/train/api/doc/ray.train.torch.TorchTrainer.html#ray.train.torch.TorchTrainer) to run training.
+Training runs through Ray Train's
+[`TorchTrainer`](https://docs.ray.io/en/latest/train/api/doc/ray.train.torch.TorchTrainer.html#ray.train.torch.TorchTrainer).
+Install the extra with `pip install axolotl[ray]`.
 
-## Ray cluster setup
+## Quick start
 
-A prerequisite using the Ray Train integration is to setup a Ray cluster on your desired node(s). For a detailed guide on how you can get started with ray clusters, check the official Ray docs [here](https://docs.ray.io/en/latest/cluster/getting-started.html).
+Describe the run in a [runtime config](runtime-config.qmd) and select the ray
+launcher:
 
-Every Ray cluster has one _head_ node and a set of worker nodes. The head node is just like any other worker node, but it also runs certain special processes related to scheduling and orchestration. Ray-enabled scripts are run on the head node and depending on the resources (number of CPUs, GPUs, etc) they request, will be scheduled to run certain tasks on the worker nodes. For more on key concepts behind a Ray cluster, you can refer this [doc](https://docs.ray.io/en/latest/cluster/key-concepts.html#cluster-key-concepts).
+```yaml
+# cluster.yaml
+launcher: ray
+ray:
+  num_workers: auto    # one worker per available GPU
+  resources_per_worker:
+    GPU: 1
+```
 
-## Sanity check
-
-To run a sanity check on whether your ray cluster is setup properly, execute the following on the head node:
+With no `address` set, axolotl uses the cluster brought up by `axolotl ray up`
+(or any `ray start` cluster) when one is running, and an isolated local Ray
+instance otherwise. Set `address: auto` to require attaching to the most
+recently started local cluster, `ray://host:10001` for a specific one, or an
+`http(s)://` address for remote Jobs submission (below).
 
 ```bash
-ray status
+axolotl train recipe.yaml --runtime cluster.yaml
+# or, without a runtime file:
+axolotl train recipe.yaml --launcher ray
 ```
 
-The output should have a summary of your Ray cluster - list of all the nodes in your cluster, the number of CPUs and GPUs in your cluster, etc. For example, if you have a cluster with 1 CPU-only head node and 2 4xL40S worker nodes, the output can look like this:
+`--launcher ray` alone uses the legacy config keys (`ray_num_workers`, default
+1); the runtime file unlocks `num_workers: auto` and the Jobs API flow below.
 
+## Setting up a Ray cluster
 
-```
-Node status
----------------------------------------------------------------
-Active:
- 1 head
-Idle:
- 2 4xL40S:48CPU-384GB
-Pending:
- (no pending nodes)
-Recent failures:
- (no failures)
+A Ray cluster has one _head_ node and any number of worker nodes; training is
+launched from the head and scheduled onto workers automatically. If you already
+run Ray (KubeRay, the autoscaler, a managed platform), `--launcher ray`
+attaches to it and nothing else is needed — see the official
+[cluster docs](https://docs.ray.io/en/latest/cluster/getting-started.html).
 
-Resources
----------------------------------------------------------------
-Usage:
- 0.0/96.0 CPU
- 0.0/8.0 GPU
- 0B/800.00GiB memory
- 0B/229.57GiB object_store_memory
+For bare-metal nodes without an existing setup, axolotl can bring the cluster
+up itself over passwordless ssh:
 
-Demands:
- (no resource demands)
+```bash
+# on the head node; hostfile lists the worker nodes (see examples/runtime/hostfile.example)
+axolotl ray up --hostfile hostfile
+axolotl ray status        # sanity check: node list, total CPUs/GPUs
+axolotl ray down          # tear down head + workers when done
 ```
 
-You should also be able to see the same on the [Ray dashboard](https://docs.ray.io/en/latest/ray-observability/getting-started.html).
+`up` records the cluster under `~/.cache/axolotl/`, so `status` and `down`
+need no arguments. `down --force` kills only daemons tagged with the cluster's
+unique temp dir, never co-tenant Ray clusters.
 
+You can also verify any cluster manually with `ray status` or the
+[Ray dashboard](https://docs.ray.io/en/latest/ray-observability/getting-started.html).
 
-## Configuring training with Ray Train
+## Remote submission (Ray Jobs API)
 
-You can find an example configuration at `configs/llama-3/lora-1b-ray.yaml`.
+Point `address` at a cluster's dashboard port and axolotl submits the run via
+the [Ray Jobs API](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/index.html)
+instead of running locally — no SSH to the head node required:
 
-The key parameters to note here are:
+```yaml
+launcher: ray
+ray:
+  address: http://head-node:8265
+  num_workers: auto
+  runtime_env:
+    working_dir: .          # uploaded with the job
+    excludes: ["outputs/"]
+    env_vars:
+      HF_HOME: /mnt/shared/hf
+```
+
+Logs stream to your terminal until the job finishes; Ctrl-C stops the job
+unless `ray.detach: true` is set. Anything not uploaded via `working_dir`
+(datasets, deepspeed JSONs referenced by path) must already exist on the
+cluster or shared storage.
+
+## Choosing resources
+
+- `num_workers`: `auto` derives the worker count from total cluster resources
+  and `resources_per_worker`; an integer pins it exactly.
+- `resources_per_worker`: a Ray
+  [resource request](https://docs.ray.io/en/latest/ray-core/scheduling/resources.html)
+  per worker. To restrict training to a specific GPU type on a mixed cluster:
+
+```yaml
+ray:
+  resources_per_worker:
+    GPU: 1
+    accelerator_type:L40S: 0.001
+```
+
+## Legacy config keys
+
+The original flags still work and now behave consistently — `use_ray: true` in
+the training YAML selects the ray launcher on its own, and conflicting flags
+(`--use-ray --launcher torchrun`) error instead of silently ignoring one:
 
 ```yaml
 use_ray: true
 ray_num_workers: 4
-# optional
 resources_per_worker:
     GPU: 1
 ```
 
-- `use_ray`: This is the flag that enables the Ray Train integration. You can either use the corresponding `--use-ray` flag in the CLI or set `use_ray` in the config file.
-- `ray_num_workers`: This is the number of workers/GPUs to use for training.
-- `resources_per_worker`: This is the Ray [resource request](https://docs.ray.io/en/latest/ray-core/scheduling/resources.html) for each worker. This can be used to request a specific GPU type or a custom resource for each worker. For example, if your ray cluster has GPUs of different types, and you only want to use NVIDIA L40S GPUs, you can do
-
-```yaml
-resources_per_worker:
-    accelerator_type:L40S: 0.001
-```
-
-## Launching training
-
-You can simply run the following command on the head node:
-
 ```bash
-axolotl train examples/llama-3/lora-1b-ray.yml --use-ray
+axolotl train examples/llama-3/lora-1b-ray.yml --use-ray   # deprecated spelling
 ```
 
-This will launch training on the head node and workers will be scheduled automatically by Ray Train to run on the appropriate head or worker nodes.
+Prefer `launcher: ray` in a runtime file for new setups; CLI flags like
+`--ray-num-workers` override runtime-file values when both are given.
 
-You can also monitor training progress on the Ray dashboard.
+## Monitoring
 
-Coming back to the example on a Ray cluster with 1 head node and 2 4xL40S worker nodes, let's say you want to make use of all 8 GPUs. You would be able to just set `ray_num_workers: 8` and run the previous command. The Cluster tab will show the following:
-
-![Ray dashboard](./images/ray-cluster-dashboard.png)
+Training progress for any of these flows is visible on the Ray dashboard
+(`http://<head>:8265`), including per-node GPU utilization under the Cluster
+tab.

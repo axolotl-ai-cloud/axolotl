@@ -1,0 +1,12 @@
+# Two-node torchrun via c10d rendezvous. The same file works on BOTH nodes —
+# per-node identity comes from the rendezvous, not this file:
+#   axolotl train recipe.yaml --runtime examples/runtime/torchrun-2node.yaml
+launcher: torchrun
+env:
+  NCCL_DEBUG: WARN
+torchrun:
+  nnodes: 2
+  nproc_per_node: 8
+  rdzv_backend: c10d
+  rdzv_endpoint: 10.0.0.4:29400
+  rdzv_id: my-training-run
