@@ -356,6 +356,10 @@ class TrainerBuilderBase(abc.ABC):
 
                     optimizer_cls = SinkGDOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "polora":
+                from axolotl.utils.optimizers.polora import PoloraOptimizerFactory
+
+                optimizer_cls = PoloraOptimizerFactory
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
