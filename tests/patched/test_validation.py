@@ -684,6 +684,21 @@ class TestValidation(BaseValidation):
         ):
             validate_config(cfg)
 
+    def test_deprecated_flash_attn_fuse_qkv(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "flash_attn_fuse_qkv": True,
+                }
+            )
+            | minimal_cfg
+        )
+        with pytest.raises(
+            DeprecationWarning,
+            match=r"`flash_attn_fuse_qkv` is no longer supported",
+        ):
+            validate_config(cfg)
+
     def test_packing(self, minimal_cfg):
         cfg = (
             DictDefault(

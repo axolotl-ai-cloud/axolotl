@@ -25,6 +25,7 @@ class DeprecatedParameters(BaseModel):
     rpo_alpha: float | None = None
     s2_attention: bool | None = None
     flash_attn_rms_norm: bool | None = None
+    flash_attn_fuse_qkv: bool | None = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -139,6 +140,13 @@ class DeprecatedParameters(BaseModel):
         if flash_attn_rms_norm:
             raise DeprecationWarning("`flash_attn_rms_norm` is no longer supported.")
         return flash_attn_rms_norm
+
+    @field_validator("flash_attn_fuse_qkv")
+    @classmethod
+    def validate_flash_attn_fuse_qkv(cls, flash_attn_fuse_qkv):
+        if flash_attn_fuse_qkv:
+            raise DeprecationWarning("`flash_attn_fuse_qkv` is no longer supported.")
+        return flash_attn_fuse_qkv
 
 
 class RemappedParameters(BaseModel):

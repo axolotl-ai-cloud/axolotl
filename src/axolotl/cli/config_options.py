@@ -85,6 +85,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--flash-attn-fuse-qkv/--no-flash-attn-fuse-qkv",),
+        None,
+        None,
+        None,
+    ),
+    (
         ("--overrides-of-model-config",),
         None,
         None,
