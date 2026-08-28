@@ -922,6 +922,18 @@ class AxolotlInputConfig(
         },
     )
 
+    ple_cpu_offload: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Keep parameters the model declares in `_no_placement_params` "
+            "in host RAM instead of VRAM (e.g. Qwen3.8-Flash-Next's 51.2B n-gram PLE "
+            "embedding, 95.4 GiB in bf16, which its forward already gathers on whatever "
+            "device the weight lives on). Each token reads only a handful of rows, so the "
+            "per-step transfer is tens of MB. Requires load_in_4bit/load_in_8bit and "
+            "enough host RAM to hold the table."
+        },
+    )
+
     quantize_moe_experts: bool = Field(
         default=False,
         json_schema_extra={
@@ -1737,6 +1749,22 @@ class AxolotlInputConfig(
             )
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ple_cpu_offload(cls, data):
+        if data.get("ple_cpu_offload"):
+            # both place parameters themselves, so the table would be sharded or gathered
+            if data.get("fsdp_config") is not None:
+                raise ValueError("ple_cpu_offload is not compatible with FSDP")
+            if data.get("deepspeed"):
+                raise ValueError("ple_cpu_offload is not compatible with DeepSpeed")
+            # accelerate only skips its device placement for a quantized model
+            if not (data.get("load_in_4bit") or data.get("load_in_8bit")):
+                raise ValueError(
+                    "ple_cpu_offload requires load_in_4bit or load_in_8bit"
+                )
+        return data
 
     @model_validator(mode="before")
     @classmethod
