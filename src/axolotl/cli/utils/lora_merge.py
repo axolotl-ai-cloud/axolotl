@@ -1944,6 +1944,7 @@ def merge_lora_sharded_efficient(
     trust_remote_code: bool = False,
     dequant: bool = False,
     override_quantizer: bool = False,
+    revision: Optional[str] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -1988,7 +1989,9 @@ def merge_lora_sharded_efficient(
     nvfp4_scale_mode = _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer)
 
     if "/" in str(base_model_path) and not base_model_path.exists():
-        base_model_path = Path(snapshot_download(str(base_model_path)))
+        base_model_path = Path(
+            snapshot_download(str(base_model_path), revision=revision)
+        )
 
     meta_model = _build_meta_model(base_model_path, trust_remote_code=trust_remote_code)
 
