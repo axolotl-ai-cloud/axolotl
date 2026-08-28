@@ -13,6 +13,7 @@ MOE_ARCH_BLOCK = {
     "qwen2_moe": "Qwen2MoeSparseMoeBlock",
     "qwen3_moe": "Qwen3MoeSparseMoeBlock",
     "qwen3_5_moe": "Qwen3_5MoeSparseMoeBlock",
+    "qwen4_exp_text": "Qwen4ExpTextSparseMoeBlock",
     "qwen3_vl_moe": "Qwen3VLMoeTextSparseMoeBlock",
     "deepseek_v2": "DeepseekV2MoE",
     "deepseek_v3": "DeepseekV3MoE",
