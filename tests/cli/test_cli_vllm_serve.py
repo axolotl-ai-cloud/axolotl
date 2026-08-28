@@ -58,3 +58,36 @@ def test_vllm_serve_bool_precedence(cli_runner, tmp_path, stub_serve, flags, exp
     script_args = stub_serve.main.call_args.args[0]
     assert script_args.enable_prefix_caching is expected
     assert script_args.enable_reasoning is expected
+
+
+def test_vllm_serve_passes_model_revision(cli_runner, tmp_path, monkeypatch):
+    """`revision_of_model` must reach vLLM's `ScriptArguments.revision`, the same
+    way it reaches the model/tokenizer/processor loaders.
+
+    Regression for the bug where `do_vllm_serve` built `base_kwargs` without a
+    `revision` entry, so `revision_of_model` was silently ignored and vLLM always
+    served the default branch.
+    """
+    name = "axolotl_stub_serve_revision"
+    module = types.ModuleType(name)
+    module.main = MagicMock()
+    monkeypatch.setitem(sys.modules, name, module)
+
+    cfg = DictDefault(
+        {
+            "base_model": "dummy-model",
+            "revision_of_model": "abc123",
+            "vllm": {"serve_module": name},
+        }
+    )
+    monkeypatch.setattr("axolotl.cli.vllm_serve.load_cfg", lambda *_, **__: cfg)
+
+    config = tmp_path / "config.yml"
+    config.write_text("base_model: dummy-model\n")
+
+    result = cli_runner.invoke(cli, ["vllm-serve", str(config)])
+    assert result.exit_code == 0, result.output
+
+    module.main.assert_called_once()
+    script_args = module.main.call_args.args[0]
+    assert script_args.revision == "abc123"
