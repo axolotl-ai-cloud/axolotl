@@ -27,9 +27,10 @@ run: |
   # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint
   source /workspace/axolotl/scripts/cuda13_env.sh
 
-  axolotl fetch examples
-  axolotl train examples/llama-3/lora-1b.yml
+  axolotl train /workspace/axolotl/examples/llama-3/lora-1b.yml
 ```
+
+The image ships the example configs at `/workspace/axolotl/examples`, so there is nothing to fetch. Paths are absolute because the `run` block executes in `~/sky_workdir`, not in the image's Axolotl checkout.
 
 Note the image choice: SkyPilot sources `~/.bashrc` when running `setup` and `run`, and the `-cloud` image's `.bashrc` attaches a tmux session and exits, which terminates the command. Use the plain image as above, or `axolotlai/axolotl-cloud-term:main-latest` if you want the cloud image's HuggingFace cache defaults without tmux.
 
@@ -41,11 +42,11 @@ sky logs axolotl
 sky down axolotl
 ```
 
-Training outputs live on the cluster and disappear with `sky down`. The `run` block always executes in `~/sky_workdir`, so copy outputs off first (`rsync -Pavz axolotl:sky_workdir/outputs/ ./outputs/`) or mount a bucket as shown in the spot section below.
+Training outputs live on the cluster and disappear with `sky down`. The config's relative `output_dir` lands under `~/sky_workdir`, so copy outputs off first (`rsync -Pavz axolotl:sky_workdir/outputs/ ./outputs/`) or mount a bucket as shown in the spot section below.
 
 The example configs referenced here use ungated models. For gated models, launch with `--secret HF_TOKEN`, written literally like that with no value attached: the bare name tells SkyPilot to read `$HF_TOKEN` from your local shell and expose it to the `run` commands. You can also list it in the task file as an empty `secrets:` entry, but the value still has to come from `--secret` at launch. Writing `HF_TOKEN: $HF_TOKEN` there does not work: SkyPilot passes that through as the literal string rather than expanding it.
 
-To train with your own config, add `workdir: .` to the task file and drop the `axolotl fetch examples` line. Your current directory is then synced to `~/sky_workdir`, which is where the `run` commands already execute, so `axolotl train my_training.yml` works as-is.
+To train with your own config, add `workdir: .` to the task file. Your current directory is then synced to `~/sky_workdir`, which is where the `run` commands already execute, so `axolotl train my_training.yml` works as-is.
 
 ## Multi-node
 
@@ -70,9 +71,8 @@ run: |
   export NCCL_SOCKET_IFNAME=$IFACE
   export NCCL_BUFFSIZE=2097152
 
-  axolotl fetch examples
   HEAD_IP=$(echo "$SKYPILOT_NODE_IPS" | head -n1)
-  axolotl train examples/llama-3/fft-8b-liger-fsdp.yaml --launcher torchrun -- \
+  axolotl train /workspace/axolotl/examples/llama-3/fft-8b-liger-fsdp.yaml --launcher torchrun -- \
     --nnodes $SKYPILOT_NUM_NODES \
     --nproc_per_node $SKYPILOT_NUM_GPUS_PER_NODE \
     --rdzv_id $SKYPILOT_TASK_ID \
