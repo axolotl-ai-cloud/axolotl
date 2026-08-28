@@ -1588,7 +1588,7 @@ Warning
 </section>
 <section id="optimizers-schedulers" class="level2">
 <h2 class="anchored" data-anchor-id="optimizers-schedulers">Optimizers &amp; schedulers</h2>
-<p><strong>Optimizers:</strong> all HuggingFace / <code>bitsandbytes</code> optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore. (Muon / Flash / Q-GaLore require FSDP2, not DeepSpeed.)</p>
+<p><strong>Optimizers:</strong> all HuggingFace / <code>bitsandbytes</code> optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)</p>
 <p><strong>Schedulers:</strong> cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).</p>
 <p><strong>Also:</strong> gradient checkpointing (+CPU/disk offload), gradient accumulation, NEFTune, LR groups / embedding LR, loss watchdog, early stopping, <code>torch_compile</code>.</p>
 </section>
@@ -1756,6 +1756,10 @@ Warning
 <td>FSDP2 (not DeepSpeed)</td>
 </tr>
 <tr class="even">
+<td>PoLoRA optimizer</td>
+<td>LoRA/QLoRA + single-GPU, DDP, or FSDP2 (not DeepSpeed/TP)</td>
+</tr>
+<tr class="odd">
 <td>EBFT (<code>rl: ebft</code>)</td>
 <td><code>ebft:</code> config block</td>
 </tr>

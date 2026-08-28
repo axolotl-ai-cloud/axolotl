@@ -922,7 +922,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#scattermoe-nvfp4-w4a16-lora" id="toc-scattermoe-nvfp4-w4a16-lora" class="nav-link" data-scroll-target="#scattermoe-nvfp4-w4a16-lora">ScatterMoE NVFP4 (W4A16) LoRA</a></li>
   <li><a href="#sonicmoe-nvfp4-w4a4-lora" id="toc-sonicmoe-nvfp4-w4a4-lora" class="nav-link" data-scroll-target="#sonicmoe-nvfp4-w4a4-lora">SonicMoE NVFP4 (W4A4) LoRA</a></li>
   <li><a href="#model-support" id="toc-model-support" class="nav-link" data-scroll-target="#model-support">Model Support</a></li>
-  <li><a href="#blackwell-sm_120-note" id="toc-blackwell-sm_120-note" class="nav-link" data-scroll-target="#blackwell-sm_120-note">Blackwell (sm_120) note</a></li>
+  <li><a href="#epilogue-check-why-gpt_oss-is-no-on-sonicmoe" id="toc-epilogue-check-why-gpt_oss-is-no-on-sonicmoe" class="nav-link" data-scroll-target="#epilogue-check-why-gpt_oss-is-no-on-sonicmoe">Epilogue check (why <code>gpt_oss</code> is No on SonicMoE)</a></li>
   <li><a href="#feature-comparison" id="toc-feature-comparison" class="nav-link" data-scroll-target="#feature-comparison">Feature comparison</a></li>
   <li><a href="#note-on-megablocks" id="toc-note-on-megablocks" class="nav-link" data-scroll-target="#note-on-megablocks">Note on MegaBlocks</a></li>
   </ul></li>
@@ -1826,18 +1826,19 @@ on the <code>cp</code> axis (e.g.&nbsp;GLM-5.2 DSA via the kernels plugin); stoc
 <tr class="even">
 <td><code>gpt_oss</code></td>
 <td style="text-align: center;">Yes</td>
-<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">No</td>
 <td style="text-align: center;">-</td>
 <td style="text-align: center;">-</td>
 </tr>
 </tbody>
 </table>
 <p>NVFP4 for <code>deepseek_v4</code> is supported via ScatterMoE with <code>use_dsv4_kernels</code> (its own fused-kernel path), so it is not a row above.</p>
-<p><code>gpt_oss</code> carries the decorator with <code>is_concatenated=False, is_transposed=True, has_bias=True</code> and uses a sigmoid-GLU activation with clamping. Both forwards read these flags off <code>self</code> and dispatch accordingly: the ScatterMoE forward handles the transposed/interleaved/biased layout and clamped sigmoid-GLU via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM); the SonicMoE forward uses the upstream CUTLASS kernel.</p>
+<p><code>gpt_oss</code> carries the decorator with <code>is_concatenated=False, is_transposed=True, has_bias=True</code> and uses a clamped sigmoid-GLU activation. The ScatterMoE forward handles the transposed/interleaved/biased layout and that epilogue via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM).</p>
 </section>
-<section id="blackwell-sm_120-note" class="level3">
-<h3 class="anchored" data-anchor-id="blackwell-sm_120-note">Blackwell (sm_120) note</h3>
-<p><code>use_sonicmoe</code> runs on consumer Blackwell (sm_120) when the loaded <code>sonic-moe</code> kernel bundles quack 0.6.1 (on nvidia-cutlass-dsl 4.6.0). The upstream <code>kernels-community/sonic-moe</code> prebuilt may still bundle quack 0.3.11 (no sm_120 GEMM) until the rebuild lands; point at a quack 0.6.1 build or use <code>use_scattermoe</code>. NVFP4 experts on sm_120 take the dequant path (no native W4A4: <code>fp4_cute</code> is SM100/SM110-only).</p>
+<section id="epilogue-check-why-gpt_oss-is-no-on-sonicmoe" class="level3">
+<h3 class="anchored" data-anchor-id="epilogue-check-why-gpt_oss-is-no-on-sonicmoe">Epilogue check (why <code>gpt_oss</code> is No on SonicMoE)</h3>
+<p>SonicMoE picks its fused epilogue from <code>config.hidden_act</code>, which cannot express a clamped or otherwise non-plain GLU. <code>GptOssConfig.hidden_act</code> is <code>"silu"</code>, so <code>gpt_oss</code> silently ran plain SwiGLU (10.4% top-1 agreement, teacher-forced NLL 2.30 -&gt; 8.12 on <code>openai/gpt-oss-20b</code>).</p>
+<p>Axolotl now probes each model’s declared <code>_apply_gate</code> numerically at load and raises if the chosen path cannot reproduce it, pointing at <code>expert_backend: scattermoe</code>.</p>
 </section>
 <section id="feature-comparison" class="level3">
 <h3 class="anchored" data-anchor-id="feature-comparison">Feature comparison</h3>
