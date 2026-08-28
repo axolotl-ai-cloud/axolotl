@@ -3,7 +3,7 @@ title: SkyPilot
 description: How to launch Axolotl on any cloud or Kubernetes with SkyPilot
 ---
 
-[SkyPilot](https://github.com/skypilot-org/skypilot) is an open-source framework for running workloads on any cloud or Kubernetes cluster. Instead of provisioning an instance and setting up Docker yourself, you describe the job in a short YAML and SkyPilot finds a GPU across your enabled infrastructure (AWS, GCP, Azure, RunPod, Vast.ai, Kubernetes, and [more](https://docs.skypilot.co/en/latest/getting-started/installation.html)), pulls the Axolotl image, and runs training.
+[SkyPilot](https://github.com/skypilot-org/skypilot) is an open-source framework for running workloads on any cloud or Kubernetes cluster. Instead of provisioning an instance and setting up Docker yourself, you describe the job in a short YAML and SkyPilot finds a GPU across your enabled infrastructure (AWS, GCP, Azure, RunPod, Vast.ai, Kubernetes, and [more](https://docs.skypilot.ai/en/latest/getting-started/installation.html)), pulls the Axolotl image, and runs training.
 
 ## Setup
 
@@ -121,6 +121,6 @@ Point `output_dir` in your Axolotl config at `/checkpoints` and set `auto_resume
 
 ## Further reading
 
-- [SkyPilot docs](https://docs.skypilot.co/)
-- [Task YAML reference](https://docs.skypilot.co/en/latest/reference/yaml-spec.html)
-- [Managed jobs](https://docs.skypilot.co/en/latest/examples/managed-jobs.html)
+- [SkyPilot docs](https://docs.skypilot.ai/)
+- [Task YAML reference](https://docs.skypilot.ai/en/latest/reference/yaml-spec.html)
+- [Managed jobs](https://docs.skypilot.ai/en/latest/examples/managed-jobs.html)
