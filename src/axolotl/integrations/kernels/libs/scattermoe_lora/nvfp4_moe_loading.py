@@ -473,17 +473,19 @@ def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> i
     if NVFP4Tensor is None:
         return 0
     wmap = _load_index(repo_id)
-    # per-layer expert count, from the index (no reads): count ...experts.<e>.<proj0>.weight keys.
+    # per-experts-module expert count, from the index (no reads). Keyed on the full prefix
+    # rather than the layer index: a checkpoint can carry two stacks at the same index (an MTP
+    # head alongside the decoder), and those must not collapse onto each other.
     proj0 = routed_projs[0]
-    layer_E: dict[int, int] = {}
+    prefix_E: dict[str, int] = {}
     pat = re.compile(
-        r"\.layers\.(\d+)\.mlp\.experts\.(\d+)\." + re.escape(proj0) + r"\.weight$"
+        r"(.*\.layers\.\d+\.mlp\.experts)\.(\d+)\." + re.escape(proj0) + r"\.weight$"
     )
     for key in wmap:
         m = pat.search(key)
         if m:
-            L, e = int(m.group(1)), int(m.group(2))
-            layer_E[L] = max(layer_E.get(L, 0), e + 1)
+            base, e = m.group(1), int(m.group(2))
+            prefix_E[base] = max(prefix_E.get(base, 0), e + 1)
 
     handles: dict[str, object] = {}
 
@@ -501,14 +503,10 @@ def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> i
     for mod_name, mod in model.named_modules():
         if not (hasattr(mod, "gate_up_proj") and hasattr(mod, "down_proj")):
             continue
-        m = re.search(r"\.layers\.(\d+)\.", "." + mod_name)
-        if m is None:
+        E = prefix_E.get(mod_name)
+        if E is None:
             continue
-        L = int(m.group(1))
-        if L not in layer_E:
-            continue
-        E = layer_E[L]
-        base = f"model.layers.{L}.mlp.experts"
+        base = mod_name
         for fused, parts in fused_map:
             sel = [p for p in parts if p in routed_projs]
             if not sel:
