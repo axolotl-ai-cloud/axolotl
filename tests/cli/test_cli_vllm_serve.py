@@ -23,6 +23,7 @@ def stub_serve(monkeypatch):
         {
             "base_model": "dummy-model",
             "revision_of_model": "test-revision",
+            "trust_remote_code": True,
             "vllm": {
                 "serve_module": name,
                 "enable_prefix_caching": True,
@@ -71,3 +72,15 @@ def test_vllm_serve_forwards_model_revision(cli_runner, tmp_path, stub_serve):
     stub_serve.main.assert_called_once()
     script_args = stub_serve.main.call_args.args[0]
     assert script_args.revision == "test-revision"
+
+
+def test_vllm_serve_forwards_trust_remote_code(cli_runner, tmp_path, stub_serve):
+    config = tmp_path / "config.yml"
+    config.write_text("base_model: dummy-model\n")
+
+    result = cli_runner.invoke(cli, ["vllm-serve", str(config)])
+    assert result.exit_code == 0, result.output
+
+    stub_serve.main.assert_called_once()
+    script_args = stub_serve.main.call_args.args[0]
+    assert script_args.trust_remote_code is True

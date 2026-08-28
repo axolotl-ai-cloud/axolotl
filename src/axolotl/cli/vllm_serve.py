@@ -88,6 +88,7 @@ def do_vllm_serve(
     base_kwargs = dict(
         model=model,
         revision=cfg.revision_of_model,
+        trust_remote_code=bool(cfg.trust_remote_code),
         tensor_parallel_size=tensor_parallel_size,
         data_parallel_size=data_parallel_size,
         host=host,
