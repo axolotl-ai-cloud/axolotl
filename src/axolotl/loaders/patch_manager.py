@@ -575,14 +575,20 @@ class PatchManager:
 
                 patch_qwen3_next_modeling_packing()
 
-            if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
+            if (
+                self.cfg.model_config_type in ("qwen3_5", "qwen3_5_text")
+                and self.cfg.sample_packing
+            ):
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
                     patch_qwen3_5_modeling_packing,
                 )
 
                 patch_qwen3_5_modeling_packing()
 
-            if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
+            if (
+                self.cfg.model_config_type in ("qwen3_5_moe", "qwen3_5_moe_text")
+                and self.cfg.sample_packing
+            ):
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
                     patch_qwen3_5_moe_modeling_packing,
                 )
