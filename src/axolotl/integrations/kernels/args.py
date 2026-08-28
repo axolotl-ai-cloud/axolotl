@@ -285,7 +285,9 @@ class KernelsArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_use_kernels(cls, data):
-        if data.get("use_kernels") is not True:
+        """Default `use_kernels` on, honoring an explicit opt-out: the experts backend is
+        registered independently of kernelize, whose hub-kernel swap can shadow it."""
+        if data.get("use_kernels") is None:
             LOG.warning(
                 "`use_kernels` must be set to True to use this. Automatically setting it to True."
             )
