@@ -609,6 +609,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/skypilot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">SkyPilot</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -877,10 +883,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.models.mamba_utils.assert_mamba2_scan_honours_seq_idx" id="toc-axolotl.monkeypatch.models.mamba_utils.assert_mamba2_scan_honours_seq_idx" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.assert_mamba2_scan_honours_seq_idx">assert_mamba2_scan_honours_seq_idx</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded" id="toc-axolotl.monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded">ensure_mamba_kernels_loaded</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.get_seq_idx" id="toc-axolotl.monkeypatch.models.mamba_utils.get_seq_idx" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.get_seq_idx">get_seq_idx</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.is_cp_active" id="toc-axolotl.monkeypatch.models.mamba_utils.is_cp_active" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.is_cp_active">is_cp_active</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction" id="toc-axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction">mamba2_cp_correction</a></li>
+  <li><a href="#axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available" id="toc-axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available">mamba2_seq_idx_kernels_available</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.ring_shift_ssm_state" id="toc-axolotl.monkeypatch.models.mamba_utils.ring_shift_ssm_state" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.ring_shift_ssm_state">ring_shift_ssm_state</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.wrap_mamba_scan_for_cp" id="toc-axolotl.monkeypatch.models.mamba_utils.wrap_mamba_scan_for_cp" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.wrap_mamba_scan_for_cp">wrap_mamba_scan_for_cp</a></li>
   </ul></li>
@@ -910,20 +918,28 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.monkeypatch.models.mamba_utils.assert_mamba2_scan_honours_seq_idx">assert_mamba2_scan_honours_seq_idx</a></td>
+<td>Probe the resolved chunk-scan once, and raise if it drops <code>seq_idx</code>.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded">ensure_mamba_kernels_loaded</a></td>
 <td>Eagerly resolve mamba-ssm and causal-conv1d globals on <em>target_module</em>.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.get_seq_idx">get_seq_idx</a></td>
 <td>Convert position_ids [B, T] → seq_idx [B, T] int32 for mamba-ssm kernels.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.is_cp_active">is_cp_active</a></td>
 <td>Return True if context parallelism (ring attention) is active on this rank.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction">mamba2_cp_correction</a></td>
 <td>Apply CP correction to SSM output using the received state from rank-1.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available">mamba2_seq_idx_kernels_available</a></td>
+<td>True when the installed Mamba2 kernels honour <code>seq_idx</code>.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.ring_shift_ssm_state">ring_shift_ssm_state</a></td>
@@ -935,9 +951,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 </tbody>
 </table>
+<section id="axolotl.monkeypatch.models.mamba_utils.assert_mamba2_scan_honours_seq_idx" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.assert_mamba2_scan_honours_seq_idx">assert_mamba2_scan_honours_seq_idx</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.assert_mamba2_scan_honours_seq_idx(target_module)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Probe the resolved chunk-scan once, and raise if it drops <code>seq_idx</code>.</p>
+<p>Which implementation ends up behind <code>mamba2_chunk_scan</code> is only settled
+once the model is built (pip package, Hub kernel, or the torch fallback),
+and the fallback drops unknown kwargs silently — training would then mix
+SSM state across packed samples. The probe is skipped when it cannot run
+(no CUDA device, or a kernel that rejects the probe shapes).</p>
+</section>
 <section id="axolotl.monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded">ensure_mamba_kernels_loaded</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded(target_module)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.ensure_mamba_kernels_loaded(target_module)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Eagerly resolve mamba-ssm and causal-conv1d globals on <em>target_module</em>.</p>
 <p>Transformers &gt;= 5.5 lazily loads these inside <code>Mixer.__init__</code> via
 <code>lazy_load_kernel</code>. Our monkeypatches run <em>before</em> model instantiation,
@@ -947,7 +973,7 @@ resolution early so the patched <code>cuda_kernels_forward</code> (and
 </section>
 <section id="axolotl.monkeypatch.models.mamba_utils.get_seq_idx" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.get_seq_idx">get_seq_idx</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.get_seq_idx(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.get_seq_idx(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Convert position_ids [B, T] → seq_idx [B, T] int32 for mamba-ssm kernels.</p>
 <p>Example: position_ids [[0,1,2,3,0,1,2]] → seq_idx [[0,0,0,0,1,1,1]]</p>
 <p>Under context parallelism a rank may receive a chunk that begins mid-sample
@@ -960,23 +986,23 @@ position_ids [[3,4,5,0,1,2]] → seq_idx [[0,0,0,1,1,1]]</p>
 </section>
 <section id="axolotl.monkeypatch.models.mamba_utils.is_cp_active" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.is_cp_active">is_cp_active</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.is_cp_active()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.is_cp_active()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Return True if context parallelism (ring attention) is active on this rank.</p>
 <p>Zero-cost when CP is not configured: the import guard ensures we only touch
 the distributed group if ring_flash_attn is installed.</p>
 </section>
 <section id="axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction">mamba2_cp_correction</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.mamba2_cp_correction(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    out,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    h_final,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    C,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    cum_A,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    h_prev,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    num_heads,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    head_dim,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    seq_idx<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.mamba2_cp_correction(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    out,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    h_final,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    C,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    cum_A,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    h_prev,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    num_heads,</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    head_dim,</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    seq_idx<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply CP correction to SSM output using the received state from rank-1.</p>
 <p>SSM output is linear in the initial hidden state, so the contribution of
 h_prev can be added analytically without a second forward pass.</p>
@@ -1096,9 +1122,18 @@ packed sequences.</code></pre>
 </table>
 </section>
 </section>
+<section id="axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available">mamba2_seq_idx_kernels_available</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>True when the installed Mamba2 kernels honour <code>seq_idx</code>.</p>
+<p>transformers resolves <code>mamba-ssm</code> / <code>causal-conv1d</code> ahead of its own
+torch fallbacks, and those fallbacks drop unknown kwargs — so without the
+real kernels <code>seq_idx</code> is silently ignored and SSM state leaks across
+packed samples.</p>
+</section>
 <section id="axolotl.monkeypatch.models.mamba_utils.ring_shift_ssm_state" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.ring_shift_ssm_state">ring_shift_ssm_state</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.ring_shift_ssm_state(h_final)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.ring_shift_ssm_state(h_final)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>P2P ring: send h_final to rank+1, receive from rank-1 within CP group.</p>
 <p>Uses synchronous send/recv on the ring attention process group.
 Rank 0 in the CP group receives zeros (no previous chunk).</p>
@@ -1156,7 +1191,7 @@ Rank 0 in the CP group receives zeros (no previous chunk).</p>
 </section>
 <section id="axolotl.monkeypatch.models.mamba_utils.wrap_mamba_scan_for_cp" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.wrap_mamba_scan_for_cp">wrap_mamba_scan_for_cp</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.wrap_mamba_scan_for_cp(target_module)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.wrap_mamba_scan_for_cp(target_module)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Wrap <code>mamba_chunk_scan_combined</code> in <em>target_module</em> to apply CP correction.</p>
 <p>After the scan, if CP is active the wrapper:
 1. Sends the final SSM state to the next rank via <code>ring_shift_ssm_state</code>.

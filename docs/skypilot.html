@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="description" content="How to launch Axolotl on any cloud or Kubernetes with SkyPilot">
 
-<title>core.chat.format.shared – Axolotl</title>
+<title>SkyPilot – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -26,26 +27,61 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5ed5d6ce6a6b0ff48bdc088d658ecc41.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-5ed5d6ce6a6b0ff48bdc088d658ecc41.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -84,7 +120,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -94,9 +130,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -112,7 +148,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/skypilot.html">SkyPilot</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -126,7 +162,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -141,31 +177,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Support Matrix</span></a>
   </div>
 </li>
@@ -180,79 +216,79 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Muse Glimmer</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">North Micro Vision Instruct</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Shieldstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Kimi Linear</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/plano.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/plano.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Plano Orchestrator</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MiMo</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">InternVL 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PaddleOCR-VL</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Trinity</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Arcee AFM</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
@@ -267,19 +303,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Vision</span></a>
   </div>
 </li>
@@ -296,19 +332,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Vision</span></a>
   </div>
 </li>
@@ -316,151 +352,151 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 3.1/3.2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Voxtral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Devstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral 7B</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.7-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.6V</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Apertus</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GPT-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Seed-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/phi.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/phi.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Phi</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SmolVLM 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Granite 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Liquid Foundation Models 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Hunyuan</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Jamba</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Orpheus</span></a>
   </div>
 </li>
@@ -468,25 +504,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Telemetry</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -494,7 +530,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -503,37 +539,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -550,43 +586,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/skypilot.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/skypilot.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">SkyPilot</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -603,91 +639,91 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ebft.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">EBFT Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">vLLM Serving for GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">1.58-bit Finetuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -704,43 +740,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Streaming Datasets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/attention.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/attention.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Attention</span></a>
   </div>
 </li>
@@ -757,43 +793,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FSDP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MoE Expert Quantization</span></a>
   </div>
 </li>
@@ -810,25 +846,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/training_stability.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Training Stability &amp; Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -844,20 +880,128 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.chat.format.shared" id="toc-axolotl.core.chat.format.shared" class="nav-link active" data-scroll-target="#axolotl.core.chat.format.shared">core.chat.format.shared</a></li>
+  <li><a href="#setup" id="toc-setup" class="nav-link active" data-scroll-target="#setup">Setup</a></li>
+  <li><a href="#single-node" id="toc-single-node" class="nav-link" data-scroll-target="#single-node">Single node</a></li>
+  <li><a href="#multi-node" id="toc-multi-node" class="nav-link" data-scroll-target="#multi-node">Multi-node</a></li>
+  <li><a href="#spot-instances" id="toc-spot-instances" class="nav-link" data-scroll-target="#spot-instances">Spot instances</a></li>
+  <li><a href="#further-reading" id="toc-further-reading" class="nav-link" data-scroll-target="#further-reading">Further reading</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/skypilot.html">SkyPilot</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">SkyPilot</h1>
+</div>
+
+<div>
+  <div class="description">
+    How to launch Axolotl on any cloud or Kubernetes with SkyPilot
+  </div>
+</div>
 
 
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
 
 
-<section id="axolotl.core.chat.format.shared" class="level1">
-<h1>core.chat.format.shared</h1>
-<p><code>core.chat.format.shared</code></p>
-<p>shared functions for format transforms</p>
+</header>
+
+
+<p><a href="https://github.com/skypilot-org/skypilot">SkyPilot</a> runs workloads on any cloud or Kubernetes cluster. You describe the job in a short YAML, and SkyPilot finds a GPU across your enabled infrastructure (AWS, GCP, Azure, RunPod, Vast.ai, Kubernetes, and <a href="https://docs.skypilot.ai/en/latest/getting-started/installation.html">more</a>), pulls the Axolotl image, and runs training.</p>
+<section id="setup" class="level2">
+<h2 class="anchored" data-anchor-id="setup">Setup</h2>
+<p>Install SkyPilot with the providers you use, then confirm your credentials work:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">"skypilot[aws,gcp,kubernetes]"</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> check</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="single-node" class="level2">
+<h2 class="anchored" data-anchor-id="single-node">Single node</h2>
+<p>Create a SkyPilot task file, e.g.&nbsp;<code>axolotl-skypilot.yaml</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">accelerators</span><span class="kw">:</span><span class="at"> A100:1</span><span class="co">  # or L40S:1, H100:8, ...</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image_id</span><span class="kw">:</span><span class="at"> docker:axolotlai/axolotl:main-latest</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">run</span><span class="kw">: </span><span class="ch">|</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  source /workspace/axolotl/scripts/cuda13_env.sh</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  axolotl train /workspace/axolotl/examples/llama-3/lora-1b.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The <code>run</code> block executes in <code>~/sky_workdir</code>, not in the image’s Axolotl checkout, so configs bundled in the image need absolute paths.</p>
+<p>On the image choice: SkyPilot sources <code>~/.bashrc</code> for <code>setup</code> and <code>run</code>, and the <code>-cloud</code> image’s <code>.bashrc</code> attaches a tmux session and exits, killing the command. Use the plain image as above, or <code>axolotlai/axolotl-cloud-term:main-latest</code> for the cloud image’s HuggingFace cache defaults without tmux.</p>
+<p>Launch it, then re-attach to logs or clean up when done:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> launch <span class="at">-c</span> axolotl axolotl-skypilot.yaml</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> logs axolotl</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> down axolotl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The config’s relative <code>output_dir</code> lands under <code>~/sky_workdir</code> on the cluster and disappears with <code>sky down</code>, so copy it off first (<code>rsync -Pavz axolotl:sky_workdir/outputs/ ./outputs/</code>) or mount a bucket as shown below.</p>
+<p>The example configs referenced here use ungated models. For gated models, pass your token at launch:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> launch <span class="at">-c</span> axolotl axolotl-skypilot.yaml <span class="at">--secret</span> HF_TOKEN</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The bare name is intentional: SkyPilot reads <code>$HF_TOKEN</code> from your local shell.</p>
+<p>To train with your own config, add <code>workdir: .</code> to the task file. Your current directory syncs to <code>~/sky_workdir</code>, where the <code>run</code> commands already execute, so <code>axolotl train my_training.yml</code> works as-is.</p>
+</section>
+<section id="multi-node" class="level2">
+<h2 class="anchored" data-anchor-id="multi-node">Multi-node</h2>
+<p>Set <code>num_nodes</code> and pass SkyPilot’s runtime environment variables to the torchrun launcher described in the <a href="../docs/multi-node.html">multi-node guide</a>. SkyPilot runs the <code>run</code> block on every node. In a separate task file, e.g.&nbsp;<code>axolotl-multinode.yaml</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">num_nodes</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">accelerators</span><span class="kw">:</span><span class="at"> H100:8</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image_id</span><span class="kw">:</span><span class="at"> docker:axolotlai/axolotl:main-latest</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="fu">run</span><span class="kw">: </span><span class="ch">|</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>  # the image entrypoint normally sources this; SkyPilot bypasses the entrypoint</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>  source /workspace/axolotl/scripts/cuda13_env.sh</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  # Pin collectives to the node's real NIC. Without this, Gloo resolves the</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>  # hostname to 127.0.1.1 (the Debian/Ubuntu loopback alias in /etc/hosts) and</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>  # startup fails with "Gloo connectFullMesh failed ... Connection refused".</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>  IFACE=$(awk '$2=="00000000" {print $1; exit}' /proc/net/route)</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>  export GLOO_SOCKET_IFNAME=$IFACE</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>  export NCCL_SOCKET_IFNAME=$IFACE</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>  export NCCL_BUFFSIZE=2097152</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>  HEAD_IP=$(echo "$SKYPILOT_NODE_IPS" | head -n1)</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>  axolotl train /workspace/axolotl/examples/llama-3/fft-8b-liger-fsdp.yaml --launcher torchrun -- \</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>    --nnodes $SKYPILOT_NUM_NODES \</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    --nproc_per_node $SKYPILOT_NUM_GPUS_PER_NODE \</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    --rdzv_id $SKYPILOT_TASK_ID \</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    --rdzv_backend c10d \</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    --rdzv_endpoint "$HEAD_IP:29400"</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> launch <span class="at">-c</span> axolotl-2n axolotl-multinode.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>On AWS, GCP, Nebius, and RDMA-capable Kubernetes clusters, add <code>network_tier: best</code> under <code>resources</code> to get the fastest inter-node networking available; clouds without the feature reject the option.</p>
+<p>Each node tokenizes the dataset independently on first run. For large datasets, mount a bucket with <code>file_mounts</code>, point <code>dataset_prepared_path</code> in the Axolotl config at it, and run <code>axolotl preprocess</code> once so all nodes reuse the tokenized data.</p>
+<p>To scale out, launch a new cluster with more nodes: <code>sky launch -c axolotl-4n --num-nodes 4 axolotl-multinode.yaml</code>.</p>
+</section>
+<section id="spot-instances" class="level2">
+<h2 class="anchored" data-anchor-id="spot-instances">Spot instances</h2>
+<p>To run on spot (preemptible) instances, add <code>use_spot: true</code> under <code>resources</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">accelerators</span><span class="kw">:</span><span class="at"> A100:1</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">image_id</span><span class="kw">:</span><span class="at"> docker:axolotlai/axolotl:main-latest</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_spot</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For long runs, use managed jobs instead of <code>sky launch</code>: SkyPilot then auto-recovers the job if the instance is preempted. Any <code>workdir</code> or local <code>file_mounts</code> are staged through an object-store bucket, which you can pick with <code>jobs.bucket</code> in <code>~/.sky/config.yaml</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sky</span> jobs launch <span class="at">-n</span> axolotl axolotl-skypilot.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Mount a bucket for checkpoints so recovery resumes instead of restarting:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">file_mounts</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">/checkpoints</span><span class="kw">:</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> my-axolotl-checkpoints</span><span class="co">  # bucket is created if it doesn't exist</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> MOUNT_CACHED</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Point <code>output_dir</code> at <code>/checkpoints</code> and set <code>auto_resume_from_checkpoints: true</code> so a recovered job resumes from the newest checkpoint. Caveat: <code>MOUNT_CACHED</code> uploads asynchronously and Axolotl does not validate what it resumes from, so a preemption can leave the newest checkpoint incomplete. If the resume fails, delete that directory from the bucket to fall back to the previous one.</p>
+</section>
+<section id="further-reading" class="level2">
+<h2 class="anchored" data-anchor-id="further-reading">Further reading</h2>
+<ul>
+<li><a href="https://docs.skypilot.ai/">SkyPilot docs</a></li>
+<li><a href="https://docs.skypilot.ai/en/latest/reference/yaml-spec.html">Task YAML reference</a></li>
+<li><a href="https://docs.skypilot.ai/en/latest/examples/managed-jobs.html">Managed jobs</a></li>
+</ul>
 
 
 </section>

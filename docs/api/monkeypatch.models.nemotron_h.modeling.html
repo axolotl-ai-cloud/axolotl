@@ -609,6 +609,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/skypilot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">SkyPilot</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -877,6 +883,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.models.nemotron_h.modeling.guard_nemotron_h_fused_scan" id="toc-axolotl.monkeypatch.models.nemotron_h.modeling.guard_nemotron_h_fused_scan" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.nemotron_h.modeling.guard_nemotron_h_fused_scan">guard_nemotron_h_fused_scan</a></li>
   <li><a href="#axolotl.monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing" id="toc-axolotl.monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing">patch_nemotron_h_modeling_packing</a></li>
   </ul></li>
   </ul></li>
@@ -894,12 +901,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p><code>monkeypatch.models.nemotron_h.modeling</code></p>
 <p>Sample-packing and context-parallelism patch for NemotronH (Mamba2/Attention/MoE hybrid).</p>
 <p>Threads seq_idx (derived from position_ids) into the Mamba2 SSM kernels so
-packed-sequence boundaries reset SSM state. Upstream hard-codes seq_idx=None,
-which leaks hidden state across boundaries. Attention and MoE blocks need no
-changes — only the Mamba2 mixer is patched.</p>
+packed-sequence boundaries reset SSM state. Upstream never passes one, which
+leaks hidden state across boundaries. Attention and MoE blocks need no changes
+— transformers builds block-diagonal masks from position_ids for attention.</p>
 <p>CP correction (ring-shift of SSM state + additive output fix) is handled by
-<code>wrap_mamba_scan_for_cp</code> from <code>mamba_utils</code>, which wraps the
-<code>mamba_chunk_scan_combined</code> call at the module level.</p>
+<code>wrap_mamba_scan_for_cp</code> from <code>mamba_utils</code>, which wraps the chunk-scan
+call at the module level.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -911,17 +918,35 @@ changes — only the Mamba2 mixer is patched.</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.monkeypatch.models.nemotron_h.modeling.guard_nemotron_h_fused_scan">guard_nemotron_h_fused_scan</a></td>
+<td>Skip the fused Mamba2 training kernel where its assumptions break.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing">patch_nemotron_h_modeling_packing</a></td>
 <td>Patch NemotronH for sample packing: seq_idx threading into Mamba2 SSM kernels.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.monkeypatch.models.nemotron_h.modeling.guard_nemotron_h_fused_scan" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.nemotron_h.modeling.guard_nemotron_h_fused_scan">guard_nemotron_h_fused_scan</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.nemotron_h.modeling.guard_nemotron_h_fused_scan(mod<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Skip the fused Mamba2 training kernel where its assumptions break.</p>
+<p><code>mamba_split_conv1d_scan_combined</code> multiplies by <code>out_proj.weight</code>
+itself, which fails on a bitsandbytes-quantized weight, and it never
+surfaces the final SSM state that the CP correction needs. Returning
+<code>None</code> is upstream’s own “kernel unavailable” signal, so the mixer falls
+back to the separate conv / chunk-scan calls.</p>
+</section>
 <section id="axolotl.monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing">patch_nemotron_h_modeling_packing</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.nemotron_h.modeling.patch_nemotron_h_modeling_packing(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    kernels_enabled<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Patch NemotronH for sample packing: seq_idx threading into Mamba2 SSM kernels.</p>
 <p>_get_unpad_data is handled by SUPPORTED_MULTIPACK_MODEL_TYPES / patch_for_multipack().
 This function only applies the seq_idx patches that are unique to nemotron_h.</p>
+<p><code>kernels_enabled</code> mirrors <code>use_kernels</code>: transformers then kernelizes the
+mixer with the Hub Mamba2 kernels, which take seq_idx like the pip ones.</p>
 
 
 </section>
