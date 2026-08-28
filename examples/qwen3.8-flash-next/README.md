@@ -22,7 +22,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     # QLoRA (1x B300 @ ~111 GiB w offload, else ~207 GiB)
     axolotl train examples/qwen3.8-flash-next/qlora.yaml
 
-    # Vision + text QLoRA
+    # Vision + text QLoRA (1x B300 @ ~93 GiB w offload, else ~190 GiB)
     axolotl train examples/qwen3.8-flash-next/vision-qlora.yaml
     ```
 
