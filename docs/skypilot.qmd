@@ -3,7 +3,7 @@ title: SkyPilot
 description: How to launch Axolotl on any cloud or Kubernetes with SkyPilot
 ---
 
-[SkyPilot](https://github.com/skypilot-org/skypilot) is an open-source framework for running workloads on any cloud or Kubernetes cluster. Instead of provisioning an instance and setting up Docker yourself, you describe the job in a short YAML and SkyPilot finds a GPU across your enabled infrastructure (AWS, GCP, Azure, RunPod, Vast.ai, Kubernetes, and [more](https://docs.skypilot.ai/en/latest/getting-started/installation.html)), pulls the Axolotl image, and runs training.
+[SkyPilot](https://github.com/skypilot-org/skypilot) runs workloads on any cloud or Kubernetes cluster. You describe the job in a short YAML, and SkyPilot finds a GPU across your enabled infrastructure (AWS, GCP, Azure, RunPod, Vast.ai, Kubernetes, and [more](https://docs.skypilot.ai/en/latest/getting-started/installation.html)), pulls the Axolotl image, and runs training.
 
 ## Setup
 
@@ -30,11 +30,11 @@ run: |
   axolotl train /workspace/axolotl/examples/llama-3/lora-1b.yml
 ```
 
-The image ships the example configs at `/workspace/axolotl/examples`, so there is nothing to fetch. Paths are absolute because the `run` block executes in `~/sky_workdir`, not in the image's Axolotl checkout.
+The `run` block executes in `~/sky_workdir`, not in the image's Axolotl checkout, so configs bundled in the image need absolute paths.
 
-Note the image choice: SkyPilot sources `~/.bashrc` when running `setup` and `run`, and the `-cloud` image's `.bashrc` attaches a tmux session and exits, which terminates the command. Use the plain image as above, or `axolotlai/axolotl-cloud-term:main-latest` if you want the cloud image's HuggingFace cache defaults without tmux.
+On the image choice: SkyPilot sources `~/.bashrc` for `setup` and `run`, and the `-cloud` image's `.bashrc` attaches a tmux session and exits, killing the command. Use the plain image as above, or `axolotlai/axolotl-cloud-term:main-latest` for the cloud image's HuggingFace cache defaults without tmux.
 
-Launch it, stream logs, and clean up when done:
+Launch it, then re-attach to logs or clean up when done:
 
 ```bash
 sky launch -c axolotl axolotl-skypilot.yaml
@@ -42,7 +42,7 @@ sky logs axolotl
 sky down axolotl
 ```
 
-Training outputs live on the cluster and disappear with `sky down`. The config's relative `output_dir` lands under `~/sky_workdir`, so copy outputs off first (`rsync -Pavz axolotl:sky_workdir/outputs/ ./outputs/`) or mount a bucket as shown in the spot section below.
+The config's relative `output_dir` lands under `~/sky_workdir` on the cluster and disappears with `sky down`, so copy it off first (`rsync -Pavz axolotl:sky_workdir/outputs/ ./outputs/`) or mount a bucket as shown below.
 
 The example configs referenced here use ungated models. For gated models, pass your token at launch:
 
@@ -50,13 +50,13 @@ The example configs referenced here use ungated models. For gated models, pass y
 sky launch -c axolotl axolotl-skypilot.yaml --secret HF_TOKEN
 ```
 
-The bare name with no value attached is intentional: SkyPilot reads `$HF_TOKEN` from your local shell.
+The bare name is intentional: SkyPilot reads `$HF_TOKEN` from your local shell.
 
-To train with your own config, add `workdir: .` to the task file. Your current directory is then synced to `~/sky_workdir`, which is where the `run` commands already execute, so `axolotl train my_training.yml` works as-is.
+To train with your own config, add `workdir: .` to the task file. Your current directory syncs to `~/sky_workdir`, where the `run` commands already execute, so `axolotl train my_training.yml` works as-is.
 
 ## Multi-node
 
-Set `num_nodes` and pass SkyPilot's runtime environment variables to the torchrun launcher described in the [multi-node guide](multi-node.qmd). SkyPilot runs the `run` block on every node, and the image already ships Axolotl, so nothing needs installing per node. In a separate task file, e.g. `axolotl-multinode.yaml`:
+Set `num_nodes` and pass SkyPilot's runtime environment variables to the torchrun launcher described in the [multi-node guide](multi-node.qmd). SkyPilot runs the `run` block on every node. In a separate task file, e.g. `axolotl-multinode.yaml`:
 
 ```yaml
 num_nodes: 2
@@ -98,7 +98,7 @@ To scale out, launch a new cluster with more nodes: `sky launch -c axolotl-4n --
 
 ## Spot instances
 
-To run on spot (preemptible) instances, add `use_spot: true` under `resources` in your task file:
+To run on spot (preemptible) instances, add `use_spot: true` under `resources`:
 
 ```yaml
 resources:
@@ -107,7 +107,7 @@ resources:
   use_spot: true
 ```
 
-For long runs, use managed jobs instead of `sky launch`: SkyPilot then auto-recovers the job if the spot instance is preempted. If the task has a `workdir` or local `file_mounts`, managed jobs stage them through a temporary object-store bucket (or one you pick with `jobs.bucket` in `~/.sky/config.yaml`); without object store access, files are streamed through the jobs controller instead.
+For long runs, use managed jobs instead of `sky launch`: SkyPilot then auto-recovers the job if the instance is preempted. Any `workdir` or local `file_mounts` are staged through an object-store bucket, which you can pick with `jobs.bucket` in `~/.sky/config.yaml`.
 
 ```bash
 sky jobs launch -n axolotl axolotl-skypilot.yaml
@@ -122,7 +122,7 @@ file_mounts:
     mode: MOUNT_CACHED
 ```
 
-Point `output_dir` in your Axolotl config at `/checkpoints` and set `auto_resume_from_checkpoints: true` so a recovered job resumes from the newest checkpoint in the bucket. One caveat: `MOUNT_CACHED` uploads asynchronously and Axolotl resumes from the highest-numbered checkpoint without validating it, so an abrupt preemption can leave that checkpoint incomplete and the resume failing. If that happens, delete the incomplete checkpoint directory from the bucket and the job will resume from the previous one.
+Point `output_dir` at `/checkpoints` and set `auto_resume_from_checkpoints: true` so a recovered job resumes from the newest checkpoint. Caveat: `MOUNT_CACHED` uploads asynchronously and Axolotl does not validate what it resumes from, so a preemption can leave the newest checkpoint incomplete. If the resume fails, delete that directory from the bucket to fall back to the previous one.
 
 ## Further reading
 
