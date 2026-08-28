@@ -68,7 +68,6 @@ run: |
   IFACE=$(awk '$2=="00000000" {print $1; exit}' /proc/net/route)
   export GLOO_SOCKET_IFNAME=$IFACE
   export NCCL_SOCKET_IFNAME=$IFACE
-  export NCCL_IB_DISABLE=0
   export NCCL_BUFFSIZE=2097152
 
   axolotl fetch examples
