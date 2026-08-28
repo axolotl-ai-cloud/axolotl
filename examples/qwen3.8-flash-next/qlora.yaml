@@ -13,6 +13,9 @@ load_in_4bit: true
 # integration cannot reach. Without this ~96% of the model stays in bf16.
 quantize_moe_experts: true
 
+# keeps the 51.2B n-gram table (95.4 GiB) in host RAM; needs ~100 GB free system RAM
+ple_cpu_offload: true
+
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
