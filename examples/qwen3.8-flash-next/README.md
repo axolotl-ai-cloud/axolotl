@@ -56,10 +56,10 @@ lora_target_modules:
 | Feature | Status |
 |---|---|
 | `attn_implementation` | `sdpa` only. |
-| `lora_target_linear` | Incompatible. It expands to the QSA indexer projection, which receives no gradient, so that adapter would silently never train. |
+| `lora_target_linear` | Incompatible. It expands to the QSA indexer projection incorrectly. |
 | LoRA kernels | Unsupported |
 | Liger | Unsupported due to incompatible kernels |
-| `sdpa_varlen` | Unsupported, and not needed: packing isolation comes from the 4D block-diagonal mask, not from varlen. |
+| `sdpa_varlen` | Unsupported |
 | Full finetuning | Untested. The bf16 weights alone are 329.6 GiB. |
 
 ### TIPS
