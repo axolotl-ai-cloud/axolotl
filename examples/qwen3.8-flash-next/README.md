@@ -77,6 +77,9 @@ lora_target_modules:
 
 ### TIPS
 
+- `ple_cpu_offload: true` keeps the 51.2B n-gram table (95.4 GiB) in host RAM, cutting peak VRAM
+  from 206.8 to 111.4 GiB at a ~5% throughput cost, with identical loss. The model gathers only
+  the rows each token needs. Needs ~100 GB of free system RAM, and 4-bit or 8-bit loading.
 - Sample packing is supported and enabled in `qlora.yaml`. Axolotl's "0.0 loss with sdpa in bf16" warning fires on any non-SM90 GPU, so it also fires on Blackwell; a packed 4096 run on B300 trains normally.
 - QSA only engages past 2048 tokens, since each query selects 512 blocks of 4. Below that it is a no-op and Axolotl short-circuits the indexer.
 - Set `lora_dropout: 0` whenever `lora_target_parameters` is set.
