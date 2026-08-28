@@ -1842,12 +1842,16 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="after")
     def check_sample_packing_w_sdpa_bf16(self):
-        is_sm_90 = self.capabilities and self.capabilities.compute_capability == "sm_90"
+        cc = self.capabilities.compute_capability if self.capabilities else None
+        # the torch issue below is pre-Hopper, so anything sm_90 or newer is unaffected
+        is_hopper_or_newer = bool(
+            cc and cc.startswith("sm_") and int(cc.split("_", 1)[1]) >= 90
+        )
         if (
             self.sample_packing
             and self.attn_implementation == "sdpa"
             and (self.bfloat16 or self.bf16)
-            and not is_sm_90
+            and not is_hopper_or_newer
         ):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
             LOG.warning(
