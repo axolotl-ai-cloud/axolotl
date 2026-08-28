@@ -68,10 +68,8 @@ from axolotl.utils.schemas.enums import RLType
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
-# Architectures whose Mamba2 mixer calls the fused kernel with
-# ``outproj_weight=self.out_proj.weight`` (see ``modeling_falcon_h1.py`` /
-# ``modeling_nemotron_h.py`` in transformers) rather than going through the
-# module, so ``out_proj`` must stay in its original dtype under bitsandbytes.
+# Mamba2 mixers in these architectures pass ``outproj_weight=self.out_proj.weight``
+# to the fused kernel instead of calling the module, so ``out_proj`` cannot be 4-bit.
 MAMBA2_FUSED_OUT_PROJ_MODEL_TYPES = ("falcon_h1", "nemotron_h")
 
 
@@ -691,14 +689,8 @@ class ModelLoader:
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
             if self.cfg.model_config_type in MAMBA2_FUSED_OUT_PROJ_MODEL_TYPES:
-                # The Mamba2 fused kernels read ``out_proj.weight`` directly
-                # instead of calling the module, so the output projection cannot
-                # be packed to 4-bit. ``lm_head`` is listed explicitly because
-                # setting ``llm_int8_skip_modules`` at all makes transformers
-                # skip the automatic default it would otherwise compute
-                # (``HfQuantizer.get_modules_to_not_convert`` only falls back to
-                # ``get_keys_to_not_convert`` when the list is ``None``), which
-                # is what keeps the output head out of 4-bit.
+                # lm_head is listed too: passing llm_int8_skip_modules at all
+                # suppresses the default transformers would otherwise compute.
                 bnb_config["llm_int8_skip_modules"] = ["out_proj", "lm_head"]
 
             if self.cfg.bnb_config_kwargs:

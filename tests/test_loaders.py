@@ -106,9 +106,7 @@ class TestModelsUtils:
     def test_qlora_skips_out_proj_for_mamba2_fused_architectures(
         self, model_config_type
     ):
-        """The Mamba2 fused kernels read ``out_proj.weight`` directly, so it must
-        not be packed to 4-bit. ``lm_head`` rides along because passing
-        ``llm_int8_skip_modules`` suppresses the default transformers computes."""
+        """out_proj must stay out of 4-bit for the Mamba2 fused kernels."""
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = True
         self.cfg.adapter = "qlora"
@@ -121,8 +119,7 @@ class TestModelsUtils:
         ].llm_int8_skip_modules == ["out_proj", "lm_head"]
 
     def test_qlora_leaves_skip_modules_unset_for_other_architectures(self):
-        """Architectures without the fused-kernel constraint keep transformers'
-        own default, which is computed from the model at load time."""
+        """Other architectures keep transformers' own default."""
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = True
         self.cfg.adapter = "qlora"
@@ -136,7 +133,7 @@ class TestModelsUtils:
         )
 
     def test_bnb_config_kwargs_still_overrides_the_skip_modules(self):
-        """``bnb_config_kwargs`` is applied last and stays authoritative."""
+        """bnb_config_kwargs is applied last and stays authoritative."""
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = True
         self.cfg.adapter = "qlora"
