@@ -75,14 +75,14 @@ fsdp:
   - full_shard
 fsdp_config:
   fsdp_version: 2
-  offload_params: false
-  # cpu_ram_efficient_loading: true # does not work with load_in_8bit/4bit
-  auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
-  state_dict_type: SHARDED_STATE_DICT
-  sharding_strategy: FULL_SHARD
-  reshard_after_forward: true
-  activation_checkpointing: true
+  fsdp_offload_params: false
+  # fsdp_cpu_ram_efficient_loading: true # does not work with load_in_8bit/4bit
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_reshard_after_forward: true
+  fsdp_activation_checkpointing: true
 special_tokens:
   pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>

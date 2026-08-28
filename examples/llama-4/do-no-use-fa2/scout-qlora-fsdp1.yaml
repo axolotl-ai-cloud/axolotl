@@ -77,16 +77,16 @@ fsdp:
   - auto_wrap
   - full_shard
 fsdp_config:
-  transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
-  limit_all_gathers: true
-  sync_module_states: true
-  offload_params: true
-  use_orig_params: false
-  cpu_ram_efficient_loading: true
-  auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  state_dict_type: FULL_STATE_DICT
-  sharding_strategy: FULL_SHARD
-  activation_checkpointing: true
+  fsdp_transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: true
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_activation_checkpointing: true
 special_tokens:
   pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>
