@@ -87,6 +87,36 @@ Paper: [https://arxiv.org/abs/2411.02853](https://arxiv.org/abs/2411.02853)
 optimizer: adopt_adamw
 ```
 
+### adamc
+
+AdamW with the weight decay corrected for the learning rate schedule. AdamW's decoupled
+decay makes the steady-state gradient-to-weight-norm ratio depend on the current learning
+rate, so a decaying schedule pushes the gradient norm up over the second half of training.
+AdamC scales the decay by the schedule position (`lambda_t = lambda * lr_t / lr_max`),
+which holds that ratio constant and keeps weight norms stable.
+
+Paper: [https://arxiv.org/abs/2506.02285](https://arxiv.org/abs/2506.02285)
+
+```yaml
+optimizer: adamc
+learning_rate: 0.00001
+weight_decay: 0.05
+lr_scheduler: cosine   # the correction is a no-op under a constant LR
+```
+
+The peak learning rate is captured per parameter group when the optimizer is built, so
+`embedding_lr`, `embedding_lr_scale`, and `lr_groups` are each corrected against their own
+peak. Override it explicitly if you build a schedule that exceeds the configured LR:
+
+```yaml
+optim_args:
+  max_lr: 0.0001
+```
+
+Only groups with a non-zero weight decay are affected — axolotl already excludes
+embeddings, the LM head, norms, and biases from decay, matching the paper's rule of
+applying the correction to normalized layers only.
+
 ### came_pytorch
 
 GitHub: [https://github.com/yangluo7/CAME/tree/master](https://github.com/yangluo7/CAME/tree/master)
