@@ -1223,6 +1223,23 @@ class OptimizationValidationMixin:
 
         return self
 
+    @model_validator(mode="after")
+    def check_fsdp2_cpu_ram_efficient_loading_w_4bit(self):
+        # nf4 quantizes on rank 0 only: its params keep the packed `(N, 1)` shape there while the
+        # other ranks stay on meta unpacked, so the FSDP2 load scatters mismatched sizes.
+        if (
+            self.fsdp_config
+            and str(self.fsdp_version) == "2"
+            and self.fsdp_config.cpu_ram_efficient_loading
+            and self.load_in_4bit
+        ):
+            raise ValueError(
+                "FSDP2 does not support `cpu_ram_efficient_loading` with load_in_4bit; the "
+                "rank-0-only bitsandbytes quantization deadlocks the state dict scatter. "
+                "Please set `fsdp_config.cpu_ram_efficient_loading` to false."
+            )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def check_tensor_parallel_size_update_ds_json(cls, data):
