@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+from transformers.integrations.accelerate import force_accelerate_hooks
 
 from axolotl.utils.logging import get_logger
 
@@ -13,6 +14,13 @@ try:
     from fla.modules.convolution import causal_conv1d as fla_causal_conv1d
 except ImportError:
     fla_causal_conv1d = None
+
+try:
+    from fla.ops.gated_delta_rule import (
+        chunk_gated_delta_rule as fla_chunk_gated_delta_rule,
+    )
+except ImportError:
+    fla_chunk_gated_delta_rule = None
 
 
 def get_cu_seqlens(position_ids):
@@ -64,7 +72,7 @@ def patch_qwen3_next_decoder_layer():
         hidden_states = self.input_layernorm(hidden_states)
 
         # Token Mixer
-        if self.layer_type == "linear_attention":
+        if self.block_type == "linear_attention":
             hidden_states = self.linear_attn(
                 hidden_states=hidden_states,
                 cache_params=past_key_values,
@@ -72,7 +80,7 @@ def patch_qwen3_next_decoder_layer():
                 attention_mask=attention_mask,
                 position_ids=position_ids,
             )
-        elif self.layer_type == "full_attention":
+        elif self.block_type == "full_attention":
             # Self Attention
             hidden_states, _ = self.self_attn(
                 hidden_states=hidden_states,
@@ -110,17 +118,15 @@ def patch_qwen3_next_decoder_layer():
 def patch_qwen3_next_gateddelta_layer():
     """Patch Qwen3NextGatedDeltaNet to parse cu_seqlens and pass to chunk_gated_delta_rule"""
     try:
-        from transformers.models.qwen3_next.modeling_qwen3_next import (
-            Qwen3NextGatedDeltaNet,
-            apply_mask_to_padding_states,
-        )
+        from transformers.models.qwen3_next import modeling_qwen3_next as modeling
     except ImportError:
         LOG.warning("Qwen3Next model not found, skipping patch")
-        return
+        return None
 
     # Store original forward method
-    original_gated_delta_net_forward = Qwen3NextGatedDeltaNet.forward
+    original_gated_delta_net_forward = modeling.Qwen3NextGatedDeltaNet.forward
 
+    @force_accelerate_hooks("conv1d")
     def patched_gated_delta_net_forward(
         self,
         hidden_states: torch.Tensor,
@@ -130,16 +136,17 @@ def patch_qwen3_next_gateddelta_layer():
         cache_position: Optional[
             torch.LongTensor
         ] = None,  # unused: no cache in packed training
+        **kwargs,
     ):
-        hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
+        hidden_states = modeling.apply_mask_to_padding_states(
+            hidden_states, attention_mask
+        )
 
         # Set up dimensions for reshapes later
-        batch_size, seq_len, _ = hidden_states.shape
+        seq_len = hidden_states.shape[1]
 
         use_precomputed_states = (
-            cache_params is not None
-            and cache_params.has_previous_state(self.layer_idx)
-            and seq_len == 1
+            cache_params is not None and cache_params.has_previous_state(self.layer_idx)
         )
 
         # Compute cu_seqlens early for use by both causal_conv1d and chunk_gated_delta_rule
@@ -147,10 +154,16 @@ def patch_qwen3_next_gateddelta_layer():
         if not use_precomputed_states and position_ids is not None:
             cu_seqlens = get_cu_seqlens(position_ids=position_ids)
 
-        # getting projected states from cache if it exists
-        if use_precomputed_states:
-            conv_state = cache_params.layers[self.layer_idx].conv_states
-            recurrent_state = cache_params.layers[self.layer_idx].recurrent_states
+        if cu_seqlens is not None and (
+            fla_causal_conv1d is None or fla_chunk_gated_delta_rule is None
+        ):
+            # the transformers fallbacks accept cu_seqlens but ignore it, which would
+            # silently mix tokens across packed samples
+            raise RuntimeError(
+                "Packed sequences require flash-linear-attention (cu_seqlens support "
+                "in causal_conv1d and chunk_gated_delta_rule). Install "
+                "flash-linear-attention or disable packing."
+            )
 
         projected_states_qkvz = self.in_proj_qkvz(hidden_states)
         projected_states_ba = self.in_proj_ba(hidden_states)
@@ -164,52 +177,50 @@ def patch_qwen3_next_gateddelta_layer():
         mixed_qkv = torch.cat((query, key, value), dim=-1)  # [B, T, D]
         mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, D, T]
 
-        if use_precomputed_states:
-            mixed_qkv = self.causal_conv1d_update(
+        if (
+            use_precomputed_states
+            and seq_len == 1
+            and not cache_params.layers[self.layer_idx].record_past
+        ):
+            conv_state = cache_params.layers[self.layer_idx].conv_states[0]
+            mixed_qkv = modeling.causal_conv1d_update(
                 mixed_qkv,
                 conv_state,
                 self.conv1d.weight.squeeze(1),
                 self.conv1d.bias,
                 self.activation,
             )
+        elif cu_seqlens is not None:
+            if cache_params is not None:
+                cache_params.update_conv_state(
+                    mixed_qkv, self.layer_idx, conv_kernel_size=self.conv_kernel_size
+                )
+            # FLA Triton causal_conv1d: [B, T, D] in/out, with cu_seqlens support
+            mixed_qkv = mixed_qkv.transpose(1, 2)
+            mixed_qkv, _ = fla_causal_conv1d(
+                x=mixed_qkv,
+                weight=self.conv1d.weight.squeeze(1),
+                bias=self.conv1d.bias,
+                activation=self.activation,
+                cu_seqlens=cu_seqlens,
+            )
+            mixed_qkv = mixed_qkv.transpose(1, 2)  # back to [B, D, T]
         else:
             if cache_params is not None:
-                conv_state = F.pad(
-                    mixed_qkv,
-                    (self.conv_kernel_size - mixed_qkv.shape[-1], 0),
+                mixed_qkv = cache_params.update_conv_state(
+                    mixed_qkv, self.layer_idx, conv_kernel_size=self.conv_kernel_size
                 )
-                cache_params.update_conv_state(conv_state, self.layer_idx)
 
-            if fla_causal_conv1d is not None:
-                # FLA Triton causal_conv1d: [B, T, D] in/out, with cu_seqlens support
-                mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, T, D] for FLA
-                mixed_qkv, _ = fla_causal_conv1d(
-                    x=mixed_qkv,
-                    weight=self.conv1d.weight.squeeze(1),
-                    bias=self.conv1d.bias,
-                    activation=self.activation,
-                    cu_seqlens=cu_seqlens,
-                )
-                mixed_qkv = mixed_qkv.transpose(1, 2)  # back to [B, D, T]
-            elif self.causal_conv1d_fn is not None:
-                mixed_qkv = self.causal_conv1d_fn(
-                    x=mixed_qkv,
-                    weight=self.conv1d.weight.squeeze(1),
-                    bias=self.conv1d.bias,
-                    activation=self.activation,
-                    seq_idx=None,
-                )
-            else:
-                # PyTorch fallback (no cu_seqlens support)
-                if cu_seqlens is not None and cu_seqlens.shape[0] > batch_size + 1:
-                    raise RuntimeError(
-                        "Packed sequences require fla.modules.convolution.causal_conv1d "
-                        "(cu_seqlens support). Install flash-linear-attention or disable packing."
-                    )
-                LOG.warning_once(
-                    "FLA causal_conv1d not available. Falling back to PyTorch conv1d."
-                )
-                mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])
+            mixed_qkv = modeling.causal_conv1d_fn(
+                mixed_qkv,
+                self.conv1d.weight.squeeze(1),
+                self.conv1d.bias,
+                activation=self.activation,
+            )
+
+            # Drop the additional previous states
+            if cache_params is not None:
+                mixed_qkv = mixed_qkv[:, :, -seq_len:]
 
         mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, T, D]
         query, key, value = torch.split(
@@ -232,21 +243,38 @@ def patch_qwen3_next_gateddelta_layer():
             query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
-        if not use_precomputed_states:
-            core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
+        recurrent_state = (
+            cache_params.layers[self.layer_idx].recurrent_states[0]
+            if use_precomputed_states
+            else None
+        )
+        if use_precomputed_states and seq_len == 1:
+            core_attn_out, last_recurrent_state = (
+                modeling.torch_recurrent_gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    g=g,
+                    beta=beta,
+                    initial_state=recurrent_state,
+                    output_final_state=cache_params is not None,
+                    use_qk_l2norm_in_kernel=True,
+                )
+            )
+        elif cu_seqlens is not None:
+            core_attn_out, last_recurrent_state = fla_chunk_gated_delta_rule(
                 query,
                 key,
                 value,
                 g=g,
                 beta=beta,
-                initial_state=None,
+                initial_state=recurrent_state,
                 output_final_state=cache_params is not None,
                 use_qk_l2norm_in_kernel=True,
                 cu_seqlens=cu_seqlens,
             )
-
         else:
-            core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
+            core_attn_out, last_recurrent_state = modeling.torch_chunk_gated_delta_rule(
                 query,
                 key,
                 value,
@@ -275,71 +303,17 @@ def patch_qwen3_next_gateddelta_layer():
         return output
 
     # Apply the patches
-    Qwen3NextGatedDeltaNet.forward = patched_gated_delta_net_forward
+    modeling.Qwen3NextGatedDeltaNet.forward = patched_gated_delta_net_forward
 
     def unpatch():
         """Restore the original forward method"""
-        Qwen3NextGatedDeltaNet.forward = original_gated_delta_net_forward
-
-    return unpatch
-
-
-def patch_qwen3_next_imports():
-    """Patch Qwen3Next imports to use try/except instead of is_flash_linear_attention_available."""
-    try:
-        import transformers.models.qwen3_next.modeling_qwen3_next as qwen3_modeling
-    except ImportError:
-        LOG.warning("Qwen3Next model not found, skipping import patch")
-        return
-
-    # Save original values for unpatch
-    original_FusedRMSNormGated = getattr(qwen3_modeling, "FusedRMSNormGated", None)
-    original_chunk_gated_delta_rule = getattr(
-        qwen3_modeling, "chunk_gated_delta_rule", None
-    )
-    original_fused_recurrent_gated_delta_rule = getattr(
-        qwen3_modeling, "fused_recurrent_gated_delta_rule", None
-    )
-    original_is_fast_path_available = getattr(
-        qwen3_modeling, "is_fast_path_available", False
-    )
-
-    try:
-        from fla.modules import FusedRMSNormGated
-        from fla.ops.gated_delta_rule import (
-            chunk_gated_delta_rule,
-            fused_recurrent_gated_delta_rule,
-        )
-
-        qwen3_modeling.FusedRMSNormGated = FusedRMSNormGated
-        qwen3_modeling.chunk_gated_delta_rule = chunk_gated_delta_rule
-        qwen3_modeling.fused_recurrent_gated_delta_rule = (
-            fused_recurrent_gated_delta_rule
-        )
-
-        # Force is_fast_path_available to be True
-        # fla has triton kernels for causal_conv1d
-        qwen3_modeling.is_fast_path_available = True
-    except ImportError:
-        qwen3_modeling.chunk_gated_delta_rule = None
-        qwen3_modeling.fused_recurrent_gated_delta_rule = None
-        qwen3_modeling.FusedRMSNormGated = None
-
-    def unpatch():
-        """Restore the original import values"""
-        qwen3_modeling.FusedRMSNormGated = original_FusedRMSNormGated
-        qwen3_modeling.chunk_gated_delta_rule = original_chunk_gated_delta_rule
-        qwen3_modeling.fused_recurrent_gated_delta_rule = (
-            original_fused_recurrent_gated_delta_rule
-        )
-        qwen3_modeling.is_fast_path_available = original_is_fast_path_available
+        modeling.Qwen3NextGatedDeltaNet.forward = original_gated_delta_net_forward
 
     return unpatch
 
 
 def patch_qwen3_next_modeling_packing():
     """Apply all Qwen3Next model patches."""
-    patch_qwen3_next_imports()
     patch_qwen3_next_decoder_layer()
     patch_qwen3_next_gateddelta_layer()
 

@@ -11,11 +11,13 @@ regresses, a packed forward would attend across documents and this test would fa
 
 import torch
 from transformers import LlamaConfig, LlamaForCausalLM
-from transformers.testing_utils import require_flash_attn, require_torch_gpu
+from transformers.testing_utils import require_torch_gpu
+
+from ..utils import requires_flash_attn
 
 
 @require_torch_gpu
-@require_flash_attn
+@requires_flash_attn
 def test_packed_forward_matches_per_document_forward():
     torch.manual_seed(0)
     config = LlamaConfig(

@@ -11,7 +11,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig, validate_ao_dtype
 
-from .utils import check_model_output_exists, check_tensorboard
+from .utils import check_model_output_exists, check_tensorboard, requires_flash_attn
 
 
 class TestQATLlama:
@@ -114,6 +114,7 @@ class TestQATLlama:
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
 
+    @requires_flash_attn
     def test_qat_dpo(self, temp_dir):
         cfg = DictDefault(
             {

@@ -8,7 +8,6 @@ format:
 
 ## Supported Models
 
-- [Gemma-4](#sec-gemma-4) *(NEW)*
 - [Mllama](#sec-mllama)
 - [Llama4](#sec-llama4)
 - [Pixtral](#sec-pixtral)
@@ -17,16 +16,20 @@ format:
 - [Mistral-Small-4](#sec-mistral-small-4)
 - [Magistral-Small-2509](#sec-magistral-small-2509)
 - [Voxtral](#sec-voxtral)
+- [Gemma-4](#sec-gemma-4)
 - [Gemma-3](#sec-gemma-3)
 - [Gemma-3n](#sec-gemma-3n)
 - [Qwen2-VL](#sec-qwen2-vl)
 - [Qwen2.5-VL](#sec-qwen25-vl)
+- [Qwen3-VL](#sec-qwen3-vl)
 - [Qwen3.5](#sec-qwen3-5)
 - [GLM-4.6V](#sec-glm-4-6v)
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
 - [Intern-VL](#sec-intern-vl)
 - [PaddleOCR-VL](#sec-paddleocr-vl)
+- [North Micro Vision Instruct](#sec-north-micro-vision-instruct)
+- [Muse Glimmer](#sec-muse-glimmer)
 
 ## Usage
 
@@ -60,7 +63,7 @@ image_size: 512
 image_resize_algorithm: bilinear
 ```
 
-Please see [examples](https://github.com/axolotl-ai/axolotl/tree/main/examples) folder for full configs.
+Please see [examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples) folder for full configs.
 
 ::: {.callout-tip}
 Some of our chat_templates have been extended to support broader dataset types. This should not break any existing configs.
@@ -236,15 +239,6 @@ base_model: Qwen/Qwen3.5-9B
 chat_template: qwen3_5
 ```
 
-### PaddleOCR-VL {#sec-paddleocr-vl}
-
-```yaml
-base_model: PaddlePaddle/PaddleOCR-VL-1.6
-processor_type: AutoProcessor
-```
-
-Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See the [example configs and tips](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/paddleocr-vl) for details.
-
 ### GLM-4.6V {#sec-glm-4-6v}
 
 Both GLM-4.6V (106B MoE) and GLM-4.6V-Flash (9B) are supported.
@@ -285,6 +279,31 @@ Please make sure to install `timm` via `pip3 install timm==1.0.19`
 
 ```yaml
 base_model: OpenGVLab/InternVL3_5-8B
+```
+
+### PaddleOCR-VL {#sec-paddleocr-vl}
+
+```yaml
+base_model: PaddlePaddle/PaddleOCR-VL-1.6
+processor_type: AutoProcessor
+```
+
+Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See the [example configs and tips](https://docs.axolotl.ai/docs/models/paddleocr-vl.html) for details.
+
+### North Micro Vision Instruct {#sec-north-micro-vision-instruct}
+
+```yaml
+base_model: CohereLabs/North-Micro-Vision-Instruct
+processor_type: AutoProcessor
+```
+
+### Muse Glimmer {#sec-muse-glimmer}
+
+Requires `transformers>=5.15.0`.
+
+```yaml
+base_model: meta-models/Muse-Glimmer-30B
+processor_type: AutoProcessor
 ```
 
 ## Dataset Format

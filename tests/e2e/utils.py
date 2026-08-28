@@ -10,6 +10,7 @@ import unittest
 from functools import wraps
 from pathlib import Path
 
+import pytest
 import torch
 from packaging import version
 from tbparse import SummaryReader
@@ -40,6 +41,24 @@ def most_recent_subdir(path):
     subdir = max(subdirectories, key=os.path.getctime)
 
     return subdir
+
+
+def flash_attn_available() -> bool:
+    """True when flash_attention_2/3 can load: the flash-attn package, or a
+    kernels-hub prebuilt binary matching this torch build."""
+    try:
+        from transformers.utils import is_flash_attn_2_available
+
+        return is_flash_attn_2_available(kernels_fallback_ok=True)
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
+# pytest.mark works on plain (non-TestCase) classes; unittest.skipUnless does not.
+requires_flash_attn = pytest.mark.skipif(
+    not flash_attn_available(),
+    reason="flash-attn unavailable: no package and no kernels-hub build for this torch",
+)
 
 
 def require_torch_2_4_1(test_case):

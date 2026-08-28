@@ -5,9 +5,7 @@ monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interatio
 import contextlib
 import copy
 import functools
-import gc
 import os
-import sys
 
 import torch
 import torch.distributed as dist
@@ -343,114 +341,6 @@ def fsdp2_load_full_state_dict(
     )
     log_gpu_memory_usage(LOG, "Memory usage after broadcasting full state dict", 0)
     return model
-
-
-def get_state_dict(self, model, unwrap=True):
-    """
-    Returns the state dictionary of a model sent through [`Accelerator.prepare`] potentially without full
-    precision.
-
-    Args:
-        model (`torch.nn.Module`):
-            A PyTorch model sent through [`Accelerator.prepare`]
-        unwrap (`bool`, *optional*, defaults to `True`):
-            Whether to return the original underlying state_dict of `model` or to return the wrapped state_dict
-
-    Returns:
-        `dict`: The state dictionary of the model potentially without full precision.
-
-    Example:
-
-    ```python
-    >>> import torch
-    >>> from accelerate import Accelerator
-
-    >>> accelerator = Accelerator()
-    >>> net = torch.nn.Linear(2, 2)
-    >>> net = accelerator.prepare(net)
-    >>> state_dict = accelerator.get_state_dict(net)
-    ```
-    """
-    from accelerate import DistributedType
-    from accelerate.utils import compare_versions
-
-    if self.distributed_type == DistributedType.DEEPSPEED:
-        zero3_sharding = self.deepspeed_config["zero_optimization"]["stage"] == 3
-        tp_sharding = (
-            self.deepspeed_config.get("tensor_parallel", {}).get("autotp_size", 0) > 1
-        )
-        if zero3_sharding or tp_sharding:
-            if model.zero_gather_16bit_weights_on_model_save():
-                if tp_sharding and not compare_versions("deepspeed", ">=", "0.16.4"):
-                    raise ImportError(
-                        "Deepspeed TP requires deepspeed >= 0.16.4, Please update DeepSpeed via `pip install deepspeed -U`."
-                    )
-                state_dict = (
-                    model._consolidated_16bit_state_dict()
-                    if tp_sharding
-                    else model._zero3_consolidated_16bit_state_dict()
-                )
-            else:
-                raise ValueError(
-                    "Cannot get 16bit model weights because `stage3_gather_16bit_weights_on_model_save` in DeepSpeed config is False. "
-                    "To save the model weights in 16bit, set `stage3_gather_16bit_weights_on_model_save` to True in DeepSpeed config file or "
-                    "set `zero3_save_16bit_model` to True when using `accelerate config`. "
-                    "To save the full checkpoint, run `model.save_checkpoint(save_dir)` and use `zero_to_fp32.py` to recover weights."
-                )
-        else:
-            from deepspeed.checkpoint.utils import clone_tensors_for_torch_save
-
-            state_dict = clone_tensors_for_torch_save(
-                self.unwrap_model(model).state_dict()
-            )
-    elif self.is_fsdp2:
-        # https://github.com/pytorch/torchtune/blob/main/torchtune/training/_distributed.py#L465
-        from torch.distributed.tensor import DTensor
-
-        state_dict = {}
-        sharded_state_dict = model.state_dict()
-        is_rank_zero = torch.distributed.get_rank() == 0
-        for param_name, param in sharded_state_dict.items():
-            if param.is_cpu:
-                param = param.to(torch.device("cuda"))
-
-            if isinstance(param, DTensor):
-                param = param.full_tensor()
-
-            if is_rank_zero:
-                state_dict[param_name] = param.cpu()
-            # Drop the GPU-resident gathered tensor before the next iteration
-            # allocates the next one; otherwise the caching allocator holds
-            # both reservations and we accumulate ~model-size of VRAM.
-            del param
-            torch.distributed.barrier()
-
-        # Release the sharded view and force the allocator to give back the
-        # gather buffers.
-        del sharded_state_dict
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    elif self.distributed_type == DistributedType.FSDP:
-        from torch.distributed.fsdp import (
-            FullStateDictConfig,
-            FullyShardedDataParallel as FSDP,
-            StateDictType,
-        )
-
-        full_state_dict_config = FullStateDictConfig(
-            offload_to_cpu=True, rank0_only=True
-        )
-        with FSDP.state_dict_type(
-            model, StateDictType.FULL_STATE_DICT, full_state_dict_config
-        ):
-            state_dict = model.state_dict()
-    else:
-        if unwrap:
-            model = self.unwrap_model(model)
-        state_dict = model.state_dict()
-
-    return state_dict
 
 
 def patch_peft_param_wrapper_for_fsdp2():
@@ -971,9 +861,3 @@ def patch_accelerate_fsdp2():
     import accelerate
 
     accelerate.accelerator.fsdp2_prepare_model = fsdp2_prepare_model
-    accelerate.Accelerator.get_state_dict = get_state_dict
-    setattr(
-        sys.modules["accelerate"],
-        "Accelerator.get_state_dict",
-        get_state_dict,
-    )

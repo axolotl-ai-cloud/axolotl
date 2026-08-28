@@ -9,6 +9,8 @@ quartodoc:
   package: axolotl
   title: API Reference
   parser: google
+  renderer:
+    style: docs.scripts._renderer.py
 
   sections:
     - title: Core
@@ -447,6 +449,8 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/muse-glimmer.qmd
+                - docs/models/cohere-north-micro-vision-instruct.qmd
                 - docs/models/shieldstral.qmd
                 - docs/models/kimi-linear.qmd
                 - docs/models/plano.qmd
@@ -509,6 +513,7 @@ website:
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
+            - docs/skypilot.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 
