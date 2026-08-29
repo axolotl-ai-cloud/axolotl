@@ -11,20 +11,25 @@ from truss_train import definitions
 
 cloud_config = yaml.safe_load(open("cloud.yaml", "r"))
 gpu = cloud_config.get("gpu", "h100")
-gpu_count = int(cloud_config.get("gpu_count", 1))
-node_count = int(cloud_config.get("node_count", 1))
+gpu_count = (
+    1  # int(cloud_config.get("gpu_count", 1)) # only single GPU supported at the moment
+)
+node_count = (
+    1  # int(cloud_config.get("node_count", 1)) # only single node support for lmeval
+)
 project_name = cloud_config.get("project_name", "axolotl-project") or "axolotl-project"
 secrets = cloud_config.get("secrets", [])
-launcher = cloud_config.get("launcher", "accelerate")
-launcher_args = cloud_config.get("launcher_args", [])
-script_name = "run.sh"
+# launcher = cloud_config.get("launcher", "accelerate")
+# launcher_args = cloud_config.get("launcher_args", [])
+script_name = "eval.sh"
 
-launcher_args_str = ""
-if launcher_args:
-    launcher_args_str = "-- " + " ".join(launcher_args)
+# launcher_args_str = ""
+# if launcher_args:
+#     launcher_args_str = "-- " + " ".join(launcher_args)
 
 # 1. Define a base image for your training job
-BASE_IMAGE = "axolotlai/axolotl:main-py3.11-cu128-2.9.1"
+# must use torch 2.7.0 for vllm
+BASE_IMAGE = "axolotlai/axolotl:main-py3.11-cu126-2.7.1"
 
 # 2. Define the Runtime Environment for the Training Job
 # This includes start commands and environment variables.a
@@ -32,8 +37,8 @@ BASE_IMAGE = "axolotlai/axolotl:main-py3.11-cu128-2.9.1"
 # `SecretReference`.
 
 env_vars = {
-    "AXOLOTL_LAUNCHER": launcher,
-    "AXOLOTL_LAUNCHER_ARGS": launcher_args_str,
+    # "AXOLOTL_LAUNCHER": launcher,
+    # "AXOLOTL_LAUNCHER_ARGS": launcher_args_str,
 }
 for secret_name in secrets:
     env_vars[secret_name] = definitions.SecretReference(name=secret_name)
