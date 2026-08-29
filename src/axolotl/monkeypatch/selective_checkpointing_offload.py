@@ -60,7 +60,6 @@ class _OffloadRef:
     device: torch.device
     size: torch.Size
     stride: tuple[int, ...]
-    storage_offset: int
     buffer_key: _BufferKey
     cpu_tensor: torch.Tensor | None = None
     gpu_tensor: torch.Tensor | None = None
@@ -89,7 +88,6 @@ class SacOffloadEngine:
         self.max_cpu_buffer_pool_size = max_cpu_buffer_pool_size
         self.stats = SacOffloadStats()
 
-        self.s0 = torch.cuda.current_stream() if torch.cuda.is_available() else None
         self.s1 = torch.cuda.Stream() if torch.cuda.is_available() else None
 
         self._pack_seq = 0
@@ -181,7 +179,6 @@ class SacOffloadEngine:
             device=tensor.device,
             size=tensor.size(),
             stride=tuple(tensor.stride()),
-            storage_offset=tensor.storage_offset(),
             buffer_key=key,
             cpu_tensor=cpu_tensor,
         )
@@ -194,14 +191,11 @@ class SacOffloadEngine:
         if ref.gpu_tensor is not None or ref.cpu_tensor is None:
             return
         with torch.cuda.stream(self.s1):
-            gpu_tensor = ref.cpu_tensor.to(ref.device, non_blocking=True)
-            if (
-                gpu_tensor.storage_offset() != ref.storage_offset
-                or gpu_tensor.stride() != ref.stride
-            ):
-                gpu_tensor = torch.as_strided(
-                    gpu_tensor, ref.size, ref.stride, ref.storage_offset
-                )
+            # fresh offset-0 storage; the source offset would overrun the pooled buffer
+            gpu_tensor = torch.empty_strided(
+                ref.size, ref.stride, dtype=ref.cpu_tensor.dtype, device=ref.device
+            )
+            gpu_tensor.copy_(ref.cpu_tensor, non_blocking=True)
         ref.gpu_tensor = gpu_tensor
         ref.restore_event = self.s1.record_event()
 
