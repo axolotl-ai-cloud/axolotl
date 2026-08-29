@@ -528,6 +528,36 @@ def apply_lora_kernel_patches(
 
     layers = get_layers(model)
 
+    # Opt-in B200 factored MLP kernel: hard-gated to sm_100 (and other
+    # certified-envelope conditions); anything else falls back to the
+    # standard kernel path with a logged reason.
+    use_b200_mlp = False
+    apply_b200_mlp_fn = None
+    lora_mlp_b200_module_supported = None
+    if cfg.lora_mlp_kernel and cfg.lora_mlp_kernel_b200:
+        from axolotl.kernels.blackwell import (
+            lora_mlp_b200_config_eligible,
+            lora_mlp_b200_module_supported,
+        )
+
+        use_b200_mlp, b200_reason = lora_mlp_b200_config_eligible(
+            lora_config, activation
+        )
+        if use_b200_mlp:
+            from axolotl.kernels.blackwell.lora_mlp_factored import (
+                apply_lora_mlp_swiglu_b200,
+            )
+
+            apply_b200_mlp_fn = apply_lora_mlp_swiglu_b200
+            LOG.info(
+                "lora_mlp_kernel_b200: using the B200 (sm_100) factored LoRA MLP kernel"
+            )
+        else:
+            LOG.warning(
+                f"lora_mlp_kernel_b200: falling back to the standard LoRA MLP "
+                f"kernel: {b200_reason}"
+            )
+
     linear_attn_patched_layers = 0
     linear_attn_patched_projs: set[str] = set()
 
@@ -635,6 +665,17 @@ def apply_lora_kernel_patches(
 
                 if can_patch_mlp:
                     apply_fn = APPLY_FN_MAPPING[activation]
+                    if use_b200_mlp:
+                        supported, module_reason = lora_mlp_b200_module_supported(
+                            gate_proj, up_proj, down_proj
+                        )
+                        if supported:
+                            apply_fn = apply_b200_mlp_fn
+                        else:
+                            LOG.warning_once(
+                                f"lora_mlp_kernel_b200: standard kernel for "
+                                f"unsupported MLP module(s): {module_reason}"
+                            )
                     layer.mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
