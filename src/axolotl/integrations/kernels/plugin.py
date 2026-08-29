@@ -279,11 +279,17 @@ class KernelsPlugin(BasePlugin):
         from axolotl.integrations.kernels.merge_aware_callback import (
             write_merge_aware_metadata,
         )
-        from axolotl.utils.distributed import is_main_process
+
+        # trainer teardown may have destroyed the process group before this hook,
+        # making is_main_process() (dist.get_rank()) raise; fall back to env rank
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            is_main = torch.distributed.get_rank() == 0
+        else:
+            is_main = os.environ.get("RANK", "0") == "0"
 
         # merge_aware_enabled() still False => start_step was never reached, the
         # adapter never trained through the fake-quant: leave it unstamped
-        if is_main_process() and merge_aware_enabled():
+        if is_main and merge_aware_enabled():
             if write_merge_aware_metadata(
                 cfg.output_dir, start_step=cfg.nvfp4_merge_aware_start_step
             ):

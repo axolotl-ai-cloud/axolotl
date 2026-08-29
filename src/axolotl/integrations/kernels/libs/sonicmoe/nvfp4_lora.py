@@ -805,3 +805,95 @@ def grouped_moe_reference_forward(
     return combine_expert_outputs(
         y_grouped, gather_token_idx, weights_grouped, hidden_states.shape[0]
     )
+
+
+def grouped_moe_merge_aware_ep_forward(
+    hidden_states: torch.Tensor,
+    local_top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    w1: torch.Tensor,
+    b1: Optional[torch.Tensor],
+    w2: torch.Tensor,
+    b2: Optional[torch.Tensor],
+    lora1: Optional[tuple],
+    lora2: Optional[tuple],
+    num_experts_local: int,
+    *,
+    act: str,
+    concat: bool,
+    scaling1: float,
+    scaling2: float,
+    limit: Optional[float] = None,
+) -> torch.Tensor:
+    """Merge-aware NVFP4 MoE forward on this rank's LOCAL experts (EP local path).
+
+    After DeepEP dispatch, ``local_top_k_index`` holds local expert ids in
+    ``[0, num_experts_local)`` with ``-1`` for slots routed to remote ranks. The
+    sentinel rows are dropped: that ``(token, slot)`` is combined on the rank that
+    owns the expert. Unlike ``grouped_moe_reference_forward``'s ``route_and_group``,
+    this tolerates the sentinels and never sees a global id, so no EP guard fires.
+
+    ``w1``/``w2`` are the local NVFP4 experts; ``lora1``/``lora2`` are ``(A, B)``
+    in PEFT rank-major layout already sliced to the local experts. The snap is
+    per-expert, so the local shard's effective-weight grid is bit-identical to its
+    slice of the global snap (proven in ``test_nvfp4_merge_aware_ep_invariance``):
+    what a rank trains against is what the gathered merge writes.
+
+    Sentinel-dropping breaks the "every token appears exactly K times" contract
+    the ``_GatherRows`` / ``_CombineByGather`` fast paths assume, so the gather and
+    combine use plain ``index_select`` / ``index_add`` (correct autograd for the
+    irregular fan-out). Runs the dense snapped-weight forward (CPU-capable).
+    """
+    merge_aware = merge_aware_enabled()
+    ma1 = merge_aware and lora1 is not None and is_nvfp4_param(w1)
+    ma2 = merge_aware and lora2 is not None and is_nvfp4_param(w2)
+    ma_pts1 = w1.per_tensor_scale if ma1 else None  # type: ignore[attr-defined]
+    ma_pts2 = w2.per_tensor_scale if ma2 else None  # type: ignore[attr-defined]
+    w1 = dequantize_expert_weight(w1)
+    w2 = dequantize_expert_weight(w2)
+
+    device = hidden_states.device
+    num_tokens = hidden_states.shape[0]
+    k = local_top_k_index.shape[1]
+
+    flat_expert = local_top_k_index.reshape(-1)
+    flat_weight = top_k_weights.reshape(-1).to(hidden_states.dtype)
+    token_ids = torch.arange(num_tokens, device=device).repeat_interleave(k)
+
+    keep = flat_expert >= 0
+    if not bool(keep.all()):
+        flat_expert = flat_expert[keep]
+        flat_weight = flat_weight[keep]
+        token_ids = token_ids[keep]
+
+    sorted_experts, order = torch.sort(flat_expert, stable=True)
+    gather_token_idx = token_ids[order]
+    weights_grouped = flat_weight[order]
+    x_grouped = hidden_states.index_select(0, gather_token_idx)
+    expert_offsets = torch.searchsorted(
+        sorted_experts,
+        torch.arange(num_experts_local + 1, device=device, dtype=sorted_experts.dtype),
+    )
+
+    y_grouped = grouped_expert_mlp_lora(
+        x_grouped,
+        expert_offsets,
+        w1,
+        b1,
+        w2,
+        b2,
+        lora1,
+        lora2,
+        act=act,
+        backend="torch",
+        concat=concat,
+        scaling1=scaling1,
+        scaling2=scaling2,
+        limit=limit,
+        merge_aware1=ma1,
+        ma_pts1=ma_pts1,
+        merge_aware2=ma2,
+        ma_pts2=ma_pts2,
+    )
+    out = y_grouped.new_zeros((num_tokens, y_grouped.shape[-1]))
+    return out.index_add(0, gather_token_idx, y_grouped * weights_grouped.unsqueeze(-1))
