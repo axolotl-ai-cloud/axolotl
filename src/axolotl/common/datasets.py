@@ -13,6 +13,7 @@ from axolotl.telemetry.errors import send_errors
 from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora import recommend_lora_r
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.tokenization import check_dataset_labels
 
@@ -63,6 +64,14 @@ def load_datasets(
         tokenizer,
         processor=processor,
     )
+
+    if cfg.adapter in ("lora", "qlora") and not cfg.lora_r:
+        recommended = recommend_lora_r(len(train_dataset))
+        LOG.info(
+            f"lora_r not set; auto-setting to {recommended} based on dataset size "
+            f"({len(train_dataset)} samples). Set lora_r explicitly to override."
+        )
+        cfg.lora_r = recommended
 
     if (
         cfg.debug
