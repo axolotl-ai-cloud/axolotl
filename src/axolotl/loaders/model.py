@@ -535,6 +535,10 @@ class ModelLoader:
         ``Accelerator.prepare_model``, which skips its ``model.to(device)`` for a quantized
         model carrying an ``hf_device_map`` but does not get one from transformers when the
         map is a single device.
+
+        That skip is accelerate 1.13.0's ``accelerator.py`` L1824 branch shadowing the
+        ``model.to(self.device)`` at L1864, so an accelerate bump that reorders the two
+        silently pulls the table back into VRAM.
         """
         suffixes = getattr(self.model, "_no_placement_params", None) or []
         targets = [
