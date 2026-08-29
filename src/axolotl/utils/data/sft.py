@@ -327,18 +327,108 @@ def _load_raw_datasets(
     # Load and process individual datasets
     datasets = []
     prompters = []
-    for dataset_config in datasets_with_name_generator(datasets_configs):
-        dataset_wrapper, dataset_prompter = _load_and_process_single_dataset(
-            dataset_config=dataset_config,
-            cfg=cfg,
-            tokenizer=tokenizer,
-            split=split,
-            seed=cfg.seed,
-            processor=processor,
-            streaming=streaming,
-        )
-        datasets.append(dataset_wrapper)
-        prompters.append(dataset_prompter)
+
+    # Check if we should use multi-dataset work queue processing
+    use_multi_dataset_queue = (
+        not streaming
+        and cfg.dataset_num_proc
+        and cfg.dataset_num_proc > 1
+        and len(datasets_configs) > 1
+    )
+
+    if use_multi_dataset_queue:
+        # Load all datasets first without processing
+        raw_datasets = []
+        strategies = []
+
+        for dataset_config in datasets_with_name_generator(datasets_configs):
+            # Load the raw dataset
+            dataset = load_dataset_with_config(
+                dataset_config, cfg.hf_use_auth_token, streaming=streaming
+            )
+
+            # Parse dataset type
+            d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
+
+            # Select the appropriate split
+            if isinstance(dataset, (DatasetDict, IterableDatasetDict)):
+                if dataset_config.split and dataset_config.split in dataset:
+                    dataset = dataset[dataset_config.split]
+                elif split in dataset:
+                    dataset = dataset[split]
+                else:
+                    raise ValueError(
+                        f"no {split} split found for dataset {dataset_config.path}, you may "
+                        "specify a split with 'split: ...'"
+                    )
+
+            # Apply sharding if configured
+            if dataset_config.shards:
+                shards_idx = dataset_config.get("shards_idx", 0)
+                dataset = dataset.shuffle(seed=cfg.seed).shard(
+                    num_shards=dataset_config.shards, index=shards_idx
+                )
+
+            # Get the dataset strategy without processing
+            from axolotl.prompt_strategies import load
+
+            dataset_strategy = load(
+                dataset_config.type, tokenizer, cfg, dataset_config, processor=processor
+            )
+
+            if not dataset_strategy:
+                # Fallback to standard processing for this dataset
+                dataset_wrapper, dataset_prompter = _load_and_process_single_dataset(
+                    dataset_config=dataset_config,
+                    cfg=cfg,
+                    tokenizer=tokenizer,
+                    split=split,
+                    seed=cfg.seed,
+                    processor=processor,
+                    streaming=streaming,
+                )
+                datasets.append(dataset_wrapper)
+                prompters.append(dataset_prompter)
+            else:
+                raw_datasets.append(dataset)
+                strategies.append(dataset_strategy)
+
+        # Process all datasets with the multi-dataset work queue
+        if raw_datasets:
+            from axolotl.datasets_work_queue import (
+                wrap_multiple_datasets_for_work_queue_tokenized_prompt,
+            )
+
+            LOG.info(
+                f"Using multi-dataset work queue processing for {len(raw_datasets)} datasets"
+            )
+
+            processed_datasets = wrap_multiple_datasets_for_work_queue_tokenized_prompt(
+                list(zip(strategies, raw_datasets, strict=True)),
+                process_count=cfg.dataset_num_proc,
+                keep_in_memory=cfg.dataset_keep_in_memory is True,
+            )
+
+            datasets.extend(processed_datasets)
+            # Add placeholder prompters
+            for _ in processed_datasets:
+                from axolotl.prompters import UnsupportedPrompter
+
+                prompters.append(UnsupportedPrompter())
+    else:
+        # Standard processing for each dataset individually
+        for dataset_config in datasets_with_name_generator(datasets_configs):
+            dataset_wrapper, dataset_prompter = _load_and_process_single_dataset(
+                dataset_config=dataset_config,
+                cfg=cfg,
+                tokenizer=tokenizer,
+                split=split,
+                seed=cfg.seed,
+                processor=processor,
+                streaming=streaming,
+            )
+            datasets.append(dataset_wrapper)
+            prompters.append(dataset_prompter)
 
     # Merge datasets
     dataset = merge_datasets(datasets, cfg)
