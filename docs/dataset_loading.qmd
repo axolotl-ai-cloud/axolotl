@@ -204,6 +204,19 @@ We assume you have credentials setup and not using anonymous access. If you want
 
 Other environment variables that can be set can be found in [boto3 docs](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables)
 
+#### S3-compatible endpoints
+
+Keep the `s3://` prefix and set `AWS_ENDPOINT_URL` to the store's endpoint. Works with MinIO, [Tigris](https://www.tigrisdata.com), Cloudflare R2, and other S3-compatible stores.
+
+Example for Tigris:
+
+```bash
+export AWS_ENDPOINT_URL=https://t3.storage.dev
+export AWS_ACCESS_KEY_ID=tid_your_access_key_id
+export AWS_SECRET_ACCESS_KEY=tsec_your_secret_access_key
+```
+
+
 #### GCS
 
 Prepend the path with `gs://` or `gcs://`.
