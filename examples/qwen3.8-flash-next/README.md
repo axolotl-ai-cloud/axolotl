@@ -19,15 +19,15 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 4. Run the finetuning example:
 
     ```bash
-    # QLoRA (1x B300 @ ~111 GiB w offload, else ~207 GiB)
+    # QLoRA (1x B300 @ ~120 GiB w offload, else ~216 GiB)
     axolotl train examples/qwen3.8-flash-next/qlora.yaml
 
-    # Vision + text QLoRA (1x B300 @ ~93 GiB w offload, else ~190 GiB)
+    # Vision + text QLoRA (1x B300 @ ~103 GiB w offload, else ~197 GiB)
     axolotl train examples/qwen3.8-flash-next/vision-qlora.yaml
     ```
 
     ```bash
-    # NVFP4 MoE-LoRA
+    # NVFP4 MoE-LoRA (1x B300 @ ~200 GiB)
     axolotl train examples/qwen3.8-flash-next/nvfp4-lora.yaml
 
     # bake the adapter back into a plain NVFP4 checkpoint. --lora-model-dir defaults to
@@ -64,7 +64,7 @@ lora_target_modules:
 
 ### TIPS
 
-- `ple_cpu_offload: true` overhead is about 5% in this example to save 95.4 GiB of VRAM.
+- `ple_cpu_offload: true` saves 95.4 GiB of VRAM by keeping the n-gram table in host RAM for some minor throughput tradeoff.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 

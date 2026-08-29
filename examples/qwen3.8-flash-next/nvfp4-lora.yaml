@@ -76,3 +76,8 @@ saves_per_epoch: 1
 wandb_project:
 wandb_entity:
 wandb_name:
+
+# the auto device map sizes this pre-quantized checkpoint at bf16 and spills to CPU,
+# which accelerate cannot then place; pin it to one GPU
+device_map:
+  "": 0
