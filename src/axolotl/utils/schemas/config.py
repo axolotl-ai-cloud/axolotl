@@ -1841,6 +1841,17 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         return self
 
     @model_validator(mode="after")
+    def check_ple_cpu_offload_multi_gpu(self):
+        n_gpu = self.capabilities.n_gpu if self.capabilities else 1
+        if self.ple_cpu_offload and n_gpu and n_gpu > 1:
+            # FSDP and DeepSpeed are already hard errors; this is the DDP case
+            LOG.warning(
+                "ple_cpu_offload has only been validated on a single GPU. Under DDP every "
+                "rank keeps its own copy of the table in host RAM."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_sample_packing_w_sdpa_bf16(self):
         cc = self.capabilities.compute_capability if self.capabilities else None
         # the torch issue below is pre-Hopper, so anything sm_90 or newer is unaffected

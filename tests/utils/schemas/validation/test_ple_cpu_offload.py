@@ -147,3 +147,41 @@ def test_merge_lora_clears_the_flag(tmp_path, monkeypatch):
     merge_lora_cli.do_cli(config=str(config_path))
 
     assert captured["cfg"].ple_cpu_offload is False
+
+
+class TestPleCpuOffloadMultiGpu:
+    """DDP is untested rather than broken, so it warns instead of failing."""
+
+    @staticmethod
+    def _warnings(monkeypatch):
+        """Capture the module logger directly.
+
+        ``caplog`` is not usable here: any earlier test that runs an axolotl CLI entry
+        point reconfigures logging for the whole process and the records stop arriving.
+        """
+        import axolotl.utils.schemas.config as config_module
+
+        seen = []
+        monkeypatch.setattr(
+            config_module.LOG, "warning", lambda msg, *a, **k: seen.append(str(msg))
+        )
+        return seen
+
+    def test_warns_on_multi_gpu(self, min_base_cfg, gpu_caps, env_caps, monkeypatch):
+        seen = self._warnings(monkeypatch)
+        gpu_caps["n_gpu"] = 2
+        cfg = (
+            DictDefault(ple_cpu_offload=True, adapter="qlora", load_in_4bit=True)
+            | min_base_cfg
+        )
+        validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
+        assert any("only been validated on a single GPU" in m for m in seen)
+
+    def test_quiet_on_single_gpu(self, min_base_cfg, gpu_caps, env_caps, monkeypatch):
+        seen = self._warnings(monkeypatch)
+        cfg = (
+            DictDefault(ple_cpu_offload=True, adapter="qlora", load_in_4bit=True)
+            | min_base_cfg
+        )
+        validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
+        assert not any("only been validated on a single GPU" in m for m in seen)
