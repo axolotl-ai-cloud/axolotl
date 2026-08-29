@@ -22,12 +22,12 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     # QLoRA (1x B300 @ ~120 GiB w offload, else ~216 GiB)
     axolotl train examples/qwen3.8-flash-next/qlora.yaml
 
-    # Vision + text QLoRA (1x B300 @ ~103 GiB w offload, else ~197 GiB)
+    # Vision + text QLoRA (1x B300 @ ~110 GiB w offload, else ~207 GiB)
     axolotl train examples/qwen3.8-flash-next/vision-qlora.yaml
     ```
 
     ```bash
-    # NVFP4 MoE-LoRA (1x B300 @ ~200 GiB)
+    # NVFP4 MoE-LoRA (1x B300 @ ~223 GiB)
     axolotl train examples/qwen3.8-flash-next/nvfp4-lora.yaml
 
     # bake the adapter back into a plain NVFP4 checkpoint. --lora-model-dir defaults to
