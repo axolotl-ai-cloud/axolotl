@@ -160,6 +160,7 @@ def do_cli(
         load_in_8bit=False,
         load_in_4bit=False,
         quantize_moe_experts=False,
+        ple_cpu_offload=False,
         attn_implementation=None,
         context_parallel_size=None,
         deepspeed=None,
