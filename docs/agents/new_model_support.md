@@ -107,11 +107,11 @@ Move one concern at a time using this mapping:
 | `pre_config_load()` / `pre_tokenizer_load()` / `pre_model_load()` | `BEFORE_CONFIG_LOAD` / `BEFORE_TOKENIZER_LOAD` / `BEFORE_MODEL_BUILD` hook |
 | `post_model_load()` | `AFTER_ADAPTER_LOAD` hook |
 
-Unless a profile phase explicitly replaces its family hooks, hooks from the family, profile, and legacy method are additive. Remove a legacy method once its behavior moves into a profile hook, or the old and new implementations both run. The compatibility guard prevents a legacy method's `super()` call from re-entering the declarative hook, but it cannot identify duplicate logic implemented in both places. `AFTER_BASE_MODEL_BUILD` has no legacy-method equivalent.
+Unless a profile phase explicitly replaces its family hooks, hooks from the family, profile, and legacy method are additive. Remove a legacy method once its behavior moves into a profile hook, or the old and new implementations both run. The compatibility guard prevents a legacy method's `super()` call from re-entering the declarative hook, but it cannot identify duplicate logic implemented in both places. `AFTER_BASE_MODEL_BUILD` and `BEFORE_SAVE` have no legacy-method equivalent.
 
 ### Hook phases
 
-Hooks receive an immutable `ModelHookContext` containing the run config and the objects available at that phase. The `tokenizer` and `processor` fields are optional because early phases do not construct them and direct `ModelLoader` callers can omit a processor; hooks must handle `None` unless their phase and caller guarantee the object. Register hooks under `ModelHookPhase` rather than relying on an implied ordering.
+Hooks receive an immutable `ModelHookContext` containing the run config and the objects available at that phase. The `tokenizer` and `processor` fields are optional because early phases do not construct them and direct `ModelLoader` callers can omit a processor; hooks must handle `None` unless their phase and caller guarantee the object. Prefer consuming `context.processor` when it is set — transformers v5 is converging on the processor as the primary preprocessing object — and fall back to `context.tokenizer`; the tokenizer field remains for text-only runs and compatibility. Register hooks under `ModelHookPhase` rather than relying on an implied ordering.
 
 | Phase | Meaning |
 |-------|---------|
@@ -121,6 +121,7 @@ Hooks receive an immutable `ModelHookContext` containing the run config and the 
 | `BEFORE_MODEL_BUILD` | At the established pre-load patch slot before checkpoint construction; use only for patches that must exist while the model class is imported or instantiated. |
 | `AFTER_BASE_MODEL_BUILD` | Immediately after the raw base model is built and before adapters are applied. |
 | `AFTER_ADAPTER_LOAD` | After adapters and final load setup, before the remaining generic and plugin post-load hooks. |
+| `BEFORE_SAVE` | Right before the trained model is saved (`save_trained_model`) or a legacy-merged model is written (`merge-lora`); use to undo or finalize model state for serialization. The memory-efficient merge path never materializes a model instance and does not dispatch this phase. |
 
 The context fields available at each phase are:
 
@@ -132,6 +133,7 @@ The context fields available at each phase are:
 | `BEFORE_MODEL_BUILD` | Available | Available | Optional | - | Available |
 | `AFTER_BASE_MODEL_BUILD` | Available | Available | Optional | Raw base model | Available |
 | `AFTER_ADAPTER_LOAD` | Available | Available | Optional | Final loaded model | Available |
+| `BEFORE_SAVE` | - | Optional | Optional | Trained/merged model | - |
 
 `cfg` is always available. Although the context dataclass prevents assigning different field values, the contained config and model objects remain mutable so hooks can apply their intended configuration or patch. At `BEFORE_TOKENIZER_LOAD`, the exact type may already be available as `cfg.model_config_type`, but the `model_config` object itself is not included in the context. The standard loading helper supplies a processor for multimodal runs; direct `ModelLoader` callers must pass one explicitly if their hooks require it.
 
@@ -172,13 +174,20 @@ profile = ModelProfile(
 ```
 
 - `weight_conversions` maps a `model_type` or model class name to `WeightTransform` entries (`WeightConverter`, `WeightRenaming`, ...) passed to `transformers.conversion_mapping.register_checkpoint_conversion_mapping`. Class-name keys take priority over `model_type` keys inside transformers. Remote-code models receive only conversion mappings registered this way; transformers skips its built-in table for custom code.
-- `patch_mappings` maps class names (or regex patterns) to replacement `nn.Module` subclasses passed to `transformers.monkey_patching.register_patch_mapping`; transformers swaps the classes during `from_pretrained`/`from_config` module construction. Prefer exact class names: the registry is process-global, and a broad pattern such as `.*Attention` also patches every other architecture loaded later in the same process.
+- `patch_mappings` maps class names (or regex patterns) to replacement `nn.Module` subclasses passed to `transformers.monkey_patching.register_patch_mapping`; transformers swaps the classes during `from_pretrained`/`from_config` module construction. This is the sanctioned way to replace a single module class within one architecture; an exact class name such as `"MyModelExperts"` swaps only that module. Prefer exact class names: the registry is process-global, and a broad pattern such as `.*Attention` also patches every other architecture loaded later in the same process.
+- `attention_functions` / `attention_mask_functions` map implementation names to callables registered into `ALL_ATTENTION_FUNCTIONS` / `ALL_MASK_ATTENTION_FUNCTIONS`. Every attention implementation needs a matching mask entry, or mask construction falls through to defaults that may not fit the implementation.
+- `experts_functions` maps implementation names to callables registered into `ALL_EXPERTS_FUNCTIONS`; the run selects one via `config._experts_implementation`.
+- `quantizers` maps quantization-method names to `QuantizerRegistration(quantizer_cls, config_cls)`. Registration is idempotent (re-applying the same classes is a no-op); a different existing registration is overwritten with a warning. A custom quantizer can hook the weight-conversion pipeline via `HfQuantizer.update_weight_conversions`.
+- `auto_classes` takes `AutoClassRegistration` entries wiring a config class plus its model / tokenizer / processor classes into the transformers auto registries (`AutoConfig.register`, `AutoModelFor*.register`, ...), with `exist_ok` so repeated application is a no-op. Note transformers silently refuses to re-point a *native* transformers config class at a custom model class through this path; use `patch_mappings` for that.
+- `model_class_attrs` maps classes to attribute overrides applied with plain `setattr` before model build, for class-level knobs with no registration API: `_no_split_modules`, `_keep_in_fp32_modules(_strict)`, `_tied_weights_keys`, `supports_gradient_checkpointing`, and config-side `base_model_tp_plan` / `base_model_ep_plan` / `base_model_fsdp_plan` class vars.
 
-These registries are two halves of one operation: a patch mapping that changes a module's checkpoint layout must ship matching `weight_conversions`, or loading breaks; transformers' own kernel-fusion machinery always registers them as a pair.
+`weight_conversions` and `patch_mappings` are two halves of one operation: a patch mapping that changes a module's checkpoint layout must ship matching `weight_conversions`, or loading breaks; transformers' own kernel-fusion machinery always registers them as a pair. The same pairing applies to `attention_functions`/`attention_mask_functions`.
 
 Saving reverses conversions. `save_pretrained(save_original_format=True)` (the default) applies each registered transform's reverse to emit the original checkpoint layout, so every `ConversionOps` in a registered `WeightConverter` must implement `reverse_op`. Axolotl warns at registration for any op missing a `reverse_op`; a transform carrying a quantization operation also cannot round-trip, though that only surfaces at save time. The reverse pass is skipped while a PEFT config is loaded, so merged and full-parameter saves are the affected path.
 
 Registrations resolve family → profile like strategies (an omitted field inherits, explicit `None` clears); there is no legacy-method equivalent.
+
+A per-architecture loss goes through `ModelStrategyOverrides(loss_function=provider)` instead: the provider's callable is set per model instance (`model.loss_function`, honored by transformers' loss dispatch) right after the base model is built, so no global `LOSS_MAPPING` mutation is needed.
 
 ### Registration and fallback
 
