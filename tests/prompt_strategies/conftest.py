@@ -154,6 +154,16 @@ def fixture_gemma2_tokenizer():
     return tokenizer
 
 
+@pytest.fixture(name="muse_glimmer_tokenizer", scope="session")
+@enable_hf_offline
+def fixture_muse_glimmer_tokenizer(
+    download_muse_glimmer_tokenizer_fixture,
+):
+    tokenizer = AutoTokenizer.from_pretrained("meta-models/Muse-Glimmer-30B")
+
+    return tokenizer
+
+
 @pytest.fixture(name="magistral_tokenizer")
 def fixture_magistral_tokenizer():
     from axolotl.utils.mistral import HFMistralTokenizer

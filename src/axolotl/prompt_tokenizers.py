@@ -132,7 +132,6 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         tokenized_prompt = self._tokenize(user_prompt, add_eos_token=False)
         if not self.train_on_inputs:
             user_prompt_len = len(tokenized_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
             tokenized_prompt["labels"] = [IGNORE_INDEX] * user_prompt_len
         tokenized_res_prompt = self._tokenize(
             response, strip_bos_token=True, add_eos_token=True
@@ -282,7 +281,6 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
             )
             tokenized_user_prompt = self._tokenize(user_prompt, add_eos_token=False)
             user_prompt_len = len(tokenized_user_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
             tokenized_full_prompt["labels"] = [
                 IGNORE_INDEX
             ] * user_prompt_len + tokenized_full_prompt["labels"][user_prompt_len:]

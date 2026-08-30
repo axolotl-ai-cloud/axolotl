@@ -18,6 +18,10 @@ from transformers import AutoModelForCausalLM
 # Import the actual trainer methods we want to test
 from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
 
+from ..utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
+
 MODEL_NAME = "axolotl-ai-co/tiny-qwen3-129m"
 
 
