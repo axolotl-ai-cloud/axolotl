@@ -149,6 +149,47 @@ def test_merge_lora_clears_the_flag(tmp_path, monkeypatch):
     assert captured["cfg"].ple_cpu_offload is False
 
 
+def test_merge_lora_overrides_beat_the_cli_flag(tmp_path, monkeypatch):
+    """``--ple-cpu-offload`` reaches ``do_cli`` as a kwarg of the same name as the merge
+    override, which used to bind ``load_cfg``'s keyword twice and raise ``TypeError``."""
+    import yaml
+
+    from axolotl.cli import merge_lora as merge_lora_cli
+
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "adapter": "qlora",
+                "load_in_4bit": True,
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.0,
+                "sequence_len": 512,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 0.0001,
+                "output_dir": str(adapter_dir),
+                "datasets": [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+            }
+        )
+    )
+
+    captured = {}
+    monkeypatch.setattr(
+        merge_lora_cli, "do_merge_lora", lambda cfg: captured.update(cfg=cfg)
+    )
+    merge_lora_cli.do_cli(
+        config=str(config_path), ple_cpu_offload=True, quantize_moe_experts=True
+    )
+
+    assert captured["cfg"].ple_cpu_offload is False
+    assert captured["cfg"].quantize_moe_experts is False
+
+
 class TestPleCpuOffloadMultiGpu:
     """DDP is untested rather than broken, so it warns instead of failing."""
 
