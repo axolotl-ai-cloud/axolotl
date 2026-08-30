@@ -539,6 +539,7 @@ class ModelLoader:
         That skip is accelerate 1.13.0's ``accelerator.py`` L1824 branch shadowing the
         ``model.to(self.device)`` at L1864, so an accelerate bump that reorders the two
         silently pulls the table back into VRAM.
+        ``tests/loaders/test_ple_offload_accelerate_contract.py`` fails if that happens.
         """
         suffixes = getattr(self.model, "_no_placement_params", None) or []
         targets = [
