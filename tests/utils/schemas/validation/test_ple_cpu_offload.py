@@ -22,6 +22,22 @@ def env_caps():
     return {"torch_version": "2.12.1"}
 
 
+@pytest.fixture()
+def config_warnings(monkeypatch):
+    """Capture the config module's logger directly.
+
+    ``caplog`` is not usable here: any earlier test that runs an axolotl CLI entry point
+    reconfigures logging for the whole process and the records stop arriving.
+    """
+    import axolotl.utils.schemas.config as config_module
+
+    seen: list[str] = []
+    monkeypatch.setattr(
+        config_module.LOG, "warning", lambda msg, *a, **k: seen.append(str(msg))
+    )
+    return seen
+
+
 class TestPleCpuOffloadValidation:
     """ple_cpu_offload only works where accelerate skips its own device placement."""
 
@@ -104,31 +120,29 @@ class TestSdpaBf16PackingWarning:
 
     @pytest.mark.parametrize("compute_capability", ["sm_80", "sm_86", "sm_89"])
     def test_warns_before_hopper(
-        self, min_base_cfg, gpu_caps, env_caps, caplog, compute_capability
+        self, min_base_cfg, gpu_caps, env_caps, config_warnings, compute_capability
     ):
         gpu_caps["compute_capability"] = compute_capability
         cfg = (
             DictDefault(sample_packing=True, attn_implementation="sdpa", bf16=True)
             | min_base_cfg
         )
-        with caplog.at_level("WARNING"):
-            validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
-        assert "0.0 loss" in caplog.text
+        validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
+        assert any("0.0 loss" in m for m in config_warnings)
 
     @pytest.mark.parametrize(
         "compute_capability", ["sm_90", "sm_100", "sm_103", "sm_120"]
     )
     def test_quiet_on_hopper_and_newer(
-        self, min_base_cfg, gpu_caps, env_caps, caplog, compute_capability
+        self, min_base_cfg, gpu_caps, env_caps, config_warnings, compute_capability
     ):
         gpu_caps["compute_capability"] = compute_capability
         cfg = (
             DictDefault(sample_packing=True, attn_implementation="sdpa", bf16=True)
             | min_base_cfg
         )
-        with caplog.at_level("WARNING"):
-            validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
-        assert "0.0 loss" not in caplog.text
+        validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
+        assert not any("0.0 loss" in m for m in config_warnings)
 
 
 def test_merge_lora_clears_the_flag(tmp_path, monkeypatch):
@@ -214,36 +228,25 @@ def test_merge_lora_overrides_beat_the_cli_flag(tmp_path, monkeypatch):
 class TestPleCpuOffloadMultiGpu:
     """DDP is untested rather than broken, so it warns instead of failing."""
 
-    @staticmethod
-    def _warnings(monkeypatch):
-        """Capture the module logger directly.
-
-        ``caplog`` is not usable here: any earlier test that runs an axolotl CLI entry
-        point reconfigures logging for the whole process and the records stop arriving.
-        """
-        import axolotl.utils.schemas.config as config_module
-
-        seen = []
-        monkeypatch.setattr(
-            config_module.LOG, "warning", lambda msg, *a, **k: seen.append(str(msg))
-        )
-        return seen
-
-    def test_warns_on_multi_gpu(self, min_base_cfg, gpu_caps, env_caps, monkeypatch):
-        seen = self._warnings(monkeypatch)
+    def test_warns_on_multi_gpu(
+        self, min_base_cfg, gpu_caps, env_caps, config_warnings
+    ):
         gpu_caps["n_gpu"] = 2
         cfg = (
             DictDefault(ple_cpu_offload=True, adapter="qlora", load_in_4bit=True)
             | min_base_cfg
         )
         validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
-        assert any("only been validated on a single GPU" in m for m in seen)
+        assert any("only been validated on a single GPU" in m for m in config_warnings)
 
-    def test_quiet_on_single_gpu(self, min_base_cfg, gpu_caps, env_caps, monkeypatch):
-        seen = self._warnings(monkeypatch)
+    def test_quiet_on_single_gpu(
+        self, min_base_cfg, gpu_caps, env_caps, config_warnings
+    ):
         cfg = (
             DictDefault(ple_cpu_offload=True, adapter="qlora", load_in_4bit=True)
             | min_base_cfg
         )
         validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
-        assert not any("only been validated on a single GPU" in m for m in seen)
+        assert not any(
+            "only been validated on a single GPU" in m for m in config_warnings
+        )
