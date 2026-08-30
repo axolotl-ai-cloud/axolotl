@@ -2336,7 +2336,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--ple-cpu-offload/--no-ple-cpu-offload",),
         None,
         None,
-        "Keep parameters the model declares in `_no_placement_params` in host RAM instead of VRAM (e.g. Qwen3.8-Flash-Next's 51.2B n-gram PLE embedding, 95.4 GiB in bf16, which its forward already gathers on whatever device the weight lives on). Each token reads only a handful of rows, so the per-step transfer is tens of MB. Requires load_in_4bit/load_in_8bit and enough host RAM to hold the table.",
+        "Keep parameters the model declares in `_no_placement_params` in host RAM instead of VRAM (e.g. Qwen3.8-Flash-Next's 51.2B n-gram PLE embedding, 95.4 GiB in bf16, which its forward already gathers on whatever device the weight lives on). Each token reads only a handful of rows, so the per-step transfer is tens of MB. Requires qlora with load_in_4bit or lora with load_in_8bit, and enough host RAM to hold the table.",
     ),
     (
         ("--quantize-moe-experts/--no-quantize-moe-experts",),
