@@ -72,6 +72,9 @@ Dropping `lora_target_parameters` to train the attention projections alone fits 
   `share_expert_swiglu_limit_list`). The published modeling code never reads those keys, so neither
   does Axolotl — training matches the reference implementation, but check the serving stack before
   relying on it. Axolotl logs a warning when a checkpoint sets them.
+- `context_parallel_size > 1` is rejected: ring attention shards the sequence across ranks and
+  nothing hands a KDA layer's recurrent state to the next rank, so each would restart the recurrence
+  from zero.
 - Cut Cross Entropy, Liger kernels and the LoRA MLP/QKV kernels do not cover this architecture.
 - `kda_safe_gate` is applied outside the kernel: `fla-core` 0.4.1 has no fused equivalent, so
   Axolotl evaluates `lower_bound * sigmoid(exp(A_log) * (g + dt_bias))` in plain PyTorch.

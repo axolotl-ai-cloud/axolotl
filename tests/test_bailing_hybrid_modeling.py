@@ -123,6 +123,23 @@ class TestBailingHybridModeling:
         saved = load_file(tmp_path / "model.safetensors")
         assert saved.keys() == published_layout(model, config).keys()
 
+    def test_layer_types_ignore_a_stale_serialized_value(self, config):
+        """`layer_types` sizes the hybrid cache while the decoder layers build from
+        `is_linear_attention_layer`; a serialized value must not desynchronise them."""
+        stale = ["full_attention"] * CONFIG_KWARGS["num_hidden_layers"]
+
+        reloaded = BailingMoeV3Config(**{**CONFIG_KWARGS, "layer_types": stale})
+
+        assert reloaded.layer_types == config.layer_types
+        assert reloaded.layer_types != stale
+
+    def test_layer_types_survive_a_round_trip(self, config, tmp_path):
+        config.save_pretrained(tmp_path)
+
+        assert BailingMoeV3Config.from_pretrained(tmp_path).layer_types == (
+            config.layer_types
+        )
+
     def test_multi_token_prediction_weights_are_not_reported_missing(self):
         config = BailingMoeV3Config(**{**CONFIG_KWARGS, "num_nextn_predict_layers": 1})
         model = BailingMoeV3ForCausalLM(config)
@@ -208,6 +225,13 @@ class TestCuSeqlensFromPositionIds:
         position_ids = torch.tensor([[3, 4, 5, 0, 1, 2]])
 
         assert cu_seqlens_from_position_ids(position_ids).tolist() == [0, 3, 6]
+
+    def test_batched_packing_splits_rows_and_restarts(self):
+        """micro_batch_size > 1 with packing: the rows become one varlen stream, so
+        a row boundary is a document boundary alongside every restart."""
+        position_ids = torch.tensor([[0, 1, 2, 0, 1, 2], [0, 1, 0, 1, 2, 3]])
+
+        assert cu_seqlens_from_position_ids(position_ids).tolist() == [0, 3, 6, 8, 12]
 
 
 class TestPositionIdsReachAttention:
@@ -323,6 +347,35 @@ class TestBailingHybridForward:
 
         assert logits.shape == (1, 8, 64)
         assert torch.isfinite(logits).all()
+
+    def test_packed_documents_are_isolated_at_micro_batch_size_2(self, model):
+        """Without a flattened varlen stream the KDA recurrence runs straight through
+        the batch, so editing document 1 moves document 2's logits."""
+        position_ids = torch.arange(4, device=model.device).repeat(2).expand(2, 8)
+        input_ids = torch.randint(2, 64, (2, 8), device=model.device)
+        edited = input_ids.clone()
+        edited[0, :4] = torch.randint(2, 64, (4,), device=model.device)
+
+        baseline = model(input_ids=input_ids, position_ids=position_ids).logits
+        changed = model(input_ids=edited, position_ids=position_ids).logits
+
+        torch.testing.assert_close(changed[0, 4:], baseline[0, 4:])
+        torch.testing.assert_close(changed[1], baseline[1])
+        assert not torch.allclose(changed[0, :4], baseline[0, :4])
+
+    def test_batched_packing_matches_micro_batch_size_1(self, model):
+        """A packed row must produce the same logits whether it is batched or not."""
+        position_ids = torch.arange(4, device=model.device).repeat(2).expand(2, 8)
+        input_ids = torch.randint(2, 64, (2, 8), device=model.device)
+
+        batched = model(input_ids=input_ids, position_ids=position_ids).logits
+
+        for row in range(2):
+            single = model(
+                input_ids=input_ids[row : row + 1],
+                position_ids=position_ids[row : row + 1],
+            ).logits
+            torch.testing.assert_close(batched[row : row + 1], single)
 
     def test_causal_masking(self, model):
         """A hardcoded eager interface is how the published code loses causality."""

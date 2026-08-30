@@ -114,15 +114,6 @@ class BailingMoeV3Config(PretrainedConfig):
         self.norm_topk_prob = norm_topk_prob
         self.routed_scaling_factor = routed_scaling_factor
         self.num_nextn_predict_layers = num_nextn_predict_layers
-        # lets the stock hybrid cache allocate one linear-attention layer per KDA
-        # layer, with a conv state per q/k/v projection
-        self.layer_types = [
-            "linear_attention"
-            if self.is_linear_attention_layer(idx)
-            else "full_attention"
-            for idx in range(num_hidden_layers)
-        ]
-        self.number_of_conv_states = 3
 
         super().__init__(
             pad_token_id=pad_token_id,
@@ -130,6 +121,17 @@ class BailingMoeV3Config(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
+
+        # after `super().__init__`: a serialized `layer_types` must not win over the
+        # layout the decoder layers build from. Sizes the stock hybrid cache too --
+        # one linear-attention layer per KDA layer, a conv state per q/k/v projection
+        self.layer_types = [
+            "linear_attention"
+            if self.is_linear_attention_layer(idx)
+            else "full_attention"
+            for idx in range(num_hidden_layers)
+        ]
+        self.number_of_conv_states = 3
 
     def is_linear_attention_layer(self, layer_idx: int) -> bool:
         """Every ``layer_group_size``-th layer is softmax attention; the tail that

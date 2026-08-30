@@ -486,6 +486,26 @@ class TestBailingHybridSupport:
 
         assert resolved is BailingMoeV3Config
 
+    def test_context_parallel_is_rejected(self):
+        """Ring attention severs the KDA recurrence: each rank would restart it from
+        zero with no state exchange, and the loss curve would not show it."""
+        with pytest.raises(ValueError, match="context_parallel_size"):
+            run_model_support_hooks(
+                get_model_support("bailing_hybrid"),
+                ModelHookPhase.CONFIGURE_RUN,
+                ModelHookContext(cfg=DictDefault(context_parallel_size=2)),
+            )
+
+    @pytest.mark.parametrize("context_parallel_size", [None, 1])
+    def test_single_rank_is_allowed(self, context_parallel_size):
+        run_model_support_hooks(
+            get_model_support("bailing_hybrid"),
+            ModelHookPhase.CONFIGURE_RUN,
+            ModelHookContext(
+                cfg=DictDefault(context_parallel_size=context_parallel_size)
+            ),
+        )
+
     def test_weight_conversions_are_reversible(self):
         """``save_pretrained`` reverses these to re-emit the published layout."""
         from axolotl.model_support.bailing_hybrid import _weight_conversions

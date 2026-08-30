@@ -66,17 +66,26 @@ def cu_seqlens_from_position_ids(
 
     Axolotl removes the packed attention mask whenever sample packing is on
     (``sample_packing_drop_attention_mask``), so a ``position_ids`` restarting at 0
-    is the only remaining signal for a document boundary.
+    is the only remaining signal for a document boundary. A batch is concatenated
+    into a single varlen stream, so each row boundary is a document boundary too.
     """
-    if position_ids is None or position_ids.shape[0] != 1:
+    if position_ids is None:
         return None
-    starts = (position_ids[0] == 0).nonzero().flatten()
-    # under context parallelism a chunk can begin mid-document, with no leading 0
-    if starts.numel() == 0 or starts[0] != 0:
-        starts = torch.cat([starts.new_zeros(1), starts])
-    if starts.numel() < 2:
+    if position_ids.dim() == 1:
+        position_ids = position_ids.unsqueeze(0)
+    rows, seq_len = position_ids.shape
+    restarts = (position_ids == 0).nonzero()
+    # a plain batch packs nothing; fla takes `[B, T, ...]` without a varlen stream
+    if rows > 1 and not bool((restarts[:, 1] != 0).any()):
         return None
-    total = starts.new_tensor([position_ids.shape[1]])
+    starts = restarts[:, 0] * seq_len + restarts[:, 1]
+    # a row can start mid-document: under context parallelism a chunk has no leading
+    # 0, and flattening a batch splits at every row start whether or not one is there
+    row_starts = torch.arange(rows, device=position_ids.device) * seq_len
+    starts = torch.cat([row_starts, starts]).unique()
+    if rows == 1 and starts.numel() < 2:
+        return None
+    total = starts.new_tensor([rows * seq_len])
     return torch.cat([starts, total]).to(torch.int32)
 
 
@@ -329,6 +338,7 @@ class BailingMoeV3KimiDeltaAttention(nn.Module):
             conv_states = tuple(cache_layer.conv_states[idx] for idx in range(3))
 
         cu_seqlens, indices = kwargs.get("cu_seqlens"), None
+        flattened = False
         if attention_mask is not None:
             # multipack encodes one id per packed document, so unpadding also splits documents
             indices, cu_seqlens, _ = get_unpad_data(attention_mask[:, -q_len:])
@@ -337,6 +347,10 @@ class BailingMoeV3KimiDeltaAttention(nn.Module):
             ).unsqueeze(0)
         elif cu_seqlens is None:
             cu_seqlens = cu_seqlens_from_position_ids(position_ids)
+            if cu_seqlens is not None and batch_size > 1:
+                # the offsets index one flat stream; fla has no batched varlen form
+                hidden_states = hidden_states.reshape(1, batch_size * q_len, -1)
+                flattened = True
 
         projections = (
             (self.q_proj, self.q_conv1d),
@@ -379,6 +393,8 @@ class BailingMoeV3KimiDeltaAttention(nn.Module):
         out = self.o_proj(rearrange(out, "b t h d -> b t (h d)"))
         if indices is not None:
             out = pad_input(out.squeeze(0), indices, batch_size, q_len)
+        elif flattened:
+            out = out.reshape(batch_size, q_len, -1)
         return out
 
 
