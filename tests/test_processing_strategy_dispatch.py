@@ -84,3 +84,17 @@ def test_absent_model_type_falls_back_to_chat_template(monkeypatch):
         _stub_processor(), None, "some_template", model_type=None
     )
     assert isinstance(strategy, _SentinelStrategy)
+
+
+def test_no_registry_key_collides_with_a_chat_template_name():
+    """model_type and chat_template_type share one registry, so a key registered under a
+    chat_template name would silently change which strategy every other model resolves to.
+    """
+    from axolotl.model_support import registry
+    from axolotl.utils.schemas.enums import ChatTemplate
+
+    registry._ensure_builtins()  # pylint: disable=protected-access
+    collisions = set(registry._REGISTRY) & {  # pylint: disable=protected-access
+        template.value for template in ChatTemplate
+    }
+    assert not collisions
