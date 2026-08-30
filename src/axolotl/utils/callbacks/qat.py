@@ -32,12 +32,20 @@ class QATCallback(TrainerCallback):
 
     def __init__(self, cfg: QATConfig):
         self.cfg = cfg
+        self.fake_quant_enabled: bool | None = None
 
     def on_step_begin(self, args, state, control, model, **kwargs):
-        if self.cfg.fake_quant_after_n_steps is not None:
-            if state.global_step == 0:
-                LOG.info(f"Disabling fake quantization at step {state.global_step}")
-                model.apply(partial(toggle_fake_quant, enable=False))
-            elif state.global_step == self.cfg.fake_quant_after_n_steps:
-                LOG.info(f"Enabling fake quantization at step {state.global_step}")
-                model.apply(partial(toggle_fake_quant, enable=True))
+        if self.cfg.fake_quant_after_n_steps is None:
+            return
+
+        # quantizers are constructed enabled, so a resume mid-warmup has to switch
+        # them off; equality against the step would leave the warmup quantized
+        enable = state.global_step >= self.cfg.fake_quant_after_n_steps
+        if enable is self.fake_quant_enabled:
+            return
+
+        LOG.info(
+            f"{'Enabling' if enable else 'Disabling'} fake quantization at step {state.global_step}"
+        )
+        model.apply(partial(toggle_fake_quant, enable=enable))
+        self.fake_quant_enabled = enable

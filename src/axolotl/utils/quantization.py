@@ -22,6 +22,7 @@ from torchao.quantization.quant_api import (
 
 from axolotl.utils.quantization_ternary import (
     convert_ternary_model,
+    has_tied_output_embedding,
     prepare_model_for_ternary_qat,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
@@ -424,10 +425,12 @@ def convert_qat_model(
     """
     This function converts a QAT model which has fake quantized layers back to the original model.
     """
-    convert_ternary_model(model)
+    was_ternary = convert_ternary_model(model)
     config = QATConfig(step="convert")
-    quantize_(model, config)
-    if quantize_embedding:
+    if not was_ternary:
+        # ternary linears are already back to nn.Linear, torchao has nothing to convert
+        quantize_(model, config)
+    if quantize_embedding and not (was_ternary and has_tied_output_embedding(model)):
         quantize_(
             model,
             config,
