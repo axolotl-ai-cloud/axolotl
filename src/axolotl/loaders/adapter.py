@@ -438,7 +438,11 @@ def load_adapter(
     if adapter == "mixlora":
         _validate_mixlora_lora_target_modules(cfg)
         # First, load standard LoRA for attention layers (q, k, v, o projections)
-        peft_model, lora_config = load_lora(model, cfg, inference=inference)
+        peft_model, lora_config = load_lora(
+            model, cfg, inference=inference, config_only=config_only
+        )
+        if config_only:
+            return peft_model, lora_config
         # Then, apply MixLoRA patching to FFN layers (router + LoRA experts)
         import safetensors.torch
 

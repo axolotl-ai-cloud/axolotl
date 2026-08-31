@@ -458,8 +458,17 @@ class ModelLoader:
         if self.cfg.adapter in ["lora", "qlora", "mixlora"]:
             needs_fa2_dtype = True
             if self.cfg.gradient_checkpointing:
+                gc_kwargs = self.cfg.gradient_checkpointing_kwargs
+                if self.cfg.adapter == "mixlora":
+                    # MixLoraFFN stashes the router aux loss on the module and
+                    # reads it back after the forward pass. Reentrant checkpointing
+                    # (the default when use_reentrant isn't set) recomputes the
+                    # forward under no_grad on the way out, so a value read from
+                    # outside the checkpointed region carries no autograd graph.
+                    # Non-reentrant checkpointing keeps the graph intact.
+                    gc_kwargs = {**(gc_kwargs or {}), "use_reentrant": False}
                 self.model.gradient_checkpointing_enable(
-                    gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
+                    gradient_checkpointing_kwargs=gc_kwargs
                 )
 
         self._prepare_model_for_quantization()
@@ -746,7 +755,7 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
                 )
-        elif self.cfg.adapter == "qlora" and self.cfg.load_in_4bit:
+        elif self.cfg.adapter in ("qlora", "mixlora") and self.cfg.load_in_4bit:
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,
