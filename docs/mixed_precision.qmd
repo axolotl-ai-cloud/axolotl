@@ -14,7 +14,7 @@ Mixed precision training uses lower precision data types to reduce memory usage 
 
 - **FP16** - Half precision 16-bit (Pascal generation+)
 - **BF16** - Brain Float 16-bit (Ampere generation+)
-- **FP8** - 8-bit floating point (Hopper generation+)
+- **FP8** - 8-bit floating point (compatible Hopper or Blackwell GPUs)
 
 ## FP16 Mixed Precision {#sec-fp16}
 
@@ -77,7 +77,7 @@ implementation.
 ## FP8 Mixed Precision {#sec-fp8}
 
 ::: {.callout-note}
-FP8 support is experimental and requires compatible hardware (H100, H200) and recent PyTorch versions with TorchAO.
+FP8 support is experimental and requires compatible NVIDIA Hopper or Blackwell hardware (for example, H100, H200, B200, and supported consumer Blackwell devices) plus recent PyTorch and TorchAO versions.
 :::
 
 ### What is FP8? {#sec-fp8-overview}
@@ -86,7 +86,7 @@ FP8 (8-bit floating point) can provide significant time savings compared to FP16
 
 ### Requirements {#sec-fp8-software}
 
-- Hopper+ GPUs (H100/H200)
+- Compatible NVIDIA Hopper or Blackwell GPUs (for example, H100, H200, B200, and supported consumer Blackwell devices; availability depends on the installed PyTorch, TorchAO, and CUDA build)
 - PyTorch 2.7+ (+ compatible TorchAO version)
 - CUDA 12.4+
 
@@ -145,7 +145,7 @@ fsdp_config:
 ### Choosing Precision Format {#sec-choosing-format}
 
 - **Start with automatic detection**: `bf16: auto`
-- **For Hopper+ (H100/H200)**: Try FP8 + torch.compile for maximum speed
+- **For compatible Hopper or Blackwell GPUs**: Try FP8 + torch.compile for maximum speed
 - **For Ampere (A100/RTX 30/40)**: Use BF16
 - **For older Pascal/Turing GPUs**: Use FP16 with caution
 - **For very old or unsupported GPUs**: Use FP32
