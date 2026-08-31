@@ -920,6 +920,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#configuration-reference" id="toc-configuration-reference" class="nav-link" data-scroll-target="#configuration-reference">Configuration Reference</a>
   <ul class="collapse">
   <li><a href="#core-grpo" id="toc-core-grpo" class="nav-link" data-scroll-target="#core-grpo">Core GRPO</a></li>
+  <li><a href="#entropy-regularization" id="toc-entropy-regularization" class="nav-link" data-scroll-target="#entropy-regularization">Entropy regularization</a></li>
   <li><a href="#reward-functions" id="toc-reward-functions" class="nav-link" data-scroll-target="#reward-functions">Reward functions</a></li>
   <li><a href="#generation-parameters" id="toc-generation-parameters" class="nav-link" data-scroll-target="#generation-parameters">Generation parameters</a></li>
   <li><a href="#async-pipeline" id="toc-async-pipeline" class="nav-link" data-scroll-target="#async-pipeline">Async pipeline</a></li>
@@ -1588,15 +1589,79 @@ Tip
 </tr>
 <tr class="even">
 <td><code>scale_rewards</code></td>
-<td>bool</td>
+<td>bool or str</td>
 <td><code>true</code></td>
-<td>Normalize rewards by standard deviation</td>
+<td>Reward std scaling: <code>group</code>, <code>batch</code>, or <code>none</code> (bool accepted: <code>true</code>-&gt;<code>group</code>, <code>false</code>-&gt;<code>none</code>)</td>
 </tr>
 <tr class="odd">
 <td><code>mask_truncated_completions</code></td>
 <td>bool</td>
 <td><code>false</code></td>
 <td>Exclude truncated completions from loss</td>
+</tr>
+<tr class="even">
+<td><code>log_multimodal</code></td>
+<td>bool</td>
+<td><code>null</code></td>
+<td>Log multimodal content (images/videos) alongside completions (TRL &gt;= 1.9)</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="entropy-regularization" class="level3">
+<h3 class="anchored" data-anchor-id="entropy-regularization">Entropy regularization</h3>
+<p>Available in TRL &gt;= 1.8. Adds an entropy bonus to encourage exploration.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 22%">
+<col style="width: 16%">
+<col style="width: 25%">
+<col style="width: 36%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>entropy_coef</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Static entropy regularization coefficient</td>
+</tr>
+<tr class="even">
+<td><code>use_adaptive_entropy</code></td>
+<td>bool</td>
+<td><code>null</code></td>
+<td>Adaptively tune <code>entropy_coef</code> toward <code>entropy_target</code> (Skywork-OR1 style)</td>
+</tr>
+<tr class="odd">
+<td><code>entropy_target</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Target entropy when <code>use_adaptive_entropy</code> is enabled</td>
+</tr>
+<tr class="even">
+<td><code>entropy_coef_delta</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Step size for adjusting <code>entropy_coef</code></td>
+</tr>
+<tr class="odd">
+<td><code>entropy_coef_min</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Lower bound for adaptive <code>entropy_coef</code></td>
+</tr>
+<tr class="even">
+<td><code>entropy_coef_max</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Upper bound for adaptive <code>entropy_coef</code></td>
 </tr>
 </tbody>
 </table>
@@ -1710,7 +1775,7 @@ Tip
 <td><code>vllm_guided_decoding_regex</code></td>
 <td>str</td>
 <td><code>null</code></td>
-<td>Regex constraint for guided decoding</td>
+<td>Regex constraint for structured/guided decoding (mapped to TRL’s <code>vllm_structured_outputs_regex</code> on TRL &gt;= 1.7)</td>
 </tr>
 </tbody>
 </table>
@@ -1837,6 +1902,18 @@ Tip
 <td>float</td>
 <td><code>null</code></td>
 <td>Cap C for IS ratio clipping/masking</td>
+</tr>
+<tr class="odd">
+<td><code>vllm_importance_sampling_clip_min</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Lower clip bound for the IS ratio (TRL &gt;= 1.6)</td>
+</tr>
+<tr class="even">
+<td><code>vllm_importance_sampling_clip_max</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Upper clip bound for the IS ratio (TRL &gt;= 1.6)</td>
 </tr>
 <tr class="odd">
 <td><code>off_policy_mask_threshold</code></td>
