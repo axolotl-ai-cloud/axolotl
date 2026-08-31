@@ -1989,6 +1989,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Enable FP8 mixed precision training using TorchAO. Best used in combination with torch.compile.",
     ),
     (
+        ("--fp8-recipe",),
+        None,
+        None,
+        "TorchAO FP8 scaling recipe. Available options are: 'tensorwise', 'rowwise', and 'rowwise_with_gw_hp'.",
+    ),
+    (
         ("--fp8-enable-fsdp-float8-all-gather/--no-fp8-enable-fsdp-float8-all-gather",),
         None,
         None,

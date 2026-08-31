@@ -425,6 +425,14 @@ class TrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fp8_config(cls, data):
+        if (
+            data.get("fp8_enable_fsdp_float8_all_gather")
+            and data.get("fp8_recipe", "tensorwise") != "tensorwise"
+        ):
+            raise ValueError(
+                "`fp8_enable_fsdp_float8_all_gather` only supports the tensorwise "
+                "`fp8_recipe`; disable it when using rowwise scaling."
+            )
         if data.get("fp8") and not data.get("torch_compile"):
             LOG.warning(
                 "torch_compile is strongly recommended for FP8 training in order to "

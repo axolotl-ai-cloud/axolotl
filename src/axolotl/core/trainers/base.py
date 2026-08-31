@@ -680,19 +680,21 @@ class AxolotlTrainer(
         super().create_accelerator_and_postprocess()
 
     def additional_accelerator_args(
-        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
+        self,
+        fp8: bool = False,
+        fp8_recipe: str = "tensorwise",
+        enable_fsdp_float8_all_gather: bool = False,
+        **kwargs,
     ) -> dict[str, Any]:
         ret_kwargs = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
-            from torchao.float8 import Float8LinearConfig
 
-            # By default, Float8LinearConfig is instantiated using the "tensorwise"
-            # scaling strategy. See more details here:
-            # https://github.com/pytorch/ao/tree/main/torchao/float8.
-            config = Float8LinearConfig(
+            from axolotl.core.fp8 import build_fp8_linear_config
+
+            config = build_fp8_linear_config(
+                fp8_recipe=fp8_recipe,
                 enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
-                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
             )
 
             ret_kwargs["mixed_precision"] = "fp8"

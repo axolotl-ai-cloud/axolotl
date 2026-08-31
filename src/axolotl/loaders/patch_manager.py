@@ -728,7 +728,8 @@ class PatchManager:
             )
 
             patch_create_accelerate_code_for_fp8(
-                self.cfg.fp8_enable_fsdp_float8_all_gather
+                enable_fsdp_float8_all_gather=self.cfg.fp8_enable_fsdp_float8_all_gather,
+                fp8_recipe=getattr(self.cfg, "fp8_recipe", None) or "tensorwise",
             )
             patch_fp8_exclude_moe_router()
 

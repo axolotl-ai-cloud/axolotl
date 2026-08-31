@@ -1444,6 +1444,29 @@ class TestTorchCompileValidation(BaseValidation):
         assert "CUDA graphs require static shapes" not in caplog.text
 
 
+class TestFP8RecipeValidation:
+    """Validate FP8 recipe defaults and incompatible FSDP combinations."""
+
+    def test_fp8_recipe_defaults_to_tensorwise(self, minimal_cfg):
+        updated_cfg = validate_config(minimal_cfg)
+
+        assert updated_cfg.fp8_recipe == "tensorwise"
+
+    @pytest.mark.parametrize("recipe", ["rowwise", "rowwise_with_gw_hp"])
+    def test_rowwise_recipe_rejects_fsdp_float8_all_gather(self, minimal_cfg, recipe):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "fp8_recipe": recipe,
+                "fp8_enable_fsdp_float8_all_gather": True,
+                "fsdp_version": 2,
+            }
+        )
+
+        with pytest.raises(ValidationError, match="only supports the tensorwise"):
+            validate_config(cfg)
+
+
 class TestSampleOptimConfigValidation(BaseValidation):
     """
     test configurations for sample optimizations like batch flattening

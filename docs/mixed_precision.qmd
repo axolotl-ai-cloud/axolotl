@@ -82,7 +82,7 @@ FP8 support is experimental and requires compatible hardware (H100, H200) and re
 
 ### What is FP8? {#sec-fp8-overview}
 
-FP8 (8-bit floating point) can provide significant time savings compared to FP16/BF16 while maintaining training stability. Axolotl's implementation uses PyTorch's TorchAO library with "tensorwise" scaling strategy.
+FP8 (8-bit floating point) can provide significant time savings compared to FP16/BF16 while maintaining training stability. Axolotl's implementation uses PyTorch's TorchAO library and supports tensorwise and rowwise scaling recipes.
 
 ### Requirements {#sec-fp8-software}
 
@@ -98,6 +98,9 @@ Add to your YAML config:
 # Enable FP8 mixed precision
 fp8: true
 
+# Optional: Select tensorwise (default), rowwise, or rowwise_with_gw_hp scaling
+fp8_recipe: tensorwise
+
 # Optional: Enable FP8 for FSDP all-gather operations
 fp8_enable_fsdp_float8_all_gather: true
 
@@ -111,12 +114,17 @@ torch_compile: true
 FP8 training requires `torch_compile: true` to see meaningful speedups. Without compilation, FP8 may actually be slower and use more memory than FP16/BF16.
 :::
 
+::: {.callout-warning}
+`fp8_enable_fsdp_float8_all_gather: true` currently supports only the default `tensorwise` recipe. Disable it when using `rowwise` or `rowwise_with_gw_hp`.
+:::
+
 ### Advanced FP8 Configs {#sec-fp8-advanced}
 
 For [FSDP](multi-gpu.qmd#sec-fsdp) (Fully Sharded Data Parallel) training:
 
 ```{.yaml}
 fp8: true
+fp8_recipe: tensorwise
 fp8_enable_fsdp_float8_all_gather: true
 
 torch_compile: true
