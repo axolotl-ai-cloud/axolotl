@@ -375,6 +375,12 @@ class PatchManager:
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
+        from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+            patch_fa2_hub_kernel_version,
+        )
+
+        patch_fa2_hub_kernel_version()
+
         if self.cfg.attn_implementation == "xformers":
             from axolotl.monkeypatch.attention import register_xformers_attn
 
