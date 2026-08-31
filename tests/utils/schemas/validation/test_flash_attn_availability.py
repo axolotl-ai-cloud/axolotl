@@ -17,11 +17,17 @@ class TestFlashAttnAvailabilityValidator:
     def _force_availability(monkeypatch, value: bool):
         import transformers.utils
 
+        from axolotl.monkeypatch.attention import fa2_hub_kernel
+
         monkeypatch.setattr(
             transformers.utils, "is_flash_attn_2_available", lambda **_: value
         )
         monkeypatch.setattr(
             transformers.utils, "is_flash_attn_3_available", lambda **_: value
+        )
+        # FA2 has a second opinion; leaving it live would hit the hub from a unit test.
+        monkeypatch.setattr(
+            fa2_hub_kernel, "is_fa2_hub_kernel_available", lambda: value
         )
 
     def test_fa2_unavailable_raises(self, min_base_cfg, monkeypatch):
@@ -43,6 +49,20 @@ class TestFlashAttnAvailabilityValidator:
         cfg = min_base_cfg | DictDefault(flash_attention=True)
         with pytest.raises(ValueError, match="no\\s+flash-attn build is available"):
             validate_config(cfg)
+
+    def test_fa2_falls_back_to_pinned_hub_kernel(self, min_base_cfg, monkeypatch):
+        """transformers probes the hub at v1; a v2-only build must still count."""
+        import transformers.utils
+
+        from axolotl.monkeypatch.attention import fa2_hub_kernel
+
+        monkeypatch.setattr(
+            transformers.utils, "is_flash_attn_2_available", lambda **_: False
+        )
+        monkeypatch.setattr(fa2_hub_kernel, "is_fa2_hub_kernel_available", lambda: True)
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        validated = validate_config(cfg)
+        assert validated.attn_implementation == "flash_attention_2"
 
     def test_fa2_available_passes(self, min_base_cfg, monkeypatch):
         self._force_availability(monkeypatch, True)
