@@ -20,7 +20,7 @@ dependencies = [
     "transformers==5.16.1",
     "accelerate==1.13.0",
     "datasets==4.8.4",
-    "trl==1.8.0",
+    "trl==1.9.0",
     "hf_xet==1.4.3",
     "kernels>=0.16.0,<0.17.0",
     "trackio==0.19.0",
@@ -127,7 +127,7 @@ ray = [
     "ray[train]>=2.52.1",
 ]
 vllm = [
-    "vllm>=0.15.0",
+    "vllm>=0.17.0",
 ]
 llmcompressor = [
     "llmcompressor>=0.10.0",
