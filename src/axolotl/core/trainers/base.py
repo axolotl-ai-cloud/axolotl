@@ -682,8 +682,8 @@ class AxolotlTrainer(
     def additional_accelerator_args(
         self,
         fp8: bool = False,
-        fp8_recipe: str = "tensorwise",
         enable_fsdp_float8_all_gather: bool = False,
+        fp8_recipe: str = "tensorwise",
         **kwargs,
     ) -> dict[str, Any]:
         ret_kwargs = {}
