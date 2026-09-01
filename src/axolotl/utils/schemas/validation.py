@@ -905,6 +905,75 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_polora(cls, data):
+        if data.get("optimizer") != "polora":
+            return data
+        if data.get("adapter") not in ("lora", "qlora"):
+            raise ValueError(
+                "polora only updates LoRA (A, B) factors and requires "
+                "adapter: lora or qlora."
+            )
+        if data.get("deepspeed") or (data.get("tensor_parallel_size") or 1) > 1:
+            # ZeRO partitions the optimizer step itself, and TP shards the rank dim;
+            # polora needs whole factors to build its r x r curvature matrices.
+            raise ValueError(
+                "polora is not compatible with DeepSpeed or tensor parallelism. "
+                "Use single-GPU, DDP, or FSDP2."
+            )
+        if data.get("fsdp") or data.get("fsdp_config"):
+            if str(cls._resolve_fsdp_version(data)) != "2":
+                raise ValueError(
+                    "polora requires FSDP2. Set fsdp_version: 2 to use polora with FSDP."
+                )
+
+        untrained = [
+            key
+            for key in (
+                "lora_modules_to_save",
+                "unfrozen_parameters",
+                "peft_use_dora",
+                "peft_trainable_token_indices",
+                "lisa_step_interval",
+                "reward_model",
+                "process_reward_model",
+            )
+            if data.get(key)
+        ]
+        if untrained:
+            raise ValueError(
+                f"polora has no fallback optimizer, so the parameters added by {untrained} "
+                "would never be trained. Remove them or pick a different optimizer."
+            )
+
+        # The factory builds the optimizer straight from the model, bypassing axolotl's
+        # parameter grouping, so per-group learning rates never take effect.
+        ignored_lrs = [
+            key
+            for key in (
+                "loraplus_lr_ratio",
+                "lr_groups",
+                "embedding_lr",
+                "embedding_lr_scale",
+            )
+            if data.get(key)
+        ]
+        if ignored_lrs:
+            raise ValueError(
+                f"polora sets its own per-factor step size, so {ignored_lrs} would be "
+                "silently ignored. Remove them or pick a different optimizer."
+            )
+
+        if data.get("relora_steps"):
+            raise ValueError(
+                "relora resets optimizer state through Optimizer.state, which polora "
+                "does not use, so its momentum would survive every merge."
+            )
+        if data.get("weight_decay"):
+            LOG.warning("polora has no weight decay term; weight_decay is ignored.")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_qgalore(cls, data):
         if data.get("optimizer") != "q_galore_adamw8bit":
             return data
@@ -1154,6 +1223,23 @@ class OptimizationValidationMixin:
 
         return self
 
+    @model_validator(mode="after")
+    def check_fsdp2_cpu_ram_efficient_loading_w_4bit(self):
+        # nf4 quantizes on rank 0 only: its params keep the packed `(N, 1)` shape there while the
+        # other ranks stay on meta unpacked, so the FSDP2 load scatters mismatched sizes.
+        if (
+            self.fsdp_config
+            and str(self.fsdp_version) == "2"
+            and self.fsdp_config.cpu_ram_efficient_loading
+            and self.load_in_4bit
+        ):
+            raise ValueError(
+                "FSDP2 does not support `cpu_ram_efficient_loading` with load_in_4bit; the "
+                "rank-0-only bitsandbytes quantization deadlocks the state dict scatter. "
+                "Please set `fsdp_config.cpu_ram_efficient_loading` to false."
+            )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def check_tensor_parallel_size_update_ds_json(cls, data):
@@ -1302,12 +1388,18 @@ class SystemValidationMixin:
             is_flash_attn_3_available,
         )
 
-        # kernels_fallback_ok mirrors runtime resolution: the flash-attn package OR a
-        # kernels-hub binary matching this torch build.
+        # Mirror runtime resolution: the flash-attn package OR a kernels-hub binary
+        # matching this torch build.
         if self.attn_implementation == "flash_attention_3":
             available = is_flash_attn_3_available(kernels_fallback_ok=True)
         else:
-            available = is_flash_attn_2_available(kernels_fallback_ok=True)
+            # transformers probes the hub at v1 but loads a different major, so ask
+            # about the version we actually pin instead.
+            from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+                is_fa2_hub_kernel_available,
+            )
+
+            available = is_flash_attn_2_available() or is_fa2_hub_kernel_available()
         if not available:
             raise ValueError(
                 f"attn_implementation: {self.attn_implementation} is set, but no "
@@ -1440,21 +1532,6 @@ class ModelCompatibilityValidationMixin:
             self.base_model and "mpt" in self.base_model.lower()
         ) and self.gradient_checkpointing:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
-        return self
-
-    @model_validator(mode="after")
-    def check_nemotron_h_gradient_checkpointing(self):
-        if (
-            self.base_model
-            and "nemotron-h" in self.base_model.lower()
-            and self.gradient_checkpointing
-            and not self.sample_packing
-        ):
-            raise ValueError(
-                "gradient_checkpointing for nemotron_h requires sample_packing: true. "
-                "The upstream model marks supports_gradient_checkpointing=False; "
-                "axolotl only enables it after applying the sample-packing patch."
-            )
         return self
 
     @model_validator(mode="after")

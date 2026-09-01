@@ -1165,10 +1165,10 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Sync steps for the reference model.",
     ),
     (
-        ("--trl.scale-rewards/--no-trl.scale-rewards",),
+        ("--trl.scale-rewards",),
         "trl__scale_rewards",
         None,
-        "Whether to scale rewards by their standard deviation.",
+        "How to scale rewards by their standard deviation. One of 'group' (per prompt-group, GRPO default), 'batch' (whole batch), or 'none'. Booleans are accepted for back-compat (True->'group', False->'none').",
     ),
     (
         ("--trl.temperature",),
@@ -1247,6 +1247,60 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "trl__mask_truncated_completions",
         None,
         "Whether to exclude truncated completions from loss calculation.",
+    ),
+    (
+        ("--trl.entropy-coef",),
+        "trl__entropy_coef",
+        "float",
+        "Static entropy regularization coefficient for GRPO, adding an entropy bonus to encourage exploration.",
+    ),
+    (
+        ("--trl.use-adaptive-entropy/--no-trl.use-adaptive-entropy",),
+        "trl__use_adaptive_entropy",
+        None,
+        "Enable adaptive entropy regularization (Skywork-OR1 style), adjusting entropy_coef toward entropy_target.",
+    ),
+    (
+        ("--trl.entropy-target",),
+        "trl__entropy_target",
+        "float",
+        "Target entropy when use_adaptive_entropy is enabled.",
+    ),
+    (
+        ("--trl.entropy-coef-delta",),
+        "trl__entropy_coef_delta",
+        "float",
+        "Step size for adjusting entropy_coef toward entropy_target.",
+    ),
+    (
+        ("--trl.entropy-coef-min",),
+        "trl__entropy_coef_min",
+        "float",
+        "Lower bound for the adaptive entropy_coef.",
+    ),
+    (
+        ("--trl.entropy-coef-max",),
+        "trl__entropy_coef_max",
+        "float",
+        "Upper bound for the adaptive entropy_coef.",
+    ),
+    (
+        ("--trl.vllm-importance-sampling-clip-min",),
+        "trl__vllm_importance_sampling_clip_min",
+        "float",
+        "Lower clip bound for the vLLM/training importance-sampling ratio.",
+    ),
+    (
+        ("--trl.vllm-importance-sampling-clip-max",),
+        "trl__vllm_importance_sampling_clip_max",
+        "float",
+        "Upper clip bound for the vLLM/training importance-sampling ratio.",
+    ),
+    (
+        ("--trl.log-multimodal/--no-trl.log-multimodal",),
+        "trl__log_multimodal",
+        None,
+        "Whether to log multimodal content (images, videos) alongside completions. Disable to reduce log size.",
     ),
     (
         ("--trl.vllm-enable-sleep-mode/--no-trl.vllm-enable-sleep-mode",),
@@ -2331,6 +2385,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Which experts implementation to use for MoE models,",
+    ),
+    (
+        ("--ple-cpu-offload/--no-ple-cpu-offload",),
+        None,
+        None,
+        "Keep parameters the model declares in `_no_placement_params` in host RAM instead of VRAM (e.g. Qwen3.8-Flash-Next's 51.2B n-gram PLE embedding, 95.4 GiB in bf16, which its forward already gathers on whatever device the weight lives on). Each token reads only a handful of rows, so the per-step transfer is tens of MB. Requires qlora with load_in_4bit or lora with load_in_8bit, and enough host RAM to hold the table.",
     ),
     (
         ("--quantize-moe-experts/--no-quantize-moe-experts",),

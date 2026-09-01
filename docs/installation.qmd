@@ -102,6 +102,10 @@ For providers supporting Docker:
     - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
     - [Latitude.sh](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
 
+### SkyPilot {#sec-skypilot}
+
+To launch Axolotl on your own cloud accounts (AWS, GCP, Azure, etc.) or Kubernetes cluster with a single command, see the [SkyPilot guide](skypilot.qmd).
+
 ### Google Colab {#sec-colab}
 
 [![](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/axolotl-ai-cloud/axolotl/blob/main/examples/colab-notebooks/colab-axolotl-example.ipynb#scrollTo=msOCO4NRmRLa)

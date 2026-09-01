@@ -63,6 +63,8 @@ examples:
     title: Llama 2
 
   # Alibaba
+  - name: qwen3.8-flash-next
+    title: Qwen 3.8 Flash Next
   - name: qwen3.5
     title: Qwen 3.5
   - name: qwen3-next

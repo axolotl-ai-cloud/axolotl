@@ -156,12 +156,15 @@ def patch_peft_target_parameters_matching():
        adapters are compatible with standard PEFT, vLLM, etc.
     3. Skips ParametrizationList synthetic paths to prevent PEFT from mistakenly
        targeting quantized expert params via name-suffix matching.
+    4. Evicts the stale ``parametrize`` cache entry when a nested ParamWrapper
+       activates, so its delta is not masked by an already-cached value.
     """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
 
-    from contextlib import nullcontext
+    from contextlib import contextmanager, nullcontext
 
+    from peft.tuners.lora.layer import ParamWrapper
     from peft.tuners.tuners_utils import BaseTuner, BaseTunerLayer
     from peft.utils.integrations import init_empty_weights
     from peft.utils.other import _get_submodules
@@ -312,6 +315,26 @@ def patch_peft_target_parameters_matching():
         return _original_check(config, key)
 
     BaseTuner._check_target_module_exists = _patched_check_target_module_exists
+
+    # Targeting two parameters of one module nests the ParamWrappers, and the outer one
+    # opens `parametrize.cached()` before the inner registers its LoRA proxy. On an
+    # already-parametrized (quantized) parameter that registration caches the pre-proxy
+    # value, so every later read returns it and the inner LoRA gets no gradient at all.
+    if not getattr(ParamWrapper._activate_lora, "_axolotl_patched", False):
+        _original_activate = ParamWrapper._activate_lora
+
+        @contextmanager
+        def _patched_activate_lora(self, active_adapters):
+            with _original_activate(self, active_adapters):
+                key = (id(self.get_base_layer()), self.parameter_name)
+                P._cache.pop(key, None)
+                try:
+                    yield
+                finally:
+                    P._cache.pop(key, None)
+
+        _patched_activate_lora._axolotl_patched = True
+        ParamWrapper._activate_lora = _patched_activate_lora
 
     patch_peft_target_parameters_matching._axolotl_patched = True
     LOG.info("Patched PEFT _inject_parameters for consistent ParamWrapper ordering")
