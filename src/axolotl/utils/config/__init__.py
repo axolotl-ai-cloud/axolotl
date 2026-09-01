@@ -432,6 +432,14 @@ def normalize_config(cfg):
                 )
                 cfg.ddp_find_unused_parameters = True
 
+    # MixLoRA reads _aux_loss from the module after the forward pass; reentrant
+    # checkpointing recomputes forward under no_grad, dropping the autograd graph.
+    if cfg.adapter == "mixlora" and cfg.gradient_checkpointing:
+        if cfg.gradient_checkpointing_kwargs is None:
+            cfg.gradient_checkpointing_kwargs = {}
+        if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
+            cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
