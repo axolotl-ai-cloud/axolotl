@@ -23,6 +23,8 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "qwen3_next",
     "qwen3_5",
     "qwen3_5_moe",
+    "qwen4_exp",
+    "qwen4_exp_text",
     "falcon",
     "phi",
     "phi3",

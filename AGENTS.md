@@ -94,6 +94,7 @@ Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/C
 - Plugin system: `plugins:` list in config loads integration modules
 - Trainer mixins: `core/trainers/mixins/` for composable trainer behaviors
 - Schemas: all config validation via Pydantic in `utils/schemas/`
+- HF Hub kernels live at `huggingface.co/kernels/<org>/<name>` (API `/api/kernels/...`); the bare `huggingface.co/<org>/<name>` path is a different namespace that silently serves a stale mirror
 
 ## Comment Style
 

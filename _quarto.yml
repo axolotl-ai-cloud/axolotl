@@ -479,6 +479,7 @@ website:
                 - docs/models/mistral.qmd
                 - docs/models/llama-4.qmd
                 - docs/models/llama-2.qmd
+                - docs/models/qwen3.8-flash-next.qmd
                 - docs/models/qwen3.5.qmd
                 - docs/models/qwen3-next.qmd
                 - docs/models/qwen3.qmd
