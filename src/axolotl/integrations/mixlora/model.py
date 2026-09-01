@@ -276,10 +276,7 @@ class MixLoraFFN(nn.Module):
         hidden_dim = self.base_ffn.gate_proj.in_features
         intermediate_dim = self.base_ffn.gate_proj.out_features
 
-        # Resolve activation function from the base FFN (default to F.silu)
         self.activation_fn = getattr(self.base_ffn, "act_fn", F.silu)
-        if not callable(self.activation_fn):
-            self.activation_fn = F.silu
 
         # Router
         self.router = MixLoraRouter(

@@ -22,7 +22,6 @@ to the attention layers via standard PEFT.
 Reference: https://arxiv.org/abs/2404.15159
 """
 
-from .patching import patch_model_with_mixlora
 from .plugin import MixLoraPlugin
 
-__all__ = ["patch_model_with_mixlora", "MixLoraPlugin"]
+__all__ = ["MixLoraPlugin"]
