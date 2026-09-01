@@ -28,7 +28,7 @@ class MixLoraPlugin(BasePlugin):
         return [AdapterCapabilities(name="mixlora", lora_like=True)]
 
     def get_trainer_cls(self, cfg):
-        if cfg.adapter == "mixlora":
+        if cfg.adapter == "mixlora" and cfg.rl is None:
             from .trainer import MixLoraTrainer
 
             return MixLoraTrainer
