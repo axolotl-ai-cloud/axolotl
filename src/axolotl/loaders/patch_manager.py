@@ -727,9 +727,15 @@ class PatchManager:
                 patch_create_accelerate_code_for_fp8,
             )
 
+            fp8_config = self.cfg.get("fp8_config") or {}
+            fp8_recipe = (
+                fp8_config.get("recipe", "tensorwise")
+                if isinstance(fp8_config, dict)
+                else "tensorwise"
+            )
             patch_create_accelerate_code_for_fp8(
                 enable_fsdp_float8_all_gather=self.cfg.fp8_enable_fsdp_float8_all_gather,
-                fp8_recipe=getattr(self.cfg, "fp8_recipe", None) or "tensorwise",
+                fp8_recipe=fp8_recipe,
             )
             patch_fp8_exclude_moe_router()
 

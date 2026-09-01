@@ -26,7 +26,7 @@ def test_fp8_patch_forwards_recipe_and_all_gather(monkeypatch):
     cfg = DictDefault(
         {
             "fp8": True,
-            "fp8_recipe": "rowwise",
+            "fp8_config": {"recipe": "rowwise"},
             "fp8_enable_fsdp_float8_all_gather": False,
         }
     )

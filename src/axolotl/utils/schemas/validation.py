@@ -425,13 +425,16 @@ class TrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fp8_config(cls, data):
-        if (
-            data.get("fp8_enable_fsdp_float8_all_gather")
-            and data.get("fp8_recipe", "tensorwise") != "tensorwise"
-        ):
+        fp8_config = data.get("fp8_config") or {}
+        fp8_recipe = (
+            fp8_config.get("recipe", "tensorwise")
+            if isinstance(fp8_config, dict)
+            else "tensorwise"
+        )
+        if data.get("fp8_enable_fsdp_float8_all_gather") and fp8_recipe != "tensorwise":
             raise ValueError(
                 "`fp8_enable_fsdp_float8_all_gather` only supports the tensorwise "
-                "`fp8_recipe`; disable it when using rowwise scaling."
+                "`fp8_config.recipe`; disable it when using rowwise scaling."
             )
         if data.get("fp8") and not data.get("torch_compile"):
             LOG.warning(

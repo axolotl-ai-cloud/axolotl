@@ -1447,17 +1447,18 @@ class TestTorchCompileValidation(BaseValidation):
 class TestFP8RecipeValidation:
     """Validate FP8 recipe defaults and incompatible FSDP combinations."""
 
-    def test_fp8_recipe_defaults_to_tensorwise(self, minimal_cfg):
-        updated_cfg = validate_config(minimal_cfg)
+    def test_fp8_config_defaults_to_tensorwise(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "fp8_config": {}})
+        updated_cfg = validate_config(cfg)
 
-        assert updated_cfg.fp8_recipe == "tensorwise"
+        assert updated_cfg.fp8_config.recipe == "tensorwise"
 
     @pytest.mark.parametrize("recipe", ["rowwise", "rowwise_with_gw_hp"])
     def test_rowwise_recipe_rejects_fsdp_float8_all_gather(self, minimal_cfg, recipe):
         cfg = DictDefault(
             {
                 **minimal_cfg,
-                "fp8_recipe": recipe,
+                "fp8_config": {"recipe": recipe},
                 "fp8_enable_fsdp_float8_all_gather": True,
                 "fsdp_version": 2,
             }

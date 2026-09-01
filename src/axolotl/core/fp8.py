@@ -14,7 +14,7 @@ def build_fp8_linear_config(
     if enable_fsdp_float8_all_gather and fp8_recipe != "tensorwise":
         raise ValueError(
             "`fp8_enable_fsdp_float8_all_gather` only supports the "
-            "tensorwise `fp8_recipe`; disable it when using rowwise scaling."
+            "tensorwise `fp8_config.recipe`; disable it when using rowwise scaling."
         )
 
     config = Float8LinearConfig.from_recipe_name(fp8_recipe)

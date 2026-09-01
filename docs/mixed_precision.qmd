@@ -77,16 +77,16 @@ implementation.
 ## FP8 Mixed Precision {#sec-fp8}
 
 ::: {.callout-note}
-FP8 support is experimental and requires compatible NVIDIA Hopper or Blackwell hardware (for example, H100, H200, B200, and supported consumer Blackwell devices) plus recent PyTorch and TorchAO versions.
+FP8 support is experimental and requires compatible NVIDIA Hopper or Blackwell hardware (including supported consumer Blackwell devices) and recent PyTorch versions with TorchAO.
 :::
 
 ### What is FP8? {#sec-fp8-overview}
 
-FP8 (8-bit floating point) can provide significant time savings compared to FP16/BF16 while maintaining training stability. Axolotl's implementation uses PyTorch's TorchAO library and supports tensorwise and rowwise scaling recipes.
+FP8 (8-bit floating point) can provide significant time savings compared to FP16/BF16 while maintaining training stability. Axolotl's implementation uses PyTorch's TorchAO library and supports `tensorwise`, `rowwise`, and `rowwise_with_gw_hp` scaling recipes.
 
 ### Requirements {#sec-fp8-software}
 
-- Compatible NVIDIA Hopper or Blackwell GPUs (for example, H100, H200, B200, and supported consumer Blackwell devices; availability depends on the installed PyTorch, TorchAO, and CUDA build)
+- Compatible NVIDIA Hopper or Blackwell GPUs (including supported consumer Blackwell devices)
 - PyTorch 2.7+ (+ compatible TorchAO version)
 - CUDA 12.4+
 
@@ -98,8 +98,9 @@ Add to your YAML config:
 # Enable FP8 mixed precision
 fp8: true
 
-# Optional: Select tensorwise (default), rowwise, or rowwise_with_gw_hp scaling
-fp8_recipe: tensorwise
+# Optional: Select the FP8 scaling recipe (tensorwise by default)
+fp8_config:
+  recipe: tensorwise
 
 # Optional: Enable FP8 for FSDP all-gather operations
 fp8_enable_fsdp_float8_all_gather: true
@@ -114,17 +115,14 @@ torch_compile: true
 FP8 training requires `torch_compile: true` to see meaningful speedups. Without compilation, FP8 may actually be slower and use more memory than FP16/BF16.
 :::
 
-::: {.callout-warning}
-`fp8_enable_fsdp_float8_all_gather: true` currently supports only the default `tensorwise` recipe. Disable it when using `rowwise` or `rowwise_with_gw_hp`.
-:::
-
 ### Advanced FP8 Configs {#sec-fp8-advanced}
 
 For [FSDP](multi-gpu.qmd#sec-fsdp) (Fully Sharded Data Parallel) training:
 
 ```{.yaml}
 fp8: true
-fp8_recipe: tensorwise
+fp8_config:
+  recipe: tensorwise
 fp8_enable_fsdp_float8_all_gather: true
 
 torch_compile: true
