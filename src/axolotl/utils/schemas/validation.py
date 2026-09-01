@@ -1388,12 +1388,18 @@ class SystemValidationMixin:
             is_flash_attn_3_available,
         )
 
-        # kernels_fallback_ok mirrors runtime resolution: the flash-attn package OR a
-        # kernels-hub binary matching this torch build.
+        # Mirror runtime resolution: the flash-attn package OR a kernels-hub binary
+        # matching this torch build.
         if self.attn_implementation == "flash_attention_3":
             available = is_flash_attn_3_available(kernels_fallback_ok=True)
         else:
-            available = is_flash_attn_2_available(kernels_fallback_ok=True)
+            # transformers probes the hub at v1 but loads a different major, so ask
+            # about the version we actually pin instead.
+            from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+                is_fa2_hub_kernel_available,
+            )
+
+            available = is_flash_attn_2_available() or is_fa2_hub_kernel_available()
         if not available:
             raise ValueError(
                 f"attn_implementation: {self.attn_implementation} is set, but no "
