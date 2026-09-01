@@ -218,16 +218,18 @@ def _lora_backward_per_group(
         return dx, d_lora_A, d_lora_B
 
     dx = torch.zeros_like(x_grouped)
-    d_A_3d = grad_h.new_zeros((E, r, dim2))
-    d_B_3d = grad_h.new_zeros((E, dim1, r))
+    # this is the fallback the grouped-mm guard takes on a dtype mismatch, so x,
+    # grad and the LoRA factors may all differ here and none of them can be assumed
+    d_A_3d = torch.zeros((E, r, dim2), dtype=lora_A.dtype, device=grad_h.device)
+    d_B_3d = torch.zeros((E, dim1, r), dtype=lora_A.dtype, device=grad_h.device)
 
     for e in range(E):
         start = int(expert_offsets[e])
         end = int(expert_offsets[e + 1])
         if end <= start:
             continue
-        x_e = x_grouped[start:end]  # [T_e, dim2]
         g_e = grad_h[start:end]  # [T_e, dim1]
+        x_e = x_grouped[start:end].to(g_e.dtype)  # [T_e, dim2]
 
         # dx_e = g_e @ W_eff_e with W_eff_e = W_e + scaling * (B_e @ A_e),
         # split so W_eff is never materialized and the NVFP4 base dequantizes
@@ -235,10 +237,12 @@ def _lora_backward_per_group(
         w_e = dequantize_expert_slice(base_weight, e)  # [dim1, dim2]
         dx[start:end] = g_e @ w_e.to(g_e.dtype)
         if not dx_via_weight_only:
-            dx[start:end] += scaling * ((g_e @ B_3d[e]) @ A_3d[e])
+            dx[start:end] += scaling * (
+                (g_e @ B_3d[e].to(g_e.dtype)) @ A_3d[e].to(g_e.dtype)
+            )
 
         # dW_eff_e = grad_h_e^T @ x_e  ([dim1, dim2], the [E, dim1, dim2] convention)
-        dW_e = g_e.transpose(0, 1) @ x_e  # [dim1, dim2]
+        dW_e = (g_e.transpose(0, 1) @ x_e).to(lora_A.dtype)  # [dim1, dim2]
 
         # Same map as MoELoRAMaterialize.backward:
         #   dA_e = scaling * B_e^T @ dW_e     ([r, dim1] @ [dim1, dim2] = [r, dim2])

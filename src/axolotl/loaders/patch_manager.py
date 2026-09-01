@@ -24,6 +24,7 @@ from axolotl.integrations.base import PluginManager
 from axolotl.model_support import (
     ModelHookContext,
     ModelHookPhase,
+    Unsupported,
     check_capability,
     get_model_support,
     get_model_support_for_cfg,
@@ -375,6 +376,12 @@ class PatchManager:
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
+        from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+            patch_fa2_hub_kernel_version,
+        )
+
+        patch_fa2_hub_kernel_version()
+
         if self.cfg.attn_implementation == "xformers":
             from axolotl.monkeypatch.attention import register_xformers_attn
 
@@ -837,6 +844,18 @@ class PatchManager:
             and self.cfg.sample_packing
         )
         if not (explicit or auto):
+            return
+
+        support = get_model_support(self.cfg.model_config_type)
+        resolved = resolve_model_support(support) if support is not None else None
+        capability = resolved.capabilities.get("sdpa_varlen") if resolved else None
+        if isinstance(capability, Unsupported):
+            if explicit:
+                LOG.warning(
+                    "sdpa_varlen is not supported for model_type=%s.%s Keeping stock SDPA.",
+                    self.cfg.model_config_type,
+                    f" {capability.reason}" if capability.reason else "",
+                )
             return
 
         from axolotl.monkeypatch.attention.sdpa_varlen import (

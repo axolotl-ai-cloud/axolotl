@@ -927,6 +927,18 @@ class AxolotlInputConfig(
         },
     )
 
+    ple_cpu_offload: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Keep parameters the model declares in `_no_placement_params` "
+            "in host RAM instead of VRAM (e.g. Qwen3.8-Flash-Next's 51.2B n-gram PLE "
+            "embedding, 95.4 GiB in bf16, which its forward already gathers on whatever "
+            "device the weight lives on). Each token reads only a handful of rows, so the "
+            "per-step transfer is tens of MB. Requires qlora with load_in_4bit or lora "
+            "with load_in_8bit, and enough host RAM to hold the table."
+        },
+    )
+
     quantize_moe_experts: bool = Field(
         default=False,
         json_schema_extra={
@@ -1745,6 +1757,28 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_ple_cpu_offload(cls, data):
+        if data.get("ple_cpu_offload"):
+            # both place parameters themselves, so the table would be sharded or gathered
+            if data.get("fsdp_config") is not None or data.get("fsdp") is not None:
+                raise ValueError("ple_cpu_offload is not compatible with FSDP")
+            if data.get("deepspeed"):
+                raise ValueError("ple_cpu_offload is not compatible with DeepSpeed")
+            # accelerate only skips its device placement for a bitsandbytes model, and
+            # these are the pairings `_set_quantization_config` actually builds one for
+            adapter = data.get("adapter")
+            if not (
+                (adapter == "qlora" and data.get("load_in_4bit"))
+                or (adapter == "lora" and data.get("load_in_8bit"))
+            ):
+                raise ValueError(
+                    "ple_cpu_offload requires qlora with load_in_4bit or lora with "
+                    "load_in_8bit"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_save_strategy_best_requires_metric(cls, data):
         if data.get("save_strategy") == "best" and not data.get(
             "metric_for_best_model"
@@ -1818,13 +1852,28 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         return self
 
     @model_validator(mode="after")
+    def check_ple_cpu_offload_multi_gpu(self):
+        n_gpu = self.capabilities.n_gpu if self.capabilities else 1
+        if self.ple_cpu_offload and n_gpu and n_gpu > 1:
+            # FSDP and DeepSpeed are already hard errors; this is the DDP case
+            LOG.warning(
+                "ple_cpu_offload has only been validated on a single GPU. Under DDP every "
+                "rank keeps its own copy of the table in host RAM."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_sample_packing_w_sdpa_bf16(self):
-        is_sm_90 = self.capabilities and self.capabilities.compute_capability == "sm_90"
+        cc = self.capabilities.compute_capability if self.capabilities else None
+        # the torch issue below is pre-Hopper, so anything sm_90 or newer is unaffected
+        is_hopper_or_newer = bool(
+            cc and cc.startswith("sm_") and int(cc.split("_", 1)[1]) >= 90
+        )
         if (
             self.sample_packing
             and self.attn_implementation == "sdpa"
             and (self.bfloat16 or self.bf16)
-            and not is_sm_90
+            and not is_hopper_or_newer
         ):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
             LOG.warning(
