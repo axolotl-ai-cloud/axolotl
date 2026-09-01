@@ -69,6 +69,15 @@ def _apply_transformers_test_shims():
 def pytest_configure(config):  # pylint: disable=unused-argument
     _apply_transformers_test_shims()
 
+    # Tests that call `from_pretrained` directly never reach PatchManager, and
+    # `lazy_import_flash_attention` caches by implementation string, so the first FA2
+    # load in a worker pins the kernel major for every later test in that process.
+    from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+        patch_fa2_hub_kernel_version,
+    )
+
+    patch_fa2_hub_kernel_version()
+
 
 # A device-side assert / illegal access poisons the process-wide CUDA context, so
 # every later GPU test errors at setup. Abort the session instead of cascading.
