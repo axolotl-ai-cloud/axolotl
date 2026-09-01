@@ -190,7 +190,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 
 ## Optimizers & schedulers
 
-**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore. (Muon / Flash / Q-GaLore require FSDP2, not DeepSpeed.)
+**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)
 
 **Schedulers:** cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).
 
@@ -246,6 +246,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | ReLoRA | `jagged_restart_steps` (and *not* FSDP/DeepSpeed/one_cycle) |
 | Sample packing | varlen backend (FA2/3, flex, xformers, sage) |
 | Muon / Flash / Q-GaLore optimizers | FSDP2 (not DeepSpeed) |
+| PoLoRA optimizer | LoRA/QLoRA + single-GPU, DDP, or FSDP2 (not DeepSpeed/TP) |
 | EBFT (`rl: ebft`) | `ebft:` config block |
 
 ### Incompatible {#incompatible}

@@ -374,7 +374,7 @@ def save_trained_model(
                 config = json.load(config_file_io, object_pairs_hook=OrderedDict)
                 if config.get("architectures"):
                     config["architectures"] = [
-                        name.lstrip("FSDP") for name in config["architectures"]
+                        name.removeprefix("FSDP") for name in config["architectures"]
                     ]
             # write the updated model config back
             with open(

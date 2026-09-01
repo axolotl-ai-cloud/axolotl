@@ -118,6 +118,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
         dequant=bool(getattr(cfg, "merge_dequant", False)),
         override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
+        revision=cfg.revision_of_model,
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")
