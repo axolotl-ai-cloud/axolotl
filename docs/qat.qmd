@@ -42,8 +42,12 @@ We support the following quantization schemas:
 
 `weight_dtype: ternary` trains every linear outside the LM head with weights restricted to `{-1, 0, 1}`,
 scaled by a per-row (per output channel) absmean, as in [BitNet b1.58](https://arxiv.org/abs/2402.17764).
-Activations are quantized to int8 with a per-token absmax scale, norms and the LM head stay in high precision,
-and `quantize_embedding` uses int8 per-row rather than ternary. `group_size` does not apply.
+Norms and the LM head stay in high precision, and `quantize_embedding` uses int8 per-row rather than
+ternary. `group_size` does not apply.
+
+Activation quantization is opt-in: set `activation_dtype: int8` to also fake quantize activations with a
+per-token absmax scale (`int8` is the only activation dtype ternary accepts). Leave `activation_dtype`
+unset — the default — for weight-only ternary.
 
 The [`use_onebitllms`](./1_58bit_finetuning.qmd) path trains the same scheme through an external library, for
 checkpoints that are already ternary.
@@ -51,7 +55,7 @@ checkpoints that are already ternary.
 ```yaml
 qat:
   weight_dtype: ternary
-  activation_dtype: int8        # optional, the only supported activation dtype for ternary
+  activation_dtype: int8        # optional, omit for weight-only; int8 is the only value ternary accepts
   quantize_embedding: true      # int8 per-row embeddings
   fake_quant_after_n_steps: 100 # optional high precision warmup
 ```

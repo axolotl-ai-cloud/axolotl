@@ -62,21 +62,16 @@ logging_steps: 1
 save_steps: 10
 save_total_limit: 3
 
-fsdp:
-  - full_shard
-  - auto_wrap
-
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
   # Full finetune of 8B sharded over 2 GPUs is ~48GB each before activations.
   # Set this to true if you have less than 80GB per GPU.
-  fsdp_offload_params: false
-  fsdp_cpu_ram_efficient_loading: true
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_sharding_strategy: FULL_SHARD
-  fsdp_reshard_after_forward: true
-  fsdp_activation_checkpointing: true
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  activation_checkpointing: true
 
 special_tokens:
