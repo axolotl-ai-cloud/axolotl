@@ -67,6 +67,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "nemotron_h",
     "falcon_h1",
     "minimax_m2",
+    "bailing_hybrid",
 ]
 
 

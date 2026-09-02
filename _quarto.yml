@@ -206,6 +206,7 @@ quartodoc:
         - model_support.templates
         - model_support.kimi_linear.patch_kimi_linear
         - model_support.registry
+        - model_support.remote_code
         - monkeypatch.models.llama4.modeling
         - monkeypatch.models.mamba_utils
         - monkeypatch.models.mistral3.mistral_common_tokenizer
@@ -449,6 +450,7 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/ling3.qmd
                 - docs/models/muse-glimmer.qmd
                 - docs/models/cohere-north-micro-vision-instruct.qmd
                 - docs/models/shieldstral.qmd
