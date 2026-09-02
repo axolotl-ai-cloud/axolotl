@@ -407,6 +407,34 @@ def download_muse_glimmer_tokenizer_fixture():
     )
 
 
+# mistral-common tokenizers live in tekken.json, which `*token*` does not match
+@pytest.fixture(scope="session")
+def download_magistral_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Magistral-Small-2506",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
+    )
+
+
+@pytest.fixture(scope="session")
+def download_devstral_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Devstral-Small-2505",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
+    )
+
+
+@pytest.fixture(scope="session")
+def download_devstral_1_1_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Devstral-Small-2507",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def download_phi_35_mini_model_fixture():
     # download the tokenizer only
