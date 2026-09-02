@@ -42,9 +42,17 @@ def _enable_parametrization_cache(module, inputs):
 
 
 def _disable_parametrization_cache(module, inputs, output):
-    P._cache_enabled -= 1
+    # always_call can fire without a matching pre-hook; a negative counter is truthy.
+    P._cache_enabled = max(0, P._cache_enabled - 1)
     if not P._cache_enabled:
         P._cache = {}
+
+
+def _register_parametrization_cache_hooks(module):
+    """Gate torch's parametrization cache to this module's forward."""
+    module.register_forward_pre_hook(_enable_parametrization_cache)
+    # Without always_call, an aborted checkpoint recompute skips this and pins experts.
+    module.register_forward_hook(_disable_parametrization_cache, always_call=True)
 
 
 def replace_parameter_8bit(module, param_name):
@@ -63,8 +71,7 @@ def replace_parameter_8bit(module, param_name):
 
     # Cache dequantized values during forward to avoid redundant dequantization.
     if not getattr(module, "_axolotl_8bit_hooks_registered", False):
-        module.register_forward_pre_hook(_enable_parametrization_cache)
-        module.register_forward_hook(_disable_parametrization_cache)
+        _register_parametrization_cache_hooks(module)
         module._axolotl_8bit_hooks_registered = True
 
 
