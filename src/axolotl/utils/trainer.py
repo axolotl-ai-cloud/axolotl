@@ -656,6 +656,8 @@ def setup_parallelism_envs(cfg):
 
 
 def prepare_optim_env(cfg):
+    if cfg.ddp_timeout:
+        os.environ.setdefault("AXOLOTL_NCCL_TIMEOUT", str(cfg.ddp_timeout))
 
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:

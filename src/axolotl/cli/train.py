@@ -2,13 +2,10 @@
 
 import gc
 import os
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Union
 
 import fire
-from accelerate import Accelerator, InitProcessGroupKwargs
-from transformers.hf_argparser import HfArgumentParser
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.utils import make_lazy_getattr
@@ -192,16 +189,6 @@ def ray_train_func(kwargs: dict):
     if cfg.deepspeed and hasattr(cfg.deepspeed, "to_dict"):
         cfg.deepspeed = cfg.deepspeed.to_dict()
 
-    # this call creates the process group, so ddp_timeout must be applied here
-    kwargs_handlers = []
-    if cfg.ddp_timeout:
-        kwargs_handlers.append(
-            InitProcessGroupKwargs(timeout=timedelta(seconds=cfg.ddp_timeout))
-        )
-    Accelerator(
-        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-        kwargs_handlers=kwargs_handlers,
-    )
     # initialize accelerator before model instantiation
     accelerator_cls(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
 
