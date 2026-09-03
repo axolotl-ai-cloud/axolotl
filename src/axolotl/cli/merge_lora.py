@@ -24,6 +24,13 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
+    if str(getattr(cfg, "adapter", None)) == "mixlora":
+        raise NotImplementedError(
+            "merge-lora is not supported for `adapter: mixlora` — MixLoRA experts "
+            "are not merged into the base model. Load the trained checkpoint "
+            "directly via `lora_model_dir` instead."
+        )
+
     merge_method = str(getattr(cfg, "merge_method", "memory_efficient"))
     if merge_method == "legacy":
         LOG.debug("Using legacy LoRA merging method...")

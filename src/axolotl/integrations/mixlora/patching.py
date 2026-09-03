@@ -20,6 +20,7 @@ transformer layers and replaces them with MixLoraFFN modules that contain
 the original frozen FFN + router + LoRA experts.
 """
 
+import torch
 import torch.nn as nn
 
 from axolotl.integrations.mixlora.constants import (
@@ -154,7 +155,22 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
             setattr(parent, attr_name, mixlora_ffn)
             continue
         device = first_param.device
-        dtype = first_param.dtype
+        dtype = next(
+            (
+                p.dtype
+                for p in original_ffn.parameters()
+                if p.is_floating_point()
+            ),
+            None,
+        )
+        if dtype is None:
+            # bnb quantized params report an int dtype, so fall back to the
+            # compute dtype it sets on the quantized linear
+            dtype = getattr(
+                getattr(original_ffn, "down_proj", None),
+                "compute_dtype",
+                torch.get_default_dtype(),
+            )
         # Only move trainable params (router + experts) to the device
         # The original FFN is already on the correct device
         mixlora_ffn.router = mixlora_ffn.router.to(device=device, dtype=dtype)
