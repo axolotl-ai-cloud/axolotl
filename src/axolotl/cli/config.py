@@ -211,6 +211,10 @@ def prepare_plugins(cfg: DictDefault):
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
+    from axolotl.utils.config import ensure_context_parallel_plugin
+
+    ensure_context_parallel_plugin(cfg)
+
     if cfg.get("plugins"):
         from axolotl.integrations.base import PluginManager
 

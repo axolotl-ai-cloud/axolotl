@@ -109,10 +109,6 @@ quartodoc:
         - core.trainers.mixins.packing
         - core.trainers.mixins.rng_state_loader
         - core.trainers.mixins.scheduler
-    - title: Context Managers
-      desc: Context managers for altering trainer behaviors
-      contents:
-        - utils.ctx_managers.sequence_parallel
     - title: Prompt Strategies
       desc: Prompt formatting strategies
       contents:
@@ -221,7 +217,6 @@ quartodoc:
         - monkeypatch.models.qwen3_vl.fused_attn
         - monkeypatch.models.voxtral.modeling
         - monkeypatch.peft.utils
-        - monkeypatch.ring_attn.adapters.batch
         - monkeypatch.ring_attn.patch
         - monkeypatch.tiled_mlp.base
         - monkeypatch.tiled_mlp.patch
@@ -295,6 +290,8 @@ quartodoc:
       contents:
         - integrations.base
         - integrations.config
+        - integrations.context_parallel.args
+        - integrations.context_parallel.plugin
         - integrations.cut_cross_entropy
         - integrations.cut_cross_entropy.args
         - integrations.densemixer.args
