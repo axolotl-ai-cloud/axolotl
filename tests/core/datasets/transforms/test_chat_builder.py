@@ -1,7 +1,3 @@
-"""
-Tests for the chat message transform builder (raw dataset -> internal format).
-"""
-
 import pytest
 
 from axolotl.core.datasets.transforms.chat_builder import chat_message_transform_builder
@@ -308,6 +304,22 @@ class TestChatBuilderToolCalls:
             {
                 "type": "tool_response",
                 "value": {"name": "get_temp", "content": "22.0"},
+            }
+        ]
+
+    def test_tool_scalar_list_content_becomes_response(self):
+        transform = chat_message_transform_builder()
+        out = transform(
+            {
+                "messages": [
+                    {"role": "tool", "name": "get_temp", "content": ["ok"]}
+                ]
+            }
+        )
+        assert out["conversation"][0]["content"] == [
+            {
+                "type": "tool_response",
+                "value": {"name": "get_temp", "content": "ok"},
             }
         ]
 

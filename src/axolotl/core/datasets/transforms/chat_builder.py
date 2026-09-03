@@ -202,9 +202,11 @@ def _normalize_content(
     if role in ("tool", "ipython") and message.get("name"):
         if len(normalized) == 1:
             item = normalized[0]
-            if item.get("type") == "text":
-                response_content: Any = item.get("value", item.get("text", ""))
-            elif isinstance(item, Mapping) and "type" not in item:
+            if not isinstance(item, Mapping):
+                response_content = item
+            elif item.get("type") == "text":
+                response_content = item.get("value", item.get("text", ""))
+            elif "type" not in item:
                 response_content = item
             else:
                 return normalized
