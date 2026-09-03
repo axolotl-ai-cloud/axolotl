@@ -150,11 +150,21 @@ def chat_message_transform_builder(
 def _convert_openai_tool_call(tool_call: Mapping[str, Any]) -> dict[str, Any]:
     """Convert a raw OpenAI tool call entry to the internal tool_call content format."""
     function = tool_call.get("function", tool_call)
+    tool_call_id = tool_call.get("id") or function.get("id")
     arguments = function.get("arguments", {})
     if isinstance(arguments, str):
-        arguments = json.loads(arguments) if arguments else {}
+        if not arguments:
+            arguments = {}
+        else:
+            try:
+                arguments = json.loads(arguments)
+            except ValueError as exc:
+                raise ValueError(
+                    "Could not parse arguments JSON for tool call "
+                    f"name={function.get('name', '')!r} "
+                    f"id={tool_call_id!r}: {arguments!r}"
+                ) from exc
     value: dict[str, Any] = {"name": function.get("name", ""), "arguments": arguments}
-    tool_call_id = tool_call.get("id") or function.get("id")
     if tool_call_id is not None:
         value["id"] = tool_call_id
     return {"type": "tool_call", "value": value}

@@ -155,6 +155,49 @@ class TestChatBuilderToolCalls:
             }
         ]
 
+    def test_malformed_string_arguments_fail_naming_the_tool_call(self):
+        transform = chat_message_transform_builder()
+        with pytest.raises(ValueError, match="get_stock_price"):
+            transform(
+                {
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "call_9",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "get_stock_price",
+                                        "arguments": '{"symbol": ',
+                                    },
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+        with pytest.raises(ValueError, match="call_9"):
+            transform(
+                {
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "call_9",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "get_stock_price",
+                                        "arguments": '{"symbol": ',
+                                    },
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+
     def test_content_function_items_converted(self):
         transform = chat_message_transform_builder()
         out = transform(
