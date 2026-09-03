@@ -1803,7 +1803,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         prompt_mask=prompt_mask,
                     )
                 else:
-                    old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
+                    old_per_token_logps, _, _ = self._get_per_token_logps_and_entropies(
                         self.model,
                         prompt_completion_ids,
                         attention_mask,
@@ -1819,7 +1819,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             # Reference model logprobs
             if self.beta != 0.0:
                 if self.ref_model is not None:
-                    ref_logps, _ = self._get_per_token_logps_and_entropies(
+                    ref_logps, _, _ = self._get_per_token_logps_and_entropies(
                         self.ref_model,
                         prompt_completion_ids,
                         attention_mask,
@@ -1837,7 +1837,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         else None
                     )
                     with use_adapter(unwrapped, adapter_name=adapter_name):
-                        ref_logps, _ = self._get_per_token_logps_and_entropies(
+                        ref_logps, _, _ = self._get_per_token_logps_and_entropies(
                             self.model,
                             prompt_completion_ids,
                             attention_mask,
@@ -2196,7 +2196,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         prompt_mask=chunk_prompt_mask,
                     )
                 else:
-                    old_logps, _ = self._get_per_token_logps_and_entropies(
+                    old_logps, _, _ = self._get_per_token_logps_and_entropies(
                         self.model,
                         prompt_completion_ids,
                         attention_mask,
@@ -2246,7 +2246,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             # Reference logprobs
             if self.beta != 0.0:
                 if self.ref_model is not None:
-                    ref_logps, _ = self._get_per_token_logps_and_entropies(
+                    ref_logps, _, _ = self._get_per_token_logps_and_entropies(
                         self.ref_model,
                         prompt_completion_ids,
                         attention_mask,
@@ -2264,7 +2264,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         else None
                     )
                     with use_adapter(unwrapped, adapter_name=adapter_name):
-                        ref_logps, _ = self._get_per_token_logps_and_entropies(
+                        ref_logps, _, _ = self._get_per_token_logps_and_entropies(
                             self.model,
                             prompt_completion_ids,
                             attention_mask,
@@ -2877,15 +2877,23 @@ class AsyncGRPOTrainer(GRPOTrainer):
         logits_to_keep,
         batch_size=None,
         compute_entropy=False,
+        compute_aux_loss=False,
         pixel_values=None,
         image_grid_thw=None,
         num_images=None,
         pixel_attention_mask=None,
+        spatial_shapes=None,
+        num_tiles=None,
         image_sizes=None,
         token_type_ids=None,
         mm_token_type_ids=None,
-    ) -> tuple[Any, torch.Tensor | None]:
-        """Compute log-probs and (optionally) entropies for each token.
+        image_position_ids=None,
+    ) -> tuple[Any, torch.Tensor | None, torch.Tensor | None]:
+        """Compute log-probs, (optionally) entropies, and (optionally) the MoE aux loss.
+
+        Signature/behavior mirrors ``trl.GRPOTrainer._get_per_token_logps_and_entropies``
+        (needed because TRL's base ``_generate_and_score_completions``/``_compute_loss``
+        call this method polymorphically with these kwargs).
 
         When running under no_grad (scoring path), bypasses accelerate's
         ConvertOutputsToFp32 wrapper to avoid a fp32 copy of the
@@ -2913,6 +2921,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         batch_size = batch_size or input_ids.size(0)
         all_logps = []
         all_entropies = []
+        all_aux_losses = []
         with autocast_ctx:
             for start in range(0, input_ids.size(0), batch_size):
                 input_ids_batch = input_ids[start : start + batch_size]
@@ -2941,11 +2950,30 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     cum_imgs = torch.tensor([0] + num_images).cumsum(0)
                     img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
                     model_inputs["image_grid_thw"] = image_grid_thw[img_start:img_end]
+                elif image_position_ids is not None and pixel_values is not None:
+                    cum_imgs = torch.tensor([0] + num_images).cumsum(0)
+                    img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
+                    model_inputs["pixel_values"] = pixel_values[img_start:img_end]
+                    model_inputs["image_position_ids"] = image_position_ids[
+                        img_start:img_end
+                    ]
+                elif spatial_shapes is not None and pixel_values is not None:
+                    # LFM2-VL tensors are tile-indexed.
+                    cum_tiles = torch.tensor([0] + num_tiles).cumsum(0)
+                    tile_start, tile_end = (
+                        cum_tiles[start],
+                        cum_tiles[start + batch_size],
+                    )
+                    model_inputs["pixel_values"] = pixel_values[tile_start:tile_end]
+                    model_inputs["pixel_attention_mask"] = pixel_attention_mask[
+                        tile_start:tile_end
+                    ]
+                    model_inputs["spatial_shapes"] = spatial_shapes[tile_start:tile_end]
                 elif pixel_values is not None:
                     model_inputs["pixel_values"] = pixel_values[
                         start : start + batch_size
                     ]
-                if pixel_attention_mask is not None:
+                if pixel_attention_mask is not None and spatial_shapes is None:
                     model_inputs["pixel_attention_mask"] = pixel_attention_mask[
                         start : start + batch_size
                     ]
@@ -2967,7 +2995,14 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
                 model_inputs["use_cache"] = False
 
-                logits = model(**model_inputs).logits
+                # MoE models: request router logits so the model returns `outputs.aux_loss`.
+                # VLM wrappers honor this only as a forward kwarg (not from the model
+                # config), so it must be passed here.
+                if compute_aux_loss:
+                    model_inputs["output_router_logits"] = True
+
+                outputs = model(**model_inputs)
+                logits = outputs.logits
                 completion_ids = input_ids_batch[:, -logits_to_keep:]
                 # FP8 models produce NaN logits at positions where
                 # attention_mask=0 (padding). Replace NaN with 0 so
@@ -2998,9 +3033,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
                             entropies = entropy_from_logits(logits)
                         all_entropies.append(entropies)
 
+                if compute_aux_loss:
+                    all_aux_losses.append(outputs.aux_loss)
+
         logps = torch.cat(all_logps, dim=0)
         entropies = torch.cat(all_entropies, dim=0) if compute_entropy else None
-        return logps, entropies
+        aux_loss = torch.stack(all_aux_losses).mean() if compute_aux_loss else None
+        return logps, entropies, aux_loss
 
     # ------------------------------------------------------------------
     # Loss override (adds IS ratio + OPSM)
@@ -3072,7 +3111,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 )
             )
         else:
-            per_token_logps, entropies = self._get_per_token_logps_and_entropies(
+            per_token_logps, entropies, _ = self._get_per_token_logps_and_entropies(
                 model,
                 input_ids,
                 attention_mask,

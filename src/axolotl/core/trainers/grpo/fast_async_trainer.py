@@ -586,7 +586,7 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                             ):
                                 if fk in data:
                                     r_fwd_kwargs[fk] = data[fk]
-                            r_logps, _ = self._get_per_token_logps_and_entropies(
+                            r_logps, _, _ = self._get_per_token_logps_and_entropies(
                                 self.model,
                                 r_ids,
                                 r_mask,
