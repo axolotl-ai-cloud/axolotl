@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-5ed5d6ce6a6b0ff48bdc088d658ecc41.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -213,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ling 3.0</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
@@ -389,6 +395,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.8 Flash Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -881,6 +893,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul>
   <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
   <li><a href="#configuring-qat-in-axolotl" id="toc-configuring-qat-in-axolotl" class="nav-link" data-scroll-target="#configuring-qat-in-axolotl">Configuring QAT in Axolotl</a></li>
+  <li><a href="#ternary-qat" id="toc-ternary-qat" class="nav-link" data-scroll-target="#ternary-qat">Ternary QAT</a></li>
   </ul>
 </nav>
     </div>
@@ -921,7 +934,7 @@ and the QAT documentation in the <a href="https://github.com/pytorch/ao/tree/mai
 <p>To enable QAT in axolotl, add the following to your configuration file:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">qat</span><span class="kw">:</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">activation_dtype</span><span class="kw">:</span><span class="co"> # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4", "int8", "float8"</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="co"> # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4", "fp8", and "nvfp4".</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="co"> # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4", "fp8", "nvfp4", and "ternary".</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">group_size</span><span class="kw">:</span><span class="co"> # Optional[int] = 32. The number of elements in each group for per-group fake quantization</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fake_quant_after_n_steps</span><span class="kw">:</span><span class="co"> # Optional[int] = None. The number of steps to apply fake quantization after</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>We support the following quantization schemas:</p>
@@ -931,7 +944,31 @@ and the QAT documentation in the <a href="https://github.com/pytorch/ao/tree/mai
 <li><code>Float8DynamicActivationFloat8Weight</code></li>
 <li><code>Float8DynamicActivationInt4Weight</code></li>
 <li><code>NVFP4</code></li>
+<li><code>Ternary</code> (BitNet b1.58 style)</li>
 </ul>
+</section>
+<section id="ternary-qat" class="level2">
+<h2 class="anchored" data-anchor-id="ternary-qat">Ternary QAT</h2>
+<p><code>weight_dtype: ternary</code> trains every linear outside the LM head with weights restricted to <code>{-1, 0, 1}</code>,
+scaled by a per-row (per output channel) absmean, as in <a href="https://arxiv.org/abs/2402.17764">BitNet b1.58</a>.
+Norms and the LM head stay in high precision, and <code>quantize_embedding</code> uses int8 per-row rather than
+ternary. <code>group_size</code> does not apply.</p>
+<p>Activation quantization is opt-in: set <code>activation_dtype: int8</code> to also fake quantize activations with a
+per-token absmax scale (<code>int8</code> is the only activation dtype ternary accepts). Leave <code>activation_dtype</code>
+unset — the default — for weight-only ternary.</p>
+<p>The <a href="../docs/1_58bit_finetuning.html"><code>use_onebitllms</code></a> path trains the same scheme through an external library, for
+checkpoints that are already ternary.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">qat</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="at"> ternary</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">activation_dtype</span><span class="kw">:</span><span class="at"> int8</span><span class="co">        # optional, omit for weight-only; int8 is the only value ternary accepts</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">quantize_embedding</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">      # int8 per-row embeddings</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fake_quant_after_n_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span><span class="co"> # optional high precision warmup</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Gradients reach the high precision master weights through a straight-through estimator, so the optimizer state
+stays unquantized. At the end of training the ternary values are baked into the saved weights, which means the
+checkpoint loads with plain <code>transformers</code> but is still stored at the model’s training dtype — serving it at
+two bits per weight requires an inference stack with a ternary format (for example GGUF <code>TQ1_0</code>/<code>TQ2_0</code>).
+Recovering quality after switching an existing model to ternary takes a continued pretraining scale token budget,
+not a fine-tuning one.</p>
 <p>Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the <a href="../docs/quantize.html"><code>quantize</code></a> command to do this.</p>
 
 

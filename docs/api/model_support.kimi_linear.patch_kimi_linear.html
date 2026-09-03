@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5ed5d6ce6a6b0ff48bdc088d658ecc41.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -213,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ling 3.0</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
@@ -389,6 +395,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.8 Flash Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -883,7 +895,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.model_support.kimi_linear.patch_kimi_linear.get_patch_file_path" id="toc-axolotl.model_support.kimi_linear.patch_kimi_linear.get_patch_file_path" class="nav-link" data-scroll-target="#axolotl.model_support.kimi_linear.patch_kimi_linear.get_patch_file_path">get_patch_file_path</a></li>
   <li><a href="#axolotl.model_support.kimi_linear.patch_kimi_linear.patch_kimi" id="toc-axolotl.model_support.kimi_linear.patch_kimi_linear.patch_kimi" class="nav-link" data-scroll-target="#axolotl.model_support.kimi_linear.patch_kimi_linear.patch_kimi">patch_kimi</a></li>
   </ul></li>
   </ul></li>
@@ -899,6 +910,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.model_support.kimi_linear.patch_kimi_linear" class="level1">
 <h1>model_support.kimi_linear.patch_kimi_linear</h1>
 <p><code>model_support.kimi_linear.patch_kimi_linear</code></p>
+<p>Redirect Kimi-Linear’s remote-code loading to the in-tree training copies.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -910,28 +922,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.model_support.kimi_linear.patch_kimi_linear.get_patch_file_path">get_patch_file_path</a></td>
-<td>Gets the absolute path to a patch file using importlib.resources.files.</td>
-</tr>
-<tr class="even">
 <td><a href="#axolotl.model_support.kimi_linear.patch_kimi_linear.patch_kimi">patch_kimi</a></td>
-<td>Apply all Kimi patches.</td>
+<td>Apply all Kimi patches. Must be called BEFORE loading config/tokenizer/model.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.model_support.kimi_linear.patch_kimi_linear.get_patch_file_path" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.model_support.kimi_linear.patch_kimi_linear.get_patch_file_path">get_patch_file_path</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>model_support.kimi_linear.patch_kimi_linear.get_patch_file_path(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    package_dot_path,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    filename,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Gets the absolute path to a patch file using importlib.resources.files.</p>
-</section>
 <section id="axolotl.model_support.kimi_linear.patch_kimi_linear.patch_kimi" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.model_support.kimi_linear.patch_kimi_linear.patch_kimi">patch_kimi</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>model_support.kimi_linear.patch_kimi_linear.patch_kimi()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Apply all Kimi patches.
-Must be called BEFORE loading config/tokenizer/model.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>model_support.kimi_linear.patch_kimi_linear.patch_kimi()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Apply all Kimi patches. Must be called BEFORE loading config/tokenizer/model.</p>
 
 
 </section>

@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5ed5d6ce6a6b0ff48bdc088d658ecc41.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -147,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/muse-glimmer.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Kimi Linear</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/ling3.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Kimi Linear</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -213,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ling 3.0</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
@@ -389,6 +395,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3.8 Flash Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -892,7 +904,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/muse-glimmer.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Kimi Linear</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/ling3.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Kimi Linear</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">Kimi Linear</h1>
 </div>
@@ -919,8 +931,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ol type="1">
 <li><p>Install Axolotl following the <a href="https://docs.axolotl.ai/docs/installation.html">installation guide</a>.</p></li>
 <li><p>Install CCE via <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">docs</a></p></li>
+<li><p>Check that FLA 0.4.1 is installed — the KDA layers import their kernels from it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install fla-core==0.4.1 flash-linear-attention==0.4.1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<blockquote class="blockquote">
+<p>Axolotl already pins both on x86_64, so a standard install covers this. The
+version matters: <code>fused_kda_gate</code> changed signature in 0.4.1, so 0.4.0 raises
+a <code>TypeError</code> at the first KDA layer. FLA is not published for aarch64, which
+leaves Kimi Linear unsupported there.</p>
+</blockquote></li>
 <li><p>Run the finetuning example:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/kimi-linear/kimi-48b-lora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/kimi-linear/kimi-48b-lora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
 </ol>
 <p>This config uses about 98.7GiB VRAM.</p>
 <p>Let us know how it goes. Happy finetuning!</p>
