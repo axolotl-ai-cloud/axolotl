@@ -48,6 +48,7 @@ from axolotl.loaders.utils import (
     get_linear_embedding_layers,
     get_module_class_from_name,
     load_model_config,
+    materialize_trainable_meta_params,
 )
 from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.models.mamba import fix_mamba_attn_for_loss
@@ -58,6 +59,7 @@ from axolotl.utils.distributed import (
     build_parallelism_config,
     get_device_count,
     get_device_type,
+    init_distributed_state,
 )
 from axolotl.utils.fp32_norms import (
     _matches_norm_class,
@@ -201,6 +203,7 @@ class ModelLoader:
         PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
         lora_config = self._load_adapters()
         PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
+        self._materialize_trainable_meta_params()
 
         # Apply remaining patches and finalize
         self._apply_post_lora_load_setup(skip_move_to_device)
@@ -525,6 +528,16 @@ class ModelLoader:
                 )
 
         return lora_config
+
+    def _materialize_trainable_meta_params(self):
+        """Non-rank-0 loads onto meta and PEFT follows the base layer's device; the optimizer is
+        built before `accelerator.prepare`, which remaps its params by `data_ptr()` (0 on meta)."""
+        if (
+            self.cfg.fsdp_config
+            and self.cfg.fsdp_config.cpu_ram_efficient_loading
+            and int(os.getenv("LOCAL_RANK", "0")) != 0
+        ):
+            materialize_trainable_meta_params(self.model)
 
     def _keep_no_placement_params_on_cpu(self):
         """Stop the offloaded ``_no_placement_params`` being pulled back into VRAM.
@@ -956,6 +969,9 @@ class ModelLoader:
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
                 skip_move_to_device = True
+                # transformers' non-rank-0 meta gate needs an initialized process group; the
+                # mesh build normally provides one, pure EP builds no mesh (no-op if already up)
+                init_distributed_state()
                 # Don't delete device_map for QLoRA + FSDP - it was set correctly in
                 # _set_device_map
                 if (

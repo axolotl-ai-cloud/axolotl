@@ -228,6 +228,74 @@ def ensure_dtype(model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16):
             module.to(dtype)
 
 
+def _cpu_storage_like(tensor: torch.Tensor) -> torch.Tensor | None:
+    """Real CPU storage matching a plain tensor's shape/dtype, or ``None`` for an opaque subclass."""
+    if type(tensor) not in (torch.Tensor, torch.nn.Parameter):
+        return None
+    try:
+        return torch.zeros_like(tensor, device="cpu")
+    except (NotImplementedError, RuntimeError):
+        # some dtypes (e.g. float4_e2m1fn_x2) have no CPU fill kernel
+        return torch.empty_like(tensor, device="cpu")
+
+
+def materialize_trainable_meta_params(model: torch.nn.Module) -> list[str]:
+    """Gives meta-device trainable params real CPU storage, because accelerate's FSDP2 prepare keys
+    its optimizer parameter remap on `data_ptr()` and every meta tensor reports 0."""
+    from torch.distributed.tensor import DTensor
+
+    replacements: dict[int, torch.nn.Parameter] = {}
+    materialized: list[str] = []
+
+    for name, param in model.named_parameters():
+        if not (param.requires_grad and param.is_meta):
+            continue
+
+        if isinstance(param, DTensor):
+            cpu_local = _cpu_storage_like(param._local_tensor)
+            storage = (
+                None
+                if cpu_local is None
+                else DTensor.from_local(
+                    cpu_local,
+                    param.device_mesh,
+                    param.placements,
+                    run_check=False,
+                    shape=param.shape,
+                    stride=param.stride(),
+                )
+            )
+            kind = f"DTensor over {type(param._local_tensor).__name__}"
+        else:
+            storage = _cpu_storage_like(param)
+            kind = type(param).__name__
+
+        if storage is None:
+            LOG.warning(
+                f"{name} ({kind}) is trainable but on meta and cannot be materialized on "
+                "CPU; accelerate's FSDP2 optimizer remap may not reach it"
+            )
+            continue
+        replacements[id(param)] = torch.nn.Parameter(storage)
+        materialized.append(name)
+
+    if not materialized:
+        return materialized
+
+    # meta -> cpu is not a compatible shallow copy, so `.data =` raises and the object is swapped
+    for module in model.modules():
+        for attr, param in module._parameters.items():
+            if param is not None and id(param) in replacements:
+                module._parameters[attr] = replacements[id(param)]
+
+    LOG.info(
+        f"materialized {len(materialized)} trainable meta params on CPU "
+        "for FSDP2 optimizer mapping"
+    )
+
+    return materialized
+
+
 def get_linear_embedding_layers(model_type: str) -> list[str]:
     """Returns layer names of linear embeddings needed for LoRA based on model type."""
     if model_type == "gpt_neox":
