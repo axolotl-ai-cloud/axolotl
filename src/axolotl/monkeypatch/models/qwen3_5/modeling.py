@@ -45,7 +45,8 @@ def get_cu_seqlens(position_ids):
         position_ids = position_ids[0]
 
     tensor_kwargs = {"dtype": torch.int32, "device": position_ids.device}
-    position_ids = position_ids.view(-1)
+    # Sample packing hands in a sliced (non-contiguous) view, which `view` rejects.
+    position_ids = position_ids.reshape(-1)
     indices_q = (position_ids == 0).nonzero().view(-1)
     return torch.cat(
         (
