@@ -231,6 +231,33 @@ def execute_training(
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
 
+        if cfg.adapter == "mixlora" and resume_from_checkpoint:
+            # HF Trainer's own checkpoint restore doesn't know about MixLoRA's
+            # router/expert sidecar file, so it never gets loaded on resume.
+            # Load it explicitly before training resumes.
+            import safetensors.torch
+
+            from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
+            from axolotl.integrations.mixlora.model import load_mixlora_state_dict
+
+            mixlora_weights_path = os.path.join(
+                resume_from_checkpoint, MIXLORA_WEIGHTS_NAME
+            )
+            if os.path.exists(mixlora_weights_path):
+                load_mixlora_state_dict(
+                    trainer.model,
+                    safetensors.torch.load_file(mixlora_weights_path),
+                    strict=True,
+                )
+                LOG.info(
+                    "Loaded MixLoRA router/expert weights from checkpoint for resume"
+                )
+            else:
+                LOG.warning(
+                    "Resuming MixLoRA training but checkpoint is missing "
+                    f"{MIXLORA_WEIGHTS_NAME}; router/expert weights were not restored."
+                )
+
         LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
@@ -405,6 +432,36 @@ def save_trained_model(
             trainer.model.save_pretrained(cfg.output_dir)
 
         model.save_pretrained(cfg.output_dir)
+
+        if cfg.adapter == "mixlora":
+            # PEFT's save_pretrained above doesn't know about MixLoRA's
+            # router/expert weights, so MixLoraTrainer._save is the only place
+            # that normally writes the sidecar file. That method only runs for
+            # trainer-driven checkpoint saves, not this final save, so write
+            # the sidecar explicitly here too.
+            #
+            # Scoped to this plain (non-FSDP, non-deepspeed-zero3) branch only:
+            # `model` here is a fully materialized single-process copy, so
+            # mixlora_state_dict(model) is safe to call directly. Under FSDP,
+            # model on each rank only holds its local shard, so calling this
+            # there would silently write a corrupted, partial sidecar instead
+            # of correctly doing nothing — final MixLoRA save isn't supported
+            # for FSDP/deepspeed-zero3 yet.
+            import safetensors.torch
+
+            from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
+            from axolotl.integrations.mixlora.model import mixlora_state_dict
+
+            mixlora_state = mixlora_state_dict(model)
+            if mixlora_state:
+                cpu_state = {
+                    key: value.detach().cpu() for key, value in mixlora_state.items()
+                }
+                safetensors.torch.save_file(
+                    cpu_state,
+                    os.path.join(cfg.output_dir, MIXLORA_WEIGHTS_NAME),
+                    metadata={"format": "pt"},
+                )
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
