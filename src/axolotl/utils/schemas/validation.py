@@ -431,6 +431,11 @@ class TrainingValidationMixin:
             if isinstance(fp8_config, dict)
             else "tensorwise"
         )
+        if fp8_config and not data.get("fp8"):
+            raise ValueError(
+                "`fp8_config` requires `fp8: true`; "
+                "set `fp8: true` or remove `fp8_config`."
+            )
         if data.get("fp8_enable_fsdp_float8_all_gather") and fp8_recipe != "tensorwise":
             raise ValueError(
                 "`fp8_enable_fsdp_float8_all_gather` only supports the tensorwise "

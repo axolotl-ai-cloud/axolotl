@@ -1453,11 +1453,23 @@ class TestFP8RecipeValidation:
 
         assert updated_cfg.fp8_config.recipe == "tensorwise"
 
+    def test_fp8_config_requires_fp8_enabled(self, minimal_cfg):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "fp8_config": {"recipe": "rowwise"},
+            }
+        )
+
+        with pytest.raises(ValidationError, match=r"requires `fp8: true`"):
+            validate_config(cfg)
+
     @pytest.mark.parametrize("recipe", ["rowwise", "rowwise_with_gw_hp"])
     def test_rowwise_recipe_rejects_fsdp_float8_all_gather(self, minimal_cfg, recipe):
         cfg = DictDefault(
             {
                 **minimal_cfg,
+                "fp8": True,
                 "fp8_config": {"recipe": recipe},
                 "fp8_enable_fsdp_float8_all_gather": True,
                 "fsdp_version": 2,
