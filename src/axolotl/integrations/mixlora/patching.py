@@ -156,11 +156,7 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
             continue
         device = first_param.device
         dtype = next(
-            (
-                p.dtype
-                for p in original_ffn.parameters()
-                if p.is_floating_point()
-            ),
+            (p.dtype for p in original_ffn.parameters() if p.is_floating_point()),
             None,
         )
         if dtype is None:
