@@ -1,7 +1,9 @@
 """Unit tests for async GRPO"""
 
+import types
 import unittest
-from unittest.mock import MagicMock
+from collections import defaultdict
+from unittest.mock import MagicMock, patch
 
 import torch
 
@@ -406,6 +408,433 @@ class TestMaybeSyncVllmWeightsIntervalDefault(unittest.TestCase):
         trainer.state.global_step = 4
         AsyncGRPOTrainer._maybe_sync_vllm_weights(trainer)
         trainer._sync_lora_adapter.assert_called_once()
+
+
+class _StopEarly(Exception):
+    """Raised by a mocked call to short-circuit a large method right after
+    capturing the kwargs it was invoked with."""
+
+
+def _capture_and_stop():
+    """Returns (captured_kwargs_dict, side_effect_fn) for mocking
+    ``_get_per_token_logps_and_entropies``: records the kwargs of the first
+    call, then aborts the enclosing method via ``_StopEarly`` so tests don't
+    need to stub out the rest of a large scoring/loss method."""
+    captured: dict = {}
+
+    def _side_effect(*_args, **kwargs):
+        captured.update(kwargs)
+        raise _StopEarly()
+
+    return captured, _side_effect
+
+
+class TestMultimodalTileFieldPropagation(unittest.TestCase):
+    """spatial_shapes / num_tiles / image_position_ids (TRL 1.9's LFM2-VL /
+    tile-indexed VLM fields) must reach ``_get_per_token_logps_and_entropies``
+    from every async GRPO scoring path, not just the low-level method
+    signature."""
+
+    def _make_async_trainer(self):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        trainer = AsyncGRPOTrainer.__new__(AsyncGRPOTrainer)
+        trainer.accelerator = MagicMock()
+        trainer.accelerator.device = torch.device("cpu")
+        trainer.accelerator.num_processes = 1
+        trainer.model = MagicMock()
+        trainer.model.is_gradient_checkpointing = False
+        trainer.is_fsdp_enabled = False
+        trainer.use_vllm = True
+        trainer.vllm_importance_sampling_correction = True
+        trainer.beta = 0.0
+        trainer.aux_loss_enabled = False
+        trainer.num_generations = 2
+        trainer.num_iterations = 1
+        trainer.pad_token_id = 0
+        trainer.eos_token_id = 1
+        trainer.mask_truncated_completions = False
+        trainer.tools = None
+        trainer.chat_template_kwargs = {}
+        trainer._launch_reward_workers = MagicMock()
+        trainer.args = types.SimpleNamespace(
+            per_device_train_batch_size=2,
+            batch_flattening=False,
+            gradient_accumulation_steps=1,
+            steps_per_generation=1,
+            gradient_checkpointing_kwargs=None,
+        )
+        return trainer
+
+    def test_generate_only_forwards_tile_fields(self):
+        """_generate_only must (a) recover num_tiles the way TRL does for
+        tile-indexed VLMs, and (b) preserve spatial_shapes/image_position_ids
+        into the deferred rollout output."""
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        trainer = self._make_async_trainer()
+
+        images = [["img_a"], ["img_b", "img_c"]]  # num_images == [1, 2]
+        inputs = [
+            {"prompt": "p1", "images": images[0]},
+            {"prompt": "p2", "images": images[1]},
+        ]
+        trainer._generate = MagicMock(
+            return_value=(
+                [[1, 2, 3], [1, 2]],  # prompt_ids_list
+                [[4, 5], [4, 5, 6]],  # completion_ids_list
+                None,  # tool_mask_list
+                ["a", "b"],  # completions
+                2,  # num_items_in_batch
+                None,  # sampling_per_token_logps_list
+                None,  # extra_fields
+            )
+        )
+        trainer.processing_class = MagicMock()
+        trainer.processing_class.return_value = {
+            "spatial_shapes": torch.zeros(3, 2),
+            "pixel_values": torch.zeros(3, 4, 4),
+            "image_position_ids": torch.zeros(2, 5),
+        }
+        trainer.processing_class.image_processor.use_thumbnail = False
+        trainer.processing_class.image_processor.return_value = {
+            "image_rows": torch.tensor([1, 1, 1]),
+            "image_cols": torch.tensor([2, 3, 4]),
+        }
+
+        with (
+            patch(
+                "axolotl.core.trainers.grpo.async_trainer.apply_chat_template",
+                return_value={"prompt": "TEXT"},
+            ),
+            patch(
+                "axolotl.core.trainers.grpo.async_trainer.is_conversational",
+                return_value=True,
+            ),
+            patch(
+                "axolotl.core.trainers.grpo.async_trainer.prepare_multimodal_messages",
+                side_effect=lambda p, _il: p,
+            ),
+        ):
+            output = AsyncGRPOTrainer._generate_only(trainer, inputs)
+
+        # image_rows * image_cols == [2, 3, 4]; split by num_images=[1, 2] → [2], [3, 4]
+        self.assertEqual(output["num_tiles"], [2, 7])
+        self.assertIn("spatial_shapes", output)
+        self.assertIn("image_position_ids", output)
+
+    def test_compute_deferred_scores_forwards_tile_fields(self):
+        trainer = self._make_async_trainer()
+        captured, side_effect = _capture_and_stop()
+        trainer._get_per_token_logps_and_entropies = MagicMock(side_effect=side_effect)
+
+        rollout = {
+            "_deferred_inputs": [{}, {}],
+            "_deferred_prompts": ["p1", "p2"],
+            "_deferred_completions": ["c1", "c2"],
+            "_deferred_completion_ids_list": [[1], [1]],
+            "_pending_policy_logps": True,
+            "prompt_ids": torch.zeros(2, 3, dtype=torch.long),
+            "completion_ids": torch.zeros(2, 4, dtype=torch.long),
+            "prompt_mask": torch.ones(2, 3, dtype=torch.long),
+            "completion_mask": torch.ones(2, 4, dtype=torch.long),
+            "spatial_shapes": torch.zeros(2, 2),
+            "image_position_ids": torch.zeros(2, 5),
+            "num_tiles": [2, 3],
+        }
+
+        with self.assertRaises(_StopEarly):
+            trainer._compute_deferred_scores(rollout)
+
+        self.assertEqual(captured["num_tiles"], [2, 3])
+        self.assertIn("spatial_shapes", captured)
+        self.assertIn("image_position_ids", captured)
+
+    def test_compute_streaming_group_scores_forwards_tile_fields(self):
+        trainer = self._make_async_trainer()
+        captured, side_effect = _capture_and_stop()
+        trainer._get_per_token_logps_and_entropies = MagicMock(side_effect=side_effect)
+
+        data = {
+            "prompt_ids": torch.zeros(4, 3, dtype=torch.long),
+            "completion_ids": torch.zeros(4, 4, dtype=torch.long),
+            "prompt_mask": torch.ones(4, 3, dtype=torch.long),
+            "completion_mask": torch.ones(4, 4, dtype=torch.long),
+            "spatial_shapes": torch.zeros(4, 2),
+            "image_position_ids": torch.zeros(4, 5),
+            "num_tiles": [2, 3, 4, 5],
+        }
+
+        with self.assertRaises(_StopEarly):
+            trainer._compute_streaming_group_scores(
+                data,
+                s_start=0,
+                s_end=2,
+                inputs=[{}, {}],
+                prompts=["p1", "p2"],
+                completions=["c1", "c2"],
+                completion_ids_list=[[1], [1]],
+                is_last_chunk=True,
+            )
+
+        # num_tiles is a per-sample list (like num_images) — sliced to the chunk
+        self.assertEqual(captured["num_tiles"], [2, 3])
+        self.assertIn("spatial_shapes", captured)
+        self.assertIn("image_position_ids", captured)
+
+    def test_compute_loss_forwards_tile_fields(self):
+        trainer = self._make_async_trainer()
+        captured, side_effect = _capture_and_stop()
+        trainer._get_per_token_logps_and_entropies = MagicMock(side_effect=side_effect)
+
+        inputs = {
+            "prompt_ids": torch.zeros(2, 3, dtype=torch.long),
+            "completion_ids": torch.zeros(2, 4, dtype=torch.long),
+            "prompt_mask": torch.ones(2, 3, dtype=torch.long),
+            "completion_mask": torch.ones(2, 4, dtype=torch.long),
+            "spatial_shapes": torch.zeros(2, 2),
+            "num_tiles": [2, 3],
+            "image_position_ids": torch.zeros(2, 5),
+        }
+
+        with self.assertRaises(_StopEarly):
+            trainer._compute_loss(trainer.model, inputs)
+
+        self.assertEqual(captured["num_tiles"], [2, 3])
+        self.assertIn("spatial_shapes", captured)
+        self.assertIn("image_position_ids", captured)
+
+    def test_fast_async_replay_recompute_forwards_tile_fields(self):
+        from axolotl.core.trainers.grpo.fast_async_trainer import (
+            FastAsyncGRPOTrainer,
+        )
+        from axolotl.core.trainers.grpo.replay_buffer import ReplayBuffer
+
+        trainer = FastAsyncGRPOTrainer.__new__(FastAsyncGRPOTrainer)
+        trainer.model = MagicMock()
+        trainer.model.is_gradient_checkpointing = False
+        trainer.args = types.SimpleNamespace(gradient_checkpointing_kwargs=None)
+        trainer.reward_funcs = [MagicMock()]
+        trainer._replay_recompute_logps = True
+        trainer._replay_buffer = ReplayBuffer(max_size=2)
+        trainer._replay_buffer.add(
+            1.0,
+            {
+                "prompt_ids": torch.zeros(2, 3, dtype=torch.long),
+                "completion_ids": torch.zeros(2, 4, dtype=torch.long),
+                "prompt_mask": torch.ones(2, 3, dtype=torch.long),
+                "completion_mask": torch.ones(2, 4, dtype=torch.long),
+                "old_per_token_logps": torch.zeros(2, 4),
+            },
+        )
+        captured, side_effect = _capture_and_stop()
+        trainer._get_per_token_logps_and_entropies = MagicMock(side_effect=side_effect)
+
+        # One group (num_generations=2) with zero reward variance → "no signal" →
+        # triggers replacement from the replay buffer + old_per_token_logps recompute.
+        data = {
+            "prompt_ids": torch.zeros(2, 3, dtype=torch.long),
+            "completion_ids": torch.zeros(2, 4, dtype=torch.long),
+            "prompt_mask": torch.ones(2, 3, dtype=torch.long),
+            "completion_mask": torch.ones(2, 4, dtype=torch.long),
+            "old_per_token_logps": torch.zeros(2, 4),
+            "spatial_shapes": torch.zeros(2, 2),
+            "image_position_ids": torch.zeros(2, 5),
+            "num_tiles": [2, 3],
+        }
+        rewards_per_func = torch.zeros(2, 1)
+        advantages = torch.zeros(2)
+
+        with self.assertRaises(_StopEarly):
+            FastAsyncGRPOTrainer._post_advantage_hook(
+                trainer,
+                data,
+                rewards_per_func,
+                advantages,
+                inputs=[{}, {}],
+                num_generations=2,
+                mode="train",
+            )
+
+        self.assertIn("spatial_shapes", captured)
+        self.assertIn("num_tiles", captured)
+        self.assertIn("image_position_ids", captured)
+
+
+class TestGetPerTokenLogpsMultimodalTailBatch(unittest.TestCase):
+    """A batch_size that doesn't evenly divide the sample count must not
+    overflow the cumulative image/tile index tensors on the last chunk."""
+
+    def _make_trainer(self):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        trainer = AsyncGRPOTrainer.__new__(AsyncGRPOTrainer)
+        trainer.is_fsdp_enabled = False
+        trainer.accelerator = MagicMock()
+        trainer.accelerator.unwrap_model = lambda m, keep_fp32_wrapper=True: m
+        trainer.use_liger_kernel = False
+        trainer.temperature = 1.0
+        trainer.model_kwarg_keys = set()
+        return trainer
+
+    @staticmethod
+    def _fake_model(seq_len, vocab_size):
+        def _call(**kwargs):
+            n = kwargs["input_ids"].size(0)
+            out = MagicMock()
+            out.logits = torch.randn(n, seq_len, vocab_size)
+            return out
+
+        return _call
+
+    def test_image_position_ids_tail_batch_does_not_overflow(self):
+        trainer = self._make_trainer()
+        B, L, V = 5, 6, 10  # batch_size=2 -> last chunk start=4, start+batch_size=6 > B
+        logits_to_keep = 3
+        num_images = [1, 1, 1, 1, 1]
+
+        logps, _entropies, _aux = trainer._get_per_token_logps_and_entropies(
+            self._fake_model(L, V),
+            torch.randint(0, V, (B, L)),
+            torch.ones(B, L, dtype=torch.long),
+            logits_to_keep,
+            batch_size=2,
+            num_images=num_images,
+            pixel_values=torch.randn(5, 3, 4, 4),
+            image_position_ids=torch.randn(5, 2),
+        )
+        self.assertEqual(logps.shape, (B, logits_to_keep))
+
+    def test_spatial_shapes_tail_batch_does_not_overflow(self):
+        trainer = self._make_trainer()
+        B, L, V = 5, 6, 10
+        logits_to_keep = 3
+        num_tiles = [1, 1, 1, 1, 1]
+
+        logps, _entropies, _aux = trainer._get_per_token_logps_and_entropies(
+            self._fake_model(L, V),
+            torch.randint(0, V, (B, L)),
+            torch.ones(B, L, dtype=torch.long),
+            logits_to_keep,
+            batch_size=2,
+            num_tiles=num_tiles,
+            pixel_values=torch.randn(5, 3, 4, 4),
+            pixel_attention_mask=torch.ones(5, 4, 4, dtype=torch.long),
+            spatial_shapes=torch.randn(5, 2),
+        )
+        self.assertEqual(logps.shape, (B, logits_to_keep))
+
+    def test_image_grid_thw_tail_batch_does_not_overflow(self):
+        trainer = self._make_trainer()
+        B, L, V = 5, 6, 10
+        logits_to_keep = 3
+        num_images = [1, 1, 1, 1, 1]
+
+        logps, _entropies, _aux = trainer._get_per_token_logps_and_entropies(
+            self._fake_model(L, V),
+            torch.randint(0, V, (B, L)),
+            torch.ones(B, L, dtype=torch.long),
+            logits_to_keep,
+            batch_size=2,
+            num_images=num_images,
+            pixel_values=torch.randn(5, 4),
+            image_grid_thw=torch.tensor([[1, 1, 1]] * 5),
+        )
+        self.assertEqual(logps.shape, (B, logits_to_keep))
+
+
+class TestComputeLossAuxLoss(unittest.TestCase):
+    """MoE router aux loss must be requested, added to the policy loss with
+    ``router_aux_loss_coef``, and logged — matching stock TRL's
+    ``GRPOTrainer._compute_loss`` behavior."""
+
+    def _make_trainer(self, aux_loss_enabled, batch_flattening=False):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        trainer = AsyncGRPOTrainer.__new__(AsyncGRPOTrainer)
+        trainer.is_fsdp_enabled = False
+        trainer.aux_loss_enabled = aux_loss_enabled
+        trainer.router_aux_loss_coef = 0.01
+        trainer.top_entropy_quantile = 1.0
+        trainer.beta = 0.0
+        trainer.loss_type = "grpo"
+        trainer.epsilon_low = 0.2
+        trainer.epsilon_high = 0.2
+        trainer.use_vllm = False
+        trainer.off_policy_mask_threshold = None
+        trainer.current_gradient_accumulation_steps = 1
+        trainer.args = types.SimpleNamespace(
+            batch_flattening=batch_flattening, delta=None
+        )
+        trainer.model = MagicMock()
+        trainer.model.training = True
+        trainer._metrics = defaultdict(lambda: defaultdict(list))
+        trainer.accelerator = MagicMock()
+        trainer.accelerator.gather = lambda x: x
+        return trainer
+
+    def _make_inputs(self):
+        return {
+            "prompt_ids": torch.zeros(2, 3, dtype=torch.long),
+            "prompt_mask": torch.ones(2, 3, dtype=torch.long),
+            "completion_ids": torch.zeros(2, 3, dtype=torch.long),
+            "completion_mask": torch.ones(2, 3, dtype=torch.long),
+            "advantages": torch.ones(2, 1),
+        }
+
+    def test_aux_loss_added_to_policy_loss_when_enabled(self):
+        trainer = self._make_trainer(aux_loss_enabled=True)
+        aux_loss = torch.tensor(2.0)
+        trainer._get_per_token_logps_and_entropies = MagicMock(
+            return_value=(torch.zeros(2, 3), torch.zeros(2, 3), aux_loss)
+        )
+
+        loss_with_aux = trainer._compute_loss(trainer.model, self._make_inputs())
+
+        # compute_aux_loss must be requested from the low-level scoring call
+        _, call_kwargs = trainer._get_per_token_logps_and_entropies.call_args
+        self.assertTrue(call_kwargs["compute_aux_loss"])
+
+        # Baseline without aux loss: same setup, aux_loss_enabled=False
+        trainer_no_aux = self._make_trainer(aux_loss_enabled=False)
+        trainer_no_aux._get_per_token_logps_and_entropies = MagicMock(
+            return_value=(torch.zeros(2, 3), torch.zeros(2, 3), None)
+        )
+        loss_without_aux = trainer_no_aux._compute_loss(
+            trainer_no_aux.model, self._make_inputs()
+        )
+        _, call_kwargs_no_aux = (
+            trainer_no_aux._get_per_token_logps_and_entropies.call_args
+        )
+        self.assertFalse(call_kwargs_no_aux["compute_aux_loss"])
+
+        # router_aux_loss_coef * aux_loss must be added on top of the policy loss
+        self.assertAlmostEqual(
+            (loss_with_aux - loss_without_aux).item(),
+            trainer.router_aux_loss_coef * aux_loss.item(),
+            places=5,
+        )
+        self.assertIn("aux_loss", trainer._metrics["train"])
+        self.assertNotIn("aux_loss", trainer_no_aux._metrics["train"])
+
+    def test_flattened_path_disabled_when_aux_loss_enabled(self):
+        """batch_flattening's fast path can't produce an aux_loss; it must be
+        skipped (not silently drop the MoE loss) whenever aux_loss is needed."""
+        trainer = self._make_trainer(aux_loss_enabled=True, batch_flattening=True)
+        aux_loss = torch.tensor(1.5)
+        trainer._get_per_token_logps_and_entropies = MagicMock(
+            return_value=(torch.zeros(2, 3), torch.zeros(2, 3), aux_loss)
+        )
+        trainer._get_per_token_logps_and_entropies_flattened = MagicMock(
+            side_effect=AssertionError(
+                "flattened path must not be used when aux_loss_enabled"
+            )
+        )
+
+        trainer._compute_loss(trainer.model, self._make_inputs())
+
+        trainer._get_per_token_logps_and_entropies.assert_called_once()
+        trainer._get_per_token_logps_and_entropies_flattened.assert_not_called()
 
 
 if __name__ == "__main__":

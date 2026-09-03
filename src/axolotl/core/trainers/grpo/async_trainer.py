@@ -1598,6 +1598,21 @@ class AsyncGRPOTrainer(GRPOTrainer):
         else:
             forward_kwargs = {}
 
+        # Recover LFM2-VL tile counts; the full processor drops row/column metadata.
+        num_tiles = None
+        if images is not None and "spatial_shapes" in forward_kwargs:
+            image_info = self.processing_class.image_processor(
+                images=images, return_tensors="pt", return_row_col_info=True
+            )
+            tiles_per_image = image_info["image_rows"] * image_info["image_cols"]
+            if self.processing_class.image_processor.use_thumbnail:
+                tiles_per_image = tiles_per_image + (tiles_per_image > 1).to(
+                    tiles_per_image.dtype
+                )
+            num_tiles = [
+                group.sum().item() for group in torch.split(tiles_per_image, num_images)
+            ]
+
         # Extend token_type_ids / mm_token_type_ids for completion tokens
         for ttid_key in ("token_type_ids", "mm_token_type_ids"):
             if ttid_key in forward_kwargs:
@@ -1640,13 +1655,17 @@ class AsyncGRPOTrainer(GRPOTrainer):
             output["tool_mask"] = tool_mask
         if images is not None:
             output["num_images"] = num_images
+        if num_tiles is not None:
+            output["num_tiles"] = num_tiles
         for k in (
             "pixel_values",
             "image_grid_thw",
             "pixel_attention_mask",
+            "spatial_shapes",
             "image_sizes",
             "token_type_ids",
             "mm_token_type_ids",
+            "image_position_ids",
         ):
             if k in forward_kwargs:
                 output[k] = forward_kwargs[k]
@@ -1762,13 +1781,16 @@ class AsyncGRPOTrainer(GRPOTrainer):
             "pixel_values",
             "image_grid_thw",
             "pixel_attention_mask",
+            "spatial_shapes",
             "image_sizes",
             "token_type_ids",
             "mm_token_type_ids",
+            "image_position_ids",
         ):
             if key in data:
                 forward_kwargs[key] = data[key]
         num_images = data.get("num_images")
+        num_tiles = data.get("num_tiles")
 
         # --- Launch rewards in parallel with logprobs ---
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
@@ -1810,6 +1832,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         logits_to_keep,
                         logprob_batch_size,
                         num_images=num_images,
+                        num_tiles=num_tiles,
                         **forward_kwargs,
                     )
                 data["old_per_token_logps"] = old_per_token_logps
@@ -1826,6 +1849,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         logits_to_keep,
                         batch_size,
                         num_images=num_images,
+                        num_tiles=num_tiles,
                         **forward_kwargs,
                     )
                 else:
@@ -1844,6 +1868,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                             logits_to_keep,
                             batch_size,
                             num_images=num_images,
+                            num_tiles=num_tiles,
                             **forward_kwargs,
                         )
                 data["ref_per_token_logps"] = ref_logps
@@ -2146,9 +2171,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
             "pixel_values",
             "image_grid_thw",
             "pixel_attention_mask",
+            "spatial_shapes",
             "image_sizes",
             "token_type_ids",
             "mm_token_type_ids",
+            "image_position_ids",
         ):
             if key in data:
                 val = data[key]
@@ -2167,6 +2194,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
             and len(num_images) == len(data["prompt_ids"])
         ):
             num_images = num_images[s_start:s_end]
+        num_tiles = data.get("num_tiles")
+        if (
+            num_tiles is not None
+            and hasattr(num_tiles, "__getitem__")
+            and len(num_tiles) == len(data["prompt_ids"])
+        ):
+            num_tiles = num_tiles[s_start:s_end]
 
         # --- Launch rewards in parallel with logprobs ---
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
@@ -2203,6 +2237,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         logits_to_keep,
                         logprob_batch_size,
                         num_images=num_images,
+                        num_tiles=num_tiles,
                         **forward_kwargs,
                     )
                 if "old_per_token_logps" not in data:
@@ -2253,6 +2288,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         logits_to_keep,
                         batch_size,
                         num_images=num_images,
+                        num_tiles=num_tiles,
                         **forward_kwargs,
                     )
                 else:
@@ -2271,6 +2307,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                             logits_to_keep,
                             batch_size,
                             num_images=num_images,
+                            num_tiles=num_tiles,
                             **forward_kwargs,
                         )
                 if "ref_per_token_logps" not in data:
@@ -2924,8 +2961,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
         all_aux_losses = []
         with autocast_ctx:
             for start in range(0, input_ids.size(0), batch_size):
-                input_ids_batch = input_ids[start : start + batch_size]
-                attention_mask_batch = attention_mask[start : start + batch_size]
+                end = min(start + batch_size, input_ids.size(0))
+                input_ids_batch = input_ids[start:end]
+                attention_mask_batch = attention_mask[start:end]
 
                 # Build model inputs
                 model_inputs = {
@@ -2944,15 +2982,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     )
                     row_start, row_end = (
                         cum_rows[start].item(),
-                        cum_rows[start + batch_size].item(),
+                        cum_rows[end].item(),
                     )
                     model_inputs["pixel_values"] = pixel_values[row_start:row_end]
                     cum_imgs = torch.tensor([0] + num_images).cumsum(0)
-                    img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
+                    img_start, img_end = cum_imgs[start], cum_imgs[end]
                     model_inputs["image_grid_thw"] = image_grid_thw[img_start:img_end]
                 elif image_position_ids is not None and pixel_values is not None:
                     cum_imgs = torch.tensor([0] + num_images).cumsum(0)
-                    img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
+                    img_start, img_end = cum_imgs[start], cum_imgs[end]
                     model_inputs["pixel_values"] = pixel_values[img_start:img_end]
                     model_inputs["image_position_ids"] = image_position_ids[
                         img_start:img_end
@@ -2962,7 +3000,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     cum_tiles = torch.tensor([0] + num_tiles).cumsum(0)
                     tile_start, tile_end = (
                         cum_tiles[start],
-                        cum_tiles[start + batch_size],
+                        cum_tiles[end],
                     )
                     model_inputs["pixel_values"] = pixel_values[tile_start:tile_end]
                     model_inputs["pixel_attention_mask"] = pixel_attention_mask[
@@ -3086,9 +3124,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 "image_grid_thw",
                 "num_images",
                 "pixel_attention_mask",
+                "spatial_shapes",
+                "num_tiles",
                 "image_sizes",
                 "token_type_ids",
                 "mm_token_type_ids",
+                "image_position_ids",
             )
             if k in inputs and inputs[k] is not None
         }
@@ -3097,6 +3138,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
             getattr(self.args, "batch_flattening", False)
             and not forward_kwargs
             and not self.is_fsdp_enabled
+            # The flattened forward pass doesn't request router logits, so it
+            # can't produce an aux_loss — fall back to the padded path instead
+            # of silently dropping the MoE load-balancing loss.
+            and not self.aux_loss_enabled
         )
 
         if can_flatten:
@@ -3110,14 +3155,18 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     compute_entropy=True,
                 )
             )
+            aux_loss = None
         else:
-            per_token_logps, entropies, _ = self._get_per_token_logps_and_entropies(
-                model,
-                input_ids,
-                attention_mask,
-                logits_to_keep,
-                compute_entropy=True,
-                **forward_kwargs,
+            per_token_logps, entropies, aux_loss = (
+                self._get_per_token_logps_and_entropies(
+                    model,
+                    input_ids,
+                    attention_mask,
+                    logits_to_keep,
+                    compute_entropy=True,
+                    compute_aux_loss=self.aux_loss_enabled,
+                    **forward_kwargs,
+                )
             )
         if self.top_entropy_quantile < 1.0:
             entropy_mask = self.get_high_entropy_mask(
@@ -3247,6 +3296,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
             loss = (per_token_loss * mask.sum(1, keepdim=True)).mean() / normalizer
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
+
+        if self.aux_loss_enabled:
+            loss = loss + self.router_aux_loss_coef * aux_loss / normalizer
+            self._metrics[mode]["aux_loss"].append(
+                self.accelerator.gather(aux_loss).nanmean().item()
+            )
 
         # --- Metrics ---
         completion_token_count = mask.sum().clamp(min=1.0)

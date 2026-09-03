@@ -580,9 +580,12 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                                 "pixel_values",
                                 "image_grid_thw",
                                 "pixel_attention_mask",
+                                "spatial_shapes",
+                                "num_tiles",
                                 "image_sizes",
                                 "token_type_ids",
                                 "mm_token_type_ids",
+                                "image_position_ids",
                             ):
                                 if fk in data:
                                     r_fwd_kwargs[fk] = data[fk]
