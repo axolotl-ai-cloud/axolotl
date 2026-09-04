@@ -652,6 +652,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     train_on_eos=train_on_eos,
                     role_boundaries_override=role_boundaries_override,
                     field_messages=field_messages or None,
+                    model_type=self.cfg.model_config_type,
                 )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening

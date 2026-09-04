@@ -10,8 +10,10 @@ import unittest
 from functools import wraps
 from pathlib import Path
 
+import pytest
 import torch
 from packaging import version
+from safetensors.torch import load_file
 from tbparse import SummaryReader
 
 from axolotl.utils.dict import DictDefault
@@ -40,6 +42,30 @@ def most_recent_subdir(path):
     subdir = max(subdirectories, key=os.path.getctime)
 
     return subdir
+
+
+def flash_attn_available() -> bool:
+    """True when flash_attention_2/3 can load: the flash-attn package, or a
+    kernels-hub prebuilt binary matching this torch build."""
+    try:
+        from transformers.utils import is_flash_attn_2_available
+
+        from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+            is_fa2_hub_kernel_available,
+        )
+
+        # transformers probes the hub at v1, which has no build for newer torch; ask
+        # about the version we pin or these tests silently skip instead of running.
+        return is_flash_attn_2_available() or is_fa2_hub_kernel_available()
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
+# pytest.mark works on plain (non-TestCase) classes; unittest.skipUnless does not.
+requires_flash_attn = pytest.mark.skipif(
+    not flash_attn_available(),
+    reason="flash-attn unavailable: no package and no kernels-hub build for this torch",
+)
 
 
 def require_torch_2_4_1(test_case):
@@ -312,3 +338,28 @@ def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
         assert (Path(temp_dir) / "model.safetensors").exists()
     else:
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
+
+
+def check_lora_b_fully_trained(temp_dir: str) -> None:
+    """Assert every row of every saved ``lora_B`` was trained.
+
+    ``lora_B`` starts at exactly zero, so a row that is still all-zero was never stepped.
+    Under FSDP each rank owns a contiguous row slice, so a partially trained adapter shows
+    up as an occupancy fraction of exactly ``1/world_size``.
+    """
+    adapter_path = Path(temp_dir) / "adapter_model.safetensors"
+    adapter = load_file(str(adapter_path))
+
+    lora_b_keys = [key for key in adapter if "lora_B" in key]
+    assert lora_b_keys, (
+        f"No lora_B tensors found in {adapter_path} - the occupancy check below would "
+        f"pass vacuously. Keys present: {sorted(adapter)[:10]}"
+    )
+
+    for key in lora_b_keys:
+        tensor = adapter[key]
+        occupancy = (tensor != 0).any(dim=1).float().mean().item()
+        assert occupancy == 1.0, (
+            f"{key}: only {occupancy} of rows are nonzero, expected 1.0 - "
+            f"a 1/world_size occupancy means only rank 0's FSDP shard was trained"
+        )

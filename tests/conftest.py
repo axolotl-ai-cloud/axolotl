@@ -69,6 +69,15 @@ def _apply_transformers_test_shims():
 def pytest_configure(config):  # pylint: disable=unused-argument
     _apply_transformers_test_shims()
 
+    # Tests that call `from_pretrained` directly never reach PatchManager, and
+    # `lazy_import_flash_attention` caches by implementation string, so the first FA2
+    # load in a worker pins the kernel major for every later test in that process.
+    from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+        patch_fa2_hub_kernel_version,
+    )
+
+    patch_fa2_hub_kernel_version()
+
 
 # A device-side assert / illegal access poisons the process-wide CUDA context, so
 # every later GPU test errors at setup. Abort the session instead of cascading.
@@ -402,6 +411,45 @@ def download_llama3_8b_instruct_model_fixture():
         "NousResearch/Meta-Llama-3-8B-Instruct",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
+    )
+
+
+# Not autouse: the weights are 56GB, so only the tests that ask for it pay the fetch.
+@pytest.fixture(scope="session")
+def download_muse_glimmer_tokenizer_fixture():
+    # tokenizer + the Harmony chat template only, never the weights
+    snapshot_download_w_retry(
+        "meta-models/Muse-Glimmer-30B",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json", "chat_template.jinja"],
+    )
+
+
+# mistral-common tokenizers live in tekken.json, which `*token*` does not match
+@pytest.fixture(scope="session")
+def download_magistral_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Magistral-Small-2506",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
+    )
+
+
+@pytest.fixture(scope="session")
+def download_devstral_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Devstral-Small-2505",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
+    )
+
+
+@pytest.fixture(scope="session")
+def download_devstral_1_1_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Devstral-Small-2507",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
     )
 
 

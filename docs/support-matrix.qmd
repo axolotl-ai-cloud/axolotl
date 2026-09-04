@@ -78,7 +78,7 @@ Quantization shows up at three distinct points in the lifecycle; they are easy t
 | Phase | Purpose | Config | Trains? |
 |---|---|---|---|
 | **Load-time (frozen base)** | shrink the base so an adapter fits | `load_in_4bit`/`load_in_8bit`, `gptq`, AWQ, `model_quantization_config: FineGrainedFP8Config`/`Mxfp4Config`, NVFP4-modelopt (MoE) | adapter only |
-| **Train-time (compute)** | faster/leaner training, high-precision master weights kept | `fp8: true` (torchao float8, `fp8_enable_fsdp_float8_all_gather`), `qat:` (fake-quant during training) | full fine-tune ✅ |
+| **Train-time (compute)** | faster/leaner training, high-precision master weights kept | `fp8: true` (torchao float8, `fp8_config.recipe`, `fp8_enable_fsdp_float8_all_gather`), `qat:` (fake-quant during training) | full fine-tune ✅ |
 | **Post-training (export)** | quantize the finished model | `quantization:` PTQ via `axolotl quantize` (int4/int8/fp8/nvfp4/mxfp4) | n/a (after training) |
 
 ::: {.callout-note}
@@ -190,7 +190,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 
 ## Optimizers & schedulers
 
-**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore. (Muon / Flash / Q-GaLore require FSDP2, not DeepSpeed.)
+**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)
 
 **Schedulers:** cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).
 
@@ -246,6 +246,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | ReLoRA | `jagged_restart_steps` (and *not* FSDP/DeepSpeed/one_cycle) |
 | Sample packing | varlen backend (FA2/3, flex, xformers, sage) |
 | Muon / Flash / Q-GaLore optimizers | FSDP2 (not DeepSpeed) |
+| PoLoRA optimizer | LoRA/QLoRA + single-GPU, DDP, or FSDP2 (not DeepSpeed/TP) |
 | EBFT (`rl: ebft`) | `ebft:` config block |
 
 ### Incompatible {#incompatible}
