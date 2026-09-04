@@ -920,6 +920,18 @@ class AxolotlInputConfig(
         },
     )
 
+    vision_patch_embed_linear: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Run the vision patch_embed Conv3d as its exact F.linear "
+                "equivalent — faster and immune to the slow_conv_dilated3d "
+                "fallback on cuDNN-less torch builds. Default on for supported "
+                "Qwen/GLM VLMs; set false to keep the stock Conv3d forward."
+            )
+        },
+    )
+
     experts_implementation: str | None = Field(
         default=None,
         json_schema_extra={
