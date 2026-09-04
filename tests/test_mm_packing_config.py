@@ -316,3 +316,30 @@ class TestMultimodalPretrainingPacking:
         )
         out = validate_config(cfg)
         assert out.sample_packing is True
+
+
+class TestMultimodalPackingRealBatches:
+    """check_mm_packing_real_batches_flash in AttentionValidationMixin."""
+
+    def test_warns_flash_with_real_batches(self, caplog):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            remove_unused_columns=False,
+            attn_implementation="flash_attention_2",
+            multipack_real_batches=True,
+        )
+        with caplog.at_level("WARNING"):
+            validate_config(cfg)
+        assert "cannot isolate" in caplog.text
+
+    def test_no_warning_by_default(self, caplog):
+        cfg = _cfg(
+            processor_type="AutoProcessor",
+            sample_packing=True,
+            remove_unused_columns=False,
+            attn_implementation="flash_attention_2",
+        )
+        with caplog.at_level("WARNING"):
+            validate_config(cfg)
+        assert "cannot isolate" not in caplog.text

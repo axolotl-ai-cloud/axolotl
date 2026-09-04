@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
 
 from axolotl.utils.collators import MultiModalBatchSamplerDataCollatorForSeq2Seq
 
@@ -163,3 +164,52 @@ def test_pixtral_ragged_list_of_images_pads_and_concats_image_sizes():
     assert batch["pixel_values"][1, 0, 0, 0] == 2
     assert tuple(batch["image_sizes"].shape) == (2, 2)
     assert batch["image_sizes"].tolist() == [[64, 96], [128, 64]]
+
+
+class _HFLikeTokenizer(PadTokenizer):
+    """Pads only model_input_names like a real tokenizer; other keys must already be rectangular."""
+
+    def pad(
+        self,
+        features,
+        padding=True,
+        max_length=None,
+        pad_to_multiple_of=None,
+        return_tensors=None,
+    ):
+        target_len = max(len(f["input_ids"]) for f in features)
+        out = {}
+        for key in set().union(*(f.keys() for f in features)):
+            rows = [list(f[key]) for f in features]
+            if key in ("input_ids", "attention_mask"):
+                rows = [r + [0] * (target_len - len(r)) for r in rows]
+            out[key] = torch.tensor(rows)  # raises on ragged rows
+        return out
+
+
+def test_mm_token_type_ids_padded_across_packs():
+    collator = MultiModalBatchSamplerDataCollatorForSeq2Seq(
+        _HFLikeTokenizer(), return_tensors="pt"
+    )
+    rows = [
+        {
+            "input_ids": [1, 5, 5, 2],
+            "attention_mask": [1] * 4,
+            "labels": [1, -100, -100, 2],
+            "position_ids": [0, 1, 2, 3],
+            "mm_token_type_ids": [0, 1, 1, 0],
+            "pixel_values": np.zeros((2, 8), dtype=np.float32),
+            "image_grid_thw": [[1, 2, 2]],
+        },
+        {
+            "input_ids": [1, 2],
+            "attention_mask": [1, 1],
+            "labels": [1, 2],
+            "position_ids": [0, 1],
+            "mm_token_type_ids": [0, 0],
+        },
+    ]
+    batch = collator([[rows[0]], [rows[1]]])
+    assert batch["mm_token_type_ids"].shape == (2, 4)
+    assert batch["mm_token_type_ids"][1].tolist() == [0, 0, 0, 0]
+    assert batch["position_ids"][1].tolist() == [0, 1, 0, 1]

@@ -256,6 +256,25 @@ class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
 
     @model_validator(mode="after")
+    def check_mm_packing_real_batches_flash(self):
+        # transformers' flash path only reads packed cu_seqlens from position_ids
+        # when the batch is a single row; multi-row batches attend across packs.
+        if (
+            self.sample_packing
+            and self.multipack_real_batches
+            and self.attn_supports_packing
+            and (self.processor_type or getattr(self, "is_multimodal", None))
+        ):
+            LOG.warning(
+                "`multipack_real_batches: true` with `attn_implementation=%r` "
+                "produces multi-row packed batches, which flash attention cannot "
+                "isolate. Leave `multipack_real_batches` unset (one pack of "
+                "micro_batch_size * sequence_len tokens per step) or use sdpa.",
+                self.attn_implementation,
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
         if self.sample_packing and not self.attn_decontaminates_packing:
             if self.attn_implementation:
