@@ -59,6 +59,7 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
 )
+from axolotl.utils.fp32_master_weights import tag_model_fp32_master_weights
 from axolotl.utils.fp32_norms import (
     _matches_norm_class,
     get_fp32_norm_patterns,
@@ -209,6 +210,14 @@ class ModelLoader:
 
         if self.cfg.fp32_norms:
             tag_model_fp32_norms(self.model, self.cfg)
+
+        # TRL never freezes the DPO ref model; tagging it would double its memory for nothing.
+        if (
+            self.is_fsdp_enabled
+            and str(self.cfg.fsdp_version) == "2"
+            and not self.reference_model
+        ):
+            tag_model_fp32_master_weights(self.model, self.cfg)
 
         return self.model, lora_config
 

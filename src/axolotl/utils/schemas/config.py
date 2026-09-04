@@ -1067,6 +1067,17 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "FSDP version"},
     )
+    fp32_master_weights: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Keep fp32 master copies of trainable params under FSDP2; compute "
+                "stays in the mixed-precision dtype. Defaults to true for full "
+                "fine-tunes and false for adapters. Set to false for pure bf16 and "
+                "lower memory. Requires fsdp_version: 2."
+            )
+        },
+    )
     fp32_norms: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1666,6 +1677,22 @@ class AxolotlInputConfig(
                 "packed variable-length sequences are dynamic and will trigger graph "
                 "re-capture or fallback. Disable one of them to get the cudagraphs "
                 "speedup."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_fp32_master_weights(self):
+        if self.fp32_master_weights is None:
+            return self
+        if self.fsdp_config is None or str(self.fsdp_version) != "2":
+            raise ValueError(
+                "fp32_master_weights requires fsdp_version: 2. FSDP1 and DeepSpeed "
+                "get the upcast from accelerate."
+            )
+        if self.fp32_master_weights and self.fp8:
+            raise ValueError(
+                "fp32_master_weights is incompatible with fp8: torchao float8 keeps "
+                "its own high-precision weights."
             )
         return self
 

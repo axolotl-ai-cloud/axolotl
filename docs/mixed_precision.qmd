@@ -54,6 +54,27 @@ bf16: true
 bf16: full  # Equivalent to bf16_full_eval in the HF trainer
 ```
 
+### Master weights under FSDP2 {#sec-fp32-master-weights}
+
+BF16 mixed precision keeps an fp32 *master* copy of each trainable
+parameter and casts down only for compute. Without it, at a typical SFT
+learning rate of `5e-6`, Adam steps land below bf16's mantissa resolution
+and round away to nothing.
+
+```{.yaml}
+fsdp_version: 2
+fp32_master_weights: true    # default for full fine-tunes
+```
+
+Defaults to `true` for full fine-tunes and `false` for adapters (PEFT
+already keeps LoRA params in fp32). Set it to `false` for pure bf16: this
+saves ~6 bytes per parameter per rank — weights plus the two Adam moments
+— at the cost of the rounding above.
+
+fp32 master weights also mean fp32 optimizer state and fp32 checkpoints,
+roughly twice the size of a bf16 save. FSDP1 and DeepSpeed already behave
+this way; accelerate applies the upcast for them itself.
+
 ### Keeping norms in fp32 (FSDP2) {#sec-fp32-norms}
 
 Some models declare RMSNorm/LayerNorm layers as fp32 for training
