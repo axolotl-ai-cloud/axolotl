@@ -37,7 +37,12 @@ def get_lora_merged_state_dict(
 
     base_model_prefix = "base_model.model."
     state_dict = {}
-    key_list = [key for key, _ in model.named_modules() if model.prefix not in key]
+    model_prefix = getattr(model, "prefix", None)
+    key_list = [
+        key
+        for key, _ in model.named_modules()
+        if model_prefix is None or model_prefix not in key
+    ]
     for key in key_list:
         try:
             _, target, _ = _get_submodules(model, key)
@@ -50,7 +55,10 @@ def get_lora_merged_state_dict(
                 target.merge(safe_merge=True, adapter_names=None)
                 # get the state_dict of target.base_layer
                 layer_state_dict = target.base_layer.state_dict()
-                state_dict[weight_key] = layer_state_dict["weight"]
+                if "weight" in layer_state_dict:
+                    state_dict[weight_key] = layer_state_dict["weight"]
+                if "bias" in layer_state_dict:
+                    state_dict[bias_key] = layer_state_dict["bias"]
             elif isinstance(target, ModulesToSaveWrapper):
                 # save any additional trainable modules part of `modules_to_save`
                 new_module = target.modules_to_save[target.active_adapter]
@@ -58,7 +66,10 @@ def get_lora_merged_state_dict(
                     # check if the module is itself a tuner layer
                     new_module.merge(safe_merge=True, adapter_names=None)
                 layer_state_dict = new_module.state_dict()
-                state_dict[weight_key] = layer_state_dict["weight"]
+                if "weight" in layer_state_dict:
+                    state_dict[weight_key] = layer_state_dict["weight"]
+                if "bias" in layer_state_dict:
+                    state_dict[bias_key] = layer_state_dict["bias"]
             elif hasattr(target, "weight"):
                 if any(
                     skip in key
@@ -70,7 +81,8 @@ def get_lora_merged_state_dict(
                 ):
                     continue
                 layer_state_dict = target.state_dict()
-                state_dict[weight_key] = layer_state_dict["weight"]
-                if hasattr(target, "bias") and "bias" in layer_state_dict.keys():
+                if "weight" in layer_state_dict:
+                    state_dict[weight_key] = layer_state_dict["weight"]
+                if hasattr(target, "bias") and "bias" in layer_state_dict:
                     state_dict[bias_key] = layer_state_dict["bias"]
     return state_dict
