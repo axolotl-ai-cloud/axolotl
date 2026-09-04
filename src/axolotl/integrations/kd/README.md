@@ -21,3 +21,14 @@ datasets:
 ```
 
 An example dataset can be found at [`axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample`](https://huggingface.co/datasets/axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample)
+
+## Implementation notes
+
+The live KD loss is the fused Liger kernel
+(`kernels/liger.py::LigerFusedLinearKLTopKLogprobLoss`). A readable, dependency-free
+reference of the same top-k forward-KL is kept in
+[`topk_logprob/forward_kl.py`](topk_logprob/forward_kl.py) for correctness
+comparisons and as a non-Liger fallback; it is not wired into the trainer by default.
+
+For **on-policy** distillation (student rollouts + in-process teacher), see the
+[GKD plugin](../gkd/README.md).
