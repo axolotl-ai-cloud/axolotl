@@ -2,10 +2,11 @@
 
 import json
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from transformers import TrainerState
 
+from axolotl.core.builders import HFCausalTrainerBuilder
 from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.core.trainers.utils import trainable_tokens_per_sec_per_gpu
 from axolotl.utils.callbacks.tokens_per_second import TokensPerSecondCallback
@@ -81,6 +82,26 @@ def _restored_tokens(callback):
     return getattr(state, "tokens", None)
 
 
+def _builder_tkps_callback(cfg):
+    """Build the callback the way training actually does.
+
+    Going through ``HFCausalTrainerBuilder.get_callbacks()`` is what pins the
+    ordering this fix is about: the callback is constructed here, while
+    ``cfg.resume_from_checkpoint`` is still unresolved.
+    """
+    builder = HFCausalTrainerBuilder.__new__(HFCausalTrainerBuilder)
+    builder.cfg = cfg
+    builder.model = MagicMock()
+    with (
+        patch("axolotl.core.builders.base.PluginManager") as pm,
+        patch("axolotl.core.builders.base.TelemetryManager") as tm,
+    ):
+        pm.get_instance.return_value.add_callbacks_pre_trainer.return_value = []
+        tm.get_instance.return_value.enabled = False
+        callbacks = builder.get_callbacks()
+    return next(c for c in callbacks if isinstance(c, TokensPerSecondCallback))
+
+
 class TestTokensPerSecondResume:
     """Counter restore must survive auto-resume, which resolves the path late."""
 
@@ -92,13 +113,12 @@ class TestTokensPerSecondResume:
                 "output_dir": output_dir,
                 "auto_resume_from_checkpoints": True,
                 "resume_from_checkpoint": None,
+                "include_tkps": True,
             }
         )
 
         # the builder runs first, while the path is still unresolved
-        callback = TokensPerSecondCallback(
-            resume_from_checkpoint=cfg.resume_from_checkpoint, cfg=cfg
-        )
+        callback = _builder_tkps_callback(cfg)
         determine_last_checkpoint(cfg)
 
         tokens = _restored_tokens(callback)
@@ -110,12 +130,14 @@ class TestTokensPerSecondResume:
         output_dir = str(tmp_path)
         checkpoint = _write_checkpoint(output_dir, 5, total=42, trainable=7)
         cfg = DictDefault(
-            {"output_dir": output_dir, "resume_from_checkpoint": checkpoint}
+            {
+                "output_dir": output_dir,
+                "resume_from_checkpoint": checkpoint,
+                "include_tkps": True,
+            }
         )
 
-        callback = TokensPerSecondCallback(
-            resume_from_checkpoint=cfg.resume_from_checkpoint, cfg=cfg
-        )
+        callback = _builder_tkps_callback(cfg)
         assert _restored_tokens(callback)["total"].item() == 42
 
     def test_fresh_run_leaves_counters_alone(self, tmp_path):
@@ -124,12 +146,11 @@ class TestTokensPerSecondResume:
                 "output_dir": str(tmp_path),
                 "auto_resume_from_checkpoints": True,
                 "resume_from_checkpoint": None,
+                "include_tkps": True,
             }
         )
 
-        callback = TokensPerSecondCallback(
-            resume_from_checkpoint=cfg.resume_from_checkpoint, cfg=cfg
-        )
+        callback = _builder_tkps_callback(cfg)
         determine_last_checkpoint(cfg)
 
         assert _restored_tokens(callback) is None
@@ -139,3 +160,15 @@ class TestTokensPerSecondResume:
 
         callback = TokensPerSecondCallback(resume_from_checkpoint=checkpoint)
         assert _restored_tokens(callback)["total"].item() == 99
+
+    def test_unreadable_token_state_is_ignored(self, tmp_path):
+        """A truncated state file must not take the whole run down."""
+        checkpoint = os.path.join(str(tmp_path), "checkpoint-1")
+        os.makedirs(checkpoint, exist_ok=True)
+        with open(
+            os.path.join(checkpoint, TOKENS_STATE_FILE), "w", encoding="utf-8"
+        ) as fout:
+            fout.write("{not json")
+
+        callback = TokensPerSecondCallback(resume_from_checkpoint=checkpoint)
+        assert _restored_tokens(callback) is None

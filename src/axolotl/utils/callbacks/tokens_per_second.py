@@ -52,8 +52,12 @@ class TokensPerSecondCallback(TrainerCallback):
             return
         tokens_state_path = os.path.join(resume_from_checkpoint, TOKENS_STATE_FILE)
         if os.path.isfile(tokens_state_path):
-            with open(tokens_state_path, "r", encoding="utf-8") as f:
-                tokens_state = json.load(f)
+            try:
+                with open(tokens_state_path, "r", encoding="utf-8") as f:
+                    tokens_state = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                LOG.warning(f"Ignoring unreadable token state at {tokens_state_path}")
+                return
             state.tokens = {
                 "total": torch.tensor(tokens_state.get("total", 0)),
                 "trainable": torch.tensor(tokens_state.get("trainable", 0)),
