@@ -78,7 +78,7 @@ Quantization shows up at three distinct points in the lifecycle; they are easy t
 | Phase | Purpose | Config | Trains? |
 |---|---|---|---|
 | **Load-time (frozen base)** | shrink the base so an adapter fits | `load_in_4bit`/`load_in_8bit`, `gptq`, AWQ, `model_quantization_config: FineGrainedFP8Config`/`Mxfp4Config`, NVFP4-modelopt (MoE) | adapter only |
-| **Train-time (compute)** | faster/leaner training, high-precision master weights kept | `fp8: true` (torchao float8, `fp8_enable_fsdp_float8_all_gather`), `qat:` (fake-quant during training) | full fine-tune ✅ |
+| **Train-time (compute)** | faster/leaner training, high-precision master weights kept | `fp8: true` (torchao float8, `fp8_config.recipe`, `fp8_enable_fsdp_float8_all_gather`), `qat:` (fake-quant during training) | full fine-tune ✅ |
 | **Post-training (export)** | quantize the finished model | `quantization:` PTQ via `axolotl quantize` (int4/int8/fp8/nvfp4/mxfp4) | n/a (after training) |
 
 ::: {.callout-note}
