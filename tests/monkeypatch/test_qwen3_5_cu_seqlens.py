@@ -34,6 +34,27 @@ def test_get_cu_seqlens_accepts_non_contiguous_mrope_position_ids():
     assert get_cu_seqlens(mrope).tolist() == [0, 4, 6, 10, 12]
 
 
+def test_get_cu_seqlens_accepts_expanded_mrope_position_ids():
+    """The shape transformers actually builds, and the one that crashed.
+
+    Qwen3_5TextModel expands a 1-D arange into the MRoPE axes, so axis 0 is a
+    stride-0 view rather than a slice:
+    https://github.com/huggingface/transformers/blob/v5.16.1/src/transformers/models/qwen3_5/modeling_qwen3_5.py#L1177-L1182
+    """
+    batch, seq_len = 2, 4
+    expanded = torch.arange(seq_len).view(1, 1, -1).expand(4, batch, -1)[1:]
+    assert not expanded[0].is_contiguous()
+
+    assert get_cu_seqlens(expanded).tolist() == [0, 4, 8]
+
+
+def test_get_cu_seqlens_keys_off_smallest_position():
+    """Sequences need not start at 0; boundaries follow the smallest position."""
+    packed = _packed_position_ids() + 1
+
+    assert get_cu_seqlens(packed).tolist() == [0, 4, 8, 12, 16]
+
+
 def test_get_cu_seqlens_unchanged_for_contiguous_position_ids():
     """The contiguous path keeps the boundaries it produced before."""
     packed = _packed_position_ids()
