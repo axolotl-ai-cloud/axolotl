@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from axolotl.utils.mm_cpt import is_mm_cpt_entry
 from axolotl.utils.schemas.enums import ChatTemplate
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
 
@@ -238,11 +239,87 @@ class PretrainingDataset(BaseModel):
     name: str | None = None
     path: str | None = None
     split: str | None = "train"
-    text_column: str | None = "text"
+    text_column: str | None = Field(
+        default="text",
+        json_schema_extra={"description": "Column holding the row's text."},
+    )
     type: str | None = "pretrain"
     trust_remote_code: bool | None = False
-    data_files: str | None = None
+    data_files: str | list[str] | None = None
+    ds_type: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Dataset loader type when `path` points to local files (e.g. 'json', 'csv', 'parquet')."
+        },
+    )
     skip: int | None = None
+
+    # Multimodal CPT fields. Opt-in via `type: multimodal_pretrain` or `multimodal: true`.
+    multimodal: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Opt in to multimodal CPT. Auto-enabled when type='multimodal_pretrain'."
+        },
+    )
+    image_column: str | None = Field(
+        default="images",
+        json_schema_extra={
+            "description": "Column holding a list of image paths per row."
+        },
+    )
+    image_base_dir: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Base directory for relative image paths."},
+    )
+    image_token: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Override the image placeholder token (autodetected from processor if unset)."
+        },
+    )
+    skip_bad_images: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Drop rows that fail placeholder/image validation or whose images fail to load, instead of aborting the run."
+        },
+    )
+    allow_remote_images: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Permit fetching image sources with a URL scheme (http(s)/etc.). Off by default to avoid SSRF from untrusted shards."
+        },
+    )
+    max_images_per_row: int | None = Field(
+        default=32,
+        json_schema_extra={
+            "description": "Reject (or drop, with skip_bad_images) rows carrying more images than this — each image expands to a large pixel tensor at the collator. Set 0 or null to disable."
+        },
+    )
+
+
+class MultiModalEvalDataset(PretrainingDataset):
+    """Multimodal CPT eval dataset configuration (test_datasets entry).
+
+    Inherits all fields from :class:`PretrainingDataset` and only overrides
+    the `type` default (no `"pretrain"` fallback for eval entries) plus adds
+    a validator that requires an explicit MM marker.
+    """
+
+    type: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_mm_markers(cls, data):
+        if isinstance(data, BaseModel):
+            data = data.model_dump()
+        if not isinstance(data, dict):
+            return data
+        if not is_mm_cpt_entry(data):
+            raise ValueError(
+                "MultiModalEvalDataset requires type='multimodal_pretrain' "
+                "or multimodal=True"
+            )
+        return data
 
 
 class UserDefinedDPOType(BaseModel):

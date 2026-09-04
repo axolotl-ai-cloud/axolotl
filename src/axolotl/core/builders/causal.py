@@ -44,27 +44,43 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.collators.mm_pretrain import MultiModalPretrainDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mm_cpt import is_mm_cpt_entry
 
 LOG = get_logger(__name__)
 
 _MM_NUM_WORKERS_WARNED: set = set()
 
 
-def _warn_if_num_workers_zero_for_mm(cfg, log) -> None:
+def _warn_if_num_workers_zero_for_mm(cfg, log, check_train_on_inputs=True) -> None:
     if not getattr(cfg, "processor_type", None):
         return
     if getattr(cfg, "dataloader_num_workers", None) not in (None, 0):
         return
-    if getattr(cfg, "train_on_inputs", False):
+    if check_train_on_inputs and getattr(cfg, "train_on_inputs", False):
         return
     if "mm_num_workers_zero" in _MM_NUM_WORKERS_WARNED:
         return
     _MM_NUM_WORKERS_WARNED.add("mm_num_workers_zero")
     log.warning(
-        "Increase dataloader_num_workers to speed up multimodal training with assistant-only loss masking (currently dataloader_num_workers=0)."
+        "Increase dataloader_num_workers to speed up multimodal training — "
+        "image decoding and processor runs happen in the dataloader "
+        "(currently dataloader_num_workers=0)."
     )
+
+
+def _is_multimodal_cpt(cfg) -> bool:
+    if not getattr(cfg, "pretraining_dataset", None):
+        return False
+    return is_mm_cpt_entry(cfg.pretraining_dataset[0])
+
+
+def _mm_cpt_get(pt_cfg, key, default=None):
+    if isinstance(pt_cfg, dict):
+        return pt_cfg.get(key, default)
+    return getattr(pt_cfg, key, default)
 
 
 class HFCausalTrainerBuilder(TrainerBuilderBase):
@@ -464,6 +480,38 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         return trainer
 
+    def _build_mm_pretrain_collator(self, pad_to_multiple_of=None, is_eval=False):
+        from axolotl.prompt_strategies.multimodal_pretrain import (
+            build_image_token_spec,
+        )
+
+        if is_eval and self.cfg.test_datasets:
+            pt_cfg = self.cfg.test_datasets[0]
+        elif self.cfg.pretraining_dataset:
+            pt_cfg = self.cfg.pretraining_dataset[0]
+        else:
+            pt_cfg = {}
+        spec = build_image_token_spec(
+            self.processor, override=_mm_cpt_get(pt_cfg, "image_token")
+        )
+        max_length = (
+            self.cfg.eval_sequence_len
+            if is_eval and self.cfg.eval_sequence_len
+            else self.cfg.sequence_len
+        )
+        collator_kwargs = {
+            "tokenizer": self.tokenizer,
+            "processor": self.processor,
+            "image_token_spec": spec,
+            "image_base_dir": _mm_cpt_get(pt_cfg, "image_base_dir"),
+            "max_length": max_length,
+            "skip_bad_images": bool(_mm_cpt_get(pt_cfg, "skip_bad_images")),
+            "allow_remote_images": bool(_mm_cpt_get(pt_cfg, "allow_remote_images")),
+        }
+        if pad_to_multiple_of is not None:
+            collator_kwargs["pad_to_multiple_of"] = pad_to_multiple_of
+        return MultiModalPretrainDataCollator(**collator_kwargs)
+
     def build_collator(
         self,
         training_args,  # type: "AxolotlTrainingArguments"  # type: ignore
@@ -471,6 +519,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         **kwargs,
     ):
         if training_args.pretraining:
+            # Intercept MM CPT before the text-only pretraining branches.
+            if (
+                self.cfg.processor_type
+                and self.processor
+                and _is_multimodal_cpt(self.cfg)
+            ):
+                if not is_eval:
+                    _warn_if_num_workers_zero_for_mm(
+                        self.cfg, LOG, check_train_on_inputs=False
+                    )
+                return self._build_mm_pretrain_collator(
+                    pad_to_multiple_of=kwargs.get("pad_to_multiple_of"),
+                    is_eval=is_eval,
+                )
             if (
                 self.cfg.pretraining_sample_concatenation is False
                 or self.cfg.micro_batch_size > 1
