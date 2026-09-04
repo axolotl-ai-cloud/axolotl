@@ -686,7 +686,7 @@ class AxolotlTrainer(
         enable_fsdp_float8_all_gather: bool = False,
         **kwargs,
     ) -> dict[str, Any]:
-        ret_kwargs = {}
+        ret_kwargs: dict[str, Any] = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
 
@@ -697,8 +697,12 @@ class AxolotlTrainer(
                 enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
             )
 
+            # Trainer already set kwargs_handlers; overwriting drops every ddp_* setting.
+            handlers = list(kwargs.get("kwargs_handlers") or [])
+            handlers.append(AORecipeKwargs(config=config))  # type: ignore
+
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
+            ret_kwargs["kwargs_handlers"] = handlers
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
