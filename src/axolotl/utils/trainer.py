@@ -9,7 +9,6 @@ from functools import partial
 from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import torch
@@ -279,12 +278,19 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # If it's a list, we assume we're dealing with a batch
         if isinstance(labels[0], int):
             # Single example: return a single bool
-            return np.any(labels != -100)
+            return any(v != -100 for v in labels)
 
-        # Batched: 'labels' is a list of lists
-        # Return a list of booleans, one per sub-list
-        results = [np.any(row_labels != -100) for row_labels in labels]
+        results = [any(v != -100 for v in row_labels) for row_labels in labels]
         return results
+
+    def raise_if_empty(dataset):
+        if len(dataset) == 0:
+            raise ValueError(
+                "The dataset has no samples left after dropping samples with no "
+                "trainable tokens. Every sample had all of its labels masked to "
+                "-100, so there is nothing to train on. Check `train_on_inputs`, "
+                "`roles_to_train`, and your prompt strategy / chat template."
+            )
 
     try:
         prior_len = len(train_dataset)
@@ -308,9 +314,8 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if prior_len:
         dropped = prior_len - len(train_dataset)
         if dropped:
-            LOG.warning(
-                f"Dropped {dropped} samples with no trainable tokens from train dataset"
-            )
+            LOG.warning(f"Dropped {dropped} samples with no trainable tokens")
+        raise_if_empty(train_dataset)
 
     if eval_dataset:
         try:
@@ -329,6 +334,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 LOG.warning(
                     f"Dropped {dropped} samples with no trainable tokens from eval dataset"
                 )
+            raise_if_empty(eval_dataset)
 
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
@@ -670,6 +676,9 @@ def setup_parallelism_envs(cfg):
 
 
 def prepare_optim_env(cfg):
+    if cfg.ddp_timeout:
+        os.environ.setdefault("AXOLOTL_NCCL_TIMEOUT", str(cfg.ddp_timeout))
+
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
             LOG.warning("P2P support not detected, setting `NCCL_P2P_DISABLE=1`")

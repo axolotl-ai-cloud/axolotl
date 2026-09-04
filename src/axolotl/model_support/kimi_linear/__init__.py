@@ -32,22 +32,22 @@ def _matches_kimi_cfg(cfg) -> bool:
 
 def _before_config_load(context: ModelHookContext) -> None:
     if _field_matches_kimi(context.cfg, "base_model_config"):
-        from .patch_kimi_linear import patch_kimi_config
+        from .patch_kimi_linear import patch_kimi
 
-        patch_kimi_config()
+        patch_kimi()
 
 
 def _before_tokenizer_load(context: ModelHookContext) -> None:
     if _field_matches_kimi(context.cfg, "tokenizer_config"):
-        from .patch_kimi_linear import patch_kimi_tokenizer
+        from .patch_kimi_linear import patch_kimi
 
-        patch_kimi_tokenizer()
+        patch_kimi()
 
 
 def _before_model_build(_context: ModelHookContext) -> None:
-    from .patch_kimi_linear import patch_kimi_model
+    from .patch_kimi_linear import patch_kimi
 
-    patch_kimi_model()
+    patch_kimi()
 
 
 @register_model_support
