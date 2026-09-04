@@ -715,6 +715,21 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_scope_rl(cls, data):
+        trl = data.get("trl") or {}
+        if not trl.get("scope_rl"):
+            return data
+        if data.get("rl") != "grpo":
+            raise ValueError("scope_rl requires `rl: grpo`")
+        if not (trl.get("use_data_producer") or trl.get("async_prefetch")):
+            raise ValueError(
+                "scope_rl requires the async GRPO trainer "
+                "(set `trl.use_data_producer: true` or `trl.async_prefetch: true`)"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_rl_config_gradient_checkpointing(cls, data):
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing

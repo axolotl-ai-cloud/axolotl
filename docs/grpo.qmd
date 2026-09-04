@@ -414,6 +414,24 @@ trl:
 
 Work is sharded across workers by prompt group. For simple reward functions, a single worker is usually sufficient -- the overhead of IPC can exceed the computation time.
 
+### SCOPE-RL entropy control
+
+GRPO entropy usually falls monotonically until the policy stops exploring. [SCOPE-RL](https://arxiv.org/abs/2510.08141) holds it at a target instead: each rollout resamples a small fraction of the prompt groups at an adjusted temperature, keeps only the completions that were rewarded, and adds them to the loss as a positive-advantage term.
+
+```yaml
+trl:
+  use_data_producer: true         # SCOPE-RL requires the async trainer
+  scope_rl: true
+  scope_target_entropy: 0.5       # H0 -- the entropy level to hold
+  scope_alpha: 0.015625           # 1/64: share of groups resampled, and the weight of the term
+  scope_positive_threshold: 1.0   # total reward at which a sample counts as positive
+```
+
+The auxiliary temperature is `clip(1 + H0 - H, 0.8, 1.2)` times your sampling temperature, where `H` is the entropy measured on the previous step: below target it samples hotter (positive samples at high temperature push entropy back up), above target it samples colder. Only positive samples are kept -- the paper's ablations show that mixing in negatives re-collapses entropy.
+
+Cost is roughly `scope_alpha` extra generation, so under 2% at the default. Watch `scope/temperature` and `scope/positive_frac`: a `positive_frac` pinned at 0 means `scope_positive_threshold` is above what your reward functions actually emit, and the branch does nothing.
+
+Higher entropy is not monotonically better -- the paper finds `H0 = 0.5` beats both 0.25 and 1.0. Tune `scope_target_entropy` before `scope_alpha`.
 
 ## Importance Sampling and Off-Policy Correction
 

@@ -252,3 +252,35 @@ class TestGRPOBatchSizeValidator:
         }
         out = self._check(data)
         assert out["gradient_accumulation_steps"] == 8
+
+
+class TestScopeRLValidator:
+    """SCOPE-RL needs `rl: grpo` on the async trainer."""
+
+    @staticmethod
+    def _check(data):
+        from axolotl.utils.schemas.validation import RLValidationMixin
+
+        return RLValidationMixin.check_scope_rl(data)
+
+    def test_async_grpo_passes(self):
+        data = {"rl": "grpo", "trl": {"scope_rl": True, "use_data_producer": True}}
+        assert self._check(data) is data
+
+    def test_async_prefetch_passes(self):
+        data = {"rl": "grpo", "trl": {"scope_rl": True, "async_prefetch": True}}
+        assert self._check(data) is data
+
+    def test_sync_grpo_raises(self):
+        with pytest.raises(ValueError, match="async GRPO"):
+            self._check({"rl": "grpo", "trl": {"scope_rl": True}})
+
+    def test_non_grpo_raises(self):
+        with pytest.raises(ValueError, match="rl: grpo"):
+            self._check(
+                {"rl": "dpo", "trl": {"scope_rl": True, "async_prefetch": True}}
+            )
+
+    def test_disabled_is_ignored(self):
+        data = {"rl": "dpo", "trl": {"scope_rl": False}}
+        assert self._check(data) is data
