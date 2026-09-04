@@ -60,7 +60,7 @@ from axolotl.utils.schemas.model import (
     SpecialTokensConfig,
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
-from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.peft import LoraConfig, MixLoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
 from axolotl.utils.schemas.training import (
     HyperparametersConfig,
@@ -191,6 +191,7 @@ class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
     LoraConfig,
+    MixLoraConfig,
     ReLoRAConfig,
     JaggedLRConfig,
     HyperparametersConfig,
