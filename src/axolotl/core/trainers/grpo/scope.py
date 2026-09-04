@@ -28,16 +28,20 @@ def scope_aux_indices(
     ]
 
 
-def scope_weights(scope_mask: torch.Tensor, alpha: float) -> torch.Tensor:
+def scope_weights(
+    scope_mask: torch.Tensor, alpha: float, positive_mask: torch.Tensor | None = None
+) -> torch.Tensor:
     """Per-row loss weights folding the ``alpha`` auxiliary term into a single mean.
 
     Aggregating ``weights * per_sequence_loss`` over all rows then reproduces
     ``mean(main) + alpha * mean(aux)`` from Eq. 11.
     """
-    num_aux = scope_mask.sum()
-    num_main = scope_mask.numel() - num_aux
+    is_aux = scope_mask.bool()
+    # non-positive aux rows sit at advantage 0, so the aux mean is over the positives
+    keep = is_aux if positive_mask is None else is_aux & positive_mask.bool()
+    num_main = scope_mask.numel() - is_aux.sum()
     return torch.where(
-        scope_mask.bool(),
-        alpha * scope_mask.numel() / num_aux.clamp(min=1),
+        is_aux,
+        alpha * scope_mask.numel() / keep.sum().clamp(min=1),
         scope_mask.numel() / num_main.clamp(min=1),
     )

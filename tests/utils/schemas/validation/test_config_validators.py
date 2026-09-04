@@ -263,17 +263,37 @@ class TestScopeRLValidator:
 
         return RLValidationMixin.check_scope_rl(data)
 
-    def test_async_grpo_passes(self):
-        data = {"rl": "grpo", "trl": {"scope_rl": True, "use_data_producer": True}}
-        assert self._check(data) is data
+    @staticmethod
+    def _trl(**kw):
+        return {
+            "rl": "grpo",
+            "trl": {
+                "scope_rl": True,
+                "async_prefetch": True,
+                "loss_type": "grpo",
+                **kw,
+            },
+        }
 
     def test_async_prefetch_passes(self):
-        data = {"rl": "grpo", "trl": {"scope_rl": True, "async_prefetch": True}}
+        data = self._trl()
         assert self._check(data) is data
 
-    def test_sync_grpo_raises(self):
-        with pytest.raises(ValueError, match="async GRPO"):
-            self._check({"rl": "grpo", "trl": {"scope_rl": True}})
+    def test_without_prefetch_raises(self):
+        """use_data_producer alone takes the scoring path, where the branch never runs."""
+        with pytest.raises(ValueError, match="async_prefetch"):
+            self._check(self._trl(async_prefetch=False, use_data_producer=True))
+
+    def test_token_normalised_loss_type_raises(self):
+        with pytest.raises(ValueError, match="loss_type"):
+            self._check(self._trl(loss_type="dapo"))
+
+    def test_unset_loss_type_raises(self):
+        """TRL defaults to dapo, so leaving it unset is the common broken case."""
+        with pytest.raises(ValueError, match="loss_type"):
+            self._check(
+                {"rl": "grpo", "trl": {"scope_rl": True, "async_prefetch": True}}
+            )
 
     def test_non_grpo_raises(self):
         with pytest.raises(ValueError, match="rl: grpo"):
@@ -284,6 +304,8 @@ class TestScopeRLValidator:
     def test_disabled_is_ignored(self):
         data = {"rl": "dpo", "trl": {"scope_rl": False}}
         assert self._check(data) is data
+
+
 class TestBatchSizeFieldsValidator:
     """``micro_batch_size`` and ``gradient_accumulation_steps`` both default to
     1, so a config that sets only one of them (or neither) is still fully

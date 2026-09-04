@@ -873,6 +873,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             raise ValueError("scope_rl requires vLLM generation.")
         # Seeded at the target so the first auxiliary rollout runs at T = 1.0.
         self._scope_entropy = self.args.scope_target_entropy
+        self._scope_temp_lock = threading.Lock()
 
         # Async state
         self._async_queue: queue.Queue | None = None
@@ -1523,14 +1524,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
         self._metrics["train"]["scope/temperature"].append(scale)
 
         generation = self.vllm_generation
-        previous = generation.temperature
-        generation.temperature = previous * scale
-        try:
-            if rank0_only:
-                return self._generate_rank0_only(prompts)
-            return self._generate(prompts)
-        finally:
-            generation.temperature = previous
+        with self._scope_temp_lock:
+            previous = generation.temperature
+            generation.temperature = previous * scale
+            try:
+                if rank0_only:
+                    return self._generate_rank0_only(prompts)
+                return self._generate(prompts)
+            finally:
+                generation.temperature = previous
 
     def _generate_only(self, inputs, rank0_only=False):
         """Generate completions without scoring.  Runs on background thread.
@@ -2086,7 +2088,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 scope_mask = scope_mask[process_slice]
                 positive = positive[process_slice]
             data["scope_mask"] = scope_mask
-            data["scope_weight"] = scope_weights(scope_mask, self.args.scope_alpha)
+            data["scope_weight"] = scope_weights(
+                scope_mask, self.args.scope_alpha, positive
+            )
             data["advantages"] = torch.where(scope_mask.bool(), positive, advantages)
             if "importance_sampling_ratio" in data:
                 # Auxiliary rows come from the temperature-scaled policy by design,

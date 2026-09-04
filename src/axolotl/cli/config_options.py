@@ -1283,6 +1283,8 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "trl__scope_positive_threshold",
         "float",
         "Total reward at or above which a SCOPE-RL auxiliary sample counts as positive.",
+    ),
+    (
         ("--trl.entropy-coef",),
         "trl__entropy_coef",
         "float",

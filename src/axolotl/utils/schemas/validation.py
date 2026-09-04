@@ -722,10 +722,14 @@ class RLValidationMixin:
             return data
         if data.get("rl") != "grpo":
             raise ValueError("scope_rl requires `rl: grpo`")
-        if not (trl.get("use_data_producer") or trl.get("async_prefetch")):
+        # the auxiliary rollout is only issued on the prefetching producer's path
+        if not trl.get("async_prefetch"):
+            raise ValueError("scope_rl requires `trl.async_prefetch: true`")
+        # token-normalised loss types weight rows by length, losing the alpha weighting
+        if trl.get("loss_type") not in ("grpo", "sapo", "dr_grpo"):
             raise ValueError(
-                "scope_rl requires the async GRPO trainer "
-                "(set `trl.use_data_producer: true` or `trl.async_prefetch: true`)"
+                "scope_rl requires `trl.loss_type` to be grpo, sapo or dr_grpo "
+                "(TRL defaults to dapo)"
             )
         return data
 

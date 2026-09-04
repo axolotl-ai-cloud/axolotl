@@ -51,19 +51,25 @@ Entropy control from [arXiv:2510.08141](https://arxiv.org/abs/2510.08141). Each 
 resamples a small fraction of prompt groups at `T = clip(1 + H0 - H(pi_old), 0.8, 1.2)`,
 keeps only the correct completions, and trains on them with advantage 1 weighted by `alpha`.
 Entropy below the target makes the extra samples hotter (pushing entropy back up); above it,
-colder. Async trainer only; ignored for multimodal batches.
+colder. Ignored for multimodal batches.
 
 ```yaml
 trl:
   use_data_producer: true
+  async_prefetch: true            # REQUIRED -- auxiliary rollout runs only on this path
+  loss_type: grpo                 # REQUIRED -- TRL defaults to dapo, which is incompatible
   scope_rl: true
   scope_target_entropy: 0.5       # H0
   scope_alpha: 0.015625           # 1/64: share of groups resampled AND loss weight
   scope_positive_threshold: 1.0   # total reward counting as a positive sample
 ```
 
+Both marked lines are required and rejected if missing. `scope_alpha` is honoured only when a
+batch holds at least `1 / scope_alpha` groups; smaller batches resample one whole group and pay
+more generation than configured.
+
 Metrics: `scope/temperature` (drifts to 1.2 as entropy collapses), `scope/positive_frac`
-(0.0 for many steps means the threshold is too high, and the branch is a no-op).
+(0.0 for many steps means the threshold is too high, and the branch contributes nothing).
 
 ## Health Checks
 

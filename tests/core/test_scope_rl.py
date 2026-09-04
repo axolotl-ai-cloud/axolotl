@@ -80,6 +80,14 @@ class TestScopeWeights(unittest.TestCase):
         halves = [(losses[s] * weights[s]).mean() for s in (slice(0, 8), slice(8, 16))]
         self.assertAlmostEqual(whole.item(), (sum(halves) / 2).item(), places=5)
 
+    def test_normalises_over_positives_only(self):
+        """Non-positive aux rows are held at advantage 0, so they must not dilute alpha."""
+        losses = torch.tensor([0.0] * 8 + [5.0, 0.0, 0.0, 0.0])
+        mask = torch.tensor([0.0] * 8 + [1.0] * 4)
+        positive = torch.tensor([0.0] * 8 + [1.0, 0.0, 0.0, 0.0])
+        weighted = (losses * scope_weights(mask, 0.25, positive)).mean()
+        self.assertAlmostEqual(weighted.item(), 0.25 * 5.0, places=5)
+
     def test_no_aux_rows_is_plain_mean(self):
         losses = torch.arange(4, dtype=torch.float)
         mask = torch.zeros(4)
