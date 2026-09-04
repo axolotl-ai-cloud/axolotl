@@ -111,22 +111,36 @@ class AxolotlTrainer(
         super().__init__(*_args, **kwargs)
 
         # Gemma4 (and similar multimodal models) declare **kwargs in forward() for
-        # extra inputs like mm_token_type_ids.  HF Trainer interprets VAR_KEYWORD as
-        # "the model handles num_items_in_batch internally" and skips the loss ÷
-        # gradient_accumulation_steps normalisation, which inflates the *logged* loss
-        # (the gradient itself is still correct). Override to False when the model
-        # doesn't actually consume num_items_in_batch.
+        # extra inputs like mm_token_type_ids. HF Trainer interprets VAR_KEYWORD as
+        # "the model handles num_items_in_batch internally". Override to False only
+        # when the model's loss really does not consume num_items_in_batch.
+        #
+        # Setting this flag False is not cosmetic: transformers then skips counting
+        # items per accumulation window, each micro-batch loss becomes a mean over
+        # its own supervised tokens, and the step reduces to a mean of micro-batch
+        # means rather than (sum of token losses / total tokens). When micro-batches
+        # carry different numbers of supervised tokens the gradient direction moves,
+        # not just the logged loss.
         if self.model_accepts_loss_kwargs:
             model_to_check = self.accelerator.unwrap_model(self.model)
-            if hasattr(model_to_check, "base_model"):  # PEFT wrapper
-                model_to_check = model_to_check.base_model
-            if hasattr(model_to_check, "model"):
-                model_to_check = model_to_check.model
-            fwd = getattr(model_to_check, "forward", None)
-            if fwd is not None:
+            # Unwrap PEFT explicitly. Do NOT walk `.base_model` / `.model`
+            # generically: `base_model` is a property on every PreTrainedModel
+            # (it returns `getattr(self, self.base_model_prefix, self)`), so the
+            # old walk descended from LlamaForCausalLM into LlamaModel, i.e. the
+            # module that never computes the loss at all.
+            if hasattr(model_to_check, "get_base_model"):
+                model_to_check = model_to_check.get_base_model()
+
+            # `num_items_in_batch` is consumed by the model's loss_function, not
+            # named in forward() (forward takes it via **kwargs). Inspecting
+            # forward() therefore never finds it and forced the flag to False for
+            # every model, silently reverting the transformers>=4.46 gradient
+            # accumulation fix back to a mean-of-micro-batch-means.
+            loss_fn = getattr(model_to_check, "loss_function", None)
+            if loss_fn is not None:
                 import inspect
 
-                params = inspect.signature(fwd).parameters
+                params = inspect.signature(loss_fn).parameters
                 if "num_items_in_batch" not in params:
                     self.model_accepts_loss_kwargs = False
 
