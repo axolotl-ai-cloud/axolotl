@@ -9,82 +9,37 @@
     "containerDiskInGb": 200,
     "gpuCount": 1,
     "allowedCudaVersions": [
-      "12.8",
-      "12.7",
-      "12.6",
-      "12.5",
-      "12.4"
+      "13.0"
     ],
     "presets": [],
     "env": [
       {
-        "key": "TOKENIZER",
+        "key": "HF_TOKEN",
         "input": {
-          "name": "Tokenizer",
+          "name": "Hugging Face Token",
           "type": "string",
-          "description": "Name or path of the Hugging Face tokenizer to use.",
+          "description": "Token for gated models/datasets and for pushing results to the Hub. May also be supplied per job via input.credentials.hf_token.",
           "default": "",
-          "advanced": true
+          "advanced": false
         }
       },
       {
-        "key": "MAX_NUM_SEQS",
+        "key": "WANDB_API_KEY",
         "input": {
-          "name": "Max Num Seqs",
-          "type": "number",
-          "description": "Maximum number of sequences per iteration.",
-          "default": 256,
-          "advanced": true
-        }
-      },
-      {
-        "key": "DISABLE_LOG_STATS",
-        "input": {
-          "name": "Disable Log Stats",
-          "type": "boolean",
-          "description": "Disable logging statistics.",
-          "default": false,
-          "trueValue": "true",
-          "falseValue": "false"
-        }
-      },
-      {
-        "key": "LOAD_FORMAT",
-        "input": {
-          "name": "Load Format",
+          "name": "Weights & Biases API Key",
           "type": "string",
-          "description": "The format of the model weights to load.",
-          "default": "auto",
-          "options": [
-            {
-              "label": "auto",
-              "value": "auto"
-            },
-            {
-              "label": "pt",
-              "value": "pt"
-            },
-            {
-              "label": "safetensors",
-              "value": "safetensors"
-            },
-            {
-              "label": "npcache",
-              "value": "npcache"
-            },
-            {
-              "label": "dummy",
-              "value": "dummy"
-            },
-            {
-              "label": "tensorizer",
-              "value": "tensorizer"
-            },
-            {
-              "label": "bitsandbytes",
-              "value": "bitsandbytes"
-            }
-          ],
+          "description": "API key for logging training runs to Weights & Biases. May also be supplied per job via input.credentials.wandb_api_key.",
+          "default": "",
+          "advanced": false
+        }
+      },
+      {
+        "key": "BASE_VOLUME",
+        "input": {
+          "name": "Base Volume",
+          "type": "string",
+          "description": "Directory that fine-tuning outputs and the Hugging Face caches are written to.",
+          "default": "/runpod-volume",
           "advanced": true
         }
       }

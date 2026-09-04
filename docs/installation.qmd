@@ -15,7 +15,7 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 
 - NVIDIA GPU (Ampere architecture or newer for `bf16` and Flash Attention) or AMD GPU
 - Python ≥3.11
-- PyTorch ≥2.11.0
+- PyTorch ≥2.11.0 (2.12.1 recommended)
 
 ## Installation {#sec-installation}
 
@@ -81,7 +81,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
 :::
 
 ::: {.callout-important}
-For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.12-cu130-2.12.0` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.12.0`.
+For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.12-cu130-2.12.1` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.12.1`.
 :::
 
 Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.
@@ -101,6 +101,10 @@ For providers supporting Docker:
     - [Novita](https://novita.ai/gpus-console?templateId=311)
     - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
     - [Latitude.sh](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
+
+### SkyPilot {#sec-skypilot}
+
+To launch Axolotl on your own cloud accounts (AWS, GCP, Azure, etc.) or Kubernetes cluster with a single command, see the [SkyPilot guide](skypilot.qmd).
 
 ### Google Colab {#sec-colab}
 
