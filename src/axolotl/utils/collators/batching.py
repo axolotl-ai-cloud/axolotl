@@ -61,6 +61,8 @@ class DataCollatorForSeq2Seq:
         for feature_name, pad_token_id in [
             ("labels", self.label_pad_token_id),
             ("position_ids", self.position_pad_token_id),
+            # mRoPE processors emit per-token modality ids; tokenizer.pad ignores them.
+            ("mm_token_type_ids", 0),
         ]:
             feat = (
                 [feature[feature_name] for feature in features]

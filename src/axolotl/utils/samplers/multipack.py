@@ -17,6 +17,12 @@ from torch.utils.data import BatchSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.logging import get_logger
+from axolotl.utils.samplers.balanced import (
+    BALANCED_GREEDY,
+    FIRST_FIT_DECREASING,
+    PackingStrategy,
+    balanced_greedy_pack_group,
+)
 
 LOG = get_logger(__name__)
 
@@ -113,10 +119,24 @@ def pack_group(
 
 
 def _process_group(
-    args: tuple[np.ndarray, int, int, int, int, bool],
+    args: tuple[np.ndarray, int, int, int, int, bool, PackingStrategy],
 ) -> list[list[int]]:
     """Standalone function for multiprocessing."""
-    group_lengths, start_idx, bin_capacity, max_bins, bin_size, safe_mode = args
+    (
+        group_lengths,
+        start_idx,
+        bin_capacity,
+        max_bins,
+        bin_size,
+        safe_mode,
+        packing_strategy,
+    ) = args
+    if packing_strategy == BALANCED_GREEDY:
+        # max_bins/safe_mode don't apply: balanced grows bins as needed, and
+        # pack_parallel passes max_bins=len(group), so FFD's cap is a no-op too.
+        return balanced_greedy_pack_group(
+            group_lengths, start_idx, bin_capacity, bin_size
+        )
     return pack_group(
         group_lengths, start_idx, bin_capacity, max_bins, bin_size, safe_mode
     )
@@ -130,6 +150,7 @@ def pack_parallel(
     num_processes: int | None = None,
     safe_mode: bool = True,
     mp_start_method: str | None = "fork",
+    packing_strategy: PackingStrategy = FIRST_FIT_DECREASING,
 ) -> list[list[int]]:
     """Pack sequences into bins using parallel processing.
 
@@ -155,7 +176,17 @@ def pack_parallel(
     for i in range(0, num_items, group_size):
         group_lengths = sequence_lengths[i : i + group_size]
         max_bins = len(group_lengths)  # Allow as many bins as items in the group
-        tasks.append((group_lengths, i, bin_capacity, max_bins, bin_size, safe_mode))
+        tasks.append(
+            (
+                group_lengths,
+                i,
+                bin_capacity,
+                max_bins,
+                bin_size,
+                safe_mode,
+                packing_strategy,
+            )
+        )
 
     # Process groups in parallel
     all_bins = []
@@ -269,6 +300,7 @@ class MultipackBatchSampler(BatchSampler):
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
         mp_start_method: str = "fork",
+        packing_strategy: PackingStrategy = FIRST_FIT_DECREASING,
         **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
@@ -282,6 +314,7 @@ class MultipackBatchSampler(BatchSampler):
         self.num_processes = num_processes
         self.safe_mode = safe_mode
         self.mp_start_method = mp_start_method
+        self.packing_strategy = packing_strategy
 
         assert isinstance(self.lengths, np.ndarray)
 
@@ -347,6 +380,7 @@ class MultipackBatchSampler(BatchSampler):
                 num_processes=min(4, num_processes) if num_processes else 4,
                 safe_mode=self.safe_mode,
                 mp_start_method=self.mp_start_method,
+                packing_strategy=self.packing_strategy,
             )
 
             # Map bin indices back to original indices
