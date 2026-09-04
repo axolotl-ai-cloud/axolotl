@@ -21,6 +21,19 @@ from tests.conftest import capture_axolotl_warnings
 warnings.filterwarnings("error")
 
 
+@pytest.fixture(autouse=True)
+def _stub_flash_attn_available(monkeypatch):
+    # These tests exercise config validation semantics, not whether this box has flash-attn.
+    import transformers.utils
+
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_2_available", lambda **_: True
+    )
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_3_available", lambda **_: True
+    )
+
+
 @pytest.fixture(name="minimal_cfg")
 def fixture_cfg():
     return DictDefault(
