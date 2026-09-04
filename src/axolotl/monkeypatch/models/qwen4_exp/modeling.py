@@ -83,12 +83,15 @@ def get_cu_seqlens(position_ids: torch.Tensor) -> Optional[torch.Tensor]:
     Adapted from transformers.modeling_flash_attention_utils.prepare_fa_kwargs_from_position_ids.
     """
     tensor_kwargs = {"dtype": torch.int32, "device": position_ids.device}
-    flat = position_ids.reshape(-1)
-    indices_q = (flat == 0).nonzero().view(-1)
+    position_ids = position_ids.reshape(-1)
+    indices_q = (position_ids == position_ids.min()).nonzero().view(-1)
     if indices_q.numel() < 2:
         return None
     return torch.cat(
-        (indices_q.to(**tensor_kwargs), torch.tensor(flat.size(), **tensor_kwargs))
+        (
+            indices_q.to(**tensor_kwargs),
+            torch.tensor(position_ids.size(), **tensor_kwargs),
+        )
     )
 
 
