@@ -310,11 +310,7 @@ class TestChatBuilderToolCalls:
     def test_tool_scalar_list_content_becomes_response(self):
         transform = chat_message_transform_builder()
         out = transform(
-            {
-                "messages": [
-                    {"role": "tool", "name": "get_temp", "content": ["ok"]}
-                ]
-            }
+            {"messages": [{"role": "tool", "name": "get_temp", "content": ["ok"]}]}
         )
         assert out["conversation"][0]["content"] == [
             {
