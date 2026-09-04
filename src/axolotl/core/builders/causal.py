@@ -87,11 +87,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks.append(QATCallback(self.cfg.qat))
 
         if self.cfg.include_tkps:
-            callbacks.append(
-                TokensPerSecondCallback(
-                    resume_from_checkpoint=self.cfg.resume_from_checkpoint,
-                )
-            )
+            callbacks.append(TokensPerSecondCallback(cfg=self.cfg))
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
