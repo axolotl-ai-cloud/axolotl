@@ -69,7 +69,7 @@ def ssmax_flex_attention_forward(
     ssmax_b = _ssmax_config.get("ssmax_b", 0.0)
 
     position_ids = kwargs.get("position_ids", None)
-    position_ids_flat = position_ids.view(-1) if position_ids is not None else None
+    position_ids_flat = position_ids.reshape(-1) if position_ids is not None else None
 
     block_mask = attention_mask if isinstance(attention_mask, BlockMask) else None
     score_mask = None if block_mask else attention_mask

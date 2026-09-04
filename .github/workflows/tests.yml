@@ -97,9 +97,10 @@ jobs:
           python-version: ${{ matrix.python_version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
+          prune-cache: true
           cache-dependency-glob: "pyproject.toml"
 
       - name: Install PyTorch
@@ -123,7 +124,7 @@ jobs:
           axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.1' }}
         run: |
           axolotl generate-cli-config-options --check
 
@@ -198,9 +199,10 @@ jobs:
           python-version: ${{ matrix.python_version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
+          prune-cache: true
           cache-dependency-glob: "pyproject.toml"
 
       - name: Install PyTorch
@@ -226,7 +228,7 @@ jobs:
           axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.1' }}
         run: |
           axolotl generate-cli-config-options --check
 

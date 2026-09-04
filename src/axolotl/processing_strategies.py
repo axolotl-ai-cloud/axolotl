@@ -1455,6 +1455,7 @@ def get_processing_strategy(
     train_on_eos: Optional[str] = None,
     role_boundaries_override: Optional[list[dict]] = None,
     field_messages: str | list[str] | tuple[str, ...] | None = None,
+    model_type: str | None = None,
 ):
     processing_kwargs = {
         "processor": processor,
@@ -1481,8 +1482,12 @@ def get_processing_strategy(
         resolve_model_support,
     )
 
-    support = get_model_support(chat_template_type) or get_model_support_for_processor(
-        processor
+    # model_type first: architectures sharing a processor class with another
+    # family cannot be told apart by the processor matcher alone.
+    support = (
+        get_model_support(model_type)
+        or get_model_support(chat_template_type)
+        or get_model_support_for_processor(processor)
     )
     resolved_support = resolve_model_support(support)
     strategy_provider = (

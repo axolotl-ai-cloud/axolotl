@@ -37,15 +37,20 @@ def _nvfp4_cls():
 
 
 def _resolve_repo_file(repo_id: str, filename: str) -> str:
-    """Resolve a checkpoint file path from a local snapshot dir or the HF hub.
+    """Resolve a checkpoint file path from a local snapshot dir, the HF cache, or the hub.
 
     A local snapshot dir (offline/air-gapped axolotl usage) would fail ``hf_hub_download``
-    with an ``HFValidationError``, so read straight from disk in that case.
+    with an ``HFValidationError``, so read straight from disk in that case. An already-cached
+    hub file is returned without a network round trip (hub requests are rate limited, and
+    ``HF_HUB_OFFLINE`` runs have no network at all).
     """
     if os.path.isdir(repo_id):
         return os.path.join(repo_id, filename)
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download, try_to_load_from_cache
 
+    cached = try_to_load_from_cache(repo_id, filename)
+    if isinstance(cached, str):
+        return cached
     return hf_hub_download(repo_id, filename)
 
 
@@ -62,28 +67,61 @@ def _shard_open(repo_id: str, shard: str):
     return safe_open(_resolve_repo_file(repo_id, shard), framework="pt")
 
 
-def _safetensors_metadata(repo_id: str) -> dict[str, tuple[str, tuple[int, ...]]]:
-    """Return ``{tensor_name: (dtype_str, shape)}`` for every checkpoint tensor, read from the
-    safetensors *headers* only (no weight download). Works for a hub repo or a local snapshot dir.
+def _local_shard_paths(repo_id: str) -> list[str] | None:
+    """Ordered on-disk paths of every safetensors shard, without touching the network.
+
+    ``None`` means the checkpoint is a hub repo whose shards are not all in the HF cache, so
+    only the hub metadata API can answer. A local snapshot dir always returns paths (a missing
+    shard there is a broken checkpoint, and surfacing that beats a bogus hub lookup).
     """
     if os.path.isdir(repo_id):
-        from safetensors import safe_open
-
-        out: dict[str, tuple[str, tuple[int, ...]]] = {}
-        index = os.path.join(repo_id, "model.safetensors.index.json")
-        if os.path.exists(index):
+        if os.path.exists(os.path.join(repo_id, "model.safetensors.index.json")):
             shards = sorted(set(_load_index(repo_id).values()))
         else:  # single-file checkpoint
             shards = ["model.safetensors"]
+        return [os.path.join(repo_id, shard) for shard in shards]
+
+    import json
+
+    from huggingface_hub import try_to_load_from_cache
+
+    index = try_to_load_from_cache(repo_id, "model.safetensors.index.json")
+    if isinstance(index, str):
+        with open(index) as f:
+            shards = sorted(set(json.load(f)["weight_map"].values()))
+    else:  # single-file checkpoint, or nothing cached at all
+        shards = ["model.safetensors"]
+    paths = [try_to_load_from_cache(repo_id, shard) for shard in shards]
+    if all(isinstance(p, str) for p in paths):
+        return paths  # type: ignore[return-value]
+    return None
+
+
+def _safetensors_metadata(repo_id: str) -> dict[str, tuple[str, tuple[int, ...]]]:
+    """Return ``{tensor_name: (dtype_str, shape)}`` for every checkpoint tensor, read from the
+    safetensors *headers* only (no weight download). Prefers a local snapshot dir or the HF cache
+    and only falls back to the hub metadata API for a checkpoint that is not on disk.
+    """
+    shards = _local_shard_paths(repo_id)
+    if shards is not None:
+        from safetensors import safe_open
+
+        out: dict[str, tuple[str, tuple[int, ...]]] = {}
         for shard in shards:
-            with safe_open(os.path.join(repo_id, shard), framework="pt") as f:
+            with safe_open(shard, framework="pt") as f:
                 for name in f.keys():
                     sl = f.get_slice(name)
                     out[name] = (sl.get_dtype(), tuple(sl.get_shape()))
         return out
 
-    from huggingface_hub import HfApi
+    from huggingface_hub import HfApi, constants
 
+    if constants.HF_HUB_OFFLINE:
+        raise OSError(
+            f"HF_HUB_OFFLINE is set but the safetensors shards of '{repo_id}' are not in the HF "
+            f"cache ({constants.HF_HUB_CACHE}), so its NVFP4 layout cannot be inspected. Download "
+            "the checkpoint, or point base_model at a local snapshot directory."
+        )
     meta = HfApi().get_safetensors_metadata(repo_id)
     out = {}
     for fmeta in meta.files_metadata.values():
@@ -473,17 +511,19 @@ def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> i
     if NVFP4Tensor is None:
         return 0
     wmap = _load_index(repo_id)
-    # per-layer expert count, from the index (no reads): count ...experts.<e>.<proj0>.weight keys.
+    # per-experts-module expert count, from the index (no reads). Keyed on the full prefix
+    # rather than the layer index: a checkpoint can carry two stacks at the same index (an MTP
+    # head alongside the decoder), and those must not collapse onto each other.
     proj0 = routed_projs[0]
-    layer_E: dict[int, int] = {}
+    prefix_E: dict[str, int] = {}
     pat = re.compile(
-        r"\.layers\.(\d+)\.mlp\.experts\.(\d+)\." + re.escape(proj0) + r"\.weight$"
+        r"(.*\.layers\.\d+\.mlp\.experts)\.(\d+)\." + re.escape(proj0) + r"\.weight$"
     )
     for key in wmap:
         m = pat.search(key)
         if m:
-            L, e = int(m.group(1)), int(m.group(2))
-            layer_E[L] = max(layer_E.get(L, 0), e + 1)
+            base, e = m.group(1), int(m.group(2))
+            prefix_E[base] = max(prefix_E.get(base, 0), e + 1)
 
     handles: dict[str, object] = {}
 
@@ -501,14 +541,10 @@ def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> i
     for mod_name, mod in model.named_modules():
         if not (hasattr(mod, "gate_up_proj") and hasattr(mod, "down_proj")):
             continue
-        m = re.search(r"\.layers\.(\d+)\.", "." + mod_name)
-        if m is None:
+        E = prefix_E.get(mod_name)
+        if E is None:
             continue
-        L = int(m.group(1))
-        if L not in layer_E:
-            continue
-        E = layer_E[L]
-        base = f"model.layers.{L}.mlp.experts"
+        base = mod_name
         for fused, parts in fused_map:
             sel = [p for p in parts if p in routed_projs]
             if not sel:
