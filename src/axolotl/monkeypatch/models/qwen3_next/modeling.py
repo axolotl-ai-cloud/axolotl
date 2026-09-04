@@ -27,12 +27,12 @@ def get_cu_seqlens(position_ids):
     """
     Adapted from transformers.modeling_flash_attention_utils.prepare_fa_kwargs_from_position_ids.
 
-    https://github.com/huggingface/transformers/blob/0f1b128d3359a26bd18be99c26d7f04fb3cba914/src/transformers/modeling_flash_attention_utils.py#L316
+    https://github.com/huggingface/transformers/blame/c676202114bb929ba4377f90fc92c5a8fec72da6/src/transformers/modeling_flash_attention_utils.py#L458-L495
     """
     tensor_kwargs = {"dtype": torch.int32, "device": position_ids.device}
 
-    position_ids = position_ids.view(-1)
-    indices_q = (position_ids == 0).nonzero().view(-1)
+    position_ids = position_ids.reshape(-1)
+    indices_q = (position_ids == position_ids.min()).nonzero().view(-1)
 
     cu_seq_lens_q = torch.cat(
         (
@@ -64,7 +64,6 @@ def patch_qwen3_next_decoder_layer():
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Tuple[torch.Tensor]] = None,
-        cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> torch.FloatTensor:
         residual = hidden_states
@@ -76,9 +75,9 @@ def patch_qwen3_next_decoder_layer():
             hidden_states = self.linear_attn(
                 hidden_states=hidden_states,
                 cache_params=past_key_values,
-                cache_position=cache_position,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
+                **kwargs,
             )
         elif self.block_type == "full_attention":
             # Self Attention
@@ -87,7 +86,6 @@ def patch_qwen3_next_decoder_layer():
                 attention_mask=attention_mask,
                 position_ids=position_ids,
                 past_key_values=past_key_values,
-                cache_position=cache_position,
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
@@ -99,7 +97,7 @@ def patch_qwen3_next_decoder_layer():
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         # For the MoE layers, we need to unpack
-        if isinstance(hidden_states, Tuple):
+        if isinstance(hidden_states, tuple):
             hidden_states, _ = hidden_states
         hidden_states = residual + hidden_states
 
@@ -133,9 +131,6 @@ def patch_qwen3_next_gateddelta_layer():
         cache_params=None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        cache_position: Optional[
-            torch.LongTensor
-        ] = None,  # unused: no cache in packed training
         **kwargs,
     ):
         hidden_states = modeling.apply_mask_to_padding_states(
