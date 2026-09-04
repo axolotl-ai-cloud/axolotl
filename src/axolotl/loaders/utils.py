@@ -246,6 +246,7 @@ def materialize_trainable_meta_params(model: torch.nn.Module) -> list[str]:
 
     replacements: dict[int, torch.nn.Parameter] = {}
     materialized: list[str] = []
+    skipped: list[str] = []
 
     for name, param in model.named_parameters():
         if not (param.requires_grad and param.is_meta):
@@ -271,13 +272,18 @@ def materialize_trainable_meta_params(model: torch.nn.Module) -> list[str]:
             kind = type(param).__name__
 
         if storage is None:
-            LOG.warning(
-                f"{name} ({kind}) is trainable but on meta and cannot be materialized on "
-                "CPU; accelerate's FSDP2 optimizer remap may not reach it"
-            )
+            skipped.append(f"{name} ({kind})")
             continue
         replacements[id(param)] = torch.nn.Parameter(storage)
         materialized.append(name)
+
+    # only non-rank-0 has anything to do here, where LOG's main-process default drops every line
+    if skipped:
+        LOG.warning(
+            f"{len(skipped)} trainable params are on meta and cannot be materialized on "
+            f"CPU; accelerate's FSDP2 optimizer remap may not reach them: {skipped[:5]}",
+            main_process_only=False,
+        )
 
     if not materialized:
         return materialized
@@ -290,7 +296,8 @@ def materialize_trainable_meta_params(model: torch.nn.Module) -> list[str]:
 
     LOG.info(
         f"materialized {len(materialized)} trainable meta params on CPU "
-        "for FSDP2 optimizer mapping"
+        "for FSDP2 optimizer mapping",
+        main_process_only=False,
     )
 
     return materialized

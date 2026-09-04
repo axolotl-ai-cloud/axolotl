@@ -8,7 +8,6 @@ optimizer slot collapses onto one param and their LoRA shards never get stepped,
 exactly ``1/world_size`` of each ``lora_B``'s rows nonzero in the saved adapter.
 """
 
-import logging
 import os
 import types
 from unittest.mock import patch
@@ -149,32 +148,24 @@ class TestMaterializeDTensorParams:
         assert keys["sharded"] != 0
 
 
-def test_unsupported_tensor_subclass_is_skipped_and_warned(caplog):
-    # axolotl's LOG propagates to the root logger, so caplog sees it directly; fall
-    # back to patching LOG.warning if a future logging change breaks that propagation.
+def test_unsupported_tensor_subclass_is_skipped_and_warned():
     model = torch.nn.Module()
     model.packed = _Packed(torch.empty(2, 2, device="meta"))
     assert model.packed.requires_grad
     assert model.packed.is_meta
 
-    with caplog.at_level(logging.WARNING, logger="axolotl.loaders.utils"):
+    with patch.object(utils_mod.LOG, "warning") as mock_warning:
         materialized = materialize_trainable_meta_params(model)
 
     assert materialized == []
     assert model.packed.is_meta
     assert type(model.packed) is _Packed
 
-    if caplog.records:
-        messages = [r.getMessage() for r in caplog.records]
-        assert any("packed" in m and "_Packed" in m for m in messages)
-    else:
-        with patch.object(utils_mod.LOG, "warning") as mock_warning:
-            model2 = torch.nn.Module()
-            model2.packed = _Packed(torch.empty(2, 2, device="meta"))
-            materialize_trainable_meta_params(model2)
-            mock_warning.assert_called_once()
-            message = mock_warning.call_args[0][0]
-            assert "packed" in message and "_Packed" in message
+    mock_warning.assert_called_once()
+    message = mock_warning.call_args[0][0]
+    assert "packed" in message and "_Packed" in message
+    # the helper only runs on non-rank-0, so the main-process default would drop this
+    assert mock_warning.call_args[1]["main_process_only"] is False
 
 
 @pytest.mark.parametrize(
