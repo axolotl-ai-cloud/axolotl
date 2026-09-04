@@ -425,13 +425,13 @@ class TrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fp8_config(cls, data):
-        fp8_config = data.get("fp8_config") or {}
+        fp8_config = data.get("fp8_config")
         fp8_recipe = (
             fp8_config.get("recipe", "tensorwise")
             if isinstance(fp8_config, dict)
-            else "tensorwise"
+            else getattr(fp8_config, "recipe", "tensorwise")
         )
-        if fp8_config and not data.get("fp8"):
+        if fp8_config is not None and not data.get("fp8"):
             raise ValueError(
                 "`fp8_config` requires `fp8: true`; "
                 "set `fp8: true` or remove `fp8_config`."

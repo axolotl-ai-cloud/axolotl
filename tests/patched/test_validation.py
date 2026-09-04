@@ -1448,20 +1448,31 @@ class TestFP8RecipeValidation:
     """Validate FP8 recipe defaults and incompatible FSDP combinations."""
 
     def test_fp8_config_defaults_to_tensorwise(self, minimal_cfg):
-        cfg = DictDefault({**minimal_cfg, "fp8_config": {}})
+        cfg = DictDefault({**minimal_cfg, "fp8": True, "fp8_config": {}})
         updated_cfg = validate_config(cfg)
 
         assert updated_cfg.fp8_config.recipe == "tensorwise"
 
-    def test_fp8_config_requires_fp8_enabled(self, minimal_cfg):
+    @pytest.mark.parametrize("fp8_config", [{}, {"recipe": "rowwise"}])
+    def test_fp8_config_requires_fp8_enabled(self, minimal_cfg, fp8_config):
+        cfg = DictDefault({**minimal_cfg, "fp8_config": fp8_config})
+
+        with pytest.raises(ValidationError, match=r"requires `fp8: true`"):
+            validate_config(cfg)
+
+    def test_fp8_config_rejects_nested_all_gather_key(self, minimal_cfg):
         cfg = DictDefault(
             {
                 **minimal_cfg,
-                "fp8_config": {"recipe": "rowwise"},
+                "fp8": True,
+                "fp8_config": {
+                    "recipe": "rowwise",
+                    "enable_fsdp_float8_all_gather": True,
+                },
             }
         )
 
-        with pytest.raises(ValidationError, match=r"requires `fp8: true`"):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             validate_config(cfg)
 
     @pytest.mark.parametrize("recipe", ["rowwise", "rowwise_with_gw_hp"])
