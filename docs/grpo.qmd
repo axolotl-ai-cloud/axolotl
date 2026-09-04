@@ -552,8 +552,22 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | `epsilon` | float | `null` | PPO clipping lower bound |
 | `epsilon_high` | float | `null` | PPO clipping upper bound |
 | `loss_type` | str | `null` | Loss formulation: `grpo`, `bnpo`, or `dr_grpo` |
-| `scale_rewards` | bool | `true` | Normalize rewards by standard deviation |
+| `scale_rewards` | bool or str | `true` | Reward std scaling: `group`, `batch`, or `none` (bool accepted: `true`->`group`, `false`->`none`) |
 | `mask_truncated_completions` | bool | `false` | Exclude truncated completions from loss |
+| `log_multimodal` | bool | `null` | Log multimodal content (images/videos) alongside completions (TRL >= 1.9) |
+
+### Entropy regularization
+
+Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `entropy_coef` | float | `null` | Static entropy regularization coefficient |
+| `use_adaptive_entropy` | bool | `null` | Adaptively tune `entropy_coef` toward `entropy_target` (Skywork-OR1 style) |
+| `entropy_target` | float | `null` | Target entropy when `use_adaptive_entropy` is enabled |
+| `entropy_coef_delta` | float | `null` | Step size for adjusting `entropy_coef` |
+| `entropy_coef_min` | float | `null` | Lower bound for adaptive `entropy_coef` |
+| `entropy_coef_max` | float | `null` | Upper bound for adaptive `entropy_coef` |
 
 ### Reward functions
 
@@ -575,7 +589,7 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | `repetition_penalty` | float | `null` | Penalty for repeated tokens |
 | `generation_kwargs` | dict | `null` | Additional vLLM SamplingParams (e.g., `stop_token_ids`) |
 | `chat_template_kwargs` | dict | `null` | Chat template kwargs (e.g., `{enable_thinking: false}`) |
-| `vllm_guided_decoding_regex` | str | `null` | Regex constraint for guided decoding |
+| `vllm_guided_decoding_regex` | str | `null` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7) |
 
 ### Async pipeline
 
@@ -600,6 +614,8 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | `importance_sampling_level` | `"token"` or `"sequence"` | `null` | Granularity of IS ratios. Use `token` with Liger |
 | `vllm_importance_sampling_mode` | str | `null` | `token_mask`, `token_truncate`, `sequence_mask`, or `sequence_truncate` |
 | `vllm_importance_sampling_cap` | float | `null` | Cap C for IS ratio clipping/masking |
+| `vllm_importance_sampling_clip_min` | float | `null` | Lower clip bound for the IS ratio (TRL >= 1.6) |
+| `vllm_importance_sampling_clip_max` | float | `null` | Upper clip bound for the IS ratio (TRL >= 1.6) |
 | `off_policy_mask_threshold` | float | `null` | KL threshold for off-policy sequence masking (OPSM) |
 | `use_bias_correction_kl` | bool | `null` | Apply IS correction to KL divergence term |
 

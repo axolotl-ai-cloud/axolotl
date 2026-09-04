@@ -1,5 +1,11 @@
 examples:
   # August 2026
+  - name: ling3
+    title: Ling 3.0
+  - name: muse-glimmer
+    title: Muse Glimmer
+  - name: cohere-north-micro-vision-instruct
+    title: North Micro Vision Instruct
   - name: shieldstral
     title: Shieldstral
 
@@ -57,6 +63,8 @@ examples:
     title: Llama 2
 
   # Alibaba
+  - name: qwen3.8-flash-next
+    title: Qwen 3.8 Flash Next
   - name: qwen3.5
     title: Qwen 3.5
   - name: qwen3-next
