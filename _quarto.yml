@@ -9,6 +9,8 @@ quartodoc:
   package: axolotl
   title: API Reference
   parser: google
+  renderer:
+    style: docs.scripts._renderer.py
 
   sections:
     - title: Core
@@ -204,6 +206,7 @@ quartodoc:
         - model_support.templates
         - model_support.kimi_linear.patch_kimi_linear
         - model_support.registry
+        - model_support.remote_code
         - monkeypatch.models.llama4.modeling
         - monkeypatch.models.mamba_utils
         - monkeypatch.models.mistral3.mistral_common_tokenizer
@@ -447,6 +450,9 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/ling3.qmd
+                - docs/models/muse-glimmer.qmd
+                - docs/models/cohere-north-micro-vision-instruct.qmd
                 - docs/models/shieldstral.qmd
                 - docs/models/kimi-linear.qmd
                 - docs/models/plano.qmd
@@ -475,6 +481,7 @@ website:
                 - docs/models/mistral.qmd
                 - docs/models/llama-4.qmd
                 - docs/models/llama-2.qmd
+                - docs/models/qwen3.8-flash-next.qmd
                 - docs/models/qwen3.5.qmd
                 - docs/models/qwen3-next.qmd
                 - docs/models/qwen3.qmd
@@ -509,6 +516,7 @@ website:
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
+            - docs/skypilot.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 

@@ -8,7 +8,13 @@ from accelerate.test_utils import execute_subprocess_async, get_torch_dist_uniqu
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard_loss_decreased, require_torch_2_7_0
+from tests.e2e.utils import (
+    check_tensorboard_loss_decreased,
+    require_torch_2_7_0,
+    requires_flash_attn,
+)
+
+pytestmark = requires_flash_attn
 
 
 class TestTensorParallel:

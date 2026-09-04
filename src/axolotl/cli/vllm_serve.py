@@ -87,6 +87,8 @@ def do_vllm_serve(
     enforce_eager = bool(raw_enforce_eager) if raw_enforce_eager is not None else False
     base_kwargs = dict(
         model=model,
+        revision=cfg.revision_of_model,
+        trust_remote_code=bool(cfg.trust_remote_code),
         tensor_parallel_size=tensor_parallel_size,
         data_parallel_size=data_parallel_size,
         host=host,
