@@ -802,6 +802,28 @@ class RLValidationMixin:
 
         return data
 
+    @model_validator(mode="after")
+    def check_dpo_use_liger_kernel(self):
+        if not self.dpo_use_liger_kernel:
+            return self
+        loss_types = self.dpo_loss_type
+        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
+        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
+        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
+            raise ValueError(
+                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
+                "(liger-kernel's fused DPO loss cannot length-normalize the "
+                "squared margin). Disable the liger kernel or use another loss."
+            )
+        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
+        if loss_types and len(loss_types) > 1:
+            LOG.warning(
+                "`dpo_use_liger_kernel` uses only the first entry of "
+                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
+                "are ignored on the liger loss path."
+            )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):

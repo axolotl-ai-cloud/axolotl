@@ -529,3 +529,8 @@ def prepare_plugins(cfg):
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
+        # the manager is a singleton: only run hooks for plugins in THIS config,
+        # not ones retained from an earlier config in the same process
+        for plugin_name, plugin in plugin_manager.plugins.items():
+            if plugin_name in cfg["plugins"]:
+                plugin.register(cfg)
