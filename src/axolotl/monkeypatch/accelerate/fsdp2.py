@@ -789,7 +789,11 @@ def patch_move_missing_keys_meta_for_fsdp():
     Caller MUST restrict this to frozen-base (adapter) runs: leaving base params on meta on
     non-rank-0 deadlocks the FSDP2 optimizer-state all-gather at checkpoint save for a FULL
     fine-tune (rank-0 real DTensors vs non-rank-0 meta). LoRA/qLoRA carry no base optimizer state,
-    so the gather never touches these params."""
+    so the gather never touches these params.
+
+    Trainable params created after the load (the adapters) must NOT stay on meta on non-rank-0 —
+    accelerate keys its FSDP2 optimizer param remap on ``data_ptr()``, which is 0 for every meta
+    tensor; see ``axolotl.loaders.utils.materialize_trainable_meta_params``."""
     from transformers import PreTrainedModel
     from transformers.integrations import (
         is_deepspeed_zero3_enabled,
