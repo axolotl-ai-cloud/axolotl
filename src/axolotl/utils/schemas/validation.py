@@ -17,6 +17,7 @@ from axolotl.utils.schemas.enums import (
     RingAttnFunc,
     RLType,
 )
+from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 
 LOG = get_logger(__name__)
 
@@ -426,17 +427,16 @@ class TrainingValidationMixin:
     @classmethod
     def check_fp8_config(cls, data):
         fp8_config = data.get("fp8_config")
-        fp8_recipe = (
-            fp8_config.get("recipe", "tensorwise")
-            if isinstance(fp8_config, dict)
-            else getattr(fp8_config, "recipe", "tensorwise")
-        )
+        fp8_recipe = resolve_fp8_recipe(fp8_config)
         if fp8_config is not None and not data.get("fp8"):
             raise ValueError(
                 "`fp8_config` requires `fp8: true`; "
                 "set `fp8: true` or remove `fp8_config`."
             )
-        if data.get("fp8_enable_fsdp_float8_all_gather") and fp8_recipe != "tensorwise":
+        if (
+            data.get("fp8_enable_fsdp_float8_all_gather")
+            and fp8_recipe != DEFAULT_FP8_RECIPE
+        ):
             raise ValueError(
                 "`fp8_enable_fsdp_float8_all_gather` only supports the tensorwise "
                 "`fp8_config.recipe`; disable it when using rowwise scaling."

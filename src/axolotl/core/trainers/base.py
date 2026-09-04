@@ -58,6 +58,7 @@ from axolotl.utils.distributed import (
 )
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
 
@@ -682,7 +683,7 @@ class AxolotlTrainer(
     def additional_accelerator_args(
         self,
         fp8: bool = False,
-        fp8_recipe: str = "tensorwise",
+        fp8_recipe: str = DEFAULT_FP8_RECIPE,
         enable_fsdp_float8_all_gather: bool = False,
         **kwargs,
     ) -> dict[str, Any]:

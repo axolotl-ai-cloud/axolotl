@@ -733,13 +733,9 @@ class PatchManager:
             from axolotl.monkeypatch.trainer_accelerator_args import (
                 patch_create_accelerate_code_for_fp8,
             )
+            from axolotl.utils.schemas.fp8 import resolve_fp8_recipe
 
-            fp8_config = self.cfg.get("fp8_config") or {}
-            fp8_recipe = (
-                fp8_config.get("recipe", "tensorwise")
-                if isinstance(fp8_config, dict)
-                else "tensorwise"
-            )
+            fp8_recipe = resolve_fp8_recipe(self.cfg.get("fp8_config"))
             patch_create_accelerate_code_for_fp8(
                 enable_fsdp_float8_all_gather=self.cfg.fp8_enable_fsdp_float8_all_gather,
                 fp8_recipe=fp8_recipe,
