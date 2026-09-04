@@ -85,8 +85,8 @@ dependencies = [
     "torchao==0.17.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
 
     # Architecture-specific
-    "fla-core==0.4.1 ; platform_machine != 'aarch64'",
-    "flash-linear-attention==0.4.1 ; platform_machine != 'aarch64'",
+    "fla-core==0.5.2 ; platform_machine != 'aarch64'",
+    "flash-linear-attention==0.5.2 ; platform_machine != 'aarch64'",
 ]
 
 [project.optional-dependencies]
