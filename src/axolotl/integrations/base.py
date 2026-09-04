@@ -65,6 +65,8 @@ class BasePlugin:
         Plugin methods include:
         - register(cfg): Registers the plugin with the given configuration.
         - load_datasets(cfg): Loads and preprocesses the dataset for training.
+        - post_tokenizer_load(cfg, tokenizer): Performs actions after the tokenizer is
+            loaded, optionally returning a replacement tokenizer.
         - pre_model_load(cfg): Performs actions before the model is loaded.
         - post_model_build(cfg, model): Performs actions after the model is loaded, but
             before LoRA adapters are applied.
@@ -132,6 +134,18 @@ class BasePlugin:
 
         Returns:
             dataset_meta: The metadata for the training dataset.
+        """
+
+    def post_tokenizer_load(self, cfg: DictDefault, tokenizer):
+        """Performs actions after the tokenizer is loaded, optionally returning a
+        replacement tokenizer.
+
+        Args:
+            cfg: The configuration for the plugin.
+            tokenizer: The loaded tokenizer.
+
+        Returns:
+            A replacement tokenizer, or `None` to keep the existing one.
         """
 
     def pre_model_load(self, cfg: DictDefault):
@@ -517,6 +531,22 @@ class PluginManager:
                 else:
                     raise RuntimeError("Multiple plugins loaded datasets")
         return return_ds_meta
+
+    def post_tokenizer_load(self, cfg: DictDefault, tokenizer):
+        """Calls the `post_tokenizer_load` method of all registered plugins.
+
+        Args:
+            cfg: The configuration for the plugins.
+            tokenizer: The loaded tokenizer.
+
+        Returns:
+            The (possibly replaced) tokenizer.
+        """
+        for plugin in self.plugins.values():
+            result = plugin.post_tokenizer_load(cfg, tokenizer)
+            if result is not None:
+                tokenizer = result
+        return tokenizer
 
     def pre_model_load(self, cfg: DictDefault):
         """Calls the pre_model_load method of all registered plugins.
