@@ -632,15 +632,17 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
 
         # One group (num_generations=2) with zero reward variance → "no signal" →
         # triggers replacement from the replay buffer + old_per_token_logps recompute.
+        # 2 samples, uneven tiles-per-sample [2, 3] -> 5 tiles total (LFM2-VL-style).
         data = {
             "prompt_ids": torch.zeros(2, 3, dtype=torch.long),
             "completion_ids": torch.zeros(2, 4, dtype=torch.long),
             "prompt_mask": torch.ones(2, 3, dtype=torch.long),
             "completion_mask": torch.ones(2, 4, dtype=torch.long),
             "old_per_token_logps": torch.zeros(2, 4),
-            "spatial_shapes": torch.zeros(2, 2),
-            "image_position_ids": torch.zeros(2, 5),
             "num_tiles": [2, 3],
+            "pixel_values": torch.zeros(5, 3, 4, 4),
+            "pixel_attention_mask": torch.ones(5, 4, 4),
+            "spatial_shapes": torch.zeros(5, 2),
         }
         rewards_per_func = torch.zeros(2, 1)
         advantages = torch.zeros(2)
@@ -658,7 +660,7 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
 
         self.assertIn("spatial_shapes", captured)
         self.assertIn("num_tiles", captured)
-        self.assertIn("image_position_ids", captured)
+        self.assertEqual(captured["num_tiles"], [2, 3])
 
 
 class TestGetPerTokenLogpsMultimodalTailBatch(unittest.TestCase):
@@ -835,6 +837,145 @@ class TestComputeLossAuxLoss(unittest.TestCase):
 
         trainer._get_per_token_logps_and_entropies.assert_called_once()
         trainer._get_per_token_logps_and_entropies_flattened.assert_not_called()
+
+
+class TestSliceMultimodalKwargs(unittest.TestCase):
+    """_slice_multimodal_kwargs must slice image/tile-indexed tensors by
+    cumulative image/tile offset, not by naive sample-range slicing."""
+
+    def test_image_position_ids_path_uses_image_offset_not_sample_offset(self):
+        from axolotl.core.trainers.grpo.fast_async_trainer import (
+            _slice_multimodal_kwargs,
+        )
+
+        # 4 samples, uneven images-per-sample: [1, 2, 1, 1] -> 5 images total
+        num_images = [1, 2, 1, 1]
+        pixel_values = torch.arange(5).float().unsqueeze(1).repeat(1, 3)
+        image_position_ids = torch.arange(5).float().unsqueeze(1).repeat(1, 2)
+        data = {
+            "num_images": num_images,
+            "pixel_values": pixel_values,
+            "image_position_ids": image_position_ids,
+        }
+
+        # samples [1:3) own images at rows [1:4) (sample 0 -> row 0,
+        # sample 1 -> rows 1-2, sample 2 -> row 3) — NOT rows [1:3).
+        out = _slice_multimodal_kwargs(data, 1, 3)
+        self.assertEqual(out["num_images"], [2, 1])
+        torch.testing.assert_close(out["pixel_values"], pixel_values[1:4])
+        torch.testing.assert_close(out["image_position_ids"], image_position_ids[1:4])
+
+    def test_spatial_shapes_path_uses_tile_offset_not_sample_offset(self):
+        from axolotl.core.trainers.grpo.fast_async_trainer import (
+            _slice_multimodal_kwargs,
+        )
+
+        # 3 samples, uneven tiles-per-sample: [2, 1, 3] -> 6 tiles total
+        num_tiles = [2, 1, 3]
+        pixel_values = torch.arange(6).float().unsqueeze(1).repeat(1, 3)
+        spatial_shapes = torch.arange(6).float().unsqueeze(1).repeat(1, 2)
+        pixel_attention_mask = torch.ones(6, 4)
+        data = {
+            "num_tiles": num_tiles,
+            "pixel_values": pixel_values,
+            "spatial_shapes": spatial_shapes,
+            "pixel_attention_mask": pixel_attention_mask,
+        }
+
+        # samples [1:3) own tile rows [2:6), not [1:3)
+        out = _slice_multimodal_kwargs(data, 1, 3)
+        self.assertEqual(out["num_tiles"], [1, 3])
+        torch.testing.assert_close(out["pixel_values"], pixel_values[2:6])
+        torch.testing.assert_close(out["spatial_shapes"], spatial_shapes[2:6])
+        torch.testing.assert_close(
+            out["pixel_attention_mask"], pixel_attention_mask[2:6]
+        )
+
+    def test_sample_indexed_fields_use_plain_sample_slice(self):
+        from axolotl.core.trainers.grpo.fast_async_trainer import (
+            _slice_multimodal_kwargs,
+        )
+
+        data = {
+            "image_sizes": torch.arange(4).unsqueeze(1),
+            "token_type_ids": torch.arange(8).view(4, 2),
+        }
+        out = _slice_multimodal_kwargs(data, 1, 3)
+        torch.testing.assert_close(out["image_sizes"], data["image_sizes"][1:3])
+        torch.testing.assert_close(out["token_type_ids"], data["token_type_ids"][1:3])
+
+
+class TestFastAsyncReplayRecomputeImageOffset(unittest.TestCase):
+    """Regression test for the replay-recompute call site: a replayed group
+    with r_start > 0 must receive the images belonging to *its* samples,
+    not the first N images of the full batch."""
+
+    def test_replay_recompute_uses_correct_image_offset_for_r_start_gt_0(self):
+        from axolotl.core.trainers.grpo.fast_async_trainer import (
+            FastAsyncGRPOTrainer,
+        )
+        from axolotl.core.trainers.grpo.replay_buffer import ReplayBuffer
+
+        trainer = FastAsyncGRPOTrainer.__new__(FastAsyncGRPOTrainer)
+        trainer.model = MagicMock()
+        trainer.model.is_gradient_checkpointing = False
+        trainer.args = types.SimpleNamespace(gradient_checkpointing_kwargs=None)
+        trainer.reward_funcs = [MagicMock()]
+        trainer._replay_recompute_logps = True
+        trainer._replay_buffer = ReplayBuffer(max_size=2)
+        trainer._replay_buffer.add(
+            1.0,
+            {
+                "prompt_ids": torch.zeros(2, 3, dtype=torch.long),
+                "completion_ids": torch.zeros(2, 4, dtype=torch.long),
+                "prompt_mask": torch.ones(2, 3, dtype=torch.long),
+                "completion_mask": torch.ones(2, 4, dtype=torch.long),
+                "old_per_token_logps": torch.zeros(2, 4),
+            },
+        )
+        captured, side_effect = _capture_and_stop()
+        trainer._get_per_token_logps_and_entropies = MagicMock(side_effect=side_effect)
+
+        # 4 samples / 2 groups of num_generations=2. Uneven images-per-sample
+        # [1, 2, 1, 1] -> 5 images total, so a naive data[key][r_start:r_end]
+        # slice would silently return the wrong (group 0's) images.
+        num_images = [1, 2, 1, 1]
+        pixel_values = torch.arange(5).float().unsqueeze(1).repeat(1, 3)
+        image_position_ids = torch.arange(5).float().unsqueeze(1).repeat(1, 2)
+        data = {
+            "prompt_ids": torch.zeros(4, 3, dtype=torch.long),
+            "completion_ids": torch.zeros(4, 4, dtype=torch.long),
+            "prompt_mask": torch.ones(4, 3, dtype=torch.long),
+            "completion_mask": torch.ones(4, 4, dtype=torch.long),
+            "old_per_token_logps": torch.zeros(4, 4),
+            "num_images": num_images,
+            "pixel_values": pixel_values,
+            "image_position_ids": image_position_ids,
+        }
+        # Group 0 (samples 0-1) has reward signal -> kept as-is.
+        # Group 1 (samples 2-3) has zero variance -> replaced from the replay
+        # buffer, triggering recompute for r_start=2, r_end=4.
+        rewards_per_func = torch.tensor([[0.0], [1.0], [0.5], [0.5]])
+        advantages = torch.zeros(4)
+
+        with self.assertRaises(_StopEarly):
+            FastAsyncGRPOTrainer._post_advantage_hook(
+                trainer,
+                data,
+                rewards_per_func,
+                advantages,
+                inputs=[{}, {}, {}, {}],
+                num_generations=2,
+                mode="train",
+            )
+
+        # Samples [2:4) own images at rows [3:5) (sample 0 -> row 0,
+        # sample 1 -> rows 1-2, sample 2 -> row 3, sample 3 -> row 4).
+        self.assertEqual(captured["num_images"], [1, 1])
+        torch.testing.assert_close(captured["pixel_values"], pixel_values[3:5])
+        torch.testing.assert_close(
+            captured["image_position_ids"], image_position_ids[3:5]
+        )
 
 
 if __name__ == "__main__":
