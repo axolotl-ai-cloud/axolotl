@@ -21,6 +21,19 @@ from tests.conftest import capture_axolotl_warnings
 warnings.filterwarnings("error")
 
 
+@pytest.fixture(autouse=True)
+def _stub_flash_attn_available(monkeypatch):
+    # These tests exercise config validation semantics, not whether this box has flash-attn.
+    import transformers.utils
+
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_2_available", lambda **_: True
+    )
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_3_available", lambda **_: True
+    )
+
+
 @pytest.fixture(name="minimal_cfg")
 def fixture_cfg():
     return DictDefault(
@@ -1564,6 +1577,53 @@ class TestTorchCompileValidation(BaseValidation):
         with capture_axolotl_warnings(caplog):
             validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
         assert "CUDA graphs require static shapes" not in caplog.text
+
+
+class TestFP8RecipeValidation:
+    """Validate FP8 recipe defaults and incompatible FSDP combinations."""
+
+    def test_fp8_config_defaults_to_tensorwise(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "fp8": True, "fp8_config": {}})
+        updated_cfg = validate_config(cfg)
+
+        assert updated_cfg.fp8_config.recipe == "tensorwise"
+
+    @pytest.mark.parametrize("fp8_config", [{}, {"recipe": "rowwise"}])
+    def test_fp8_config_requires_fp8_enabled(self, minimal_cfg, fp8_config):
+        cfg = DictDefault({**minimal_cfg, "fp8_config": fp8_config})
+
+        with pytest.raises(ValidationError, match=r"requires `fp8: true`"):
+            validate_config(cfg)
+
+    def test_fp8_config_rejects_nested_all_gather_key(self, minimal_cfg):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "fp8": True,
+                "fp8_config": {
+                    "recipe": "rowwise",
+                    "enable_fsdp_float8_all_gather": True,
+                },
+            }
+        )
+
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("recipe", ["rowwise", "rowwise_with_gw_hp"])
+    def test_rowwise_recipe_rejects_fsdp_float8_all_gather(self, minimal_cfg, recipe):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "fp8": True,
+                "fp8_config": {"recipe": recipe},
+                "fp8_enable_fsdp_float8_all_gather": True,
+                "fsdp_version": 2,
+            }
+        )
+
+        with pytest.raises(ValidationError, match="only supports the tensorwise"):
+            validate_config(cfg)
 
 
 class TestSampleOptimConfigValidation(BaseValidation):
