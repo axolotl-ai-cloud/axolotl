@@ -7,6 +7,7 @@ Covers:
   - lora_target_modules with invalid regex patterns is rejected
   - GRPO: generation batch size must be divisible by num_generations,
     num_generations >= 2, and effective_gbs >= num_generations * world_size
+  - context_parallel_size > 1 rejects any attn_implementation but flash_attention_2
 """
 
 import pytest
@@ -252,3 +253,67 @@ class TestGRPOBatchSizeValidator:
         }
         out = self._check(data)
         assert out["gradient_accumulation_steps"] == 8
+
+
+class TestBatchSizeFieldsValidator:
+    """``micro_batch_size`` and ``gradient_accumulation_steps`` both default to
+    1, so a config that sets only one of them (or neither) is still fully
+    specified and must not be rejected by ``check_batch_size_fields``.
+
+    ``check_batch_size_fields`` runs in ``mode="before"`` (before field defaults
+    are applied), so these guard against a regression where relying on the
+    documented defaults raised "At least two of ... must be set".
+    """
+
+    @staticmethod
+    def _base():
+        """``min_base_cfg`` sets both batch fields explicitly, which is exactly
+        the case that already worked; build a config without them instead."""
+        return DictDefault(
+            base_model="HuggingFaceTB/SmolLM2-135M",
+            learning_rate=1e-3,
+            datasets=[
+                {
+                    "path": "mhenrichsen/alpaca_2k_test",
+                    "type": "alpaca",
+                },
+            ],
+        )
+
+    def test_only_gradient_accumulation_steps_passes(self):
+        cfg = self._base() | DictDefault(gradient_accumulation_steps=4)
+        validated = validate_config(cfg)
+        assert validated.gradient_accumulation_steps == 4
+        assert validated.micro_batch_size == 1
+
+    def test_only_micro_batch_size_passes(self):
+        cfg = self._base() | DictDefault(micro_batch_size=4)
+        validated = validate_config(cfg)
+        assert validated.micro_batch_size == 4
+        assert validated.gradient_accumulation_steps == 1
+
+    def test_neither_set_relies_on_defaults(self):
+        validated = validate_config(self._base())
+        assert validated.micro_batch_size == 1
+        assert validated.gradient_accumulation_steps == 1
+
+
+class TestContextParallelAttnImplValidator:
+    """Ring attention only supports the flash attention 2 backend, so CP > 1 rejects the rest."""
+
+    @pytest.mark.parametrize(
+        "impl",
+        [
+            "flash_attention_3",
+            "flash_attention_4",
+            "kernels-community/flash-attn2",
+            "kernels-community/flash-attn3",
+            "sdpa",
+        ],
+    )
+    def test_non_fa2_rejected(self, min_base_cfg, impl):
+        cfg = min_base_cfg | DictDefault(
+            context_parallel_size=2, attn_implementation=impl
+        )
+        with pytest.raises(ValueError, match="only supports the flash attention 2"):
+            validate_config(cfg)

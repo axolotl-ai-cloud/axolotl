@@ -605,7 +605,9 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             self.num_generations, dim=0
         )
         advantages = rewards - mean_grouped_rewards
-        if self.args.scale_rewards:
+        # scale_rewards may be a string ("group"/"batch"/"none") or bool; only skip
+        # normalization when explicitly disabled.
+        if self.args.scale_rewards not in (False, "none"):
             advantages = advantages / (std_grouped_rewards + 1e-4)
 
         # Slice to keep only the local part of the data

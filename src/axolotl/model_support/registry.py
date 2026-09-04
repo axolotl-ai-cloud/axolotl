@@ -13,8 +13,12 @@ LOG = get_logger(__name__)
 # Built-in descriptors, imported lazily on first lookup so that importing
 # axolotl.model_support stays cycle-free and cheap.
 _BUILTIN_MODULES = (
+    "axolotl.model_support.bailing_hybrid",
+    "axolotl.model_support.cohere_compass",
     "axolotl.model_support.kimi_linear",
+    "axolotl.model_support.muse_glimmer",
     "axolotl.model_support.paddleocr_vl",
+    "axolotl.model_support.qwen4_exp",
 )
 
 _REGISTRY: dict[str, ModelSupport] = {}

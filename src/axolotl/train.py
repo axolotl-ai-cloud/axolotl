@@ -31,6 +31,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
@@ -108,6 +109,8 @@ def setup_model_and_tokenizer(
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
+        # unfreezing can promote base params the loader left on meta (non-rank-0) to trainable
+        materialize_trainable_meta_params(model)
         if any(
             any(embed in param for embed in ["lm_head", "embed_tokens"])
             for param in cfg.unfrozen_parameters
@@ -374,7 +377,7 @@ def save_trained_model(
                 config = json.load(config_file_io, object_pairs_hook=OrderedDict)
                 if config.get("architectures"):
                     config["architectures"] = [
-                        name.lstrip("FSDP") for name in config["architectures"]
+                        name.removeprefix("FSDP") for name in config["architectures"]
                     ]
             # write the updated model config back
             with open(
