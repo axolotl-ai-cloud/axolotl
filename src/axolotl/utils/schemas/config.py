@@ -448,6 +448,20 @@ class AxolotlInputConfig(
             "description": "Keep dataset in memory while preprocessing. Only needed if cached dataset is taking too much storage"
         },
     )
+    dataset_map_batch_size: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": "Rows per batched tokenization call while preprocessing. Defaults to 1000, or 32 for multimodal datasets whose rows carry large pixel_values. Lower this to reduce peak RAM."
+        },
+    )
+    dataset_writer_batch_size: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": "Rows each tokenization worker buffers in RAM before flushing to the Arrow cache while preprocessing. Defaults to 1000, or 32 for multimodal datasets. Lower this to reduce peak RAM."
+        },
+    )
     dataloader_pin_memory: bool | None = None
     dataloader_num_workers: int | None = None
     dataloader_prefetch_factor: int | None = None

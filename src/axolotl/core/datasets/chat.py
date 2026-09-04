@@ -24,6 +24,7 @@ class TokenizedChatDataset(Dataset):
         formatter=None,
         process_count: Optional[int] = None,
         keep_in_memory: Optional[bool] = False,
+        writer_batch_size: Optional[int] = None,
         **kwargs,
     ):
         def map_fn(ex):
@@ -41,11 +42,15 @@ class TokenizedChatDataset(Dataset):
             return ex.tokenized(model_transform)
 
         features = data.features.keys()
+        map_kwargs = {}
+        if writer_batch_size:
+            map_kwargs["writer_batch_size"] = writer_batch_size
         tokenized_data = data.map(
             map_fn,
             num_proc=process_count,
             keep_in_memory=keep_in_memory,
             remove_columns=features,
             desc="Tokenizing Chats",
+            **map_kwargs,
         )
         super().__init__(tokenized_data.data, *args, **kwargs)
