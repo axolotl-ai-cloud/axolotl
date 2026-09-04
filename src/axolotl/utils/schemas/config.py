@@ -42,6 +42,7 @@ from axolotl.utils.schemas.enums import (
     RLType,
     attn_impl_base,
 )
+from axolotl.utils.schemas.export import ExportConfig
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
     CometConfig,
@@ -280,6 +281,12 @@ class AxolotlInputConfig(
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
+    export: ExportConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Configuration for `axolotl export` (GGUF conversion)"
+        },
+    )
     reward_model: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},

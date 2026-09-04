@@ -1,0 +1,78 @@
+---
+title: "Exporting to GGUF"
+back-to-top-navigation: true
+toc: true
+toc-expand: 2
+toc-depth: 4
+---
+
+`axolotl export` converts a trained checkpoint into [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md), the format used by llama.cpp, Ollama, LM Studio, and llamafile.
+
+::: {.callout-note}
+
+GGUF is for the llama.cpp family of runtimes. For **vLLM, SGLang, or TGI**, serve the merged safetensors checkpoint directly (see [merge-lora](./cli.qmd#merge-lora)), optionally quantized with [torchao](./quantize.qmd) or llm-compressor — vLLM's GGUF loader is experimental and slower than its native path.
+
+:::
+
+## Prerequisites
+
+Export shells out to a built [llama.cpp](https://github.com/ggml-org/llama.cpp) checkout, which is not a Python dependency of Axolotl:
+
+```bash
+git clone https://github.com/ggml-org/llama.cpp
+cmake -B build llama.cpp && cmake --build build --config Release -j
+pip install -r llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+export LLAMA_CPP_DIR=$PWD/llama.cpp
+```
+
+The conversion script runs under Axolotl's interpreter, so install its requirements into the same environment.
+
+Point at it with `$LLAMA_CPP_DIR` or the `export.llama_cpp_dir` config key. Building is only required if you request quantized outputs.
+
+## Usage
+
+```bash
+axolotl export config.yml --quantize Q4_K_M,Q8_0
+```
+
+LoRA/QLoRA runs must be merged first — export refuses an adapter-only directory:
+
+```bash
+axolotl merge-lora config.yml
+axolotl export config.yml
+```
+
+## Configuration
+
+```yaml
+export:
+  format: gguf         # Optional[str] = "gguf". Deployment format.
+  outtype: f16         # Optional[str] = "f16". Weight type of the unquantized conversion: f32, f16, bf16, q8_0, auto.
+  quantize: [Q4_K_M]   # Optional[list[str]] = []. Additional llama.cpp quant types to emit.
+  output_dir:          # Optional[str]. Defaults to {output_dir}/gguf.
+  llama_cpp_dir:       # Optional[str]. Defaults to $LLAMA_CPP_DIR.
+```
+
+Every key can be overridden from the CLI (`--outtype`, `--quantize`, `--llama-cpp-dir`), and `--model-dir` exports an arbitrary checkpoint instead of the one in `output_dir`.
+
+Each requested quant type is written as its own file alongside the unquantized conversion:
+
+```
+outputs/my-run/gguf/
+├── my-run-f16.gguf
+├── my-run-Q4_K_M.gguf
+└── my-run-Q8_0.gguf
+```
+
+## Preflight checks
+
+Conversion is slow, so a few failure modes are caught up front:
+
+- **Pre-quantized checkpoints** (torchao fp8/nvfp4, bitsandbytes) cannot be converted — re-export in bf16 with `axolotl merge-lora --dequant`.
+- **Vocab mismatch** between `tokenizer.json` and `config.json` (a common outcome of adding tokens without resizing embeddings).
+- **Multi-token-prediction layers** (`num_nextn_predict_layers`), which llama.cpp cannot load. See [GLM-4.5](./models/glm45.qmd).
+- **Missing chat template**, which is only a warning but usually means the runtime will fall back to a default template and undo your fine-tune.
+
+## Known gaps
+
+Not yet supported: importance-matrix (`imatrix`) calibration, `gguf-split` for large models, multimodal `mmproj` files, exporting a LoRA adapter as a standalone GGUF, and pushing to the Hub.

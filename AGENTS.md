@@ -14,6 +14,7 @@ axolotl preprocess config.yaml         # Tokenize dataset and validate config
 axolotl preprocess config.yaml --debug # Inspect tokenized samples and label masking
 axolotl inference config.yaml          # Interactive inference
 axolotl merge-lora config.yaml         # Merge LoRA adapter into base model
+axolotl export config.yaml             # Export a trained model to GGUF (llama.cpp/Ollama)
 axolotl vllm-serve config.yaml         # Start vLLM server for GRPO/EBFT training
 axolotl fetch examples                 # Download example configs
 axolotl agent-docs                     # Show agent-optimized docs (bundled with pip package)
