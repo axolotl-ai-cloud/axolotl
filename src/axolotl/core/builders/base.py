@@ -216,6 +216,15 @@ class TrainerBuilderBase(abc.ABC):
             )
         return callbacks
 
+    def mutate_callbacks_post_trainer(self, trainer, callbacks: list | None):
+        """Let plugins mutate the pending post-trainer callback stack."""
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            callbacks = plugin_manager.mutate_callbacks_post_trainer(
+                self.cfg, trainer, callbacks=callbacks
+            )
+        return callbacks
+
     def hook_pre_create_training_args(self, training_arguments_kwargs):
         # TODO
         return training_arguments_kwargs

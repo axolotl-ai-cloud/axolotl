@@ -34,6 +34,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_post_trainer_create_callbacks(self, trainer):
         callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
+        callbacks = self.mutate_callbacks_post_trainer(
+            trainer=trainer, callbacks=callbacks
+        )
         return callbacks
 
     def _get_trainer_cls(self, trainer_kwargs: dict):
@@ -332,8 +335,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
                 ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)
 
-        trainer = self.hook_post_create_trainer(trainer)
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
+        trainer = self.hook_post_create_trainer(trainer)
 
         return trainer

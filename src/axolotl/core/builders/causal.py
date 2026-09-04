@@ -144,6 +144,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             LOG.info("SFT sample generation enabled")
 
         callbacks.extend(super().get_post_trainer_create_callbacks(trainer=trainer))
+        callbacks = self.mutate_callbacks_post_trainer(
+            trainer=trainer, callbacks=callbacks
+        )
         return callbacks
 
     def _get_trainer_cls(self):
@@ -450,12 +453,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             callbacks=self.get_callbacks(),
             **trainer_kwargs,
         )
-        trainer = self.hook_post_create_trainer(trainer)
         # if the trainer has the `axolotl_cfg` property, set it
         if hasattr(trainer, "axolotl_cfg"):
             trainer.axolotl_cfg = self.cfg
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
+        trainer = self.hook_post_create_trainer(trainer)
 
         if self.cfg.deepspeed and self.cfg.sample_packing:
             trainer.accelerator.state.deepspeed_plugin.deepspeed_config[
