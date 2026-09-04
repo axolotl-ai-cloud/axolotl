@@ -243,7 +243,7 @@ def _make_qwen3_5_gated_delta_forward(module):
                 query,
                 key,
                 value,
-                g=g.to(dtype=query.dtype),
+                g=g,
                 beta=beta,
                 initial_state=recurrent_state,
                 output_final_state=cache_params is not None,
