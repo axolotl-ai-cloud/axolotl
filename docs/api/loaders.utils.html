@@ -900,6 +900,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.loaders.utils.get_linear_embedding_layers" id="toc-axolotl.loaders.utils.get_linear_embedding_layers" class="nav-link" data-scroll-target="#axolotl.loaders.utils.get_linear_embedding_layers">get_linear_embedding_layers</a></li>
   <li><a href="#axolotl.loaders.utils.get_module_class_from_name" id="toc-axolotl.loaders.utils.get_module_class_from_name" class="nav-link" data-scroll-target="#axolotl.loaders.utils.get_module_class_from_name">get_module_class_from_name</a></li>
   <li><a href="#axolotl.loaders.utils.load_model_config" id="toc-axolotl.loaders.utils.load_model_config" class="nav-link" data-scroll-target="#axolotl.loaders.utils.load_model_config">load_model_config</a></li>
+  <li><a href="#axolotl.loaders.utils.materialize_trainable_meta_params" id="toc-axolotl.loaders.utils.materialize_trainable_meta_params" class="nav-link" data-scroll-target="#axolotl.loaders.utils.materialize_trainable_meta_params">materialize_trainable_meta_params</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -944,6 +945,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td><a href="#axolotl.loaders.utils.load_model_config">load_model_config</a></td>
 <td>Loads and configures a model configuration from HuggingFace or local sources.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.loaders.utils.materialize_trainable_meta_params">materialize_trainable_meta_params</a></td>
+<td>Gives meta-device trainable params real CPU storage, because accelerate’s FSDP2 prepare keys</td>
 </tr>
 </tbody>
 </table>
@@ -1173,9 +1178,15 @@ used instead of <code>AutoConfig</code> (e.g., ‘LlamaConfig’, ‘MistralConf
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+<section id="axolotl.loaders.utils.materialize_trainable_meta_params" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.utils.materialize_trainable_meta_params">materialize_trainable_meta_params</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>loaders.utils.materialize_trainable_meta_params(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Gives meta-device trainable params real CPU storage, because accelerate’s FSDP2 prepare keys
+its optimizer parameter remap on <code>data_ptr()</code> and every meta tensor reports 0.</p>
+
+
 </section>
 </section>
 </section>

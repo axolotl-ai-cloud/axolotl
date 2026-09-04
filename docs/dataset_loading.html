@@ -912,6 +912,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#remote-filesystems" id="toc-remote-filesystems" class="nav-link" data-scroll-target="#remote-filesystems">Remote Filesystems</a>
   <ul>
   <li><a href="#s3" id="toc-s3" class="nav-link" data-scroll-target="#s3">S3</a></li>
+  <li><a href="#s3-compatible-endpoints" id="toc-s3-compatible-endpoints" class="nav-link" data-scroll-target="#s3-compatible-endpoints">S3-compatible endpoints</a></li>
   <li><a href="#gcs" id="toc-gcs" class="nav-link" data-scroll-target="#gcs">GCS</a></li>
   <li><a href="#azure" id="toc-azure" class="nav-link" data-scroll-target="#azure">Azure</a>
   <ul class="collapse">
@@ -1159,6 +1160,12 @@ Note
 </div>
 <p>Other environment variables that can be set can be found in <a href="https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables">boto3 docs</a></p>
 </section>
+<section id="s3-compatible-endpoints" class="level4">
+<h4 class="anchored" data-anchor-id="s3-compatible-endpoints">S3-compatible endpoints</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">AWS_ENDPOINT_URL</span><span class="op">=</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">AWS_ACCESS_KEY_ID</span><span class="op">=</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">AWS_SECRET_ACCESS_KEY</span><span class="op">=</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
 <section id="gcs" class="level4">
 <h4 class="anchored" data-anchor-id="gcs">GCS</h4>
 <p>Prepend the path with <code>gs://</code> or <code>gcs://</code>.</p>
@@ -1210,8 +1217,8 @@ Note
 <section id="https" class="level3">
 <h3 class="anchored" data-anchor-id="https">HTTPS</h3>
 <p>The path should start with <code>https://</code>.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> https://path/to/your/dataset/file.jsonl</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> https://path/to/your/dataset/file.jsonl</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This must be publically accessible.</p>
 </section>
 </section>

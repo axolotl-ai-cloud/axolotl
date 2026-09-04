@@ -1055,6 +1055,9 @@ not broadcast — get real CPU storage.</p>
 non-rank-0 deadlocks the FSDP2 optimizer-state all-gather at checkpoint save for a FULL
 fine-tune (rank-0 real DTensors vs non-rank-0 meta). LoRA/qLoRA carry no base optimizer state,
 so the gather never touches these params.</p>
+<p>Trainable params created after the load (the adapters) must NOT stay on meta on non-rank-0 —
+accelerate keys its FSDP2 optimizer param remap on <code>data_ptr()</code>, which is 0 for every meta
+tensor; see <code>axolotl.loaders.utils.materialize_trainable_meta_params</code>.</p>
 </section>
 <section id="axolotl.monkeypatch.accelerate.fsdp2.patch_peft_param_wrapper_for_fsdp2" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.patch_peft_param_wrapper_for_fsdp2">patch_peft_param_wrapper_for_fsdp2</h3>

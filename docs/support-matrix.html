@@ -1194,7 +1194,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="even">
 <td><strong>Train-time (compute)</strong></td>
 <td>faster/leaner training, high-precision master weights kept</td>
-<td><code>fp8: true</code> (torchao float8, <code>fp8_enable_fsdp_float8_all_gather</code>), <code>qat:</code> (fake-quant during training)</td>
+<td><code>fp8: true</code> (torchao float8, <code>fp8_config.recipe</code>, <code>fp8_enable_fsdp_float8_all_gather</code>), <code>qat:</code> (fake-quant during training)</td>
 <td>full fine-tune ✅</td>
 </tr>
 <tr class="odd">
