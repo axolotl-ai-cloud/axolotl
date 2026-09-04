@@ -7,6 +7,7 @@ Covers:
   - lora_target_modules with invalid regex patterns is rejected
   - GRPO: generation batch size must be divisible by num_generations,
     num_generations >= 2, and effective_gbs >= num_generations * world_size
+  - context_parallel_size > 1 rejects any attn_implementation but flash_attention_2
 """
 
 import pytest
@@ -252,3 +253,24 @@ class TestGRPOBatchSizeValidator:
         }
         out = self._check(data)
         assert out["gradient_accumulation_steps"] == 8
+
+
+class TestContextParallelAttnImplValidator:
+    """Only `flash_attention_2` is ring-substituted, so CP > 1 must reject everything else."""
+
+    @pytest.mark.parametrize(
+        "impl",
+        [
+            "flash_attention_3",
+            "flash_attention_4",
+            "kernels-community/flash-attn2",
+            "kernels-community/flash-attn3",
+            "sdpa",
+        ],
+    )
+    def test_non_fa2_rejected(self, min_base_cfg, impl):
+        cfg = min_base_cfg | DictDefault(
+            context_parallel_size=2, attn_implementation=impl
+        )
+        with pytest.raises(ValueError, match="only supports the flash attention 2"):
+            validate_config(cfg)

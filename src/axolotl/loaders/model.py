@@ -825,8 +825,8 @@ class ModelLoader:
         # Ring attention only substitutes the `flash_attention_2` dispatch key.
         if (self.cfg.context_parallel_size or 1) > 1:
             LOG.info(
-                "Not upgrading %s to Flash Attention 4: no ring-attention "
-                "implementation is registered for it under context parallelism.",
+                "Not upgrading %s to Flash Attention 4: ring attention only "
+                "supports the flash attention 2 backend.",
                 hf_impl,
             )
             return hf_impl

@@ -16,6 +16,7 @@ from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RingAttnFunc,
     RLType,
+    attn_impl_base,
 )
 
 LOG = get_logger(__name__)
@@ -1652,10 +1653,11 @@ class ComplexValidationMixin:
                 "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
             )
         elif self.context_parallel_size > 1:
-            if not self.attn_uses_flash_lib:
+            if attn_impl_base(self.attn_implementation) != "flash_attention_2":
                 raise ValueError(
-                    "context_parallel_size > 1 requires flash attention "
-                    "(attn_implementation: flash_attention_2 or flash_attention_3)."
+                    "context_parallel_size > 1 requires attn_implementation: "
+                    "flash_attention_2. Ring attention only supports the flash "
+                    "attention 2 backend."
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
