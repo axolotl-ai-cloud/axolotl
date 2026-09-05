@@ -123,15 +123,17 @@ class TestKimiLinearSupport:
         assert resolved.hooks.for_phase(ModelHookPhase.BEFORE_MODEL_BUILD)
 
     def test_dynamic_module_redirect_requires_exact_module_stem(self):
-        from axolotl.model_support.kimi_linear.patch_kimi_linear import (
-            _kimi_module_entry,
-        )
+        from axolotl.model_support.kimi_linear.patch_kimi_linear import KIMI_MODULES
+        from axolotl.model_support.remote_code import owned_stem
 
-        assert _kimi_module_entry("transformers_modules/x/repo/modeling_kimi.py")
-        assert _kimi_module_entry("transformers_modules.x.repo.modeling_kimi")
-        assert _kimi_module_entry("tokenization_kimi.py")
-        assert _kimi_module_entry("transformers_modules/x/modeling_kimi_vl.py") is None
-        assert _kimi_module_entry("modeling_kimi_vl") is None
+        def entry(module_path):
+            return owned_stem(KIMI_MODULES, module_path)
+
+        assert entry("transformers_modules/x/repo/modeling_kimi.py")
+        assert entry("transformers_modules.x.repo.modeling_kimi")
+        assert entry("tokenization_kimi.py")
+        assert entry("transformers_modules/x/modeling_kimi_vl.py") is None
+        assert entry("modeling_kimi_vl") is None
 
     def test_pre_config_load_patches_dynamic_module_loading(
         self, restore_dynamic_module_loader
@@ -349,3 +351,167 @@ class TestPaddleOCRVLSupport:
             ValueError, match="not supported for model_type=paddleocr_vl"
         ):
             patch_manager._apply_self_attention_lora_patch()
+
+
+class TestCohereCompassSupport:
+    """Built-in CohereCompass descriptor (North Micro Vision Instruct and siblings)."""
+
+    def test_registered_and_multimodal(self):
+        support = get_model_support("cohere_compass")
+        assert support is not None
+        resolved = resolve_model_support(support)
+        assert resolved.is_multimodal is True
+        assert resolved.family == "image_text_to_text"
+        assert set(support.capabilities) == {
+            "cut_cross_entropy",
+            "liger",
+            "lora_kernels",
+        }
+
+    def test_auto_model_cls(self):
+        support = get_model_support("cohere_compass")
+        assert support.get_auto_model_cls() is AutoModelForImageTextToText
+
+    def test_processing_strategy_cls(self):
+        from axolotl.model_support.cohere_compass.processing import (
+            CohereCompassProcessingStrategy,
+        )
+
+        support = get_model_support("cohere_compass")
+        assert support.get_processing_strategy_cls() is CohereCompassProcessingStrategy
+
+    def test_verified_capabilities_not_marked_unsupported(self):
+        """CCE, LoRA kernels and Liger were all verified on hardware for this arch."""
+        from axolotl.model_support.base import Unsupported
+
+        caps = resolve_model_support(get_model_support("cohere_compass")).capabilities
+        for name in ("cut_cross_entropy", "lora_kernels", "liger"):
+            assert not isinstance(caps[name], Unsupported), name
+
+
+class TestMuseGlimmerSupport:
+    """Built-in Muse Glimmer descriptor and its declared capability guards."""
+
+    def test_registered_and_multimodal(self):
+        support = get_model_support("muse_glimmer")
+        assert support is not None
+        resolved = resolve_model_support(support)
+        assert resolved.is_multimodal is True
+        assert resolved.family == "image_text_to_text"
+        assert support.is_multimodal is True
+        assert set(support.capabilities) == {
+            "cut_cross_entropy",
+            "liger",
+            "lora_kernels",
+        }
+
+    def test_auto_model_cls(self):
+        support = get_model_support("muse_glimmer")
+        assert support.get_auto_model_cls() is AutoModelForImageTextToText
+
+    def test_processing_strategy_cls(self):
+        from axolotl.model_support.muse_glimmer.processing import (
+            MuseGlimmerProcessingStrategy,
+        )
+
+        support = get_model_support("muse_glimmer")
+        assert support.get_processing_strategy_cls() is MuseGlimmerProcessingStrategy
+
+    def test_cut_cross_entropy_supported(self):
+        """The fork patches MuseGlimmerForConditionalGeneration directly and reproduces
+        the output_multiplier scaling plus the tanh softcap inside apply_lce."""
+        support = get_model_support("muse_glimmer")
+        check_capability(support, "cut_cross_entropy", "muse_glimmer")
+
+    def test_lora_kernels_rejected(self):
+        """The fused QKV/O rewrite cannot express the sigmoid-gated attention output."""
+        support = get_model_support("muse_glimmer")
+        with pytest.raises(ValueError, match="muse_glimmer"):
+            check_capability(support, "lora_kernels", "muse_glimmer")
+
+
+class TestBailingHybridSupport:
+    """Built-in Ling 3.0 descriptor: cfg matching, remote-code redirect, conversions."""
+
+    def test_registered_and_vanilla_family(self):
+        support = get_model_support("bailing_hybrid")
+        assert support is not None
+        assert type(support).__name__ == "BailingHybridSupport"
+        assert resolve_model_support(support).family == "vanilla_causal_lm"
+
+    def test_matches_cfg_by_model_name(self):
+        from axolotl.model_support.registry import get_model_support_for_cfg
+
+        cfg = DictDefault(base_model_config="inclusionAI/Ling-3.0-flash")
+        assert get_model_support_for_cfg(cfg) is get_model_support("bailing_hybrid")
+
+    def test_no_match_for_other_models(self):
+        from axolotl.model_support.registry import get_model_support_for_cfg
+
+        cfg = DictDefault(base_model_config="Qwen/Qwen3-30B-A3B")
+        assert get_model_support_for_cfg(cfg) is None
+
+    def test_redirects_remote_code_at_every_pre_load_phase(self):
+        support = get_model_support("bailing_hybrid")
+        hooks = resolve_model_support(support).hooks
+        for phase in (
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            ModelHookPhase.BEFORE_TOKENIZER_LOAD,
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+        ):
+            assert hooks.for_phase(phase)
+
+    def test_remote_code_resolves_to_the_in_tree_config(self):
+        import transformers.dynamic_module_utils as dynamic_module_utils
+
+        from axolotl.model_support.bailing_hybrid.configuration_bailing_moe_v3 import (
+            BailingMoeV3Config,
+        )
+
+        original = dynamic_module_utils.get_class_in_module
+        try:
+            run_model_support_hooks(
+                get_model_support("bailing_hybrid"),
+                ModelHookPhase.BEFORE_CONFIG_LOAD,
+                ModelHookContext(
+                    cfg=DictDefault(base_model_config="inclusionAI/Ling-3.0-flash")
+                ),
+            )
+            resolved = dynamic_module_utils.get_class_in_module(
+                "BailingMoeV3Config",
+                "transformers_modules/inclusionAI/Ling-3.0-flash/abc/configuration_bailing_moe_v3.py",
+            )
+        finally:
+            dynamic_module_utils.get_class_in_module = original
+
+        assert resolved is BailingMoeV3Config
+
+    def test_context_parallel_is_rejected(self):
+        """Ring attention severs the KDA recurrence: each rank would restart it from
+        zero with no state exchange, and the loss curve would not show it."""
+        with pytest.raises(ValueError, match="context_parallel_size"):
+            run_model_support_hooks(
+                get_model_support("bailing_hybrid"),
+                ModelHookPhase.CONFIGURE_RUN,
+                ModelHookContext(cfg=DictDefault(context_parallel_size=2)),
+            )
+
+    @pytest.mark.parametrize("context_parallel_size", [None, 1])
+    def test_single_rank_is_allowed(self, context_parallel_size):
+        run_model_support_hooks(
+            get_model_support("bailing_hybrid"),
+            ModelHookPhase.CONFIGURE_RUN,
+            ModelHookContext(
+                cfg=DictDefault(context_parallel_size=context_parallel_size)
+            ),
+        )
+
+    def test_weight_conversions_are_reversible(self):
+        """``save_pretrained`` reverses these to re-emit the published layout."""
+        from axolotl.model_support.bailing_hybrid import _weight_conversions
+
+        transforms = _weight_conversions()["bailing_hybrid"]
+        assert transforms
+        for transform in transforms:
+            for operation in getattr(transform, "operations", None) or []:
+                assert operation.reverse_op is not None

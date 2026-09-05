@@ -3,8 +3,6 @@
 from functools import partial
 
 from torch import nn
-from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
-from torchao.quantization.qat.linear import FakeQuantizedLinear
 from transformers import TrainerCallback
 
 from axolotl.utils.logging import get_logger
@@ -21,15 +19,10 @@ def toggle_fake_quant(mod: nn.Module, enable: bool):
         mod: The module to toggle fake quantization for.
         enable: Whether to enable or disable fake quantization.
     """
-    if isinstance(mod, (FakeQuantizedLinear, FakeQuantizedEmbedding)):
-        if (
-            isinstance(mod, FakeQuantizedLinear)
-            and mod.activation_fake_quantizer is not None
-            and hasattr(mod.activation_fake_quantizer, "enabled")
-        ):
-            mod.activation_fake_quantizer.enabled = enable
-        if hasattr(mod.weight_fake_quantizer, "enabled"):
-            mod.weight_fake_quantizer.enabled = enable
+    for attr in ("activation_fake_quantizer", "weight_fake_quantizer"):
+        fake_quantizer = getattr(mod, attr, None)
+        if fake_quantizer is not None and hasattr(fake_quantizer, "enabled"):
+            fake_quantizer.enabled = enable
 
 
 class QATCallback(TrainerCallback):
@@ -39,12 +32,20 @@ class QATCallback(TrainerCallback):
 
     def __init__(self, cfg: QATConfig):
         self.cfg = cfg
+        self.fake_quant_enabled: bool | None = None
 
     def on_step_begin(self, args, state, control, model, **kwargs):
-        if self.cfg.fake_quant_after_n_steps is not None:
-            if state.global_step == 0:
-                LOG.info(f"Disabling fake quantization at step {state.global_step}")
-                model.apply(partial(toggle_fake_quant, enable=False))
-            elif state.global_step == self.cfg.fake_quant_after_n_steps:
-                LOG.info(f"Enabling fake quantization at step {state.global_step}")
-                model.apply(partial(toggle_fake_quant, enable=True))
+        if self.cfg.fake_quant_after_n_steps is None:
+            return
+
+        # quantizers are constructed enabled, so a resume mid-warmup has to switch
+        # them off; equality against the step would leave the warmup quantized
+        enable = state.global_step >= self.cfg.fake_quant_after_n_steps
+        if enable is self.fake_quant_enabled:
+            return
+
+        LOG.info(
+            f"{'Enabling' if enable else 'Disabling'} fake quantization at step {state.global_step}"
+        )
+        model.apply(partial(toggle_fake_quant, enable=enable))
+        self.fake_quant_enabled = enable

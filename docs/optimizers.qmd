@@ -87,6 +87,36 @@ Paper: [https://arxiv.org/abs/2411.02853](https://arxiv.org/abs/2411.02853)
 optimizer: adopt_adamw
 ```
 
+### adamc
+
+AdamW with the weight decay corrected for the learning rate schedule. AdamW's decoupled
+decay makes the steady-state gradient-to-weight-norm ratio depend on the current learning
+rate, so a decaying schedule pushes the gradient norm up over the second half of training.
+AdamC scales the decay by the schedule position (`lambda_t = lambda * lr_t / lr_max`),
+which holds that ratio constant and keeps weight norms stable.
+
+Paper: [https://arxiv.org/abs/2506.02285](https://arxiv.org/abs/2506.02285)
+
+```yaml
+optimizer: adamc
+learning_rate: 0.00001
+weight_decay: 0.05
+lr_scheduler: cosine   # the correction is a no-op under a constant LR
+```
+
+The peak learning rate is captured per parameter group when the optimizer is built, so
+`embedding_lr`, `embedding_lr_scale`, and `lr_groups` are each corrected against their own
+peak. Override it explicitly if you build a schedule that exceeds the configured LR:
+
+```yaml
+optim_args:
+  max_lr: 0.0001
+```
+
+Only groups with a non-zero weight decay are affected — axolotl already excludes
+embeddings, the LM head, norms, and biases from decay, matching the paper's rule of
+applying the correction to normalized layers only.
+
 ### came_pytorch
 
 GitHub: [https://github.com/yangluo7/CAME/tree/master](https://github.com/yangluo7/CAME/tree/master)
@@ -290,3 +320,57 @@ qgalore_cos_threshold: 0.4         # skip SVD if P_t is this similar to P_{t-1}
 qgalore_gamma_proj: 2              # grow update_proj_gap by this factor when stable
 qgalore_queue_size: 5
 ```
+
+### polora
+
+PoLoRA (Preconditioned Orthogonalized LoRA) is a **LoRA-only** optimizer. It extends
+Muon-style spectral descent to the `(A, B)` product structure: each pair is whitened in a
+diagonal-Kronecker curvature metric, passed through the matrix sign, then rescaled to
+spectral norm `rho = lr / (sigma_max(A) + sigma_max(B))`. Optimizer state is a first moment
+plus two diagonal preconditioners, roughly half of Adam's.
+
+GitHub: [https://github.com/nikhilgsh/polora](https://github.com/nikhilgsh/polora)
+Docs: [https://nikhilgsh.github.io/polora/](https://nikhilgsh.github.io/polora/)
+
+Install from source:
+
+```bash
+pip install git+https://github.com/nikhilgsh/polora.git
+```
+
+- Requires `adapter: lora` or `adapter: qlora`, and single-GPU, DDP, or FSDP2.
+- We recommend enabling `sample_packing` and higher batch sizes to minimize optim step overhead.
+- We find that `learning_rate` should be set 1-2 orders of magnitude higher than AdamW: 3e-4 -> 3e-2.
+
+```yaml
+optimizer: polora
+adapter: lora
+learning_rate: 0.01      # make sure to sweep
+
+# optional, defaults shown
+optim_args:
+  beta1: 0.9             # momentum
+  curvature_beta: 0.99   # EMA for the diagonal preconditioners
+  epsilon: 1.0e-12       # numerical floor
+  delta: 1.0e-4          # relative damping of the inverse square roots
+  ns_steps: 8            # PolarExpress matrix-sign iterations
+  higham_iters: 8        # Newton-Schulz iterations for the inverse square roots
+  compile: false         # torch.compile the spectral kernels
+```
+
+::: {.callout-note}
+
+**Memory.** PoLoRA carries one momentum where Adam carries two, but stacks same-shape pairs
+into fp32 temporaries peaking near 6x the size of the LoRA factors. At 1B those transients
+fit under the activation peak, and it came out slightly cheaper than AdamW at both `lora_r:
+32` and `256`. They scale with `lora_r` times model width, so on a wide model at high rank
+will be more costly.
+
+**Gradients.** Every LoRA factor needs a gradient every step. Exclude layers that skip
+batches (vision towers, unrouted MoE experts) via `lora_exclude_modules`. On MoE,
+`lora_target_parameters` builds factors at `lora_r * num_experts`, so keep `lora_r` small.
+
+**FSDP2.** Axolotl adds FSDP2 support, however, we recommend only using it when frozen base
+does not fit due to noticeable slowdowns.
+
+:::
