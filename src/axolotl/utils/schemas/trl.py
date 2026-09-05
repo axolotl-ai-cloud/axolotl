@@ -201,6 +201,8 @@ class TRLConfig(BaseModel):
     )
     scope_alpha: float | None = Field(
         default=None,
+        gt=0,
+        le=1,
         json_schema_extra={
             "description": "Fraction of rollout groups resampled for the SCOPE-RL auxiliary branch, "
             "and the weight of its loss term."
@@ -208,12 +210,14 @@ class TRLConfig(BaseModel):
     )
     scope_temperature_min: float | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={
             "description": "Lower clip for the SCOPE-RL auxiliary sampling temperature."
         },
     )
     scope_temperature_max: float | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={
             "description": "Upper clip for the SCOPE-RL auxiliary sampling temperature."
         },

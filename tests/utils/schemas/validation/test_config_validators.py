@@ -295,6 +295,11 @@ class TestScopeRLValidator:
                 {"rl": "grpo", "trl": {"scope_rl": True, "async_prefetch": True}}
             )
 
+    def test_inverted_temperature_range_raises(self):
+        """`min > max` makes the clip collapse to `max`, ignoring the feedback signal."""
+        with pytest.raises(ValueError, match="scope_temperature_min"):
+            self._check(self._trl(scope_temperature_min=1.2, scope_temperature_max=0.8))
+
     def test_non_grpo_raises(self):
         with pytest.raises(ValueError, match="rl: grpo"):
             self._check(

@@ -731,6 +731,14 @@ class RLValidationMixin:
                 "scope_rl requires `trl.loss_type` to be grpo, sapo or dr_grpo "
                 "(TRL defaults to dapo)"
             )
+        t_min, t_max = (
+            trl.get("scope_temperature_min"),
+            trl.get("scope_temperature_max"),
+        )
+        if t_min is not None and t_max is not None and t_min > t_max:
+            raise ValueError(
+                "`trl.scope_temperature_min` must not exceed `trl.scope_temperature_max`"
+            )
         return data
 
     @model_validator(mode="before")

@@ -64,9 +64,9 @@ trl:
   scope_positive_threshold: 1.0   # total reward counting as a positive sample
 ```
 
-Both marked lines are required and rejected if missing. `scope_alpha` is honoured only when a
-batch holds at least `1 / scope_alpha` groups; smaller batches resample one whole group and pay
-more generation than configured.
+Both marked lines are required and rejected if missing. Whole groups are resampled and never
+fewer than one, so a batch holding fewer than `1 / scope_alpha` groups pays more generation than
+configured. Only generation cost is affected -- the loss weight stays at `scope_alpha`.
 
 Metrics: `scope/temperature` (drifts to 1.2 as entropy collapses), `scope/positive_frac`
 (0.0 for many steps means the threshold is too high, and the branch contributes nothing).

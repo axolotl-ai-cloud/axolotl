@@ -871,6 +871,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
             raise ValueError("scope_rl is not supported with streaming_partial_batch.")
         if self.args.scope_rl and not self.use_vllm:
             raise ValueError("scope_rl requires vLLM generation.")
+        if self.args.scope_rl and not self.args.async_prefetch:
+            raise ValueError("scope_rl requires async_prefetch.")
         # Seeded at the target so the first auxiliary rollout runs at T = 1.0.
         self._scope_entropy = self.args.scope_target_entropy
         self._scope_temp_lock = threading.Lock()
@@ -1575,6 +1577,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
             ]
 
         # --- SCOPE-RL: pick the groups to resample in the auxiliary branch ---
+        if self.args.scope_rl and images is not None:
+            logger.warning_once("scope_rl is skipped for multimodal batches.")
         scope_idx = (
             scope_aux_indices(
                 len(inputs),
@@ -2088,9 +2092,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 scope_mask = scope_mask[process_slice]
                 positive = positive[process_slice]
             data["scope_mask"] = scope_mask
-            data["scope_weight"] = scope_weights(
-                scope_mask, self.args.scope_alpha, positive
-            )
+            data["scope_weight"] = scope_weights(scope_mask, self.args.scope_alpha)
             data["advantages"] = torch.where(scope_mask.bool(), positive, advantages)
             if "importance_sampling_ratio" in data:
                 # Auxiliary rows come from the temperature-scaled policy by design,
@@ -3324,7 +3326,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
             per_token_loss = per_token_loss * inputs["importance_sampling_ratio"]
 
         if self.beta != 0.0:
-            per_token_loss = per_token_loss + self.beta * per_token_kl
+            kl = per_token_kl
+            if "scope_weight" in inputs:
+                kl = kl * (
+                    inputs["scope_weight"] * (1 - inputs["scope_mask"])
+                ).unsqueeze(1)
+            per_token_loss = per_token_loss + self.beta * kl
 
         # --- Aggregate loss ---
         mode = "train" if self.model.training else "eval"
