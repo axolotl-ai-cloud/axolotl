@@ -211,6 +211,18 @@ class GRPOStrategy:
         if getattr(trl, "use_bias_correction_kl", None) is not None:
             grpo_args_kwargs["use_bias_correction_kl"] = trl.use_bias_correction_kl
 
+        # SCOPE-RL fields
+        for key in (
+            "scope_rl",
+            "scope_target_entropy",
+            "scope_alpha",
+            "scope_temperature_min",
+            "scope_temperature_max",
+            "scope_positive_threshold",
+        ):
+            if getattr(trl, key, None) is not None:
+                grpo_args_kwargs[key] = getattr(trl, key)
+
         # Fast Async GRPO fields
         if getattr(trl, "reward_num_workers", None) is not None:
             grpo_args_kwargs["reward_num_workers"] = trl.reward_num_workers

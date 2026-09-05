@@ -733,6 +733,33 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_scope_rl(cls, data):
+        trl = data.get("trl") or {}
+        if not trl.get("scope_rl"):
+            return data
+        if data.get("rl") != "grpo":
+            raise ValueError("scope_rl requires `rl: grpo`")
+        # the auxiliary rollout is only issued on the prefetching producer's path
+        if not trl.get("async_prefetch"):
+            raise ValueError("scope_rl requires `trl.async_prefetch: true`")
+        # token-normalised loss types weight rows by length, losing the alpha weighting
+        if trl.get("loss_type") not in ("grpo", "sapo", "dr_grpo"):
+            raise ValueError(
+                "scope_rl requires `trl.loss_type` to be grpo, sapo or dr_grpo "
+                "(TRL defaults to dapo)"
+            )
+        t_min, t_max = (
+            trl.get("scope_temperature_min"),
+            trl.get("scope_temperature_max"),
+        )
+        if t_min is not None and t_max is not None and t_min > t_max:
+            raise ValueError(
+                "`trl.scope_temperature_min` must not exceed `trl.scope_temperature_max`"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_rl_config_gradient_checkpointing(cls, data):
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing

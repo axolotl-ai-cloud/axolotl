@@ -43,6 +43,33 @@ Multiple rewards: `reward_funcs: [r1, r2]` with `reward_weights: [1.0, 0.5]`.
 | Zero-adv skip | `skip_zero_advantage_batches: true` | Skip batches with no learning signal |
 | Replay buffer | `replay_buffer_size: 100` | Cache high-signal groups |
 | IS correction | `vllm_importance_sampling_correction: true` | Fix off-policy distribution shift |
+| SCOPE-RL | `scope_rl: true` | Hold entropy at a target instead of collapsing |
+
+## SCOPE-RL
+
+Entropy control from [arXiv:2510.08141](https://arxiv.org/abs/2510.08141). Each rollout
+resamples a small fraction of prompt groups at `T = clip(1 + H0 - H(pi_old), 0.8, 1.2)`,
+keeps only the correct completions, and trains on them with advantage 1 weighted by `alpha`.
+Entropy below the target makes the extra samples hotter (pushing entropy back up); above it,
+colder. Ignored for multimodal batches.
+
+```yaml
+trl:
+  use_data_producer: true
+  async_prefetch: true            # REQUIRED -- auxiliary rollout runs only on this path
+  loss_type: grpo                 # REQUIRED -- TRL defaults to dapo, which is incompatible
+  scope_rl: true
+  scope_target_entropy: 0.5       # H0
+  scope_alpha: 0.015625           # 1/64: share of groups resampled AND loss weight
+  scope_positive_threshold: 1.0   # total reward counting as a positive sample
+```
+
+Both marked lines are required and rejected if missing. Whole groups are resampled and never
+fewer than one, so a batch holding fewer than `1 / scope_alpha` groups pays more generation than
+configured. Only generation cost is affected -- the loss weight stays at `scope_alpha`.
+
+Metrics: `scope/temperature` (drifts to 1.2 as entropy collapses), `scope/positive_frac`
+(0.0 for many steps means the threshold is too high, and the branch contributes nothing).
 
 ## Health Checks
 
@@ -61,6 +88,8 @@ src/axolotl/
   cli/vllm_serve.py                # Entry point for vLLM server
   core/trainers/grpo/
     trainer.py                     # AxolotlGRPOTrainer
+    async_trainer.py               # AsyncGRPOTrainer — rollout, deferred scoring, loss
+    scope.py                       # SCOPE-RL entropy control helpers
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   scripts/vllm_serve_lora.py       # vLLM serve script with LoRA sync support

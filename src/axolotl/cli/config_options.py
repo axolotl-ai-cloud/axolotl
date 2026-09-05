@@ -1249,6 +1249,42 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to exclude truncated completions from loss calculation.",
     ),
     (
+        ("--trl.scope-rl/--no-trl.scope-rl",),
+        "trl__scope_rl",
+        None,
+        "Enable SCOPE-RL entropy control (arXiv:2510.08141). Requires async GRPO.",
+    ),
+    (
+        ("--trl.scope-target-entropy",),
+        "trl__scope_target_entropy",
+        "float",
+        "Target policy entropy H0 for SCOPE-RL.",
+    ),
+    (
+        ("--trl.scope-alpha",),
+        "trl__scope_alpha",
+        "float",
+        "Fraction of rollout groups resampled for the SCOPE-RL auxiliary branch, and the weight of its loss term.",
+    ),
+    (
+        ("--trl.scope-temperature-min",),
+        "trl__scope_temperature_min",
+        "float",
+        "Lower clip for the SCOPE-RL auxiliary sampling temperature.",
+    ),
+    (
+        ("--trl.scope-temperature-max",),
+        "trl__scope_temperature_max",
+        "float",
+        "Upper clip for the SCOPE-RL auxiliary sampling temperature.",
+    ),
+    (
+        ("--trl.scope-positive-threshold",),
+        "trl__scope_positive_threshold",
+        "float",
+        "Total reward at or above which a SCOPE-RL auxiliary sample counts as positive.",
+    ),
+    (
         ("--trl.entropy-coef",),
         "trl__entropy_coef",
         "float",

@@ -189,6 +189,45 @@ class TRLConfig(BaseModel):
             "description": "Whether to exclude truncated completions from loss calculation."
         },
     )
+    scope_rl: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable SCOPE-RL entropy control (arXiv:2510.08141). Requires async GRPO."
+        },
+    )
+    scope_target_entropy: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Target policy entropy H0 for SCOPE-RL."},
+    )
+    scope_alpha: float | None = Field(
+        default=None,
+        gt=0,
+        le=1,
+        json_schema_extra={
+            "description": "Fraction of rollout groups resampled for the SCOPE-RL auxiliary branch, "
+            "and the weight of its loss term."
+        },
+    )
+    scope_temperature_min: float | None = Field(
+        default=None,
+        ge=0,
+        json_schema_extra={
+            "description": "Lower clip for the SCOPE-RL auxiliary sampling temperature."
+        },
+    )
+    scope_temperature_max: float | None = Field(
+        default=None,
+        ge=0,
+        json_schema_extra={
+            "description": "Upper clip for the SCOPE-RL auxiliary sampling temperature."
+        },
+    )
+    scope_positive_threshold: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Total reward at or above which a SCOPE-RL auxiliary sample counts as positive."
+        },
+    )
 
     # Entropy regularization (TRL >= 1.8)
     entropy_coef: float | None = Field(

@@ -255,6 +255,63 @@ class TestGRPOBatchSizeValidator:
         assert out["gradient_accumulation_steps"] == 8
 
 
+class TestScopeRLValidator:
+    """SCOPE-RL needs `rl: grpo` on the async trainer."""
+
+    @staticmethod
+    def _check(data):
+        from axolotl.utils.schemas.validation import RLValidationMixin
+
+        return RLValidationMixin.check_scope_rl(data)
+
+    @staticmethod
+    def _trl(**kw):
+        return {
+            "rl": "grpo",
+            "trl": {
+                "scope_rl": True,
+                "async_prefetch": True,
+                "loss_type": "grpo",
+                **kw,
+            },
+        }
+
+    def test_async_prefetch_passes(self):
+        data = self._trl()
+        assert self._check(data) is data
+
+    def test_without_prefetch_raises(self):
+        """use_data_producer alone takes the scoring path, where the branch never runs."""
+        with pytest.raises(ValueError, match="async_prefetch"):
+            self._check(self._trl(async_prefetch=False, use_data_producer=True))
+
+    def test_token_normalised_loss_type_raises(self):
+        with pytest.raises(ValueError, match="loss_type"):
+            self._check(self._trl(loss_type="dapo"))
+
+    def test_unset_loss_type_raises(self):
+        """TRL defaults to dapo, so leaving it unset is the common broken case."""
+        with pytest.raises(ValueError, match="loss_type"):
+            self._check(
+                {"rl": "grpo", "trl": {"scope_rl": True, "async_prefetch": True}}
+            )
+
+    def test_inverted_temperature_range_raises(self):
+        """`min > max` makes the clip collapse to `max`, ignoring the feedback signal."""
+        with pytest.raises(ValueError, match="scope_temperature_min"):
+            self._check(self._trl(scope_temperature_min=1.2, scope_temperature_max=0.8))
+
+    def test_non_grpo_raises(self):
+        with pytest.raises(ValueError, match="rl: grpo"):
+            self._check(
+                {"rl": "dpo", "trl": {"scope_rl": True, "async_prefetch": True}}
+            )
+
+    def test_disabled_is_ignored(self):
+        data = {"rl": "dpo", "trl": {"scope_rl": False}}
+        assert self._check(data) is data
+
+
 class TestBatchSizeFieldsValidator:
     """``micro_batch_size`` and ``gradient_accumulation_steps`` both default to
     1, so a config that sets only one of them (or neither) is still fully
