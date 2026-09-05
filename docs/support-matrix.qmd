@@ -190,7 +190,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 
 ## Optimizers & schedulers
 
-**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)
+**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon (32/8-bit), Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)
 
 **Schedulers:** cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).
 
