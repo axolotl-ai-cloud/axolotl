@@ -889,7 +889,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon":
+        if data.get("optimizer") in ("muon", "muon_8bit"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
