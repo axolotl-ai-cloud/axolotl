@@ -589,14 +589,9 @@ def register_nvfp4_expert_converters(
     converters are replaced (they'd fight ours for the same source keys). Safe to call repeatedly
     (our converters are tagged and filtered out of the preserved set on re-entry).
     """
-    from transformers.conversion_mapping import (
-        get_checkpoint_conversion_mapping,
-        register_checkpoint_conversion_mapping,
-    from axolotl.utils.weight_conversions import register_weight_conversions
+    from transformers.conversion_mapping import get_checkpoint_conversion_mapping
 
-    converters = (nvfp4_experts_weight_converters() if include_routed else []) + list(
-        extra or []
-    )
+    from axolotl.utils.weight_conversions import register_weight_conversions
 
     converters = (
         nvfp4_experts_weight_converters(routed_projs) if include_routed else []
@@ -616,16 +611,12 @@ def register_nvfp4_expert_converters(
             isinstance(op, ours) for op in (getattr(conv, "operations", None) or [])
         )
 
+    # The direct-expert-load fast path (include_routed=False) relies on the stock bf16
+    # expert-fusion converters being absent, so only the non-expert entries are kept and
+    # the list replaces (rather than merges with) whatever is registered.
     existing = get_checkpoint_conversion_mapping(model_type) or []
     keep = [c for c in existing if not _targets_experts(c) and not _is_ours(c)]
     converters = keep + converters
-    try:
-        register_checkpoint_conversion_mapping(model_type, converters)
-    except ValueError:
-        # Already registered; overwrite to keep converters fresh.
-        register_checkpoint_conversion_mapping(model_type, converters, overwrite=True)
-    # replace_existing: the direct-expert-load fast path (include_routed=False) relies on
-    # the stock fp16 fusion converters being absent, so these must be the only converters.
     register_weight_conversions(model_type, converters, replace_existing=True)
 
     LOG.info(

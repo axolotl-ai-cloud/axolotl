@@ -2,7 +2,8 @@
 
 Dense experts materialize expert LoRA via ``MoELoRAMaterialize`` and hand the result
 to upstream's ``sonicmoe_experts_forward`` through a facade. NVFP4 experts (which the
-CUTLASS kernel cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
+CUTLASS kernel cannot read) take the grouped dequant path in ``nvfp4_lora`` instead, and
+non-gated relu² experts (nemotron_h) the grouped MLP in ``nongated``.
 """
 
 from __future__ import annotations
@@ -117,14 +118,18 @@ class _LoRAExpertsFacade:
         "num_experts",
     )
 
-    def __init__(self, experts_module, w1, b1, w2, b2):
-        from .epilogue import check_epilogue
+    def __init__(self, experts_module, w1, b1, w2, b2, act: str | None = None):
         from .nvfp4 import resolve_gated_activation
 
-        act = resolve_gated_activation(experts_module.config)
         concat = getattr(experts_module, "is_concatenated", True)
-        # The fused kernel has no clamp, so the dense path can only ever compute limit=None.
-        check_epilogue(experts_module, act, concat=concat, limit=None, path="dense")
+        # An explicit ``act`` means the caller rewrote non-gated weights into a gated layout;
+        # ``_apply_gate`` is not the contract for those experts, so there is nothing to probe.
+        if act is None:
+            from .epilogue import check_epilogue
+
+            act = resolve_gated_activation(experts_module.config)
+            # The fused kernel has no clamp, so the dense path can only ever compute limit=None.
+            check_epilogue(experts_module, act, concat=concat, limit=None, path="dense")
 
         self.has_gate = True
         self.gate_up_proj = w1
@@ -193,65 +198,66 @@ def sonicmoe_experts_forward_with_lora(
         w1 = MoELoRAMaterialize.apply(w1, *lora_w1)
     if lora_w2 is not None:
         w2 = MoELoRAMaterialize.apply(w2, *lora_w2)
- 
+
+    if not has_gate:
+        return _sonicmoe_nongated_forward(
+            self, hidden_states, top_k_index, top_k_weights, w1, b1, w2, b2
+        )
+
     return sonicmoe_experts_forward(
         _LoRAExpertsFacade(self, w1, b1, w2, b2),
         hidden_states,
         top_k_index,
         top_k_weights,
-    
+    )
+
+
+def _sonicmoe_nongated_forward(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    w1: torch.Tensor,
+    b1,
+    w2: torch.Tensor,
+    b2,
+) -> torch.Tensor:
+    """Non-gated relu² experts (nemotron_h); ``w1``/``w2`` already carry any LoRA delta."""
     from .nvfp4 import resolve_gated_activation
 
     act_name = resolve_gated_activation(self.config)
+    if act_name not in ("relu2", "relu_squared"):
+        raise NotImplementedError(
+            f"sonicmoe non-gated experts support only the relu² activation "
+            f"(nemotron_h); got {act_name!r}"
+        )
+    if b1 is not None or b2 is not None:
+        raise NotImplementedError("sonicmoe non-gated experts do not support bias")
 
-    if not has_gate:
-        if act_name not in ("relu2", "relu_squared"):
-            raise NotImplementedError(
-                f"sonicmoe non-gated experts support only the relu² activation "
-                f"(nemotron_h); got {act_name!r}"
-            )
-        if b1 is not None or b2 is not None:
-            raise NotImplementedError("sonicmoe non-gated experts do not support bias")
-        if os.environ.get("AXOLOTL_SONICMOE_NONGATED_FUSED") == "1":
-            # relu²(h) == h · relu(h) exactly, so duplicate the up projection into the
-            # gate half and run the CUTLASS REGLU epilogue (relu(gate) * up); autograd
-            # sums both halves' grads back into up_proj. Requires a sonic-moe build
-            # whose op layer allows reglu (quack ships the epilogue + dreglu backward).
-            w1 = torch.cat(
-                [w1, w1], dim=2 if getattr(self, "is_transposed", False) else 1
-            )
-            act_name = "relu"
-        else:
-            # Default: single-launch grouped-GEMM MLP (the current sonic-moe op layer
-            # asserts gated epilogues). W_eff already carries any LoRA delta.
-            from .nongated import sonicmoe_nongated_forward
+    transposed = getattr(self, "is_transposed", False)
+    if os.environ.get("AXOLOTL_SONICMOE_NONGATED_FUSED") == "1":
+        # relu²(h) == h · relu(h) exactly, so duplicate the up projection into the
+        # gate half and run the CUTLASS REGLU epilogue (relu(gate) * up); autograd
+        # sums both halves' grads back into up_proj. Requires a sonic-moe build
+        # whose op layer allows reglu (quack ships the epilogue + dreglu backward).
+        from transformers.integrations.sonicmoe import sonicmoe_experts_forward
 
-            if getattr(self, "is_transposed", False):
-                w1, w2 = w1.transpose(-2, -1), w2.transpose(-2, -1)
-            return sonicmoe_nongated_forward(
-                hidden_states, top_k_index, top_k_weights, w1, w2, self.num_experts
-            )
+        w1 = torch.cat([w1, w1], dim=2 if transposed else 1)
+        return sonicmoe_experts_forward(
+            _LoRAExpertsFacade(self, w1, None, w2, None, act="relu"),
+            hidden_states,
+            top_k_index,
+            top_k_weights,
+        )
 
-    # Match upstream layout expectations:
-    #   is_transposed=False: gate_up [E, 2*I, H] / down [E, H, I] -> permute(1, 2, 0)
-    #   is_transposed=True:  gate_up [E, H, 2*I] / down [E, I, H] -> permute(2, 1, 0)
-    perm = (2, 1, 0) if getattr(self, "is_transposed", False) else (1, 2, 0)
-    w1 = w1.permute(*perm)
-    w2 = w2.permute(*perm)
+    # Default: single-launch grouped-GEMM MLP (the current sonic-moe op layer
+    # asserts gated epilogues).
+    from .nongated import sonicmoe_nongated_forward
 
-    return _sonicmoe_wrapper(
-        hidden_states=hidden_states,
-        router_scores=router_scores,
-        expert_ids=expert_ids,
-        token_idx=token_idx,
-        w1=w1,
-        b1=b1,
-        w2=w2,
-        b2=b2,
-        act_name=act_name,
-        num_experts=self.num_experts,
-        concat_layout=getattr(self, "is_concatenated", True),
-        is_inference_mode_enabled=not torch.is_grad_enabled(),
+    if transposed:
+        w1, w2 = w1.transpose(-2, -1), w2.transpose(-2, -1)
+    return sonicmoe_nongated_forward(
+        hidden_states, top_k_index, top_k_weights, w1, w2, self.num_experts
     )
 
 
