@@ -146,6 +146,25 @@ class TestHFCausalTrainerBuilder:
         optim = trainer.create_optimizer()
         assert isinstance(optim, Muon)
 
+    def test_polora_optimizer(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "polora"
+        cfg["optim_args"] = {"beta1": 0.95, "ns_steps": 4}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        from axolotl.utils.optimizers.polora import PoloraOptimizerFactory
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is PoloraOptimizerFactory
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["beta1"] == 0.95
+        assert optimizer_kwargs["ns_steps"] == 4
+        # polora takes no Adam betas/eps; the builder branch must not merge them in
+        assert "betas" not in optimizer_kwargs
+        assert "eps" not in optimizer_kwargs
+
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
         cfg["optimizer"] = "sinkgd"

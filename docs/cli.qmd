@@ -237,7 +237,7 @@ See [LM Eval Harness integration docs](https://docs.axolotl.ai/docs/custom_integ
 Delinearizes a Llama 4 linearized model into a regular HuggingFace Llama 4 model. This only works with the non-quantized linearized model.
 
 ```bash
-axolotl delinearize-llama4 --model path/to/model_dir --output path/to/output_dir
+axolotl delinearize-llama4 path/to/model_dir path/to/output_dir
 ```
 
 This would be necessary to use with other frameworks. If you have an adapter, merge it with the non-quantized linearized model before delinearizing.

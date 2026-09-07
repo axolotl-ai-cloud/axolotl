@@ -31,6 +31,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
@@ -108,6 +109,8 @@ def setup_model_and_tokenizer(
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
+        # unfreezing can promote base params the loader left on meta (non-rank-0) to trainable
+        materialize_trainable_meta_params(model)
         if any(
             any(embed in param for embed in ["lm_head", "embed_tokens"])
             for param in cfg.unfrozen_parameters
@@ -122,7 +125,9 @@ def setup_model_and_tokenizer(
 
 
 def setup_reference_model(
-    cfg: DictDefault, tokenizer: PreTrainedTokenizer
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None = None,
 ) -> PreTrainedModel | None:
     """
     Set up the reference model for RL training if needed.
@@ -130,6 +135,7 @@ def setup_reference_model(
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         tokenizer: The tokenizer to use for the reference model.
+        processor: The processor to use for a multimodal reference model.
 
     Returns:
         Reference model if needed for RL training, `None` otherwise.
@@ -149,7 +155,12 @@ def setup_reference_model(
             ):
                 reference_model = False
             # load the model again for model_ref/baseline
-            model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
+            model_loader = ModelLoader(
+                cfg,
+                tokenizer,
+                processor=processor,
+                reference_model=reference_model,
+            )
             model_ref, _ = model_loader.load()
     return model_ref
 
@@ -366,7 +377,7 @@ def save_trained_model(
                 config = json.load(config_file_io, object_pairs_hook=OrderedDict)
                 if config.get("architectures"):
                     config["architectures"] = [
-                        name.lstrip("FSDP") for name in config["architectures"]
+                        name.removeprefix("FSDP") for name in config["architectures"]
                     ]
             # write the updated model config back
             with open(
@@ -574,7 +585,7 @@ def setup_model_and_trainer(
     model, tokenizer, peft_config, processor = setup_model_and_tokenizer(cfg)
 
     # Set up reference model for RL if needed
-    model_ref = setup_reference_model(cfg, tokenizer)
+    model_ref = setup_reference_model(cfg, tokenizer, processor)
 
     # Get datasets from metadata
     train_dataset = dataset_meta.train_dataset

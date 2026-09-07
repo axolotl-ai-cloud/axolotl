@@ -592,6 +592,10 @@ def register_nvfp4_expert_converters(
     from transformers.conversion_mapping import (
         get_checkpoint_conversion_mapping,
         register_checkpoint_conversion_mapping,
+    from axolotl.utils.weight_conversions import register_weight_conversions
+
+    converters = (nvfp4_experts_weight_converters() if include_routed else []) + list(
+        extra or []
     )
 
     converters = (
@@ -620,6 +624,9 @@ def register_nvfp4_expert_converters(
     except ValueError:
         # Already registered; overwrite to keep converters fresh.
         register_checkpoint_conversion_mapping(model_type, converters, overwrite=True)
+    # replace_existing: the direct-expert-load fast path (include_routed=False) relies on
+    # the stock fp16 fusion converters being absent, so these must be the only converters.
+    register_weight_conversions(model_type, converters, replace_existing=True)
 
     LOG.info(
         "Registered %s NVFP4 WeightConverters (%d) in transformers conversion_mapping",

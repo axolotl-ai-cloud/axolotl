@@ -20,8 +20,8 @@ aliases where they exist. Tags follow the same format for both names.
 ## Supported variants
 
 Current Axolotl runtime images target Python 3.12 on CUDA 13.0 with PyTorch
-2.11.0 and 2.12.0. The floating `main-latest` tags point at the Python 3.12 /
-CUDA 13.0 / PyTorch 2.12.0 build. Bare release tags, such as `0.16.1`, point
+2.11.0 and 2.12.1+. The floating `main-latest` tags point at the Python 3.12 /
+CUDA 13.0 / PyTorch 2.12.1 build. Bare release tags, such as `0.16.1`, point
 at the same latest matrix entry for that release.
 
 Base images may include additional uv-based tags for build compatibility, and
@@ -51,7 +51,7 @@ main-base-py{python_version}-cu{cuda_version}-{pytorch_version}
 Tags examples:
 
 - `main-base-py3.12-cu130-2.11.0`
-- `main-base-py3.12-cu130-2.12.0`
+- `main-base-py3.12-cu130-2.12.1`
 
 ## Main
 
@@ -93,11 +93,11 @@ There may be some extra tags appended to the image, like `-vllm` which installs 
 Tags examples:
 
 - `main-py3.12-cu130-2.11.0`
-- `main-py3.12-cu130-2.12.0`
+- `main-py3.12-cu130-2.12.1`
 - `main-latest`
-- `main-20260315-py3.12-cu130-2.12.0`
+- `main-20260315-py3.12-cu130-2.12.1`
 - `0.16.1`
-- `0.16.1-py3.12-cu130-2.12.0`
+- `0.16.1-py3.12-cu130-2.12.1`
 - `0.16.1-latest`
 
 ## Cloud

@@ -2,12 +2,14 @@
 Model loader class implementation for loading, configuring, and patching various models.
 """
 
+from __future__ import annotations
+
 import gc
 import math
 import os
 from functools import cached_property
 from importlib.util import find_spec
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import peft
 import torch
@@ -46,8 +48,9 @@ from axolotl.loaders.utils import (
     get_linear_embedding_layers,
     get_module_class_from_name,
     load_model_config,
+    materialize_trainable_meta_params,
 )
-from axolotl.model_support import get_model_support
+from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -56,6 +59,7 @@ from axolotl.utils.distributed import (
     build_parallelism_config,
     get_device_count,
     get_device_type,
+    init_distributed_state,
 )
 from axolotl.utils.fp32_norms import (
     _matches_norm_class,
@@ -65,6 +69,9 @@ from axolotl.utils.fp32_norms import (
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
+
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -106,6 +113,7 @@ class ModelLoader:
         cfg: DictDefault,
         tokenizer: PreTrainedTokenizerBase,
         *,
+        processor: ProcessorMixin | None = None,
         inference: bool = False,
         reference_model: bool = False,
         **kwargs,
@@ -124,6 +132,7 @@ class ModelLoader:
         """
         self.cfg = cfg
         self.tokenizer = tokenizer
+        self.processor = processor
         self.inference: bool = inference
         self.reference_model: bool = reference_model
 
@@ -147,6 +156,9 @@ class ModelLoader:
             cfg=cfg,
             model_config=self.model_config,
             inference=inference,
+            tokenizer=tokenizer,
+            processor=self.processor,
+            reference_model=reference_model,
         )
 
     @cached_property
@@ -191,6 +203,7 @@ class ModelLoader:
         PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
         lora_config = self._load_adapters()
         PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
+        self._materialize_trainable_meta_params()
 
         # Apply remaining patches and finalize
         self._apply_post_lora_load_setup(skip_move_to_device)
@@ -516,14 +529,63 @@ class ModelLoader:
 
         return lora_config
 
+    def _materialize_trainable_meta_params(self):
+        """Non-rank-0 loads onto meta and PEFT follows the base layer's device; the optimizer is
+        built before `accelerator.prepare`, which remaps its params by `data_ptr()` (0 on meta)."""
+        if (
+            self.cfg.fsdp_config
+            and self.cfg.fsdp_config.cpu_ram_efficient_loading
+            and int(os.getenv("LOCAL_RANK", "0")) != 0
+        ):
+            materialize_trainable_meta_params(self.model)
+
+    def _keep_no_placement_params_on_cpu(self):
+        """Stop the offloaded ``_no_placement_params`` being pulled back into VRAM.
+
+        These land in host RAM on their own (Qwen3.8-Flash-Next's n-gram table arrives as
+        128 checkpoint shards that transformers concatenates on CPU) and the model gathers
+        rows on whatever device the weight sits on. What drags them onto the accelerator is
+        ``Accelerator.prepare_model``, which skips its ``model.to(device)`` for a quantized
+        model carrying an ``hf_device_map`` but does not get one from transformers when the
+        map is a single device.
+
+        That skip is accelerate 1.13.0's ``accelerator.py`` L1824 branch shadowing the
+        ``model.to(self.device)`` at L1864, so an accelerate bump that reorders the two
+        silently pulls the table back into VRAM.
+        ``tests/loaders/test_ple_offload_accelerate_contract.py`` fails if that happens.
+        """
+        suffixes = getattr(self.model, "_no_placement_params", None) or []
+        targets = [
+            name
+            for name, param in self.model.named_parameters()
+            if any(name.endswith(suffix) for suffix in suffixes)
+            and param.device.type == "cpu"
+        ]
+        if not targets:
+            LOG.warning(
+                "ple_cpu_offload is set but no `_no_placement_params` of %s are in host "
+                "RAM, so there is nothing to keep there.",
+                self.cfg.model_config_type,
+            )
+            return
+
+        if not hasattr(self.model, "hf_device_map"):
+            self.model.hf_device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
+        LOG.info("ple_cpu_offload: keeping %s in host RAM", ", ".join(targets))
+
     def _apply_post_lora_load_setup(self, skip_move_to_device: bool):
         """Apply final optimizations and patches."""
+        if self.cfg.ple_cpu_offload:
+            self._keep_no_placement_params_on_cpu()
+
         # Place model on accelerator
         if (
             self.cfg.ddp
             and not self.cfg.load_in_8bit
             and not (self.cfg.rl and self.cfg.load_in_4bit)
             and not skip_move_to_device
+            # would drag the offloaded table onto the accelerator with everything else
+            and not self.cfg.ple_cpu_offload
         ):
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
 
@@ -558,16 +620,43 @@ class ModelLoader:
 
     def _set_auto_model_loader(self):
         """Set `self.auto_model_loader`. Defaults to `transformers.AutoModelForCausalLM`
-        (set at `__init__`). When using a multimodal model, `self.auto_model_loader`
-        should be set according to the type of the model.
+        (set at `__init__`). Registered model profiles can select another loader;
+        unregistered multimodal models use the legacy mapping.
         """
-        if self.cfg.is_multimodal:
-            support = get_model_support(self.model_config.model_type)
-            auto_model_loader = support.get_auto_model_cls() if support else None
-            if auto_model_loader is None:
-                auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
-                    self.model_config.model_type, AutoModelForImageTextToText
-                )
+        support = get_model_support(self.model_config.model_type)
+        resolved_support = (
+            resolve_model_support(support) if support is not None else None
+        )
+        auto_model_provider = (
+            resolved_support.strategies.auto_model_cls
+            if resolved_support is not None
+            else None
+        )
+        auto_model_loader = (
+            auto_model_provider() if auto_model_provider is not None else None
+        )
+        profile_conflicts_with_multimodal_run = (
+            auto_model_loader is not None
+            and self.cfg.is_multimodal
+            and resolved_support is not None
+            and not resolved_support.is_multimodal
+        )
+        if profile_conflicts_with_multimodal_run:
+            LOG.warning(
+                "Model support for %s is not multimodal but this run is; "
+                "ignoring its auto-model class %s in favor of the multimodal "
+                "mapping.",
+                self.model_config.model_type,
+                auto_model_loader.__name__,
+            )
+            auto_model_loader = None
+        if auto_model_loader is not None:
+            self.auto_model_loader = auto_model_loader
+        elif self.cfg.is_multimodal:
+            auto_model_loader = MULTIMODAL_AUTO_MODEL_MAPPING.get(
+                self.model_config.model_type, AutoModelForImageTextToText
+            )
+            # transformers' names mapping stores class names as strings
             if isinstance(auto_model_loader, str):
                 auto_model_loader = AutoModelForImageTextToText
             self.auto_model_loader = auto_model_loader
@@ -758,11 +847,47 @@ class ModelLoader:
             hf_impl = _LOAD_TIME_OVERRIDE.get(
                 self.cfg.attn_implementation, self.cfg.attn_implementation
             )
+            hf_impl = self._resolve_flash_attention_4(hf_impl)
             self.model_kwargs["attn_implementation"] = hf_impl
             self.model_config._attn_implementation = hf_impl
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
+
+    def _resolve_flash_attention_4(self, hf_impl):
+        """Prefer native FA4 over the FA2 path when FA4 is installed and usable.
+
+        transformers dispatches ``flash_attention_4`` natively; ``flash_attention_2`` only
+        reaches FA4 when the FA2 library is present, otherwise it resolves to an
+        unregistered hub kernel. Upgrade to the native name so FA4 is actually used.
+        """
+        if hf_impl not in (
+            "flash_attention_2",
+            "flash_attention_3",
+            "flash_attention_4",
+        ):
+            return hf_impl
+
+        from axolotl.monkeypatch.attention.flash_attn_4 import configure_fa4, fa4_usable
+
+        if hf_impl == "flash_attention_4":
+            configure_fa4()
+            return hf_impl
+
+        # Ring attention only substitutes the `flash_attention_2` dispatch key.
+        if (self.cfg.context_parallel_size or 1) > 1:
+            LOG.info(
+                "Not upgrading %s to Flash Attention 4: ring attention only "
+                "supports the flash attention 2 backend.",
+                hf_impl,
+            )
+            return hf_impl
+
+        if fa4_usable(self.model_config):
+            configure_fa4()
+            LOG.info("Flash Attention 4 enabled (upgraded from %s).", hf_impl)
+            return "flash_attention_4"
+        return hf_impl
 
     def _check_model_requirements(self):
         if self.cfg.model_config_type in ["lfm2-vl", "lfm2"]:
@@ -854,6 +979,9 @@ class ModelLoader:
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
                 skip_move_to_device = True
+                # transformers' non-rank-0 meta gate needs an initialized process group; the
+                # mesh build normally provides one, pure EP builds no mesh (no-op if already up)
+                init_distributed_state()
                 # Don't delete device_map for QLoRA + FSDP - it was set correctly in
                 # _set_device_map
                 if (

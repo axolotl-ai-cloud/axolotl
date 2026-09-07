@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from datasets import Dataset
@@ -140,7 +140,9 @@ def rand_reward_func(prompts, completions) -> list[float]:
         try:
             builder = HFRLTrainerBuilder(grpo_cfg, model, tokenizer)
             training_arguments, _ = builder._build_training_arguments(100)
-            builder.train_dataset = MagicMock()
+            builder.train_dataset = Dataset.from_dict(
+                {"prompt": [[{"role": "user", "content": "Question?"}]] * 8}
+            )
 
             self._test_common_training_arguments(training_arguments, rl=grpo_cfg.rl)
             # GRPO specific

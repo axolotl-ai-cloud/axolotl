@@ -324,7 +324,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "tokenizer_type": "LlamaTokenizer",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -341,21 +341,24 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "kto_undesirable_weight": 1.0,
                 "remove_unused_columns": False,
                 "datasets": [
-                    # {
-                    #     "path": "argilla/kto-mix-15k",
-                    #     "type": "chatml.argilla_chat",
-                    #     "split": "train",
-                    # },
+                    {
+                        # this repo's test split carries a DPO schema that fails to cast
+                        "path": "argilla/kto-mix-15k",
+                        "data_files": ["data/train-*.parquet"],
+                        "type": "chatml.argilla_chat",
+                        "split": "train",
+                    },
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "chatml.ultra",
                         "split": "train",
                     },
-                    # {
-                    #     "path": "argilla/kto-mix-15k",
-                    #     "type": "llama3.argilla_chat",
-                    #     "split": "train",
-                    # },
+                    {
+                        "path": "argilla/kto-mix-15k",
+                        "data_files": ["data/train-*.parquet"],
+                        "type": "llama3.argilla_chat",
+                        "split": "train",
+                    },
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "llama3.ultra",

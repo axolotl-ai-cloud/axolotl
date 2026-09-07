@@ -109,6 +109,7 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
         # - dropout unsupported by varlen_attn.
         # - head_dim within the Flash limit.
         # - scaling: varlen_attn only applies 1/sqrt(head_dim); a custom scale can't be honored.
+        # - CUDA fp16/bf16 only: the flash kernel backing varlen_attn has no CPU or fp32 support.
         standard_scale = scaling is None or abs(scaling - head_dim**-0.5) < 1e-9
         use_varlen = (
             attention_mask is None
@@ -116,6 +117,8 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             and head_dim <= _VARLEN_MAX_HEAD_DIM
             and position_ids is not None
             and standard_scale
+            and query.is_cuda
+            and query.dtype in (torch.float16, torch.bfloat16)
         )
         packed = position_ids is not None and _is_packed(position_ids)
         use_varlen = use_varlen and packed  # single-doc rows -> stock SDPA

@@ -67,13 +67,18 @@ def load_model_and_tokenizer(
     LOG.info(f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}")
     tokenizer = load_tokenizer(cfg)
 
-    LOG.info("loading model...")
-    model_loader = ModelLoader(cfg, tokenizer, inference=inference)
-    model, _ = model_loader.load()
-
     processor = None
     if cfg.is_multimodal:
         LOG.info("loading processor...")
         processor = load_processor(cfg, tokenizer)
+
+    LOG.info("loading model...")
+    model_loader = ModelLoader(
+        cfg,
+        tokenizer,
+        processor=processor,
+        inference=inference,
+    )
+    model, _ = model_loader.load()
 
     return model, tokenizer, processor
