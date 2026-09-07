@@ -1,10 +1,9 @@
 """
 User-defined KTO strategies
 """
-# pylint: disable=duplicate-code
 
 
-def default(cfg, dataset_idx=0, **kwargs):  # pylint: disable=unused-argument
+def default(cfg, dataset_idx=0, **kwargs):
     ds_cfg = cfg["datasets"][dataset_idx]["type"]
     if not isinstance(ds_cfg, dict):
         raise ValueError(
@@ -16,14 +15,14 @@ def default(cfg, dataset_idx=0, **kwargs):  # pylint: disable=unused-argument
     field_label = ds_cfg.get("field_label", "label")
     prompt_format = ds_cfg.get("prompt_format")
     if not prompt_format:
-        prompt_format = "{" + field_prompt + "}"
+        prompt_format = "{prompt}"
     completion_format = ds_cfg.get("completion_format")
     if not completion_format:
-        chosen_format = "{" + field_completion + "}"
+        completion_format = "{completion}"
 
     def transform_fn(sample):
         if (
-            "{" + field_system + "}" in prompt_format
+            "{system}" in prompt_format
             and field_system in sample
             and sample[field_system]
         ):
@@ -31,8 +30,10 @@ def default(cfg, dataset_idx=0, **kwargs):  # pylint: disable=unused-argument
                 system=sample[field_system], prompt=sample[field_prompt]
             )
         else:
-            sample["prompt"] = prompt_format.format(prompt=sample["prompt"])
-        sample["completion"] = chosen_format.format(chosen=sample[field_completion])
+            sample["prompt"] = prompt_format.format(prompt=sample[field_prompt])
+        sample["completion"] = completion_format.format(
+            completion=sample[field_completion]
+        )
         sample["label"] = sample[field_label]
         return sample
 

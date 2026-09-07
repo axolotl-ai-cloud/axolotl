@@ -1,6 +1,7 @@
 """
 Module for handling lm eval harness input arguments.
 """
+
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -13,3 +14,5 @@ class LMEvalArgs(BaseModel):
 
     lm_eval_tasks: List[str] = []
     lm_eval_batch_size: Optional[int] = 8
+    lm_eval_post_train: Optional[bool] = True
+    lm_eval_model: Optional[str] = None

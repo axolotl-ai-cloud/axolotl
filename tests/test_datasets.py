@@ -1,35 +1,46 @@
-"""
-Test dataset loading under various conditions.
-"""
+"""Test dataset loading under various conditions."""
 
 import shutil
 import tempfile
-import unittest
 from pathlib import Path
+from typing import Any, Generator
+from unittest.mock import patch
 
+import pytest
 from datasets import Dataset
 from huggingface_hub import snapshot_download
-from transformers import AutoTokenizer
+from transformers import PreTrainedTokenizer
 
-from axolotl.utils.data import load_tokenized_prepared_datasets
-from axolotl.utils.data.rl import load_prepare_dpo_datasets
+from axolotl.loaders.tokenizer import load_tokenizer
+from axolotl.utils.data.rl import prepare_preference_datasets
+from axolotl.utils.data.sft import (
+    _load_tokenized_prepared_datasets,
+)
+from axolotl.utils.data.shared import load_preprocessed_dataset
 from axolotl.utils.dict import DictDefault
 
+from tests.constants import (
+    ALPACA_MESSAGES_CONFIG_OG,
+    ALPACA_MESSAGES_CONFIG_REVISION,
+    SPECIAL_TOKENS,
+    alpaca_messages_dpo_rows,
+)
+from tests.hf_offline_utils import enable_hf_offline
 
-class TestDatasetPreparation(unittest.TestCase):
+
+class TestDatasetPreparation:
     """Test a configured dataloader."""
 
-    def setUp(self) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(
-            {
-                "bos_token": "<s>",
-                "eos_token": "</s>",
-                "unk_token": "<unk>",
-            }
-        )
-        # Alpaca dataset.
-        self.dataset = Dataset.from_list(
+    @pytest.fixture
+    def tokenizer(
+        self, tokenizer_huggyllama
+    ) -> Generator[PreTrainedTokenizer, Any, Any]:
+        tokenizer_huggyllama.add_special_tokens(SPECIAL_TOKENS)
+        yield tokenizer_huggyllama
+
+    @pytest.fixture
+    def dataset_fixture(self):
+        yield Dataset.from_list(
             [
                 {
                     "instruction": "Evaluate this sentence for spelling and grammar mistakes",
@@ -39,7 +50,30 @@ class TestDatasetPreparation(unittest.TestCase):
             ]
         )
 
-    def test_load_hub(self):
+    def test_load_preprocessed_dataset_uses_default_prepared_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_hash = "prepared-hash"
+            prepared_path = Path(tmp_dir) / dataset_hash
+            Dataset.from_dict({"value": [1]}).save_to_disk(str(prepared_path))
+            cfg = DictDefault(
+                {
+                    "dataset_prepared_path": None,
+                    "skip_prepare_dataset": False,
+                    "is_preprocess": False,
+                }
+            )
+
+            with patch(
+                "axolotl.utils.data.shared.DEFAULT_DATASET_PREPARED_PATH", tmp_dir
+            ):
+                dataset = load_preprocessed_dataset(cfg, dataset_hash)
+
+            assert dataset is not None
+            assert dataset["value"] == [1]
+
+    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
+    @enable_hf_offline
+    def test_load_hub(self, tokenizer):
         """Core use case.  Verify that processing data from the hub works"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             prepared_path = Path(tmp_dir) / "prepared"
@@ -56,25 +90,31 @@ class TestDatasetPreparation(unittest.TestCase):
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    def test_load_local_hub(self):
+    @enable_hf_offline
+    @pytest.mark.skip("datasets bug with local datasets when offline")
+    def test_load_local_hub(self, tokenizer):
         """Niche use case.  Verify that a local copy of a hub dataset can be loaded"""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_ds_path = Path("mhenrichsen/alpaca_2k_test")
+            tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download(
+            snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
             )
+            # offline mode doesn't actually copy it to local_dir, so we
+            # have to copy all the contents in the dir manually from the returned snapshot_path
+            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
             prepared_path = Path(tmp_dir) / "prepared"
             # Right now a local copy that doesn't fully conform to a dataset
@@ -82,7 +122,7 @@ class TestDatasetPreparation(unittest.TestCase):
             # how to load it.
             cfg = DictDefault(
                 {
-                    "tokenizer_config": "huggyllama/llama-7b",
+                    "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
                     "sequence_len": 1024,
                     "datasets": [
                         {
@@ -90,16 +130,17 @@ class TestDatasetPreparation(unittest.TestCase):
                             "ds_type": "parquet",
                             "type": "alpaca",
                             "data_files": [
-                                "mhenrichsen/alpaca_2k_test/alpaca_2000.parquet",
+                                f"{tmp_ds_path}/alpaca_2000.parquet",
                             ],
                         },
                     ],
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
@@ -107,11 +148,12 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
 
-    def test_load_from_save_to_disk(self):
+    @enable_hf_offline
+    def test_load_from_save_to_disk(self, tokenizer, dataset_fixture):
         """Usual use case.  Verify datasets saved via `save_to_disk` can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_name = Path(tmp_dir) / "tmp_dataset"
-            self.dataset.save_to_disk(str(tmp_ds_name))
+            dataset_fixture.save_to_disk(str(tmp_ds_name))
 
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -124,25 +166,28 @@ class TestDatasetPreparation(unittest.TestCase):
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 1,
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    def test_load_from_dir_of_parquet(self):
-        """Usual use case.  Verify a directory of parquet files can be loaded."""
+    @enable_hf_offline
+    def test_load_from_dir_of_parquet(self, tokenizer, dataset_fixture):
+        """Usual use case. Verify a directory of parquet files can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_dir = Path(tmp_dir) / "tmp_dataset"
             tmp_ds_dir.mkdir()
             tmp_ds_path = tmp_ds_dir / "shard1.parquet"
-            self.dataset.to_parquet(tmp_ds_path)
+            dataset_fixture.to_parquet(tmp_ds_path)
 
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -160,25 +205,28 @@ class TestDatasetPreparation(unittest.TestCase):
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 1,
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    def test_load_from_dir_of_json(self):
+    @enable_hf_offline
+    def test_load_from_dir_of_json(self, tokenizer, dataset_fixture):
         """Standard use case.  Verify a directory of json files can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_dir = Path(tmp_dir) / "tmp_dataset"
             tmp_ds_dir.mkdir()
             tmp_ds_path = tmp_ds_dir / "shard1.json"
-            self.dataset.to_json(tmp_ds_path)
+            dataset_fixture.to_json(tmp_ds_path)
 
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -196,23 +244,26 @@ class TestDatasetPreparation(unittest.TestCase):
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 1,
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    def test_load_from_single_parquet(self):
+    @enable_hf_offline
+    def test_load_from_single_parquet(self, tokenizer, dataset_fixture):
         """Standard use case.  Verify a single parquet file can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "tmp_dataset.parquet"
-            self.dataset.to_parquet(tmp_ds_path)
+            dataset_fixture.to_parquet(tmp_ds_path)
 
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -226,23 +277,26 @@ class TestDatasetPreparation(unittest.TestCase):
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 1,
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
-    def test_load_from_single_json(self):
+    @enable_hf_offline
+    def test_load_from_single_json(self, tokenizer, dataset_fixture):
         """Standard use case.  Verify a single json file can be loaded."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "tmp_dataset.json"
-            self.dataset.to_json(tmp_ds_path)
+            dataset_fixture.to_json(tmp_ds_path)
 
             prepared_path: Path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -256,18 +310,22 @@ class TestDatasetPreparation(unittest.TestCase):
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 1,
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 1
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
+    @pytest.mark.skip(reason="TODO: fix hf offline mode for CI rate limits")
+    @enable_hf_offline
     def test_load_hub_with_dpo(self):
         """Verify that processing dpo data from the hub works"""
 
@@ -277,32 +335,22 @@ class TestDatasetPreparation(unittest.TestCase):
                 "sequence_len": 1024,
                 "rl": "dpo",
                 "chat_template": "llama3",
-                "datasets": [
-                    {
-                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "type": "chat_template.default",
-                        "chat_template": "llama3",
-                        "field_messages": "conversation",
-                        "field_chosen": "chosen",
-                        "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
-                        "roles": {
-                            "system": ["system"],
-                            "user": ["user"],
-                            "assistant": ["assistant"],
-                        },
-                    }
-                ],
+                "datasets": [ALPACA_MESSAGES_CONFIG_OG],
             }
         )
 
-        train_dataset, _ = load_prepare_dpo_datasets(cfg)
+        tokenizer = load_tokenizer(cfg)
+        train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-        assert len(train_dataset) == 1800
-        assert "conversation" in train_dataset.features
+        assert len(train_dataset) == 64
+        assert "conversation" not in train_dataset.features
+        assert "chosen" in train_dataset.features
+        assert "rejected" in train_dataset.features
+        assert "prompt" in train_dataset.features
 
-    def test_load_hub_with_revision(self):
+    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
+    @enable_hf_offline
+    def test_load_hub_with_revision(self, tokenizer):
         """Verify that processing data from the hub works with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             prepared_path = Path(tmp_dir) / "prepared"
@@ -324,17 +372,20 @@ class TestDatasetPreparation(unittest.TestCase):
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
 
+    @enable_hf_offline
     def test_load_hub_with_revision_with_dpo(self):
         """Verify that processing dpo data from the hub works with a specific revision"""
+        dataset = Dataset.from_list(alpaca_messages_dpo_rows())
 
         cfg = DictDefault(
             {
@@ -342,43 +393,42 @@ class TestDatasetPreparation(unittest.TestCase):
                 "sequence_len": 1024,
                 "rl": "dpo",
                 "chat_template": "llama3",
-                "datasets": [
-                    {
-                        "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "type": "chat_template.default",
-                        "chat_template": "llama3",
-                        "revision": "ea82cff",
-                        "field_messages": "conversation",
-                        "field_chosen": "chosen",
-                        "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
-                        "roles": {
-                            "system": ["system"],
-                            "user": ["user"],
-                            "assistant": ["assistant"],
-                        },
-                    }
-                ],
+                "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
+                "dataset_num_proc": None,
             }
         )
 
-        train_dataset, _ = load_prepare_dpo_datasets(cfg)
+        with patch(
+            "axolotl.utils.data.rl.load_dataset_with_config"
+        ) as mock_load_dataset:
+            # Set up the mock to return different values on successive calls
+            mock_load_dataset.return_value = dataset
 
-        assert len(train_dataset) == 1800
-        assert "conversation" in train_dataset.features
+            tokenizer = load_tokenizer(cfg)
+            train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-    def test_load_local_hub_with_revision(self):
+            assert len(train_dataset) == len(dataset)
+            assert "conversation" not in train_dataset.features
+            assert "chosen" in train_dataset.features
+            assert "rejected" in train_dataset.features
+            assert "prompt" in train_dataset.features
+
+    @enable_hf_offline
+    @pytest.mark.skip("datasets bug with local datasets when offline")
+    def test_load_local_hub_with_revision(
+        self, dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff, tokenizer
+    ):
         """Verify that a local copy of a hub dataset can be loaded with a specific revision"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download(
+            snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
                 local_dir=tmp_ds_path,
                 revision="d05c1cb",
             )
+            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -399,27 +449,38 @@ class TestDatasetPreparation(unittest.TestCase):
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.utils.data.shared.load_dataset_with_config"
+            ) as mock_load_dataset:
+                # Set up the mock to return different values on successive calls
+                mock_load_dataset.return_value = (
+                    dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
+                )
 
-            assert len(dataset) == 2000
-            assert "input_ids" in dataset.features
-            assert "attention_mask" in dataset.features
-            assert "labels" in dataset.features
-            shutil.rmtree(tmp_ds_path)
+                with patch(
+                    "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH",
+                    str(prepared_path),
+                ):
+                    dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
-    def test_loading_local_dataset_folder(self):
+                assert len(dataset) == 2000
+                assert "input_ids" in dataset.features
+                assert "attention_mask" in dataset.features
+                assert "labels" in dataset.features
+                shutil.rmtree(tmp_ds_path)
+
+    @enable_hf_offline
+    def test_loading_local_dataset_folder(self, tokenizer):
         """Verify that a dataset downloaded to a local folder can be loaded"""
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_ds_path = Path(tmp_dir) / "mhenrichsen/alpaca_2k_test"
             tmp_ds_path.mkdir(parents=True, exist_ok=True)
-            snapshot_download(
+            snapshot_path = snapshot_download(
                 repo_id="mhenrichsen/alpaca_2k_test",
                 repo_type="dataset",
-                local_dir=tmp_ds_path,
             )
+            shutil.copytree(snapshot_path, tmp_ds_path, dirs_exist_ok=True)
 
             prepared_path = Path(tmp_dir) / "prepared"
             cfg = DictDefault(
@@ -432,12 +493,14 @@ class TestDatasetPreparation(unittest.TestCase):
                             "type": "alpaca",
                         },
                     ],
+                    "dataset_num_proc": 1,
                 }
             )
 
-            dataset, _ = load_tokenized_prepared_datasets(
-                self.tokenizer, cfg, prepared_path
-            )
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
 
             assert len(dataset) == 2000
             assert "input_ids" in dataset.features
@@ -445,6 +508,69 @@ class TestDatasetPreparation(unittest.TestCase):
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
 
+    @enable_hf_offline
+    def test_load_dataset_with_str_json_data(self, tokenizer):
+        """
+        Test loading datasets where data is stored as str JSON instead of list of dicts.
+        see: https://github.com/axolotl-ai-cloud/axolotl/pull/3607 for more details.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            import json
 
-if __name__ == "__main__":
-    unittest.main()
+            str_json_ds = Dataset.from_list(
+                [
+                    {
+                        "messages": json.dumps(
+                            [
+                                {"role": "user", "content": "Hello how are you?"},
+                                {
+                                    "role": "assistant",
+                                    "content": "I am doing good thanks",
+                                },
+                            ]
+                        )
+                    },
+                    {
+                        "messages": json.dumps(
+                            [
+                                {"role": "user", "content": "What is 2+2?"},
+                                {"role": "assistant", "content": "2+2 equals 4."},
+                            ]
+                        )
+                    },
+                ]
+            )
+
+            tmp_ds_path = Path(tmp_dir) / "str_json_dataset.parquet"
+            str_json_ds.to_parquet(tmp_ds_path)
+
+            prepared_path = Path(tmp_dir) / "prepared"
+            cfg = DictDefault(
+                {
+                    "tokenizer_config": "huggyllama/llama-7b",
+                    "sequence_len": 512,
+                    "datasets": [
+                        {
+                            "path": str(tmp_ds_path),
+                            "name": "test_str_json",
+                            "type": "chat_template",
+                            "field_messages": "messages",
+                            "message_field_role": "role",
+                            "message_field_content": "content",
+                        },
+                    ],
+                    "dataset_num_proc": 1,
+                }
+            )
+
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
+
+            assert len(dataset) == 2
+            assert "input_ids" in dataset.features
+            assert "attention_mask" in dataset.features
+            assert "labels" in dataset.features
+
+            assert len(dataset[0]["input_ids"]) > 0

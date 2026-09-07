@@ -1,1 +1,277 @@
-/* css styles */
+/* TYPOGRAPHY SECTION */
+
+/* Import fonts */
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&display=swap');
+
+/* Typography hierarchy */
+:root {
+    --font-title: 'Be Vietnam Pro', sans-serif;
+    --font-body: 'JetBrains Mono', monospace;
+}
+
+/* Title (h1) */
+h1 {
+    font-family: var(--font-title);
+    font-weight: 400;
+    font-size: 3rem;
+    line-height: 1.1;
+    letter-spacing: -0.05em;
+    font-feature-settings: "ss01" on;
+}
+
+/* Heading (h2) */
+h2 {
+    font-family: var(--font-title);
+    font-weight: 500;
+    font-size: 1.5rem;
+    line-height: 1.2;
+    letter-spacing: -0.03em;
+    font-feature-settings: "ss01" on;
+}
+
+/* Subtitle/Preamble */
+h3,
+h4 {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 1.25rem;
+    line-height: 1.5;
+    letter-spacing: -0.02em;
+}
+
+/* Body text */
+body {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: -0.02em;
+}
+
+/* Links */
+a {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 0.875rem;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+/* NAV BAR SECTION */
+
+/* Navbar logo styling */
+.navbar-brand img {
+    height: 32px;
+    margin-right: 10px;
+}
+
+/* COLORS SECTION */
+
+/* Brand colors */
+:root {
+    --white: #ffffff;
+    --greige-300: #EEEEE7;
+    --greige-600: #CCCAC0;
+    --black: #141310;
+    --lime: #E3F8A8;
+    --cyan: #A0F4EA;
+    --purple: #C8D0F8;
+}
+
+/* Base styles */
+body {
+    background-color: var(--black);
+    color: var(--greige-300);
+}
+
+/* Navigation */
+.navbar {
+    background-color: var(--black) !important;
+}
+
+.navbar-dark .navbar-nav .nav-link {
+    color: var(--greige-300);
+}
+
+.navbar-dark .navbar-nav .nav-link:hover {
+    color: var(--lime);
+}
+
+/* Sidebar */
+.sidebar-navigation {
+    background-color: var(--black);
+    border-right: 1px solid var(--greige-600);
+}
+
+.sidebar nav[role="doc-toc"] ul>li>a {
+    color: var(--greige-300);
+}
+
+.sidebar nav[role="doc-toc"] ul>li>a:hover {
+    color: var(--lime);
+}
+
+/* Links */
+a {
+    color: var(--lime);
+}
+
+a:hover {
+    color: var(--cyan);
+}
+
+/* Headers */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: var(--white);
+}
+
+/* Code blocks */
+pre {
+    background-color: #1a1a1a !important;
+    border: 1px solid var(--greige-600);
+}
+
+/* Tables */
+.table {
+    color: var(--greige-300);
+}
+
+/* TOC */
+#toc-title {
+    color: var(--white);
+}
+
+.toc-active {
+    color: var(--lime) !important;
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: var(--lime);
+    color: var(--black);
+    border: none;
+}
+
+.btn-primary:hover {
+    background-color: var(--cyan);
+    color: var(--black);
+}
+
+/* For inline code (single backtick) */
+code {
+    background-color: #1a1a1a !important;
+    color: var(--lime) !important;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+
+/* For inline code that is also a link */
+a code {
+    color: var(--cyan) !important;
+}
+
+/* For code blocks (triple backtick) */
+pre.sourceCode {
+    background-color: #1a1a1a !important;
+}
+
+/* Make comments in bash/shell scripts green */
+code span.co {
+    color: #5cb85c !important;
+}
+
+/* Remove underlines from JSON comments and make them green */
+code span.er {
+    color: #5cb85c !important;
+    text-decoration: none !important;
+}
+
+/* API Documentation Styling */
+
+/* Improve docstring section rendering */
+.level3 p {
+    white-space: pre-line !important;
+}
+
+/* Format docstring sections */
+.level3 p strong {
+    display: block;
+    margin-top: 1em;
+    font-weight: bold;
+    color: var(--cyan);
+}
+
+/* Add spacing after sections */
+.level3 p:has(strong) {
+    margin-bottom: 0.5em;
+}
+
+/* Format Args and Returns sections */
+p:has(code) {
+    line-height: 1.6;
+}
+
+/* Function signatures */
+.sourceCode {
+    margin-bottom: 1.5em;
+}
+
+/* Parameter tables */
+.doc-section-parameters table,
+.doc-section-returns table {
+    margin-top: 1em;
+    margin-bottom: 1.5em;
+}
+
+/* Make parameter and returns headers smaller */
+h2.anchored[data-anchor-id="parameters"],
+h2.anchored[data-anchor-id="returns"],
+.doc-section-parameters h4,
+.doc-section-returns h4 {
+    font-size: 1.25rem;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    color: var(--lime);
+    border-bottom: 1px solid var(--lime);
+    padding-bottom: 0.3rem;
+    font-family: var(--font-body);
+    font-weight: 500;
+    letter-spacing: normal;
+}
+
+/* Style documentation tables */
+table {
+    width: 100%;
+    margin-bottom: 1.5rem;
+    border-collapse: collapse;
+}
+
+table th {
+    background-color: #1a1a1a;
+    padding: 0.5rem 1rem;
+    border-bottom: 2px solid var(--greige-600);
+    text-align: left;
+}
+
+table td {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--greige-600);
+}
+
+/* Code in table cells */
+table td code {
+    background-color: transparent !important;
+    padding: 0;
+}
+
+/* Improve spacing in parameter and return tables */
+.doc-section-parameters,
+.doc-section-returns {
+    margin-top: 1rem;
+}

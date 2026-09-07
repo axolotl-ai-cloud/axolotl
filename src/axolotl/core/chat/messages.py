@@ -1,6 +1,7 @@
 """
 internal message representations of chat messages
 """
+
 import json
 from enum import Enum
 from typing import Any, Callable, List, Optional, Union
@@ -14,11 +15,11 @@ class MessageRoles(str, Enum):
     Message roles for the system, user, assistant, and tools
     """
 
-    system = "system"  # pylint: disable=invalid-name
-    user = "user"  # pylint: disable=invalid-name
-    assistant = "assistant"  # pylint: disable=invalid-name
-    tool = "tool"  # pylint: disable=invalid-name
-    ipython = (  # pylint: disable=invalid-name
+    system = "system"
+    user = "user"
+    assistant = "assistant"
+    tool = "tool"
+    ipython = (
         # for responses from builtin tools
         "ipython"
     )
@@ -29,12 +30,12 @@ class MessageContentTypes(str, Enum):
     Message content types for text, image, audio, tool calls, and tool responses
     """
 
-    special_token = "special_token"  # pylint: disable=invalid-name  # nosec B105
-    text = "text"  # pylint: disable=invalid-name
-    image = "image"  # pylint: disable=invalid-name
-    audio = "audio"  # pylint: disable=invalid-name
-    tool_call = "tool_call"  # pylint: disable=invalid-name  # to differentiate regular responses from tool calls from the assistant
-    tool_response = "tool_response"  # pylint: disable=invalid-name
+    special_token = "special_token"  # nosec B105
+    text = "text"
+    image = "image"
+    audio = "audio"
+    tool_call = "tool_call"
+    tool_response = "tool_response"
 
 
 class SpecialToken(str, Enum):
@@ -42,8 +43,8 @@ class SpecialToken(str, Enum):
     Special tokens for beginning of string and end of string
     """
 
-    bos_token = "bos_token"  # pylint: disable=invalid-name  # nosec B105
-    eos_token = "eos_token"  # pylint: disable=invalid-name  # nosec B105
+    bos_token = "bos_token"  # nosec B105
+    eos_token = "eos_token"  # nosec B105
 
 
 class ToolCallFunction(BaseModel):
@@ -72,7 +73,7 @@ class ToolCallContents(BaseModel):
 
     name: str
     arguments: dict[str, Union[str, int]]
-    id: Optional[str] = None  # pylint: disable=invalid-name
+    id: Optional[str] = None
 
     def __str__(self) -> str:
         data = {"name": self.name, "arguments": self.arguments}
@@ -88,7 +89,7 @@ class ToolResponseContents(BaseModel):
 
     name: str
     content: Union[str, dict[str, Union[str, int, float]]]
-    id: Optional[str] = None  # pylint: disable=invalid-name
+    id: Optional[str] = None
 
     def __str__(self) -> str:
         data = {"name": self.name, "content": self.content}
@@ -155,7 +156,6 @@ class Messages(BaseModel):
                         len(input_ids) : len(input_ids) + len(pending_input_ids)
                     ]
                     if new_pending_inputs != pending_input_ids:
-                        # logging.warning("tokenization mismatch from concatenation.")
                         pending_input_ids = new_pending_inputs
                     input_ids.extend(pending_input_ids)
                     if pending_weight:

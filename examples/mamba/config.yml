@@ -1,11 +1,10 @@
 base_model: state-spaces/mamba-2.8b
+# optionally might have model_type or tokenizer_type or tokenizer_config
 model_type: MambaLMHeadModel
 tokenizer_type: AutoTokenizer
 tokenizer_config: EleutherAI/gpt-neox-20b
-
-load_in_8bit: false
-load_in_4bit: false
-strict: false
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test
@@ -35,27 +34,17 @@ train_on_inputs: false
 group_by_length: true
 
 bf16: auto
-fp16:
 tf32: true
 
 gradient_checkpointing: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
-flash_attention:
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
-eval_table_size:
-eval_max_new_tokens: 128
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
 special_tokens:
 tokens:
-save_safetensors: False
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

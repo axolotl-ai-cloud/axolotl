@@ -2,23 +2,16 @@
 E2E tests for lora llama
 """
 
-import logging
-import os
 import unittest
-from pathlib import Path
 
 import pytest
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+from .utils import check_model_output_exists, with_temp_dir
 
 
 @pytest.mark.skip(reason="skipping until upstreamed into transformers")
@@ -29,7 +22,6 @@ class TestMamba(unittest.TestCase):
 
     @with_temp_dir
     def test_fft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "state-spaces/mamba-130m",
@@ -52,17 +44,18 @@ class TestMamba(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": None,
-                "save_safetensors": False,
+                "save_first_step": False,
             }
         )
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)

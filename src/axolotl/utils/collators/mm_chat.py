@@ -1,13 +1,16 @@
 """
 Collators for multi-modal chat messages and packing
 """
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
 
-from PIL import Image
-from transformers import PreTrainedTokenizerBase, ProcessorMixin
+from dataclasses import dataclass
+from typing import Any, Optional, Union
+
+from torch import Tensor
+from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
 from transformers.utils import PaddingStrategy
+
+from axolotl.processing_strategies import ProcessingStrategy
 
 
 @dataclass
@@ -17,11 +20,9 @@ class MultiModalChatDataCollator(DataCollatorMixin):
     """
 
     tokenizer: PreTrainedTokenizerBase
-    processor: ProcessorMixin
-    return_tensors: str = "pt"
-    chat_template: Optional[str] = None
+    processing_strategy: ProcessingStrategy
     packing: bool = False
-    max_images: int = -1
+    return_tensors: str = "pt"
     padding: Union[bool, str, PaddingStrategy] = True
     pad_to_multiple_of: Optional[int] = None
 
@@ -29,55 +30,30 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         if self.packing:
             raise ValueError("Packing is currently not supported.")
 
-    def torch_call(
-        self, examples: List[Union[List[int], Any, Dict[str, Any]]]
-    ) -> Dict[str, Any]:
-        # Handle dict or lists with proper padding and conversion to tensor.
+    def torch_call(self, examples: list[dict]) -> dict[str, Any]:
+        return self.process_rows(examples)
 
-        return self.__class__.process_rows(
-            examples, self.processor, self.chat_template, self.max_images
+    def process_rows(
+        self,
+        examples: list[dict],
+    ) -> dict[str, Tensor]:
+        # Preprocess the examples
+        examples = self.processing_strategy(examples)
+
+        # Initialize batch
+        messages = [ex["messages"] for ex in examples]
+
+        batch = self.processing_strategy.processor.apply_chat_template(
+            messages,
+            add_generation_prompt=False,
+            tokenize=True,
+            return_tensors="pt",
+            return_dict=True,
+            chat_template=self.processing_strategy.chat_template,
+            processor_kwargs={"padding": True},
         )
 
-    @staticmethod
-    def process_rows(examples, processor, chat_template, max_images, length_only=False):
-        # HINT: use `_torch_collate_batch` to stack and pad tensors
-        # see also DataCollatorWithFlattening and DefaultDataCollator
+        # Process the labels
+        batch["labels"] = self.processing_strategy.process_labels(batch["input_ids"])
 
-        # *** This is COPIED from the trl example sft_vlm.py code ***
-        # use this as a starting point
-
-        # Get the texts and images, and apply the chat template
-        texts = [
-            processor.apply_chat_template(
-                example["messages"], chat_template=chat_template, tokenize=False
-            )
-            for example in examples
-        ]
-        images = [
-            Image.open(example["images"])
-            if isinstance(example["images"], str)
-            else example["images"]
-            for example in examples
-        ]
-
-        if max_images > 0:
-            images = [img_batch[:max_images] for img_batch in images]
-
-        # Tokenize the texts and process the images
-        batch = processor(text=texts, images=images, return_tensors="pt", padding=True)
-
-        # The labels are the input_ids, and we mask the padding tokens in the loss computation
-        labels = batch["input_ids"].clone()
-        labels[labels == processor.tokenizer.pad_token_id] = -100  #
-        # Ignore the image token index in the loss computation (model specific)
-        image_token_id = processor.tokenizer.convert_tokens_to_ids(
-            processor.image_token
-        )
-        labels[labels == image_token_id] = -100
-        batch["labels"] = labels
-
-        if length_only:
-            return {
-                "length": [len(sample["input_ids"]) for sample in batch["input_ids"]]
-            }
         return batch

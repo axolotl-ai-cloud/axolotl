@@ -1,14 +1,7 @@
 """Module for testing prompt tokenizers."""
 
 import json
-import logging
-import unittest
 from pathlib import Path
-from typing import Optional
-
-import pytest
-from datasets import load_dataset
-from transformers import AddedToken, AutoTokenizer, LlamaTokenizer
 
 from axolotl.prompt_strategies.alpaca_chat import NoSystemPrompter
 from axolotl.prompt_strategies.alpaca_w_system import (
@@ -24,7 +17,7 @@ from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger("axolotl")
+from tests.hf_offline_utils import enable_hf_offline
 
 test_data = {
     "multi_turn_sys": {
@@ -60,37 +53,21 @@ test_data = {
 }
 
 
-class TestPromptTokenizationStrategies(unittest.TestCase):
+class TestPromptTokenizationStrategies:
     """
     Test class for prompt tokenization strategies.
     """
 
-    _caplog: Optional[pytest.LogCaptureFixture] = None
-
-    @pytest.fixture(autouse=True)
-    def inject_fixtures(self, caplog):
-        self._caplog = caplog
-
-    def setUp(self) -> None:
-        # pylint: disable=duplicate-code
-        self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(
-            {
-                "bos_token": "<s>",
-                "eos_token": "</s>",
-                "unk_token": "<unk>",
-            }
-        )
-
-    def test_no_sys_prompt(self):
+    @enable_hf_offline
+    def test_no_sys_prompt(self, tokenizer_huggyllama_w_special_tokens):
         """
         tests the interface between the user and assistant parts
         """
         prompter = NoSystemPrompter()
-        # pylint: disable=duplicate-code
+
         strat = AlpacaPromptTokenizingStrategy(
             prompter,
-            self.tokenizer,
+            tokenizer_huggyllama_w_special_tokens,
             False,
             2048,
         )
@@ -103,15 +80,16 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         assert example["labels"][world_idx] == 3186
         assert example["labels"][world_idx - 1] == -100
 
-    def test_alpaca(self):
+    @enable_hf_offline
+    def test_alpaca(self, tokenizer_huggyllama_w_special_tokens):
         """
         tests the interface between the user and assistant parts
         """
-        # pylint: disable=duplicate-code
+
         prompter = AlpacaPrompter()
         strat = AlpacaPromptTokenizingStrategy(
             prompter,
-            self.tokenizer,
+            tokenizer_huggyllama_w_special_tokens,
             False,
             2048,
         )
@@ -122,27 +100,17 @@ class TestPromptTokenizationStrategies(unittest.TestCase):
         assert example["labels"][world_idx - 1] == -100
 
 
-class InstructionWSystemPromptTokenizingStrategyTest(unittest.TestCase):
+class TestInstructionWSystemPromptTokenizingStrategy:
     """
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
-    def setUp(self) -> None:
-        # pylint: disable=duplicate-code
-        self.tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
-        self.tokenizer.add_special_tokens(
-            {
-                "bos_token": "<s>",
-                "eos_token": "</s>",
-                "unk_token": "<unk>",
-            }
-        )
-
-    def test_system_alpaca(self):
+    @enable_hf_offline
+    def test_system_alpaca(self, tokenizer_huggyllama_w_special_tokens):
         prompter = SystemDataPrompter(PromptStyle.CHAT.value)
         strat = InstructionWSystemPromptTokenizingStrategy(
             prompter,
-            self.tokenizer,
+            tokenizer_huggyllama_w_special_tokens,
             False,
             2048,
         )
@@ -163,17 +131,13 @@ class InstructionWSystemPromptTokenizingStrategyTest(unittest.TestCase):
         assert example["input_ids"][8] == 11889  # USER
 
 
-class Llama2ChatTokenizationTest(unittest.TestCase):
+class Llama2ChatTokenizationTest:
     """
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
 
-    def setUp(self) -> None:
-        # pylint: disable=duplicate-code
-        self.tokenizer = LlamaTokenizer.from_pretrained("NousResearch/Llama-2-7b-hf")
-        # woraround because official Meta repos are not open
-
-    def test_llama2_chat_integration(self):
+    @enable_hf_offline
+    def test_llama2_chat_integration(self, tokenizer_llama2_7b):
         with open(
             Path(__file__).parent / "fixtures/conversation.json", encoding="utf-8"
         ) as fin:
@@ -188,16 +152,18 @@ class Llama2ChatTokenizationTest(unittest.TestCase):
         prompter = Llama2ChatPrompter()
         strat = LLama2ChatTokenizingStrategy(
             prompter,
-            self.tokenizer,
+            tokenizer_llama2_7b,
             False,
             4096,
         )
         example = strat.tokenize_prompt(conversation)
         for fields in ["input_ids", "attention_mask", "labels"]:
-            self.assertEqual(len(example[fields]), len(tokenized_conversation[fields]))
-            self.assertEqual(example[fields], tokenized_conversation[fields])
+            # pytest assert equals
 
-    def compare_with_transformers_integration(self):
+            assert len(example[fields]) == len(tokenized_conversation[fields])
+            assert example[fields] == tokenized_conversation[fields]
+
+    def compare_with_transformers_integration(self, tokenizer_llama2_7b):
         # this needs transformers >= v4.31.0
         from transformers.models.llama.tokenization_llama import B_SYS, E_SYS
         from transformers.pipelines.conversational import Conversation
@@ -205,7 +171,7 @@ class Llama2ChatTokenizationTest(unittest.TestCase):
         # from transformers.models.llama.tokenization_llama import DEFAULT_SYSTEM_PROMPT
         # broken as of 23/7/20
         # see https://github.com/huggingface/transformers/pull/24935
-        # pylint: disable=C0103
+
         DEFAULT_SYSTEM_PROMPT = """\
 You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.
 
@@ -235,67 +201,43 @@ If a question does not make any sense, or is not factually coherent, explain why
             + user_input[1:-1],
             generated_responses=answers,
         )
-        # pylint: disable=W0212
-        hf_tokens = self.tokenizer._build_conversation_input_ids(hf_conf)
 
-        self.assertEqual(
-            hf_tokens, tokenized_conversation["input_ids"][: len(hf_tokens)]
-        )
+        hf_tokens = tokenizer_llama2_7b._build_conversation_input_ids(hf_conf)
+
+        assert hf_tokens == tokenized_conversation["input_ids"][: len(hf_tokens)]
 
 
-class OrpoTokenizationTest(unittest.TestCase):
+class OrpoTokenizationTest:
     """test case for the ORPO tokenization"""
 
-    def setUp(self) -> None:
-        # pylint: disable=duplicate-code
-        tokenizer = LlamaTokenizer.from_pretrained(
-            "casperhansen/mistral-7b-instruct-v0.1-awq"
-        )
-        tokenizer.add_special_tokens(
-            {
-                "eos_token": AddedToken(
-                    "<|im_end|>", rstrip=False, lstrip=False, normalized=False
-                )
-            }
-        )
-        tokenizer.add_tokens(
-            [
-                AddedToken(
-                    "<|im_start|>", rstrip=False, lstrip=False, normalized=False
-                ),
-            ]
-        )
-        self.tokenizer = tokenizer
-        self.dataset = load_dataset(
-            "argilla/ultrafeedback-binarized-preferences-cleaned", split="train"
-        ).select([0])
-
-    def test_orpo_integration(self):
+    @enable_hf_offline
+    def test_orpo_integration(
+        self,
+        tokenizer_mistral_7b_instruct_chatml,
+        dataset_argilla_ultrafeedback_binarized_preferences_cleaned,
+    ):
+        ds = dataset_argilla_ultrafeedback_binarized_preferences_cleaned.select([0])
         strat = load(
-            self.tokenizer,
+            tokenizer_mistral_7b_instruct_chatml,
             DictDefault({"train_on_inputs": False}),
             DictDefault({"chat_template": "chatml"}),
         )
-        res = strat.tokenize_prompt(self.dataset[0])
-        assert "rejected_input_ids" in res
+        res = strat.tokenize_prompt(ds[0])
+        assert "rejected_ids" in res
         assert "rejected_labels" in res
         assert "input_ids" in res
         assert "labels" in res
         assert "prompt_attention_mask" in res
 
-        assert len(res["rejected_input_ids"]) == len(res["rejected_labels"])
+        assert len(res["rejected_ids"]) == len(res["rejected_labels"])
         assert len(res["input_ids"]) == len(res["labels"])
         assert len(res["input_ids"]) == len(res["prompt_attention_mask"])
 
         assert res["rejected_labels"][0] == -100
-        assert res["rejected_input_ids"][-1] == res["rejected_labels"][-1]
+        assert res["rejected_ids"][-1] == res["rejected_labels"][-1]
 
         assert res["labels"][0] == -100
         assert res["input_ids"][-1] == res["labels"][-1]
 
         assert res["prompt_attention_mask"][0] == 1
         assert res["prompt_attention_mask"][-1] == 0
-
-
-if __name__ == "__main__":
-    unittest.main()

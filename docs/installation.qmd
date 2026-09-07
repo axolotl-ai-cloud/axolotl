@@ -1,0 +1,170 @@
+---
+title: "Installation"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+execute:
+  enabled: false
+---
+
+This guide covers all the ways you can install and set up Axolotl for your environment.
+
+## Requirements {#sec-requirements}
+
+- NVIDIA GPU (Ampere architecture or newer for `bf16` and Flash Attention) or AMD GPU
+- Python ≥3.11
+- PyTorch ≥2.11.0 (2.12.1 recommended)
+
+## Installation {#sec-installation}
+
+::: {.callout-important}
+For Blackwell GPUs, please use PyTorch ≥2.11.0 and CUDA 13.0. CUDA 12.8 cannot
+compile for `sm_103a` (B300), and using CUDA 13.0 also avoids first-launch JIT
+overhead on B100 / B200 / RTX 50-series.
+:::
+
+### Quick Install {#sec-uv}
+
+Axolotl uses [uv](https://docs.astral.sh/uv/) as its package manager. uv is a fast, reliable Python package installer and resolver built in Rust.
+
+Install uv if not already installed:
+```{.bash}
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+```
+
+Choose your CUDA version (e.g. `cu128`, `cu130`), create a venv, and install:
+```{.bash}
+export UV_TORCH_BACKEND=cu130  # or cu128
+uv venv
+source .venv/bin/activate
+uv pip install --no-build-isolation axolotl[deepspeed]
+```
+
+### Edge/Development Build {#sec-edge-build}
+
+For the latest features between releases:
+
+```{.bash}
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
+cd axolotl
+export UV_TORCH_BACKEND=cu130  # or cu128
+uv venv
+source .venv/bin/activate
+uv pip install --no-build-isolation -e '.[deepspeed]'
+```
+
+### Docker {#sec-docker}
+
+```{.bash}
+docker run --gpus '"all"' --rm -it --ipc=host axolotlai/axolotl-uv:main-latest
+```
+
+For development with Docker:
+
+```{.bash}
+docker compose up -d
+```
+
+::: {.callout-tip}
+### Advanced Docker Configuration
+```{.bash}
+docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
+  --name axolotl --ipc=host \
+  --ulimit memlock=-1 --ulimit stack=67108864 \
+  --mount type=bind,src="${PWD}",target=/workspace/axolotl \
+  -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+  axolotlai/axolotl-uv:main-latest
+```
+:::
+
+::: {.callout-important}
+For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.12-cu130-2.12.1` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.12.1`.
+:::
+
+Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.
+
+## Cloud Environments {#sec-cloud}
+
+### Cloud GPU Providers {#sec-cloud-gpu}
+
+For providers supporting Docker:
+
+- Use `axolotlai/axolotl-cloud-uv:main-latest`
+- Available on:
+    - [RunPod](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+    - [Vast.ai](https://cloud.vast.ai?ref_id=62897&template_id=bdd4a49fa8bce926defc99471864cace&utm_source=axolotl&utm_medium=partner&utm_campaign=template_launch_july2025&utm_content=docs_link)
+    - [PRIME Intellect](https://app.primeintellect.ai/dashboard/create-cluster?image=axolotl&location=Cheapest&security=Cheapest&show_spot=true)
+    - [Modal](https://www.modal.com?utm_source=github&utm_medium=github&utm_campaign=axolotl)
+    - [Novita](https://novita.ai/gpus-console?templateId=311)
+    - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
+    - [Latitude.sh](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
+
+### SkyPilot {#sec-skypilot}
+
+To launch Axolotl on your own cloud accounts (AWS, GCP, Azure, etc.) or Kubernetes cluster with a single command, see the [SkyPilot guide](skypilot.qmd).
+
+### Google Colab {#sec-colab}
+
+[![](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/axolotl-ai-cloud/axolotl/blob/main/examples/colab-notebooks/colab-axolotl-example.ipynb#scrollTo=msOCO4NRmRLa)
+
+## Platform-Specific Instructions {#sec-platform-specific}
+
+### macOS {#sec-macos}
+
+```{.bash}
+uv pip install --no-build-isolation -e '.'
+```
+
+See @sec-troubleshooting for Mac-specific issues.
+
+### Windows {#sec-windows}
+
+::: {.callout-important}
+We recommend using WSL2 (Windows Subsystem for Linux) or Docker.
+:::
+
+## Migrating from pip to uv {#sec-migrating}
+
+If you have an existing pip-based Axolotl installation, you can migrate to uv:
+
+```{.bash}
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+
+# Create a fresh venv (recommended for a clean start)
+export UV_TORCH_BACKEND=cu130  # or cu128
+uv venv
+source .venv/bin/activate
+
+# Reinstall axolotl
+uv pip install --no-build-isolation axolotl[deepspeed]
+```
+
+## Using pip (Alternative) {#sec-pip}
+
+If you are unable to install uv, you can still use pip directly.
+
+::: {.callout-important}
+Please make sure to have PyTorch installed before installing Axolotl with pip.
+
+Follow the instructions at: [https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/)
+:::
+
+```{.bash}
+pip3 install -U packaging setuptools wheel ninja
+pip3 install --no-build-isolation axolotl[deepspeed]
+```
+
+For editable/development installs:
+```{.bash}
+pip3 install -U packaging setuptools wheel ninja
+pip3 install --no-build-isolation -e '.[deepspeed]'
+```
+
+## Troubleshooting {#sec-troubleshooting}
+
+If you encounter installation issues, see our [FAQ](faq.qmd) and [Debugging Guide](debugging.qmd).

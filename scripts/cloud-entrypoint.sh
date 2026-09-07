@@ -2,6 +2,12 @@
 
 # Export specific ENV variables to /etc/rp_environment
 echo "Exporting environment variables..."
+if [ -f /workspace/axolotl/scripts/cuda13_env.sh ]; then
+    source /workspace/axolotl/scripts/cuda13_env.sh
+    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        echo "export LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\"" >> /etc/rp_environment
+    fi
+fi
 printenv | grep -E '^HF_|^BNB_|^CUDA_|^NCCL_|^NV|^RUNPOD_|^PATH=|^_=' | sed 's/^\([^=]*\)=\(.*\)$/export \1="\2"/' | grep -v 'printenv' >> /etc/rp_environment
 echo 'source /etc/rp_environment' >> ~/.bashrc
 
@@ -44,8 +50,13 @@ add_keys_to_authorized() {
     chmod 700 -R ~/.ssh
 }
 
+# Set SSH port
+if [ ! -z "$SSH_PORT" ]; then
+    sed -i "s/#Port 22/Port $SSH_PORT/" /etc/ssh/sshd_config
+fi
+
 if [[ $PUBLIC_KEY ]]; then
-    # runpod
+    # runpod, prime intellect
     add_keys_to_authorized "$PUBLIC_KEY"
     # Start the SSH service in the background
     service ssh start
@@ -74,6 +85,14 @@ if [ ! -d "/workspace/data/axolotl-artifacts" ]; then
 fi
 if [ ! -L "/workspace/axolotl/outputs" ]; then
     ln -sf /workspace/data/axolotl-artifacts /workspace/axolotl/outputs
+fi
+
+# start the runpod slurm init
+SLURM_INIT="${SLURM_INIT:-/slurm-init.sh}"
+
+if [[ -f "$SLURM_INIT" ]]; then
+  echo "[entrypoint] running $SLURM_INIT..."
+  bash "$SLURM_INIT"
 fi
 
 # Execute the passed arguments (CMD)

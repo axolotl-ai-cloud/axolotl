@@ -1,8 +1,10 @@
 base_model: ai21labs/AI21-Jamba-1.5-Large
+# optionally might have model_type or tokenizer_type
 tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_4bit: true
-strict: false
 use_tensorboard: true
 chat_template: jamba
 datasets:
@@ -10,17 +12,17 @@ datasets:
     type: chat_template
     drop_system_message: true
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: jamba-large-fsdp-qlora-ft
-save_safetensors: true
 adapter: qlora
 sequence_len: 2048
 sample_packing: true
-pad_to_sequence_len: true
+
 
 lora_r: 16
 lora_alpha: 16
@@ -31,12 +33,10 @@ lora_target_linear: false
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 2
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 0.00001
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 tf32: true
 
@@ -44,9 +44,9 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: true
 logging_steps: 1
-flash_attention: true
+attn_implementation: flash_attention_2
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -63,3 +63,5 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: JambaAttentionDecoderLayer,JambaMambaDecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

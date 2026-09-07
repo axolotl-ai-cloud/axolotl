@@ -1,14 +1,15 @@
 """Module containing PromptTokenizingStrategy and Prompter classes"""
 
 import abc
-import logging
-from typing import Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
+from datasets import Dataset
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from axolotl.prompters import Prompter
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_INDEX = -100
 LLAMA_DEFAULT_PAD_TOKEN = "<pad>"  # nosec
@@ -28,11 +29,23 @@ class DatasetWrappingStrategy(abc.ABC):
     Abstract class for wrapping datasets for Chat Messages
     """
 
+    @abc.abstractmethod
+    def wrap_dataset(
+        self,
+        dataset,
+        process_count: int | None = None,
+        keep_in_memory: bool | None = False,
+        **kwargs,
+    ) -> Dataset:
+        pass
+
 
 class PromptTokenizingStrategy(abc.ABC):
     """
     Abstract class for tokenizing strategies
     """
+
+    filter_rows: Optional[Callable] = None
 
     def __init__(
         self,
@@ -62,7 +75,7 @@ class PromptTokenizingStrategy(abc.ABC):
     ) -> BatchEncoding:
         empty = BatchEncoding(data={"input_ids": [], "attention_mask": []})
         if not prompt:
-            LOG.warning("Empty text requested for tokenization.")
+            LOG.warning_once("Empty text requested for tokenization.")
             return empty
 
         result = self.tokenizer(
@@ -105,7 +118,7 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
     def tokenize_prompt(self, prompt):
         (
             instruction,
-            input,  # pylint: disable=redefined-builtin
+            input,
             response,
         ) = self.parse_instruction_fields(prompt)
         user_prompt = next(
@@ -119,7 +132,6 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         tokenized_prompt = self._tokenize(user_prompt, add_eos_token=False)
         if not self.train_on_inputs:
             user_prompt_len = len(tokenized_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
             tokenized_prompt["labels"] = [IGNORE_INDEX] * user_prompt_len
         tokenized_res_prompt = self._tokenize(
             response, strip_bos_token=True, add_eos_token=True
@@ -131,7 +143,10 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         return tokenized_prompt
 
     def _build_full_prompt(
-        self, instruction, input, response  # pylint: disable=redefined-builtin
+        self,
+        instruction,
+        input,
+        response,
     ):
         return next(
             iter(
@@ -244,10 +259,9 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         raise NotImplementedError
 
     def tokenize_prompt(self, prompt):
-        # pylint: disable=duplicate-code
         (
             instruction,
-            input,  # pylint: disable=redefined-builtin
+            input,
             output,
             reflection,
             corrected,
@@ -267,16 +281,13 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
             )
             tokenized_user_prompt = self._tokenize(user_prompt, add_eos_token=False)
             user_prompt_len = len(tokenized_user_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
             tokenized_full_prompt["labels"] = [
                 IGNORE_INDEX
             ] * user_prompt_len + tokenized_full_prompt["labels"][user_prompt_len:]
 
         return tokenized_full_prompt
 
-    def _build_full_prompt(
-        self, instruction, input, output, reflection, corrected
-    ):  # pylint: disable=redefined-builtin
+    def _build_full_prompt(self, instruction, input, output, reflection, corrected):
         return next(
             iter(
                 self.prompter.build_prompt(
@@ -290,6 +301,10 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         )
 
     def _tokenize(self, prompt, add_eos_token=True, strip_bos_token=False):
+        empty = BatchEncoding(data={"input_ids": [], "attention_mask": []})
+        if not prompt:
+            LOG.warning_once("Empty text requested for tokenization.")
+            return empty
         result = self.tokenizer(
             prompt,
             truncation=True,
@@ -297,6 +312,9 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
             padding=False,
             return_tensors=None,
         )
+        if len(result["input_ids"]) == 0:
+            LOG.warning("Tokenizer result is empty. You may want to audit your dataset")
+            return empty
         if (
             result["input_ids"][-1] != self.tokenizer.eos_token_id
             and len(result["input_ids"]) < self.sequence_len

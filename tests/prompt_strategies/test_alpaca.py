@@ -1,6 +1,7 @@
 """
 Test module for alpaca integration w chatml
 """
+
 import pytest
 from datasets import Dataset
 from tokenizers import AddedToken
@@ -9,6 +10,8 @@ from transformers import AutoTokenizer
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 @pytest.fixture(name="alpaca_dataset")
@@ -25,8 +28,8 @@ def fixture_alpaca_dataset():
 
 
 @pytest.fixture(name="tokenizer")
+@enable_hf_offline
 def fixture_tokenizer():
-    # pylint: disable=all
     tokenizer = AutoTokenizer.from_pretrained(
         "casperhansen/mistral-7b-instruct-v0.1-awq"
     )

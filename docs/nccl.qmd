@@ -13,13 +13,13 @@ Often, this timeout will happen after 30 minutes (the default setting) and is ac
 
 Forcing cross-GPU communication via [NVLink](https://en.wikipedia.org/wiki/NVLink) may help without increasing timeouts. To verify that your configuration is leveraging NVLink run the following command:
 
-```shell
+```bash
 nvidia-smi nvlink --status
 ```
 
 To force NCCL to use NVLink, simply set this in the environment:
 
-```shell
+```bash
 export NCCL_P2P_LEVEL=NVL
 ```
 
@@ -33,13 +33,13 @@ If NVLink is not available in your environment there are other options for ``NCC
 
 To validate that acceptable data transfer speeds exist for your training job, running [NCCL Tests](https://github.com/NVIDIA/nccl-tests/blob/master/README.md) can help pinpoint bottlenecks, for example:
 
-```shell
+```bash
 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 3
 ```
 
 It can be useful when debugging NCCL communication timeouts to activate additional logging in both PyTorch and NCCL:
 
-```shell
+```bash
 export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=ALL
 export TORCH_DISTRIBUTED_DEBUG=INFO

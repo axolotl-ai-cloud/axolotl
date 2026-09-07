@@ -1,24 +1,17 @@
-"""
-E2E tests for lora llama
-"""
+"""E2E tests for lora llama"""
 
-import logging
-import os
 import unittest
 from pathlib import Path
 
 import pytest
 
-from axolotl.cli import load_rl_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.cli.args import TrainerCliArgs
+from axolotl.common.datasets import load_preference_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+from .utils import check_model_output_exists, with_temp_dir
 
 
 class TestDPOLlamaLora(unittest.TestCase):
@@ -28,11 +21,10 @@ class TestDPOLlamaLora(unittest.TestCase):
 
     @with_temp_dir
     def test_dpo_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -40,7 +32,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "dpo",
                 "datasets": [
                     {
@@ -61,67 +55,24 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
-
-    @with_temp_dir
-    def test_dpo_nll_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
-        cfg = DictDefault(
-            {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 1024,
-                "load_in_8bit": True,
-                "adapter": "lora",
-                "lora_r": 64,
-                "lora_alpha": 32,
-                "lora_dropout": 0.1,
-                "lora_target_linear": True,
-                "special_tokens": {},
-                "rl": "dpo",
-                "rpo_alpha": 0.5,
-                "datasets": [
-                    {
-                        "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
-                        "type": "chatml.ultra",
-                        "split": "train",
-                    },
-                ],
-                "num_epochs": 1,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 1,
-                "output_dir": temp_dir,
-                "learning_rate": 0.00001,
-                "optimizer": "paged_adamw_8bit",
-                "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "warmup_steps": 5,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
-            }
-        )
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
-
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
     def test_dpo_use_weighting(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -129,7 +80,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "dpo",
                 "dpo_use_weighting": True,
                 "datasets": [
@@ -151,23 +104,26 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
-    @pytest.mark.skip("kto_pair no longer supported in trl")
     @with_temp_dir
-    def test_kto_pair_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
+    def test_rpo(self, temp_dir):
+        # For TRL >= 0.29, loss_type=["sigmoid", "sft"], loss_weights=[1, alpha]
+        # replaces loss_type="rpo", rpo_alpha=alpha.
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -175,7 +131,60 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "rl": "dpo",
+                "dpo_loss_type": ["sigmoid", "sft"],
+                "dpo_loss_weights": [1.0, 1.0],
+                "datasets": [
+                    {
+                        "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
+                        "type": "chatml.ultra",
+                        "split": "train",
+                    },
+                ],
+                "num_epochs": 1,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "paged_adamw_8bit",
+                "lr_scheduler": "cosine",
+                "max_steps": 20,
+                "save_steps": 10,
+                "warmup_steps": 5,
+                "gradient_checkpointing": True,
+                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        cli_args = TrainerCliArgs()
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
+
+    @pytest.mark.skip("kto_pair no longer supported in trl")
+    @with_temp_dir
+    def test_kto_pair_lora(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 64,
+                "lora_alpha": 32,
+                "lora_dropout": 0.1,
+                "lora_target_linear": True,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "kto_pair",
                 "datasets": [
                     {
@@ -196,22 +205,24 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @with_temp_dir
     def test_ipo_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -219,8 +230,11 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
-                "rl": "ipo",
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "rl": "dpo",
+                "dpo_loss_type": ["ipo"],
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
@@ -240,22 +254,25 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
+    @pytest.mark.skip(reason="TRL ORPO trainer has internal zip() length mismatch bug")
     @with_temp_dir
     def test_orpo_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -263,7 +280,9 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "orpo",
                 "orpo_alpha": 0.1,
                 "remove_unused_columns": False,
@@ -287,23 +306,25 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
     @pytest.mark.skip(reason="Fix the implementation")
     @with_temp_dir
     def test_kto_lora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -311,28 +332,33 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "lora_alpha": 32,
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
-                "special_tokens": {},
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "rl": "kto",
                 "rl_beta": 0.5,
                 "kto_desirable_weight": 1.0,
                 "kto_undesirable_weight": 1.0,
                 "remove_unused_columns": False,
                 "datasets": [
-                    # {
-                    #     "path": "argilla/kto-mix-15k",
-                    #     "type": "chatml.argilla_chat",
-                    #     "split": "train",
-                    # },
+                    {
+                        # this repo's test split carries a DPO schema that fails to cast
+                        "path": "argilla/kto-mix-15k",
+                        "data_files": ["data/train-*.parquet"],
+                        "type": "chatml.argilla_chat",
+                        "split": "train",
+                    },
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "chatml.ultra",
                         "split": "train",
                     },
-                    # {
-                    #     "path": "argilla/kto-mix-15k",
-                    #     "type": "llama3.argilla_chat",
-                    #     "split": "train",
-                    # },
+                    {
+                        "path": "argilla/kto-mix-15k",
+                        "data_files": ["data/train-*.parquet"],
+                        "type": "llama3.argilla_chat",
+                        "split": "train",
+                    },
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "llama3.ultra",
@@ -351,11 +377,14 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "warmup_steps": 5,
                 "gradient_checkpointing": True,
                 "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "save_first_step": False,
             }
         )
+
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         cli_args = TrainerCliArgs()
-        dataset_meta = load_rl_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "checkpoint-20/adapter_model.safetensors").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)

@@ -1,0 +1,44 @@
+base_model: Skywork/Skywork-Reward-V2-Qwen3-8B
+model_type: AutoModelForSequenceClassification
+num_labels: 1
+
+reward_model: true
+center_rewards_coefficient: 0.01  # Incentivize mean-zero rewards for improved stability
+chat_template: qwen3
+datasets:
+  - path: argilla/distilabel-intel-orca-dpo-pairs
+    type: bradley_terry.chat_template
+
+val_set_size: 0.0
+output_dir: ./outputs/out
+
+sequence_len: 8192
+sample_packing: false
+eval_sample_packing: false
+pad_to_sequence_len: true
+
+deepspeed: deepspeed_configs/zero1.json
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+eval_batch_size: 1
+num_epochs: 3
+optimizer: adamw_bnb_8bit
+lr_scheduler: linear
+learning_rate: 0.00002
+
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+warmup_ratio: 0.1
+logging_steps: 1
+weight_decay: 0.01

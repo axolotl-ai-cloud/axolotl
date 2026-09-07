@@ -1,10 +1,10 @@
 base_model: google/gemma-2-2b
+# optionally might have model_type or tokenizer_type
 model_type: AutoModelForSequenceClassification
+num_labels: 1
 tokenizer_type: AutoTokenizer
-
-load_in_8bit: false
-load_in_4bit: false
-strict: false
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 reward_model: true
 chat_template: gemma
@@ -18,7 +18,7 @@ remove_unused_columns: false
 sequence_len: 2048
 sample_packing: false
 eval_sample_packing: false
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:
@@ -34,8 +34,6 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 fp16:
 tf32: true
@@ -43,21 +41,14 @@ tf32: true
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
-flash_attention: true
+attn_implementation: flash_attention_2
 
 warmup_ratio: 0.1
 evals_per_epoch:
-eval_table_size:
-eval_max_new_tokens: 128
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

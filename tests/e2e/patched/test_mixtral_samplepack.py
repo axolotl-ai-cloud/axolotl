@@ -2,21 +2,21 @@
 E2E tests for mixtral
 """
 
-import logging
-import os
 import unittest
-from pathlib import Path
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
+from ..utils import (
+    check_model_output_exists,
+    check_tensorboard_loss_decreased,
+    requires_flash_attn,
+    with_temp_dir,
+)
 
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+pytestmark = requires_flash_attn
 
 
 class TestMixtral(unittest.TestCase):
@@ -26,11 +26,9 @@ class TestMixtral(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
+                "base_model": "axolotl-ai-co/tiny-mixtral-30m",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
@@ -38,9 +36,9 @@ class TestMixtral(unittest.TestCase):
                 "adapter": "qlora",
                 "lora_r": 16,
                 "lora_alpha": 32,
-                "lora_dropout": 0.1,
+                "lora_dropout": 0.0,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -49,36 +47,46 @@ class TestMixtral(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 3e-3,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 80,
+                "warmup_steps": 5,
+                "logging_steps": 1,
+                "save_steps": 80,
+                "eval_steps": 80,
                 "bf16": "auto",
+                "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=10,
+            final_window=10,
+            max_initial=6.0,
+            max_final=4.7,
+        )
 
     @with_temp_dir
     def test_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
+                "base_model": "axolotl-ai-co/tiny-mixtral-30m",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -87,25 +95,33 @@ class TestMixtral(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
-                "optimizer": "adamw_bnb_8bit",
+                "learning_rate": 5e-4,
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 80,
+                "warmup_steps": 5,
+                "logging_steps": 1,
+                "save_steps": 80,
+                "eval_steps": 80,
                 "bf16": "auto",
+                "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
-        model, _ = train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (
-            "MixtralFlashAttention2"
-            in model.model.layers[0].self_attn.__class__.__name__
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=6.0,
+            max_final=4.7,
         )
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()

@@ -1,6 +1,7 @@
 """
 Prompt strategies loader for alpaca instruction datasets with system prompts
 """
+
 from typing import Generator, Tuple, Union
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
@@ -21,10 +22,9 @@ class InstructionWSystemPromptTokenizingStrategy(PromptTokenizingStrategy):
         )
 
     def tokenize_prompt(self, prompt):
-        # pylint: disable=duplicate-code
         (
             instruction,
-            input,  # pylint: disable=redefined-builtin
+            input,
             response,
             system,
         ) = self.parse_instruction_fields(prompt)
@@ -40,7 +40,6 @@ class InstructionWSystemPromptTokenizingStrategy(PromptTokenizingStrategy):
         tokenized_prompt = self._tokenize(user_prompt, add_eos_token=False)
         if not self.train_on_inputs:
             user_prompt_len = len(tokenized_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
             tokenized_prompt["labels"] = [-100] * user_prompt_len
         tokenized_res_prompt = self._tokenize(
             response, strip_bos_token=True, add_eos_token=True
@@ -63,7 +62,7 @@ class SystemDataPrompter(AlpacaPrompter):
         self,
         system: str,
         instruction: str,
-        input: Union[None, str] = None,  # pylint: disable=redefined-builtin
+        input: Union[None, str] = None,
         output: Union[None, str] = None,
     ) -> Generator[str, None, None]:
         # returns the full prompt from instruction and optional input
@@ -92,7 +91,6 @@ class OpenOrcaSystemDataPrompter(SystemDataPrompter):
     """
 
     def match_prompt_style(self):
-        # pylint: disable=duplicate-code
         if self.prompt_style == PromptStyle.INSTRUCT.value:
             self.turn_format = "### Human:\n{instruction}\n### Additional Context:\n{input}\n### Assistant:\n"
             self.turn_no_input_format = "### Human:\n{instruction}\n### Assistant:\n"

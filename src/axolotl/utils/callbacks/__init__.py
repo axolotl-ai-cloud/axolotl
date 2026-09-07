@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
-import math
+import gc
+import json
 import os
 import traceback
 from shutil import copyfile
@@ -16,8 +16,8 @@ import pandas as pd
 import torch
 import torch.distributed as dist
 import wandb
+import yaml
 from datasets import load_dataset
-from optimum.bettertransformer import BetterTransformer
 from tqdm import tqdm
 from transformers import (
     GenerationConfig,
@@ -27,12 +27,13 @@ from transformers import (
     TrainerState,
     TrainingArguments,
 )
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
+from transformers.trainer_utils import (
+    SaveStrategy,
+)
+from trl.models import unwrap_model_for_generation
 
 from axolotl.utils import is_comet_available, is_mlflow_available
-from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.callbacks.perplexity import Perplexity
-from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
     barrier,
     broadcast_dict,
@@ -42,89 +43,15 @@ from axolotl.utils.distributed import (
     is_main_process,
     zero_first,
 )
+from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.config import AxolotlInputConfig
 
 if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainingArguments
+    from axolotl.core.training_args import AxolotlTrainingArguments
+
 
 IGNORE_INDEX = -100
-LOG = logging.getLogger("axolotl.callbacks")
-
-
-class EvalFirstStepCallback(
-    TrainerCallback
-):  # pylint: disable=too-few-public-methods disable=unused-argument
-    """
-    Callback to trigger evals on the first step
-    """
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if args.eval_strategy == IntervalStrategy.STEPS and state.global_step == 1:
-            control.should_evaluate = True
-        return control
-
-
-class SaveBetterTransformerModelCallback(
-    TrainerCallback
-):  # pylint: disable=too-few-public-methods
-    """Callback to save the BetterTransformer wrapped model"""
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        # Save
-        if (
-            args.save_strategy == IntervalStrategy.STEPS
-            and args.save_steps > 0
-            and state.global_step % args.save_steps == 0
-        ):
-            control.should_save = True
-
-        if control.should_save:
-            checkpoint_folder = os.path.join(
-                args.output_dir,
-                f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
-            )
-
-            model = BetterTransformer.reverse(kwargs["model"])
-            model.save_pretrained(checkpoint_folder)
-            # FIXME - need to cleanup old checkpoints
-
-            # since we're saving here, we don't need the trainer loop to attempt to save too b/c
-            # the trainer will raise an exception since it can't save a BetterTransformer wrapped model
-            control.should_save = False
-        return control
-
-
-class GPUStatsCallback(
-    TrainerCallback
-):  # pylint: disable=too-few-public-methods disable=unused-argument
-    """Callback to track GPU utilization"""
-
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.logged = False
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if not self.logged and state.global_step > 1:
-            log_gpu_memory_usage(LOG, "while training", self.cfg.device)
-            self.logged = True
-        return control
+LOG = get_logger(__name__)
 
 
 class LossWatchDogCallback(TrainerCallback):
@@ -132,18 +59,17 @@ class LossWatchDogCallback(TrainerCallback):
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.logged = False
         self.violations = 0
         self.threshold = cfg.loss_watchdog_threshold
         self.patience = cfg.loss_watchdog_patience or 3
 
     def on_step_end(
         self,
-        _args: TrainingArguments,
+        args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
         **_kwargs,
-    ):
+    ) -> TrainerControl:
         if len(state.log_history) > 0 and "loss" in state.log_history[-1]:
             if state.log_history[-1]["loss"] > self.threshold:
                 self.violations += 1
@@ -154,6 +80,71 @@ class LossWatchDogCallback(TrainerCallback):
                     control.should_training_stop = True
             else:
                 self.violations = 0
+        return control
+
+
+class SaveModelOnFirstStepCallback(TrainerCallback):
+    """Callback to save the model on the first step of training if enabled"""
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ) -> TrainerControl:
+        if state.global_step == 1:
+            control.should_save = True
+        return control
+
+
+class SkipEvalOnResumeCallback(TrainerCallback):
+    """Skip the redundant evaluation that fires when resuming from a checkpoint
+    whose step aligns with ``eval_steps``.
+
+    When HuggingFace Trainer resumes, it restores ``global_step`` from the
+    checkpoint and immediately triggers ``_maybe_log_save_evaluate`` for that
+    step.  Because the evaluation was already performed during the original
+    run, repeating it wastes time and pollutes metric logs.
+
+    This callback records the ``global_step`` at the start of training (i.e.
+    the checkpoint step when resuming, or 0 for a fresh run) and suppresses
+    any evaluation request on that exact step.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._resume_step: int | None = None
+
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ):
+        # ``global_step`` is already restored from the checkpoint at this
+        # point.  For a fresh run it will be 0, so the guard below becomes a
+        # no-op.
+        self._resume_step = state.global_step
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **_kwargs,
+    ) -> TrainerControl:
+        if (
+            self._resume_step
+            and state.global_step <= self._resume_step
+            and control.should_evaluate
+        ):
+            LOG.info(
+                "Skipping evaluation at step %d (already completed before resume)",
+                state.global_step,
+            )
+            control.should_evaluate = False
         return control
 
 
@@ -260,10 +251,10 @@ def bench_eval_callback_factory(trainer, tokenizer):
         def on_evaluate(
             self,
             args: AxolotlTrainingArguments,
-            state: TrainerState,  # pylint: disable=unused-argument
-            control: TrainerControl,  # pylint: disable=unused-argument
-            metrics: Dict[str, float],  # pylint: disable=unused-argument
-            **kwargs,  # pylint: disable=unused-argument
+            state: TrainerState,
+            control: TrainerControl,
+            metrics: Dict[str, float],
+            **kwargs,
         ):
             data_loader = trainer.get_bench_dataloader(
                 bench_dataset.remove_columns(["input", "subject", "output", "name"])
@@ -293,7 +284,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
             # Extract results by subject.
             bench_name = bench_dataset["name"]
             bench_names: dict = {s: {"refs": [], "preds": []} for s in set(bench_name)}
-            for s, p, r in zip(bench_name, preds, refs):  # pylint: disable=invalid-name
+            for s, p, r in zip(bench_name, preds, refs, strict=False):
                 bench_names[s]["preds"].append(p)
                 bench_names[s]["refs"].append(r)
             barrier()
@@ -331,9 +322,7 @@ def bench_eval_callback_factory(trainer, tokenizer):
                 bench_scores = []
                 bench_refs = []
                 bench_preds = []
-                for (
-                    bench_name
-                ) in combined_bench_names:  # pylint: disable=consider-using-dict-items
+                for bench_name in combined_bench_names:
                     bench_score = accuracy.compute(
                         references=combined_bench_names[bench_name]["refs"],
                         predictions=combined_bench_names[bench_name]["preds"],
@@ -341,9 +330,9 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     bench_refs.extend(combined_bench_names[bench_name]["refs"])
                     bench_preds.extend(combined_bench_names[bench_name]["preds"])
                     if not pd.isna(bench_score):
-                        results[
-                            f"{bench_split}_bench_accuracy_{bench_name}"
-                        ] = bench_score
+                        results[f"{bench_split}_bench_accuracy_{bench_name}"] = (
+                            bench_score
+                        )
                         bench_scores.append(bench_score)
                     else:
                         results[f"{bench_split}_bench_accuracy_{bench_name}"] = 0.0
@@ -375,27 +364,32 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             for metric in self.cfg.eval_causal_lm_metrics:
                 if metric == "perplexity":
                     max_seq_len = self.cfg.eval_max_new_tokens
-                    metrics[metric] = Perplexity(trainer.model, tokenizer, max_seq_len)
+                    metrics[metric] = Perplexity(
+                        tokenizer=tokenizer,
+                        max_seq_len=max_seq_len,
+                    )
                 else:
                     try:
                         metrics[metric] = evaluate.load(metric)
-                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                    except Exception as exc:
                         LOG.warning(f"{metric}: {exc.args}")
             return metrics
 
         def on_evaluate(
             self,
-            args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
+            args: AxolotlTrainingArguments,
             state: TrainerState,
             control: TrainerControl,
-            train_dataloader,  # pylint: disable=unused-argument
+            train_dataloader,
             eval_dataloader,
-            **kwargs,  # pylint: disable=unused-argument
+            **kwargs,
         ):
-            trainer.model.eval()
-            device = torch.device(self.cfg.device)
+            trainer.model_wrapped.eval()
 
-            # pylint: disable=duplicate-code
+            device = torch.device(
+                self.cfg.device
+            )  # Use this instead of trainer.model_wrapped.device as it may return cpu if fsdp offloaded
+
             generation_config = GenerationConfig(
                 max_new_tokens=self.cfg.eval_max_new_tokens,
                 bos_token_id=tokenizer.bos_token_id,
@@ -426,17 +420,19 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 try:
                     # Only pass the kwargs that are in the metric's feature list
                     metric_kwargs = {
-                        k: kwargs[k]
-                        for k in metric._feature_names()  # pylint: disable=protected-access
-                        if k in kwargs
+                        k: kwargs[k] for k in metric._feature_names() if k in kwargs
                     }
+
+                    if isinstance(metric, Perplexity):
+                        metric_kwargs["model"] = trainer.model_wrapped
+
                     metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]
                         if "score" in metric_score
                         else metric_score["mean_score"]
                     )
-                except Exception:  # pylint: disable=broad-exception-caught
+                except Exception:
                     traceback.print_exc()
                     LOG.debug(
                         f"Failed to compute metric {metric.name} with kwargs {kwargs.keys()}"
@@ -465,89 +461,98 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             def predict_with_generate():
                 eval_src, eval_pred, eval_ref = [], [], []
 
-                for batch in tqdm(eval_dataloader):
-                    batch_labels = batch["labels"].to(device)
-                    batch_input_ids = batch["input_ids"].to(device)
+                with unwrap_model_for_generation(
+                    trainer.model_wrapped, trainer.accelerator
+                ) as unwrapped_model:
+                    for batch in tqdm(eval_dataloader, disable=not is_main_process()):
+                        batch_labels = batch["labels"].to(device)
+                        batch_input_ids = batch["input_ids"].to(device)
 
-                    if "position_ids" in batch:
-                        batch_pos_ids = batch["position_ids"].tolist()
-                    else:
-                        batch_pos_ids = [None] * len(batch["input_ids"])
-
-                    prompt_token_ids_list = []
-                    completion_token_ids_list = []
-
-                    for input_ids_all, labels_all, pos_ids in zip(
-                        batch_input_ids,
-                        batch_labels,
-                        batch_pos_ids,
-                    ):
-                        if pos_ids is None:
-                            pos_ranges = [(0, len(input_ids_all) - 1)]
+                        if "position_ids" in batch:
+                            batch_pos_ids = batch["position_ids"].tolist()
                         else:
-                            pos_ranges = find_ranges(pos_ids)
+                            batch_pos_ids = [None] * len(batch["input_ids"])
 
-                        for pos_range in pos_ranges:
-                            start, end = pos_range
-                            if start == end:
-                                continue
+                        prompt_token_ids_list = []
+                        completion_token_ids_list = []
 
-                            input_ids = input_ids_all[start : end + 1]
-                            labels = labels_all[start : end + 1]
+                        for input_ids_all, labels_all, pos_ids in zip(
+                            batch_input_ids,
+                            batch_labels,
+                            batch_pos_ids,
+                            strict=False,
+                        ):
+                            if pos_ids is None:
+                                pos_ranges = [(0, len(input_ids_all) - 1)]
+                            else:
+                                pos_ranges = find_ranges(pos_ids)
 
-                            tokens_without_loss = labels == IGNORE_INDEX
-                            tokens_with_loss = labels != IGNORE_INDEX
-                            tokens_exclude_padding = input_ids != tokenizer.pad_token_id
-                            prompt_token_includes = (
-                                tokens_without_loss & tokens_exclude_padding
+                            for pos_range in pos_ranges:
+                                start, end = pos_range
+                                if start == end:
+                                    continue
+
+                                input_ids = input_ids_all[start : end + 1]
+                                labels = labels_all[start : end + 1]
+
+                                tokens_without_loss = labels == IGNORE_INDEX
+                                tokens_with_loss = labels != IGNORE_INDEX
+                                tokens_exclude_padding = (
+                                    input_ids != tokenizer.pad_token_id
+                                )
+                                prompt_token_includes = (
+                                    tokens_without_loss & tokens_exclude_padding
+                                )
+
+                                prompt_token_ids = input_ids[prompt_token_includes]
+                                prompt_token_ids_list.append(prompt_token_ids)
+
+                                completion_token_ids = input_ids[tokens_with_loss]
+                                completion_token_ids_list.append(completion_token_ids)
+
+                        prompt_texts = tokenizer.batch_decode(
+                            prompt_token_ids_list, skip_special_tokens=True
+                        )
+                        completion_texts = tokenizer.batch_decode(
+                            completion_token_ids_list, skip_special_tokens=True
+                        )
+
+                        with torch.no_grad():
+                            prompt_encoding = tokenizer(
+                                prompt_texts, padding=True, return_tensors="pt"
+                            ).to(device)
+
+                            predictions = unwrapped_model.generate(
+                                **prompt_encoding, generation_config=generation_config
                             )
 
-                            prompt_token_ids = input_ids[prompt_token_includes]
-                            prompt_token_ids_list.append(prompt_token_ids)
+                            del prompt_encoding
 
-                            completion_token_ids = input_ids[tokens_with_loss]
-                            completion_token_ids_list.append(completion_token_ids)
+                        prediction_all_tokens = predictions["sequences"].cpu().tolist()
+                        prediction_without_prompt_tokens_list = []
+                        for prompt_token_ids, prediction_tokens in zip(
+                            prompt_token_ids_list, prediction_all_tokens, strict=False
+                        ):
+                            prediction_without_prompt_tokens = prediction_tokens[
+                                len(prompt_token_ids) :
+                            ]
+                            prediction_without_prompt_tokens_list.append(
+                                prediction_without_prompt_tokens
+                            )
 
-                    prompt_texts = tokenizer.batch_decode(
-                        prompt_token_ids_list, skip_special_tokens=True
-                    )
-                    completion_texts = tokenizer.batch_decode(
-                        completion_token_ids_list, skip_special_tokens=True
-                    )
-
-                    with torch.no_grad():
-                        prompt_encoding = tokenizer(
-                            prompt_texts, padding=True, return_tensors="pt"
-                        ).to(self.cfg.device)
-                        predictions = trainer.model.generate(
-                            **prompt_encoding, generation_config=generation_config
+                        predicted_texts = tokenizer.batch_decode(
+                            prediction_without_prompt_tokens_list,
+                            skip_special_tokens=True,
                         )
 
-                    prediction_all_tokens = predictions["sequences"].cpu().tolist()
-                    prediction_without_prompt_tokens_list = []
-                    for prompt_token_ids, prediction_tokens in zip(
-                        prompt_token_ids_list, prediction_all_tokens
-                    ):
-                        prediction_without_prompt_tokens = prediction_tokens[
-                            len(prompt_token_ids) :
-                        ]
-                        prediction_without_prompt_tokens_list.append(
-                            prediction_without_prompt_tokens
-                        )
-
-                    predicted_texts = tokenizer.batch_decode(
-                        prediction_without_prompt_tokens_list, skip_special_tokens=True
-                    )
-
-                    eval_src.extend(prompt_texts)
-                    eval_pred.extend(predicted_texts)
-                    eval_ref.extend(completion_texts)
+                        eval_src.extend(prompt_texts)
+                        eval_pred.extend(predicted_texts)
+                        eval_ref.extend(completion_texts)
 
                 return eval_src, eval_pred, eval_ref
 
-            if is_main_process():
-                eval_preds = predict_with_generate()
-                trainer.log(evaluate_preds(*eval_preds))
+            eval_preds = predict_with_generate()
+            trainer.log(evaluate_preds(*eval_preds))
 
             return control
 
@@ -564,12 +569,12 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
 
         def on_evaluate(
             self,
-            args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
+            args: AxolotlTrainingArguments,
             state: TrainerState,
             control: TrainerControl,
-            train_dataloader,  # pylint: disable=unused-argument
+            train_dataloader,
             eval_dataloader,
-            **kwargs,  # pylint: disable=unused-argument
+            **kwargs,
         ):
             eval_table_size = self.cfg.eval_table_size
 
@@ -579,7 +584,6 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
             trainer.model.eval()
             device = torch.device(self.cfg.device)
 
-            # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
                 max_new_tokens=self.cfg.eval_max_new_tokens,
                 bos_token_id=tokenizer.bos_token_id,
@@ -647,6 +651,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         batch_labels,
                         batch_pos_ids,
                         batch_logits,
+                        strict=False,
                     ):
                         if pos_ids is None:
                             pos_ranges = [(0, len(input_ids_all) - 1)]
@@ -700,7 +705,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                     prediction_all_tokens = predictions["sequences"].cpu().tolist()
                     prediction_without_prompt_tokens_list = []
                     for prompt_token_ids, prediction_tokens in zip(
-                        prompt_token_ids_list, prediction_all_tokens
+                        prompt_token_ids_list, prediction_all_tokens, strict=False
                     ):
                         prediction_without_prompt_tokens = prediction_tokens[
                             len(prompt_token_ids) :
@@ -719,7 +724,11 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         prediction_text,
                         pred_step_text,
                     ) in zip(
-                        prompt_texts, completion_texts, predicted_texts, pred_step_texts
+                        prompt_texts,
+                        completion_texts,
+                        predicted_texts,
+                        pred_step_texts,
+                        strict=False,
                     ):
                         table_data["id"].append(row_index)
                         table_data["Prompt"].append(prompt_text)
@@ -732,7 +741,13 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         ].append(pred_step_text)
                         row_index += 1
                 if logger == "wandb":
-                    wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
+                    wandb.run.log(  # type: ignore[attr-defined]
+                        {
+                            f"{name} - Predictions vs Ground Truth": pd.DataFrame(
+                                table_data
+                            )
+                        }
+                    )
                 elif logger == "mlflow" and is_mlflow_available():
                     import mlflow
 
@@ -770,55 +785,191 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 
     def on_train_begin(
         self,
-        args: AxolotlTrainingArguments,  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
+        args: AxolotlTrainingArguments,
+        state: TrainerState,
         control: TrainerControl,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
-        if is_main_process():
+        if state.is_world_process_zero:
             try:
                 # sync config to top level in run, cannot delete file right away because wandb schedules it to be synced even w/policy = 'now', so let OS delete it later.
                 with NamedTemporaryFile(
                     mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
                 ) as temp_file:
                     copyfile(self.axolotl_config_path, temp_file.name)
-                    artifact = wandb.Artifact(
-                        f"config-{wandb.run.id}", type="axolotl-config"
+                    artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                        f"config-{wandb.run.id}",  # type: ignore[attr-defined]
+                        type="axolotl-config",
                     )
                     artifact.add_file(temp_file.name)
-                    wandb.log_artifact(artifact)
-                    wandb.save(temp_file.name)
-                LOG.info(
-                    "The Axolotl config has been saved to the WandB run under files."
-                )
+                    wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                    wandb.save(temp_file.name)  # type: ignore[attr-defined]
+                    LOG.info(
+                        "The Axolotl config has been saved to the WandB run under files."
+                    )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+
+            try:
+                with open(self.axolotl_config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+
+                chat_tpl = cfg.get("chat_template_jinja")
+                if chat_tpl:
+                    with NamedTemporaryFile(
+                        mode="w", delete=True, suffix=".jinja", prefix="chat_template_"
+                    ) as temp_ct_file:
+                        if (
+                            isinstance(chat_tpl, str)
+                            and os.path.exists(chat_tpl)
+                            and os.path.isfile(chat_tpl)
+                        ):
+                            copyfile(chat_tpl, temp_ct_file.name)
+                        else:
+                            temp_ct_file.write(str(chat_tpl))
+                            temp_ct_file.flush()
+
+                        artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                            f"chat-template-{wandb.run.id}",  # type: ignore[attr-defined]
+                            type="jinja-template",
+                        )
+                        artifact.add_file(temp_ct_file.name)
+                        wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                        wandb.save(temp_ct_file.name)  # type: ignore[attr-defined]
+                        LOG.info(
+                            "The chat_template_jinja has been saved to the WandB run under files."
+                        )
+            except (FileNotFoundError, ConnectionError, yaml.YAMLError) as err:
+                LOG.warning(f"Error while saving chat_template_jinja to WandB: {err}")
+
+            if args.deepspeed:
+                try:
+                    # sync config to top level in run, cannot delete file right away because wandb schedules it to be synced even w/policy = 'now', so let OS delete it later.
+                    with NamedTemporaryFile(
+                        mode="w",
+                        delete=False,
+                        suffix=".json",
+                        prefix="deepspeed_config_",
+                    ) as temp_file:
+                        skip_upload = False
+                        if isinstance(args.deepspeed, dict):
+                            json.dump(args.deepspeed, temp_file, indent=4)
+                        elif isinstance(args.deepspeed, str) and os.path.exists(
+                            args.deepspeed
+                        ):
+                            copyfile(args.deepspeed, temp_file.name)
+                        else:
+                            skip_upload = True
+                        if not skip_upload:
+                            artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                                f"deepspeed-config-{wandb.run.id}",  # type: ignore[attr-defined]
+                                type="deepspeed-config",
+                            )
+                            artifact.add_file(temp_file.name)
+                            wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                            wandb.save(temp_file.name)  # type: ignore[attr-defined]
+                            LOG.info(
+                                "The DeepSpeed config has been saved to the WandB run under files."
+                            )
+                except (FileNotFoundError, ConnectionError) as err:
+                    LOG.warning(f"Error while saving DeepSpeed config to WandB: {err}")
+
         return control
 
 
-class SaveModelCallback(TrainerCallback):
-    """Callback to save model on train end"""
+class GCCallback(TrainerCallback):
+    """Runs ``gc.collect()`` + ``torch.cuda.empty_cache()`` on
+    ``gc_collect_steps`` intervals and on eval/save/epoch boundaries that
+    the Trainer's native ``torch_empty_cache_steps`` doesn't cover. The two
+    settings are complementary; overlapping intervals just double-clear.
+    """
 
-    def on_step_end(  # pylint: disable=unused-argument
+    def __init__(self, gc_collect_steps: int | None = -1, gc_steps: int | None = None):
+        if gc_steps is not None and gc_collect_steps in (-1, None):
+            gc_collect_steps = gc_steps
+        self.gc_collect_steps: int = gc_collect_steps or -1
+        self.next_gc_on_begin_step: int = -1
+
+    def _gc(self):
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    def on_train_begin(
         self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
+        args,
+        state,
+        control,
         **kwargs,
     ):
-        # Save
-        if state.global_step >= state.max_steps:
-            control.should_save = True
-        elif (
-            args.save_strategy == IntervalStrategy.STEPS
-            and state.save_steps < 1.0
-            and state.global_step % math.ceil(state.save_steps * state.max_steps) == 0
-        ):
-            # workaround to save model on fractional save_steps
-            control.should_save = True
+        self._gc()
 
-    def on_train_end(  # pylint: disable=unused-argument
-        self, args, state, control, **kwargs
+    def on_step_begin(
+        self,
+        args,
+        state,
+        control,
+        **kwargs,
     ):
-        control.should_save = True
-        return control
+        if self.next_gc_on_begin_step == state.global_step or state.global_step == 0:
+            self._gc()
+
+    def on_step_end(
+        self,
+        args,
+        state,
+        control,
+        **kwargs,
+    ):
+        if control.should_evaluate:
+            # automatically GC before evals so the eval memory spike from the CEL doesn't OOM the trainer
+            self._gc()
+            # also GC on the start of the next step after the eval
+            self.next_gc_on_begin_step = state.global_step + 1
+        elif (
+            self.gc_collect_steps > 0 and state.global_step % self.gc_collect_steps == 0
+        ):
+            self._gc()
+        elif (
+            args.save_strategy == SaveStrategy.STEPS
+            and state.save_steps > 0
+            and state.global_step % state.save_steps == 0
+        ):
+            # gc on save steps in case anything is loaded to CPU RAM like offloaded tensors
+            self._gc()
+        elif state.global_step >= state.max_steps:
+            if args.save_strategy == SaveStrategy.STEPS:
+                # gc on save steps in case anything is loaded to CPU RAM like offloaded tensors
+                self._gc()
+
+    def on_epoch_end(
+        self,
+        args,
+        state,
+        control,
+        **kwargs,
+    ):
+        self._gc()
+
+
+def colab_inference_post_train_callback(trainer: Trainer):
+    class ColabCallback(TrainerCallback):
+        """Callback to prep model for inference on Google Colab"""
+
+        def __init__(self, cfg):
+            self.gpu_name = torch.cuda.get_device_name(0)
+            self.cfg = cfg
+
+        def on_train_end(self, args, state, control, **kwargs):
+            """
+            handle T4 gpu, we need to convert attention to eager for inference
+            """
+            if (
+                "Tesla T4" in self.gpu_name
+                and self.cfg.attn_implementation == "xformers"
+            ):
+                trainer.model.config._attn_implementation = "eager"
+            trainer.model.gradient_checkpointing_disable()
+            trainer.model.config.use_cache = True
+            trainer.model.eval()
+
+    return ColabCallback

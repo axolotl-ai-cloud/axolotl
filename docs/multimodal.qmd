@@ -1,28 +1,414 @@
-# MultiModal / Vision Language Models (BETA)
+---
+title: MultiModal / Vision Language Models (BETA)
+format:
+  html:
+    toc: true
+    toc-depth: 3
+---
 
-### Supported Models
+## Supported Models
 
-- Mllama, i.e. llama with vision models
+- [Mllama](#sec-mllama)
+- [Llama4](#sec-llama4)
+- [Pixtral](#sec-pixtral)
+- [Llava-1.5](#sec-llava-15)
+- [Mistral-Small-3.1](#sec-mistral-small-31)
+- [Mistral-Small-4](#sec-mistral-small-4)
+- [Magistral-Small-2509](#sec-magistral-small-2509)
+- [Voxtral](#sec-voxtral)
+- [Gemma-4](#sec-gemma-4)
+- [Gemma-3](#sec-gemma-3)
+- [Gemma-3n](#sec-gemma-3n)
+- [Qwen2-VL](#sec-qwen2-vl)
+- [Qwen2.5-VL](#sec-qwen25-vl)
+- [Qwen3-VL](#sec-qwen3-vl)
+- [Qwen3.5](#sec-qwen3-5)
+- [Qwen3.8-Flash-Next](#sec-qwen3-8-flash-next)
+- [GLM-4.6V](#sec-glm-4-6v)
+- [SmolVLM2](#sec-smolvlm2)
+- [LFM2-VL](#sec-lfm2-vl)
+- [Intern-VL](#sec-intern-vl)
+- [PaddleOCR-VL](#sec-paddleocr-vl)
+- [North Micro Vision Instruct](#sec-north-micro-vision-instruct)
+- [Muse Glimmer](#sec-muse-glimmer)
 
-### Usage
+## Usage
 
-Currently multimodal support is limited and doesn't have full feature parity. To finetune a multimodal Llama w/ LoRA,
-you'll need to use the following in YAML in combination with the rest of the required hyperparams.
+Multimodal support is limited and doesn't have full feature parity.
+
+Here are the hyperparams you'll need to use to finetune a multimodal model.
 
 ```yaml
-base_model: alpindale/Llama-3.2-11B-Vision-Instruct
 processor_type: AutoProcessor
-skip_prepare_dataset: true
 
-chat_template: llama3_2_vision
+skip_prepare_dataset: true
+remove_unused_columns: false  # leave columns in place as they are needed to handle image embeddings during training
+sample_packing: false  # not yet supported with multimodal
+
+chat_template:  # see in next section if specified
+
+# example dataset
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
-remove_unused_columns: false
-sample_packing: false
 
-# only finetune the Language model, leave the vision model and vision tower frozen
-lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+# (optional) if doing lora, only finetune the Language model,
+# leave the vision model and vision tower frozen
+# load_in_8bit: true
+adapter: lora
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+# (optional) if you want to resize images to a set size
+image_size: 512
+image_resize_algorithm: bilinear
 ```
+
+Please see [examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples) folder for full configs.
+
+::: {.callout-tip}
+Some of our chat_templates have been extended to support broader dataset types. This should not break any existing configs.
+:::
+
+::: {.callout-note}
+As of now, we do not truncate nor drop samples based on `sequence_len` as each arch has different ways to process non-text tokens. We are looking for help on this.
+:::
+
+### Mllama {#sec-mllama}
+
+```yaml
+base_model: meta-llama/Llama-3.2-11B-Vision-Instruct
+
+chat_template: llama3_2_vision
+```
+
+### Llama4 {#sec-llama4}
+
+```yaml
+base_model: meta-llama/Llama-4-Scout-17B-16E-Instruct
+
+chat_template: llama4
+```
+
+### Pixtral {#sec-pixtral}
+
+```yaml
+base_model: mistralai/Pixtral-12B-2409
+
+chat_template: pixtral
+```
+
+### Llava-1.5 {#sec-llava-15}
+
+```yaml
+base_model: llava-hf/llava-1.5-7b-hf
+
+chat_template: llava
+```
+
+### Mistral-Small-3.1 {#sec-mistral-small-31}
+
+::: {.callout-tip}
+Please make sure to install vision lib via `pip install 'mistral-common[opencv]==1.8.5'`
+:::
+
+```yaml
+base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
+```
+
+### Mistral-Small-4 {#sec-mistral-small-4}
+
+```yaml
+base_model: mistralai/Mistral-Small-4-119B-2603
+```
+
+### Magistral-Small-2509 {#sec-magistral-small-2509}
+
+::: {.callout-tip}
+Please make sure to install vision lib via `pip install 'mistral-common[opencv]==1.8.5'`
+:::
+
+```yaml
+base_model: mistralai/Magistral-Small-2509
+```
+
+### Voxtral {#sec-voxtral}
+
+::: {.callout-tip}
+Please make sure to install audio lib via `pip3 install librosa==0.11.0 'mistral_common[audio]==1.8.3'`
+:::
+
+```yaml
+base_model: mistralai/Voxtral-Mini-3B-2507
+
+processor_type: VoxtralProcessor
+```
+
+### Gemma-4 {#sec-gemma-4}
+
+All Gemma 4 variants (E2B, E4B, 26B-A4B, 31B) load as multimodal models even for text-only training.
+
+```yaml
+base_model: google/gemma-4-E2B-it  # or E4B-it, 26B-A4B, 31B
+
+chat_template: gemma4
+freeze_mm_modules: true  # freeze vision/audio encoders for text-only or vision LoRA
+
+# For the 26B-A4B MoE model, enable ScatterMoE and expert LoRA:
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+use_kernels: true
+use_scattermoe: true
+experts_implementation: scattermoe
+
+lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+# MoE expert LoRA (3D tensors, not nn.Linear) — only for 26B-A4B:
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+```
+
+::: {.callout-warning}
+Gemma 4 VLM training starts with high loss (~8-15). This is expected — see the [training stability guide](training_stability.qmd) for details.
+:::
+
+::: {.callout-tip}
+For DDP training, axolotl auto-detects Gemma4 and sets `use_reentrant=False` and `ddp_find_unused_parameters=True`. However, when `activation_offloading: true`, `ddp_find_unused_parameters` is skipped (checkpoint wrappers conflict with it); use `freeze_mm_modules: true` instead to handle unused vision/audio params. For FSDP2, use `fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer`.
+:::
+
+### Gemma-3 {#sec-gemma-3}
+
+::: {.callout-tip}
+The Gemma3-1B model is a text-only model, so please train as regular text model.
+:::
+
+For multi-modal 4B/12B/27B models, use the following config:
+
+```yaml
+base_model: google/gemma-3-4b-it
+
+chat_template: gemma3
+```
+
+### Gemma-3n {#sec-gemma-3n}
+
+::: {.callout-warning}
+The model's initial loss and grad norm will be very high. We suspect this to be due to the Conv in the vision layers.
+:::
+
+::: {.callout-tip}
+Please make sure to install `timm` via `pip3 install timm==1.0.17`
+:::
+
+```yaml
+base_model: google/gemma-3n-E2B-it
+
+chat_template: gemma3n
+```
+
+### Qwen2-VL {#sec-qwen2-vl}
+
+```yaml
+base_model: Qwen/Qwen2-VL-7B-Instruct
+
+chat_template: qwen2_vl
+```
+
+### Qwen2.5-VL {#sec-qwen25-vl}
+
+```yaml
+base_model: Qwen/Qwen2.5-VL-7B-Instruct
+
+chat_template: qwen2_vl  # same as qwen2-vl
+```
+
+### Qwen3-VL {#sec-qwen3-vl}
+
+```yaml
+base_model: Qwen/Qwen3-VL-4B-Instruct
+
+chat_template: qwen2_vl  # same as qwen2-vl
+```
+
+### Qwen3.5 {#sec-qwen3-5}
+
+```yaml
+base_model: Qwen/Qwen3.5-9B
+
+chat_template: qwen3_5
+```
+
+### Qwen3.8-Flash-Next {#sec-qwen3-8-flash-next}
+
+::: {.callout-tip}
+Please make sure to install `torchvision` via `uv pip install torchvision`.
+:::
+
+```yaml
+base_model: Qwen/Qwen3.8-Flash-Next
+processor_type: AutoProcessor
+```
+
+See the [example configs and tips](https://docs.axolotl.ai/docs/models/qwen3.8-flash-next.html) for details.
+
+### GLM-4.6V {#sec-glm-4-6v}
+
+Both GLM-4.6V (106B MoE) and GLM-4.6V-Flash (9B) are supported.
+
+```yaml
+# GLM-4.6V (106B MoE version)
+base_model: zai-org/GLM-4.6V
+
+# OR GLM-4.6V-Flash (9B version)
+base_model: zai-org/GLM-4.6V-Flash
+```
+
+### SmolVLM2 {#sec-smolvlm2}
+
+::: {.callout-tip}
+Please make sure to install `num2words` via `pip3 install num2words==0.5.14`
+:::
+
+```yaml
+base_model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+```
+
+### LFM2-VL {#sec-lfm2-vl}
+
+::: {.callout-warning}
+Please uninstall `causal-conv1d` via `pip3 uninstall -y causal-conv1d`
+:::
+
+```yaml
+base_model: LiquidAI/LFM2-VL-450M
+```
+
+### Intern-VL {#sec-intern-vl}
+
+::: {.callout-tip}
+Please make sure to install `timm` via `pip3 install timm==1.0.19`
+:::
+
+```yaml
+base_model: OpenGVLab/InternVL3_5-8B
+```
+
+### PaddleOCR-VL {#sec-paddleocr-vl}
+
+```yaml
+base_model: PaddlePaddle/PaddleOCR-VL-1.6
+processor_type: AutoProcessor
+```
+
+Keep `sample_packing: false` and do not enable Liger or Cut Cross Entropy. See the [example configs and tips](https://docs.axolotl.ai/docs/models/paddleocr-vl.html) for details.
+
+### North Micro Vision Instruct {#sec-north-micro-vision-instruct}
+
+```yaml
+base_model: CohereLabs/North-Micro-Vision-Instruct
+processor_type: AutoProcessor
+```
+
+### Muse Glimmer {#sec-muse-glimmer}
+
+Requires `transformers>=5.15.0`.
+
+```yaml
+base_model: meta-models/Muse-Glimmer-30B
+processor_type: AutoProcessor
+```
+
+## Dataset Format
+
+For multi-modal datasets, we adopt an extended `chat_template` format similar to OpenAI's Message format.
+
+- A message is a list of `role` and `content`.
+- `role` can be `system`, `user`, `assistant`, etc.
+- `content` is a list of `type` and (`text`, `image`, `path`, `url`, `base64`, or `audio`).
+
+::: {.callout-note}
+The recommended column name is `messages` with the OpenAI-style `role`/`content` schema shown above. If your upstream data already lives under a different column name (e.g., `conversations`, `dialogue`), set `field_messages: <your_column>` in the dataset config; this is a rename-only escape hatch — the inner schema must still match one of the two formats above (`role`/`content` or ShareGPT's `from`/`value`).
+:::
+
+### Image
+
+::: {.callout-note}
+For backwards compatibility:
+
+- If the dataset has a `images` or `image` column of `list[Image]`, it will be appended to the first `content` list as `{"type": "image", "image": ...}`. However, if the content already has a `{"type": "image"}` but no `image` key, it will be set the `image` key.
+- If `content` is a string, it will be converted to a list with `type` as `text`.
+:::
+
+For image loading, you can use the following keys within `content` alongside `"type": "image"`:
+
+- `"path": "/path/to/image.jpg"`
+- `"url": "https://example.com/image.jpg"`
+- `"base64": "..."`
+- `"image": PIL.Image`
+
+### Audio
+
+For audio loading, you can use the following keys within `content` alongside `"type": "audio"`:
+
+- `"path": "/path/to/audio.mp3"`
+- `"url": "https://example.com/audio.mp3"`
+- `"audio": np.ndarray`
+
+::: {.callout-tip}
+
+You may need to install `librosa` via `pip3 install librosa==0.11.0`.
+
+:::
+
+### Video
+
+::: {.callout-warning}
+
+This is not well tested at the moment. We welcome contributors!
+
+:::
+
+For video loading, you can use the following keys within `content` alongside `"type": "video"`:
+
+- `"path": "/path/to/video.mp4"`
+- `"url": "https://example.com/video.mp4"`
+- `"video": np.ndarray | list[PIL.Image.Image] | torch.Tensor` (or list of the aforementioned)
+
+### Example
+
+Here is an example of a multi-modal dataset:
+```json
+[
+  {
+    "messages": [
+        {
+            "role": "system",
+            "content": [
+              {"type": "text", "text": "You are a helpful assistant."}
+              ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"},
+                {"type": "text", "text": "Describe this image in detail."}
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+              {"type": "text", "text": "The image is a bee."}
+            ]
+        }
+    ]
+  }
+]
+```
+
+## FAQ
+
+1. `PIL.UnidentifiedImageError: cannot identify image file ...`
+
+`PIL` could not retrieve the file at `url` using `requests`. Please check for typo. One alternative reason is that the request is blocked by the server.

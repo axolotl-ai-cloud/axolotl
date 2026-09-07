@@ -1,0 +1,339 @@
+"""Builder for RLHF trainers"""
+
+import inspect
+from pathlib import Path
+
+from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.core.trainers import (
+    AxolotlCPOTrainer,
+    AxolotlKTOTrainer,
+    AxolotlORPOTrainer,
+)
+from axolotl.core.trainers.dpo import DPOStrategy
+from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
+from axolotl.integrations.base import PluginManager
+from axolotl.loaders.utils import ensure_dtype
+from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.import_helper import get_cls_from_module_str
+from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.enums import RLType
+
+LOG = get_logger(__name__)
+
+
+class HFRLTrainerBuilder(TrainerBuilderBase):
+    """Trainer factory class for TRL-based RLHF trainers (e.g. DPO)"""
+
+    def get_callbacks(self):
+        callbacks = super().get_callbacks()
+
+        if self.cfg.qat:
+            callbacks.append(QATCallback(self.cfg.qat))
+
+        return callbacks
+
+    def get_post_trainer_create_callbacks(self, trainer):
+        callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
+        return callbacks
+
+    def _get_trainer_cls(self, trainer_kwargs: dict):
+        """
+        Returns trainer_cls and trainer_cls_args
+        """
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+            trainer_cls_args = []  # type: ignore
+
+            if trainer_cls is not None:
+                return trainer_cls, trainer_cls_args
+
+        trainer_cls = None
+        trainer_cls_args = [self.model]
+
+        if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
+            async_grpo = bool(
+                self.cfg.trl
+                and (
+                    getattr(self.cfg.trl, "async_prefetch", False)
+                    or getattr(self.cfg.trl, "use_data_producer", False)
+                )
+            )
+            trainer_cls = GRPOStrategy.get_trainer_class(
+                sequence_parallel=self.cfg.context_parallel_size > 1,
+                async_grpo=async_grpo,
+            )
+            trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
+            trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
+
+        elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
+            trainer_cls = DPOStrategy.get_trainer_class()
+            trainer_cls_args.append(self.model_ref)
+
+        elif self.cfg.rl is RLType.ORPO:
+            trainer_cls = AxolotlORPOTrainer
+        elif self.cfg.rl is RLType.KTO:
+            trainer_cls = AxolotlKTOTrainer
+        elif self.cfg.rl is RLType.SIMPO:
+            trainer_cls = AxolotlCPOTrainer
+        elif self.cfg.rl is RLType.EBFT:
+            from axolotl.core.trainers.ebft import EBFTStrategy
+
+            trainer_cls = EBFTStrategy.get_trainer_class(self.cfg)
+            trainer_kwargs.update(EBFTStrategy.set_trainer_kwargs(self.cfg))
+        else:
+            raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+
+        if self.cfg.trainer_cls:
+            # override the trainer cls
+            try:
+                trainer_cls = get_cls_from_module_str(self.cfg.trainer_cls)
+                LOG.debug(f"Using custom trainer class: {self.cfg.trainer_cls}")
+            except (ImportError, AttributeError, ValueError) as e:
+                raise ValueError(
+                    f"Failed to load custom trainer class '{self.cfg.trainer_cls}': {e}"
+                ) from e
+
+        return trainer_cls, trainer_cls_args
+
+    def _build_training_arguments(self, total_num_steps):
+        """
+        Returns training_args and trainer_kwargs
+        """
+        from axolotl.core.training_args import (
+            AxolotlCPOConfig,
+            AxolotlKTOConfig,
+            AxolotlORPOConfig,
+        )
+
+        training_args_kwargs, trainer_kwargs = self._set_base_training_args(
+            total_num_steps=total_num_steps
+        )
+
+        if self.cfg.remove_unused_columns is not None:
+            training_args_kwargs["remove_unused_columns"] = (
+                self.cfg.remove_unused_columns
+            )
+        else:
+            training_args_kwargs["remove_unused_columns"] = False
+
+        if self.cfg.trl and self.cfg.trl.beta is not None:
+            training_args_kwargs["beta"] = self.cfg.trl.beta
+        elif self.cfg.rl_beta is not None:
+            training_args_kwargs["beta"] = self.cfg.rl_beta
+        elif self.cfg.orpo_alpha is not None:
+            # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
+            training_args_kwargs["beta"] = self.cfg.orpo_alpha
+
+        if self.cfg.use_wandb:
+            training_args_kwargs["run_name"] = self.cfg.wandb_name
+
+        training_args_cls = None
+        blocklist_args_kwargs = []
+        if self.cfg.rl is RLType.SIMPO:
+            training_args_cls = AxolotlCPOConfig
+            training_args_kwargs["loss_type"] = "simpo"
+            training_args_kwargs["simpo_gamma"] = self.cfg.simpo_gamma
+            if self.cfg.cpo_alpha is not None:
+                training_args_kwargs["cpo_alpha"] = self.cfg.cpo_alpha
+
+            blocklist_args_kwargs.append("max_prompt_length")
+
+        elif self.cfg.rl is RLType.ORPO:
+            training_args_cls = AxolotlORPOConfig
+
+            blocklist_args_kwargs.append("max_prompt_length")
+
+        elif self.cfg.rl is RLType.KTO:
+            training_args_cls = AxolotlKTOConfig
+            # KTOConfig in TRL >= 0.27.0 no longer accepts max_prompt_length
+            blocklist_args_kwargs.append("max_prompt_length")
+
+            training_args_kwargs["desirable_weight"] = (
+                self.cfg.kto_desirable_weight or 1.0
+            )
+            training_args_kwargs["undesirable_weight"] = (
+                self.cfg.kto_undesirable_weight or 1.0
+            )
+
+        elif self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
+            async_grpo = bool(
+                self.cfg.trl
+                and (
+                    getattr(self.cfg.trl, "async_prefetch", False)
+                    or getattr(self.cfg.trl, "use_data_producer", False)
+                )
+            )
+            training_args_cls = GRPOStrategy.get_training_args_class(
+                async_grpo=async_grpo
+            )
+            training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
+            blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
+            if not async_grpo:
+                # Filter out async/fast-async-only fields not in standard GRPOConfig.
+                # These are defined in FastAsyncGRPOConfig and only used by
+                # AxolotlAsyncGRPOConfig. Standard GRPOConfig rejects them.
+                import dataclasses
+
+                from trl import GRPOConfig as _BaseGRPOConfig
+
+                from axolotl.core.trainers.grpo.fast_async_trainer import (
+                    FastAsyncGRPOConfig,
+                )
+
+                async_only_fields = {
+                    f.name for f in dataclasses.fields(FastAsyncGRPOConfig)
+                } - {f.name for f in dataclasses.fields(_BaseGRPOConfig)}
+                blocklist_args_kwargs.extend(list(async_only_fields))
+            if self.cfg.rl is RLType.GDPO:
+                training_args_kwargs.setdefault(
+                    "multi_objective_aggregation", "normalize_then_sum"
+                )
+
+        elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
+            training_args_cls = AxolotlDPOConfig
+            training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
+
+        elif self.cfg.rl is RLType.EBFT:
+            from axolotl.core.trainers.ebft import EBFTStrategy
+
+            training_args_cls = EBFTStrategy.get_training_args_class(self.cfg)
+            training_args_kwargs.update(EBFTStrategy.set_training_args_kwargs(self.cfg))
+            blocklist_args_kwargs = EBFTStrategy.get_blocklist_args_kwargs(self.cfg)
+        else:
+            raise ValueError(f"Unsupported RL: {self.cfg.rl}")
+
+        for blocklist_key in blocklist_args_kwargs:
+            if blocklist_key in training_args_kwargs:
+                del training_args_kwargs[blocklist_key]
+
+        if self.cfg.plugins:
+            plugin_manager = PluginManager.get_instance()
+            plugin_training_args = plugin_manager.get_training_args(self.cfg)
+            if plugin_training_args:
+                training_args_kwargs.update(plugin_training_args)
+
+        training_args = training_args_cls(
+            logging_first_step=True,
+            **training_args_kwargs,
+        )
+
+        # unset run_name so wandb sets up experiment names
+        if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
+            training_args.run_name = None
+
+        return training_args, trainer_kwargs
+
+    def build_collator(self, **kwargs):
+        """Build a data collator for preference-tuning trainers.
+
+        Returns None for RL types that provide their own collator (e.g. GRPO,
+        KTO), letting the trainer construct its default. For DPO/IPO/ORPO/SIMPO
+        returns an ``AxolotlDPODataCollatorWithPadding`` when
+        ``pad_to_multiple_of`` is set, otherwise None (so the trainer
+        falls back to the TRL default).
+        """
+        if self.cfg.rl not in (
+            RLType.DPO,
+            RLType.IPO,
+            RLType.ORPO,
+            RLType.SIMPO,
+        ):
+            return None
+
+        pad_to_multiple_of = getattr(self.cfg, "pad_to_multiple_of", None)
+        if not pad_to_multiple_of:
+            return None
+
+        from axolotl.utils.collators.dpo import AxolotlDPODataCollatorWithPadding
+
+        LOG.info(
+            f"Using AxolotlDPODataCollatorWithPadding with pad_to_multiple_of="
+            f"{pad_to_multiple_of}"
+        )
+        is_enc_dec = getattr(self.model.config, "is_encoder_decoder", False)
+        return AxolotlDPODataCollatorWithPadding(
+            pad_token_id=self.tokenizer.pad_token_id,
+            is_encoder_decoder=is_enc_dec,
+            pad_to_multiple_of=pad_to_multiple_of,
+            **kwargs,
+        )
+
+    def build(self, total_num_steps):
+        training_args, trainer_kwargs = self._build_training_arguments(total_num_steps)
+
+        if (data_collator := self.build_collator()) is not None:
+            trainer_kwargs["data_collator"] = data_collator
+
+        if self.eval_dataset:
+            trainer_kwargs["eval_dataset"] = self.eval_dataset
+        if (
+            self.cfg.adapter
+            and self.peft_config
+            and self.cfg.rl not in (RLType.GRPO, RLType.ORPO, RLType.EBFT, RLType.SIMPO)
+        ):
+            trainer_kwargs["peft_config"] = self.peft_config
+
+        trainer_cls, trainer_cls_args = self._get_trainer_cls(trainer_kwargs)
+
+        sig = inspect.signature(trainer_cls)
+        if "tokenizer" in sig.parameters:
+            trainer_kwargs["tokenizer"] = self.tokenizer
+        else:
+            trainer_kwargs["processing_class"] = self.tokenizer
+
+        if self.cfg.datasets is not None and (
+            trainer_cls is DPOStrategy.get_trainer_class()
+        ):
+            trainer_kwargs["dataset_tags"] = [
+                d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
+            ]
+
+        trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
+            trainer_kwargs, trainer_cls
+        )
+
+        # Allow FP8-quantized models to be fine-tuned with LoRA adapters.
+        # transformers' validate_quantization_for_training blocks FP8 because
+        # hf_quantizer.is_trainable is False, but LoRA only trains the adapters
+        # (base weights stay frozen in FP8).
+        _orig_validate_quant = None
+        if (
+            self.cfg.adapter
+            and hasattr(self.model, "is_quantized")
+            and self.model.is_quantized
+        ):
+            import transformers.trainer as _trainer_module
+
+            _orig_validate_quant = _trainer_module.validate_quantization_for_training
+            _trainer_module.validate_quantization_for_training = lambda model: None
+
+        try:
+            trainer = trainer_cls(
+                *trainer_cls_args,
+                args=training_args,
+                train_dataset=self.train_dataset,
+                callbacks=self.get_callbacks(),
+                **trainer_kwargs,
+            )
+        finally:
+            if _orig_validate_quant is not None:
+                import transformers.trainer as _trainer_module
+
+                _trainer_module.validate_quantization_for_training = (
+                    _orig_validate_quant
+                )
+        if self.cfg.fsdp_config or self.cfg.fsdp:
+            ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
+            if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
+                ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)
+
+        trainer = self.hook_post_create_trainer(trainer)
+        for callback in self.get_post_trainer_create_callbacks(trainer):
+            trainer.add_callback(callback)
+
+        return trainer

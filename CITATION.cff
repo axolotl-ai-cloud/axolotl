@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+type: software
+title: "Axolotl: Open Source LLM Post-Training"
+message: "If you use this software, please cite it as below."
+authors:
+  - name: "Axolotl maintainers and contributors"
+repository-code: "https://github.com/axolotl-ai-cloud/axolotl"
+url: "https://axolotl.ai/"
+license: Apache-2.0
+date-released: "2023-05-30"

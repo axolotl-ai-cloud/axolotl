@@ -6,8 +6,8 @@ import tempfile
 import pytest
 import torch
 
+from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import ModelLoader, load_model, load_tokenizer
 
 
 @pytest.fixture(name="temp_dir")
@@ -26,9 +26,9 @@ class TestLoadModelUtils:
         # load config
         self.cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
-                "tokenizer_config": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
+                "tokenizer_config": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
                 "load_in_8bit": False,
                 "adapter": "lora",
@@ -36,11 +36,9 @@ class TestLoadModelUtils:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -52,15 +50,17 @@ class TestLoadModelUtils:
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
+                "tensor_parallel_size": 1,
+                "context_parallel_size": 1,
             }
         )
-        self.model_loader = (  # pylint: disable=attribute-defined-outside-init
-            ModelLoader(
-                cfg=self.cfg,
-                tokenizer="",
-            )
+        self.model_loader = ModelLoader(
+            cfg=self.cfg,
+            tokenizer="",
+            inference=False,
+            reference_model=True,
         )
 
     @pytest.mark.parametrize("embedding_modules", ["embed_tokens", "lm_head"])
@@ -72,14 +72,9 @@ class TestLoadModelUtils:
         self, temp_dir, embedding_modules, dist_dtype, before_kbit_train_or_finetune
     ):
         self.cfg.output_dir = temp_dir
-        self.model_loader.tokenizer = load_tokenizer(self.cfg)  # pylint: disable=all
-        self.model_loader.model, _ = load_model(
-            self.cfg,
-            self.model_loader.tokenizer,
-            inference=False,
-            reference_model=True,
-        )
-        self.model_loader.convert_embedding_modules_dtype(
+        self.model_loader.tokenizer = load_tokenizer(self.cfg)
+        self.model_loader.load()
+        self.model_loader._convert_embedding_modules_dtype(
             embedding_modules, dist_dtype, before_kbit_train_or_finetune
         )
         for name, module in self.model_loader.model.named_modules():

@@ -6,8 +6,8 @@ from typing import Optional
 import pytest
 
 from axolotl.utils.config import validate_config
-from axolotl.utils.config.models.input.v0_4_1 import ChatTemplate
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.datasets import ChatTemplate
 
 warnings.filterwarnings("error")
 
@@ -24,7 +24,6 @@ def fixture_cfg():
     )
 
 
-# pylint: disable=too-many-public-methods (duplicate-code)
 class BaseValidation:
     """
     Base validation module to setup the log capture
@@ -69,8 +68,12 @@ class TestValidationCheckDatasetConfig(BaseValidation):
             cfg,
             capabilities={
                 "bf16": "false",
+                "tf32": "false",
                 "n_gpu": 1,
                 "compute_capability": "8.0",
+            },
+            env_capabilities={
+                "torch_version": "2.6.0",
             },
         )
 
@@ -123,6 +126,9 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "bf16": "false",
                 "n_gpu": 1,
                 "compute_capability": "8.0",
+            },
+            env_capabilities={
+                "torch_version": "2.6.0",
             },
         )
 
@@ -177,6 +183,9 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "n_gpu": 1,
                 "compute_capability": "8.0",
             },
+            env_capabilities={
+                "torch_version": "2.6.0",
+            },
         )
 
         _check_config()
@@ -230,6 +239,9 @@ class TestValidationCheckDatasetConfig(BaseValidation):
                 "bf16": "false",
                 "n_gpu": 1,
                 "compute_capability": "8.0",
+            },
+            env_capabilities={
+                "torch_version": "2.6.0",
             },
         )
 
@@ -290,3 +302,67 @@ class TestValidationCheckDatasetConfig(BaseValidation):
         )
 
         validate_config(cfg)
+
+    def test_message_property_mappings(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                        "message_property_mappings": {
+                            "role": "role",
+                            "content": "content",
+                        },
+                    }
+                ],
+            }
+        )
+
+        validate_config(cfg)
+
+
+class TestOptimizerValidation(BaseValidation):
+    """
+    Test muon optimizer validation
+    """
+
+    def test_muon_deepspeed(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "optimizer": "muon",
+                "deepspeed": "deepspeed_configs/zero3.json",
+            }
+        )
+
+        with pytest.raises(ValueError, match=r".*is currently incompatible with*"):
+            validate_config(cfg)
+
+    def test_muon_fsdp(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    }
+                ],
+                "optimizer": "muon",
+                "fsdp": ["full_shard"],
+                "fsdp_config": {
+                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                },
+            }
+        )
+
+        with pytest.raises(ValueError, match=r".*only compatible with FSDP2.*"):
+            validate_config(cfg)

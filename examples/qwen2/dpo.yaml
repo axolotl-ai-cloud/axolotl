@@ -1,6 +1,6 @@
 base_model: Qwen/Qwen2.5-0.5B
-
-strict: false
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 chat_template: qwen_25
 rl: dpo
@@ -10,8 +10,9 @@ datasets:
     field_messages: conversation
     field_chosen: chosen
     field_rejected: rejected
-    message_field_role: role
-    message_field_content: content
+    message_property_mappings:
+      role: role
+      content: content
     roles:
       system:
         - system
@@ -26,7 +27,7 @@ output_dir: ./outputs/dpo-out
 
 sequence_len: 2048
 sample_packing: false
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:
@@ -41,27 +42,17 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: false
 
 gradient_checkpointing: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
-flash_attention: true
+attn_implementation: flash_attention_2
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
-eval_table_size:
-eval_max_new_tokens: 128
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

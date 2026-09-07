@@ -1,6 +1,7 @@
 """
 Tests for utils in axolotl.utils.chat_templates
 """
+
 import unittest
 
 import pytest
@@ -12,8 +13,11 @@ from axolotl.utils.chat_templates import (
     get_chat_template,
 )
 
+from tests.hf_offline_utils import enable_hf_offline
+
 
 @pytest.fixture(name="llama3_tokenizer")
+@enable_hf_offline
 def fixture_llama3_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Meta-Llama-3-8B")
 

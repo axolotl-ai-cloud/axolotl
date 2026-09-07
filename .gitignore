@@ -1,6 +1,7 @@
 **/axolotl.egg-info
 configs
 last_run_prepared/
+outputs
 .vscode
 _site/
 
@@ -31,6 +32,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+uv.lock
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -180,5 +182,15 @@ prepared-datasets/
 submit.sh
 *.out*
 
+# Quartodoc generated files
+objects.json
+site_libs/
+
 typings/
 out/
+
+# vim
+*.swp
+
+# scm auto-versioning
+src/axolotl/_version.py

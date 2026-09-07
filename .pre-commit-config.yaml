@@ -3,31 +3,21 @@ default_language_version:
 
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
     -   id: check-yaml
     -   id: end-of-file-fixer
     -   id: trailing-whitespace
     -   id: no-commit-to-branch
         args: ['--branch', 'main']
--   repo: https://github.com/psf/black
-    rev: 23.3.0
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
     hooks:
-    -   id: black
--   repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
--   repo: https://github.com/PyCQA/flake8
-    rev: 6.0.0
-    hooks:
-    - id: flake8
--   repo: https://github.com/PyCQA/pylint
-    rev: v2.17.4
-    hooks:
-    - id: pylint
+    -   id: ruff
+        args: [--fix]
+    -   id: ruff-format
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.3.0
+    rev: v1.19.1
     hooks:
     - id: mypy
       additional_dependencies:
@@ -36,10 +26,18 @@ repos:
             'pydantic>=2.5.3',
         ]
 -   repo: https://github.com/PyCQA/bandit
-    rev: 1.7.5
+    rev: 1.9.4
     hooks:
     -   id: bandit
         args: [
             '--ini',
             '.bandit',
         ]
+-   repo: local
+    hooks:
+    -   id: check-cli-config-options
+        name: check generated CLI config options are up to date
+        entry: axolotl generate-cli-config-options --check
+        language: system
+        files: ^src/axolotl/(utils/schemas/.*\.py|cli/config_options\.py)$
+        pass_filenames: false

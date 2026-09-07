@@ -1,13 +1,12 @@
 """
 KTO strategies for chatml
 """
-# pylint: disable=duplicate-code
 
 
 def argilla(
     cfg,
     **kwargs,
-):  # pylint: disable=possibly-unused-variable,unused-argument
+):
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -15,9 +14,9 @@ def argilla(
                 f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['instruction']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 
@@ -27,22 +26,27 @@ def argilla(
 def argilla_chat(
     cfg,
     **kwargs,
-):  # pylint: disable=possibly-unused-variable,unused-argument
+):
     """
     for argilla/kto-mix-15k conversations
     """
 
     def transform_fn(sample):
-        sample[
-            "prompt"
-        ] = f"<|im_start|>user\n{sample['chosen'][0]['content']}<|im_end|>\n<|im_start|>assistant\n"
-        sample["completion"] = f"{sample['completion'][1]['content']}<|im_end|>"
+        history, response = sample["completion"][:-1], sample["completion"][-1]
+        sample["prompt"] = (
+            "".join(
+                f"<|im_start|>{turn['role']}\n{turn['content']}<|im_end|>\n"
+                for turn in history
+            )
+            + "<|im_start|>assistant\n"
+        )
+        sample["completion"] = f"{response['content']}<|im_end|>"
         return sample
 
     return transform_fn
 
 
-def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def intel(cfg, **kwargs):
     """
     For Intel Orca KTO
     ex: argilla/distilabel-intel-orca-kto
@@ -55,18 +59,16 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['question']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 
     return transform_fn
 
 
-def prompt_pairs(
-    cfg, **kwargs
-):  # pylint: disable=possibly-unused-variable,unused-argument
+def prompt_pairs(cfg, **kwargs):
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -74,16 +76,16 @@ def prompt_pairs(
                 f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 
     return transform_fn
 
 
-def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def ultra(cfg, **kwargs):
     """
     for ultrafeedback binarized conversations
     ex: argilla/ultrafeedback-binarized-preferences-cleaned-kto
@@ -96,9 +98,9 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            sample["prompt"] = (
+                f"<|im_start|>user\n{sample['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            )
         sample["completion"] = f"{sample['completion']}<|im_end|>"
         return sample
 

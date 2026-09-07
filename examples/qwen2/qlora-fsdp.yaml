@@ -1,9 +1,11 @@
 base_model: Qwen/Qwen2-7B
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 trust_remote_code: true
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 datasets:
   - path: tatsu-lab/alpaca
@@ -15,7 +17,7 @@ output_dir: ./outputs/out
 sequence_len: 2048
 sample_packing: true
 eval_sample_packing: true
-pad_to_sequence_len: true
+
 
 adapter: qlora
 lora_model_dir:
@@ -23,7 +25,6 @@ lora_r: 32
 lora_alpha: 64
 lora_dropout: 0.05
 lora_target_linear: true
-lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
@@ -34,31 +35,23 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 4
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: true
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
-flash_attention: true
+attn_implementation: flash_attention_2
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
 fsdp:
   - full_shard
@@ -74,3 +67,5 @@ fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

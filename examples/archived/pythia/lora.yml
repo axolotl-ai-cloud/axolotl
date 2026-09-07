@@ -1,0 +1,36 @@
+base_model: EleutherAI/pythia-1.4b-deduped
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+load_in_8bit: true
+datasets:
+  - path: teknium/GPT4-LLM-Cleaned
+    type: alpaca
+dataset_prepared_path:
+val_set_size: 0.05
+adapter: lora
+lora_model_dir:
+sequence_len: 512
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - query_key_value
+lora_target_linear:
+lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+output_dir: ./outputs/lora-alpaca-pythia
+gradient_accumulation_steps: 1
+micro_batch_size: 4
+num_epochs: 4
+learning_rate: 0.00001
+bf16: auto
+tf32: true
+resume_from_checkpoint:
+weight_decay: 0.1
+evals_per_epoch: 4
+logging_steps: 1

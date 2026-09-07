@@ -10,209 +10,340 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""
-Base class for all plugins.
+"""Base class for all plugins.
 
 A plugin is a reusable, modular, and self-contained piece of code that extends the functionality of Axolotl.
 Plugins can be used to integrate third-party models, modify the training process, or add new features.
 
 To create a new plugin, you need to inherit from the BasePlugin class and implement the required methods.
 """
+
+from __future__ import annotations
+
 import collections
 import importlib
-import logging
-from typing import OrderedDict
+import traceback
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable, OrderedDict, Union
+
+from peft import PeftConfig, PeftMixedModel, PeftModel
+from torch import nn
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+from transformers import PreTrainedModel, Trainer
+from transformers.trainer_pt_utils import get_parameter_names
+
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from axolotl.common.datasets import TrainDatasetMeta
+
+
+@dataclass(frozen=True)
+class AdapterCapabilities:
+    """Capabilities for an adapter contributed by a plugin."""
+
+    name: str
+    lora_like: bool = False
+    relora: bool = False
 
 
 class BasePlugin:
-    """
-    Base class for all plugins. Defines the interface for plugin methods.
+    """Base class for all plugins. Defines the interface for plugin methods.
 
-    Attributes:
-    None
+    A plugin is a reusable, modular, and self-contained piece of code that extends
+    the functionality of Axolotl. Plugins can be used to integrate third-party models,
+    modify the training process, or add new features.
 
-    Methods:
-    register(cfg): Registers the plugin with the given configuration.
-    pre_model_load(cfg): Performs actions before the model is loaded.
-    post_model_load(cfg, model): Performs actions after the model is loaded.
-    pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
-    post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
-    create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
-    create_lr_scheduler(cfg, trainer, optimizer): Creates and returns a learning rate scheduler.
-    add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before training.
-    add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after training.
+    To create a new plugin, you need to inherit from the BasePlugin class and
+    implement the required methods.
+
+    Note:
+        Plugin methods include:
+        - register(cfg): Registers the plugin with the given configuration.
+        - load_datasets(cfg): Loads and preprocesses the dataset for training.
+        - pre_model_load(cfg): Performs actions before the model is loaded.
+        - post_model_build(cfg, model): Performs actions after the model is loaded, but
+            before LoRA adapters are applied.
+        - pre_lora_load(cfg, model): Performs actions before LoRA weights are loaded.
+        - post_lora_load(cfg, model): Performs actions after LoRA weights are loaded.
+        - post_model_load(cfg, model): Performs actions after the model is loaded,
+            inclusive of any adapters.
+        - post_trainer_create(cfg, trainer): Performs actions after the trainer is
+            created.
+        - create_optimizer(cfg, trainer): Creates and returns an optimizer for training.
+        - create_lr_scheduler(cfg, trainer, optimizer, num_training_steps): Creates and
+            returns a learning rate scheduler.
+        - add_callbacks_pre_trainer(cfg, model): Adds callbacks to the trainer before
+            training.
+        - add_callbacks_post_trainer(cfg, trainer): Adds callbacks to the trainer after
+            training.
     """
 
     def __init__(self):
-        """
-        Initializes the BasePlugin.
+        """Initializes the BasePlugin."""
+
+    def register(self, cfg: dict):
+        """Registers the plugin with the given configuration as an unparsed dict.
+
+        Args:
+            cfg: The configuration for the plugin.
         """
 
-    def register(self, cfg):  # pylint: disable=unused-argument
-        """
-        Registers the plugin with the given configuration.
+    def get_input_args(self) -> str | None:
+        """Returns a pydantic model for the plugin's input arguments."""
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
+    def get_training_args_mixin(self) -> str | None:
+        """
+        Returns a dataclass model for the plugin's training arguments.
+        """
+
+    def get_adapter_capabilities(self) -> list[AdapterCapabilities]:
+        """Returns adapter capabilities contributed by the plugin."""
+        return []
+
+    def get_lora_config_kwargs(self, cfg: DictDefault) -> dict:
+        """Returns extra PEFT LoraConfig kwargs for plugin LoRA-like adapters."""
+        return {}
+
+    def load_adapter(
+        self,
+        model: PreTrainedModel,
+        cfg: DictDefault,
+        inference: bool = False,
+        config_only: bool = False,
+    ) -> (
+        tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]
+        | None
+    ):
+        """Optionally load a plugin adapter instead of the generic loader."""
+
+    def load_datasets(
+        self, cfg: DictDefault, preprocess: bool = False
+    ) -> Union["TrainDatasetMeta", None]:
+        """Loads and preprocesses the dataset for training.
+
+        Args:
+            cfg: The configuration for the plugin.
+            preprocess: Whether this is the preprocess step of the datasets.
 
         Returns:
-        None
+            dataset_meta: The metadata for the training dataset.
         """
 
-    def get_input_args(self):
-        """
-        Returns a pydantic model for the plugin's input arguments.
+    def pre_model_load(self, cfg: DictDefault):
+        """Performs actions before the model is loaded.
+
+        Args:
+            cfg: The configuration for the plugin.
         """
 
-    def pre_model_load(self, cfg):  # pylint: disable=unused-argument
-        """
-        Performs actions before the model is loaded.
+    def post_model_build(self, cfg: DictDefault, model: PreTrainedModel):
+        """Performs actions after the model is built/loaded, but before any adapters are applied.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
+        Args:
+            cfg: The configuration for the plugin.
+        """
+
+    def pre_lora_load(self, cfg: DictDefault, model: PreTrainedModel):
+        """Performs actions before LoRA weights are loaded.
+
+        Args:
+            cfg: The configuration for the plugin.
+            model: The loaded model.
+        """
+
+    def post_lora_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
+        """Performs actions after LoRA weights are loaded.
+
+        Args:
+            cfg: The configuration for the plugin.
+            model: The loaded model.
+        """
+
+    def post_model_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
+        """Performs actions after the model is loaded.
+
+        Args:
+            cfg: The configuration for the plugin.
+            model: The loaded model.
+        """
+
+    def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
+        """Returns a custom class for the trainer.
+
+        Args:
+            cfg: The global axolotl configuration.
 
         Returns:
-        None
+            The first non-`None` trainer class returned by a plugin.
         """
 
-    def post_model_load(self, cfg, model):  # pylint: disable=unused-argument
-        """
-        Performs actions after the model is loaded.
+    def post_trainer_create(self, cfg: DictDefault, trainer: Trainer):
+        """Performs actions after the trainer is created.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-        model (object): The loaded model.
+        Args:
+            cfg: The configuration for the plugin.
+            trainer: The trainer object for training.
+        """
+
+    def get_training_args(self, cfg: DictDefault):
+        """
+        Returns custom training arguments to set on TrainingArgs.
+
+        Args:
+            cfg: The global axolotl configuration.
 
         Returns:
-        None
+            object: dict containing the training arguments.
         """
 
-    def pre_lora_load(self, cfg, model):  # pylint: disable=unused-argument
+    def get_collator_cls_and_kwargs(self, cfg: DictDefault, is_eval: bool = False):
         """
-        Performs actions before LoRA weights are loaded.
+        Returns a custom class for the collator.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-        model (object): The loaded model.
+        Args:
+            cfg: The global axolotl configuration.
+            is_eval: Whether this is an eval split.
 
         Returns:
-        None
+            class: The class for the collator.
         """
 
-    def post_lora_load(self, cfg, model):  # pylint: disable=unused-argument
-        """
-        Performs actions after LoRA weights are loaded.
+    def create_optimizer(self, cfg: DictDefault, trainer: Trainer) -> Optimizer | None:
+        """Creates and returns an optimizer for training.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-        model (object): The loaded model.
+        Args:
+            cfg: The configuration for the plugin.
+            trainer: The trainer object for training.
 
         Returns:
-        None
-        """
-
-    def create_optimizer(self, cfg, trainer):  # pylint: disable=unused-argument
-        """
-        Creates and returns an optimizer for training.
-
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-        trainer (object): The trainer object for training.
-
-        Returns:
-        object: The created optimizer.
+            The created optimizer.
         """
 
     def create_lr_scheduler(
-        self, cfg, trainer, optimizer
-    ):  # pylint: disable=unused-argument
-        """
-        Creates and returns a learning rate scheduler.
+        self,
+        cfg: DictDefault,
+        trainer: Trainer,
+        optimizer: Optimizer,
+        num_training_steps: int,
+    ) -> LRScheduler | None:
+        """Creates and returns a learning rate scheduler.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-        trainer (object): The trainer object for training.
-        optimizer (object): The optimizer for training.
-
-        Returns:
-        object: The created learning rate scheduler.
-        """
-
-    def add_callbacks_pre_trainer(self, cfg, model):  # pylint: disable=unused-argument
-        """
-        setup callbacks before creating the trainer.
-
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-        model (object): The loaded model.
+        Args:
+            cfg: The configuration for the plugin.
+            trainer: The trainer object for training.
+            optimizer: The optimizer for training.
+            num_training_steps: Total number of training steps
 
         Returns:
-        List[callable]: A list of callback functions to be added to the TrainingArgs
+            The created learning rate scheduler.
+        """
+
+    def add_callbacks_pre_trainer(
+        self, cfg: DictDefault, model: PreTrainedModel
+    ) -> list[Callable]:
+        """Set up callbacks before creating the trainer.
+
+        Args:
+            cfg: The configuration for the plugin.
+            model: The loaded model.
+
+        Returns:
+            A list of callback functions to be added to the `TrainingArgs`.
         """
         return []
 
     def add_callbacks_post_trainer(
-        self, cfg, trainer
-    ):  # pylint: disable=unused-argument
-        """
-        Adds callbacks to the trainer after creating the trainer.
-        This is useful for callbacks that require access to the model or trainer.
+        self, cfg: DictDefault, trainer: Trainer
+    ) -> list[Callable]:
+        """Adds callbacks to the trainer after creating the trainer. This is useful for
+        callbacks that require access to the model or trainer.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-        trainer (object): The trainer object for training.
+        Args:
+            cfg: The configuration for the plugin.
+            trainer: The trainer object for training.
 
         Returns:
-        List[callable]: A list of callback functions to be added
+            A list of callback functions to be added
         """
         return []
 
-    def post_train(self, cfg, model):  # pylint: disable=unused-argument
+    def on_rollouts_scored(
+        self,
+        cfg: DictDefault,
+        trainer,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Called after rollouts are scored during online RL (GRPO/PPO).
+
+        Provides access to the full scored rollout data for logging, trace
+        storage, or analysis. Called once per scoring step with all samples
+        from that step.
+
+        Args:
+            cfg: The axolotl configuration.
+            trainer: The trainer instance.
+            prompts: List of prompt texts (one per sample).
+            completions: List of completion texts (one per sample).
+            rewards: Dict mapping reward function name to list of reward values.
+            advantages: List of advantage values (one per sample).
         """
-        Performs actions after training is complete.
 
-        Parameters:
-        cfg (dict): The axolotl configuration
-        model (object): The loaded model.
+    def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
+        """Performs actions after training is complete.
 
-        Returns:
-        None
+        Args:
+            cfg: The axolotl configuration.
+            model: The loaded model.
         """
 
-    def post_train_unload(self, cfg):  # pylint: disable=unused-argument
-        """
-        Performs actions after training is complete and the model is unloaded.
+    def post_train_unload(self, cfg: DictDefault):
+        """Performs actions after training is complete and the model is unloaded.
 
-        Parameters:
-        cfg (dict): The configuration for the plugin.
-
-        Returns:
-        None
+        Args:
+            cfg: The configuration for the plugin.
         """
 
 
 def load_plugin(plugin_name: str) -> BasePlugin:
-    """
-    Loads a plugin based on the given plugin name.
+    """Loads a plugin based on the given plugin name.
 
-    The plugin name should be in the format "module_name.class_name".
-    This function splits the plugin name into module and class, imports the module,
-    retrieves the class from the module, and creates an instance of the class.
+    The plugin name should be in the format "module_name.class_name". This function
+    splits the plugin name into module and class, imports the module, retrieves the
+    class from the module, and creates an instance of the class.
 
-    Parameters:
-    plugin_name (str): The name of the plugin to be loaded. The name should be in the format "module_name.class_name".
+    Args:
+        plugin_name: The name of the plugin to be loaded. The name should be in the
+            format "module_name.class_name".
 
     Returns:
-    BasePlugin: An instance of the loaded plugin.
+        An instance of the loaded plugin.
 
     Raises:
-    ImportError: If the plugin module cannot be imported.
+        ImportError: If the plugin module cannot be imported.
     """
     # split the plugin name into module and class
     module_name, class_name = plugin_name.rsplit(".", 1)
 
     # import the module
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as orig_exc:
+        try:
+            if not module_name.startswith("axolotl.integrations."):
+                module = importlib.import_module("axolotl.integrations." + module_name)
+            else:
+                raise orig_exc
+        except ModuleNotFoundError as exc:
+            raise orig_exc from exc
+
     # instantiate the class
     plugin_class = getattr(module, class_name)
     # create an instance of the class
@@ -222,67 +353,75 @@ def load_plugin(plugin_name: str) -> BasePlugin:
 
 
 class PluginManager:
-    """
-    The PluginManager class is responsible for loading and managing plugins.
-    It should be a singleton so it can be accessed from anywhere in the codebase.
+    """The `PluginManager` class is responsible for loading and managing plugins. It
+    should be a singleton so it can be accessed from anywhere in the codebase.
 
     Attributes:
-    plugins (List[BasePlugin]): A list of loaded plugins.
+        plugins: A list of loaded plugins.
 
-    Methods:
-    get_instance(): Static method to get the singleton instance of PluginManager.
-    register(plugin_name: str): Registers a new plugin by its name.
-    pre_model_load(cfg): Calls the pre_model_load method of all registered plugins.
+    Note:
+        Key methods include:
+        - get_instance(): Static method to get the singleton instance of `PluginManager`.
+        - register(plugin_name: str): Registers a new plugin by its name.
+        - pre_model_load(cfg): Calls the pre_model_load method of all registered plugins.
     """
 
     plugins: OrderedDict[str, BasePlugin] = collections.OrderedDict()
 
-    _instance = None
+    _instance: PluginManager | None = None
+    _cfg: DictDefault | None = None
 
     def __new__(cls):
-        """
-        Creates a new instance of PluginManager if it doesn't exist yet.
-        """
+        """Creates a new instance of PluginManager if it doesn't exist yet."""
         if cls._instance is None:
             cls._instance = super(PluginManager, cls).__new__(cls)
-            cls._instance.plugins = collections.OrderedDict()
+            cls._instance.plugins: OrderedDict[str, BasePlugin] = (
+                collections.OrderedDict()
+            )
         return cls._instance
 
     @staticmethod
     def get_instance() -> "PluginManager":
-        """
-        Returns the singleton instance of PluginManager.
-        If the instance doesn't exist, it creates a new one.
+        """Returns the singleton instance of PluginManager. If the instance doesn't
+        exist, it creates a new one.
         """
         if PluginManager._instance is None:
             PluginManager()
         return PluginManager._instance  # type: ignore
 
+    @property
+    def cfg(self):
+        return self._cfg
+
+    @cfg.setter
+    def cfg(self, cfg):
+        self._cfg = cfg
+
     def register(self, plugin_name: str):
-        """
-        Registers a new plugin by its name.
+        """Registers a new plugin by its name.
 
-        Parameters:
-        plugin_name (str): The name of the plugin to be registered.
-
-        Returns:
-        None
+        Args:
+            plugin_name: The name of the plugin to be registered.
 
         Raises:
-        ImportError: If the plugin module cannot be imported.
+            ImportError: If the plugin module cannot be imported.
         """
         try:
+            LOG.info(f"Attempting to load plugin: {plugin_name}")
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
-        except ImportError:
-            logging.error(f"Failed to load plugin: {plugin_name}")
+            LOG.info(f"Plugin loaded successfully: {plugin_name}")
+        except ImportError as exc:
+            LOG.error(f"Failed to load plugin: {plugin_name}")
+            # print stacktrace
+            traceback.print_exc()
+            print(f"Error: {exc}")
 
-    def get_input_args(self):
-        """
-        Returns a list of Pydantic classes for all registered plugins' input arguments.'
+    def get_input_args(self) -> list[str]:
+        """Returns a list of Pydantic classes for all registered plugins' input arguments.'
 
         Returns:
-        list[str]: A list of Pydantic classes for all registered plugins' input arguments.'
+            A list of Pydantic classes for all registered plugins' input arguments.'
         """
         input_args = []
         for plugin in self.plugins.values():
@@ -291,106 +430,258 @@ class PluginManager:
                 input_args.append(input_args_from_plugin)
         return input_args
 
-    def pre_model_load(self, cfg):
+    def get_training_args_mixin(self):
         """
-        Calls the pre_model_load method of all registered plugins.
-
-        Parameters:
-        cfg (dict): The configuration for the plugins.
+        Returns a list of dataclasses for all registered plugins' training args mixins'
 
         Returns:
-        None
+        list[str]: A list of dataclsses
+        """
+        training_args = []
+        for plugin in self.plugins.values():
+            training_args_from_plugin = plugin.get_training_args_mixin()
+            if training_args_from_plugin is not None:
+                training_args.append(training_args_from_plugin)
+        return training_args
+
+    def adapter_capabilities(self) -> dict[str, AdapterCapabilities]:
+        """Returns adapter capabilities by adapter name."""
+        capabilities = {}
+        for plugin in self.plugins.values():
+            for adapter_capability in plugin.get_adapter_capabilities():
+                capabilities[adapter_capability.name] = adapter_capability
+        return capabilities
+
+    def get_adapter_capability(self, adapter: str) -> AdapterCapabilities | None:
+        """Returns capabilities for a registered plugin adapter."""
+        return self.adapter_capabilities().get(adapter)
+
+    def supports_adapter(self, adapter: str) -> bool:
+        """Returns whether a plugin has registered the adapter name."""
+        return adapter in self.adapter_capabilities()
+
+    def adapter_supports_relora(self, adapter: str) -> bool:
+        """Returns whether a plugin adapter supports ReLoRA restart semantics."""
+        capability = self.get_adapter_capability(adapter)
+        return bool(capability and capability.relora)
+
+    def get_lora_config_kwargs(self, cfg: DictDefault) -> dict:
+        """Returns extra LoraConfig kwargs from plugins for the configured adapter."""
+        lora_config_kwargs = {}
+        for plugin in self.plugins.values():
+            plugin_kwargs = plugin.get_lora_config_kwargs(cfg)
+            if plugin_kwargs:
+                lora_config_kwargs.update(plugin_kwargs)
+        return lora_config_kwargs
+
+    def load_adapter(
+        self,
+        model: PreTrainedModel,
+        cfg: DictDefault,
+        inference: bool = False,
+        config_only: bool = False,
+    ) -> (
+        tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]
+        | None
+    ):
+        """Returns the first plugin adapter loader result, if any."""
+        for plugin in self.plugins.values():
+            loaded = plugin.load_adapter(
+                model,
+                cfg,
+                inference=inference,
+                config_only=config_only,
+            )
+            if loaded is not None:
+                return loaded
+        return None
+
+    def load_datasets(
+        self, cfg: DictDefault, preprocess: bool = False
+    ) -> Union["TrainDatasetMeta", None]:
+        """Calls the load_datasets method of each registered plugin.
+
+        Args:
+            cfg: The configuration for the plugins.
+            preprocess: Whether this is preprocess step of the datasets.
+
+        Returns:
+            The dataset metadata loaded from all registered plugins.
+        """
+        return_ds_meta = None
+        for plugin in self.plugins.values():
+            dataset_meta = plugin.load_datasets(cfg, preprocess)
+            if dataset_meta is not None:
+                if return_ds_meta is None:
+                    return_ds_meta = dataset_meta
+                else:
+                    raise RuntimeError("Multiple plugins loaded datasets")
+        return return_ds_meta
+
+    def pre_model_load(self, cfg: DictDefault):
+        """Calls the pre_model_load method of all registered plugins.
+
+        Args:
+            cfg: The configuration for the plugins.
         """
         for plugin in self.plugins.values():
             plugin.pre_model_load(cfg)
 
-    def post_model_load(self, cfg, model):
-        """
-        Calls the post_model_load method of all registered plugins.
+    def post_model_build(self, cfg: DictDefault, model: PreTrainedModel):
+        """Calls the `post_model_build` method of all registered plugins after the
+        model has been built / loaded, but before any adapters have been applied.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        model (object): The loaded model.
-
-        Returns:
-        None
+        Args:
+            cfg: The configuration for the plugins.
+            model: The loaded model.
         """
         for plugin in self.plugins.values():
-            plugin.post_model_load(cfg, model)
+            plugin.post_model_build(cfg, model)
 
-    def pre_lora_load(self, cfg, model):
-        """
-        Calls the pre_lora_load method of all registered plugins.
+    def pre_lora_load(self, cfg: DictDefault, model: PreTrainedModel):
+        """Calls the `pre_lora_load` method of all registered plugins.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        model (object): The loaded model.
-
-        Returns:
-        None
+        Args:
+            cfg: The configuration for the plugins.
+            model: The loaded model.
         """
         for plugin in self.plugins.values():
             plugin.pre_lora_load(cfg, model)
 
-    def post_lora_load(self, cfg, model):
-        """
-        Calls the post_lora_load method of all registered plugins.
+    def post_lora_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
+        """Calls the `post_lora_load` method of all registered plugins.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        model (object): The loaded model.
-
-        Returns:
-        None
+        Args:
+            cfg: The configuration for the plugins.
+            model: The loaded model.
         """
         for plugin in self.plugins.values():
             plugin.post_lora_load(cfg, model)
 
-    def create_optimizer(self, cfg, trainer):
+    def post_model_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
+        """Calls the `post_model_load` method of all registered plugins after the model
+        has been loaded inclusive of any adapters.
+
+        Args:
+            cfg: The configuration for the plugins.
+            model: The loaded model.
         """
-        Calls the create_optimizer method of all registered plugins and returns the first non-None optimizer.
+        for plugin in self.plugins.values():
+            plugin.post_model_load(cfg, model)
+
+    def get_trainer_cls(self, cfg: DictDefault) -> Trainer | None:
+        """Calls the `get_trainer_cls` method of all registered plugins and returns the
+        first non-`None` trainer class.
+
+        Args:
+            cfg: The configuration for the plugins.
+
+        Returns:
+            The first non-`None` trainer class returned by a plugin.
+        """
+        for plugin in self.plugins.values():
+            trainer_cls = plugin.get_trainer_cls(cfg)
+            if trainer_cls is not None:
+                return trainer_cls
+        return None
+
+    def get_training_args(self, cfg):
+        """
+        Calls the get_training_args method of all registered plugins and returns the combined training arguments.
 
         Parameters:
         cfg (dict): The configuration for the plugins.
-        trainer (object): The trainer object for training.
 
         Returns:
-        object: The created optimizer, or None if none was found.
+        object: The training arguments
+        """
+        training_args_kwargs = {}
+        for plugin in self.plugins.values():
+            training_args = plugin.get_training_args(cfg)
+            if training_args is not None:
+                training_args_kwargs.update(training_args)
+
+        return training_args_kwargs
+
+    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
+        """
+        Calls the get_collator_cls_and_kwargs method of all registered plugins and returns the first non-None collator class.
+
+        Parameters:
+        cfg (dict): The configuration for the plugins.
+        is_eval (bool): Whether this is an eval split.
+
+        Returns:
+        object: The collator class, or None if none was found.
         """
         for plugin in self.plugins.values():
-            optimizer = plugin.create_optimizer(cfg, trainer)
+            collator = plugin.get_collator_cls_and_kwargs(cfg, is_eval=is_eval)
+            if collator is not None:
+                collator_cls, collator_kwargs = collator
+                return collator_cls, collator_kwargs
+        return None
+
+    def post_trainer_create(self, cfg: DictDefault, trainer: Trainer):
+        """Calls the `post_trainer_create` method of all registered plugins.
+
+        Args:
+            cfg: The configuration for the plugins.
+            trainer: The trainer object for training.
+        """
+        for plugin in self.plugins.values():
+            plugin.post_trainer_create(cfg, trainer)
+
+    def create_optimizer(self, trainer: Trainer) -> Optimizer | None:
+        """Calls the `create_optimizer` method of all registered plugins and returns
+        the first non-`None` optimizer.
+
+        Args:
+            trainer: The trainer object for training.
+
+        Returns:
+            The created optimizer, or `None` if none was found.
+        """
+        for plugin in self.plugins.values():
+            optimizer = plugin.create_optimizer(self.cfg, trainer)
             if optimizer is not None:
                 return optimizer
         return None
 
-    def create_lr_scheduler(self, cfg, trainer, optimizer):
-        """
-        Calls the create_lr_scheduler method of all registered plugins and returns the first non-None scheduler.
+    def create_lr_scheduler(
+        self, trainer: Trainer, optimizer: Optimizer, num_training_steps: int
+    ) -> LRScheduler | None:
+        """Calls the `create_lr_scheduler` method of all registered plugins and returns
+        the first non-`None` scheduler.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        trainer (object): The trainer object for training.
-        optimizer (object): The optimizer for training.
+        Args:
+            trainer: The trainer object for training.
+            optimizer: The optimizer for training.
 
         Returns:
-        object: The created learning rate scheduler, or None if none was found.
+            The created learning rate scheduler, or `None` if not found.
         """
         for plugin in self.plugins.values():
-            scheduler = plugin.create_lr_scheduler(cfg, trainer, optimizer)
+            scheduler: LRScheduler | None = plugin.create_lr_scheduler(
+                self.cfg,
+                trainer=trainer,
+                optimizer=optimizer,
+                num_training_steps=num_training_steps,
+            )
             if scheduler is not None:
                 return scheduler
         return None
 
-    def add_callbacks_pre_trainer(self, cfg, model):
-        """
-        Calls the add_callbacks_pre_trainer method of all registered plugins.
+    def add_callbacks_pre_trainer(
+        self, cfg: DictDefault, model: PreTrainedModel
+    ) -> list[Callable]:
+        """Calls the add_callbacks_pre_trainer method of all registered plugins.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        model (object): The loaded model.
+        Args:
+            cfg: The configuration for the plugins.
+            model: The loaded model.
 
         Returns:
-        List[callable]: A list of callback functions to be added to the TrainingArgs.
+            A list of callback functions to be added to the `TrainingArgs`.
         """
         callbacks = []
         for plugin in self.plugins.values():
@@ -399,16 +690,17 @@ class PluginManager:
                 callbacks.extend(plugin_callbacks)
         return callbacks
 
-    def add_callbacks_post_trainer(self, cfg, trainer):
-        """
-        Calls the add_callbacks_post_trainer method of all registered plugins.
+    def add_callbacks_post_trainer(
+        self, cfg: DictDefault, trainer: Trainer
+    ) -> list[Callable]:
+        """Calls the `add_callbacks_post_trainer` method of all registered plugins.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        trainer (object): The trainer object for training.
+        Args:
+            cfg: The configuration for the plugins.
+            trainer: The trainer object for training.
 
         Returns:
-        List[callable]: A list of callback functions to be added to the TrainingArgs.
+            A list of callback functions to be added to the `TrainingArgs`.
         """
         callbacks = []
         for plugin in self.plugins.values():
@@ -417,16 +709,81 @@ class PluginManager:
                 callbacks.extend(plugin_callbacks)
         return callbacks
 
-    def post_train_unload(self, cfg):
+    def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
+        """Calls the post_train method of all registered plugins.
+
+        Args:
+            cfg: The configuration for the plugins.
+            model: The loaded model.
         """
-        Calls the post_train_unload method of all registered plugins.
+        for plugin in self.plugins.values():
+            plugin.post_train(cfg, model)
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        model (object): The loaded model.
+    def on_rollouts_scored(
+        self,
+        cfg: DictDefault,
+        trainer,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Calls the on_rollouts_scored method of all registered plugins.
 
-        Returns:
-        None
+        Args:
+            cfg: The configuration for the plugins.
+            trainer: The trainer instance.
+            prompts: List of prompt texts.
+            completions: List of completion texts.
+            rewards: Dict mapping reward function name to list of rewards.
+            advantages: List of advantage values.
+        """
+        for plugin in self.plugins.values():
+            try:
+                plugin.on_rollouts_scored(
+                    cfg, trainer, prompts, completions, rewards, advantages
+                )
+            except Exception:
+                LOG.warning(
+                    f"Plugin {plugin.__class__.__name__}.on_rollouts_scored failed",
+                    exc_info=True,
+                )
+
+    def post_train_unload(self, cfg: DictDefault):
+        """Calls the post_train_unload method of all registered plugins.
+
+        Args:
+            cfg: The configuration for the plugins.
         """
         for plugin in self.plugins.values():
             plugin.post_train_unload(cfg)
+
+
+class BaseOptimizerFactory:
+    """Base class for factories to create custom optimizers"""
+
+    def __call__(
+        self, opt_model, training_args, **optimizer_kwargs
+    ) -> Optimizer | None:
+        pass
+
+    # duplicated from transformers
+    def get_decay_parameter_names(self, model) -> list[str]:
+        """
+        Get all parameter names that weight decay will be applied to.
+
+        This function filters out parameters in two ways:
+        1. By layer type (instances of layers specified in ALL_LAYERNORM_LAYERS)
+        2. By parameter name patterns (containing 'bias', or variation of 'norm')
+        """
+        forbidden_name_patterns = [
+            r"bias",
+            r"layernorm",
+            r"rmsnorm",
+            r"(?:^|\.)norm(?:$|\.)",
+            r"_norm(?:$|\.)",
+        ]
+        decay_parameters = get_parameter_names(
+            model, [nn.LayerNorm], forbidden_name_patterns
+        )
+        return decay_parameters

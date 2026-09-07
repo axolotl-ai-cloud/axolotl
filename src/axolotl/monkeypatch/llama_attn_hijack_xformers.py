@@ -2,7 +2,6 @@
 Directly copied the code from https://raw.githubusercontent.com/oobabooga/text-generation-webui/main/modules/llama_attn_hijack.py and made some adjustments
 """
 
-import logging
 import warnings
 from typing import Optional, Tuple
 
@@ -11,10 +10,14 @@ import torch.nn.functional as F
 import transformers.models.llama.modeling_llama
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repeat_kv
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 try:
     import xformers.ops
 except ImportError:
-    logging.error("xformers not found! Please install it before trying to use it.")
+    LOG.error("xformers not found! Please install it before trying to use it.")
 
 
 def hijack_llama_attention():
@@ -29,10 +32,9 @@ def xformers_forward(
     past_key_value: Optional[Tuple[torch.Tensor]] = None,
     output_attentions: bool = False,
     use_cache: bool = False,
-    padding_mask: Optional[torch.LongTensor] = None,  # pylint: disable=unused-argument
-    **kwargs,  # pylint: disable=unused-argument
+    padding_mask: Optional[torch.LongTensor] = None,
+    **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-    # pylint: disable=duplicate-code
     bsz, q_len, _ = hidden_states.size()
 
     if not hasattr(self, "pretraining_tp"):
@@ -99,7 +101,8 @@ def xformers_forward(
 
     if output_attentions:
         warnings.warn(
-            "Output attentions is not supported for patched `LlamaAttention`, returning `None` instead."
+            "Output attentions is not supported for patched `LlamaAttention`, returning `None` instead.",
+            stacklevel=2,
         )
 
     #

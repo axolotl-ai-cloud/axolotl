@@ -1,10 +1,9 @@
 base_model: NousResearch/Llama-2-7b-hf
+# optionally might have model_type or tokenizer_type
 model_type: LlamaForCausalLM
 tokenizer_type: LlamaTokenizer
-
-load_in_8bit: false
-load_in_4bit: false
-strict: false
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test
@@ -15,7 +14,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 adapter:
 lora_model_dir:
@@ -23,7 +22,6 @@ lora_r:
 lora_alpha:
 lora_dropout:
 lora_target_linear:
-lora_fan_in_fan_out:
 
 wandb_project:
 wandb_entity:
@@ -38,31 +36,22 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: false
 
 gradient_checkpointing: true
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
-flash_attention: true
+attn_implementation: flash_attention_2
 flash_attn_cross_entropy: false
-flash_attn_rms_norm: true
-flash_attn_fuse_qkv: false
 flash_attn_fuse_mlp: true
 
-warmup_steps: 100
+warmup_ratio: 0.1
 evals_per_epoch: 4
-eval_table_size:
 saves_per_epoch: 1
-debug:
+
 deepspeed: #deepspeed_configs/zero2.json # multi-gpu only
 weight_decay: 0.1
-fsdp:
-fsdp_config:
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

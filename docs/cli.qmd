@@ -1,0 +1,353 @@
+---
+title: "Command Line Interface (CLI)"
+format:
+  html:
+    toc: true
+    toc-expand: 2
+    toc-depth: 3
+execute:
+  enabled: false
+---
+
+The Axolotl CLI provides a streamlined interface for training and fine-tuning large language models. This guide covers
+the CLI commands, their usage, and common examples.
+
+
+## Basic Commands
+
+All Axolotl commands follow this general structure:
+
+```bash
+axolotl <command> [config.yml] [options]
+```
+
+The config file can be local or a URL to a raw YAML file.
+
+### Launcher Arguments
+
+For commands that support multi-GPU (`train`, `evaluate`, ...), you can pass launcher-specific arguments using the `--` separator:
+
+```bash
+# Pass torchrun arguments
+axolotl train config.yml --launcher torchrun -- --nproc_per_node=2 --nnodes=1
+
+# Pass accelerate arguments
+axolotl train config.yml --launcher accelerate -- --config_file=accelerate_config.yml --num_processes=4
+```
+
+Arguments after `--` are passed directly to the launcher (torchrun, accelerate launch, etc.).
+
+## Command Reference
+
+### fetch
+
+Downloads example configurations and deepspeed configs to your local machine.
+
+```bash
+# Get example YAML files
+axolotl fetch examples
+
+# Get deepspeed config files
+axolotl fetch deepspeed_configs
+
+# Specify custom destination
+axolotl fetch examples --dest path/to/folder
+```
+
+### preprocess
+
+Preprocesses and tokenizes your dataset before training. This is recommended for large datasets.
+
+```bash
+# Basic preprocessing
+axolotl preprocess config.yml
+
+# Preprocessing with one GPU
+CUDA_VISIBLE_DEVICES="0" axolotl preprocess config.yml
+
+# Debug mode to see processed examples
+axolotl preprocess config.yml --debug
+
+# Debug with limited examples
+axolotl preprocess config.yml --debug --debug-num-examples 5
+```
+
+Configuration options:
+
+```yaml
+dataset_prepared_path: Local folder for saving preprocessed data
+push_dataset_to_hub: HuggingFace repo to push preprocessed data (optional)
+```
+
+### train
+
+Trains or fine-tunes a model using the configuration specified in your YAML file.
+
+```bash
+# Basic training
+axolotl train config.yml
+
+# Train and set/override specific options
+axolotl train config.yml \
+    --learning-rate 1e-4 \
+    --micro-batch-size 2 \
+    --num-epochs 3
+
+# Training without accelerate
+axolotl train config.yml --launcher python
+
+# Pass launcher-specific arguments using -- separator
+axolotl train config.yml --launcher torchrun -- --nproc_per_node=2 --nnodes=1
+axolotl train config.yml --launcher accelerate -- --config_file=accelerate_config.yml
+
+# Resume training from checkpoint
+axolotl train config.yml --resume-from-checkpoint path/to/checkpoint
+```
+
+It is possible to run sweeps over multiple hyperparameters by passing in a sweeps config.
+
+```bash
+# Basic training with sweeps
+axolotl train config.yml --sweep path/to/sweep.yaml
+```
+
+Example sweep config:
+```yaml
+_:
+  # This section is for dependent variables we need to fix
+  - load_in_8bit: false
+    load_in_4bit: false
+    adapter: lora
+  - load_in_8bit: true
+    load_in_4bit: false
+    adapter: lora
+
+# These are independent variables
+learning_rate: [0.0003, 0.0006]
+lora_r:
+  - 16
+  - 32
+lora_alpha:
+  - 16
+  - 32
+  - 64
+```
+
+
+
+### inference
+
+Runs inference using your trained model in CLI, interactive chat, or Gradio
+interface mode.
+
+```bash
+# CLI inference with LoRA
+axolotl inference config.yml --lora-model-dir="./outputs/lora-out"
+
+# CLI inference with full model
+axolotl inference config.yml --base-model="./completed-model"
+
+# Interactive multi-turn chat (see the inference guide for commands)
+axolotl inference config.yml --chat \
+    --lora-model-dir="./outputs/lora-out"
+
+# Gradio web interface
+axolotl inference config.yml --gradio \
+    --lora-model-dir="./outputs/lora-out"
+
+# Inference with input from file
+cat prompt.txt | axolotl inference config.yml \
+    --base-model="./completed-model"
+```
+
+### merge-lora
+
+Merges trained LoRA adapters into the base model.
+
+```bash
+# Basic merge
+axolotl merge-lora config.yml
+
+# Specify LoRA directory (usually used with checkpoints)
+axolotl merge-lora config.yml --lora-model-dir="./lora-output/checkpoint-100"
+
+# Merge using CPU (if out of GPU memory)
+CUDA_VISIBLE_DEVICES="" axolotl merge-lora config.yml
+
+# Dequantize a quantized base to bf16 while merging
+axolotl merge-lora config.yml --dequant
+```
+
+For quantized bases the default merge is format-preserving (the delta is folded and re-quantized back to the same format). `--dequant` writes a bf16 checkpoint instead; it is rejected for merge-aware NVFP4 adapters, where `--override-quantizer` can also be used to proceed past a quantizer-identity mismatch. See [NVFP4 MoE LoRA](nvfp4_lora.qmd).
+
+Configuration options:
+
+```yaml
+gpu_memory_limit: Limit GPU memory usage
+lora_on_cpu: Load LoRA weights on CPU
+```
+
+### merge-sharded-fsdp-weights
+
+Merges sharded FSDP model checkpoints into a single combined checkpoint.
+
+```bash
+# Basic merge
+axolotl merge-sharded-fsdp-weights config.yml
+```
+
+### evaluate
+
+Evaluates a model's performance (loss etc) on the train and eval datasets.
+
+```bash
+# Basic evaluation
+axolotl evaluate config.yml
+
+# Evaluation with launcher arguments
+axolotl evaluate config.yml --launcher torchrun -- --nproc_per_node=2
+```
+
+### lm-eval
+
+Runs LM Evaluation Harness on your model.
+
+```bash
+# Basic evaluation
+axolotl lm-eval config.yml
+```
+
+Configuration options:
+
+```yaml
+lm_eval_model: # model to evaluate (local or hf path)
+
+# List of tasks to evaluate
+lm_eval_tasks:
+  - arc_challenge
+  - hellaswag
+lm_eval_batch_size: # Batch size for evaluation
+output_dir: # Directory to save evaluation results
+```
+
+See [LM Eval Harness integration docs](https://docs.axolotl.ai/docs/custom_integrations.html#language-model-evaluation-harness-lm-eval) for full configuration details.
+
+### delinearize-llama4
+
+Delinearizes a Llama 4 linearized model into a regular HuggingFace Llama 4 model. This only works with the non-quantized linearized model.
+
+```bash
+axolotl delinearize-llama4 path/to/model_dir path/to/output_dir
+```
+
+This would be necessary to use with other frameworks. If you have an adapter, merge it with the non-quantized linearized model before delinearizing.
+
+### quantize
+
+Quantizes a model using the quantization configuration specified in your YAML file.
+
+```bash
+axolotl quantize config.yml
+```
+
+See [Quantization](./quantize.qmd) for more details.
+
+
+## Legacy CLI Usage
+
+While the new Click-based CLI is preferred, Axolotl still supports the legacy module-based CLI:
+
+```bash
+# Preprocess
+python -m axolotl.cli.preprocess config.yml
+
+# Train
+accelerate launch -m axolotl.cli.train config.yml
+
+# Inference
+accelerate launch -m axolotl.cli.inference config.yml \
+    --lora_model_dir="./outputs/lora-out"
+
+# Gradio interface
+accelerate launch -m axolotl.cli.inference config.yml \
+    --lora_model_dir="./outputs/lora-out" --gradio
+```
+
+::: {.callout-important}
+When overriding CLI parameters in the legacy CLI, use same notation as in yaml file (e.g., `--lora_model_dir`).
+
+**Note:** This differs from the new Click-based CLI, which uses dash notation (e.g., `--lora-model-dir`). Keep this in mind if you're referencing newer documentation or switching between CLI versions.
+:::
+
+## Remote Compute with Modal Cloud
+
+Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a
+cloud YAML file alongside your regular Axolotl config.
+
+### Cloud Configuration
+
+Create a cloud config YAML with your Modal settings:
+
+```yaml
+# cloud_config.yml
+provider: modal
+gpu: a100       # Supported: l40s, a100-40gb, a100-80gb, a10g, h100, t4, l4
+gpu_count: 1    # Number of GPUs to use
+timeout: 86400  # Maximum runtime in seconds (24 hours)
+branch: main    # Git branch to use (optional)
+
+volumes:        # Persistent storage volumes
+  - name: axolotl-cache
+    mount: /workspace/cache
+  - name: axolotl-data
+    mount: /workspace/data
+  - name: axolotl-artifacts
+    mount: /workspace/artifacts
+
+secrets:        # Secrets to inject
+  - WANDB_API_KEY
+  - HF_TOKEN
+```
+
+### Running on Modal Cloud
+
+Commands that support the --cloud flag:
+
+```bash
+# Preprocess on cloud
+axolotl preprocess config.yml --cloud cloud_config.yml
+
+# Train on cloud
+axolotl train config.yml --cloud cloud_config.yml
+
+# Run lm-eval on cloud
+axolotl lm-eval config.yml --cloud cloud_config.yml
+```
+
+### Cloud Configuration Options
+
+```yaml
+provider:    # compute provider, currently only `modal` is supported
+gpu:         # GPU type to use
+gpu_count:   # Number of GPUs (default: 1)
+memory:      # RAM in GB (default: 128)
+timeout:     # Maximum runtime in seconds
+timeout_preprocess: # Preprocessing timeout
+branch:      # Git branch to use
+docker_tag:  # Custom Docker image tag
+volumes:     # List of persistent storage volumes
+
+# Environment variables to pass. Can be specified in two ways:
+# 1. As a string: Will load the value from the host computer's environment variables
+# 2. As a key-value pair: Will use the specified value directly
+# Example:
+# env:
+#   - CUSTOM_VAR  # Loads from host's $CUSTOM_VAR
+#   - {CUSTOM_VAR: "value"}  # Uses "value" directly
+env:
+
+# Secrets to inject. Same input format as `env` but for sensitive data.
+secrets:
+  # - HF_TOKEN
+  # - WANDB_API_KEY
+```

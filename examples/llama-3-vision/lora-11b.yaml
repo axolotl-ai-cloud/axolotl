@@ -1,6 +1,9 @@
 base_model: alpindale/Llama-3.2-11B-Vision-Instruct
+# optionally might have model_type or tokenizer_type or processor_type
 processor_type: AutoProcessor
-strict: false
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 
 # these 3 lines are needed for now to handle vision chat templates w images
 skip_prepare_dataset: true
@@ -12,8 +15,7 @@ datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft
     type: chat_template
     split: train[:1%]
-    field_messages: messages
-dataset_prepared_path: last_run_prepared
+dataset_prepared_path:
 val_set_size: 0.0
 output_dir: ./outputs/out
 
@@ -26,7 +28,7 @@ pad_to_sequence_len: false
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_modules: 'language_model.model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 wandb_project:
 wandb_entity:
@@ -41,23 +43,18 @@ optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 fp16:
 tf32: true
 
 gradient_checkpointing: true
-local_rank:
 logging_steps: 1
-flash_attention: true
-eager_attention:
+# flash_attention: true  # use for text-only mode
+attn_implementation: sdpa
 
 warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
-fsdp:
-fsdp_config:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

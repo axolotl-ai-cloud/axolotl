@@ -1,23 +1,129 @@
 """Module for working with config dicts"""
-import logging
+
+import copy
+import json
 import os
 from typing import Optional
 
 import torch
+from pydantic import ValidationError
+from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
+from transformers.utils.import_utils import (
+    is_torch_greater_or_equal,
+    is_torch_npu_available,
+)
 
 from axolotl.integrations.config import merge_input_args
-from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.config.models.input.v0_4_1 import (
-    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
+from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
+from axolotl.loaders.utils import load_model_config
+from axolotl.model_support import (
+    ModelHookContext,
+    ModelHookPhase,
+    Unsupported,
+    get_model_support,
+    resolve_model_support,
+    run_model_support_hooks,
 )
-from axolotl.utils.config.models.input.v0_4_1 import (
+from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.config import (
+    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
     AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model_config
+from axolotl.utils.schemas.datasets import (
+    DPODataset,
+    KTODataset,
+    SFTDataset,
+    SyntheticDataset,
+)
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
+
+_NONE_DEFAULT_FIELDS = {
+    "xformers_attention",
+    "sdp_attention",
+    "flex_attention",
+    "flash_attention",
+    "sage_attention",
+    "eager_attention",
+}
+
+
+def _is_pydantic_undefined(value):
+    return value is PydanticUndefined or isinstance(value, PydanticUndefinedType)
+
+
+def _field_name_for_missing_loc(model_cls, field_loc):
+    fields = getattr(model_cls, "model_fields", None) or {}
+    if field_loc in fields:
+        return field_loc
+
+    for field_name, field in fields.items():
+        if field_loc == getattr(field, "alias", None):
+            return field_name
+
+        validation_alias = getattr(field, "validation_alias", None)
+        if field_loc == validation_alias:
+            return field_name
+
+        for alias in getattr(validation_alias, "choices", ()) or ():
+            if field_loc == alias:
+                return field_name
+
+        alias_path = getattr(validation_alias, "path", None)
+        if alias_path and field_loc == alias_path[0]:
+            return field_name
+
+    return field_loc
+
+
+def _field_default_from_mro(model_cls, field_name):
+    if field_name in _NONE_DEFAULT_FIELDS:
+        return None
+
+    for cls in model_cls.__mro__:
+        fields = getattr(cls, "model_fields", None)
+        if not fields or field_name not in fields:
+            continue
+
+        default = fields[field_name].get_default(call_default_factory=True)
+        if not _is_pydantic_undefined(default):
+            return copy.deepcopy(default)
+
+    return PydanticUndefined
+
+
+def _model_validate_with_field_names(model_cls, data):
+    try:
+        return model_cls.model_validate(data, by_alias=True, by_name=True)
+    except TypeError:
+        return model_cls(**data)
+
+
+def _model_with_inherited_default_fallback(model_cls, data):
+    try:
+        return model_cls(**data)
+    except ValidationError as exc:
+        missing_fields = {
+            _field_name_for_missing_loc(model_cls, err["loc"][0])
+            for err in exc.errors()
+            if err.get("type") == "missing" and len(err.get("loc", ())) == 1
+        }
+        if not missing_fields:
+            raise
+
+        data_with_defaults = dict(data)
+        for field_name in missing_fields:
+            if field_name in data_with_defaults:
+                continue
+            default = _field_default_from_mro(model_cls, field_name)
+            if _is_pydantic_undefined(default):
+                raise
+            data_with_defaults[field_name] = default
+
+        return _model_validate_with_field_names(model_cls, data_with_defaults)
 
 
 def choose_device(cfg):
@@ -29,8 +135,11 @@ def choose_device(cfg):
             if torch.backends.mps.is_available():
                 return "mps"
 
-            raise SystemError("No CUDA/mps device found")
-        except Exception:  # pylint: disable=broad-exception-caught
+            if is_torch_npu_available():
+                return f"npu:{cfg.local_rank}"
+
+            raise SystemError("No CUDA/mps/npu device found")
+        except Exception:
             return "cpu"
 
     cfg.device = get_device()
@@ -39,6 +148,8 @@ def choose_device(cfg):
     else:
         if cfg.device.startswith("cuda"):
             cfg.device_map = {"": torch.cuda.current_device()}
+        elif cfg.device.startswith("npu"):
+            cfg.device_map = {"npu": torch.npu.current_device()}
         else:
             cfg.device_map = {"": cfg.device}
 
@@ -49,14 +160,58 @@ def choose_device(cfg):
         cfg.device_map = None
 
 
+def resolve_dtype(cfg):
+    if (
+        not cfg.fp16 and cfg.bf16 == "auto" and not cfg.use_ray
+    ):  # if we use ray we want to defer this check to the worker node
+        if is_torch_bf16_gpu_available():
+            LOG.debug("bf16 support detected, enabling for this configuration.")
+            cfg.bf16 = True
+        else:
+            LOG.debug("bf16 support not detected, disabling for this configuration.")
+            cfg.bf16 = False
+            if cfg.fp16 is None and not cfg.float16:
+                cfg.fp16 = True
+
+    if cfg.fp16 and cfg.bf16 == "auto":
+        cfg.bf16 = False
+
+    if cfg.device == "mps":
+        cfg.load_in_8bit = False
+        cfg.tf32 = False
+        if cfg.bf16 and cfg.fp16 is not False:
+            cfg.fp16 = True
+        cfg.bf16 = False
+    else:
+        if cfg.tf32 is True:
+            torch.set_float32_matmul_precision("high")
+            if is_torch_greater_or_equal("2.9.0"):
+                torch.backends.fp32_precision = "tf32"
+                torch.backends.cuda.matmul.fp32_precision = "tf32"
+                torch.backends.cudnn.fp32_precision = "tf32"
+            else:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+        if cfg.bf16:
+            cfg.fp16 = False
+
+    if cfg.bf16 or cfg.bfloat16:
+        cfg.torch_dtype = torch.bfloat16
+    elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
+        cfg.torch_dtype = torch.float16
+    else:
+        cfg.torch_dtype = torch.float32
+
+
 def normalize_config(cfg):
     # setup some derived config / hyperparams
-    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
-        cfg.batch_size // cfg.micro_batch_size
-    )
-    cfg.batch_size = (
-        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
-    )
+    if not cfg.use_ray:
+        cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
+            cfg.batch_size // cfg.micro_batch_size
+        )
+        cfg.batch_size = (
+            cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
+        )
     if cfg.eval_batch_size is None:
         cfg.eval_batch_size = cfg.micro_batch_size
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -71,51 +226,50 @@ def normalize_config(cfg):
     ]
     choose_device(cfg)
     cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
-    if cfg.ddp:
+    if cfg.world_size != 1:
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
-        cfg.batch_size = cfg.batch_size * cfg.world_size
+        if cfg.fsdp or cfg.fsdp_config or cfg.ddp:
+            effective_world_size = (
+                cfg.world_size
+                // (cfg.context_parallel_size or 1)
+                // (cfg.tensor_parallel_size or 1)
+            )
+            cfg.batch_size = cfg.batch_size * effective_world_size
 
-    if cfg.bf16 == "auto":
-        if is_torch_bf16_gpu_available():
-            LOG.debug("bf16 support detected, enabling for this configuration.")
-            cfg.bf16 = True
-        else:
-            LOG.debug("bf16 support not detected, disabling for this configuration.")
-            cfg.bf16 = False
-            if cfg.fp16 is None:
-                cfg.fp16 = True
+    if not cfg.use_ray:
+        # delay resolving dtype until on worker node when launching with ray
+        resolve_dtype(cfg)
 
-    if cfg.device == "mps":
-        cfg.load_in_8bit = False
-        cfg.tf32 = False
-        if cfg.bf16:
-            cfg.fp16 = True
-        cfg.bf16 = False
-    else:
-        torch.backends.cuda.matmul.allow_tf32 = cfg.tf32 or False
-        if cfg.bf16:
-            cfg.fp16 = False
-
-    if cfg.bf16 or cfg.bfloat16:
-        cfg.torch_dtype = torch.bfloat16
-    elif cfg.load_in_8bit or cfg.fp16 or cfg.float16:
-        cfg.torch_dtype = torch.float16
-    else:
-        cfg.torch_dtype = torch.float32
+    if cfg.deepspeed:
+        if isinstance(cfg.deepspeed, str) and os.path.exists(cfg.deepspeed):
+            ds_config_path = cfg.deepspeed
+            with open(ds_config_path, encoding="utf-8") as f:
+                cfg.deepspeed = json.load(f)
 
     if cfg.saves_per_epoch:
         save_steps = 1.0 / (cfg.saves_per_epoch * cfg.num_epochs)
         if save_steps < 1.0:  # prevent saves on every step
             cfg.save_steps = save_steps
+        elif save_steps > 1:
+            LOG.warning(
+                f"Invalid value for save_steps ({save_steps}) from saves_per_epoch and/or num_epochs. Saving at training end only."
+            )
     if (cfg.val_set_size or cfg.test_datasets) and cfg.evals_per_epoch:
         eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
         if eval_steps < 1.0:  # prevent evals on every step
             cfg.eval_steps = eval_steps
-
-    cfg.dataset_processes = cfg.dataset_processes or os.cpu_count()
+        elif eval_steps > 1:
+            LOG.warning(
+                f"Invalid value for eval_steps ({eval_steps}) from evals_per_epoch and/or num_epochs. Skipping evaluations."
+            )
 
     if not cfg.base_model_config:
         cfg.base_model_config = cfg.base_model
+
+    # Apply pre-config load patches (e.g., for Kimi Linear remote code patching)
+    from axolotl.loaders.patch_manager import PatchManager
+
+    PatchManager.apply_pre_config_load_patches(cfg)
 
     model_config = load_model_config(cfg)
 
@@ -123,9 +277,17 @@ def normalize_config(cfg):
         cfg.tokenizer_config or cfg.base_model_config or cfg.base_model
     )
 
+    model_support = get_model_support(getattr(model_config, "model_type", None))
+    resolved_support = (
+        resolve_model_support(model_support) if model_support is not None else None
+    )
+
+    cfg.model_config_type = model_config.model_type
+
     cfg.is_multimodal = (
-        hasattr(model_config, "model_type")
-        and model_config.model_type in ["llava", "mllama"]
+        (resolved_support is not None and resolved_support.is_multimodal)
+        or hasattr(model_config, "model_type")
+        and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
         or any(
             multimodal_name in cfg.base_model.lower()
             for multimodal_name in [
@@ -138,15 +300,52 @@ def normalize_config(cfg):
         cfg.processor_config = (
             cfg.processor_config or cfg.base_model_config or cfg.base_model
         )
-        model_config = model_config.text_config
 
-    cfg.model_config_type = model_config.model_type
+    if resolved_support is not None:
+        # The auto-enable validator runs before model_type is known; undo it
+        # for archs that declare the fused kernels broken.
+        lora_kernels_cap = resolved_support.capabilities.get("lora_kernels")
+        kernel_fields = (
+            "lora_mlp_kernel",
+            "lora_qkv_kernel",
+            "lora_o_kernel",
+            "lora_embedding_kernel",
+        )
+        if isinstance(lora_kernels_cap, Unsupported) and any(
+            cfg[k] for k in kernel_fields
+        ):
+            LOG.warning(
+                "Disabling fused LoRA kernels: unsupported for model_type=%s.%s",
+                cfg.model_config_type,
+                f" {lora_kernels_cap.reason}" if lora_kernels_cap.reason else "",
+            )
+            for k in kernel_fields:
+                cfg[k] = False
+
+    run_model_support_hooks(
+        model_support,
+        ModelHookPhase.CONFIGURE_RUN,
+        ModelHookContext(
+            cfg=cfg,
+            model_config=model_config,
+            inference=cfg.inference,
+        ),
+    )
+
+    # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
+    if callable(getattr(model_config, "get_text_config", None)):
+        text_config = model_config.get_text_config()
+        if (
+            hasattr(text_config, "model_type")
+            and text_config.model_type != model_config.model_type
+        ):
+            cfg.model_config_type_text = text_config.model_type
 
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
         (
             hasattr(model_config, "model_type")
-            and model_config.model_type == ["llama", "mllama_text_model"]
+            and model_config.model_type in ["llama", "mllama_text_model"]
         )
         or cfg.is_llama_derived_model
         or "llama" in cfg.base_model.lower()
@@ -201,6 +400,38 @@ def normalize_config(cfg):
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
+    # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms /
+    # cross-layer shared KV cause "marked ready twice" errors with reentrant
+    # checkpointing) and ddp_find_unused_parameters=True (per_layer_projection
+    # LoRA / frozen mm params may not receive gradients on every step). The
+    # unified variant shares the same constraints.
+    if cfg.model_config_type in ("gemma4", "gemma4_unified"):
+        if cfg.gradient_checkpointing:
+            if cfg.gradient_checkpointing_kwargs is None:
+                cfg.gradient_checkpointing_kwargs = {}
+            if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
+                LOG.warning(
+                    "Gemma4 requires use_reentrant=False for gradient checkpointing "
+                    "in distributed training. Setting use_reentrant=False."
+                )
+                cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
+        if cfg.ddp and cfg.ddp_find_unused_parameters is None:
+            if cfg.activation_offloading is True:
+                # activation_offloading uses checkpoint wrappers that conflict
+                # with find_unused_parameters (causes "marked ready twice").
+                # Use freeze_mm_modules instead to eliminate unused params.
+                LOG.info(
+                    "Gemma4 + DDP + activation_offloading: skipping "
+                    "ddp_find_unused_parameters (use freeze_mm_modules to "
+                    "handle unused vision/audio params)."
+                )
+            else:
+                LOG.warning(
+                    "Gemma4 requires ddp_find_unused_parameters=True for DDP. "
+                    "Auto-enabling."
+                )
+                cfg.ddp_find_unused_parameters = True
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
@@ -223,24 +454,78 @@ def normalize_cfg_datasets(cfg):
                     cfg.datasets[idx].chat_template_jinja = cfg.chat_template_jinja
 
 
-def validate_config(cfg: DictDefault, capabilities: Optional[dict] = None):
+def validate_config(
+    cfg: DictDefault,
+    capabilities: Optional[dict] = None,
+    env_capabilities: Optional[dict] = None,
+) -> DictDefault:
     AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
     AxolotlInputConfig = AxolotlInputConfigBase
 
     if cfg.plugins:
         (
-            AxolotlConfigWCapabilities,  # pylint: disable=invalid-name
-            AxolotlInputConfig,  # pylint: disable=invalid-name
+            AxolotlConfigWCapabilities,
+            AxolotlInputConfig,
         ) = merge_input_args()
 
-    if capabilities:
+    # Convert datasets to proper format if needed
+    if cfg.get("datasets"):
+        for idx, ds_cfg in enumerate(cfg["datasets"]):
+            if cfg.get("rl") in ["dpo", "ipo", "simpo"] and not isinstance(
+                ds_cfg, DPODataset
+            ):
+                cfg["datasets"][idx] = DPODataset(**ds_cfg)
+            elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
+                cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
+            elif (
+                ds_cfg.get("type")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "type", None)
+            ) == "_synthetic" and not isinstance(ds_cfg, SyntheticDataset):
+                cfg["datasets"][idx] = SyntheticDataset(
+                    **(ds_cfg if isinstance(ds_cfg, dict) else dict(ds_cfg))
+                )
+            elif not isinstance(ds_cfg, SFTDataset):
+                cfg["datasets"][idx] = SFTDataset(**dict(ds_cfg))
+
+    if capabilities or env_capabilities:
+        if (capabilities and env_capabilities is None) or (
+            env_capabilities and capabilities is None
+        ):
+            raise ValueError(
+                "Both capabilities and env_capabilities must be provided or not provided."
+            )
+
         return DictDefault(
             dict(
-                AxolotlConfigWCapabilities(
-                    **cfg.to_dict(), capabilities=capabilities
+                _model_with_inherited_default_fallback(
+                    AxolotlConfigWCapabilities,
+                    {
+                        **cfg.to_dict(),
+                        "capabilities": capabilities,
+                        "env_capabilities": env_capabilities,
+                    },
                 ).model_dump(exclude_none=True)
             )
         )
+
     return DictDefault(
-        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
+        dict(
+            _model_with_inherited_default_fallback(
+                AxolotlInputConfig, cfg.to_dict()
+            ).model_dump(exclude_none=True)
+        )
     )
+
+
+def prepare_plugins(cfg):
+    """
+    Prepare the plugins for the configuration
+    """
+
+    if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
+        plugin_manager = PluginManager.get_instance()
+        for plugin_name in cfg["plugins"]:
+            plugin_manager.register(plugin_name)

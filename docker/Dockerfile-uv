@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+ARG BASE_TAG=main-base
+FROM axolotlai/axolotl-base-uv:$BASE_TAG
+
+ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
+ARG AXOLOTL_EXTRAS=""
+ARG AXOLOTL_ARGS=""
+ARG CUDA="118"
+ARG PYTORCH_VERSION="2.1.2"
+ARG TARGETARCH
+
+ENV PYTORCH_VERSION=$PYTORCH_VERSION
+
+WORKDIR /workspace/axolotl
+
+COPY . .
+
+# If AXOLOTL_EXTRAS is set, append it in brackets; don't install deepspeed with arm64
+RUN uv pip uninstall causal_conv1d
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install "huggingface_hub>=1.5.0" "httpx<1" "kernels-data" && \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+        BASE_EXTRAS="optimizers,ray"; \
+    else \
+        BASE_EXTRAS="deepspeed,optimizers,ray"; \
+    fi && \
+    if [ "$AXOLOTL_EXTRAS" != "" ]; then \
+        uv pip install --no-build-isolation -e .[$BASE_EXTRAS,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+    else \
+        uv pip install --no-build-isolation -e .[$BASE_EXTRAS] $AXOLOTL_ARGS; \
+    fi && \
+    python scripts/cutcrossentropy_install.py --uv | sh && \
+    uv pip install pytest
+
+# fix so that git fetch/pull from remote works with shallow clone
+RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+    git config --get remote.origin.fetch && \
+    git config --global credential.helper store
+
+COPY .axolotl-complete.bash /root/.axolotl-complete.bash
+RUN chmod +x /root/.axolotl-complete.bash && \
+    chmod +x /workspace/axolotl/scripts/uv-entrypoint.sh && \
+    echo 'source /root/.axolotl-complete.bash' >> ~/.bashrc
+
+ENTRYPOINT ["/workspace/axolotl/scripts/uv-entrypoint.sh"]

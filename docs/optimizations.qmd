@@ -1,0 +1,180 @@
+---
+title: Optimizations Guide
+description: A guide to the performance and memory optimizations available in Axolotl.
+---
+
+Axolotl includes numerous optimizations to speed up training, reduce memory usage, and handle large models.
+
+This guide provides a high-level overview and directs you to the detailed documentation for each feature.
+
+## Speed Optimizations
+
+These optimizations focus on increasing training throughput and reducing total training time.
+
+### Sample Packing
+
+Improves GPU utilization by combining multiple short sequences into a single packed sequence for training. This requires enabling one of the [attention](#attention-implementations) implementations below.
+
+- **Config:** `sample_packing: true`
+- **Learn more:** [Sample Packing](multipack.qmd)
+
+### Attention Implementations
+
+Using an optimized attention implementation is critical for training speed.
+
+- **[Flash Attention 2](https://github.com/Dao-AILab/flash-attention)**: `attn_implementation: flash_attention_2`. **(Recommended)** The industry standard for fast attention on modern GPUs. Requires Ampere or higher. For AMD, check [AMD Support](https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#amd-rocm-support).
+- **[Flex Attention](https://pytorch.org/blog/flexattention/)**: `attn_implementation: flex_attention`.
+- **[SDP Attention](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)**: `attn_implementation: sdpa`. PyTorch's native implementation.
+- **[Xformers](https://github.com/facebookresearch/xformers)**: `attn_implementation: xformers`. Works with FP16.
+
+See [Attention](attention.qmd) for the full list of backends and the canonical values.
+
+### LoRA Optimizations
+
+Leverages optimized kernels to accelerate LoRA training and reduce memory usage.
+
+- **Learn more:** [LoRA Optimizations Documentation](lora_optims.qmd)
+
+## Memory Optimizations
+
+These techniques help you fit larger models or use bigger batch sizes on your existing hardware.
+
+### Parameter Efficient Finetuning (LoRA & QLoRA)
+
+Drastically reduces memory by training a small set of "adapter" parameters instead of the full model. This is the most common and effective memory-saving technique.
+
+- Examples: Find configs with `lora` or `qlora` in the [examples directory](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-3).
+- Config Reference: See `adapter`, `load_in_4bit`, and `load_in_8bit` in the [Configuration Reference](config-reference.qmd).
+
+### Gradient Checkpointing & Activation Offloading
+
+These techniques save VRAM by changing how activations are handled.
+
+- Gradient Checkpointing: re-computes activations during the backward pass, trading compute time for VRAM.
+- Activation Offloading: moves activations to CPU RAM or disk, trading I/O overhead for VRAM.
+- Learn more: [Gradient Checkpointing and Offloading Docs](gradient_checkpointing.qmd)
+
+### Layer Offloading
+
+Offloads frozen (non-trainable) decoder layer parameters to CPU and streams them back to GPU one layer at a time during forward/backward passes using CUDA stream prefetching. Especially effective for LoRA/QLoRA where most parameters are frozen.
+
+- **Config:** `layer_offloading: true`
+- **Learn more:** [Layer Offloading Docs](gradient_checkpointing.qmd#enabling-layer-offloading)
+
+### Cut Cross Entropy (CCE)
+
+Reduces VRAM usage by using an optimized cross-entropy loss calculation.
+
+- **Learn more:** [Custom Integrations - CCE](custom_integrations.qmd#cut-cross-entropy)
+
+### Liger Kernels
+
+Provides efficient Triton kernels to improve training speed and reduce memory usage.
+
+- **Learn more:** [Custom Integrations - Liger Kernels](custom_integrations.qmd#liger-kernels)
+
+### Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)
+
+Replaces the per-layer `q_norm + apply_rotary_pos_emb` (and matching K path) with a single Triton kernel launch on the full-attention layers. Opt-in. The kernel computes in fp32 and rounds once, so it matches an fp32 reference to within bf16 rounding — i.e. it is *more* accurate than the eager bf16 path, which rounds at several intermediate steps. Gemma 4 always uses the fused path (no flag needed). Qwen3.6 checkpoints are loaded by transformers under the `qwen3_5` / `qwen3_5_moe` model_types, so the same flag covers both generations.
+
+```yaml
+fused_attn_kernel: true
+```
+
+- **Compile-safe:** the kernel is wrapped as a `torch.library.triton_op` and traces under `torch.compile(fullgraph=True)`.
+- **Baseline perf:** stacking `torch_compile: true` is a steady-state win that scales with arch — ~−14% to −16.5% on sm_86 (vanilla RTX 3090 / 3090 Ti), ~−19% on sm_120 (Blackwell/RTX 5090), measured on Qwen3-8B + LoRA r=16 + torch 2.11. Also trims peak memory ~2%.
+- **Compile cold-start:** adds 5–15 min on the first step.
+- **Tuning (`torch_compile_options`):** optionally sets allowlisted `torch._inductor.config` flags (disallowed keys are rejected at validation; see the config reference for the list). Payoff is arch-specific: the only measured win is `max_autotune_gemm: true` on sm_120 with ≥32 GB (~−2.6% over plain compile) — the same flag *regresses* ~+13% on sm_86, and every other flag tested was within noise. `triton.cudagraphs` needs static shapes and is incompatible with `sample_packing`.
+
+### Expert Kernels
+
+Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
+
+- **ScatterMoE**: Triton, any CUDA GPU.
+- **SonicMoE**: CUTLASS / cute-DSL, Hopper (H100/H200) or Blackwell (B200/GB200).
+
+- **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
+- **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration), [NVFP4 MoE LoRA](nvfp4_lora.qmd) for 4-bit checkpoints
+
+## Long Context Models
+
+Techniques to train models on sequences longer than their original context window.
+
+### RoPE Scaling
+
+Extends a model's context window by interpolating its Rotary Position Embeddings.
+
+- **Config:** Pass the `rope_scaling` config under the `overrides_of_model_config: `. To learn how to set RoPE, check the respective model config.
+
+### Sequence Parallelism
+
+Splits long sequences across multiple GPUs, enabling training with sequence lengths that would not fit on a single device.
+
+- **Learn more:** [Sequence Parallelism Documentation](sequence_parallelism.qmd)
+
+### Artic Long Sequence Training (ALST)
+
+ALST is a recipe that combines several techniques to train long-context models efficiently. It typically involves:
+
+- TiledMLP to reduce memory usage in MLP layers.
+- Tiled Loss functions (like [CCE](#cut-cross-entropy-(cce) or [Liger](#liger-kernels)).
+- Activation Offloading to CPU.
+
+- Example: [ALST Example Configuration](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/alst)
+
+## Large Models (Distributed Training)
+
+To train models that don't fit on a single GPU, you'll need to use a distributed training strategy like FSDP or DeepSpeed. These frameworks shard the model weights, gradients, and optimizer states across multiple GPUs and nodes.
+
+- **Learn more:** [Multi-GPU Guide](multi-gpu.qmd)
+- **Learn more:** [Multi-Node Guide](multi-node.qmd)
+
+### N-D Parallelism (Beta)
+
+For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
+
+- **Learn more:** [N-D Parallelism Guide](nd_parallelism.qmd)
+
+
+## Quantization
+
+Techniques to reduce the precision of model weights for memory savings.
+
+### 4-bit Training (QLoRA)
+
+The recommended approach for quantization-based training. It loads the base model in 4-bit using `bitsandbytes` and then trains QLoRA adapters. See [Adapter Finetuning](#adapter-finetuning-lora-qlora) for details.
+
+### FP8 Training
+
+Enables training with 8-bit floating point precision on supported hardware (e.g., NVIDIA Hopper series GPUs) for significant speed and memory gains.
+
+- **Example:** [Llama 3 FP8 FSDP Example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/3b-fp8-fsdp2.yaml)
+
+### NVFP4 (W4A4) LoRA
+
+Train LoRA adapters on a ModelOpt NVFP4 MoE checkpoint (the experts stay 4-bit-packed; LoRA `A` / `B` train in bf16).
+Two kernels support it: **SonicMoE** (`use_sonicmoe: true`, W4A4 native on Blackwell SM100+ or W4A16 elsewhere) and **ScatterMoE** (`use_scattermoe: true`, W4A16 on any CUDA GPU).
+With SonicMoE, `nvfp4_merge_aware: true` trains against the merge quantizer so the adapter bakes back into a plain NVFP4 checkpoint losslessly.
+
+- **Config:** `use_sonicmoe: true` or `use_scattermoe: true` with a ModelOpt NVFP4 `base_model` (e.g. `nvidia/Qwen3-30B-A3B-NVFP4`)
+- **Examples:** [Qwen3-30B-A3B (SonicMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml), [GLM-5.2 (ScatterMoE)](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/glm_moe_dsa/glm-5.2-nvfp4-lora.yaml)
+- **Learn more:** [NVFP4 MoE LoRA](nvfp4_lora.qmd)
+
+### Quantization Aware Training (QAT)
+
+Simulates quantization effects during training, helping the model adapt and potentially improving the final accuracy of the quantized model.
+
+- **Learn more:** [QAT Documentation](qat.qmd)
+
+### GPTQ
+
+Allows you to finetune LoRA adapters on top of a model that has already been quantized using the GPTQ method.
+
+- **Example:** [GPTQ LoRA Example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-2/gptq-lora.yml)
+
+### MoE Expert Quantization
+
+Quantizes MoE expert weights on load to reduce VRAM when training MoE models with adapters. Required for Transformers v5+ MoE models where experts use fused `nn.Parameter` tensors.
+
+- **Config:** `quantize_moe_experts: true`
+- **Learn more:** [MoE Expert Quantization](expert_quantization.qmd)

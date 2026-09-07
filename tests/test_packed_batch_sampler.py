@@ -1,14 +1,19 @@
 """Module for testing streaming dataset sequence packing"""
+
+import numpy as np
 import pytest
-from datasets import concatenate_datasets, load_dataset
-from torch.utils.data import DataLoader, RandomSampler
+from datasets import concatenate_datasets
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import AutoTokenizer
 
 from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.completion import load
 from axolotl.utils.collators import V2BatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.data.utils import handle_long_seq_in_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+
+from tests.hf_offline_utils import enable_hf_offline
 
 
 @pytest.fixture(name="tokenizer")
@@ -16,11 +21,6 @@ def fixture_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
     tokenizer.pad_token = "</s>"
     return tokenizer
-
-
-@pytest.fixture(name="max_seq_length")
-def fixture_max_seq_length():
-    return 4096
 
 
 class TestBatchedSamplerPacking:
@@ -37,13 +37,27 @@ class TestBatchedSamplerPacking:
             (2, 2),
         ],
     )
-    def test_packing(self, batch_size, num_workers, tokenizer, max_seq_length):
-        import axolotl.monkeypatch.data.batch_dataset_fetcher  # pylint: disable=unused-import  # noqa: F401
-
-        dataset = load_dataset(
-            "Trelis/tiny-shakespeare",
-            split="train",
+    @pytest.mark.parametrize("max_seq_length", [4096, 512])
+    @pytest.mark.parametrize("sequential", [True, False])
+    @enable_hf_offline
+    def test_packing(
+        self,
+        dataset_winglian_tiny_shakespeare,
+        batch_size,
+        num_workers,
+        tokenizer,
+        max_seq_length,
+        sequential,
+    ):
+        from axolotl.monkeypatch.data.batch_dataset_fetcher import (
+            apply_multipack_dataloader_patch,
+            remove_multipack_dataloader_patch,
         )
+
+        # Apply the patch for multipack handling
+        apply_multipack_dataloader_patch()
+
+        dataset = dataset_winglian_tiny_shakespeare["train"].select(range(16))
 
         cfg = DictDefault(
             {
@@ -53,7 +67,7 @@ class TestBatchedSamplerPacking:
         )
         ds_cfg = DictDefault(
             {
-                "field": "Text",
+                "field": "text",
             }
         )
         completion_strategy = load(tokenizer, cfg, ds_cfg)
@@ -62,6 +76,9 @@ class TestBatchedSamplerPacking:
             dataset,
         )
         train_dataset = concatenate_datasets([dataset_wrapper])
+
+        train_dataset = handle_long_seq_in_dataset(train_dataset, cfg.sequence_len, cfg)
+
         lengths = get_dataset_lengths(train_dataset)
         batch_sampler = MultipackBatchSampler(
             sampler=RandomSampler(train_dataset),
@@ -70,12 +87,14 @@ class TestBatchedSamplerPacking:
             batch_max_len=max_seq_length,
             group_size=100000,
             bin_size=200,
+            sequential=sequential,
+            drop_last=False,
         )
 
         loader = DataLoader(
             train_dataset,
             batch_sampler=batch_sampler,
-            collate_fn=V2BatchSamplerDataCollatorForSeq2Seq(  # pylint: disable=unexpected-keyword-arg
+            collate_fn=V2BatchSamplerDataCollatorForSeq2Seq(
                 tokenizer=tokenizer,
                 padding=True,
                 pad_to_multiple_of=max_seq_length,
@@ -89,9 +108,64 @@ class TestBatchedSamplerPacking:
             for pack in batch:
                 batch_idxs.extend(pack)
 
-        for batch in loader:
-            assert len(batch["input_ids"]) <= batch_size * max_seq_length
-            assert batch["input_ids"].shape[1] == max_seq_length
+        try:
+            for batch in loader:
+                assert batch["input_ids"].numel() <= batch_size * max_seq_length
+                assert batch["input_ids"].shape[1] == max_seq_length
 
-        original_idxs = set(range(len(train_dataset)))
-        assert original_idxs == set(batch_idxs)
+            original_idxs = set(range(len(train_dataset)))
+            assert original_idxs == set(batch_idxs)
+            assert len(batch_idxs) == len(set(batch_idxs))
+        finally:
+            # Clean up: remove the patch after the test
+            remove_multipack_dataloader_patch()
+
+
+class TestMultipackDropLastStats:
+    """
+    Regression tests for drop_last efficiency accounting (#3848)
+    """
+
+    # RandomSampler is what training uses, and it catches sampler-order index mixups
+    @pytest.mark.parametrize("sampler_cls", [SequentialSampler, RandomSampler])
+    @pytest.mark.parametrize("sequential", [True, False])
+    @pytest.mark.parametrize(
+        "lengths, expected_batches",
+        [
+            # incomplete tail batch gets dropped
+            ([9] * 13, 2),
+            # dropped bins are the only non-full ones, so efficiency is exactly 1.0
+            ([10] * 10 + [2] * 3, 2),
+            # the only batch is incomplete (used to raise IndexError)
+            ([9] * 3, 0),
+            # divides evenly, nothing dropped
+            ([9] * 10, 2),
+        ],
+    )
+    def test_stats_track_kept_bins(
+        self, lengths, expected_batches, sequential, sampler_cls
+    ):
+        batch_size = 5
+        batch_max_len = 10
+        lengths = np.array(lengths, dtype=np.int32)
+        sampler = MultipackBatchSampler(
+            sampler=sampler_cls(range(len(lengths))),
+            batch_size=batch_size,
+            batch_max_len=batch_max_len,
+            lengths=lengths,
+            bin_size=batch_max_len,
+            drop_last=True,
+            sequential=sequential,
+            num_processes=1,
+        )
+
+        batches = sampler.generate_batches(set_stats=True)
+        kept_bins = [bin_ for batch in batches for bin_ in batch]
+
+        assert len(batches) == expected_batches
+        assert all(len(batch) == batch_size for batch in batches)
+        assert sampler.total_token_slots == len(kept_bins) * batch_max_len
+        assert sampler.total_tokens_used == sum(
+            int(lengths[idx]) for bin_ in kept_bins for idx in bin_
+        )
+        assert 0.0 <= sampler.efficiency() <= 1.0

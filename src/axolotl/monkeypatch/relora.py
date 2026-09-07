@@ -1,21 +1,18 @@
 """Implements the ReLoRA training procedure from https://arxiv.org/abs/2307.05695, minus the initial full fine-tune."""
+
 import glob
 import json
-import logging
 import os.path
 import shutil
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Sequence, Union
+from typing import Dict, List, Literal, Union
 
-import bitsandbytes as bnb
 import peft
 import safetensors.torch as st
 import torch
 from huggingface_hub import snapshot_download
 from torch.distributed.optim import ZeroRedundancyOptimizer
-from torch.optim.lr_scheduler import LRScheduler
-from torch.optim.optimizer import Optimizer
 from transformers import (
     TrainerCallback,
     TrainerControl,
@@ -26,12 +23,19 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import barrier, is_main_process
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.relora")
+LOG = get_logger(__name__)
+
+try:
+    import bitsandbytes as bnb
+except ImportError:  # pragma: no cover - optional dependency for 8-bit merge paths
+    bnb = None
 
 
 @torch.no_grad()
 def magnitude_pruning_(tensor, prune_ratio):
+    """Zero the lowest ``prune_ratio`` fraction of values by absolute magnitude, in place."""
     tensor_magnitude = torch.abs(tensor)
     threshold = torch.quantile(
         tensor_magnitude.flatten().to(dtype=torch.float32), prune_ratio
@@ -41,14 +45,43 @@ def magnitude_pruning_(tensor, prune_ratio):
     tensor.mul_(mask.to(dtype=tensor.dtype))
 
 
+@torch.no_grad()
+def random_pruning_(tensor, prune_ratio):
+    """Zero a random ``prune_ratio`` fraction of values, in place."""
+    mask = (
+        torch.rand(tensor.shape, dtype=torch.float32, device=tensor.device)
+        > prune_ratio
+    )
+    tensor.mul_(mask.to(dtype=tensor.dtype))
+
+
+# 0.999 mirrors the reference implementation. True zeroing breaks
+# ZeroRedundancyOptimizer.consolidate_state_dict; see Guitaricet/relora's
+# peft_pretraining/training_utils.py for the original note on this.
+_FULL_RESET_RATIO = 0.999
+
+
 def reset_optimizer(
     optimizer: torch.optim.Optimizer,
     *,
-    reset_params: List[str],  # where str is the key to a torch.nn.Parameter
+    reset_params: List[torch.nn.Parameter],
     optimizer_state_keys: List[str],
+    prune_method: Literal["magnitude", "random", "reset"] = "magnitude",
     prune_ratio: float = 0.9,
 ):
-    pruning_fn = partial(magnitude_pruning_, prune_ratio=prune_ratio)
+    """Prune optimizer state for ``reset_params`` only."""
+    if prune_method == "magnitude":
+        pruning_fn = partial(magnitude_pruning_, prune_ratio=prune_ratio)
+    elif prune_method in ("random", "reset"):
+        # "reset" is random pruning at a near-full ratio; the caller is responsible
+        # for supplying the appropriate prune_ratio (see ReLoRACallback.on_step_begin).
+        pruning_fn = partial(random_pruning_, prune_ratio=prune_ratio)
+    else:
+        raise ValueError(
+            f"Unknown prune_method {prune_method!r}; expected one of "
+            "'magnitude', 'random', 'reset'"
+        )
+
     n_zeros = 0
     n_total = 0
 
@@ -57,15 +90,21 @@ def reset_optimizer(
         optimizer_state = optimizer.optim.state
 
     for param in reset_params:
-        param_state = optimizer_state[param]
-        if len(param_state) == 0:  # no state for this param, happens for ZeRo optimizer
+        state = optimizer_state.get(param, {})
+        if not state:
             continue
         for key in optimizer_state_keys:
-            pruning_fn(
-                param_state[key]
-            )  # pruning fn has to be inplace to keep the same keys in the dict
-            n_total += param_state[key].numel()
-            n_zeros += torch.sum(param_state[key] == 0).item()
+            value = state.get(key)
+            if value is None or not torch.is_tensor(value):
+                continue
+            try:
+                pruning_fn(value)
+                n_total += value.numel()
+                n_zeros += torch.sum(value == 0).item()
+            except RuntimeError as exc:
+                if "quantile() input tensor is too large" in str(exc):
+                    continue
+                raise
 
     _zeroed = n_zeros / (1e-7 + n_total) * 100
     LOG.info(f"Percent of optimizer states zeroed: {_zeroed:.2f}")
@@ -76,18 +115,19 @@ class ReLoRACallback(TrainerCallback):
     """Callback to merge LoRA weights into the base model and save full-weight checkpoints"""
 
     def __init__(self, cfg: DictDefault):
-        self.relora_steps = cfg.relora_steps
+        self.jagged_restart_steps = cfg.jagged_restart_steps
         self.cpu_offload = cfg.relora_cpu_offload
         self.quantized = cfg.load_in_4bit or cfg.load_in_8bit
         self.last_full_model = cfg.base_model
         self.resume_from_checkpoint = cfg.resume_from_checkpoint
+        self.prune_method = cfg.relora_prune_method or "magnitude"
 
         if not os.path.exists(self.last_full_model):
             self.last_full_model = str(Path(snapshot_download(cfg.base_model)))
 
-        assert os.path.exists(
-            self.last_full_model
-        ), "for ReLORA base_model must be a local path"
+        assert os.path.exists(self.last_full_model), (
+            "for ReLORA base_model must be a local path"
+        )
 
         self.num_lora_restarts = 0
         self.need_full_save = False
@@ -120,7 +160,9 @@ class ReLoRACallback(TrainerCallback):
         optimizer: torch.optim.Optimizer,
         **_kwargs,
     ):
-        if state.global_step > 0 and state.global_step % self.relora_steps == 0:
+        if not optimizer:
+            optimizer = state.optimizer
+        if state.global_step > 0 and state.global_step % self.jagged_restart_steps == 0:
             checkpoint_folder = os.path.join(
                 args.output_dir,
                 f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
@@ -129,11 +171,14 @@ class ReLoRACallback(TrainerCallback):
 
             if "adam" in args.optim.lower():
                 optimizer_state_keys = ["exp_avg", "exp_avg_sq"]
+                if "8bit" in args.optim.lower():
+                    optimizer_state_keys.append("state1")
+                    optimizer_state_keys.append("state2")
             else:
                 raise ValueError(f"Optimizer {args.optim} not supported with ReLoRA")
 
             lora_params = [
-                n
+                p
                 for n, p in model.named_parameters()
                 if p.requires_grad and "lora_" in n
             ]
@@ -144,7 +189,6 @@ class ReLoRACallback(TrainerCallback):
                     f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
                     "adapter",
                 ),
-                safe_serialization=True,
             )
             with torch.no_grad():
                 merge_and_save(
@@ -156,11 +200,19 @@ class ReLoRACallback(TrainerCallback):
                     actually_save=is_main_process(),
                     cpu_offload=self.cpu_offload,
                 )
+                # When relora_prune_ratio is not set, use _FULL_RESET_RATIO for
+                # "reset" (paper-style near-full reset) and 0.9 for other methods.
+                prune_ratio = args.relora_prune_ratio
+                if prune_ratio is None:
+                    prune_ratio = (
+                        _FULL_RESET_RATIO if self.prune_method == "reset" else 0.9
+                    )
                 reset_optimizer(
                     optimizer,
                     reset_params=lora_params,
                     optimizer_state_keys=optimizer_state_keys,
-                    prune_ratio=args.relora_prune_ratio,
+                    prune_method=self.prune_method,
+                    prune_ratio=prune_ratio,
                 )
 
             if self.quantized:
@@ -181,8 +233,8 @@ class ReLoRACallback(TrainerCallback):
             args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}", "relora"
         )
         if (
-            state.global_step >= self.relora_steps
-            and state.global_step % self.relora_steps != 0
+            state.global_step >= self.jagged_restart_steps
+            and state.global_step % self.jagged_restart_steps != 0
         ):
             if self.quantized:
                 if is_main_process() and self.last_full_model != checkpoint_folder:
@@ -203,7 +255,7 @@ class ReLoRACallback(TrainerCallback):
 
                     self.last_full_model = checkpoint_folder
             else:
-                model.model.save_pretrained(checkpoint_folder, safe_serialization=True)
+                model.model.save_pretrained(checkpoint_folder)
 
         return control
 
@@ -240,51 +292,6 @@ class ReLoRACallback(TrainerCallback):
                 )
         # no need to save if unquantized, as finetune.py will call merge_and_unload()
         return control
-
-
-class ReLoRAScheduler(LRScheduler):
-    """Wraps another scheduler to apply per-lora-restart learning rate warmups."""
-
-    def __init__(
-        self,
-        optimizer: Optimizer,
-        inner_schedule: LRScheduler,
-        relora_steps: int,
-        warmup_steps: int,
-        anneal_steps: int = 1,
-        min_lr_scale: float = 0.001,
-    ) -> None:
-        self.inner_schedule = inner_schedule
-        self.relora_steps = relora_steps
-        self.warmup_steps = warmup_steps
-        self.anneal_steps = anneal_steps
-        self.min_lr_scale = min_lr_scale
-        super().__init__(optimizer, inner_schedule.last_epoch, inner_schedule.verbose)
-
-    def get_lr(self) -> float:
-        self.inner_schedule.last_epoch = self.last_epoch
-
-        original = self.inner_schedule.get_lr()
-        step = self.last_epoch
-
-        if step < self.relora_steps - self.warmup_steps:
-            scale = 1
-        else:
-            per_relora_progress = step % self.relora_steps
-            if per_relora_progress < self.warmup_steps:
-                cycle_t = min(1.0, (per_relora_progress) / self.warmup_steps)
-            elif per_relora_progress > (self.relora_steps - self.anneal_steps):
-                cycle_t = min(
-                    1.0,
-                    (self.relora_steps - per_relora_progress) / self.anneal_steps,
-                )
-            else:
-                cycle_t = 1
-            scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
-
-        if isinstance(original, Sequence):
-            return [lr * scale for lr in original]
-        return original * scale
 
 
 def sharded_paths(path: str, module_names: List[str]) -> Dict[str, str]:
@@ -327,7 +334,6 @@ def find_lora_modules(model: peft.LoraModel) -> Dict[str, peft.tuners.lora.LoraL
     key_list = [key for key, _ in model.model.named_modules() if "lora" not in key]
     for key in key_list:
         try:
-            # pylint: disable=protected-access
             _parent, target, _target_name = peft.utils._get_submodules(model.model, key)
         except AttributeError:
             continue
@@ -356,6 +362,8 @@ def update_weights(
         target.weight.data = new_weight.cpu()
         target.to(device)
     elif isinstance(target, peft.tuners.lora.Linear8bitLt):
+        if bnb is None:
+            raise ImportError("bitsandbytes is required to merge 8-bit LoRA weights")
         target.weight.data = (
             bnb.nn.Int8Params(new_weight, requires_grad=False).to(device).data
         )
@@ -375,7 +383,7 @@ def merge_and_save(
     modules = find_lora_modules(model)
 
     if not quantized:
-        for module_name, target in modules.items():
+        for _, target in modules.items():
             active_adapter = target.active_adapter
             if isinstance(active_adapter, list):
                 active_adapter = active_adapter[0]
@@ -399,7 +407,10 @@ def merge_and_save(
         if shard_path.endswith(".safetensors"):
             in_tensors = st.load_file(str(Path(model_src) / shard_path))
         else:
-            in_tensors = torch.load(Path(model_src) / shard_path)
+            in_tensors = torch.load(
+                Path(model_src) / shard_path,
+                weights_only=True,  # to prevent arbitrary code execution
+            )
             if "state_dict" in in_tensors:
                 in_tensors = in_tensors["state_dict"]
 

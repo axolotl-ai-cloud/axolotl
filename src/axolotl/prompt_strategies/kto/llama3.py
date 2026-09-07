@@ -1,13 +1,12 @@
 """
 KTO strategies for llama-3 chat template
 """
-# pylint: disable=duplicate-code
 
 
 def argilla(
     cfg,
     **kwargs,
-):  # pylint: disable=possibly-unused-variable,unused-argument
+):
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -15,9 +14,9 @@ def argilla(
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['instruction']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["completion"] = f"{sample['completion']}<|eot_id|>"
         return sample
 
@@ -27,22 +26,27 @@ def argilla(
 def argilla_chat(
     cfg,
     **kwargs,
-):  # pylint: disable=possibly-unused-variable,unused-argument
+):
     """
     for argilla/kto-mix-15k conversations
     """
 
     def transform_fn(sample):
-        sample[
-            "prompt"
-        ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['completion'][0]['content']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        sample["completion"] = f"{sample['completion'][1]['content']}<|eot_id|>"
+        history, response = sample["completion"][:-1], sample["completion"][-1]
+        sample["prompt"] = (
+            "".join(
+                f"<|start_header_id|>{turn['role']}<|end_header_id|>\n\n{turn['content']}<|eot_id|>"
+                for turn in history
+            )
+            + "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        )
+        sample["completion"] = f"{response['content']}<|eot_id|>"
         return sample
 
     return transform_fn
 
 
-def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def intel(cfg, **kwargs):
     """
     For Intel Orca KTO
     ex: argilla/distilabel-intel-orca-kto
@@ -55,18 +59,16 @@ def intel(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['question']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["completion"] = f"{sample['completion']}<|eot_id|>"
         return sample
 
     return transform_fn
 
 
-def prompt_pairs(
-    cfg, **kwargs
-):  # pylint: disable=possibly-unused-variable,unused-argument
+def prompt_pairs(cfg, **kwargs):
     def transform_fn(sample):
         if "system" in sample and sample["system"]:
             sample["prompt"] = (
@@ -74,16 +76,16 @@ def prompt_pairs(
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["completion"] = f"{sample['completion']}<|eot_id|>"
         return sample
 
     return transform_fn
 
 
-def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def ultra(cfg, **kwargs):
     """
     for ultrafeedback binarized conversations
     ex: argilla/ultrafeedback-binarized-preferences-cleaned-kto
@@ -96,9 +98,9 @@ def ultra(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-arg
                 f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             )
         else:
-            sample[
-                "prompt"
-            ] = f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            sample["prompt"] = (
+                f"<|start_header_id|>user<|end_header_id|>\n\n{sample['prompt']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
         sample["completion"] = f"{sample['completion']}<|eot_id|>"
         return sample
 

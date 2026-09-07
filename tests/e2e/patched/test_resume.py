@@ -2,54 +2,56 @@
 E2E tests for resuming training
 """
 
-import logging
 import os
 import re
 import subprocess
-import unittest
-from pathlib import Path
 
 from transformers.utils import is_torch_bf16_gpu_available
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
+from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import most_recent_subdir, with_temp_dir
+from ..utils import (
+    check_model_output_exists,
+    most_recent_subdir,
+    require_torch_2_6_0,
+    requires_flash_attn,
+)
 
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+pytestmark = requires_flash_attn
 
 
-class TestResumeLlama(unittest.TestCase):
+class TestResumeLlama:
     """
     Test case for resuming training of llama models
     """
 
-    @with_temp_dir
-    def test_resume_qlora_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
+    @require_torch_2_6_0
+    def test_resume_lora_packed(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sequence_len": 1024,
                 "sample_packing": True,
                 "flash_attention": True,
-                "load_in_4bit": True,
-                "adapter": "qlora",
-                "lora_r": 32,
-                "lora_alpha": 64,
+                "load_in_8bit": True,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
-                "special_tokens": {},
+                "val_set_size": 0.001,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
                 "datasets": [
                     {
-                        "path": "vicgalle/alpaca-gpt4",
+                        "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 2,
@@ -57,34 +59,63 @@ class TestResumeLlama(unittest.TestCase):
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
-                "save_steps": 10,
+                "save_steps": 3,
                 "save_total_limit": 5,
-                "max_steps": 40,
+                "max_steps": 15,
                 "use_tensorboard": True,
+                "save_first_step": False,
+                "include_tkps": True,
             }
         )
         if is_torch_bf16_gpu_available():
             cfg.bf16 = True
         else:
             cfg.fp16 = True
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
+        initial_total_num_tokens = cfg.total_num_tokens
+        assert initial_total_num_tokens is not None, (
+            "total_num_tokens should be calculated during load_datasets"
+        )
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+
+        checkpoint_path = f"{temp_dir}/checkpoint-9"
+        tokens_state_path = os.path.join(checkpoint_path, TOKENS_STATE_FILE)
+        assert os.path.isfile(tokens_state_path), (
+            f"{TOKENS_STATE_FILE} should exist in checkpoint at {tokens_state_path}"
+        )
 
         resume_cfg = cfg | DictDefault(
             {
-                "resume_from_checkpoint": f"{temp_dir}/checkpoint-30/",
+                "resume_from_checkpoint": f"{temp_dir}/checkpoint-9/",
             }
         )
         normalize_config(resume_cfg)
-        cli_args = TrainerCliArgs()
 
-        train(cfg=resume_cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        assert resume_cfg.total_num_tokens == initial_total_num_tokens, (
+            f"total_num_tokens should be preserved on resume. "
+            f"Expected {initial_total_num_tokens}, got {resume_cfg.total_num_tokens}"
+        )
+
+        resume_dataset_meta = load_datasets(cfg=resume_cfg)
+
+        assert resume_cfg.total_num_tokens == initial_total_num_tokens, (
+            f"total_num_tokens should not be recalculated when resuming. "
+            f"Expected {initial_total_num_tokens}, got {resume_cfg.total_num_tokens}"
+        )
+
+        train(cfg=resume_cfg, dataset_meta=resume_dataset_meta)
+
+        assert resume_cfg.total_num_tokens == initial_total_num_tokens, (
+            f"total_num_tokens should remain unchanged after resume training. "
+            f"Expected {initial_total_num_tokens}, got {resume_cfg.total_num_tokens}"
+        )
+        check_model_output_exists(temp_dir, cfg)
 
         tb_log_path_1 = most_recent_subdir(temp_dir + "/runs")
         cmd = f"tensorboard --inspect  --logdir {tb_log_path_1}"
@@ -93,4 +124,4 @@ class TestResumeLlama(unittest.TestCase):
         )
         pattern = r"first_step\s+(\d+)"
         first_steps = int(re.findall(pattern, res.stdout)[0])
-        assert first_steps == 31
+        assert first_steps == 10

@@ -1,6 +1,7 @@
 """
 Chat dataset wrapping strategy for new internal messages representations
 """
+
 from typing import Any, Callable, Dict, Optional
 
 from axolotl.core.datasets.chat import TokenizedChatDataset
@@ -18,7 +19,7 @@ class ChatMessageDatasetWrappingStrategy(DatasetWrappingStrategy):
         processor,
         message_transform=None,
         formatter=None,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         """
         :param processor: tokenizer or image processor
@@ -34,7 +35,7 @@ class ChatMessageDatasetWrappingStrategy(DatasetWrappingStrategy):
         dataset,
         process_count: Optional[int] = None,
         keep_in_memory: Optional[bool] = False,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         self.dataset = TokenizedChatDataset(
             dataset,
@@ -51,8 +52,13 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     ds_cfg = ds_cfg or {}
 
     field_messages = ds_cfg.get("field_messages")
-    message_field_role = ds_cfg.get("message_field_role")
-    message_field_content = ds_cfg.get("message_field_content")
+    message_property_mappings = ds_cfg.get("message_property_mappings")
+    message_field_role = (
+        message_property_mappings.get("role") if message_property_mappings else None
+    )
+    message_field_content = (
+        message_property_mappings.get("content") if message_property_mappings else None
+    )
     message_field_training = ds_cfg.get("message_field_training")
 
     builder_kwargs = {}
@@ -66,15 +72,16 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         builder_kwargs["message_field_training"] = message_field_training
 
     chat_template = ds_cfg.get("chat_template", cfg.get("chat_template", "chatml"))
-    format_message = (
-        lambda x: x  # noqa E731  # pylint: disable=unnecessary-lambda-assignment
-    )
+
+    def format_message(x):
+        return x
+
     if chat_template == "chatml":
         from axolotl.core.chat.format.chatml import format_message  # noqa F811
     if chat_template.startswith("llama3"):
         from axolotl.core.chat.format.llama3x import format_message  # noqa F811
     message_transform: Callable = chat_message_transform_builder(
-        train_on_inputs=ds_cfg.get("train_on_inputs", False),
+        train_on_inputs=cfg.get("train_on_inputs", False),
         **builder_kwargs,
     )
     strategy = ChatMessageDatasetWrappingStrategy(

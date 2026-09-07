@@ -1,0 +1,53 @@
+FROM axolotlai/axolotl-base-uv:{{ BASE_TAG }}
+
+ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
+ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
+ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
+ENV CUDA="{{ CUDA }}"
+ENV PYTORCH_VERSION="{{ PYTORCH_VERSION }}"
+ENV GITHUB_REF="{{ GITHUB_REF }}"
+ENV GITHUB_SHA="{{ GITHUB_SHA }}"
+ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
+ENV HF_HOME="{{ HF_HOME }}"
+
+WORKDIR /workspace
+
+RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
+
+WORKDIR /workspace/axolotl
+
+RUN git fetch origin +$GITHUB_REF && \
+    git checkout FETCH_HEAD
+
+RUN uv pip install packaging==26.0 setuptools==78.1.1
+RUN uv pip uninstall causal_conv1d
+RUN uv pip install "huggingface_hub>=1.5.0" "httpx<1" "kernels-data"
+RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+    else \
+        uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray] $AXOLOTL_ARGS; \
+    fi
+
+# Override with nightly HF packages for nightly builds
+RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
+        uv pip install "kernels>=0.15.2,<0.16"; \
+        uv pip install --no-deps \
+            "transformers @ git+https://github.com/huggingface/transformers.git@main" \
+            "peft @ git+https://github.com/huggingface/peft.git@main" \
+            "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
+            "trl @ git+https://github.com/huggingface/trl.git@main" \
+            "datasets @ git+https://github.com/huggingface/datasets.git@main"; \
+    fi
+
+RUN python scripts/cutcrossentropy_install.py --uv | sh
+
+# So we can test the Docker image
+RUN uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+    codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+
+# fix so that git fetch/pull from remote works
+RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
+    git config --get remote.origin.fetch
+
+# helper for huggingface-login cli
+RUN git config --global credential.helper store

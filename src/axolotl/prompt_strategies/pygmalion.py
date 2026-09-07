@@ -1,7 +1,6 @@
 """Module containing the PygmalionPromptTokenizingStrategy and PygmalionPrompter class"""
 
 import copy
-import logging
 from collections import defaultdict
 from typing import Generator, List, Tuple
 
@@ -10,8 +9,9 @@ from axolotl.prompt_tokenizers import (
     parse_tokenized_to_result,
     tokenize_prompt_default,
 )
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_TOKEN_ID = -100
 
@@ -69,7 +69,6 @@ class PygmalionPromptTokenizingStrategy(PromptTokenizingStrategy):
                 LOG.warning(f"unknown role in conversation: {role}")
                 res = defaultdict(lambda: [])
 
-            # pylint: disable=duplicate-code
             result, current_len = parse_tokenized_to_result(
                 result,
                 current_len,
@@ -89,7 +88,10 @@ class PygmalionPrompter:
         pass
 
     def build_prompt(
-        self, source, *args, **kwargs  # pylint: disable=unused-argument
+        self,
+        source,
+        *args,
+        **kwargs,
     ) -> Generator[Tuple[str, str], None, None]:
         for msg in source:
             yield msg["role"], msg["value"]

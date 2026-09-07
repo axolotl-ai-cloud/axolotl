@@ -2,21 +2,21 @@
 E2E tests for lora llama
 """
 
-import logging
-import os
 import unittest
-from pathlib import Path
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from .utils import (
+    check_model_output_exists,
+    check_tensorboard_loss_decreased,
+    requires_flash_attn,
+    with_temp_dir,
+)
 
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+pytestmark = requires_flash_attn
 
 
 class TestPhi(unittest.TestCase):
@@ -26,17 +26,16 @@ class TestPhi(unittest.TestCase):
 
     @with_temp_dir
     def test_phi_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "microsoft/phi-1_5",
+                "base_model": "axolotl-ai-co/tiny-phi-64m",
                 "model_type": "AutoModelForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,
                 "sample_packing": False,
                 "load_in_8bit": False,
                 "adapter": None,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -49,43 +48,54 @@ class TestPhi(unittest.TestCase):
                 "dataset_shard_num": 10,
                 "dataset_shard_idx": 0,
                 "num_epochs": 1,
-                "micro_batch_size": 1,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
-                "optimizer": "paged_adamw_8bit",
+                "learning_rate": 2e-4,
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "max_steps": 10,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 50,
+                "warmup_steps": 5,
+                "logging_steps": 1,
+                "save_steps": 50,
+                "eval_steps": 50,
                 "bf16": "auto",
+                "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=5.0,
+            max_final=4.7,
+        )
 
     @with_temp_dir
     def test_phi_qlora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "microsoft/phi-1_5",
+                "base_model": "axolotl-ai-co/tiny-phi-64m",
                 "model_type": "AutoModelForCausalLM",
                 "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 2048,
                 "sample_packing": False,
-                "load_in_8bit": False,
+                "load_in_4bit": True,
                 "adapter": "qlora",
                 "lora_r": 64,
                 "lora_alpha": 32,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -98,22 +108,34 @@ class TestPhi(unittest.TestCase):
                 "dataset_shard_num": 10,
                 "dataset_shard_idx": 0,
                 "num_epochs": 1,
-                "micro_batch_size": 1,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "paged_adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "max_steps": 10,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 50,
+                "warmup_steps": 5,
+                "logging_steps": 1,
+                "save_steps": 50,
+                "eval_steps": 50,
                 "bf16": "auto",
+                "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=5.0,
+            max_final=4.7,
+        )

@@ -1,12 +1,13 @@
 """Module containing prompters"""
 
-import logging
 from enum import Enum
 from typing import Generator, Optional, Union
 
 from colorama import Fore
 
-LOG = logging.getLogger("axolotl")
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 IGNORE_TOKEN_ID = -100
 REPR_TEMPLATE = "\n<start>\n" + Fore.CYAN + "{full_prompt}" + Fore.RESET + "\n<end>\n"
 
@@ -45,7 +46,6 @@ class AlpacaPrompter(Prompter):
         self.match_prompt_style()
 
     def match_prompt_style(self):
-        # pylint: disable=duplicate-code
         if self.prompt_style == PromptStyle.INSTRUCT.value:
             self.turn_format = "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
             self.turn_no_input_format = (
@@ -92,7 +92,7 @@ class AlpacaPrompter(Prompter):
     def build_prompt(
         self,
         instruction: str,
-        input: Union[None, str] = None,  # pylint: disable=redefined-builtin
+        input: Union[None, str] = None,
         output: Union[None, str] = None,
     ) -> Generator[str, None, None]:
         yield self._build_result(instruction, input, output)
@@ -217,7 +217,7 @@ class ReflectAlpacaPrompter(Prompter):
     def _build_result(
         self,
         instruction: str,
-        input: Union[None, str] = None,  # pylint: disable=redefined-builtin
+        input: Union[None, str] = None,
         output: Union[None, str] = None,
         reflection: Union[None, str] = None,
         corrected: Union[None, str] = None,
@@ -241,12 +241,11 @@ class ReflectAlpacaPrompter(Prompter):
     def build_prompt(
         self,
         instruction: str,
-        input: Union[None, str] = None,  # pylint: disable=redefined-builtin
+        input: Union[None, str] = None,
         output: Union[None, str] = None,
         reflection: Union[None, str] = None,
         corrected: Union[None, str] = None,
     ) -> Generator[str, None, None]:
-        # pylint: disable=duplicate-code
         yield self._build_result(
             instruction,
             input,

@@ -1,6 +1,7 @@
 """
 module to handle loading model on cpu/meta device for FSDP
 """
+
 import os
 import time
 from typing import List, Optional, Type, Union
@@ -45,9 +46,7 @@ def _replace_linear(
 
         if isinstance(module, torch.nn.Linear) and name not in skip_modules:
             if issubclass(linear_replacement, Linear4bit):
-                model._modules[  # pylint: disable=protected-access
-                    name
-                ] = linear_replacement(
+                model._modules[name] = linear_replacement(
                     module.in_features,
                     module.out_features,
                     module.bias is not None,
@@ -149,8 +148,8 @@ def load_sharded_model(
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             use_cache=False,
-            torch_dtype=torch.float32,
-            _attn_implementation=model_config._attn_implementation,  # pylint: disable=protected-access
+            dtype=torch.float32,
+            _attn_implementation=model_config._attn_implementation,
             trust_remote_code=cfg.trust_remote_code,
         )
         dtype = torch_dtype if not cfg.float32 else None
@@ -159,7 +158,7 @@ def load_sharded_model(
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(
                 model_config,
-                torch_dtype=torch_dtype,
+                dtype=torch_dtype,
                 trust_remote_code=cfg.trust_remote_code,
             )
     return model
@@ -270,7 +269,7 @@ def load_sharded_model_quant(
     model.hf_quantizer = AutoHfQuantizer.from_config(quantization_config)
 
     if cfg.local_rank == 0 and verbose:
-        print(f"Loaded model weights in {time.time()-start:.3f} seconds")
+        print(f"Loaded model weights in {time.time() - start:.3f} seconds")
     # cleanup any extra memory usage from parallel loading
     torch.cuda.empty_cache()
 

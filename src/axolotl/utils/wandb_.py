@@ -16,6 +16,3 @@ def setup_wandb_env_vars(cfg: DictDefault):
     # Enable wandb if project name is present
     if cfg.wandb_project and len(cfg.wandb_project) > 0:
         cfg.use_wandb = True
-        os.environ.pop("WANDB_DISABLED", None)  # Remove if present
-    else:
-        os.environ["WANDB_DISABLED"] = "true"

@@ -1,4 +1,5 @@
 """chatml prompt tokenization strategy for ORPO"""
+
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from pydantic import BaseModel
@@ -22,9 +23,7 @@ class MessageList(BaseModel):
     messages: List[Message]
 
 
-def load(
-    tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, **kwargs
-):  # pylint: disable=possibly-unused-variable,unused-argument
+def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, **kwargs):
     """
     chatml transforms for datasets with system, input, chosen, rejected
     """
@@ -131,7 +130,7 @@ class ORPODatasetParsingStrategy:
 
 class ORPOTokenizingStrategy(PromptTokenizingStrategy):
     """
-    rejected_input_ids
+    rejected_ids
     input_ids
     rejected_attention_mask
     attention_mask
@@ -170,7 +169,7 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
                 labels += [IGNORE_INDEX] * (len(input_ids) - prev_idx)
                 prompt_len = len(input_ids)
         # remap the input_ids, attention_mask and labels
-        rejected_input_ids = input_ids
+        rejected_ids = input_ids
         rejected_labels = labels
         # pass the chosen prompt/row to the Prompter to get the formatted prompt
         chosen_message_list: MessageList = (
@@ -192,7 +191,7 @@ class ORPOTokenizingStrategy(PromptTokenizingStrategy):
                 labels += [IGNORE_INDEX] * (len(input_ids) - prev_idx)
 
         return {
-            "rejected_input_ids": rejected_input_ids,
+            "rejected_ids": rejected_ids,
             "rejected_labels": rejected_labels,
             "rejected_attention_mask": [1] * len(rejected_labels),
             "input_ids": input_ids,
@@ -218,29 +217,38 @@ class ORPOPrompter(Prompter):
         for message in message_list.messages:
             conversation.append(message.model_dump())
             if message.role == "system":
-                yield self.tokenizer.apply_chat_template(
-                    conversation,
-                    add_generation_prompt=False,
-                    chat_template=self.chat_template,
-                    tokenize=False,
-                ), False
+                yield (
+                    self.tokenizer.apply_chat_template(
+                        conversation,
+                        add_generation_prompt=False,
+                        chat_template=self.chat_template,
+                        tokenize=False,
+                    ),
+                    False,
+                )
             if message.role == "user":
-                yield self.tokenizer.apply_chat_template(
-                    conversation,
-                    add_generation_prompt=True,
-                    chat_template=self.chat_template,
-                    tokenize=False,
-                ), False
+                yield (
+                    self.tokenizer.apply_chat_template(
+                        conversation,
+                        add_generation_prompt=True,
+                        chat_template=self.chat_template,
+                        tokenize=False,
+                    ),
+                    False,
+                )
             if message.role == "assistant":
-                yield self.tokenizer.apply_chat_template(
-                    conversation,
-                    add_generation_prompt=False,
-                    chat_template=self.chat_template,
-                    tokenize=False,
-                ), True
+                yield (
+                    self.tokenizer.apply_chat_template(
+                        conversation,
+                        add_generation_prompt=False,
+                        chat_template=self.chat_template,
+                        tokenize=False,
+                    ),
+                    True,
+                )
 
 
-def argilla(cfg, **kwargs):  # pylint: disable=possibly-unused-variable,unused-argument
+def argilla(cfg, **kwargs):
     dataset_parser = ORPODatasetParsingStrategy()
 
     def transform_fn(sample, tokenizer=None):

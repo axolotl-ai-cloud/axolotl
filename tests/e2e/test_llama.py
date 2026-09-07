@@ -2,42 +2,33 @@
 E2E tests for llama
 """
 
-import logging
-import os
-import unittest
-from pathlib import Path
+import pytest
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import with_temp_dir
+from tests.e2e.utils import check_model_output_exists, requires_flash_attn
 
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+pytestmark = requires_flash_attn
 
 
-class TestLlama(unittest.TestCase):
+class TestLlama:
     """
     Test case for Llama models
     """
 
-    @with_temp_dir
     def test_fft_trust_remote_code(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
                 "trust_remote_code": True,
                 "sequence_len": 512,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -46,7 +37,8 @@ class TestLlama(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
-                "micro_batch_size": 8,
+                "max_steps": 5,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
                 "learning_rate": 0.00001,
@@ -55,12 +47,143 @@ class TestLlama(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
-                "save_safetensors": True,
+                "save_first_step": False,
             }
         )
-        normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "model.safetensors").exists()
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+
+    def test_fix_untrained_tokens(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "fix_untrained_tokens": True,
+                "sequence_len": 512,
+                "val_set_size": 0.0,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                    "bos_token": "<|custom_im_start|>",
+                    "eos_token": "<|custom_im_end|>",
+                },
+                "datasets": [
+                    {
+                        "chat_template": "jinja",
+                        "chat_template_jinja": "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{'<|custom_im_start|>' + message['role'] + '\n' + message['content'] + '<|custom_im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|custom_im_start|>assistant\n' }}{% endif %}",
+                        "path": "mlabonne/FineTome-100k",
+                        "type": "chat_template",
+                        "split": "train[:10%]",
+                        "field_messages": "conversations",
+                        "message_field_role": "from",
+                        "message_field_content": "value",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 5,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_8bit",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": True,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+
+    def test_fix_untrained_tokens_already_trained(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "fix_untrained_tokens": True,
+                "sequence_len": 512,
+                "val_set_size": 0.0,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "chat_template": "chatml",
+                "datasets": [
+                    {
+                        "path": "mlabonne/FineTome-100k",
+                        "type": "chat_template",
+                        "split": "train[:10%]",
+                        "field_messages": "conversations",
+                        "message_field_role": "from",
+                        "message_field_content": "value",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 5,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_8bit",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": True,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+
+    @pytest.mark.parametrize("tf32", ["auto", False])
+    def test_batch_flattening(self, tf32, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "trust_remote_code": True,
+                "sequence_len": 512,
+                "val_set_size": 0.01,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 5,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_8bit",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": False,
+                "batch_flattening": True,
+                "bf16": True,
+                "tf32": tf32,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)

@@ -1,0 +1,42 @@
+base_model: EleutherAI/pythia-12b-deduped
+base_model_ignore_patterns: pytorch*  # prefer safetensors
+# optionally might have model_type or tokenizer_type
+model_type: GPTNeoXForCausalLM
+tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+gptq: false
+device_map: auto
+datasets:
+  - path: vicgalle/alpaca-gpt4
+    type: alpaca
+dataset_prepared_path:
+val_set_size: 0.05
+adapter:
+lora_model_dir:
+sequence_len: 2048
+max_packed_sequence_len: 2048
+lora_r: 64
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_linear: true
+lora_fan_in_fan_out: true  # pythia/GPTNeoX lora specific
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+output_dir: ./outputs/pythia-12b
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 5
+learning_rate: 0.00003
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+bf16: false
+fp16: false
+float16: true
+tf32: true
+flash_optimum: true
+resume_from_checkpoint:
+gradient_checkpointing: true

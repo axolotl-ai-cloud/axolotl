@@ -6,17 +6,18 @@ Arxiv: https://arxiv.org/abs/2403.17919
 License: Apache 2.0
 """
 
-import logging
 from functools import reduce
 from typing import TYPE_CHECKING
 
 import numpy as np
 from transformers import TrainerCallback
 
-if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainer
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl.callbacks.lisa")
+if TYPE_CHECKING:
+    from axolotl.core.trainers import AxolotlTrainer
+
+LOG = get_logger(__name__)
 
 
 def lisa_callback_factory(trainer: "AxolotlTrainer"):
@@ -43,7 +44,7 @@ def lisa_callback_factory(trainer: "AxolotlTrainer"):
                 getattr, self.layers_attribute.split("."), self.trainer.model
             )
             LOG.info(
-                f"LISA will activate {self.n_layers}/{len(layers)} layers ({self.n_layers*100/len(layers)}%) every {self.step_interval} steps"
+                f"LISA will activate {self.n_layers}/{len(layers)} layers ({self.n_layers * 100 / len(layers)}%) every {self.step_interval} steps"
             )
 
         def freeze_all_layers(self):
@@ -54,9 +55,7 @@ def lisa_callback_factory(trainer: "AxolotlTrainer"):
                 for param in layer.parameters():
                     param.requires_grad = False
 
-        def on_step_begin(
-            self, args, state, control, **kwargs
-        ):  # pylint: disable=unused-argument
+        def on_step_begin(self, args, state, control, **kwargs):
             # Check if it's time to switch active layers, including at step 0
             if state.global_step % self.step_interval == 0 or state.global_step == 1:
                 self.switch_active_layers()

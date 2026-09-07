@@ -1,9 +1,11 @@
 base_model: axolotl-quants/DeepSeek-V2.5-bnb-nf4-bf16
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 trust_remote_code: true
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 
 plugins:
@@ -18,8 +20,9 @@ datasets:
     type: chat_template
     split: train[:20%]
     field_messages: conversations
-    message_field_role: from
-    message_field_content: value
+    message_property_mappings:
+      role: from
+      content: value
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
@@ -27,7 +30,7 @@ output_dir: ./outputs/out
 
 sequence_len: 4096
 sample_packing: true
-pad_to_sequence_len: true
+
 
 wandb_project:
 wandb_entity:
@@ -44,31 +47,23 @@ peft_use_rslora: true
 gradient_accumulation_steps: 1
 micro_batch_size: 8
 num_epochs: 1
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 2e-5
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: false
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
 logging_steps: 1
-xformers_attention:
-flash_attention: true
+attn_implementation: flash_attention_2
 
-warmup_steps: 100
+warmup_ratio: 0.1
 evals_per_epoch: 2
-eval_table_size:
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
 special_tokens:
 fsdp:
@@ -84,3 +79,5 @@ fsdp_config:
   fsdp_transformer_layer_cls_to_wrap: DeepseekV2DecoderLayer
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_sharding_strategy: FULL_SHARD
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

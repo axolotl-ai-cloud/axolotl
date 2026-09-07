@@ -1,0 +1,65 @@
+---
+title: "Reward Modelling"
+description: "Reward models are used to guide models towards behaviors which is preferred by humans, by training over large datasets annotated with human preferences. "
+---
+
+### Overview
+
+Reward modelling is a technique used to train models to predict the reward or value of a given input. This is particularly useful in reinforcement learning scenarios where the model needs to evaluate the quality of its actions or predictions.
+We support the reward modelling techniques supported by `trl`.
+
+### (Outcome) Reward Models
+
+Outcome reward models are trained using data which contains preference annotations for an entire interaction between the user and model (e.g. rather than per-turn or per-step).
+For improved training stability, you can use the `center_rewards_coefficient` parameter to encourage mean-zero reward outputs ([see TRL docs](https://huggingface.co/docs/trl/v0.10.1/en/reward_trainer#centering-rewards)).
+
+```yaml
+base_model: google/gemma-2-2b
+model_type: AutoModelForSequenceClassification
+num_labels: 1
+tokenizer_type: AutoTokenizer
+
+reward_model: true
+chat_template: gemma
+datasets:
+  - path: argilla/distilabel-intel-orca-dpo-pairs
+    type: bradley_terry.chat_template
+
+val_set_size: 0.1
+eval_steps: 100
+```
+
+Bradley-Terry chat templates expect single-turn conversations in the following format:
+
+```json
+{
+    "system": "...", // optional
+    "input": "...",
+    "chosen": "...",
+    "rejected": "..."
+}
+```
+
+### Process Reward Models (PRM)
+
+::: {.callout-tip}
+Check out our [PRM blog](https://axolotlai.substack.com/p/process-reward-models).
+:::
+
+Process reward models are trained using data which contains preference annotations for each step in a series of interactions. Typically, PRMs are trained to provide reward signals over each step of a reasoning trace and are used for downstream reinforcement learning.
+```yaml
+base_model: Qwen/Qwen2.5-3B
+model_type: AutoModelForTokenClassification
+num_labels: 2
+
+process_reward_model: true
+datasets:
+  - path: trl-lib/math_shepherd
+    type: stepwise_supervised
+    split: train
+
+val_set_size: 0.1
+eval_steps: 100
+```
+
+Please see [stepwise_supervised](dataset-formats/stepwise_supervised.qmd) for more details on the dataset format.

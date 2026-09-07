@@ -1,148 +1,489 @@
-"""data handling specific to DPO"""
+"""Data handling specific to RL trainers."""
 
 import inspect
-import logging
 from functools import partial
-from pathlib import Path
-from typing import Any, List
+from typing import Any, Callable, Literal
 
-import yaml
-from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict
+from transformers import PreTrainedTokenizer
 
-from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
+from axolotl.loaders import load_tokenizer
 from axolotl.prompt_strategies.dpo import load as load_dpo
+from axolotl.prompt_strategies.ebft import load as load_ebft
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
-from axolotl.utils.data.utils import md5
+from axolotl.utils.data.lock import FileLockLoader
+from axolotl.utils.data.shared import (
+    create_train_validation_split,
+    datasets_with_name_generator,
+    generate_dataset_hash_from_config,
+    load_dataset_with_config,
+    load_preprocessed_dataset,
+    merge_datasets,
+    save_preprocessed_dataset,
+    try_load_from_hub,
+)
+from axolotl.utils.data.utils import (
+    deduplicate_and_log_datasets,
+    retry_on_request_exceptions,
+)
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_main_process, zero_first
-from axolotl.utils.models import load_tokenizer
+from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.enums import RLType
 
-LOG = logging.getLogger("axolotl")
-
-
-def _get_path(ds_hash, cfg):
-    prepared_ds_path = (
-        Path(cfg.dataset_prepared_path) / ds_hash
-        if cfg.dataset_prepared_path
-        else Path(DEFAULT_DATASET_PREPARED_PATH) / ds_hash
-    )
-
-    return prepared_ds_path
+LOG = get_logger(__name__)
 
 
-def _load_preprocessed_ds(cfg, sub_cfg):
-    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
-    prepared_ds_path = _get_path(ds_hash, cfg)
-    dataset = None
+@retry_on_request_exceptions(max_retries=3, delay=5)
+def prepare_preference_datasets(
+    cfg: DictDefault, tokenizer: PreTrainedTokenizer
+) -> tuple[Dataset, Dataset | None]:
+    """Load and prepare preference datasets for RL training.
 
-    # pylint: disable=duplicate-code
-    if (
-        cfg.dataset_prepared_path
-        and any(prepared_ds_path.glob("*"))
-        and not cfg.is_preprocess
-    ):
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
-        dataset = load_from_disk(str(prepared_ds_path))
+    Loads training and evaluation datasets, handling preprocessing, caching, and
+    deduplication as configured. Uses FileLock for distributed coordination.
 
-    return dataset
+    Args:
+        cfg: Configuration object containing dataset and training settings.
+        tokenizer: Tokenizer to use for processing text.
+
+    Returns:
+        Tuple of (train_dataset, eval_dataset). eval_dataset may be None
+            if no evaluation dataset is configured.
+    """
+
+    def _load_datasets():
+        # Load training dataset
+        train_dataset = _load_or_create_dataset_split(cfg, tokenizer, split="train")
+
+        # Load or create evaluation dataset
+        eval_dataset: Dataset | None = None
+        if cfg.test_datasets:
+            eval_dataset = _load_or_create_dataset_split(cfg, tokenizer, split="test")
+        elif cfg.val_set_size:
+            # Create validation split from training data
+            train_dataset, eval_dataset = create_train_validation_split(
+                train_dataset, cfg, cfg.val_set_size
+            )
+
+        return train_dataset, eval_dataset
+
+    # Prepare datasets (with file locking logic for multiple ranks)
+    loader = FileLockLoader(cfg)
+    try:
+        train_dataset, eval_dataset = loader.load(_load_datasets)
+    finally:
+        loader.cleanup()
+
+    # Apply deduplication if configured
+    if cfg.dataset_exact_deduplication:
+        train_dataset, eval_dataset = deduplicate_and_log_datasets(
+            dataset=train_dataset, other_dataset=eval_dataset
+        )
+
+    return train_dataset, eval_dataset
 
 
-def _save_preprocessed_ds(cfg, sub_cfg, dataset):
-    ds_hash = md5(yaml.dump(sub_cfg, Dumper=yaml.Dumper))
-    prepared_ds_path = _get_path(ds_hash, cfg)
+def _map_dataset(
+    cfg: DictDefault,
+    dataset: Dataset | DatasetDict,
+    ds_transform_fn: Callable[..., Any],
+    tokenizer: Any | None = None,
+    **map_kwargs: Any,
+) -> Dataset:
+    """Apply transformation function to dataset.
 
-    if cfg.is_preprocess and is_main_process():
-        LOG.info(f"Loading prepared dataset from disk at {prepared_ds_path}...")
-        dataset.save_to_disk(str(prepared_ds_path))
+    Args:
+        cfg: Configuration object.
+        dataset: Dataset to transform.
+        ds_transform_fn: Transformation function to apply.
+        tokenizer: Optional tokenizer for transformation.
+        **map_kwargs: Additional arguments for dataset mapping.
 
-
-def map_dataset(cfg, data_set, ds_transform_fn, tokenizer):
+    Returns:
+        Transformed dataset.
+    """
     sig = inspect.signature(ds_transform_fn)
     if "tokenizer" in sig.parameters:
         if not tokenizer:
             tokenizer = load_tokenizer(cfg)
         ds_transform_fn = partial(ds_transform_fn, tokenizer=tokenizer)
 
-    data_set = data_set.map(
+    if isinstance(dataset, DatasetDict):
+        dataset = dataset["train"]
+
+    dataset = dataset.map(
         ds_transform_fn,
+        num_proc=cfg.dataset_num_proc,
+        load_from_cache_file=not cfg.is_preprocess,
         desc="Mapping RL Dataset",
+        **map_kwargs,
     )
-    if isinstance(data_set, DatasetDict):
-        data_set = data_set["train"]
-    return data_set
+
+    return dataset
 
 
-def load_prepare_dpo_datasets(cfg):
-    def load_split(dataset_cfgs, _cfg):
-        split_datasets: List[Any] = []
-        for i, ds_cfg in enumerate(dataset_cfgs):
-            if ds_cfg["ds_type"] == "json":
-                for data_file in ds_cfg["data_files"]:
-                    data_files = {ds_cfg["split"]: data_file}
-                    ds = load_dataset(  # pylint: disable=invalid-name
-                        "json",
-                        data_files=data_files,
-                        split=ds_cfg["split"],
-                    )
-                    split_datasets.insert(i, ds)
+def _drop_long_sequences(
+    sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
+) -> bool:
+    """Filter out samples that exceed maximum sequence length.
+
+    Args:
+        sample: Dataset sample to check.
+        rl: Reinforcement learning type.
+        tokenizer: Tokenizer for length calculation.
+        sequence_len: Maximum allowed sequence length.
+
+    Returns:
+        True if sample should be kept, False if it should be dropped.
+
+    Raises:
+        ValueError: If required keys are missing or RL type is unknown.
+    """
+    if rl in {RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO}:
+        if not (
+            sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
+        ):
+            raise ValueError(
+                "Prompt, chosen and rejected keys are required for DPO/ORPO datasets"
+            )
+
+        prompt = sample["prompt"]
+        chosen = sample["chosen"]
+        rejected = sample["rejected"]
+
+        len_prompt = len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+        len_chosen = len(tokenizer(chosen, add_special_tokens=False)["input_ids"])
+        len_rejected = len(tokenizer(rejected, add_special_tokens=False)["input_ids"])
+
+        return (len_prompt + len_chosen) <= sequence_len and (
+            len_prompt + len_rejected
+        ) <= sequence_len
+
+    if rl is RLType.KTO:
+        if not (sample.get("prompt") and sample.get("completion")):
+            raise ValueError("Prompt and completion keys are required for KTO datasets")
+
+        prompt = sample["prompt"]
+        completion = sample["completion"]
+
+        len_prompt = len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+        len_completion = len(
+            tokenizer(completion, add_special_tokens=False)["input_ids"]
+        )
+
+        return (len_prompt + len_completion) <= sequence_len
+
+    if rl in {RLType.GRPO, RLType.GDPO, RLType.EBFT}:
+        return True
+
+    raise ValueError("Unknown RL type")
+
+
+def _raise_on_long_sequences(
+    sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
+) -> bool:
+    """Check sequence length and raise ValueError if exceeded.
+
+    Used as a filter function for ``excess_length_strategy: raise``.
+
+    Args:
+        sample: Dataset sample to check.
+        rl: Reinforcement learning type.
+        tokenizer: Tokenizer for length calculation.
+        sequence_len: Maximum allowed sequence length.
+
+    Returns:
+        Always True (raises before returning False).
+
+    Raises:
+        ValueError: If any sample exceeds the configured sequence length.
+    """
+    is_valid = _drop_long_sequences(sample, rl, tokenizer, sequence_len)
+    if not is_valid:
+        raise ValueError(
+            f"Sample exceeds configured sequence_len ({sequence_len}). "
+            "Set `excess_length_strategy: drop` or `excess_length_strategy: truncate` "
+            "to handle long sequences automatically."
+        )
+    return True
+
+
+def _truncate_long_sequences_rl(
+    sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
+) -> dict[str, Any]:
+    """Truncate RL samples that exceed maximum sequence length.
+
+    For preference datasets (DPO/IPO/ORPO/SIMPO), truncates chosen and rejected
+    responses to fit within ``sequence_len`` when combined with the prompt.
+    For KTO, truncates the completion similarly.
+    GRPO/GDPO/EBFT samples are returned unchanged.
+
+    Samples where the prompt alone exceeds ``sequence_len`` cannot be
+    meaningfully truncated and are returned unchanged.  The caller should
+    follow up with a drop filter to remove them.
+
+    Args:
+        sample: Dataset sample to potentially truncate.
+        rl: Reinforcement learning type.
+        tokenizer: Tokenizer for encoding/decoding.
+        sequence_len: Maximum allowed sequence length.
+
+    Returns:
+        The sample with text fields truncated to fit within sequence_len.
+    """
+    # Fast path: if sample already fits, return unchanged (avoids decode overhead)
+    if _drop_long_sequences(sample, rl, tokenizer, sequence_len):
+        return sample
+
+    if rl in {RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO}:
+        if not (
+            sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
+        ):
+            raise ValueError(
+                "Prompt, chosen and rejected keys are required for DPO/ORPO datasets"
+            )
+
+        prompt_ids = tokenizer(sample["prompt"], add_special_tokens=False)["input_ids"]
+        chosen_ids = tokenizer(sample["chosen"], add_special_tokens=False)["input_ids"]
+        rejected_ids = tokenizer(sample["rejected"], add_special_tokens=False)[
+            "input_ids"
+        ]
+
+        max_response_len = sequence_len - len(prompt_ids)
+        if max_response_len <= 0:
+            # Prompt alone exceeds limit; cannot meaningfully truncate.
+            # Returned unchanged — the follow-up drop filter will remove it.
+            return sample
+
+        updates: dict[str, Any] = {}
+        if len(chosen_ids) > max_response_len:
+            updates["chosen"] = tokenizer.decode(
+                chosen_ids[:max_response_len], skip_special_tokens=False
+            )
+        if len(rejected_ids) > max_response_len:
+            updates["rejected"] = tokenizer.decode(
+                rejected_ids[:max_response_len], skip_special_tokens=False
+            )
+        if updates:
+            sample = {**sample, **updates}
+
+    elif rl is RLType.KTO:
+        if not (sample.get("prompt") and sample.get("completion")):
+            raise ValueError("Prompt and completion keys are required for KTO datasets")
+
+        prompt_ids = tokenizer(sample["prompt"], add_special_tokens=False)["input_ids"]
+        completion_ids = tokenizer(sample["completion"], add_special_tokens=False)[
+            "input_ids"
+        ]
+
+        max_completion_len = sequence_len - len(prompt_ids)
+        if max_completion_len <= 0:
+            return sample
+
+        if len(completion_ids) > max_completion_len:
+            sample = {
+                **sample,
+                "completion": tokenizer.decode(
+                    completion_ids[:max_completion_len], skip_special_tokens=False
+                ),
+            }
+
+    # GRPO/GDPO/EBFT: no truncation needed (responses generated at runtime)
+    return sample
+
+
+def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
+    """Load and process dataset split for RL training.
+
+    Args:
+        cfg: Configuration object containing dataset settings.
+        split: Dataset split to load ("train" or "test").
+
+    Returns:
+        Combined and processed dataset for the specified split.
+    """
+    datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
+    split_datasets: list[Dataset | DatasetDict] = []
+
+    for dataset_config in datasets_with_name_generator(datasets_configs):
+        dataset: Dataset | DatasetDict = load_dataset_with_config(
+            dataset_config, cfg.hf_use_auth_token, streaming=False
+        )
+        split_datasets.append(dataset)
+
+    tokenizer = load_tokenizer(cfg)
+
+    for i, dataset in enumerate(split_datasets):
+        _type = datasets_configs[i]["type"]
+        if _type:
+            if isinstance(_type, DictDefault):
+                _type = "user_defined.default"
+            if cfg.rl is RLType.ORPO:
+                ds_transform_fn = load_orpo(_type, cfg, dataset_idx=i)
+            elif cfg.rl is RLType.KTO:
+                ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
+            elif cfg.rl is RLType.EBFT:
+                ds_transform_fn = load_ebft(_type, cfg, dataset_idx=i)
             else:
-                ds = load_dataset(  # pylint: disable=invalid-name
-                    ds_cfg["path"],
-                    split=ds_cfg["split"],
-                    revision=ds_cfg.get("revision", None),
+                ds_transform_fn = load_dpo(_type, cfg, dataset_idx=i)
+
+            if ds_transform_fn is None:
+                raise ValueError(
+                    f"Failed to load dataset transform function for type {_type!r} "
+                    f"(rl: {cfg.rl}). See the warning logged above for the underlying "
+                    "error."
                 )
-                split_datasets.insert(i, ds)
 
-        tokenizer = None
-
-        for i, data_set in enumerate(split_datasets):
-            _type = dataset_cfgs[i]["type"]
-            if _type:
-                if isinstance(_type, DictDefault):
-                    _type = "user_defined.default"
-                if _cfg.rl == "orpo":
-                    ds_transform_fn = load_orpo(_type, _cfg, dataset_idx=i)
-                elif _cfg.rl == "kto":
-                    ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
+            map_kwargs: dict[str, Any] = {}
+            if isinstance(ds_transform_fn, tuple):
+                ds_transform_fn, map_kwargs = ds_transform_fn
+            # Handle remove_columns: "__all__" removes all original columns,
+            # or filter a list to only columns that exist in the dataset
+            if "remove_columns" in map_kwargs:
+                ds_columns = (
+                    dataset.column_names
+                    if isinstance(dataset, Dataset)
+                    else dataset[split].column_names
+                    if isinstance(dataset, DatasetDict)
+                    else []
+                )
+                if map_kwargs["remove_columns"] == "__all__":
+                    map_kwargs["remove_columns"] = list(ds_columns)
                 else:
-                    ds_transform_fn = load_dpo(_type, _cfg, dataset_idx=i)
-
-                split_datasets[i] = map_dataset(
-                    cfg, data_set, ds_transform_fn, tokenizer
-                )
-            elif _cfg.rl == "kto":
-                ds_transform_fn = load_kto(_type, _cfg, dataset_idx=i)
-                split_datasets[i] = map_dataset(
-                    cfg, data_set, ds_transform_fn, tokenizer
-                )
-            else:
-                # If no `type` is provided, assume the dataset is already in the expected format with
-                # "prompt", "chosen" and "rejected" already preprocessed
-                split_datasets[i] = data_set
-
-        return concatenate_datasets(split_datasets)
-
-    with zero_first(is_main_process()):
-        train_is_preprocessed = False
-        eval_is_preprocessed = False
-        if train_dataset := _load_preprocessed_ds(cfg, cfg.datasets):
-            train_is_preprocessed = True
+                    map_kwargs["remove_columns"] = [
+                        c for c in map_kwargs["remove_columns"] if c in ds_columns
+                    ]
+            split_datasets[i] = _map_dataset(
+                cfg, dataset, ds_transform_fn, tokenizer, **map_kwargs
+            )
         else:
-            train_dataset = load_split(cfg.datasets, cfg)
+            # If no `type` is provided, assume the dataset is already in the expected format with
+            # "prompt", "chosen", and "rejected" already preprocessed
+            split_datasets[i] = dataset
 
-        eval_dataset = None
-        if cfg.test_datasets:
-            if eval_dataset := _load_preprocessed_ds(cfg, cfg.test_datasets):
-                eval_is_preprocessed = True
-            else:
-                eval_dataset = load_split(cfg.test_datasets, cfg)
-        if not eval_dataset:
-            eval_dataset = None
+        if not cfg.skip_prepare_dataset:
+            excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
 
-        if not train_is_preprocessed:
-            _save_preprocessed_ds(cfg, cfg.datasets, train_dataset)
-        if eval_dataset and not eval_is_preprocessed:
-            _save_preprocessed_ds(cfg, cfg.test_datasets, eval_dataset)
+            if excess_length_strategy == "truncate":
+                truncate_fn = partial(
+                    _truncate_long_sequences_rl,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+                prior_len = len(split_datasets[i])
+                split_datasets[i] = split_datasets[i].map(
+                    truncate_fn,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Truncating Long Sequences",
+                )
 
-    return train_dataset, eval_dataset
+                # Drop samples that could not be truncated (e.g. prompt
+                # alone exceeds sequence_len)
+                drop_long = partial(
+                    _drop_long_sequences,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+                split_datasets[i] = split_datasets[i].filter(
+                    drop_long,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Dropping Un-truncatable Sequences",
+                )
+                dropped = prior_len - len(split_datasets[i])
+                if dropped:
+                    LOG.warning(
+                        f"Dropped {dropped} samples from dataset index {i} "
+                        f"that could not be truncated to fit sequence_len "
+                        f"(prompt alone exceeds limit)"
+                    )
+            elif excess_length_strategy == "raise":
+                raise_fn = partial(
+                    _raise_on_long_sequences,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+                split_datasets[i] = split_datasets[i].filter(
+                    raise_fn,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Checking Sequence Lengths",
+                )
+            else:  # "drop" (default)
+                drop_long = partial(
+                    _drop_long_sequences,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+
+                prior_len = len(split_datasets[i])
+                split_datasets[i] = split_datasets[i].filter(
+                    drop_long,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Dropping Long Sequences",
+                )
+                dropped = prior_len - len(split_datasets[i])
+                if dropped:
+                    LOG.warning(
+                        f"Dropped {dropped} long samples from dataset index {i}"
+                    )
+
+    # Merge datasets
+    dataset = merge_datasets(split_datasets, cfg)
+
+    if not cfg.skip_prepare_dataset:
+        # Deduplicate before saving so the saved dataset is already de-duplicated
+        if cfg.dataset_exact_deduplication:
+            dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+
+        # Save preprocessed dataset
+        dataset_hash = generate_dataset_hash_from_config(
+            cfg, datasets_configs, tokenizer.name_or_path
+        )
+        save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
+
+    return dataset
+
+
+def _load_or_create_dataset_split(
+    cfg: DictDefault, tokenizer: PreTrainedTokenizer, split: Literal["train", "test"]
+) -> Dataset:
+    """Load preprocessed dataset or create new one for given split.
+
+    Args:
+        cfg: Configuration object.
+        tokenizer: Tokenizer to use for processing text.
+        split: Dataset split to load.
+
+    Returns:
+        Tuple of (dataset, is_preprocessed).
+    """
+    # Select correct dataset configuration based on split
+    datasets_config = cfg.datasets if split == "train" else cfg.test_datasets
+
+    # Generate dataset hash for caching
+    dataset_hash = generate_dataset_hash_from_config(
+        cfg, datasets_config, tokenizer.name_or_path
+    )
+
+    # Try loading from hub if push_dataset_to_hub is configured
+    dataset = None
+    if cfg.push_dataset_to_hub:
+        dataset = try_load_from_hub(cfg, dataset_hash, split)
+
+    # Attempt to load preprocessed dataset
+    if dataset is None:
+        dataset = load_preprocessed_dataset(cfg, dataset_hash)
+
+    # Otherwise, load it
+    if dataset is None:
+        dataset = _load_split(cfg, split=split)
+
+    return dataset

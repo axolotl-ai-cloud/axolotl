@@ -1,0 +1,60 @@
+---
+title: "Quantization with torchao"
+back-to-top-navigation: true
+toc: true
+toc-expand: 2
+toc-depth: 4
+---
+
+Quantization is a technique to lower the memory footprint of your model, potentially at the cost of accuracy or model performance. We support quantizing your model using the [torchao](https://github.com/pytorch/ao) library. Quantization is supported for both post-training quantization (PTQ) and quantization-aware training (QAT).
+
+
+::: {.callout-note}
+
+We do not currently support quantization techniques such as GGUF/GPTQ,EXL2 at the moment.
+
+:::
+
+## Configuring Quantization in Axolotl
+
+Quantization is configured using the `quantization` key in your configuration file.
+
+```yaml
+base_model: # The path to the model to quantize.
+quantization:
+  activation_dtype: # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4", "int8", "float8"
+  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4", "fp8", and "nvfp4".
+  group_size: # Optional[int] = 32. The number of elements in each group for per-group fake quantization
+  quantize_embedding: # Optional[bool] = False. Whether to quantize the embedding layer.
+
+output_dir:  # The path to the output directory.
+```
+
+Once quantization is complete, your quantized model will be saved in the `{output_dir}/quantized` directory.
+
+You may also use the `quantize` command to quantize a model which has been trained with [QAT](./qat.qmd) - you can do this by using the existing QAT configuration file which
+you used to train the model:
+
+```yaml
+# qat.yml
+qat:
+  activation_dtype: int8
+  weight_dtype: int4
+  group_size: 256
+
+output_dir: # The path to the output directory used during training where the final checkpoint has been saved.
+```
+
+```bash
+axolotl quantize qat.yml
+```
+
+This ensures that an identical quantization configuration is used to quantize the model as was used to train it.
+
+
+::: {.callout-note}
+
+If you have configured pushing to hub with `hub_model_id`, your model hub name will have the quantization schema appended to it,
+e.g. `axolotl-ai-cloud/qat-nvfp4-llama3B` will become `axolotl-ai-cloud/qat-nvfp4-llama3B-nvfp4w`
+
+:::

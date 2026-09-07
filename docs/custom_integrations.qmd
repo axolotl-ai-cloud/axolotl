@@ -1,0 +1,172 @@
+---
+title: Custom Integrations
+toc: true
+toc-depth: 3
+---
+
+```{python}
+#| echo: false
+
+import os
+import re
+
+def process_readme(integration_name):
+    try:
+        path = f'../src/axolotl/integrations/{integration_name}/README.md'
+        with open(path, 'r') as f:
+            txt = f.read()
+            # Remove h1 headings
+            txt = re.sub(r'^# .*\n?', '', txt, flags=re.MULTILINE)
+            # Convert h2 to h3
+            txt = re.sub(r'^## ', '### ', txt, flags=re.MULTILINE)
+            return txt
+    except FileNotFoundError:
+        return None
+
+def print_section(name, folder_name):
+    output = f"\n## {name}\n"
+    content = process_readme(folder_name)
+    if content:
+        output += content
+    output += f"\nPlease see reference [here](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/{folder_name})\n"
+    return output
+```
+
+```{python}
+#| output: asis
+#| echo: false
+
+# Introduction text
+print("""
+Axolotl adds custom features through `integrations`. They are located within the `src/axolotl/integrations` directory.
+
+To enable them, please check the respective documentations.
+""")
+
+# Sections
+sections = [
+    ("Cut Cross Entropy", "cut_cross_entropy"),
+    ("Grokfast", "grokfast"),
+    ("Knowledge Distillation (KD)", "kd"),
+    ("Liger Kernels", "liger"),
+    ("Language Model Evaluation Harness (LM Eval)", "lm_eval"),
+    ("Spectrum", "spectrum"),
+    ("LLMCompressor", "llm_compressor")
+]
+
+for folder_name in os.listdir("../src/axolotl/integrations/"):
+    if folder_name in [path for name, path in sections]:
+        # skip if already in sections
+        continue
+    if os.path.exists(f"../src/axolotl/integrations/{folder_name}/README.md"):
+        # grab the first heading in README.md as the section name
+        with open(f"../src/axolotl/integrations/{folder_name}/README.md", "r") as f:
+            txt = f.read()
+            matches = re.search(r'^# (.*)\n?', txt, flags=re.MULTILINE)
+            if matches:
+                name = matches.group(1)
+            else:
+                continue
+            sections.append((name, folder_name))
+
+# sort sections by name
+sections = sorted(sections, key=lambda x: x[0])
+
+for section_name, folder_name in sections:
+    print(print_section(section_name, folder_name))
+```
+
+## Adding a new integration
+
+Plugins can be used to customize the behavior of the training pipeline through [hooks](https://en.wikipedia.org/wiki/Hooking). See [`axolotl.integrations.BasePlugin`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/base.py) for the possible hooks.
+
+To add a new integration, please follow these steps:
+
+1. Create a new folder in the `src/axolotl/integrations` directory.
+2. Add any relevant files (`LICENSE`, `README.md`, `ACKNOWLEDGEMENTS.md`, etc.) to the new folder.
+3. Add `__init__.py` and `args.py` files to the new folder.
+  - `__init__.py` should import the integration and hook into the appropriate functions.
+  - `args.py` should define the arguments for the integration.
+4. (If applicable) Add CPU tests under `tests/integrations` or GPU tests under `tests/e2e/integrations`.
+
+::: {.callout-tip}
+
+See [src/axolotl/integrations/cut_cross_entropy](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/cut_cross_entropy) for a minimal integration example.
+
+:::
+
+::: {.callout-warning}
+
+If you could not load your integration, please ensure you are pip installing in editable mode.
+
+```bash
+pip install -e .
+```
+
+and correctly spelled the integration name in the config file.
+
+```yaml
+plugins:
+  - axolotl.integrations.your_integration_name.YourIntegrationPlugin
+```
+
+:::
+
+::: {.callout-note}
+
+It is not necessary to place your integration in the `integrations` folder. It can be in any location, so long as it's installed in a package in your python env.
+
+See this repo for an example: [https://github.com/axolotl-ai-cloud/diff-transformer](https://github.com/axolotl-ai-cloud/diff-transformer)
+
+:::
+
+## Adding a CLI command
+
+An integration can contribute its own `axolotl` subcommand. Unlike plugin hooks, which are
+loaded from the `plugins:` list of a config file, a subcommand has to be discoverable before
+any config is read, so it is registered through a packaging entry point instead.
+
+Define a regular `click` command in your package:
+
+```python
+# my_package/cli.py
+import click
+
+@click.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option("--rank-ratio", type=float, default=0.01)
+def my_command(config: str, rank_ratio: float):
+    """one-line summary shown in `axolotl --help`"""
+    from my_package.core import run  # keep heavy imports inside the function
+
+    run(config, rank_ratio=rank_ratio)
+```
+
+and advertise it under the `axolotl.cli_commands` entry point group:
+
+```toml
+# my_package/pyproject.toml
+[project.entry-points."axolotl.cli_commands"]
+my-command = "my_package.cli:my_command"
+```
+
+Installing your package makes `axolotl my-command` available, and it will be listed in
+`axolotl --help`. The entry point name is the subcommand name, and the value is
+`<module>:<attribute>`.
+
+::: {.callout-warning}
+
+Entry points are written into your package metadata at install time, not read from
+`pyproject.toml` at runtime. After adding or renaming one, reinstall the package
+(`pip install -e .`) or the subcommand will not appear.
+
+:::
+
+::: {.callout-note}
+
+Commands shipped with axolotl take precedence, so a plugin cannot shadow `train` or any
+other core command. Integrations bundled in this repo are registered in
+`BUILTIN_COMMANDS` in `src/axolotl/cli/plugins.py` rather than through entry points, so
+that they work from a source checkout without a reinstall.
+
+:::

@@ -6,12 +6,13 @@ import unittest
 
 import transformers
 
-from axolotl.common.cli import TrainerCliArgs
-from axolotl.utils.config import normalize_config
+from axolotl.loaders import ModelLoader, load_tokenizer
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.models import load_model, load_tokenizer
 
-from ..utils import with_temp_dir
+from ..utils import requires_flash_attn, with_temp_dir
+
+pytestmark = requires_flash_attn
 
 
 class TestModelPatches(unittest.TestCase):
@@ -23,12 +24,11 @@ class TestModelPatches(unittest.TestCase):
     def test_mixtral_multipack(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "hf-internal-testing/Mixtral-tiny",
-                "tokenizer_config": "LoneStriker/Mixtral-8x7B-v0.1-HF",
+                "base_model": "axolotl-ai-co/tiny-mixtral-30m",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -46,27 +46,23 @@ class TestModelPatches(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
         tokenizer = load_tokenizer(cfg)
-        model, _ = load_model(cfg, tokenizer, inference=cli_args.inference)
-
-        assert (
-            "MixtralFlashAttention2"
-            in model.model.layers[0].self_attn.__class__.__name__
-        )
+        ModelLoader(cfg, tokenizer, inference=False).load()
 
     @with_temp_dir
     def test_mistral_multipack(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "openaccess-ai-collective/tiny-mistral",
+                "base_model": "axolotl-ai-co/tiny-mistral-25m",
                 "flash_attention": True,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.02,
                 "special_tokens": {},
                 "datasets": [
                     {
@@ -84,14 +80,17 @@ class TestModelPatches(unittest.TestCase):
                 "max_steps": 20,
                 "save_steps": 10,
                 "eval_steps": 10,
+                "save_first_step": False,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
         tokenizer = load_tokenizer(cfg)
-        load_model(cfg, tokenizer, inference=cli_args.inference)
+        ModelLoader(cfg, tokenizer, inference=False).load()
 
+        # In-tree HF models pack natively via position_ids, so we no longer
+        # override `_get_unpad_data` for them; the stock function must remain.
         assert (
-            "torch.jit"
-            in transformers.modeling_flash_attention_utils._get_unpad_data.__module__  # pylint: disable=protected-access
+            transformers.modeling_flash_attention_utils._get_unpad_data.__module__
+            == "transformers.modeling_flash_attention_utils"
         )

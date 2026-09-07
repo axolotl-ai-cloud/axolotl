@@ -6,7 +6,7 @@ chatml transforms for datasets with system, input, chosen, rejected to match lla
 def icr(
     cfg,
     **kwargs,
-):  # pylint: disable=possibly-unused-variable,unused-argument
+):
     """
     chatml transforms for datasets with system, input, chosen, rejected
     ex. https://huggingface.co/datasets/argilla/distilabel-intel-orca-dpo-pairs

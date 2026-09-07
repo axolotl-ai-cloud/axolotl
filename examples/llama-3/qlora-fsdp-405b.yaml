@@ -1,8 +1,10 @@
 base_model: hugging-quants/Meta-Llama-3.1-405B-BNB-NF4-BF16
+# optionally might have model_type or tokenizer_type
 tokenizer_type: AutoTokenizer
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
 
 load_in_4bit: true
-strict: false
 
 datasets:
   - path: tatsu-lab/alpaca
@@ -10,29 +12,25 @@ datasets:
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./outputs/out/qlora-llama3_1-405b
-save_safetensors: true
 
 adapter: qlora
 
 sequence_len: 2048
 sample_packing: true
-pad_to_sequence_len: true
+
 
 lora_r: 16
 lora_alpha: 16
 lora_dropout: 0.05
-lora_target_modules:
 lora_target_linear: true
 
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 2
-optimizer: adamw_torch
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 0.00001
 
-train_on_inputs: false
-group_by_length: false
 bf16: true
 tf32: true
 
@@ -40,9 +38,9 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: true
 logging_steps: 1
-flash_attention: true
+attn_implementation: flash_attention_2
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
@@ -61,3 +59,5 @@ fsdp_config:
   fsdp_sharding_strategy: FULL_SHARD
 special_tokens:
   pad_token: <|finetune_right_pad_id|>
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

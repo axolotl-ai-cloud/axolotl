@@ -1,18 +1,22 @@
 name: Tests
 on:
   # check on push/merge to main, PRs, and manual triggers
+  merge_group:
   push:
     branches:
       - "main"
     paths:
-      - '**.py'
-      - 'requirements.txt'
-      - '.github/workflows/*.yml'
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/*.yml"
   pull_request:
-      paths:
-       - '**.py'
-       - 'requirements.txt'
-       - '.github/workflows/*.yml'
+    # no `labeled` here: the label-gated GPU jobs live in docker-e2e.yml so
+    # labeling a PR doesn't re-run the CPU jobs
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/*.yml"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
@@ -20,145 +24,243 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+permissions:
+  contents: read
+
+env:
+  TRANSFORMERS_IS_CI: "yes"
+  UV_SYSTEM_PYTHON: "1"
+
 jobs:
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.10"
-          cache: 'pip' # caching pip dependencies
-      - uses: pre-commit/action@v3.0.1
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: "pip" # caching pip dependencies
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
         env:
-          SKIP: no-commit-to-branch
+          # check-cli-config-options needs an installed axolotl; the dedicated
+          # tests.yml step covers it in CI
+          SKIP: no-commit-to-branch,check-cli-config-options
+
+  prime-cdn-s3-cache:
+    name: Prefetch S3 once to prime the CDN cache
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 10
+    steps:
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
+        run: |
+          curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    needs: [prime-cdn-s3-cache]
     strategy:
+      max-parallel: 2
       fail-fast: false
       matrix:
-        python_version: ["3.10", "3.11"]
-        pytorch_version: ["2.3.1", "2.4.1", "2.5.1"]
-    timeout-minutes: 20
+        python_version: ["3.12"]
+        pytorch_version: ["2.11.0", "2.12.1", "2.13.0"]
+    timeout-minutes: 30
 
     steps:
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
+        run: |
+          mkdir -p ~/.cache/huggingface/hub
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
+          ls -ltr ~/.cache/huggingface/hub/
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging setuptools wheel
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }}
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
 
       - name: Install dependencies
         run: |
-          pip3 show torch
-          pip3 install -U -e .
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+
+      - name: Make sure PyTorch version wasn't clobbered
+        run: |
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
+
+      - name: Ensure axolotl CLI was installed
+        run: |
+          axolotl --help
+
+      - name: Check generated CLI config options
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.1' }}
+        run: |
+          axolotl generate-cli-config-options --check
+
+      - name: Pre-Download dataset fixture
+        run: |
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+
+      - name: Show HF cache
+        run: hf cache ls
 
       - name: Run tests
         run: |
-          pytest -n8 --ignore=tests/e2e/ tests/
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 \
+            --ignore=tests/integrations/kernels/ \
+            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+            --ignore=tests/integrations/test_gemma4_moe.py \
+            --ignore=tests/integrations/test_scattermoe_lora.py \
+            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+      - name: Show HF cache
+        run: hf cache ls
 
-  docker-e2e-tests-1st:
-    if: github.repository_owner == 'axolotl-ai-cloud'
-    # this job needs to be run on self-hosted GPU runners...
-    runs-on: [self-hosted, modal]
-    timeout-minutes: 90
-    needs: [pre-commit, pytest]
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: unittests,pytorch-${{ matrix.pytorch_version }}
+          fail_ci_if_error: false
 
+  pytest-sdist:
+    name: PyTest from Source Dist
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    needs: [prime-cdn-s3-cache]
     strategy:
+      max-parallel: 2
       fail-fast: false
       matrix:
-        include:
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.4.1
-            num_gpus: 1
-            axolotl_extras:
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - name: Install Modal
-        run: |
-          python -m pip install --upgrade pip
-          pip install modal==0.63.64 jinja2
-      - name: Update env vars
-        run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
-          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
-          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
-          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
-          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
-          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-      - name: Run tests job on Modal
-        run: |
-          modal run cicd.tests
+        python_version: ["3.12"]
+        pytorch_version: ["2.11.0", "2.12.1", "2.13.0"]
+    timeout-minutes: 30
 
-  docker-e2e-tests:
-    if: github.repository_owner == 'axolotl-ai-cloud'
-    # this job needs to be run on self-hosted GPU runners...
-    runs-on: [self-hosted, modal]
-    timeout-minutes: 90
-    needs: [pre-commit, pytest, docker-e2e-tests-1st]
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - cuda: 121
-            cuda_version: 12.1.1
-            python_version: "3.10"
-            pytorch: 2.3.1
-            num_gpus: 1
-            axolotl_extras: mamba-ssm
-          - cuda: 124
-            cuda_version: 12.4.1
-            python_version: "3.11"
-            pytorch: 2.5.1
-            num_gpus: 1
-            axolotl_extras:
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.10"
-      - name: Install Modal
+          persist-credentials: false
+
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
         run: |
-          python -m pip install --upgrade pip
-          pip install modal==0.63.64 jinja2
-      - name: Update env vars
+          mkdir -p ~/.cache/huggingface/hub
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
+          ls -ltr ~/.cache/huggingface/hub/
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install PyTorch
         run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
-          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
-          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
-          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
-          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
-          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-      - name: Run tests job on Modal
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
+
+      - name: Install dependencies
         run: |
-          modal run cicd.tests
+          uv pip install packaging setuptools_scm build wheel psutil
+          python -m build --no-isolation --sdist
+          uv pip install --no-build-isolation dist/axolotl*.tar.gz --override /tmp/torch-pin.txt
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+
+      - name: Make sure PyTorch version wasn't clobbered
+        run: |
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
+
+      - name: Ensure axolotl CLI was installed
+        run: |
+          axolotl --help
+
+      - name: Check generated CLI config options
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.1' }}
+        run: |
+          axolotl generate-cli-config-options --check
+
+      - name: Verify agent docs are discoverable
+        run: |
+          # Agent docs live in docs/agents/ (source of truth) and are resolved
+          # at runtime from the repo checkout or via `axolotl fetch docs`
+          axolotl agent-docs --list
+          axolotl agent-docs | grep -q "Fine-tuning framework"
+          axolotl agent-docs grpo | grep -q "GRPO"
+          axolotl agent-docs sft | grep -q "SFT"
+          python -c "from axolotl.cli.agent_docs import get_doc, list_topics; assert len(list_topics()) >= 5; assert 'GRPO' in get_doc('grpo')"
+
+      - name: Show HF cache
+        run: hf cache ls
+
+      - name: Run tests
+        run: |
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 \
+            --ignore=tests/integrations/kernels/ \
+            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+            --ignore=tests/integrations/test_gemma4_moe.py \
+            --ignore=tests/integrations/test_scattermoe_lora.py \
+            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+
+      - name: Show HF cache
+        run: hf cache ls

@@ -1,8 +1,7 @@
 """
 E2E tests for multigpu eval
 """
-import logging
-import os
+
 from pathlib import Path
 
 import yaml
@@ -11,8 +10,9 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
-os.environ["WANDB_DISABLED"] = "true"
+from ..utils import check_tensorboard, requires_flash_attn
+
+pytestmark = requires_flash_attn
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -23,10 +23,9 @@ class TestMultiGPUEval:
     """
 
     def test_eval_sample_packing(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "load_in_8bit": False,
                 "load_in_4bit": True,
                 "strict": False,
@@ -40,19 +39,21 @@ class TestMultiGPUEval:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["embed_tokens", "lm_head"],
-                "val_set_size": 0.1,
-                "special_tokens": {"pad_token": "<|end_of_text|>"},
+                "val_set_size": 0.05,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
                         "type": "alpaca",
+                        "split": "train[:5%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
+                "max_steps": 2,
                 "micro_batch_size": 2,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
@@ -66,6 +67,8 @@ class TestMultiGPUEval:
                 "saves_per_epoch": 1,
                 "logging_steps": 1,
                 "weight_decay": 0.0,
+                "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -88,11 +91,12 @@ class TestMultiGPUEval:
             ]
         )
 
+        check_tensorboard(temp_dir + "/runs", "eval/loss", 2.5, "Eval Loss is too high")
+
     def test_eval(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "load_in_8bit": False,
                 "load_in_4bit": True,
                 "strict": False,
@@ -106,19 +110,21 @@ class TestMultiGPUEval:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["embed_tokens", "lm_head"],
-                "val_set_size": 0.1,
-                "special_tokens": {"pad_token": "<|end_of_text|>"},
+                "val_set_size": 0.01,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
                 "datasets": [
                     {
                         "path": "teknium/GPT4-LLM-Cleaned",
                         "type": "alpaca",
+                        "split": "train[:5%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 5,
+                "max_steps": 2,
                 "micro_batch_size": 2,
-                "gradient_accumulation_steps": 4,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
@@ -132,6 +138,8 @@ class TestMultiGPUEval:
                 "saves_per_epoch": 1,
                 "logging_steps": 1,
                 "weight_decay": 0.0,
+                "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -153,3 +161,5 @@ class TestMultiGPUEval:
                 str(Path(temp_dir) / "config.yaml"),
             ]
         )
+
+        check_tensorboard(temp_dir + "/runs", "eval/loss", 2.9, "Eval Loss is too high")

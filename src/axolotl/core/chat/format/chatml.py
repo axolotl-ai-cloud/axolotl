@@ -1,6 +1,7 @@
 """
 ChatML transformation functions for MessageContents
 """
+
 from typing import Optional
 
 from ..messages import MessageContents, Messages
@@ -9,7 +10,7 @@ from .shared import wrap_tools
 
 def format_message(
     message: Messages,
-    message_index: Optional[int] = None,  # pylint: disable=unused-argument
+    message_index: Optional[int] = None,
 ) -> Messages:
     if message.is_chat_formatted:
         return message

@@ -2,8 +2,6 @@
 E2E tests for qwen
 """
 
-import logging
-import os
 from pathlib import Path
 
 import pytest
@@ -13,8 +11,9 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-LOG = logging.getLogger("axolotl.tests.qwen")
-os.environ["WANDB_DISABLED"] = "true"
+from .utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
 
 
 class TestE2eQwen:
@@ -22,9 +21,8 @@ class TestE2eQwen:
     Test cases for qwen models
     """
 
-    @pytest.mark.parametrize("base_model", ["Qwen/Qwen2-0.5B", "Qwen/Qwen2.5-0.5B"])
+    @pytest.mark.parametrize("base_model", ["axolotl-ai-co/tiny-qwen2-129m"])
     def test_dpo(self, base_model, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": base_model,
@@ -40,8 +38,10 @@ class TestE2eQwen:
                         "field_messages": "conversation",
                         "field_chosen": "chosen",
                         "field_rejected": "rejected",
-                        "message_field_role": "role",
-                        "message_field_content": "content",
+                        "message_property_mappings": {
+                            "role": "role",
+                            "content": "content",
+                        },
                         "roles": {
                             "system": ["system"],
                             "user": ["user"],
@@ -62,6 +62,7 @@ class TestE2eQwen:
                 "bf16": "auto",
                 "tf32": True,
                 "gradient_checkpointing": True,
+                "save_first_step": False,
             }
         )
 

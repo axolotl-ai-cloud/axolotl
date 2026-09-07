@@ -1,0 +1,48 @@
+{
+  "title": "Axolotl Fine-Tuning",
+  "description": "Serverless fine-tuning of open-source LLMs with Axolotl. Supports LoRA, QLoRA, DPO, and more using Hugging Face models and datasets.",
+  "type": "serverless",
+  "category": "language",
+  "iconUrl": "https://avatars.githubusercontent.com/u/167502477",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 200,
+    "gpuCount": 1,
+    "allowedCudaVersions": [
+      "13.0"
+    ],
+    "presets": [],
+    "env": [
+      {
+        "key": "HF_TOKEN",
+        "input": {
+          "name": "Hugging Face Token",
+          "type": "string",
+          "description": "Token for gated models/datasets and for pushing results to the Hub. May also be supplied per job via input.credentials.hf_token.",
+          "default": "",
+          "advanced": false
+        }
+      },
+      {
+        "key": "WANDB_API_KEY",
+        "input": {
+          "name": "Weights & Biases API Key",
+          "type": "string",
+          "description": "API key for logging training runs to Weights & Biases. May also be supplied per job via input.credentials.wandb_api_key.",
+          "default": "",
+          "advanced": false
+        }
+      },
+      {
+        "key": "BASE_VOLUME",
+        "input": {
+          "name": "Base Volume",
+          "type": "string",
+          "description": "Directory that fine-tuning outputs and the Hugging Face caches are written to.",
+          "default": "/runpod-volume",
+          "advanced": true
+        }
+      }
+    ]
+  }
+}

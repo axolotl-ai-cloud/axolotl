@@ -1,9 +1,88 @@
 """Module for custom LRScheduler class"""
+
 import math
 from functools import partial
+from typing import Any, Sequence
 
+from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
+
+
+class RexLR(LRScheduler):
+    """
+    Reflected Exponential (REX) learning rate scheduler.
+
+    - Original implementation: https://github.com/IvanVassi/REX_LR
+    - Original license: Apache 2.0
+    - Based on: https://arxiv.org/abs/2107.04197
+
+    Args:
+        optimizer (torch.optim.Optimizer): The optimizer to schedule the learning rate for.
+        max_lr (float): The maximum learning rate.
+        min_lr (float): The minimum learning rate.
+        total_steps (int): The total number of training steps.
+        num_warmup_steps (int): The number of warmup steps.
+        last_step (int): The index of last step.
+    """
+
+    def __init__(
+        self, optimizer, max_lr, min_lr, total_steps=0, num_warmup_steps=0, last_step=0
+    ):
+        if min_lr > max_lr:
+            raise ValueError(
+                f'Value of "min_lr" should be less than value of "max_lr". Got min_lr={min_lr} and max_lr={max_lr}'
+            )
+        if num_warmup_steps > total_steps:
+            raise ValueError(
+                f"num_warmup_steps ({num_warmup_steps}) must be less than or equal to total_steps ({total_steps})."
+            )
+
+        self.min_lr = min_lr
+        self.max_lr = max_lr
+        self.total_steps = total_steps
+        self.num_warmup_steps = num_warmup_steps
+        self.last_step = max(last_step - 1, 0)
+
+        # Ensure each parameter group has an "initial_lr" key to avoid issues when resuming.
+        for group in optimizer.param_groups:
+            initial_lr = group["lr"]
+            if isinstance(initial_lr, Tensor):
+                initial_lr = initial_lr.clone()
+            group.setdefault("initial_lr", initial_lr)
+        # Pass self.last_step as last_epoch to the parent.
+        super().__init__(optimizer, last_epoch=self.last_step)
+
+    @property
+    def last_step(self):
+        return self.last_epoch
+
+    @last_step.setter
+    def last_step(self, value):
+        self.last_epoch = value
+
+    def get_lr(self):
+        # Warmup phase: if defined, increase lr linearly from 0 to max_lr.
+        if 1 <= self.last_step <= self.num_warmup_steps:
+            return [
+                base_lr * self.last_step / self.num_warmup_steps
+                for base_lr in self.base_lrs
+            ]
+
+        # Post-warmup phase: adjust step relative to the end of warmup.
+        step_after = self.last_step - self.num_warmup_steps
+        remaining_steps = self.total_steps - self.num_warmup_steps
+
+        # Avoid LR spiking
+        if step_after >= remaining_steps or step_after == -1 or remaining_steps <= 0:
+            return [self.min_lr for _ in self.base_lrs]
+
+        mod_iter = step_after % remaining_steps
+        z = (remaining_steps - mod_iter) / remaining_steps
+        rex_factor = self.min_lr / self.max_lr + (1.0 - self.min_lr / self.max_lr) * (
+            z / (0.1 + 0.9 * z)
+        )
+        return [base_lr * rex_factor for base_lr in self.base_lrs]
 
 
 class InterpolatingLogScheduler(LRScheduler):
@@ -28,9 +107,7 @@ class InterpolatingLogScheduler(LRScheduler):
         self.num_steps = num_steps
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.q = (max_lr / min_lr) ** (  # pylint: disable=invalid-name
-            1 / (num_steps - 1)
-        )
+        self.q = (max_lr / min_lr) ** (1 / (num_steps - 1))
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
@@ -217,3 +294,65 @@ def get_cosine_schedule_with_warmup_decay_constant(
         num_cycles=num_cycles,
     )
     return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+class JaggedLRRestartScheduler(LRScheduler):
+    """Wraps another scheduler to apply per-lora-restart learning rate warmups."""
+
+    def __init__(
+        self,
+        optimizer: Optimizer,
+        inner_schedule: LRScheduler,
+        jagged_restart_steps: int,
+        jagged_restart_warmup_steps: int,
+        jagged_restart_anneal_steps: int = 1,
+        min_lr_scale: float = 0.001,
+    ) -> None:
+        self.inner_schedule = inner_schedule
+        self.restarts_steps = jagged_restart_steps
+        self.warmup_steps = jagged_restart_warmup_steps
+        self.anneal_steps = jagged_restart_anneal_steps
+        self.min_lr_scale = min_lr_scale
+        super().__init__(optimizer, inner_schedule.last_epoch)
+
+    def get_lr(self) -> float | Sequence[float]:
+        self.inner_schedule.last_epoch = self.last_epoch
+
+        original = self.inner_schedule.get_lr()
+        step = self.last_epoch
+
+        if step < self.restarts_steps - self.anneal_steps:
+            scale = 1
+        else:
+            per_restart_progress = step % self.restarts_steps
+            if per_restart_progress < self.warmup_steps:
+                cycle_t = min(1.0, (per_restart_progress) / self.warmup_steps)
+            elif per_restart_progress > (self.restarts_steps - self.anneal_steps):
+                cycle_t = min(
+                    1.0,
+                    (self.restarts_steps - per_restart_progress) / self.anneal_steps,
+                )
+            else:
+                cycle_t = 1
+            scale = cycle_t * (1 - self.min_lr_scale) + self.min_lr_scale
+
+        if isinstance(original, Sequence):
+            return [lr * scale for lr in original]
+
+        return original * scale
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return serializable state, saving inner_schedule as its own state_dict."""
+        state = {
+            key: value
+            for key, value in self.__dict__.items()
+            if key not in ("optimizer", "inner_schedule")
+        }
+        state["inner_schedule_state"] = self.inner_schedule.state_dict()
+        return state
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Restore state, including inner_schedule."""
+        inner_state = state_dict.pop("inner_schedule_state")
+        self.__dict__.update(state_dict)
+        self.inner_schedule.load_state_dict(inner_state)

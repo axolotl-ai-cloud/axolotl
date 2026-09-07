@@ -1,16 +1,16 @@
 """Module containing the MetharmenPromptTokenizingStrategy and MetharmePrompter class"""
 
-import logging
 from typing import Tuple
+
+from transformers import BatchEncoding
 
 from axolotl.prompt_tokenizers import InstructionPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger("axolotl")
+LOG = get_logger(__name__)
 
 IGNORE_TOKEN_ID = -100
-
-# pylint: disable=duplicate-code
 
 
 class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
@@ -37,6 +37,8 @@ class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         )
         if len(result["input_ids"]) == 0:
             LOG.warning("Tokenizer result is empty. You may want to audit your dataset")
+            # A no-BOS tokenizer yields zero tokens for an empty field.
+            return BatchEncoding(data={"input_ids": [], "attention_mask": []})
         # If there's already an EOS token there, subtract from the number added
         if result["input_ids"][-1] == self.tokenizer.eos_token_id:
             num_eos_tokens -= 1
@@ -66,7 +68,7 @@ class MetharmePrompter(AlpacaPrompter):
     turn_format = "{instruction}"
     turn_no_input_format = "{instruction}"
 
-    def __init__(self, *args, **kwargs):  # pylint: disable=super-init-not-called
+    def __init__(self, *args, **kwargs):
         pass
 
 

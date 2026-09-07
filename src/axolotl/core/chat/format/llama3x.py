@@ -1,6 +1,7 @@
 """
 Llama 3.x chat formatting functions for MessageContents
 """
+
 from typing import Optional
 
 from ..messages import MessageContents, Messages

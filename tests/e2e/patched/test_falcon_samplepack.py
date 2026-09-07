@@ -2,21 +2,18 @@
 E2E tests for falcon
 """
 
-import logging
-import os
 import unittest
-from pathlib import Path
 
-from axolotl.cli import load_datasets
-from axolotl.common.cli import TrainerCliArgs
+from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
-
-LOG = logging.getLogger("axolotl.tests.e2e")
-os.environ["WANDB_DISABLED"] = "true"
+from ..utils import (
+    check_model_output_exists,
+    check_tensorboard_loss_decreased,
+    with_temp_dir,
+)
 
 
 class TestFalconPatched(unittest.TestCase):
@@ -26,11 +23,10 @@ class TestFalconPatched(unittest.TestCase):
 
     @with_temp_dir
     def test_qlora(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "illuin/tiny-random-FalconForCausalLM",
-                "flash_attention": True,
+                "base_model": "axolotl-ai-co/tiny-falcon-42m",
+                "flash_attention": False,
                 "sample_packing": True,
                 "sequence_len": 2048,
                 "load_in_4bit": True,
@@ -40,7 +36,7 @@ class TestFalconPatched(unittest.TestCase):
                 "lora_dropout": 0.1,
                 "lora_target_linear": True,
                 "lora_modules_to_save": ["word_embeddings", "lm_head"],
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
                     "pad_token": "<|endoftext|>",
@@ -52,35 +48,45 @@ class TestFalconPatched(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 50,
+                "logging_steps": 1,
+                "save_steps": 50,
+                "eval_steps": 50,
                 "bf16": "auto",
+                "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "adapter_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=6.0,
+            max_final=4.7,
+        )
 
     @with_temp_dir
     def test_ft(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
-                "base_model": "illuin/tiny-random-FalconForCausalLM",
-                "flash_attention": True,
+                "base_model": "axolotl-ai-co/tiny-falcon-42m",
+                "flash_attention": False,
                 "sample_packing": True,
                 "sequence_len": 2048,
-                "val_set_size": 0.1,
+                "val_set_size": 0.05,
                 "special_tokens": {
                     "bos_token": "<|endoftext|>",
                     "pad_token": "<|endoftext|>",
@@ -92,21 +98,32 @@ class TestFalconPatched(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 50,
+                "logging_steps": 1,
+                "save_steps": 50,
+                "eval_steps": 50,
                 "bf16": "auto",
+                "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
+        cfg = validate_config(cfg)
         normalize_config(cfg)
-        cli_args = TrainerCliArgs()
-        dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+        dataset_meta = load_datasets(cfg=cfg)
 
-        train(cfg=cfg, cli_args=cli_args, dataset_meta=dataset_meta)
-        assert (Path(temp_dir) / "pytorch_model.bin").exists()
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=6.0,
+            max_final=4.7,
+        )

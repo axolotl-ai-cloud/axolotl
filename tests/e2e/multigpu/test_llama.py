@@ -2,22 +2,19 @@
 E2E tests for multigpu lora tinyllama
 """
 
-import logging
-import os
 from pathlib import Path
 
 import pytest
+import transformers
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from huggingface_hub import snapshot_download
+from packaging import version
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from ..utils import is_hopper
-
-LOG = logging.getLogger("axolotl.tests.e2e.multigpu")
-os.environ["WANDB_DISABLED"] = "true"
+from tests.e2e.utils import check_tensorboard, require_torch_2_6_0, requires_flash_attn
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -28,13 +25,17 @@ def download_model():
     snapshot_download("HuggingFaceTB/SmolLM2-135M")
 
 
+def transformers_version_eq(required_version):
+    return version.parse(transformers.__version__) == version.parse(required_version)
+
+
 class TestMultiGPULlama:
     """
     Test case for Llama models using LoRA
     """
 
+    @requires_flash_attn
     def test_lora_ddp(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -44,7 +45,7 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.05,
+                "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -52,17 +53,24 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "max_steps": 20,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 2,
+                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
+                "use_tensorboard": True,
+                "bf16": True,
+                "save_first_step": False,
+                "seed": 42,
             }
         )
 
@@ -73,24 +81,26 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss (%s) is too high"
+        )
+
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
     def test_lora_ddp_packed(self, temp_dir, gradient_accumulation_steps):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -111,17 +121,23 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:20%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
+                "max_steps": 2,
+                "micro_batch_size": 1,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
+                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
+                "use_tensorboard": True,
+                "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -132,21 +148,22 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    @pytest.mark.skipif(is_hopper(), reason="h100 doesn't support 8-bit lora")
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+        )
+
+    @requires_flash_attn
     def test_dpo_lora_ddp(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -160,7 +177,7 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.05,
+                "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -183,15 +200,20 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "max_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                "gradient_checkpointing": False,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "warmup_steps": 0,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
+                "use_tensorboard": True,
+                "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -202,20 +224,26 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
+        loss_threshold = 2.3
+        check_tensorboard(
+            temp_dir + "/runs",
+            "train/train_loss",
+            loss_threshold,
+            "Train Loss (%s) is too high",
+        )
+
+    @requires_flash_attn
     def test_dpo_qlora_ddp(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -229,7 +257,7 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                "val_set_size": 0.05,
+                "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -252,15 +280,20 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "max_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                "gradient_checkpointing": False,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "warmup_steps": 0,
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_8bit",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
+                "use_tensorboard": True,
+                "bf16": True,
+                "save_first_step": False,
             }
         )
 
@@ -271,24 +304,30 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
+        loss_threshold = 2.3
+        check_tensorboard(
+            temp_dir + "/runs",
+            "train/train_loss",
+            loss_threshold,
+            "Train Loss (%s) is too high",
+        )
+
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
     def test_fsdp(self, temp_dir, gradient_accumulation_steps):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -301,15 +340,18 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 10,
-                "micro_batch_size": 4,
+                "max_steps": 2,
+                "micro_batch_size": 2,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
+                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "fsdp": [
@@ -317,7 +359,6 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
@@ -326,6 +367,9 @@ class TestMultiGPULlama:
                     "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
+                "use_tensorboard": True,
+                "seed": 42,
+                "save_first_step": False,
             }
         )
 
@@ -336,30 +380,35 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+        )
+
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
-        ["FULL_STATE_DICT", "SHARDED_STATE_DICT"],
+        [
+            "FULL_STATE_DICT",
+            # "SHARDED_STATE_DICT",  # not supported since intermediate checkpoints fail with fsdp1
+        ],
     )
     def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
@@ -368,15 +417,19 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "max_steps": 3,
+                "save_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "fsdp": [
@@ -384,7 +437,6 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
@@ -393,6 +445,8 @@ class TestMultiGPULlama:
                     "fsdp_state_dict_type": fsdp_state_dict_type,
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
+                "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -403,20 +457,104 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+        )
+
+    @require_torch_2_6_0
+    @pytest.mark.parametrize(
+        "attention_backend",
+        [pytest.param("flash", marks=requires_flash_attn), "flex"],
+    )
+    @pytest.mark.parametrize(
+        "fsdp_reshard_after_forward",
+        [True, False],
+    )
+    def test_fsdp2_packed(
+        self, temp_dir, attention_backend, fsdp_reshard_after_forward
+    ):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
+                "sequence_len": 2048,
+                "val_set_size": 0.1,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 4,
+                "gradient_accumulation_steps": 2,
+                "gradient_checkpointing": True,
+                "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_8bit",
+                "lr_scheduler": "cosine",
+                "fsdp": [
+                    "auto_wrap",
+                ],
+                "fsdp_config": {
+                    "fsdp_version": 2,
+                    # "fsdp_forward_prefetch": True,  # not yet implemented in accelerate
+                    "fsdp_offload_params": False,
+                    "fsdp_cpu_ram_efficient_loading": False,
+                    "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "fsdp_reshard_after_forward": fsdp_reshard_after_forward,
+                },
+                "use_tensorboard": True,
+                "save_first_step": False,
+            }
+        )
+        if attention_backend == "flash":
+            cfg.attn_implementation = "flash_attention_2"
+        elif attention_backend == "flex":
+            cfg.attn_implementation = "flex_attention"
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
+        )
+
+    @requires_flash_attn
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
@@ -434,8 +572,8 @@ class TestMultiGPULlama:
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
-                "val_set_size": 0.05,
+                "sequence_len": 1024,
+                "val_set_size": 0.01,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -443,16 +581,18 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
-                        "split": "train[:25%]",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "max_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "fsdp": [
@@ -460,15 +600,20 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
-                    "fsdp_limit_all_gathers": True,
+                    # pinned to FSDP1: accelerate's fsdp2_load_full_state_dict
+                    # cannot resolve prequantized bnb quant-state keys
+                    # (e.g. `...weight.absmax`)
+                    "fsdp_version": 1,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
                     "fsdp_cpu_ram_efficient_loading": True,
                     "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                    "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
+                "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -479,87 +624,57 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
-        [1, 4],
+        [1, 2],
     )
-    def test_ds_zero3_packed(self, temp_dir, gradient_accumulation_steps):
-        # pylint: disable=duplicate-code
-        cfg = DictDefault(
-            {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "sample_packing": True,
-                "pad_to_sequence_len": True,
-                "sequence_len": 2048,
-                "val_set_size": 0.05,
-                "special_tokens": {
-                    "pad_token": "<|endoftext|>",
-                },
-                "datasets": [
-                    {
-                        "path": "tatsu-lab/alpaca",
-                        "type": "alpaca",
-                    },
-                ],
-                "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": gradient_accumulation_steps,
-                "output_dir": temp_dir,
-                "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
-                "lr_scheduler": "cosine",
-                "flash_attention": True,
-                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.json"),
-            }
-        )
-
-        # write cfg to yaml file
-        Path(temp_dir).mkdir(parents=True, exist_ok=True)
-        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
-            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
-
-        execute_subprocess_async(
-            [
-                "accelerate",
-                "launch",
-                "--num-processes",
-                "2",
-                "--main_process_port",
-                f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
-            ]
-        )
-
-    def test_ds_zero3_qlora_packed(self, temp_dir):
-        # pylint: disable=duplicate-code
-        cfg = DictDefault(
-            {
-                "base_model": "HuggingFaceTB/SmolLM2-135M",
-                "load_in_4bit": True,
+    @pytest.mark.parametrize(
+        "deepspeed",
+        [
+            "deepspeed_configs/zero3_bf16.json",
+            "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
+            # "deepspeed_configs/zero3_bf16_cpuoffload_params.json",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "qlora",
+        [True, False],
+    )
+    @requires_flash_attn
+    def test_ds_zero3_packed(
+        self, temp_dir, gradient_accumulation_steps, deepspeed, qlora
+    ):
+        if qlora:
+            adapter = {
                 "adapter": "qlora",
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
+                "load_in_4bit": True,
+            }
+        else:
+            adapter = {}
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "sample_packing": True,
-                "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
-                "sequence_len": 2048,
+                "sequence_len": 1024,
                 "val_set_size": 0.05,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
@@ -568,18 +683,23 @@ class TestMultiGPULlama:
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
                 "output_dir": temp_dir,
-                "learning_rate": 0.0001,
-                "optimizer": "adamw_torch",
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16.json"),
+                "deepspeed": str(AXOLOTL_ROOT / deepspeed),
+                "use_tensorboard": True,
+                "save_first_step": False,
+                **adapter,
             }
         )
 
@@ -590,56 +710,60 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "--main_process_port",
+                "--main-process-port",
                 f"{get_torch_dist_unique_port()}",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
             ]
         )
 
-    def test_8bit_lora_ds_zero3(self, temp_dir):
-        # pylint: disable=duplicate-code
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.45, "Train Loss (%s) is too high"
+        )
+
+    @requires_flash_attn
+    def test_ds_zero3_8bit_lora_packed(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "TinyLlama/TinyLlama_v1.1",
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
                 "load_in_8bit": True,
-                "tokenizer_type": "LlamaTokenizer",
-                "sequence_len": 2048,
-                "sample_packing": True,
-                "eval_sample_packing": False,
-                "pad_to_sequence_len": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
+                "sequence_len": 1024,
                 "val_set_size": 0.05,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
                         "path": "tatsu-lab/alpaca",
                         "type": "alpaca",
+                        "split": "train[:10%]",
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 15,
-                "micro_batch_size": 4,
-                "gradient_accumulation_steps": 4,
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
-                "optimizer": "adamw_torch",
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "deepspeed": "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
+                "deepspeed": str(
+                    AXOLOTL_ROOT / "deepspeed_configs/zero3_bf16_cpuoffload_all.json"
+                ),
+                "use_tensorboard": True,
+                "save_first_step": False,
             }
         )
 
@@ -650,12 +774,235 @@ class TestMultiGPULlama:
 
         execute_subprocess_async(
             [
-                "accelerate",
-                "launch",
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
                 "--num-processes",
                 "2",
-                "-m",
-                "axolotl.cli.train",
-                str(Path(temp_dir) / "config.yaml"),
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
             ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+        )
+
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 2],
+    )
+    @pytest.mark.parametrize(
+        "qlora",
+        [True, False],
+    )
+    @requires_flash_attn
+    def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps, qlora):
+        if qlora:
+            adapter = {
+                "adapter": "qlora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "load_in_4bit": True,
+            }
+        else:
+            adapter = {}
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
+                "sequence_len": 1024,
+                "val_set_size": 0.01,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero2.json"),
+                "use_tensorboard": True,
+                "seed": 42,
+                "save_first_step": False,
+                **adapter,
+            }
+        )
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+        )
+
+    @pytest.mark.parametrize(
+        "gradient_accumulation_steps",
+        [1, 2],
+    )
+    @pytest.mark.parametrize(
+        "qlora",
+        [True, False],
+    )
+    @requires_flash_attn
+    def test_ds_zero1_packed(self, temp_dir, gradient_accumulation_steps, qlora):
+        if qlora:
+            adapter = {
+                "adapter": "qlora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "load_in_4bit": True,
+            }
+        else:
+            adapter = {}
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
+                "sequence_len": 1024,
+                "val_set_size": 0.01,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
+                "use_tensorboard": True,
+                "save_first_step": False,
+                **adapter,
+            }
+        )
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss (%s) is too high"
+        )
+
+    @pytest.mark.skip(
+        reason="fix untrained tokens brittle with lots of edge cases in latest transformers"
+    )
+    def test_fix_untrained_tokens(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "fix_untrained_tokens": True,
+                "sequence_len": 512,
+                "val_set_size": 0.0,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                    "bos_token": "<|custom_im_start|>",
+                    "eos_token": "<|custom_im_end|>",
+                },
+                "datasets": [
+                    {
+                        "chat_template": "jinja",
+                        "chat_template_jinja": "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{'<|custom_im_start|>' + message['role'] + '\n' + message['content'] + '<|custom_im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|custom_im_start|>assistant\n' }}{% endif %}",
+                        "path": "mlabonne/FineTome-100k",
+                        "type": "chat_template",
+                        "split": "train[:10%]",
+                        "field_messages": "conversations",
+                        "message_field_role": "from",
+                        "message_field_content": "value",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                # "gradient_checkpointing": True,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": True,
+                # "deepspeed": str(AXOLOTL_ROOT / "deepspeed_configs/zero1.json"),
+                "use_tensorboard": True,
+                "save_first_step": False,
+            }
+        )
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 4.0, "Train Loss (%s) is too high"
         )

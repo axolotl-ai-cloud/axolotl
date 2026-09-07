@@ -1,9 +1,7 @@
-"""
-DataCollator for axolotl to pad labels and position_ids for packed sequences
-"""
+"""Data collators for axolotl to pad labels and position_ids for packed sequences"""
 
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any, List
 
 import numpy as np
 from transformers import PreTrainedTokenizerBase
@@ -46,15 +44,16 @@ class DataCollatorForSeq2Seq:
     """
 
     tokenizer: PreTrainedTokenizerBase
-    model: Optional[Any] = None
-    padding: Union[bool, str, PaddingStrategy] = True
-    max_length: Optional[int] = None
-    pad_to_multiple_of: Optional[int] = None
+    model: Any | None = None
+    padding: bool | str | PaddingStrategy = True
+    max_length: int | None = None
+    pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
 
     def __call__(self, features, return_tensors=None):
+        has_attn_mask = "attention_mask" in features[0].keys()
         labels = None
         if return_tensors is None:
             return_tensors = self.return_tensors
@@ -82,9 +81,11 @@ class DataCollatorForSeq2Seq:
 
                 padding_side = self.tokenizer.padding_side
                 for feature in features:
-                    remainder = [pad_token_id] * (
-                        max_feature_length - len(feature[feature_name])
-                    )
+                    remainder_len = max_feature_length - len(feature[feature_name])
+                    if feature_name == "position_ids":
+                        remainder = list(range(remainder_len))
+                    else:
+                        remainder = [pad_token_id] * remainder_len
                     if isinstance(feature[feature_name], list):
                         feature[feature_name] = (
                             feature[feature_name] + remainder
@@ -107,6 +108,8 @@ class DataCollatorForSeq2Seq:
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors=return_tensors,
         )
+        if not has_attn_mask and "attention_mask" in features:
+            del features["attention_mask"]
 
         # prepare decoder_input_ids
         if (
@@ -148,6 +151,7 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                         np.array(item[feature]) for item in features_ if feature in item
                     ]
                     out_features[i][feature] = np.concatenate(arrays)
+
         return super().__call__(out_features, return_tensors=return_tensors)
 
 
@@ -157,9 +161,11 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     Collator for multipack specific to the using the BatchSampler
     """
 
+    squash_position_ids: bool = False
+
     def __call__(self, features, return_tensors=None):
         if not isinstance(features[0], list):
-            features = [features]
+            features: List[List[dict]] = [features]
         out_features = [{} for _ in features]
         for i, features_ in enumerate(features):
             for feature in features_[0].keys():
@@ -172,11 +178,21 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                         if feature in item
                     ]
                     out_features[i][feature] = np.concatenate(arrays)
+                elif feature == "position_ids" and self.squash_position_ids:
+                    arrays = [
+                        np.array(item[feature]) for item in features_ if feature in item
+                    ]
+                    # concatenate, get total length and create arange of new total position ids
+                    position_ids = np.concatenate(arrays)
+                    total_length = position_ids.shape[0]
+                    position_ids = np.arange(total_length)
+                    out_features[i][feature] = position_ids
                 else:
                     arrays = [
                         np.array(item[feature]) for item in features_ if feature in item
                     ]
                     out_features[i][feature] = np.concatenate(arrays)
+
         return super().__call__(out_features, return_tensors=return_tensors)
 
 

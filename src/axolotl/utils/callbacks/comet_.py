@@ -1,17 +1,17 @@
 """Comet module for trainer callbacks"""
 
-import logging
 from typing import TYPE_CHECKING
 
 import comet_ml
 from transformers import TrainerCallback, TrainerControl, TrainerState
 
 from axolotl.utils.distributed import is_main_process
+from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from axolotl.core.trainer_builder import AxolotlTrainingArguments
+    from axolotl.core.training_args import AxolotlTrainingArguments
 
-LOG = logging.getLogger("axolotl.callbacks")
+LOG = get_logger(__name__)
 
 
 class SaveAxolotlConfigtoCometCallback(TrainerCallback):
@@ -22,10 +22,10 @@ class SaveAxolotlConfigtoCometCallback(TrainerCallback):
 
     def on_train_begin(
         self,
-        args: "AxolotlTrainingArguments",  # pylint: disable=unused-argument
-        state: TrainerState,  # pylint: disable=unused-argument
+        args: "AxolotlTrainingArguments",
+        state: TrainerState,
         control: TrainerControl,
-        **kwargs,  # pylint: disable=unused-argument
+        **kwargs,
     ):
         if is_main_process():
             try:

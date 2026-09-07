@@ -1,9 +1,11 @@
 base_model: ai21labs/Jamba-v0.1
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
 trust_remote_code: true
 
 load_in_8bit: false
 load_in_4bit: true
-strict: false
 
 datasets:
   - path: mhenrichsen/alpaca_2k_test
@@ -37,26 +39,20 @@ optimizer: paged_adamw_8bit
 lr_scheduler: cosine
 learning_rate: 0.00001
 
-train_on_inputs: false
-group_by_length: false
 bf16: auto
-fp16:
 tf32: false
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-early_stopping_patience:
 resume_from_checkpoint:
-local_rank:
 logging_steps: 1
-xformers_attention:
-flash_attention: true
+attn_implementation: flash_attention_2
 
-warmup_steps: 10
+warmup_ratio: 0.1
 evals_per_epoch:
 saves_per_epoch: 1
-debug:
-deepspeed:
 weight_decay: 0.0
 special_tokens:
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

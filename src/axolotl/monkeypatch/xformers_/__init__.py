@@ -1,6 +1,7 @@
 """
 Fused MLP layer for incrementally improved training efficiency
 """
+
 import torch
 from transformers.models.llama.modeling_llama import LlamaMLP
 from xformers.ops import SwiGLU
@@ -35,7 +36,7 @@ class FusedMLP(torch.nn.Module):
         self.swiglu.w3.weight.data = down_proj.weight.data
 
     def _post_training(self, model, name):
-        w1, w2 = torch.split(  # pylint: disable=invalid-name
+        w1, w2 = torch.split(
             self.swiglu.w12.weight.data, self.config.intermediate_size, dim=0
         )
 
@@ -47,5 +48,5 @@ class FusedMLP(torch.nn.Module):
 
         set_module_name(model, name, new_mlp)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # pylint: disable=invalid-name
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.swiglu(x)

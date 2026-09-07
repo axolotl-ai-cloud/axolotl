@@ -2,15 +2,16 @@
 
 import importlib
 import inspect
-import logging
 
-LOG = logging.getLogger("axolotl.prompt_strategies.messages")
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def load(tokenizer, cfg, ds_cfg, processor=None):
     try:
         strategy = ds_cfg.get("input_transform", "chat")
-        # pylint: disable=duplicate-code
+
         load_fn = "load"
         if strategy.split(".")[-1].startswith("load_"):
             load_fn = strategy.split(".")[-1]
@@ -28,7 +29,6 @@ def load(tokenizer, cfg, ds_cfg, processor=None):
         return func(tokenizer, cfg, **load_kwargs)
     except ModuleNotFoundError:
         return None
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         LOG.error(f"Failed to load prompt strategy `{strategy}`: {str(exc)}")
         raise exc
-    return None
