@@ -1283,8 +1283,8 @@ bidirectional context.</p>
 <section id="quickstart" class="level3">
 <h3 class="anchored" data-anchor-id="quickstart">Quickstart</h3>
 <p>Train with an example config (Llama‑3.2 1B):
-- Pretrain: <code>axolotl train examples/llama-3/diffusion-3.2-1b-pretrain.yaml</code>
-- SFT: <code>axolotl train examples/llama-3/diffusion-3.2-1b-sft.yaml</code></p>
+- Pretrain: <code>axolotl train examples/llama-3/diffusion/pretrain-1b.yaml</code>
+- SFT: <code>axolotl train examples/llama-3/diffusion/sft-1b.yaml</code></p>
 </section>
 <section id="basic-configuration" class="level3">
 <h3 class="anchored" data-anchor-id="basic-configuration">Basic Configuration</h3>
@@ -1994,7 +1994,7 @@ on the <code>cp</code> axis (e.g.&nbsp;GLM-5.2 DSA via the kernels plugin); stoc
 </section>
 <section id="example-config" class="level3">
 <h3 class="anchored" data-anchor-id="example-config">Example Config</h3>
-<p>See <a href="examples/llama-3/sparse-finetuning.yaml"><code>examples/llama-3/sparse-finetuning.yaml</code></a> for a complete example.</p>
+<p>See <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/sparse-finetuning.yaml"><code>examples/llama-3/sparse-finetuning.yaml</code></a> for a complete example.</p>
 <hr>
 </section>
 <section id="inference-with-vllm" class="level3">
@@ -2113,28 +2113,20 @@ sparse model before inference for even greater performance benefits.:</p>
 <span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_layer_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_fused_linear_cross_entropy</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_use_token_scaling</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_use_token_scaling</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_kernel_impl</span><span class="kw">:</span><span class="at"> cutedsl</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="supported-models-2" class="level3">
 <h3 class="anchored" data-anchor-id="supported-models-2">Supported Models</h3>
+<p>Any model type in liger-kernel’s native dispatch table (<code>liger_kernel.transformers.monkey_patch.MODEL_TYPE_TO_APPLY_LIGER_FN</code>) is supported out of the box — llama, mistral, mixtral, qwen2/qwen3 families, gemma through gemma4, deepseek_v4, glm4, phi3, olmo2, paligemma, and many more (50+ types as of liger 0.8.1).</p>
+<p>On top of the native table, axolotl hand-patches these types (not covered upstream, or extended with kernels the native path lacks):</p>
 <ul>
 <li>deepseek_v2</li>
-<li>gemma</li>
-<li>gemma2</li>
-<li>gemma3</li>
-<li>granite</li>
+<li>gemma4_unified / gemma4_unified_text</li>
+<li>granitemoe</li>
 <li>jamba</li>
-<li>llama</li>
-<li>mistral</li>
-<li>mixtral</li>
-<li>mllama</li>
-<li>mllama_text_model</li>
-<li>olmo2</li>
-<li>paligemma</li>
-<li>phi3</li>
-<li>qwen2</li>
-<li>qwen2_5_vl</li>
-<li>qwen2_vl</li>
+<li>qwen3_5 / qwen3_5_moe (adds the fused gated-RMSNorm kernel for linear-attention layers)</li>
 </ul>
 </section>
 <section id="citation-3" class="level3">

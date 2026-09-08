@@ -940,8 +940,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 31B Dense QLoRA (1x80GB @ ~25.2 GiB)</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/gemma4/31b-qlora.yaml</span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># E2B vision LoRA (1x80GB @ ~10.4 GiB)</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/gemma4/e2b-vision-lora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 31B Dense LoRA FSDP2, 32k sequences (multi-GPU)</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/gemma4/31b-lora-fsdp.yaml</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co"># E2B vision LoRA (1x80GB @ ~10.4 GiB)</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/gemma4/e2b-vision-lora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <section id="moe-expert-quantization-expert-lora-26b-a4b-only" class="level3">
 <h3 class="anchored" data-anchor-id="moe-expert-quantization-expert-lora-26b-a4b-only">MoE Expert Quantization &amp; Expert LoRA (26B-A4B only)</h3>
 <p>The 26B-A4B config uses ScatterMoE kernels via the transformers <code>ExpertsInterface</code> and quantizes expert weights on load. To learn about expert quantization, expert LoRA targeting, and related limitations, see the <a href="https://docs.axolotl.ai/docs/expert_quantization.html">MoE Expert Quantization</a> docs.</p>
@@ -957,6 +960,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="tips" class="level3">
 <h3 class="anchored" data-anchor-id="tips">TIPS</h3>
 <ul>
+<li><strong>Gradient spikes</strong>: Gemma 4’s text attention uses <code>scaling=1.0</code> with QK-RMSNorm, leaving the softmax structurally near-saturated. LoRA runs hit intermittent pre-clip gradient norms 100-1000× their neighbours with no matching loss spike (<a href="https://github.com/huggingface/transformers/issues/45676">transformers#45676</a>). The 31B configs compensate with <code>learning_rate: 5e-5</code> and <code>max_grad_norm: 0.1</code>; raise either at your own risk.</li>
 <li><code>gemma4_hybrid_attn_impl: true</code> trains ~2× faster than <code>flex_attention</code> on 31B (~25.2 GiB reserved, packing on) and avoids the flex <code>head_dim=512</code> kernel, which can exhaust shared memory on Blackwell.</li>
 <li>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
 <li>You can run full finetuning by removing <code>adapter: qlora</code>, <code>load_in_4bit: true</code>, and <code>quantize_moe_experts: true</code> from the config. This is heavy and has not been tested.</li>

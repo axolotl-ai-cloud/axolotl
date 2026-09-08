@@ -1028,6 +1028,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="liger-kernels">Liger Kernels</h3>
 <p>Provides efficient Triton kernels to improve training speed and reduce memory usage.</p>
 <ul>
+<li><strong>Config:</strong> <code>liger_kernel_impl: cutile | cutedsl</code> optionally selects an alternative kernel backend (liger-kernel &gt;= 0.8.1, off by default): <code>cutile</code> (<code>pip install cuda-tile</code>) covers cross_entropy/geglu/layer_norm/rope and more; <code>cutedsl</code> (<code>pip install nvidia-cutlass-dsl</code>) covers cross_entropy/rms_norm, tuned for Blackwell. <code>fused_linear_cross_entropy</code> stays on Triton with either backend.</li>
 <li><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#liger-kernels">Custom Integrations - Liger Kernels</a></li>
 </ul>
 </section>

@@ -1300,7 +1300,7 @@ Note
 <tbody>
 <tr class="odd">
 <td>Liger</td>
-<td>plugin <code>liger</code> + <code>liger_rope</code>, <code>liger_rms_norm(_gated)</code>, <code>liger_swiglu</code>/<code>liger_glu_activation</code>, <code>liger_cross_entropy</code>, <code>liger_fused_linear_cross_entropy</code></td>
+<td>plugin <code>liger</code> + <code>liger_rope</code>, <code>liger_rms_norm(_gated)</code>, <code>liger_swiglu</code>/<code>liger_glu_activation</code>, <code>liger_cross_entropy</code>, <code>liger_fused_linear_cross_entropy</code>; opt-in backend via <code>liger_kernel_impl: cutile\|cutedsl</code> (fused-linear-CE stays Triton)</td>
 <td>RoPE, RMSNorm, SwiGLU, CE, fused-linear-CE</td>
 </tr>
 <tr class="even">

@@ -1051,6 +1051,7 @@ Tip
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> argilla/ultrafeedback-binarized-preferences</span></span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>To run the DPO loss through liger-kernel’s fused (chunked) implementation, set <code>dpo_use_liger_kernel: true</code>. The fused path supports <code>dpo_loss_type</code> values <code>sigmoid</code> (default), <code>hinge</code>, <code>exo_pair</code>, <code>nca_pair</code>, <code>robust</code>, <code>bco_pair</code>, <code>sppo_hard</code>, <code>apo_zero</code>, <code>apo_down</code>, and <code>discopop</code> (liger-kernel &gt;= 0.8.1); <code>ipo</code> is not supported on the fused path, and only the first entry of <code>dpo_loss_type</code> is used.</p>
 <p>DPO supports the following types with the following dataset format:</p>
 <section id="chatml.argilla" class="level4">
 <h4 class="anchored" data-anchor-id="chatml.argilla">chatml.argilla</h4>
