@@ -21,25 +21,20 @@ datasets:
       role: from
       content: value
 val_set_size: 0.05
-output_dir: ./outputs/gemma4-31b-qlora
+output_dir: ./outputs/gemma4-31b-lora
 
-sequence_len: 2048
+sequence_len: 32768
 sample_packing: true
 
-load_in_4bit: true
-adapter: qlora
-lora_r: 16
-lora_alpha: 32
-lora_dropout: 0
-
+adapter: lora
+lora_r: 256
+lora_alpha: 512
+lora_dropout: 0.05
 # Restrict LoRA to text backbone only (skip vision/audio encoders)
 # using regex to match only the text decoder attention projections.
 lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
 
-bnb_config_kwargs:
-  bnb_4bit_use_double_quant: true
-
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 1
 optimizer: adamw_torch_8bit
@@ -64,4 +59,12 @@ warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
-special_tokens:
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer
+  state_dict_type: SHARDED_STATE_DICT
+  final_state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
