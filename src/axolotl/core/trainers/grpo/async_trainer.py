@@ -3072,7 +3072,17 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         all_entropies.append(entropies)
 
                 if compute_aux_loss:
-                    all_aux_losses.append(outputs.aux_loss)
+                    batch_aux_loss = outputs.aux_loss
+                    # HF's load_balancing_loss_func returns a plain int 0
+                    # (not a Tensor) when gate_logits are absent — normalize
+                    # so torch.stack below doesn't choke on a mixed list.
+                    if not torch.is_tensor(batch_aux_loss):
+                        batch_aux_loss = torch.tensor(
+                            float(batch_aux_loss),
+                            device=input_ids.device,
+                            dtype=torch.float32,
+                        )
+                    all_aux_losses.append(batch_aux_loss)
 
         logps = torch.cat(all_logps, dim=0)
         entropies = torch.cat(all_entropies, dim=0) if compute_entropy else None

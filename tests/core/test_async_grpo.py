@@ -745,6 +745,72 @@ class TestGetPerTokenLogpsMultimodalTailBatch(unittest.TestCase):
         self.assertEqual(logps.shape, (B, logits_to_keep))
 
 
+class TestGetPerTokenLogpsAuxLossIntFallback(unittest.TestCase):
+    """HF's load_balancing_loss_func returns a plain int 0 (not a Tensor)
+    when gate_logits are absent for a given forward pass; torch.stack must
+    not choke on that when aggregating aux_loss across batch chunks."""
+
+    def _make_trainer(self):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        trainer = AsyncGRPOTrainer.__new__(AsyncGRPOTrainer)
+        trainer.is_fsdp_enabled = False
+        trainer.accelerator = MagicMock()
+        trainer.accelerator.unwrap_model = lambda m, keep_fp32_wrapper=True: m
+        trainer.use_liger_kernel = False
+        trainer.temperature = 1.0
+        trainer.model_kwarg_keys = set()
+        return trainer
+
+    def test_int_zero_aux_loss_is_normalized_to_tensor(self):
+        trainer = self._make_trainer()
+        B, L, V = 2, 6, 10
+        logits_to_keep = 3
+
+        def fake_model(**kwargs):
+            n = kwargs["input_ids"].size(0)
+            out = MagicMock()
+            out.logits = torch.randn(n, L, V)
+            out.aux_loss = 0  # HF fallback when router logits are absent
+            return out
+
+        logps, _entropies, aux_loss = trainer._get_per_token_logps_and_entropies(
+            fake_model,
+            torch.randint(0, V, (B, L)),
+            torch.ones(B, L, dtype=torch.long),
+            logits_to_keep,
+            compute_aux_loss=True,
+        )
+        self.assertTrue(torch.is_tensor(aux_loss))
+        self.assertEqual(aux_loss.item(), 0.0)
+
+    def test_mixed_int_and_tensor_aux_loss_across_chunks_does_not_crash(self):
+        trainer = self._make_trainer()
+        B, L, V = 4, 6, 10  # batch_size=2 -> two chunks
+        logits_to_keep = 3
+        calls = {"n": 0}
+
+        def fake_model(**kwargs):
+            n = kwargs["input_ids"].size(0)
+            out = MagicMock()
+            out.logits = torch.randn(n, L, V)
+            # First chunk: real MoE loss. Second chunk: HF's int-0 fallback.
+            out.aux_loss = torch.tensor(1.5) if calls["n"] == 0 else 0
+            calls["n"] += 1
+            return out
+
+        _logps, _entropies, aux_loss = trainer._get_per_token_logps_and_entropies(
+            fake_model,
+            torch.randint(0, V, (B, L)),
+            torch.ones(B, L, dtype=torch.long),
+            logits_to_keep,
+            batch_size=2,
+            compute_aux_loss=True,
+        )
+        self.assertTrue(torch.is_tensor(aux_loss))
+        self.assertAlmostEqual(aux_loss.item(), 0.75, places=5)  # mean(1.5, 0)
+
+
 class TestComputeLossAuxLoss(unittest.TestCase):
     """MoE router aux loss must be requested, added to the policy loss with
     ``router_aux_loss_coef``, and logged — matching stock TRL's
