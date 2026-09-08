@@ -9,7 +9,7 @@
 #   - The NeMo Gym repo will be auto-cloned to ~/Gym on first run
 #
 # Usage:
-#   axolotl train examples/nemo_gym_sudoku.yaml
+#   axolotl train src/axolotl/integrations/nemo_gym/examples/nemo_gym_sudoku.yaml
 
 base_model: Qwen/Qwen2.5-1.5B-Instruct
 model_type: AutoModelForCausalLM
