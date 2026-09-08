@@ -235,3 +235,141 @@ class TestExpertsClassMetadata:
             sonicmoe_experts_forward_with_lora(
                 fake_self, hidden, top_k_index, top_k_weights
             )
+
+
+class TestFacadeActivationResolution:
+    """The facade must hand upstream an activation name its ACT_MAP accepts.
+
+    Gemma4 declares ``hidden_activation="gelu_pytorch_tanh"`` and has no ``hidden_act``
+    key at all, so reading ``hidden_act`` alone silently yields SwiGLU on a GeGLU model.
+    """
+
+    @staticmethod
+    def _facade_act(config):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            _LoRAExpertsFacade,
+        )
+
+        module = SimpleNamespace(config=config, num_experts=8)
+        facade = _LoRAExpertsFacade(module, torch.zeros(1), None, torch.zeros(1), None)
+        return facade.config.hidden_act
+
+    def test_gemma4_resolves_to_geglu(self):
+        from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
+        config = Gemma4TextConfig()
+        assert not hasattr(config, "hidden_act")
+        assert config.hidden_activation == "gelu_pytorch_tanh"
+        assert self._facade_act(config) == "gelu"
+
+    def test_hidden_act_models_unchanged(self):
+        assert self._facade_act(SimpleNamespace(hidden_act="silu")) == "silu"
+        assert self._facade_act(SimpleNamespace(hidden_act="gelu")) == "gelu"
+        assert self._facade_act(SimpleNamespace(hidden_act="relu")) == "relu"
+
+    def test_unaliased_activation_still_raises_upstream(self):
+        """The `.get(act, act)` fallback must not coerce unknown names to a default."""
+        from transformers.integrations.sonicmoe import ACT_MAP
+
+        assert (
+            self._facade_act(SimpleNamespace(hidden_act="quadratic_glu")) not in ACT_MAP
+        )
+
+    def test_resolved_name_is_accepted_by_upstream(self):
+        """Upstream raises on anything outside its ACT_MAP, so aliases must land in it."""
+        from transformers.integrations.sonicmoe import ACT_MAP
+        from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
+        for config in (
+            Gemma4TextConfig(),
+            SimpleNamespace(hidden_activation="gelu_tanh"),
+            SimpleNamespace(hidden_act="silu"),
+        ):
+            assert self._facade_act(config) in ACT_MAP
+
+
+class TestEpilogueCheck:
+    """sonicmoe picks its epilogue from `hidden_act` and never calls `_apply_gate`, so an
+    epilogue the kernel cannot express must raise rather than silently run SwiGLU."""
+
+    @staticmethod
+    def _experts(model_type, cls_name, **overrides):
+        import importlib
+
+        from transformers import AutoConfig
+
+        config = AutoConfig.for_model(model_type)
+        config = getattr(config, "text_config", config)
+        for key, value in overrides.items():
+            setattr(config, key, value)
+        config._experts_implementation = None
+        module = importlib.import_module(
+            f"transformers.models.{model_type}.modeling_{model_type}"
+        )
+        with torch.device("meta"):
+            return getattr(module, cls_name)(config)
+
+    @staticmethod
+    def _check(experts, *, limit, path):
+        from axolotl.integrations.kernels.libs.sonicmoe.epilogue import check_epilogue
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4 import (
+            resolve_gated_activation,
+        )
+
+        check_epilogue(
+            experts,
+            resolve_gated_activation(experts.config),
+            concat=getattr(experts, "is_concatenated", True),
+            limit=limit,
+            path=path,
+        )
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name,overrides",
+        [
+            ("qwen3_moe", "Qwen3MoeExperts", {}),
+            (
+                "gemma4",
+                "Gemma4TextExperts",
+                {"num_experts": 8, "moe_intermediate_size": 64},
+            ),
+        ],
+    )
+    def test_representable_epilogues_pass(self, model_type, cls_name, overrides):
+        experts = self._experts(model_type, cls_name, **overrides)
+        self._check(experts, limit=None, path="dense")
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name",
+        [
+            ("gpt_oss", "GptOssExperts"),
+            ("deepseek_v4", "DeepseekV4Experts"),
+        ],
+    )
+    def test_custom_apply_gate_rejected_on_dense_path(self, model_type, cls_name):
+        experts = self._experts(model_type, cls_name)
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(experts, limit=None, path="dense")
+
+    def test_clamped_swiglu_accepted_on_nvfp4_path(self):
+        """DeepSeek-V4 is plain SwiGLU plus a clamp, which `gated_activation` honors."""
+        experts = self._experts("deepseek_v4", "DeepseekV4Experts")
+        self._check(experts, limit=experts.limit, path="NVFP4 grouped")
+
+    def test_sigmoid_glu_rejected_on_nvfp4_path(self):
+        """`minimax_m3_vl` is a fixture, not a supported model: it is the only upstream
+        sigmoid-GLU arch with `is_transposed=False`, so the only one reaching this path."""
+        experts = self._experts("minimax_m3_vl", "MiniMaxM3VLExperts")
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(experts, limit=experts.limit, path="NVFP4 grouped")
+
+    def test_verdict_is_per_instance(self):
+        """`_apply_gate` closes over instance state, so a class-keyed cache would leak
+        one module's verdict to another."""
+        ok = self._experts("qwen3_moe", "Qwen3MoeExperts")
+        self._check(ok, limit=None, path="dense")
+
+        bad = self._experts("qwen3_moe", "Qwen3MoeExperts")
+        bad._apply_gate = lambda gate_up: gate_up.chunk(2, dim=-1)[0]
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(bad, limit=None, path="dense")

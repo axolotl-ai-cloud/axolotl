@@ -14,7 +14,7 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_6_0
+from tests.e2e.utils import check_tensorboard, require_torch_2_6_0, requires_flash_attn
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -34,6 +34,7 @@ class TestMultiGPULlama:
     Test case for Llama models using LoRA
     """
 
+    @requires_flash_attn
     def test_lora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -94,6 +95,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
@@ -160,6 +162,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     def test_dpo_lora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -239,6 +242,7 @@ class TestMultiGPULlama:
             "Train Loss (%s) is too high",
         )
 
+    @requires_flash_attn
     def test_dpo_qlora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -318,6 +322,7 @@ class TestMultiGPULlama:
             "Train Loss (%s) is too high",
         )
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
@@ -389,6 +394,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
         [
@@ -468,7 +474,7 @@ class TestMultiGPULlama:
     @require_torch_2_6_0
     @pytest.mark.parametrize(
         "attention_backend",
-        ["flash", "flex"],
+        [pytest.param("flash", marks=requires_flash_attn), "flex"],
     )
     @pytest.mark.parametrize(
         "fsdp_reshard_after_forward",
@@ -547,6 +553,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         cfg = DictDefault(
             {
@@ -647,6 +654,7 @@ class TestMultiGPULlama:
         "qlora",
         [True, False],
     )
+    @requires_flash_attn
     def test_ds_zero3_packed(
         self, temp_dir, gradient_accumulation_steps, deepspeed, qlora
     ):
@@ -724,6 +732,7 @@ class TestMultiGPULlama:
         "qlora",
         [True, False],
     )
+    @requires_flash_attn
     def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps, qlora):
         if qlora:
             adapter = {
@@ -800,6 +809,7 @@ class TestMultiGPULlama:
         "qlora",
         [True, False],
     )
+    @requires_flash_attn
     def test_ds_zero1_packed(self, temp_dir, gradient_accumulation_steps, qlora):
         if qlora:
             adapter = {

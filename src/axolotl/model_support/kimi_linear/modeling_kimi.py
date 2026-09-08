@@ -42,7 +42,7 @@ try:
     from fla.ops.kda.gate import fused_kda_gate
 except ImportError as err:
     raise ImportError(
-        "Plese run `pip uninstall fla-core flash-linear-attention -y && pip install git+https://github.com/fla-org/flash-linear-attention@v0.4.0`"
+        "Please run `pip install fla-core==0.4.1 flash-linear-attention==0.4.1`"
     ) from err
 
 from axolotl.model_support.kimi_linear.configuration_kimi import KimiLinearConfig
@@ -564,7 +564,8 @@ class KimiDeltaAttention(nn.Module):
             cu_seqlens=cu_seqlens,
         )
         g = self.f_b_proj(self.f_a_proj(hidden_states))
-        g = fused_kda_gate(g, self.A_log, self.head_dim, g_bias=self.dt_bias)
+        g = rearrange(g, "... (h d) -> ... h d", d=self.head_dim)
+        g = fused_kda_gate(g, self.A_log, self.dt_bias)
         beta = self.b_proj(hidden_states).float().sigmoid()
 
         q, k = map(

@@ -286,7 +286,7 @@ These control how the trainer interacts with vLLM.
 | `vllm_lora_sync` | bool | `false` | Sync LoRA adapters via filesystem instead of NCCL merge |
 | `vllm_sync_interval` | int | `None` | Sync weights every N optimizer steps |
 | `vllm_enable_sleep_mode` | bool | `None` | Offload vLLM VRAM when idle (colocate mode) |
-| `vllm_guided_decoding_regex` | str | `None` | Regex constraint for guided decoding |
+| `vllm_guided_decoding_regex` | str | `None` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7) |
 
 For async pipeline and off-policy correction options, see the [GRPO Configuration Reference](grpo.qmd#configuration-reference).
 

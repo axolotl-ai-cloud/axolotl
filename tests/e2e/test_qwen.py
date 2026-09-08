@@ -11,6 +11,10 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
+from .utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
+
 
 class TestE2eQwen:
     """

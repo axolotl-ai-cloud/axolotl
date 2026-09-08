@@ -78,7 +78,7 @@ Quantization shows up at three distinct points in the lifecycle; they are easy t
 | Phase | Purpose | Config | Trains? |
 |---|---|---|---|
 | **Load-time (frozen base)** | shrink the base so an adapter fits | `load_in_4bit`/`load_in_8bit`, `gptq`, AWQ, `model_quantization_config: FineGrainedFP8Config`/`Mxfp4Config`, NVFP4-modelopt (MoE) | adapter only |
-| **Train-time (compute)** | faster/leaner training, high-precision master weights kept | `fp8: true` (torchao float8, `fp8_enable_fsdp_float8_all_gather`), `qat:` (fake-quant during training) | full fine-tune ✅ |
+| **Train-time (compute)** | faster/leaner training, high-precision master weights kept | `fp8: true` (torchao float8, `fp8_config.recipe`, `fp8_enable_fsdp_float8_all_gather`), `qat:` (fake-quant during training) | full fine-tune ✅ |
 | **Post-training (export)** | quantize the finished model | `quantization:` PTQ via `axolotl quantize` (int4/int8/fp8/nvfp4/mxfp4) | n/a (after training) |
 
 ::: {.callout-note}
@@ -109,7 +109,7 @@ The differentiators. All are opt-in; most need a specific GPU generation.
 
 | Kernel | Config | Covers |
 |---|---|---|
-| Liger | plugin `liger` + `liger_rope`, `liger_rms_norm(_gated)`, `liger_swiglu`/`liger_glu_activation`, `liger_cross_entropy`, `liger_fused_linear_cross_entropy` | RoPE, RMSNorm, SwiGLU, CE, fused-linear-CE |
+| Liger | plugin `liger` + `liger_rope`, `liger_rms_norm(_gated)`, `liger_swiglu`/`liger_glu_activation`, `liger_cross_entropy`, `liger_fused_linear_cross_entropy`; opt-in backend via `liger_kernel_impl: cutile\|cutedsl` (fused-linear-CE stays Triton) | RoPE, RMSNorm, SwiGLU, CE, fused-linear-CE |
 | Cut Cross Entropy (CCE) | plugin `cut_cross_entropy` + `cut_cross_entropy: true` | memory-lean logit-free CE (Apple fork) |
 | Chunked CE | `chunked_cross_entropy: true` | chunked loss for long sequences |
 | DenseMixer | plugin `densemixer` | fused MoE forward (OLMoE, Qwen2/3-MoE) |
@@ -139,7 +139,8 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Backend | Value / flag | Notes |
 |---|---|---|
 | Flash Attention 2/3 | `flash_attention_2` / `flash_attention_3` (`flash_attention: true`) | FA2 auto-upgrades to FA3 on SM90+; ⚪ Ampere or newer only (not Turing) |
-| Flash Attention 4 🟡 | auto-upgrade when available | pre-release; 🔵 backward not in pip on Hopper (build from source) |
+| Flash Attention 4 🟡 | `flash_attention_4` (auto-upgrade when available) | pre-release; requires `quack-kernels>=0.6.0` (older quack raises `cudaErrorIllegalInstruction` in the backward) |
+| Flash Attention (torch) 🟡 | `flash_attention_torch` | torch varlen kernels, no `flash_attn` dependency; needs a transformers release that registers it |
 | SDPA | `sdpa` (`sdp_attention: true`) | safe default; works everywhere |
 | SDPA varlen | `sdpa_varlen: true` | packing without a mask tensor, PyTorch >= 2.10 |
 | FlexAttention | `flex_attention` (`flex_attention: true`) | PyTorch >= 2.6; enables `scaling_softmax` |
@@ -189,7 +190,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 
 ## Optimizers & schedulers
 
-**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore. (Muon / Flash / Q-GaLore require FSDP2, not DeepSpeed.)
+**Optimizers:** all HuggingFace / `bitsandbytes` optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)
 
 **Schedulers:** cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).
 
@@ -245,6 +246,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | ReLoRA | `jagged_restart_steps` (and *not* FSDP/DeepSpeed/one_cycle) |
 | Sample packing | varlen backend (FA2/3, flex, xformers, sage) |
 | Muon / Flash / Q-GaLore optimizers | FSDP2 (not DeepSpeed) |
+| PoLoRA optimizer | LoRA/QLoRA + single-GPU, DDP, or FSDP2 (not DeepSpeed/TP) |
 | EBFT (`rl: ebft`) | `ebft:` config block |
 
 ### Incompatible {#incompatible}
@@ -297,7 +299,6 @@ Not in a tagged release yet:
 - EP + TP/CP
 - Multiple DPO loss types (RPO)
 - Sample packing across multiple streaming datasets
-- FA4 backward on Hopper via pip
 
 ### ⚪ Out-of-scope / won't-fix
 

@@ -6,19 +6,21 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Callable, Mapping, overload
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, overload
 from weakref import WeakKeyDictionary
 
 from .base import Capability, ModelSupport
 
 if TYPE_CHECKING:
     from peft import PeftModel
+    from torch import nn
     from transformers import (
         PretrainedConfig,
         PreTrainedModel,
         PreTrainedTokenizerBase,
         ProcessorMixin,
     )
+    from transformers.core_model_loading import WeightTransform
 
     from axolotl.processing_strategies import ProcessingStrategy
     from axolotl.utils.dict import DictDefault
@@ -60,6 +62,10 @@ AutoModelClassProvider = Callable[[], type | None]
 ProcessingStrategyClassProvider = Callable[[], type["ProcessingStrategy"] | None]
 ConfigMatcher = Callable[["DictDefault"], bool]
 ProcessorMatcher = Callable[["ProcessorMixin"], bool]
+WeightConversionsProvider = Callable[
+    [], "Mapping[str, Sequence[WeightTransform]] | None"
+]
+PatchMappingsProvider = Callable[[], "Mapping[str, type[nn.Module]] | None"]
 
 
 class _InheritStrategy:
@@ -115,6 +121,55 @@ class ModelStrategyOverrides:
     processing_strategy_cls: (
         ProcessingStrategyClassProvider | None | _InheritStrategy
     ) = _INHERIT_STRATEGY
+
+
+@dataclass(frozen=True)
+class ModelRegistrations:
+    """Lazy payloads for transformers' own extension registries.
+
+    ``weight_conversions`` maps a ``model_type`` or model class name to
+    ``WeightTransform`` entries registered via
+    ``transformers.conversion_mapping.register_checkpoint_conversion_mapping``;
+    ``patch_mappings`` maps class names (or regex patterns) to replacement
+    modules registered via
+    ``transformers.monkey_patching.register_patch_mapping``. Both are applied
+    idempotently before model build. A patch mapping that changes a module's
+    checkpoint layout must ship matching weight conversions, or loading and
+    saving break.
+    """
+
+    weight_conversions: WeightConversionsProvider | None = None
+    patch_mappings: PatchMappingsProvider | None = None
+
+    def with_overrides(
+        self, overrides: ModelRegistrationOverrides
+    ) -> ModelRegistrations:
+        return ModelRegistrations(
+            weight_conversions=(
+                self.weight_conversions
+                if isinstance(overrides.weight_conversions, _InheritStrategy)
+                else overrides.weight_conversions
+            ),
+            patch_mappings=(
+                self.patch_mappings
+                if isinstance(overrides.patch_mappings, _InheritStrategy)
+                else overrides.patch_mappings
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class ModelRegistrationOverrides:
+    """Per-model registration overrides layered over family registrations.
+
+    An omitted field inherits its family provider. Explicit ``None`` removes
+    the inherited provider.
+    """
+
+    weight_conversions: WeightConversionsProvider | None | _InheritStrategy = (
+        _INHERIT_STRATEGY
+    )
+    patch_mappings: PatchMappingsProvider | None | _InheritStrategy = _INHERIT_STRATEGY
 
 
 @dataclass(frozen=True)
@@ -197,6 +252,7 @@ class ModelFamilyTemplate:
     is_multimodal: bool = False
     capabilities: Mapping[str, Capability] = field(default_factory=dict)
     strategies: ModelStrategies = field(default_factory=ModelStrategies)
+    registrations: ModelRegistrations = field(default_factory=ModelRegistrations)
     matchers: ModelMatchers = field(default_factory=ModelMatchers)
     hooks: ModelHooks = field(default_factory=ModelHooks)
 
@@ -214,6 +270,9 @@ class ModelProfile:
     is_multimodal: bool | None = None
     capabilities: Mapping[str, Capability | None] = field(default_factory=dict)
     strategies: ModelStrategyOverrides = field(default_factory=ModelStrategyOverrides)
+    registrations: ModelRegistrationOverrides = field(
+        default_factory=ModelRegistrationOverrides
+    )
     matchers: ModelMatchers = field(default_factory=ModelMatchers)
     hooks: ModelHooks = field(default_factory=ModelHooks)
 
@@ -232,6 +291,7 @@ class ResolvedModelProfile:
     is_multimodal: bool
     capabilities: Mapping[str, Capability]
     strategies: ModelStrategies
+    registrations: ModelRegistrations
     matchers: ModelMatchers
     hooks: ModelHooks
 
@@ -320,6 +380,7 @@ def _build_declarative_model_support(
             is_multimodal=False,
             capabilities={},
             strategies=ModelStrategies(),
+            registrations=ModelRegistrations(),
             matchers=ModelMatchers(),
             hooks=ModelHooks(),
         )
@@ -343,6 +404,7 @@ def _build_declarative_model_support(
         is_multimodal=is_multimodal,
         capabilities=capabilities,
         strategies=family.strategies.with_overrides(profile.strategies),
+        registrations=family.registrations.with_overrides(profile.registrations),
         matchers=family.matchers.with_overrides(profile.matchers),
         hooks=family.hooks.with_additions(profile.hooks),
     )
@@ -467,6 +529,7 @@ def resolve_model_support(
         is_multimodal=is_multimodal,
         capabilities=capabilities,
         strategies=strategies,
+        registrations=declarative.registrations,
         matchers=matchers,
         hooks=hooks,
     )

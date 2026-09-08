@@ -10,7 +10,9 @@ from accelerate.test_utils import execute_subprocess_async, get_torch_dist_uniqu
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_5_1
+from tests.e2e.utils import check_tensorboard, require_torch_2_5_1, requires_flash_attn
+
+pytestmark = requires_flash_attn
 
 
 @pytest.fixture(name="kd_min_cfg")
@@ -63,7 +65,7 @@ def min_cfg(temp_dir):
             "pad_token": "<|end_of_text|>",
             "eos_token": "<|eot_id|>",
         },
-        "max_steps": 5,
+        "max_steps": 10,
         "output_dir": temp_dir,
         "use_tensorboard": True,
         "save_first_step": False,

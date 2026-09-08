@@ -1,6 +1,7 @@
 """Dequantization utilities for `bitsandbytes` and FP8 integration."""
 
 import ctypes
+from collections.abc import Callable
 from typing import List
 
 import bitsandbytes as bnb
@@ -19,6 +20,33 @@ _NF4_DEQUANT_KERNELS = {
     torch.bfloat16: cdequantize_blockwise_bf16_nf4,
     torch.float32: cdequantize_blockwise_fp32_nf4,
 }
+
+# bnb >= 0.50.0 sets argtypes on the C dequant symbols, so ctypes coerces raw ints itself
+# and we skip a per-call c_void_p/c_int alloc; older bnb (no argtypes) still needs wrappers.
+_BNB_TYPED_CAPI = getattr(cdequantize_blockwise_fp32, "argtypes", None) is not None
+
+_ptr: Callable[..., object]
+_int: Callable[..., object]
+_stream: Callable[..., object]
+if _BNB_TYPED_CAPI:
+
+    def _ptr(tensor):
+        return None if tensor is None else tensor.data_ptr()
+
+    def _int(value):
+        return value
+
+    # bnb calls this itself under the hood; prefer it over the bnb-internal
+    # _get_tensor_stream, which upstream may remove.
+    def _stream(index):
+        return torch._C._cuda_getCurrentRawStream(index)
+
+else:
+    _ptr = get_ptr
+    _int = ctypes.c_int
+
+    def _stream(index):
+        return ctypes.c_void_p(torch._C._cuda_getCurrentRawStream(index))
 
 
 def _ctypes_nf4_dequant(
@@ -40,16 +68,16 @@ def _ctypes_nf4_dequant(
         n_elements_absmax, dtype=torch.float32, device=target_device
     )
 
-    # c_void_p is required: bnb sets no argtypes, so a bare int truncates to a C int.
-    stream = ctypes.c_void_p(torch._C._cuda_getCurrentRawStream(W.device.index))
+    # resolved per call: the current stream belongs to the caller's context, not the device
+    stream = _stream(W.device.index)
 
     cdequantize_blockwise_fp32(
-        get_ptr(code2),
-        get_ptr(absmax),
-        get_ptr(absmax2),
-        get_ptr(out_absmax),
-        ctypes.c_int(blocksize2),
-        ctypes.c_int(n_elements_absmax),
+        _ptr(code2),
+        _ptr(absmax),
+        _ptr(absmax2),
+        _ptr(out_absmax),
+        _int(blocksize2),
+        _int(n_elements_absmax),
         stream,
     )
     out_absmax += offset
@@ -58,12 +86,12 @@ def _ctypes_nf4_dequant(
     if fx is None:
         raise ValueError(f"NF4 dequantization unsupported for output dtype {dtype}")
     fx(
-        get_ptr(None),
-        get_ptr(W),
-        get_ptr(out_absmax),
-        get_ptr(out),
-        ctypes.c_int(blocksize),
-        ctypes.c_int(out.numel()),
+        _ptr(None),
+        _ptr(W),
+        _ptr(out_absmax),
+        _ptr(out),
+        _int(blocksize),
+        _int(out.numel()),
         stream,
     )
 

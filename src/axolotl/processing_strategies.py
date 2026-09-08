@@ -1246,11 +1246,7 @@ class SmolVLM2ProcessingStrategy(ProcessingStrategy):
 
 
 class Mistral3ProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for Mistral3.
-
-    Role boundaries NOT declared (mistral-common instruct tokenizer unverified);
-    same fallback as VoxtralProcessingStrategy.
-    """
+    """Processing Strategy class for Mistral3."""
 
     def __init__(
         self,
@@ -1282,6 +1278,39 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         self.image_token = special_ids.img
         self.image_break_token = special_ids.img_break
         self.image_end_token = special_ids.img_end
+
+    def _build_role_boundaries(self) -> list[RoleBoundary]:
+        tokenizer = self.processor.tokenizer
+        eos = getattr(tokenizer, "eos_token_id", None)
+        if eos is None:
+            return []
+
+        # mistral-common emits control tokens from the instruct tokenizer rather
+        # than the vocab, so `encode("[/INST]")` returns literal text instead.
+        try:
+            tekken = tokenizer.tokenizer.instruct_tokenizer.tokenizer
+            sys_start, sys_end, inst_start, inst_end = (
+                tekken.get_special_token(marker)
+                for marker in (
+                    "[SYSTEM_PROMPT]",
+                    "[/SYSTEM_PROMPT]",
+                    "[INST]",
+                    "[/INST]",
+                )
+            )
+        except (AttributeError, ValueError):
+            return []
+
+        return [
+            RoleBoundary(role="system", start_tokens=[sys_start], end_tokens=[sys_end]),
+            RoleBoundary(
+                role="user",
+                start_tokens=[inst_start],
+                end_tokens=[inst_end],
+                include_end=False,
+            ),
+            RoleBoundary(role="assistant", start_tokens=[inst_end], end_tokens=[eos]),
+        ]
 
     def process_labels(self, input_ids):
         keep = self._mask_non_assistant_keep(input_ids)
@@ -1440,6 +1469,7 @@ def get_processing_strategy(
     train_on_eos: Optional[str] = None,
     role_boundaries_override: Optional[list[dict]] = None,
     field_messages: str | list[str] | tuple[str, ...] | None = None,
+    model_type: str | None = None,
 ):
     processing_kwargs = {
         "processor": processor,
@@ -1466,8 +1496,12 @@ def get_processing_strategy(
         resolve_model_support,
     )
 
-    support = get_model_support(chat_template_type) or get_model_support_for_processor(
-        processor
+    # model_type first: architectures sharing a processor class with another
+    # family cannot be told apart by the processor matcher alone.
+    support = (
+        get_model_support(model_type)
+        or get_model_support(chat_template_type)
+        or get_model_support_for_processor(processor)
     )
     resolved_support = resolve_model_support(support)
     strategy_provider = (
