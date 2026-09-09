@@ -184,6 +184,7 @@ def patch_peft_target_parameters_matching():
     ):
         original_targets = list(peft_config.target_parameters)
         expanded = set(original_targets)
+        targeted_parameter_names: list[str] = []
 
         # Expand short suffixes to full paths for parametrized modules.
         for module_name, module in model.named_modules():
@@ -286,7 +287,7 @@ def patch_peft_target_parameters_matching():
                         key.endswith(f".{t}") for t in target_names_set
                     ):
                         create_and_replace_param(module_name, key, param_name)
-                        self.targeted_parameter_names.append(key)
+                        targeted_parameter_names.append(key)
             else:
                 unwrapped_module_name = strip_base_layer_from_name(module_name)
                 for param_name, _ in module.named_parameters(recurse=False):
@@ -295,7 +296,11 @@ def patch_peft_target_parameters_matching():
                         key.endswith(f".{t}") for t in target_names_set
                     ):
                         create_and_replace_param(module_name, key, param_name)
-                        self.targeted_parameter_names.append(key)
+                        targeted_parameter_names.append(key)
+
+        # PEFT <=0.20 reads the attribute, newer PEFT uses the return value.
+        self.targeted_parameter_names.extend(targeted_parameter_names)
+        return targeted_parameter_names
 
     BaseTuner._inject_parameters = _patched_inject_parameters
 

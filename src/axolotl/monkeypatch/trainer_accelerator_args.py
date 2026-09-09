@@ -18,7 +18,7 @@ ORIGINAL_TRAINER_CODE = """
 
 PATCHED_TRAINER_CODE = """
     if hasattr(self, "additional_accelerator_args"):
-        additional_args = self.additional_accelerator_args(fp8=True, enable_fsdp_float8_all_gather={enable_fsdp_float8_all_gather}, **args)
+        additional_args = self.additional_accelerator_args(fp8=True, fp8_recipe={fp8_recipe!r}, enable_fsdp_float8_all_gather={enable_fsdp_float8_all_gather}, **args)
         if additional_args:
             args.update(additional_args)
 
@@ -38,7 +38,9 @@ def check_create_accelerate_code_is_patchable() -> bool:
     return ORIGINAL_TRAINER_CODE in create_code
 
 
-def patch_create_accelerate_code_for_fp8(enable_fsdp_float8_all_gather: bool):
+def patch_create_accelerate_code_for_fp8(
+    enable_fsdp_float8_all_gather: bool, fp8_recipe: str = "tensorwise"
+):
     """
     Monkeypatch create_accelerator_and_postprocess so it checks for additional kwargs.
     """
@@ -53,7 +55,8 @@ def patch_create_accelerate_code_for_fp8(enable_fsdp_float8_all_gather: bool):
         return
 
     patched_trainer_code = PATCHED_TRAINER_CODE.format(
-        enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather
+        fp8_recipe=fp8_recipe,
+        enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
     )
     create_code = create_code.replace(ORIGINAL_TRAINER_CODE, patched_trainer_code)
     create_code = create_code.replace(

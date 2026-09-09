@@ -10,6 +10,25 @@ from transformers.models.qwen4_exp.configuration_qwen4_exp import (  # noqa: E40
     Qwen4ExpTextConfig,
 )
 
+
+def _torch_reference(dispatcher):
+    """Unwrap a transformers hub-kernel ``Func`` back to its torch implementation."""
+    (cell,) = type(dispatcher).forward.__closure__
+    return cell.cell_contents.__wrapped__
+
+
+@pytest.fixture(autouse=True)
+def _torch_gated_delta_rule(monkeypatch):
+    """Keep the stock forward on torch: fla's kernels need a GPU.
+
+    transformers resolves these kernels at import time on package availability alone,
+    with no device check, so a CPU runner with flash-linear-attention installed
+    dispatches into Triton and dies.
+    """
+    for name in ("torch_chunk_gated_delta_rule", "torch_recurrent_gated_delta_rule"):
+        monkeypatch.setattr(qwen4_exp, name, _torch_reference(getattr(qwen4_exp, name)))
+
+
 HIDDEN = 32
 INDEX_HEAD_DIM = 16
 DOC_LENS = [7, 11, 5]

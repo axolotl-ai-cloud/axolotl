@@ -96,8 +96,8 @@ jobs:
 
       - name: Override with nightly HF packages
         run: |
-          uv pip install "kernels>=0.15.2,<0.16"
           uv pip install --no-deps \
+            "kernels @ git+https://github.com/huggingface/kernels.git@main#subdirectory=kernels" \
             "transformers @ git+https://github.com/huggingface/transformers.git@main" \
             "peft @ git+https://github.com/huggingface/peft.git@main" \
             "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \

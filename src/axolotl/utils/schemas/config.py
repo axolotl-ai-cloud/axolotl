@@ -42,6 +42,7 @@ from axolotl.utils.schemas.enums import (
     RLType,
     attn_impl_base,
 )
+from axolotl.utils.schemas.fp8 import FP8Config
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
     CometConfig,
@@ -572,6 +573,10 @@ class AxolotlInputConfig(
             "description": "Enable FP8 mixed precision training using TorchAO. Best "
             "used in combination with torch.compile."
         },
+    )
+    fp8_config: FP8Config | None = Field(
+        default=None,
+        json_schema_extra={"description": "FP8 mixed-precision configuration options"},
     )
     fp8_enable_fsdp_float8_all_gather: bool | None = Field(
         default=None,
