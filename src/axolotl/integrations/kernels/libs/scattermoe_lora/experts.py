@@ -97,6 +97,71 @@ def _ep_local_expert_lora(lora_A, lora_B, experts):
     return a, b, e_local, rank
 
 
+def _ep_local_peft_lora(experts):
+    """This rank's local-expert LoRA in PEFT rank-major layout (pre-scattermoe).
+
+    Returns ``(gup, down)``, each ``(A [r*E_local, in], B [out, r*E_local], scaling)``
+    or ``None``. The merge-aware NVFP4 forward consumes this layout directly; the
+    scattermoe-native path instead reshuffles it via ``peft_lora_to_scattermoe``.
+    """
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None, None
+    out = []
+    for param in (experts.gate_up_proj, experts.down_proj):
+        if not isinstance(param, ParamWrapper):
+            out.append(None)
+            continue
+        lora_A, lora_B, scaling = get_lora_params_from_wrapper(param)
+        if lora_A is None:
+            out.append(None)
+            continue
+        a, b, _, _ = _ep_local_expert_lora(lora_A, lora_B, experts)
+        out.append((a, b, scaling))
+    return out[0], out[1]
+
+
+def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
+    """Merge-aware NVFP4 grouped forward for the DeepEP local path, or ``None``.
+
+    Returns ``None`` (fall through to the fast quantized-base path) unless the base
+    is NVFP4 and both projections carry a LoRA adapter. The fast path adds LoRA as a
+    separate GEMM on the untouched quant grid (the naive-merge regime); this snaps
+    each local expert's effective weight to its merge grid, so the near-lossless
+    merge holds under EP.
+    """
+    gup, down = _ep_local_peft_lora(self)
+    if gup is None or down is None:
+        return None
+    w1 = _get_base_param(self.gate_up_proj)
+    w2 = _get_base_param(self.down_proj)
+    if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
+        return None
+
+    from ..sonicmoe.nvfp4_lora import grouped_moe_merge_aware_ep_forward
+
+    A1, B1, s1 = gup
+    A2, B2, s2 = down
+    return grouped_moe_merge_aware_ep_forward(
+        hidden_states,
+        top_k_index,
+        top_k_weights,
+        w1,
+        None,
+        w2,
+        None,
+        (A1, B1),
+        (A2, B2),
+        self.num_experts,
+        act=_detect_act_type(self),
+        concat=getattr(self, "is_concatenated", True),
+        scaling1=s1,
+        scaling2=s2,
+        limit=getattr(self, "limit", None),
+    )
+
+
 def _get_base_param(param):
     """Get the base tensor from a PEFT ParamWrapper or regular Parameter."""
     try:
@@ -685,6 +750,17 @@ def scattermoe_experts_forward_ep(
     weighted token-combine done via ``index_add_``.
     """
     _check_supported_layout(self)
+
+    # Merge-aware snaps the effective weight to the merge grid every step, which the fast
+    # quantized-base path can't express (it adds LoRA as a separate GEMM on the frozen grid).
+    from ..sonicmoe.nvfp4_lora import merge_aware_enabled
+
+    if merge_aware_enabled():
+        ma_out = _ep_merge_aware_forward(
+            self, hidden_states, top_k_index, top_k_weights
+        )
+        if ma_out is not None:
+            return ma_out
 
     # Prefer the grouped NVFP4 GEMM (the same backend the non-EP forward uses) over the triton
     # scatter2scatter LoRA kernel: it's faster AND has no Triton autotune, so there's no per-rank
