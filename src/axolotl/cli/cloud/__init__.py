@@ -67,8 +67,16 @@ def do_cli_lm_eval(
     cloud_config: Path | str,
     config: Path | str,
 ) -> None:
-    cloud_cfg = load_cloud_cfg(cloud_config)
-    cloud = ModalCloud(cloud_cfg)
+    cloud_cfg: DictDefault = load_cloud_cfg(cloud_config)
+    provider = cloud_cfg.provider or "modal"
+    cloud: Cloud | None
+    if provider == "modal":
+        cloud = ModalCloud(cloud_cfg)
+    elif provider == "baseten":
+        cloud = BasetenCloud(cloud_cfg.to_dict())
+    else:
+        raise ValueError(f"Unsupported cloud provider: {provider}")
+
     with open(config, "r", encoding="utf-8") as file:
         config_yaml = file.read()
     cloud.lm_eval(config_yaml)
