@@ -1,0 +1,32 @@
+provider: nebius
+
+# Choose an image compatible with the GPU driver, then pin its digest.
+image: axolotlai/axolotl:main-latest
+platform: gpu-h100-sxm
+preset: 1gpu-16vcpu-200gb
+timeout: 3600
+
+# The CLI mounts a managed project bucket at /outputs.
+output: auto
+
+# Optional Nebius CLI profile and resource selection.
+# profile: training
+# parent_id: project-...
+# subnet_id: vpcsubnet-...
+# disk_size: 250Gi
+
+# Secrets are Nebius secret references, not values or local environment lookups.
+# Check `nebius ai job run --help` for the syntax supported by your CLI release.
+# env_secret:
+#   HF_TOKEN: secret-id/HF_TOKEN
+
+# volumes:
+#   - source: storagebucket-...
+#     mount: /data
+#     mode: ro
+
+# Local packaging preview only; never submits a job.
+# show_context: true
+
+# Server-side request validation without creating a job.
+# dry_run: true

@@ -1,0 +1,38 @@
+base_model: NousResearch/Llama-3.2-1B
+adapter: lora
+
+datasets:
+  - path: teknium/GPT4-LLM-Cleaned
+    type: alpaca
+
+# Relative output paths are placed inside the managed /outputs mount.
+output_dir: training
+sequence_len: 512
+sample_packing: false
+val_set_size: 0.01
+max_steps: 30
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+learning_rate: 0.0002
+optimizer: adamw_torch
+lr_scheduler: cosine
+warmup_steps: 2
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - v_proj
+
+bf16: auto
+attn_implementation: sdpa
+gradient_checkpointing: true
+logging_steps: 1
+save_steps: 10
+save_total_limit: 2
+save_only_model: false
+auto_resume_from_checkpoints: false
+seed: 42
+special_tokens:
+  pad_token: "<|end_of_text|>"
