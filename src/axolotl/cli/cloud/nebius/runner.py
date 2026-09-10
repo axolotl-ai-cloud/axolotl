@@ -4,9 +4,16 @@ import json
 import os
 import shutil
 import subprocess  # nosec B404
+import tempfile
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 import yaml
+
+if TYPE_CHECKING or __package__:
+    from .storage import publish, restore
+else:
+    from nebius_storage import publish, restore
 
 
 def validate_config(config, mounts):
@@ -43,8 +50,8 @@ def validate_config(config, mounts):
         raise ValueError("Nebius supports single-node jobs, not Ray clusters")
 
 
-def prepare_config(root, output_root, mounts):
-    """Resolve mounted output paths and check the selected resume checkpoint."""
+def prepare_config(root, output_root, mounts, scratch):
+    """Keep serialization and resume reads on local disk; export to the mount."""
     config = yaml.safe_load((root / "train.yaml").read_text(encoding="utf-8"))
     validate_config(config, mounts)
     output = PurePosixPath(config.get("output_dir", "training"))
@@ -53,10 +60,11 @@ def prepare_config(root, output_root, mounts):
     output_path.mkdir(parents=True, exist_ok=True)
     if any(output_path.iterdir()):
         raise ValueError("Output directory is not empty; use a new job/output prefix")
-    config["output_dir"] = str(output_path)
+    config["output_dir"] = str(scratch / "training")
     resume = config.get("resume_from_checkpoint")
     if resume:
-        checkpoint = Path(resume)
+        checkpoint = restore(Path(resume), scratch / "resume" / Path(resume).name)
+        config["resume_from_checkpoint"] = str(checkpoint)
         required = ("trainer_state.json", "optimizer.pt", "scheduler.pt")
         if any(
             not (checkpoint / name).is_file() or (checkpoint / name).stat().st_size == 0
@@ -89,19 +97,21 @@ def prepare_config(root, output_root, mounts):
     return resolved, output_path
 
 
-def main():
+def run(root, scratch):
     """Execute Axolotl in the provided runtime and preserve training failures."""
-    root = Path(__file__).resolve().parent
     os.chdir(root)
     launch = json.loads((root / "launch.json").read_text(encoding="utf-8"))
     output = os.environ.get("NEBIUS_OUTPUT_DIR")
     if not output or not Path(output).is_absolute() or not Path(output).is_dir():
         raise RuntimeError("Nebius did not provide a mounted NEBIUS_OUTPUT_DIR")
-    resolved, output_path = prepare_config(root, Path(output), launch["mounts"])
+    resolved, output_path = prepare_config(
+        root, Path(output), launch["mounts"], scratch
+    )
     completion = root / "training-complete.json"
     completion.unlink(missing_ok=True)
     env = os.environ.copy()
     env["AXOLOTL_NEBIUS_COMPLETION_FILE"] = str(completion)
+    env["AXOLOTL_NEBIUS_EXPORT_DIR"] = str(output_path)
     env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
     axolotl = shutil.which("axolotl")
     if not axolotl:
@@ -125,10 +135,19 @@ def main():
             "Training exited without normal completion; saved weights may be partial"
         )
     result = json.loads(completion.read_text(encoding="utf-8"))
-    (output_path / "nebius-result.json").write_text(
-        json.dumps(result) + "\n", encoding="utf-8"
+    publish(
+        scratch / "training",
+        output_path,
+        manifest_name="nebius-result.json",
+        metadata=result,
+        skip_checkpoints=True,
     )
     print(f"Training finished. Outputs: {output_path}", flush=True)
+
+
+def main():
+    with tempfile.TemporaryDirectory(prefix="axolotl-training-") as directory:
+        run(Path(__file__).resolve().parent, Path(directory))
 
 
 if __name__ == "__main__":
