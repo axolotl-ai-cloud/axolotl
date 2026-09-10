@@ -130,9 +130,10 @@ and [Nebius storage access](https://docs.nebius.com/object-storage/interfaces/aw
 
 ## Outputs and checkpoints
 
-The CLI mounts output storage and exposes `NEBIUS_OUTPUT_DIR`. Relative
-`output_dir` paths are resolved underneath that directory; absolute paths must
-start with `/outputs`. For example:
+The CLI mounts output storage and exposes `NEBIUS_OUTPUT_DIR`. The training
+configuration's `output_dir` selects the export destination underneath that mount;
+absolute paths must start with `/outputs`. Training itself writes to a temporary
+directory on the container's local disk. For example:
 
 ```yaml
 output_dir: training
@@ -147,12 +148,24 @@ layout, the output location is `runs/<job-name>/training/` inside the selected
 bucket. Use the CLI's printed storage hints to confirm the actual location.
 The provider refuses to train into an existing nonempty output directory.
 
-Axolotl writes its ordinary checkpoint directories and final model/adapter files.
-A small callback records normal Trainer completion; the bootstrap also requires a
-zero process exit before writing `nebius-result.json`. This distinguishes normal
-completion from Axolotl's weights-only SIGINT path, which may exit with code zero.
-The result file records the final training step, not an independent model-quality
-or storage-integrity guarantee.
+Axolotl serializes its ordinary checkpoints and final model/adapter on local disk.
+After each Trainer save, a callback streams the closed checkpoint files to output
+storage without copying POSIX metadata or renaming directories. Direct
+`safetensors` serialization into the bucket mount can fail with
+`Operation not permitted`; the local staging directory avoids that operation.
+Budget enough local disk for model caches, retained checkpoints and a staged
+resume checkpoint; use `disk_size` in the cloud YAML when needed.
+
+Each completed checkpoint export ends with `nebius-checkpoint.json`, listing file
+sizes and SHA-256 hashes. A failed copy does not produce this manifest. Saves wait
+for the copy before training continues. `save_total_limit` controls local retention
+only: exported checkpoints remain in the bucket until you remove them.
+
+The bootstrap requires both normal Trainer completion and a zero process exit
+before exporting the final files and writing `nebius-result.json`. This distinguishes
+normal completion from Axolotl's weights-only SIGINT path, which may exit with code
+zero. The result manifest lists final files and their hashes, with the final step
+under `training.global_step`. It is not a model-quality check.
 
 Check that final adapter weights, `adapter_config.json` and tokenizer files can be
 downloaded and loaded with the same base model. Use the standard S3 interface:
@@ -164,9 +177,10 @@ aws --endpoint-url https://storage.REGION.nebius.cloud \
 
 This requires the separate S3 credential setup described above. Job completion
 and file presence do not prove that an interrupted checkpoint is complete.
-Mounted object storage must not be assumed to provide a transactional directory
-save. This provider does not implement atomic checkpoint publication or automatic
-recovery after preemption.
+The manifest is written last, but this is not a transactional directory save or
+a guarantee that the mount has flushed all data to remote storage. Resume verifies
+every listed file after copying it back to local disk. Automatic recovery after
+preemption is not implemented.
 
 ## Resume explicitly
 
@@ -190,10 +204,12 @@ save_only_model: false
 
 Submit a new Job with the same model/tokenizer revisions, dataset order, adapter
 configuration and training schedule. Output goes to the new Job's own prefix.
-The bootstrap checks for readable training state, optimizer/scheduler and RNG state, and weights
-before starting Axolotl. These presence checks are not checksum or compatibility
-validation. Verify the checkpoint by downloading it and test a short resumed run;
-if it is incomplete, select an earlier complete checkpoint explicitly.
+The bootstrap requires `nebius-checkpoint.json`, stages every listed file on local
+disk, and verifies file sizes and SHA-256 hashes before starting Axolotl. It then
+checks for readable Trainer state, optimizer/scheduler and RNG state, and weights.
+Checkpoints from earlier direct-to-mount runs without a manifest are rejected.
+These checks do not validate model/config compatibility. Test a short resumed run;
+if a checkpoint is incomplete, select an earlier complete checkpoint explicitly.
 
 Automatic selection of the newest directory is rejected. Starting from adapter
 weights alone is continued adapter training, not restoration of optimizer and

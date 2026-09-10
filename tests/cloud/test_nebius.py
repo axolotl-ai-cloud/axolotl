@@ -17,7 +17,7 @@ from axolotl.cli.cloud import (
     do_cli_train,
     load_cloud_provider,
 )
-from axolotl.cli.cloud.nebius import NebiusCloud, runner
+from axolotl.cli.cloud.nebius import NebiusCloud, runner, storage
 from axolotl.utils.dict import DictDefault
 
 
@@ -88,6 +88,7 @@ def test_submit_isolated_context_and_forward_options(
         "launch.json",
         "run.py",
         "nebius_completion.py",
+        "nebius_storage.py",
     }
     assert "secret-id" not in "\n".join(context.values())
     assert "RUN_LABEL" not in "\n".join(context.values())
@@ -264,12 +265,14 @@ def remote_context(tmp_path, training_config):
 
 def test_output_resolved_to_managed_mount(remote_context):
     root, output = remote_context
-    resolved, path = runner.prepare_config(root, output, [])
+    resolved, path = runner.prepare_config(root, output, [], root / "scratch")
     assert path == output / "lora output"
-    assert yaml.safe_load(resolved.read_text())["output_dir"] == str(path)
+    assert yaml.safe_load(resolved.read_text())["output_dir"] == str(
+        root / "scratch" / "training"
+    )
     with pytest.raises(ValueError, match="not empty"):
         (path / "old-checkpoint").touch()
-        runner.prepare_config(root, output, [])
+        runner.prepare_config(root, output, [], root / "scratch")
 
 
 def test_partial_checkpoint_rejected_before_training(remote_context):
@@ -279,14 +282,14 @@ def test_partial_checkpoint_rejected_before_training(remote_context):
     cfg = yaml.safe_load((root / "train.yaml").read_text())
     cfg["resume_from_checkpoint"] = str(checkpoint)
     (root / "train.yaml").write_text(yaml.safe_dump(cfg))
-    with pytest.raises(ValueError, match="Trainer/optimizer"):
-        runner.prepare_config(root, output, [str(checkpoint.parent)])
+    with pytest.raises(ValueError, match="completion manifest"):
+        runner.prepare_config(root, output, [str(checkpoint.parent)], root / "scratch")
 
 
 def test_complete_checkpoint_passed_explicitly(remote_context):
     root, output = remote_context
-    checkpoint = root / "previous" / "checkpoint-10"
-    checkpoint.mkdir(parents=True)
+    local = root / "closed-checkpoint"
+    local.mkdir()
     for file in (
         "trainer_state.json",
         "optimizer.pt",
@@ -294,16 +297,22 @@ def test_complete_checkpoint_passed_explicitly(remote_context):
         "adapter_model.safetensors",
         "rng_state.pth",
     ):
-        (checkpoint / file).write_text(
+        (local / file).write_text(
             '{"global_step": 10}' if file == "trainer_state.json" else "fixture"
         )
+    checkpoint = root / "previous" / "checkpoint-10"
+    storage.publish(local, checkpoint)
     cfg = yaml.safe_load((root / "train.yaml").read_text())
     cfg["resume_from_checkpoint"] = str(checkpoint)
     (root / "train.yaml").write_text(yaml.safe_dump(cfg))
-    resolved, _ = runner.prepare_config(root, output, [str(checkpoint.parent)])
-    assert yaml.safe_load(resolved.read_text())["resume_from_checkpoint"] == str(
-        checkpoint
+    resolved, _ = runner.prepare_config(
+        root, output, [str(checkpoint.parent)], root / "scratch"
     )
+    staged = root / "scratch" / "resume" / "checkpoint-10"
+    assert yaml.safe_load(resolved.read_text())["resume_from_checkpoint"] == str(staged)
+    assert (staged / "adapter_model.safetensors").read_bytes() == (
+        local / "adapter_model.safetensors"
+    ).read_bytes()
 
 
 @pytest.mark.parametrize("exit_code,complete", [(0, True), (7, True), (0, False)])
@@ -312,12 +321,20 @@ def test_remote_process_exit_and_completion_marker(
 ):
     root, output = remote_context
     (root / "run.py").write_text(Path(runner.__file__).read_text())
+    (root / "nebius_storage.py").write_text(Path(storage.__file__).read_text())
     binary = tmp_path / "bin"
     binary.mkdir()
     fake = binary / "axolotl"
     fake.write_text(f"""#!{sys.executable}
 import os, json, sys
 from pathlib import Path
+import yaml
+config = yaml.safe_load(Path(sys.argv[2]).read_text())
+output = Path(config["output_dir"])
+# Simulate a serializer that cannot write directly to the bucket mount.
+assert not output.is_relative_to(os.environ["NEBIUS_OUTPUT_DIR"])
+output.mkdir(parents=True)
+(output / "adapter_model.safetensors").write_bytes(b"serialized-on-local-disk")
 if {complete!r}:
     Path(os.environ["AXOLOTL_NEBIUS_COMPLETION_FILE"]).write_text(json.dumps({{"global_step": 30, "max_steps": 30}}))
 sys.exit({exit_code})
@@ -360,7 +377,9 @@ def test_null_output_uses_managed_bucket(cloud_config, training_config, capture_
 
 
 @pytest.mark.parametrize("is_primary", [True, False])
-def test_completion_callback_writes_only_on_primary(monkeypatch, tmp_path, is_primary):
+def test_checkpoint_and_completion_callback_write_only_on_primary(
+    monkeypatch, tmp_path, is_primary
+):
     import importlib.util
 
     monkeypatch.setitem(
@@ -369,6 +388,7 @@ def test_completion_callback_writes_only_on_primary(monkeypatch, tmp_path, is_pr
     monkeypatch.setitem(
         sys.modules, "axolotl.integrations.base", SimpleNamespace(BasePlugin=object)
     )
+    monkeypatch.setitem(sys.modules, "nebius_storage", storage)
     spec = importlib.util.spec_from_file_location(
         "test_nebius_completion", Path(runner.__file__).with_name("completion.py")
     )
@@ -377,6 +397,23 @@ def test_completion_callback_writes_only_on_primary(monkeypatch, tmp_path, is_pr
     target = tmp_path / "complete.json"
     monkeypatch.setenv("AXOLOTL_NEBIUS_COMPLETION_FILE", str(target))
     callback = module.NebiusCompletionPlugin().add_callbacks_pre_trainer(None, None)[0]
+    local = tmp_path / "local"
+    checkpoint = local / "checkpoint-30"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "adapter_model.safetensors").write_bytes(b"closed weights")
+    export = tmp_path / "export"
+    monkeypatch.setenv("AXOLOTL_NEBIUS_EXPORT_DIR", str(export))
+    callback.on_save(
+        SimpleNamespace(output_dir=str(local)),
+        SimpleNamespace(is_world_process_zero=is_primary, global_step=30),
+        None,
+    )
+    assert (export / "checkpoint-30" / storage.MANIFEST).exists() == is_primary
+    if is_primary:
+        storage.restore(export / "checkpoint-30", tmp_path / "restored")
+        assert (
+            tmp_path / "restored" / "adapter_model.safetensors"
+        ).read_bytes() == b"closed weights"
     callback.on_train_end(
         None,
         SimpleNamespace(is_world_process_zero=is_primary, global_step=30, max_steps=30),
@@ -385,3 +422,86 @@ def test_completion_callback_writes_only_on_primary(monkeypatch, tmp_path, is_pr
     assert target.exists() == is_primary
     if is_primary:
         assert json.loads(target.read_text()) == {"global_step": 30, "max_steps": 30}
+
+
+@pytest.fixture
+def snapshot(tmp_path):
+    source, destination = tmp_path / "local", tmp_path / "mount"
+    source.mkdir()
+    (source / "adapter_model.safetensors").write_bytes(b"weights")
+    (source / "optimizer.pt").write_bytes(b"optimizer")
+    return source, destination
+
+
+def test_stream_export_avoids_filesystem_metadata_operations(snapshot, monkeypatch):
+    import shutil
+
+    source, destination = snapshot
+
+    def forbidden(*args, **kwargs):
+        raise PermissionError("Operation not permitted on bucket mount")
+
+    for name in ("chmod", "ftruncate", "rename", "replace"):
+        monkeypatch.setattr(os, name, forbidden)
+    monkeypatch.setattr(shutil, "copystat", forbidden)
+    storage.publish(source, destination)
+    restored = destination.parent / "restored"
+    storage.restore(destination, restored)
+    assert (restored / "adapter_model.safetensors").read_bytes() == b"weights"
+
+
+def test_failed_export_has_no_completion_manifest(snapshot, monkeypatch):
+    source, destination = snapshot
+    original = storage.copy_bytes
+
+    def fail(source, destination):
+        if source.name == "optimizer.pt":
+            raise OSError("upload interrupted")
+        return original(source, destination)
+
+    monkeypatch.setattr(storage, "copy_bytes", fail)
+    with pytest.raises(OSError, match="interrupted"):
+        storage.publish(source, destination)
+    assert not (destination / storage.MANIFEST).exists()
+    with pytest.raises(ValueError, match="completion manifest"):
+        storage.restore(destination, destination.parent / "resume")
+
+
+def test_resume_rejects_corrupt_file(snapshot):
+    source, destination = snapshot
+    storage.publish(source, destination)
+    (destination / "adapter_model.safetensors").write_bytes(b"corrupt")
+    with pytest.raises(ValueError, match="checksum"):
+        storage.restore(destination, destination.parent / "restored")
+
+
+def test_resume_rejects_manifest_traversal(snapshot):
+    source, destination = snapshot
+    storage.publish(source, destination)
+    marker = destination / storage.MANIFEST
+    manifest = json.loads(marker.read_text())
+    manifest["files"]["../escape"] = manifest["files"].pop("adapter_model.safetensors")
+    marker.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="Invalid file path"):
+        storage.restore(destination, destination.parent / "restored")
+
+
+def test_committed_snapshot_not_overwritten(snapshot):
+    source, destination = snapshot
+    storage.publish(source, destination)
+    with pytest.raises(ValueError, match="already published"):
+        storage.publish(source, destination)
+
+
+def test_final_export_does_not_copy_or_prune_checkpoints(snapshot):
+    source, destination = snapshot
+    checkpoint = source / "checkpoint-10"
+    checkpoint.mkdir()
+    (checkpoint / "adapter_model.safetensors").write_bytes(b"checkpoint")
+    storage.publish(checkpoint, destination / "checkpoint-10")
+    storage.publish(
+        source, destination, manifest_name="nebius-result.json", skip_checkpoints=True
+    )
+    result = json.loads((destination / "nebius-result.json").read_text())
+    assert set(result["files"]) == {"adapter_model.safetensors", "optimizer.pt"}
+    assert (destination / "checkpoint-10" / storage.MANIFEST).is_file()

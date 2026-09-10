@@ -82,7 +82,11 @@ class NebiusCloud(Cloud):
                 r"[A-Za-z_][A-Za-z0-9_]*", name
             ):
                 raise ValueError(f"Invalid environment variable name in {key}")
-            if name in {"NEBIUS_OUTPUT_DIR", "AXOLOTL_NEBIUS_COMPLETION_FILE"}:
+            if name in {
+                "NEBIUS_OUTPUT_DIR",
+                "AXOLOTL_NEBIUS_COMPLETION_FILE",
+                "AXOLOTL_NEBIUS_EXPORT_DIR",
+            }:
                 raise ValueError(f"{name} is managed by the Nebius launcher")
             if (
                 not isinstance(value, str)
@@ -185,6 +189,7 @@ class NebiusCloud(Cloud):
             for source, target in (
                 ("runner.py", "run.py"),
                 ("completion.py", "nebius_completion.py"),
+                ("storage.py", "nebius_storage.py"),
             ):
                 shutil.copyfile(Path(__file__).with_name(source), root / target)
             command = [executable, "ai", "job", "run", "run.py", "--name", name]
