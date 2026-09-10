@@ -327,7 +327,7 @@ axolotl lm-eval config.yml --cloud cloud_config.yml
 ### Cloud Configuration Options
 
 ```yaml
-provider:    # compute provider, currently only `modal` is supported
+provider:    # modal in this example; train also supports baseten and nebius
 gpu:         # GPU type to use
 gpu_count:   # Number of GPUs (default: 1)
 memory:      # RAM in GB (default: 128)
@@ -351,3 +351,16 @@ secrets:
   # - HF_TOKEN
   # - WANDB_API_KEY
 ```
+
+## Remote Compute with Nebius Serverless
+
+Run training directly on Nebius Serverless Jobs with `provider: nebius` in a cloud
+configuration. See the [Nebius Serverless guide](nebius-serverless.qmd) for setup,
+persistent outputs, explicit checkpoint resume and cancellation.
+
+```bash
+axolotl train examples/nebius-serverless/lora-1b.yml --cloud examples/cloud/nebius.yaml
+```
+
+Nebius currently supports training only. Cloud options such as GPU selection and
+secret configuration are provider-specific.

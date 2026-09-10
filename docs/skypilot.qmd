@@ -5,6 +5,9 @@ description: How to launch Axolotl on any cloud or Kubernetes with SkyPilot
 
 [SkyPilot](https://github.com/skypilot-org/skypilot) runs workloads on any cloud or Kubernetes cluster. You describe the job in a short YAML, and SkyPilot finds a GPU across your enabled infrastructure (AWS, GCP, Azure, RunPod, Vast.ai, Kubernetes, and [more](https://docs.skypilot.ai/en/latest/getting-started/installation.html)), pulls the Axolotl image, and runs training.
 
+For direct Nebius Serverless Jobs through `axolotl train --cloud`, see the
+[Nebius Serverless guide](nebius-serverless.qmd).
+
 ## Setup
 
 Install SkyPilot with the providers you use, then confirm your credentials work:
