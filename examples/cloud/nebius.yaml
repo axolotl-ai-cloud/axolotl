@@ -1,7 +1,7 @@
 provider: nebius
 
-# Choose an image compatible with the GPU driver, then pin its digest.
-image: axolotlai/axolotl:main-latest
+# Validated on H100; check GPU driver compatibility before changing the image.
+image: axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab
 platform: gpu-h100-sxm
 preset: 1gpu-16vcpu-200gb
 timeout: 3600
