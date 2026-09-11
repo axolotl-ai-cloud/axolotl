@@ -14,7 +14,8 @@ from torch.nn.utils import parametrize
 from axolotl.utils.dict import DictDefault
 
 if TYPE_CHECKING:
-    from transformers import BitsAndBytesConfig, PretrainedConfig
+    from transformers import BitsAndBytesConfig, PretrainedConfig, PreTrainedModel
+    from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
 from axolotl.utils.nf4 import (
     BnbNF4Parametrization,
@@ -25,7 +26,7 @@ from axolotl.utils.nf4 import (
 
 
 def load_nf4_model(
-    loader: type,
+    loader: type["PreTrainedModel"] | type["_BaseAutoModelClass"],
     model_config: "PretrainedConfig",
     model_kwargs: dict[str, Any],
     cfg: DictDefault,

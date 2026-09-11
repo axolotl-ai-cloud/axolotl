@@ -1,5 +1,7 @@
 """Loading-time quantization for MoE expert weights stored as 3D nn.Parameter tensors."""
 
+from typing import TypedDict
+
 import bitsandbytes as bnb
 import torch
 import torch.nn.utils.parametrize as P
@@ -8,7 +10,19 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-_moe_load_state = {
+
+class _MoeLoadState(TypedDict):
+    """Shared loading state for quantization and expert adapter ordering."""
+
+    count: int
+    mode: str
+    quant_type: str
+    compress_statistics: bool
+    patched: bool
+    expert_param_order: dict[str, list[str]]
+
+
+_moe_load_state: _MoeLoadState = {
     "count": 0,
     "mode": "4bit",
     "quant_type": "nf4",
