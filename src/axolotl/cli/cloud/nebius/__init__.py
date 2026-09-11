@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import shlex
 import shutil
 import subprocess  # nosec B404
 import tempfile
@@ -246,6 +247,87 @@ class NebiusCloud(Cloud):
             if result.returncode:
                 # CalledProcessError would include environment values in its command.
                 raise RuntimeError(
-                    f"Nebius CLI exited with code {result.returncode} for {name}. "
-                    "Check the remote job state before retrying; interruption does not cancel it."
+                    self._failure_message(executable, name, result.returncode)
                 )
+
+    def _job_command(self, executable, action, *args):
+        command = [executable, "ai", "job", action, *args]
+        if self.config.get("profile"):
+            command.extend(["--profile", self.config["profile"]])
+        if action == "get-by-name" and self.config.get("parent_id"):
+            command.extend(["--parent-id", self.config["parent_id"]])
+        return command
+
+    def _failure_message(self, executable, name, returncode):
+        prefix = f"Nebius CLI exited with code {returncode} for {name}. "
+        if self.config.get("show_context") or self.config.get("dry_run"):
+            return (
+                prefix
+                + "Preview/validation failed; no training job was requested. See the CLI error above."
+            )
+        lookup = self._job_command(executable, "get-by-name", "--name", name)
+        fallback = (
+            prefix
+            + "Remote state could not be confirmed. Do not resubmit until you check: "
+            + shlex.join([*lookup, "--format", "json"])
+            + ". Stopping log following does not cancel the job."
+        )
+        try:
+            result = subprocess.run(  # nosec B603
+                [*lookup, "--format", "json"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+            if result.returncode:
+                return fallback
+            job = json.loads(result.stdout)
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return fallback
+        if not isinstance(job, dict):
+            return fallback
+        metadata, status = job.get("metadata"), job.get("status")
+        if not isinstance(metadata, dict) or not isinstance(status, dict):
+            return fallback
+        job_id, state = metadata.get("id"), status.get("state")
+        if (
+            metadata.get("name") != name
+            or not isinstance(job_id, str)
+            or not re.fullmatch(r"aijob-[a-zA-Z0-9]+", job_id)
+            or not isinstance(state, str)
+            or not re.fullmatch(r"[A-Z_]{1,64}", state)
+        ):
+            return fallback
+        details = status.get("state_details")
+        code = details.get("code") if isinstance(details, dict) else None
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,80}", code):
+            code = None
+        summary = prefix + f"Job {job_id}: {state}" + (f" ({code}). " if code else ". ")
+        logs = shlex.join(self._job_command(executable, "logs", job_id))
+        if state in {"ERROR", "FAILED", "CANCELLED"}:
+            if code == "NotEnoughResources":
+                return (
+                    summary
+                    + f"Nebius could not allocate the requested {self.config['platform']}/{self.config['preset']} capacity. "
+                    "The job is terminal; you may rerun the same command later to submit a new job. "
+                    "Capacity may still be unavailable. No automatic retry was made."
+                )
+            return (
+                summary
+                + "The job is terminal. Inspect the cause before starting a new job: "
+                + logs
+                + ". No automatic retry was made."
+            )
+        if state == "COMPLETED":
+            return (
+                summary
+                + "The job completed despite the CLI error. Verify its outputs before considering another submission."
+            )
+        get = shlex.join(self._job_command(executable, "get", job_id))
+        cancel = shlex.join(self._job_command(executable, "cancel", job_id))
+        return (
+            summary
+            + "A terminal outcome has not been confirmed; do not submit a duplicate. "
+            + f"Check: {get}. To cancel: {cancel}."
+        )

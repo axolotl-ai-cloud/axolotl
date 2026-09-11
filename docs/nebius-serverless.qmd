@@ -221,7 +221,14 @@ validation and are outside the initial resume support.
 The Nebius CLI streams training logs to stdout and writes job identity/progress to
 stderr. It blocks until a terminal outcome. A nonzero CLI result is raised as an
 error, and the provider never automatically resubmits a failed or ambiguous launch.
-Keep the Job ID and name printed at submission.
+On failure, it makes one read-only lookup by the unique job name, using the same
+CLI profile/project, with a 15-second limit. A confirmed terminal
+`NotEnoughResources` error identifies the requested platform/preset and suggests
+retrying later. Other terminal failures point to job logs. If the job completed,
+it recommends checking outputs; if it is active or its state cannot be confirmed,
+it warns against submitting a duplicate and provides a status-check command.
+Lookup errors do not replace the original CLI exit code. Preview failures do not
+query job status. Keep the Job ID and name printed at submission.
 
 **Ctrl+C stops following the Job; it does not cancel remote training.** Query or
 cancel using the Nebius CLI and the same profile/project:

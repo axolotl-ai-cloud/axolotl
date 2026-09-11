@@ -184,7 +184,9 @@ def test_failure_is_not_retried_or_reported_as_success(
         NebiusCloud(cloud_config).train(yaml.safe_dump(training_config))
     assert f"code {returncode}" in str(exc.value)
     assert "do-not-log-this" not in str(exc.value)
-    called.assert_called_once()
+    assert called.call_count == 2
+    assert called.call_args_list[0].args[0][3] == "run"
+    assert called.call_args_list[1].args[0][3] == "get-by-name"
 
 
 def test_interrupt_keeps_remote_job_and_cleans_local_context(
@@ -505,3 +507,112 @@ def test_final_export_does_not_copy_or_prune_checkpoints(snapshot):
     result = json.loads((destination / "nebius-result.json").read_text())
     assert set(result["files"]) == {"adapter_model.safetensors", "optimizer.pt"}
     assert (destination / "checkpoint-10" / storage.MANIFEST).is_file()
+
+
+@pytest.mark.parametrize(
+    "state,code,expected",
+    [
+        ("ERROR", "NotEnoughResources", "could not allocate"),
+        ("FAILED", "ContainerFailed", "Inspect the cause"),
+        ("ERROR", "Timeout", "Inspect the cause"),
+        ("CANCELLED", None, "The job is terminal"),
+        ("COMPLETED", None, "completed despite the CLI error"),
+        ("RUNNING", None, "do not submit a duplicate"),
+        ("PROVISIONING", "NotEnoughResources", "do not submit a duplicate"),
+        ("FUTURE_STATE", None, "do not submit a duplicate"),
+    ],
+)
+def test_failure_diagnoses_remote_state(
+    cloud_config, training_config, monkeypatch, state, code, expected
+):
+    cloud_config.update(profile="profile with spaces", parent_id="project-test")
+    cloud_config["env"] = {"PRIVATE_VALUE": "do-not-log-this"}
+    monkeypatch.setattr(
+        "axolotl.cli.cloud.nebius.shutil.which", lambda _: "/bin/nebius"
+    )
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[3] == "run":
+            return SimpleNamespace(returncode=5)
+        assert kwargs["timeout"] == 15
+        assert kwargs["capture_output"] is True
+        assert command[command.index("--profile") + 1] == "profile with spaces"
+        assert command[command.index("--parent-id") + 1] == "project-test"
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "metadata": {
+                        "id": "aijob-test",
+                        "name": command[command.index("--name") + 1],
+                    },
+                    "status": {
+                        "state": state,
+                        "state_details": {"code": code, "message": "do-not-log-this"},
+                    },
+                }
+            ),
+        )
+
+    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", run)
+    with pytest.raises(RuntimeError) as exc:
+        NebiusCloud(cloud_config).train(yaml.safe_dump(training_config))
+    message = str(exc.value)
+    assert expected in message
+    assert "aijob-test" in message
+    assert "do-not-log-this" not in message
+    assert len(calls) == 2
+    if state == "FAILED":
+        assert "logs aijob-test --profile 'profile with spaces'" in message
+    if state == "ERROR" and code == "NotEnoughResources":
+        assert "gpu-h100-sxm/1gpu-16vcpu-200gb" in message
+        assert "rerun the same command later" in message
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        SimpleNamespace(returncode=1, stdout="", stderr="private"),
+        SimpleNamespace(returncode=0, stdout="invalid json private"),
+        SimpleNamespace(returncode=0, stdout="[]"),
+        SimpleNamespace(returncode=0, stdout='{"metadata": {}, "status": null}'),
+        SimpleNamespace(
+            returncode=0,
+            stdout='{"metadata": {"id": "aijob-test", "name": "wrong-job"}, "status": {"state": "ERROR"}}',
+        ),
+        subprocess.TimeoutExpired("private", 15),
+        OSError("private"),
+    ],
+)
+def test_status_lookup_failure_preserves_safe_guidance(
+    cloud_config, monkeypatch, result
+):
+    def run(*args, **kwargs):
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", run)
+    message = NebiusCloud(cloud_config)._failure_message(
+        "/bin/nebius", "axolotl-test", 6
+    )
+    assert "code 6" in message
+    assert "Remote state could not be confirmed" in message
+    assert "get-by-name --name axolotl-test" in message
+    assert "private" not in message
+
+
+@pytest.mark.parametrize("preview", ["show_context", "dry_run"])
+def test_failed_preview_does_not_query_or_submit_job(
+    cloud_config, monkeypatch, preview
+):
+    cloud_config[preview] = True
+    called = Mock()
+    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", called)
+    message = NebiusCloud(cloud_config)._failure_message(
+        "/bin/nebius", "axolotl-test", 2
+    )
+    assert "no training job was requested" in message
+    called.assert_not_called()
