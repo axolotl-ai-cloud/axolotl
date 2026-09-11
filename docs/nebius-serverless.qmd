@@ -40,6 +40,11 @@ optimizer, scheduler and RNG state, started at step 11, and completed at step 30
 The resumed exports also passed independent size/hash checks. The cancelled
 job's VM and boot disk were removed while its checkpoint remained readable.
 
+A separate `cpu-d3` / `2vcpu-8gb` probe with a 3600-second timeout entered
+`FAILED` with `TimeoutExceeded` about one hour after job creation (including
+provisioning and image startup), rather than one hour of training time. Allow
+for that overhead when choosing the timeout.
+
 These observations establish the tested save/readback/resume path, not a general
 storage durability guarantee or bit-identical training across runs. Publication
 uses ordinary file close through the mount; there is no explicit object-storage
