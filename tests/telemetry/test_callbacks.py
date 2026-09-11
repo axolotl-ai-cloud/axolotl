@@ -143,6 +143,59 @@ class TestTelemetryCallback:
         assert "peak_cpu_memory_bytes" in call_args["properties"]
         assert call_args["properties"]["peak_cpu_memory_bytes"] == 1024
 
+    @pytest.mark.parametrize(
+        "trailing_logs",
+        [
+            [{"eval_loss": 1.7}],
+            [{"train_loss": 2.1, "train_runtime": 120.0}],
+            [{"eval_loss": 1.7}, {"train_loss": 2.1, "train_runtime": 120.0}],
+        ],
+    )
+    def test_on_train_end_after_non_training_logs(
+        self,
+        callback,
+        mock_telemetry_manager,
+        training_args,
+        trainer_state,
+        trainer_control,
+        trailing_logs,
+    ):
+        """Final summary and evaluation logs must not erase training metrics."""
+        expected = {
+            "loss": 2.5,
+            "ppl": 12.2,
+            "learning_rate": 5e-5,
+            "grad_norm": 1.2,
+            "tokens/total": 1024,
+            "tokens/trainable": 512,
+            "tokens/train_per_sec_per_gpu": 100,
+        }
+        trainer_state.log_history = [expected.copy(), *trailing_logs]
+
+        callback.on_train_end(training_args, trainer_state, trainer_control)
+
+        properties = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert {key: properties[key] for key in expected} == expected
+
+    def test_latest_metrics_across_partial_logs(self, callback, trainer_state):
+        """Use the latest value of each metric, including genuine zeros."""
+        trainer_state.log_history = [
+            {"loss": 3.0, "learning_rate": 5e-5, "tokens/total": 1024},
+            {"loss": 2.5, "learning_rate": 0.0},
+            {"tokens/total": 2048},
+            {"eval_loss": 1.7},
+        ]
+
+        assert callback._extract_last_metrics(trainer_state) == {
+            "loss": 2.5,
+            "ppl": 0,
+            "learning_rate": 0.0,
+            "grad_norm": 0,
+            "tokens/total": 2048,
+            "tokens/trainable": 0,
+            "tokens/train_per_sec_per_gpu": 0,
+        }
+
     def test_on_epoch_begin(
         self,
         callback,

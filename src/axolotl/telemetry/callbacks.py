@@ -154,26 +154,21 @@ class TelemetryCallback(TrainerCallback):
 
     def _extract_last_metrics(self, state: TrainerState) -> dict:
         """Extract last loss, learning_rate, grad_norm, and token metrics from log history."""
-        if not state.log_history:
-            return {
-                "loss": 0,
-                "ppl": 0,
-                "learning_rate": 0,
-                "grad_norm": 0,
-                "tokens/total": 0,
-                "tokens/trainable": 0,
-                "tokens/train_per_sec_per_gpu": 0,
-            }
-
-        last_log = state.log_history[-1]
-        return {
-            "loss": last_log.get("loss", 0),
-            "ppl": last_log.get("ppl", 0),
-            "learning_rate": last_log.get("learning_rate", 0),
-            "grad_norm": last_log.get("grad_norm", 0),
-            "tokens/total": last_log.get("tokens/total", 0),
-            "tokens/trainable": last_log.get("tokens/trainable", 0),
-            "tokens/train_per_sec_per_gpu": last_log.get(
-                "tokens/train_per_sec_per_gpu", 0
-            ),
+        metrics = {
+            "loss": 0,
+            "ppl": 0,
+            "learning_rate": 0,
+            "grad_norm": 0,
+            "tokens/total": 0,
+            "tokens/trainable": 0,
+            "tokens/train_per_sec_per_gpu": 0,
         }
+        missing = set(metrics)
+        # Evaluation and final summary entries can omit training metrics.
+        for log in reversed(state.log_history):
+            for key in missing.intersection(log):
+                metrics[key] = log[key]
+                missing.remove(key)
+            if not missing:
+                break
+        return metrics
