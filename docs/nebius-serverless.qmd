@@ -10,11 +10,40 @@ It does not require SkyPilot. For SkyPilot-managed clusters, including distribut
 training, see the [SkyPilot guide](skypilot.qmd).
 
 ::: {.callout-warning}
-This provider is experimental. Its local launch/bootstrap tests and CLI packaging
-preview do not establish GPU runtime compatibility, secret injection, checkpoint
-durability or successful resume on Nebius. Validate your selected image, region and
-storage configuration with a short run before starting a long training job.
+This provider is experimental. The single-GPU validation below covers one runtime
+and storage configuration. Validate your selected image, region and training
+configuration with a short run before starting a long job.
 :::
+
+## Tested configuration
+
+On September 11, 2026, validation in `eu-north1` used Nebius CLI `0.12.265`,
+`gpu-h100-sxm` / `1gpu-16vcpu-200gb`, and this pinned Linux amd64 image:
+
+```yaml
+image: axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab
+```
+
+The container reported Python 3.12.13, Torch 2.12.1+cu130, CUDA 13.0,
+Transformers 5.16.1 and PEFT 0.20.0; the host NVIDIA driver was 580.173.02.
+The public model was `NousResearch/Llama-3.2-1B`, pinned for validation with:
+
+```yaml
+revision_of_model: a9745ffc3556f145a830ac0c203509ba860582a3
+```
+
+The 30-step LoRA example completed. Its exported files passed independent S3
+size/hash checks, and all 64 adapter tensors matched after loading with that
+base revision; inference produced finite outputs. A separate job was cancelled
+after checkpoint 10 was published and verified through S3. A fresh job restored
+optimizer, scheduler and RNG state, started at step 11, and completed at step 30.
+The resumed exports also passed independent size/hash checks. The cancelled
+job's VM and boot disk were removed while its checkpoint remained readable.
+
+These observations establish the tested save/readback/resume path, not a general
+storage durability guarantee or bit-identical training across runs. Publication
+uses ordinary file close through the mount; there is no explicit object-storage
+flush barrier or atomic directory transaction.
 
 ## Prerequisites
 
@@ -71,7 +100,10 @@ cluster scheduling are not provided. The initial example uses one GPU.
 For a local preview, set `show_context: true` in the cloud YAML and run the same
 command. This invokes `job run --show-context` and submits nothing. Set
 `dry_run: true` instead for the CLI's server-side request validation without
-creating a Job. Remove either setting to execute training; they are mutually exclusive.
+creating a Job. With CLI 0.12.265, a managed-output dry run was rejected with
+`unsupported volume source type "nebius"`; use `show_context` for a local preview
+on that release. Remove either setting to execute training; they are mutually
+exclusive.
 
 Only the resolved training YAML, launcher settings and small bootstrap modules
 are packaged in a temporary directory. The Nebius CLI enforces its 64 KiB
