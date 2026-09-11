@@ -1,0 +1,82 @@
+name: NF4 distributed CPU
+
+on:
+  workflow_call:
+    inputs:
+      nightly:
+        type: boolean
+        default: false
+      pytorch_versions:
+        type: string
+        default: '["2.11.0", "2.12.1", "2.13.0"]'
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  TRANSFORMERS_IS_CI: "yes"
+  UV_SYSTEM_PYTHON: "1"
+  DS_ACCELERATOR: "cpu"
+
+jobs:
+  nf4-distributed:
+    name: NF4 CPU / PyTorch ${{ matrix.pytorch_version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        pytorch_version: ${{ fromJSON(inputs.pytorch_versions) }}
+    steps:
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: "pyproject.toml"
+      - name: Install dependencies
+        run: |
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
+          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install pytest pytest-cov pytest-xdist
+      - name: Override with nightly HF packages
+        if: inputs.nightly
+        run: |
+          uv pip install --no-deps \
+            "kernels @ git+https://github.com/huggingface/kernels.git@main#subdirectory=kernels" \
+            "transformers @ git+https://github.com/huggingface/transformers.git@main" \
+            "peft @ git+https://github.com/huggingface/peft.git@main" \
+            "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
+            "trl @ git+https://github.com/huggingface/trl.git@main" \
+            "datasets @ git+https://github.com/huggingface/datasets.git@main"
+      - name: Verify PyTorch version
+        run: |
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, torch.__version__"
+      - name: Run distributed CPU tests
+        run: |
+          pytest -v --durations=10 -n0 -m nf4_distributed \
+            --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
+            --cov=axolotl --cov-report=xml:nf4-cpu-coverage.xml
+      - name: Upload coverage
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./nf4-cpu-coverage.xml
+          flags: nf4-cpu,pytorch-${{ matrix.pytorch_version }}
+          fail_ci_if_error: false

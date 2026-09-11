@@ -238,6 +238,7 @@ norecursedirs = [
 ]
 markers = [
     "slow: marks tests as slow",
+    "nf4_distributed: CPU multi-process NF4 loading, sharding, and resume tests",
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
     "integration: marks tests as integration tests (real model modeling paths)",
 ]

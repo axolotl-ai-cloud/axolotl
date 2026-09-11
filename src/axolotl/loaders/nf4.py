@@ -64,15 +64,50 @@ def load_nf4_model(
     quantization = model_kwargs.pop("quantization_config", None)
     distributed = bool(cfg.fsdp_config)
     main = not distributed or dist.get_rank() == 0
+
+    def empty_model():
+        with init_empty_weights():
+            options = {"dtype": model_kwargs.get("dtype", cfg.torch_dtype)}
+            for name in ("attn_implementation", "experts_implementation"):
+                if name in model_kwargs:
+                    options[name] = model_kwargs[name]
+            if hasattr(loader, "from_config"):
+                return loader.from_config(
+                    model_config,
+                    trust_remote_code=cfg.trust_remote_code or False,
+                    **options,
+                )
+            return loader._from_config(model_config, **options)
+
     error = None
     if main:
         try:
-            with staged_nf4_loading(
-                cfg, device=quantization_device, quantization_config=quantization
-            ):
-                model = loader.from_pretrained(
-                    cfg.base_model, config=model_config, **model_kwargs
-                )
+            from accelerate import PartialState
+
+            from axolotl.loaders.nf4_cache import (
+                load_nf4_cache,
+                nf4_cache_path,
+                save_nf4_cache,
+            )
+            from axolotl.utils.logging import get_logger
+
+            device = quantization_device or PartialState().device
+            cache = nf4_cache_path(
+                cfg, model_config, model_kwargs, quantization, device
+            )
+            if cache is not None and cache.is_file():
+                get_logger(__name__).info("Loading packed NF4 cache: %s", cache)
+                model = load_nf4_cache(cache, empty_model)
+            else:
+                with staged_nf4_loading(
+                    cfg, device=device, quantization_config=quantization
+                ):
+                    model = loader.from_pretrained(
+                        cfg.base_model, config=model_config, **model_kwargs
+                    )
+                if cache is not None:
+                    save_nf4_cache(cache, model)
+                    get_logger(__name__).info("Saved packed NF4 cache: %s", cache)
         except Exception as exc:
             if not distributed:
                 raise
@@ -83,15 +118,7 @@ def load_nf4_model(
         if status[0] is not None:
             raise RuntimeError(f"Rank-zero NF4 loading failed: {status[0]}")
     if not main:
-        with init_empty_weights():
-            if hasattr(loader, "from_config"):
-                model = loader.from_config(
-                    model_config,
-                    dtype=cfg.torch_dtype,
-                    trust_remote_code=cfg.trust_remote_code or False,
-                )
-            else:
-                model = loader._from_config(model_config, dtype=cfg.torch_dtype)
+        model = empty_model()
     if distributed:
         structures = []
         if main:
@@ -157,6 +184,7 @@ def staged_nf4_loading(
     import transformers.core_model_loading as loading
     import transformers.modeling_utils as modeling
 
+    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
     from axolotl.monkeypatch.moe_quant import _moe_load_state
 
     original = loading.set_param_for_module
@@ -220,8 +248,10 @@ def staged_nf4_loading(
             {
                 "FSDP_CPU_RAM_EFFICIENT_LOADING": "false",
                 "HF_ENABLE_PARALLEL_LOADING": "false",
+                "HF_DEACTIVATE_ASYNC_LOAD": "true",
             },
         ),
+        prefetch_nf4_weights(int(cfg.get("nf4_prefetch_memory_mb", 1024)) * 1024**2),
         patch.object(loading, "set_param_for_module", set_param),
         patch.object(modeling, "caching_allocator_warmup", lambda *a, **k: None),
     ):

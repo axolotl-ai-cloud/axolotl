@@ -87,7 +87,11 @@ and quantizes the original floating-point checkpoint in bounded GPU chunks,
 storing packed weights in CPU memory. Other ranks construct the model on the
 meta device. After FSDP wrapping, rank zero transfers individual parameter shards;
 no rank needs a complete GPU replica during loading. Rank zero still needs CPU RAM
-for the packed model and checkpoint conversion temporaries. Quantization metadata
+for the complete packed model and checkpoint conversion temporaries. A CPU worker
+prefetches at most one upcoming conversion group's inputs while the current group
+is converted and quantized. The default lookahead budget is 1024 MiB; larger groups
+load synchronously. A fused MoE conversion can still require a complete floating-point
+expert tensor and its source tensors on CPU. Quantization metadata
 is replicated across ranks. Frozen base linear operations are checkpointed internally
 so backward recomputes dense weights instead of retaining them for every layer. Training still needs enough GPU memory to gather and
 execute an individual wrapped layer, including its dequantized weights.
@@ -95,6 +99,34 @@ execute an individual wrapped layer, including its dequantized weights.
 `offload_params` controls FSDP parameter offloading after loading. This path requires
 an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
 DeepSpeed, tensor/context/expert parallelism, DoRA and `modules_to_save` are unsupported.
+
+### Prefetch and reusable quantized caches
+
+```yaml
+nf4_prefetch_memory_mb: 1024  # Set to 0 to disable CPU lookahead.
+nf4_cache_dir: /data/axolotl-nf4-cache  # Optional; disabled by default.
+```
+
+The prefetch budget covers estimated source and destination allocations for one
+upcoming group, in addition to the current conversion and the packed model. It is
+not a limit on total CPU RAM. GPU quantization remains serialized and chunked.
+Prefetching overlaps CPU reads with conversion and quantization; it does not
+quantize individual expert slices before Transformers assembles their target tensor.
+
+On the first load, rank zero atomically saves a tensor-only cache containing packed
+weights, quantization metadata, and unquantized exclusions. Later loads reconstruct
+the CPU model from that cache without reading the original weight tensors or running
+quantization. Other ranks still construct meta models and receive their FSDP shards.
+
+Cache entries are keyed by checkpoint identity, model and quantization settings,
+dtype, quantization device type, and library versions. Local checkpoint identity
+uses file paths, sizes, and modification times; Hub checkpoints require a resolved
+commit. Local source files must remain available for metadata-based identity checks,
+although their weight contents are not read on a cache hit. Hub cache hits still
+resolve the source configuration and revision. Interrupted writes are not reused.
+Caches are Axolotl loading artifacts, not Hugging Face model exports or training
+checkpoints. Adapter and optimizer resume still use the training checkpoint. Cache
+files are not automatically evicted; delete unwanted entries to reclaim disk space.
 
 ### Sharding and tensor shapes
 
