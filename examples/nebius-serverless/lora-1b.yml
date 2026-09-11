@@ -5,7 +5,7 @@ datasets:
   - path: teknium/GPT4-LLM-Cleaned
     type: alpaca
 
-# Relative output paths are placed inside the managed /outputs mount.
+# Relative output paths select the export folder in the managed /outputs mount.
 output_dir: training
 sequence_len: 512
 sample_packing: false
