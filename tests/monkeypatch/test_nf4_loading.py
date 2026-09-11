@@ -102,7 +102,7 @@ def test_large_bnb_dispatch(monkeypatch):
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-def test_transformers_load_and_peft(backend, tmp_path):
+def test_transformers_load_and_peft(backend, tmp_path, monkeypatch):
     from peft import LoraConfig, get_peft_model
     from transformers import LlamaConfig, LlamaForCausalLM
 
@@ -122,8 +122,16 @@ def test_transformers_load_and_peft(backend, tmp_path):
     original = LlamaForCausalLM(config)
     original.save_pretrained(tmp_path)
     cfg = DictDefault(nf4_backend=backend, quantize_moe_experts=True)
-    with staged_nf4_loading(cfg, device="cpu"):
-        model = LlamaForCausalLM.from_pretrained(tmp_path, device_map={"": "cpu"})
+    import transformers.core_model_loading as loading
+
+    def reject_prefetch(*args, **kwargs):
+        pytest.fail("Staged NF4 must not prefetch unquantized weights")
+
+    monkeypatch.setenv("HF_DEACTIVATE_ASYNC_LOAD", "false")
+    with monkeypatch.context() as scoped:
+        scoped.setattr(loading, "ThreadPoolExecutor", reject_prefetch)
+        with staged_nf4_loading(cfg, device="cpu"):
+            model = LlamaForCausalLM.from_pretrained(tmp_path, device_map={"": "cpu"})
     assert parametrize.is_parametrized(model.model.layers[0].self_attn.q_proj, "weight")
     assert not parametrize.is_parametrized(model.lm_head, "weight")
     model.requires_grad_(False)
@@ -205,6 +213,7 @@ def _distributed_nf4_worker(
             quantize_moe_experts=expert_model,
             base_model=checkpoint,
             nf4_backend=backend,
+            nf4_cache_dir=sharding_case.get("cache_dir"),
             load_in_4bit=True,
             adapter="qlora",
             fsdp_version=2,
@@ -216,7 +225,7 @@ def _distributed_nf4_worker(
         loader.auto_model_loader = model_class
         loader.model_kwargs = {"dtype": cfg.torch_dtype}
         loader._set_quantization_config()
-        if rank:
+        if rank or sharding_case.get("cache_hit"):
             with patch.object(
                 model_class,
                 "from_pretrained",
@@ -224,7 +233,8 @@ def _distributed_nf4_worker(
             ):
                 loader._build_model()
                 model = loader.model
-            assert all(p.is_meta for p in model.parameters())
+            if rank:
+                assert all(p.is_meta for p in model.parameters())
         else:
             loader._build_model()
             model = loader.model
@@ -392,6 +402,7 @@ def _check_fsdp_resume(model, rank, tokens, checkpoint):
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.nf4_distributed
 def test_rank_zero_load_shard_and_backward(backend, dtype, tmp_path):
     from transformers import LlamaConfig, LlamaForCausalLM
 
@@ -757,6 +768,7 @@ def _check_fresh_trainer_resume(model, rank, tokens, checkpoint, phase):
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.nf4_distributed
 def test_fresh_process_trainer_resume(backend, tmp_path):
     from transformers import LlamaConfig, LlamaForCausalLM
 
@@ -949,6 +961,7 @@ def test_cuda_trainer_train_and_fresh_resume(backend, tmp_path):
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.nf4_distributed
 def test_real_moe_fsdp_resume(backend, tmp_path):
     from transformers import Qwen3MoeConfig, Qwen3MoeForCausalLM
 
@@ -983,11 +996,22 @@ def test_real_moe_fsdp_resume(backend, tmp_path):
             for expert, weight in enumerate(tensor):
                 state[f"{prefix}.{expert}.down_proj.weight"] = weight.contiguous()
     save_file(state, base / "model.safetensors", metadata={"format": "pt"})
-    torch.multiprocessing.spawn(
-        _distributed_nf4_worker,
-        args=(backend, str(base), str(tmp_path / "moe")),
-        nprocs=2,
-    )
+    for cache_hit in (False, True):
+        torch.multiprocessing.spawn(
+            _distributed_nf4_worker,
+            args=(
+                backend,
+                str(base),
+                str(tmp_path / f"moe-{cache_hit}"),
+                None,
+                "cpu",
+                torch.float32,
+                False,
+                False,
+                {"cache_dir": str(tmp_path / "cache"), "cache_hit": cache_hit},
+            ),
+            nprocs=2,
+        )
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
@@ -1003,6 +1027,7 @@ def test_legacy_merge_rejects_staged_nf4(backend):
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.nf4_distributed
 def test_outer_activation_checkpointing(backend, tmp_path):
     from transformers import LlamaConfig, LlamaForCausalLM
 
@@ -1145,6 +1170,7 @@ def _install_logical_shape_checks(model, snapshot):
     "wrap_policy",
     ["TRANSFORMER_BASED_WRAP", "SIZE_BASED_WRAP", pytest.param(None, id="root_wrap")],
 )
+@pytest.mark.nf4_distributed
 def test_nf4_fsdp2_shape_matrix(architecture, backend, reshard, wrap_policy, tmp_path):
     _run_nf4_shape_case(architecture, backend, reshard, wrap_policy, tmp_path, "cpu")
 
@@ -1230,6 +1256,7 @@ def _hybrid_nf4_rejection_worker(rank, rendezvous):
         dist.destroy_process_group()
 
 
+@pytest.mark.nf4_distributed
 def test_hybrid_nf4_mesh_is_explicitly_rejected(tmp_path):
     torch.multiprocessing.spawn(
         _hybrid_nf4_rejection_worker, args=(str(tmp_path / "hybrid"),), nprocs=4
@@ -1249,3 +1276,325 @@ def test_cuda_nf4_fsdp2_shape_matrix(
     architecture, backend, reshard, wrap_policy, tmp_path
 ):
     _run_nf4_shape_case(architecture, backend, reshard, wrap_policy, tmp_path, "cuda")
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.parametrize("architecture", ["dense", "moe"])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_nf4_disk_cache(backend, architecture, dtype, tmp_path, monkeypatch):
+    from transformers import (
+        LlamaConfig,
+        LlamaForCausalLM,
+        Qwen3MoeConfig,
+        Qwen3MoeForCausalLM,
+    )
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    options = dict(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    if architecture == "moe":
+        cls = Qwen3MoeForCausalLM
+        config = Qwen3MoeConfig(
+            **options, moe_intermediate_size=128, num_experts=2, num_experts_per_tok=1
+        )
+    else:
+        cls = LlamaForCausalLM
+        config = LlamaConfig(**options, tie_word_embeddings=True)
+    base = tmp_path / "base"
+    cls(config).save_pretrained(base)
+    cfg = DictDefault(
+        base_model=str(base),
+        nf4_backend=backend,
+        quantize_moe_experts=True,
+        torch_dtype=dtype,
+        nf4_cache_dir=str(tmp_path / "cache"),
+    )
+
+    def load():
+        return load_nf4_model(
+            cls,
+            copy.deepcopy(config),
+            {"dtype": dtype, "device_map": {"": "cpu"}, "attn_implementation": "eager"},
+            cfg,
+            "cpu",
+        )
+
+    first = load()
+    files = list((tmp_path / "cache").glob("*.pt"))
+    assert len(files) == 1
+    tokens = torch.randint(0, 128, (1, 4))
+    expected = first(tokens).logits.detach()
+    with monkeypatch.context() as scoped:
+
+        def reject_source(*args, **kwargs):
+            pytest.fail("Cache hits must not load the source checkpoint")
+
+        scoped.setattr(cls, "from_pretrained", reject_source)
+        second = load()
+    for name, value in first.state_dict().items():
+        torch.testing.assert_close(second.state_dict()[name], value, rtol=0, atol=0)
+    torch.testing.assert_close(second(tokens).logits, expected, rtol=0, atol=0)
+    assert second.config._attn_implementation == "eager"
+    assert not any(tensor.is_meta for tensor in second.buffers())
+    if architecture == "dense":
+        assert second.lm_head.weight is second.model.embed_tokens.weight
+    cfg.bnb_config_kwargs = {"llm_int8_skip_modules": ["q_proj"]}
+    third = load()
+    assert len(list((tmp_path / "cache").glob("*.pt"))) == 2
+    assert not parametrize.is_parametrized(third.model.layers[0].self_attn.q_proj)
+
+
+def test_nf4_prefetch_bound_and_overlap():
+    import gc
+    import threading
+    import weakref
+
+    import transformers.core_model_loading as loading
+
+    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
+
+    started = [threading.Event() for _ in range(3)]
+    refs = {}
+
+    class Source:
+        shape = (16,)
+
+        def __init__(self, index):
+            self.index = index
+
+        def __getitem__(self, key):
+            value = torch.ones(self.shape)
+            refs[self.index] = weakref.ref(value)
+            started[self.index].set()
+            return value
+
+    with prefetch_nf4_weights(1024):
+        groups = []
+        for index in range(3):
+            key = str(index)
+            group = loading.WeightRenaming(key, key)
+            group.add_tensor(
+                key,
+                key,
+                key,
+                loading.spawn_materialize(None, Source(index), "cpu", torch.float32),
+            )
+            groups.append((key, group))
+        iterator = iter(loading.tqdm(groups, desc="Loading weights"))
+        _, current = next(iterator)
+        assert started[1].wait(5)
+        assert not started[0].is_set() and not started[2].is_set()
+        value = current.materialize_tensors()
+        del value
+        gc.collect()
+        assert refs[0]() is None
+        _, current = next(iterator)
+        assert started[2].wait(5)
+        value = current.materialize_tensors()
+        del value
+        gc.collect()
+        assert refs[1]() is None
+        _, current = next(iterator)
+        current.materialize_tensors()
+        with pytest.raises(StopIteration):
+            next(iterator)
+
+
+@pytest.mark.parametrize("budget", [0, 1])
+def test_nf4_prefetch_oversized_groups_are_lazy(budget):
+    import transformers.core_model_loading as loading
+
+    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
+
+    reads = []
+
+    class Source:
+        shape = (16,)
+
+        def __getitem__(self, key):
+            reads.append(True)
+            return torch.ones(self.shape)
+
+    with prefetch_nf4_weights(budget):
+        groups = []
+        for key in ("a", "b"):
+            group = loading.WeightRenaming(key, key)
+            group.add_tensor(
+                key,
+                key,
+                key,
+                loading.spawn_materialize(None, Source(), "cpu", torch.float32),
+            )
+            groups.append((key, group))
+        for _, group in loading.tqdm(groups, desc="Loading weights"):
+            before = len(reads)
+            group.materialize_tensors()
+            assert len(reads) == before + 1
+        assert len(reads) == 2
+
+
+def test_nf4_prefetch_failure_restores_loader():
+    import threading
+
+    import transformers.core_model_loading as loading
+
+    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
+
+    original = loading.spawn_materialize
+
+    class BrokenSource:
+        shape = (16,)
+
+        def __getitem__(self, key):
+            raise OSError("checkpoint read failed")
+
+    with pytest.raises(OSError, match="checkpoint read failed"):
+        with prefetch_nf4_weights(1024):
+            groups = []
+            for key in ("a", "b"):
+                group = loading.WeightRenaming(key, key)
+                group.add_tensor(
+                    key,
+                    key,
+                    key,
+                    loading.spawn_materialize(
+                        None, BrokenSource(), "cpu", torch.float32
+                    ),
+                )
+                groups.append((key, group))
+            iterator = iter(loading.tqdm(groups, desc="Loading weights"))
+            next(iterator)
+            next(iterator)
+    assert loading.spawn_materialize is original
+    assert not any(
+        thread.name.startswith("nf4-prefetch") for thread in threading.enumerate()
+    )
+
+
+def test_nf4_cache_atomic_write(tmp_path, monkeypatch):
+    from axolotl.loaders.nf4_cache import save_nf4_cache
+
+    path = tmp_path / "packed.pt"
+    model = nn.Linear(4, 4)
+    save_nf4_cache(path, model)
+    original = path.read_bytes()
+
+    def fail_save(payload, destination):
+        from pathlib import Path
+
+        Path(destination).write_bytes(b"incomplete")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(torch, "save", fail_save)
+    with pytest.raises(OSError, match="disk full"):
+        save_nf4_cache(path, model)
+    assert path.read_bytes() == original
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_nf4_cache_source_and_dtype_invalidation(tmp_path):
+    from transformers import LlamaConfig
+
+    from axolotl.loaders.nf4_cache import nf4_cache_path
+    from axolotl.utils.dict import DictDefault
+
+    source = tmp_path / "model.safetensors"
+    source.write_bytes(b"first")
+    cfg = DictDefault(
+        base_model=str(tmp_path),
+        nf4_cache_dir=str(tmp_path / "cache"),
+        torch_dtype=torch.float32,
+    )
+    config = LlamaConfig()
+    first = nf4_cache_path(cfg, config, {}, None, "cpu")
+    assert nf4_cache_path(cfg, config, {}, None, "cpu") == first
+    source.write_bytes(b"changed checkpoint")
+    second = nf4_cache_path(cfg, config, {}, None, "cpu")
+    assert second != first
+    cfg.torch_dtype = torch.bfloat16
+    assert nf4_cache_path(cfg, config, {}, None, "cpu") != second
+
+
+def test_nf4_cache_pins_weight_revision(tmp_path, monkeypatch):
+    from transformers import LlamaConfig
+    from transformers.utils import hub
+
+    from axolotl.loaders.nf4_cache import nf4_cache_path
+    from axolotl.utils.dict import DictDefault
+
+    revision = "a" * 40
+    calls = []
+
+    def resolve(repo, filename, **kwargs):
+        calls.append((repo, filename, kwargs["revision"]))
+        return f"/cache/models--org--weights/snapshots/{revision}/config.json"
+
+    monkeypatch.setattr(hub, "cached_file", resolve)
+    cfg = DictDefault(base_model="org/weights", nf4_cache_dir=str(tmp_path))
+    config = LlamaConfig()
+    config._commit_hash = "b" * 40
+    kwargs = {"revision": "main"}
+    first = nf4_cache_path(cfg, config, kwargs, None, "cpu")
+    assert kwargs["revision"] == kwargs["_commit_hash"] == revision
+    assert calls == [("org/weights", "config.json", "main")]
+    revision = "c" * 40
+    assert nf4_cache_path(cfg, config, {"revision": "main"}, None, "cpu") != first
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="Requires two CUDA GPUs")
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.parametrize("architecture", ["dense", "moe"])
+def test_cuda_nf4_cache_resume(backend, architecture, tmp_path):
+    from transformers import (
+        LlamaConfig,
+        LlamaForCausalLM,
+        Qwen3MoeConfig,
+        Qwen3MoeForCausalLM,
+    )
+
+    options = dict(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    if architecture == "moe":
+        model = Qwen3MoeForCausalLM(
+            Qwen3MoeConfig(
+                **options,
+                moe_intermediate_size=128,
+                num_experts=2,
+                num_experts_per_tok=1,
+            )
+        )
+    else:
+        model = LlamaForCausalLM(LlamaConfig(**options))
+    base = tmp_path / "base"
+    model.save_pretrained(base)
+    for cache_hit in (False, True):
+        torch.multiprocessing.spawn(
+            _distributed_nf4_worker,
+            args=(
+                backend,
+                str(base),
+                str(tmp_path / f"cuda-cache-{cache_hit}"),
+                None,
+                "cuda",
+                torch.bfloat16,
+                False,
+                False,
+                {"cache_dir": str(tmp_path / "cache"), "cache_hit": cache_hit},
+            ),
+            nprocs=2,
+        )

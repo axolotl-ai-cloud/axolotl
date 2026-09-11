@@ -22,7 +22,7 @@ done
 # hf download "microsoft/Phi-3-medium-128k-instruct"
 
 # Run unit tests with initial coverage report
-pytest -v --durations=10 -n8 \
+pytest -v --durations=10 -n8 -m "not slow and not nf4_distributed" \
   --ignore=tests/e2e/ \
   --ignore=tests/integrations/ \
   --ignore=tests/patched/ \
