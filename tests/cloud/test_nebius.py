@@ -68,7 +68,7 @@ def test_submit_isolated_context_and_forward_options(
                 {"source": "storagebucket-input", "mount": "/data", "mode": "ro"}
             ],
             "env": {"RUN_LABEL": "value with spaces; $(not-a-command)"},
-            "env_secret": {"HF_TOKEN": "secret-id/HF_TOKEN"},
+            "env_secret": {"HF_TOKEN": "mbsec-example"},
         }
     )
     NebiusCloud(cloud_config).train(
@@ -79,7 +79,7 @@ def test_submit_isolated_context_and_forward_options(
     command = capture_launch["command"]
     assert command[:5] == ["/bin/nebius", "ai", "job", "run", "run.py"]
     assert "RUN_LABEL=value with spaces; $(not-a-command)" in command
-    assert "HF_TOKEN=secret-id/HF_TOKEN" in command
+    assert "HF_TOKEN=mbsec-example" in command
     assert "storagebucket-input:/data:ro" in command
     assert command[command.index("--timeout") + 1] == "3600s"
     context = capture_launch["context"]
@@ -90,7 +90,7 @@ def test_submit_isolated_context_and_forward_options(
         "nebius_completion.py",
         "nebius_storage.py",
     }
-    assert "secret-id" not in "\n".join(context.values())
+    assert "mbsec-example" not in "\n".join(context.values())
     assert "RUN_LABEL" not in "\n".join(context.values())
     assert yaml.safe_load(context["train.yaml"])["learning_rate"] == 0.0001
     assert json.loads(context["launch.json"])["launcher_args"] == [
@@ -384,18 +384,19 @@ def test_checkpoint_and_completion_callback_write_only_on_primary(
 ):
     import importlib.util
 
-    monkeypatch.setitem(
-        sys.modules, "transformers", SimpleNamespace(TrainerCallback=object)
-    )
-    monkeypatch.setitem(
-        sys.modules, "axolotl.integrations.base", SimpleNamespace(BasePlugin=object)
-    )
-    monkeypatch.setitem(sys.modules, "nebius_storage", storage)
-    spec = importlib.util.spec_from_file_location(
-        "test_nebius_completion", Path(runner.__file__).with_name("completion.py")
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    with monkeypatch.context() as patch:
+        patch.setitem(
+            sys.modules, "transformers", SimpleNamespace(TrainerCallback=object)
+        )
+        patch.setitem(
+            sys.modules, "axolotl.integrations.base", SimpleNamespace(BasePlugin=object)
+        )
+        patch.setitem(sys.modules, "nebius_storage", storage)
+        spec = importlib.util.spec_from_file_location(
+            "test_nebius_completion", Path(runner.__file__).with_name("completion.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
     target = tmp_path / "complete.json"
     monkeypatch.setenv("AXOLOTL_NEBIUS_COMPLETION_FILE", str(target))
     callback = module.NebiusCompletionPlugin().add_callbacks_pre_trainer(None, None)[0]

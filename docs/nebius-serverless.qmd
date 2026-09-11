@@ -109,14 +109,16 @@ For gated models or private Hub datasets, inject a token through a Nebius secret
 ```yaml
 # Cloud configuration; values are secret references, never token values.
 env_secret:
-  HF_TOKEN: secret-id/HF_TOKEN
+  HF_TOKEN: mbsec-YOUR_SECRET_ID
 ```
 
-Check `nebius ai job run --help` for the secret selector syntax of your installed
-CLI. The example follows 0.12.265's `job run` help; `job create` may describe a
-different selector form. Secret injection still needs live validation. Unlike the
-Modal provider, this configuration does not read secrets by name from your local
-environment. Ordinary nonsecret variables use an `env` mapping:
+Create a payload entry named `HF_TOKEN` in that secret. CLI 0.12.265 was tested
+with `ENV_NAME=SECRET_ID`: the environment variable name selects the payload key.
+Its `job run --help` advertises `secret-id/key`, but that form was rejected by the
+service in testing. A disposable probe verified runtime injection with a plain
+secret ID; gated Hugging Face access was not part of that test. Unlike the Modal
+provider, this configuration does not read secrets from your local environment.
+Ordinary nonsecret variables use an `env` mapping:
 
 ```yaml
 env:
