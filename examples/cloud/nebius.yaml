@@ -16,9 +16,9 @@ output: auto
 # disk_size: 250Gi
 
 # Secrets are Nebius secret references, not values or local environment lookups.
-# Check `nebius ai job run --help` for the syntax supported by your CLI release.
+# With CLI 0.12.265, use a secret ID whose payload contains the HF_TOKEN key.
 # env_secret:
-#   HF_TOKEN: secret-id/HF_TOKEN
+#   HF_TOKEN: mbsec-YOUR_SECRET_ID
 
 # volumes:
 #   - source: storagebucket-...
