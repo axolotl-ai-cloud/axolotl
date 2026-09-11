@@ -1,6 +1,7 @@
 """Trainer callbacks for reporting runtime metrics at regular intervals."""
 
 import time
+from typing import Any
 
 from transformers import (
     TrainerCallback,
@@ -10,12 +11,21 @@ from transformers import (
 )
 
 from axolotl.telemetry.manager import TelemetryManager
-from axolotl.telemetry.runtime_metrics import RuntimeMetricsTracker
+from axolotl.telemetry.runtime_metrics import RuntimeMetrics, RuntimeMetricsTracker
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 TIME_SINCE_LAST = 60
+TRAINING_METRICS = {
+    "loss",
+    "ppl",
+    "learning_rate",
+    "grad_norm",
+    "tokens/total",
+    "tokens/trainable",
+    "tokens/train_per_sec_per_gpu",
+}
 
 
 class TelemetryCallback(TrainerCallback):
@@ -36,6 +46,10 @@ class TelemetryCallback(TrainerCallback):
         self.start_time = time.time()
         self.last_report_time = None
         self.last_report_step = 0
+        self.start_step = 0
+        self.latest_metrics: dict[str, Any] = {}
+        self.metric_steps: dict[str, int] = {}
+        self.aggregate_metrics: dict[str, Any] = {}
 
     # pylint: disable=unused-argument
     def on_train_begin(
@@ -46,6 +60,15 @@ class TelemetryCallback(TrainerCallback):
         **kwargs,
     ):
         """Handle training start."""
+        self.start_time = time.time()
+        self.start_step = state.global_step
+        self.last_report_step = self.start_step
+        self.last_report_time = self.start_time
+        self.current_epoch = int(state.epoch or 0)
+        self.tracker.metrics = RuntimeMetrics(start_time=self.start_time)
+        self.latest_metrics = {}
+        self.metric_steps = {}
+        self.aggregate_metrics = {}
         self.telemetry_manager.send_event(event_type="train-start")
 
     # pylint: disable=unused-argument
@@ -57,11 +80,17 @@ class TelemetryCallback(TrainerCallback):
         **kwargs,
     ):
         """Handle training end."""
-        # Send training completion event
+        self.tracker.update_memory_metrics()
         self.telemetry_manager.send_event(
             event_type="train-end",
-            properties=self._extract_last_metrics(state)
-            | self.tracker.metrics.to_dict(),
+            properties=self.tracker.metrics.to_dict()
+            | {
+                "step": state.global_step,
+                "start_step": self.start_step,
+                "aggregate": self.aggregate_metrics.copy(),
+                "latest_step": self.latest_metrics
+                | {"metric_steps": self.metric_steps.copy()},
+            },
         )
 
     # pylint: disable=unused-argument
@@ -73,7 +102,7 @@ class TelemetryCallback(TrainerCallback):
         **kwargs,
     ):
         """Handle epoch start."""
-        self.current_epoch += 1
+        self.current_epoch = int(state.epoch or 0)
         self.tracker.start_epoch(self.current_epoch)
 
     # pylint: disable=unused-argument
@@ -102,7 +131,7 @@ class TelemetryCallback(TrainerCallback):
         # Check if we should report metrics
         should_report = (
             step % self.report_interval_steps == 0
-            or step == 1  # Always report first step
+            or step == self.start_step + 1
             or step - self.last_report_step >= self.report_interval_steps
         )
 
@@ -116,7 +145,7 @@ class TelemetryCallback(TrainerCallback):
 
             # Only report if enough time has passed
             if (
-                step == 1
+                step == self.start_step + 1
                 or time_since_last_report >= TIME_SINCE_LAST
                 or steps_since_last_report >= self.report_interval_steps
             ):
@@ -130,7 +159,9 @@ class TelemetryCallback(TrainerCallback):
                 self.tracker.update_memory_metrics()
 
                 # Prepare metrics to report
-                metrics = self._extract_last_metrics(state) | {
+                metrics = self.latest_metrics | {
+                    "metric_steps": self.metric_steps.copy(),
+                    "start_step": self.start_step,
                     "step": step,
                     "epoch": self.current_epoch,
                     "progress": state.epoch,  # Fractional epoch progress
@@ -152,23 +183,30 @@ class TelemetryCallback(TrainerCallback):
                 self.last_report_time = current_time
                 self.last_report_step = step
 
-    def _extract_last_metrics(self, state: TrainerState) -> dict:
-        """Extract last loss, learning_rate, grad_norm, and token metrics from log history."""
-        metrics = {
-            "loss": 0,
-            "ppl": 0,
-            "learning_rate": 0,
-            "grad_norm": 0,
-            "tokens/total": 0,
-            "tokens/trainable": 0,
-            "tokens/train_per_sec_per_gpu": 0,
-        }
-        missing = set(metrics)
-        # Evaluation and final summary entries can omit training metrics.
-        for log in reversed(state.log_history):
-            for key in missing.intersection(log):
-                metrics[key] = log[key]
-                missing.remove(key)
-            if not missing:
-                break
-        return metrics
+    def on_prediction_step(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        """Capture evaluation peaks before the memory logger resets them."""
+        self.tracker.update_gpu_memory_metrics()
+
+    def on_log(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        logs: dict | None = None,
+        **kwargs,
+    ):
+        """Record training metrics with the step at which they were logged."""
+        if not logs:
+            return
+        if logs.get("train_loss") is not None:
+            self.aggregate_metrics["train_loss"] = logs["train_loss"]
+        for key in TRAINING_METRICS.intersection(logs):
+            if logs[key] is not None:
+                self.latest_metrics[key] = logs[key]
+                self.metric_steps[key] = state.global_step
