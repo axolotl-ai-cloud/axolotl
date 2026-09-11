@@ -685,6 +685,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use bitsandbytes 4 bit",
     ),
     (
+        ("--nf4-backend",),
+        None,
+        None,
+        "NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
+    ),
+    (
         ("--adapter",),
         None,
         None,
@@ -820,7 +826,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--qlora-sharded-model-loading/--no-qlora-sharded-model-loading",),
         None,
         None,
-        "load qlora model in sharded format for FSDP using answer.ai technique.",
+        "Load QLoRA weights in sharded format for FSDP. Defaults to true for FSDP2 QLoRA with load_in_4bit and cpu_ram_efficient_loading, and false otherwise.",
     ),
     (
         ("--lora-on-cpu/--no-lora-on-cpu",),
