@@ -967,6 +967,31 @@ class ModelLoader:
 
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
+        from axolotl.loaders.nf4 import load_nf4_model, uses_staged_nf4
+        from axolotl.monkeypatch.bnb_large_tensors import patch_bnb_large_tensors
+
+        if self.cfg.load_in_4bit:
+            patch_bnb_large_tensors()
+        if uses_staged_nf4(self.cfg):
+            if getattr(self.model_config, "quantization_config", None):
+                raise ValueError(
+                    "CPU-staged NF4 requires an unquantized base checkpoint"
+                )
+            self.model_kwargs["device_map"] = {"": "cpu"}
+            if self.cfg.fsdp_config:
+                init_distributed_state()
+            kwargs = dict(self.model_kwargs)
+            kwargs["trust_remote_code"] = self.cfg.trust_remote_code or False
+            self.model = load_nf4_model(
+                self.auto_model_loader, self.model_config, kwargs, self.cfg
+            )
+            self.model._moe_experts_quantized = bool(self.cfg.quantize_moe_experts)
+            if not self.cfg.fsdp_config:
+                self.model.to(
+                    torch.device("cuda", int(os.environ.get("LOCAL_RANK", 0)))
+                )
+            return True
+
         skip_move_to_device = False
 
         if self.cfg.tensor_parallel_size > 1:
@@ -1136,7 +1161,9 @@ class ModelLoader:
             # Make sure everything is in the same dtype
             skip_prepare_model_for_kbit_training = True
 
-        if getattr(self.model, "_moe_experts_quantized", False):
+        if getattr(self.model, "_moe_experts_quantized", False) or getattr(
+            self.model, "_axolotl_staged_nf4", False
+        ):
             # Parametrized expert tensors dequantize on access — would OOM.
             skip_prepare_model_for_kbit_training = True
 

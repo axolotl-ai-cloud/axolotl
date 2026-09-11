@@ -976,11 +976,12 @@ class PatchManager:
         if not self.cfg.quantize_moe_experts and not has_target_params:
             return
 
+        from axolotl.loaders.nf4 import uses_staged_nf4
         from axolotl.monkeypatch.moe_quant import (
             patch_peft_target_parameters_matching,
         )
 
-        if self.cfg.quantize_moe_experts:
+        if self.cfg.quantize_moe_experts and not uses_staged_nf4(self.cfg):
             from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
 
             patch_moe_quantization_on_load(self.cfg)
