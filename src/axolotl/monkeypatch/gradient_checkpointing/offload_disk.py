@@ -33,8 +33,11 @@ import torch
 
 from axolotl.utils.logging import get_logger
 
-torch_cuda_amp_custom_fwd = torch.amp.custom_fwd(device_type="cuda")
-torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type="cuda")
+# Detect the actual accelerator (cuda/npu/xpu/...) so the AMP custom_fwd/bwd
+# decorators are device-agnostic.
+_amp_device_type = str(torch.accelerator.current_accelerator()) if hasattr(torch, "accelerator") else "cuda"
+torch_cuda_amp_custom_fwd = torch.amp.custom_fwd(device_type=_amp_device_type)
+torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type=_amp_device_type)
 
 # Setup logger
 logger = get_logger(__name__)
@@ -473,6 +476,7 @@ class Disco(torch.autograd.Function):
         ctx.file_path = file_path
         ctx.forward_function = forward_function
         ctx.args = args
+        ctx._device = hidden_states.device  # remember the real compute device for backward
 
         return output
 
@@ -493,7 +497,7 @@ class Disco(torch.autograd.Function):
             # Ensure the file is saved before we try to load it
             manager.wait_for_save(file_path)
 
-            hidden_states = manager.load_tensor(file_path)
+            hidden_states = manager.load_tensor(file_path, target_device=ctx._device)
             hidden_states.requires_grad = True
 
             # Compute gradients
