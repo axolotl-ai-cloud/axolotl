@@ -1,0 +1,6 @@
+# Worker nodes joined by `axolotl ray up --hostfile hostfile` (run it on the
+# head node; entries matching the local machine are skipped). slots=N is
+# accepted for MPI-style compatibility and ignored — Ray detects GPUs itself.
+10.0.0.5 slots=8
+10.0.0.6 slots=8
+10.0.0.7 slots=8

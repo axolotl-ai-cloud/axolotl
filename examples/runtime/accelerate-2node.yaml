@@ -1,0 +1,10 @@
+# Two-node accelerate launch. machine_rank is intentionally not part of the
+# runtime file (it differs per node) — pass it through on each node:
+#   node 0: axolotl train recipe.yaml --runtime this.yaml -- --machine_rank 0
+#   node 1: axolotl train recipe.yaml --runtime this.yaml -- --machine_rank 1
+launcher: accelerate
+accelerate:
+  num_processes: 16
+  num_machines: 2
+  main_process_ip: 10.0.0.4
+  main_process_port: 29500

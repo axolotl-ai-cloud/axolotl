@@ -18,6 +18,7 @@ from axolotl.cli.args import (
 )
 from axolotl.cli.art import print_axolotl_text_art
 from axolotl.cli.config_options import AXOLOTL_CONFIG_CLI_OPTIONS
+from axolotl.cli.launchers.resolve import resolve_launch
 from axolotl.cli.plugins import PluginCommandGroup
 from axolotl.cli.utils import (
     add_options_from_config_options,
@@ -82,9 +83,16 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option(
     "--launcher",
-    type=click.Choice(["accelerate", "torchrun", "python"]),
-    default="accelerate",
+    type=click.Choice(["accelerate", "torchrun", "ray", "python"]),
+    default=None,
+    show_default="accelerate",
     help="Launcher to use for multi-GPU training",
+)
+@click.option(
+    "--runtime",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Path to a runtime/cluster config YAML (launcher + per-launcher settings)",
 )
 @click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @click.option(
@@ -99,7 +107,8 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
 def train(
     ctx: click.Context,
     config: str,
-    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher: Literal["accelerate", "torchrun", "ray", "python"] | None = None,
+    runtime: str | None = None,
     cloud: str | None = None,
     sweep: str | None = None,
     **kwargs,
@@ -110,7 +119,10 @@ def train(
     Args:
         ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
-        launcher: Launcher to use for multi-GPU training ("accelerate", "torchrun", or "python").
+        launcher: Launcher to use for multi-GPU training ("accelerate", "torchrun",
+            "ray", or "python"). Defaults to "accelerate" unless a --runtime file or
+            the training config selects otherwise.
+        runtime: Path to a runtime/cluster config YAML file.
         cloud: Path to a cloud accelerator configuration file
         sweep: Path to YAML config for sweeping hyperparameters.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
@@ -119,14 +131,22 @@ def train(
     # Extract launcher args from extra args (after --)
     launcher_args = ctx.args if ctx.args else []
 
-    # Handle Ray launcher override
-    _launcher = None if kwargs.get("use_ray") else launcher
+    resolved = resolve_launch(config, runtime, launcher, kwargs, launcher_args)
 
     # Process each configuration
     for cfg_file, is_group in generate_config_files(config, sweep):
         try:
             use_exec = is_group is not True
-            launch_training(cfg_file, _launcher, cloud, kwargs, launcher_args, use_exec)
+            launch_training(
+                cfg_file,
+                resolved.launcher,
+                cloud,
+                kwargs,
+                resolved.launcher_args,
+                use_exec,
+                env=resolved.env,
+                runtime=resolved.runtime,
+            )
         except subprocess.CalledProcessError as exc:
             LOG.error(f"Failed to train/fine-tune config '{cfg_file}': {exc}")
             if not sweep:
@@ -144,14 +164,27 @@ def train(
 @click.option(
     "--launcher",
     type=click.Choice(["accelerate", "torchrun", "python"]),
-    default="accelerate",
+    default=None,
+    show_default="accelerate",
     help="Launcher to use for multi-GPU evaluation",
+)
+@click.option(
+    "--runtime",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Path to a runtime/cluster config YAML (launcher + per-launcher settings)",
 )
 @add_options_from_dataclass(EvaluateCliArgs)
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 @click.pass_context
-def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
+def evaluate(
+    ctx: click.Context,
+    config: str,
+    launcher: Literal["accelerate", "torchrun", "python"] | None = None,
+    runtime: str | None = None,
+    **kwargs,
+):
     """
     Evaluate a model.
 
@@ -159,22 +192,30 @@ def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
         ctx: Click context for extra args.
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for multi-GPU evaluation ("accelerate", "torchrun", or "python").
+        runtime: Path to a runtime/cluster config YAML file.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
     # Extract launcher args from extra args (after --)
     launcher_args = ctx.args if ctx.args else []
 
-    if launcher in LAUNCHER_COMMAND_MAPPING:
+    resolved = resolve_launch(
+        config, runtime, launcher, kwargs, launcher_args, supports_ray=False
+    )
+
+    if resolved.launcher in LAUNCHER_COMMAND_MAPPING:
         base_cmd = (
-            LAUNCHER_COMMAND_MAPPING[launcher]
-            + launcher_args
+            LAUNCHER_COMMAND_MAPPING[resolved.launcher]
+            + resolved.launcher_args
             + ["-m", "axolotl.cli.evaluate"]
         )
         if config:
             base_cmd.append(config)
         cmd = build_command(base_cmd, kwargs)
-        subprocess.run(cmd, check=True)  # nosec B603
+        run_kwargs: dict = {"check": True}
+        if resolved.env:
+            run_kwargs["env"] = {**os.environ, **resolved.env}
+        subprocess.run(cmd, **run_kwargs)  # nosec B603
     else:
         from axolotl.cli.evaluate import do_cli
 
@@ -426,7 +467,13 @@ def agent_docs(topic: Optional[str], list_topics: bool):
     help="Output format (default: json)",
 )
 @click.option("--field", help="Show schema for a specific field only")
-def config_schema(output_format: str, field: Optional[str]):
+@click.option(
+    "--runtime",
+    "runtime_schema",
+    is_flag=True,
+    help="Dump the runtime (--runtime file) schema instead of the training config schema",
+)
+def config_schema(output_format: str, field: Optional[str], runtime_schema: bool):
     """Dump the full config JSON schema.
 
     Useful for AI agents and tooling to discover all available config options,
@@ -437,13 +484,24 @@ def config_schema(output_format: str, field: Optional[str]):
         axolotl config-schema                    # full JSON schema
         axolotl config-schema --format yaml      # YAML format
         axolotl config-schema --field adapter     # single field
+        axolotl config-schema --runtime           # --runtime file schema
     """
     import json
 
-    from axolotl.utils.schemas.config import AxolotlInputConfig
+    from pydantic import BaseModel
+
+    schema_model: type[BaseModel]
+    if runtime_schema:
+        from axolotl.utils.schemas.runtime import RuntimeConfig
+
+        schema_model = RuntimeConfig
+    else:
+        from axolotl.utils.schemas.config import AxolotlInputConfig
+
+        schema_model = AxolotlInputConfig
 
     try:
-        schema = AxolotlInputConfig.model_json_schema()
+        schema = schema_model.model_json_schema()
     except (TypeError, ValueError, AttributeError) as exc:
         # Fallback: dump field names, types, and defaults when full schema
         # generation fails (e.g. torch.dtype not JSON-serializable)
@@ -451,7 +509,7 @@ def config_schema(output_format: str, field: Optional[str]):
             "Full JSON schema generation failed, using simplified fallback: %s", exc
         )
         fields = {}
-        for name, field_info in AxolotlInputConfig.model_fields.items():
+        for name, field_info in schema_model.model_fields.items():
             entry = {}
             if field_info.description:
                 entry["description"] = field_info.description
@@ -491,6 +549,90 @@ def config_schema(output_format: str, field: Optional[str]):
         click.echo(yaml.dump(schema, default_flow_style=False, sort_keys=False))
     else:
         click.echo(json.dumps(schema, indent=2))
+
+
+@cli.group()
+def ray():
+    """Manage a Ray cluster for axolotl training (`up`, `down`, `status`)."""
+
+
+@ray.command(name="up")
+@click.option(
+    "--runtime",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Runtime YAML whose ray.cluster block describes the cluster",
+)
+@click.option(
+    "--hostfile",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="Hostfile of worker nodes to join over ssh (head is this machine)",
+)
+@click.option("--port", default=None, type=int, help="Ray head port (default 6379)")
+@click.option(
+    "--dashboard-port",
+    default=None,
+    type=int,
+    help="Dashboard/Jobs API port (default 8265)",
+)
+@click.option("--ssh-user", default=None, help="SSH user for worker nodes")
+@click.option(
+    "--ssh-key",
+    default=None,
+    type=click.Path(exists=True, path_type=str),
+    help="SSH identity file for worker nodes",
+)
+def ray_up(
+    runtime: str | None,
+    hostfile: str | None,
+    port: int | None,
+    dashboard_port: int | None,
+    ssh_user: str | None,
+    ssh_key: str | None,
+):
+    """Start a Ray head on this machine and join hostfile workers over ssh."""
+    from axolotl.cli.launchers.ray_cluster import cluster_up
+
+    runtime_cfg = None
+    if runtime:
+        from axolotl.cli.launchers.resolve import _load_runtime_config
+
+        runtime_cfg = _load_runtime_config(runtime)
+    cluster_up(
+        hostfile=hostfile,
+        port=port,
+        dashboard_port=dashboard_port,
+        ssh_user=ssh_user,
+        ssh_key=ssh_key,
+        runtime=runtime_cfg,
+    )
+
+
+@ray.command(name="down")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="pkill Ray daemons by their unique temp-dir tag instead of `ray stop`",
+)
+def ray_down(force: bool):
+    """Stop the cluster started by `axolotl ray up`."""
+    from axolotl.cli.launchers.ray_cluster import cluster_down
+
+    cluster_down(force=force)
+
+
+@ray.command(name="status")
+@click.option(
+    "--address",
+    default=None,
+    help="Ray address to query (defaults to the cluster recorded by `axolotl ray up`)",
+)
+def ray_status(address: str | None):
+    """Show Ray cluster status."""
+    from axolotl.cli.launchers.ray_cluster import cluster_status
+
+    cluster_status(address=address)
 
 
 def main():
