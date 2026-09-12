@@ -19,20 +19,29 @@ from axolotl.monkeypatch.ring_attn import (
 from axolotl.utils.schemas.enums import RingAttnFunc
 
 
-def _has_multiple_documents(position_ids: torch.Tensor) -> bool:
+def _has_multiple_documents(
+    position_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
+) -> bool:
     """Whether any row packs more than one document.
 
     A document boundary shows up as ``position_ids`` resetting to 0 mid-sequence.
     Mirrors the boundary detection in ``get_cu_seqlens_from_pos_ids`` (reset to 0
-    starts a new document) after stripping right-side zero padding, so a single
-    padded document is not mistaken for a pack.
+    starts a new document), but drops padding positions using ``attention_mask``
+    first when available: ``DataCollatorForSeq2Seq`` pads ``position_ids`` with
+    ``range(pad_len)`` rather than zeros, so a padded single document can also
+    reset to 0 and must not be mistaken for a pack.
     """
     if position_ids.dim() == 1:
         position_ids = position_ids.unsqueeze(0)
-    for row in position_ids:
-        padding_length = (row == 0).int().flip(dims=[0]).cumprod(dim=0).sum().item()
-        adjusted_row = row[:-padding_length] if padding_length else row
-        if adjusted_row.numel() > 1 and bool((adjusted_row[1:] == 0).any()):
+    if attention_mask is not None and attention_mask.dim() == 1:
+        attention_mask = attention_mask.unsqueeze(0)
+    for i, row in enumerate(position_ids):
+        if attention_mask is not None:
+            valid_row = row[attention_mask[i].bool()]
+        else:
+            padding_length = (row == 0).int().flip(dims=[0]).cumprod(dim=0).sum().item()
+            valid_row = row[:-padding_length] if padding_length else row
+        if valid_row.numel() > 1 and bool((valid_row[1:] == 0).any()):
             return True
     return False
 
@@ -69,20 +78,24 @@ def apply_sequence_parallelism(
     """
     batch_size, original_seq_len = batch["input_ids"].shape
 
+    # batch_ring ignores cu_seqlens: it rotates K/V across position_id resets, so
+    # tokens attend across documents and the loss is silently wrong. Only varlen
+    # respects boundaries within a packed sequence. Checked regardless of batch size,
+    # since packed multi-document rows can also appear with micro_batch_size > 1.
+    if (
+        batch.get("position_ids") is not None
+        and ring_attn_func is RingAttnFunc.BATCH_RING
+        and _has_multiple_documents(batch["position_ids"], batch.get("attention_mask"))
+    ):
+        raise ValueError(
+            "ring_attn_func='batch_ring' does not respect document boundaries in a "
+            "packed sequence: it rotates K/V across position_id resets, so queries "
+            "attend across documents and the training loss is silently wrong. Set "
+            "ring_attn_func: varlen_llama3 for pre-packed multi-document data."
+        )
+
     # Update ring attention params if needed
     if batch.get("position_ids") is not None and batch_size == 1:
-        # batch_ring ignores cu_seqlens: it rotates K/V across position_id resets, so
-        # tokens attend across documents and the loss is silently wrong. Only varlen
-        # respects boundaries within a packed sequence.
-        if ring_attn_func is RingAttnFunc.BATCH_RING and _has_multiple_documents(
-            batch["position_ids"]
-        ):
-            raise ValueError(
-                "ring_attn_func='batch_ring' does not respect document boundaries in a "
-                "packed sequence: it rotates K/V across position_id resets, so queries "
-                "attend across documents and the training loss is silently wrong. Set "
-                "ring_attn_func: varlen_llama3 for pre-packed multi-document data."
-            )
         update_ring_attn_params(position_ids=batch["position_ids"])
     else:
         # If position_ids aren't already in the batch, create them

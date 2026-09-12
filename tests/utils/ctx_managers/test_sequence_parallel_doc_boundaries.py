@@ -20,14 +20,19 @@ from axolotl.utils.ctx_managers.sequence_parallel import (
 from axolotl.utils.schemas.enums import RingAttnFunc
 
 
-def _batch(position_ids: list[int]) -> dict[str, torch.Tensor]:
+def _batch(
+    position_ids: list[int], attention_mask: list[int] | None = None
+) -> dict[str, torch.Tensor]:
     pos = torch.tensor([position_ids], dtype=torch.long)
     seq_len = pos.size(1)
-    return {
+    batch = {
         "input_ids": torch.ones(1, seq_len, dtype=torch.long),
         "labels": torch.ones(1, seq_len, dtype=torch.long),
         "position_ids": pos,
     }
+    if attention_mask is not None:
+        batch["attention_mask"] = torch.tensor([attention_mask], dtype=torch.long)
+    return batch
 
 
 class TestHasMultipleDocuments:
@@ -45,6 +50,27 @@ class TestHasMultipleDocuments:
     )
     def test_detects_resets(self, position_ids, expected):
         assert _has_multiple_documents(_batch(position_ids)["position_ids"]) is expected
+
+    def test_single_doc_with_range_padding_is_not_a_false_positive(self):
+        # DataCollatorForSeq2Seq pads position_ids with range(pad_len), not zeros, so
+        # a padded single document also resets to 0 (e.g. [0,1,2,3] padded by 3 becomes
+        # [0,1,2,3,0,1,2]). Without attention_mask this must fall back to the trailing
+        # zero-padding heuristic and would false-positive; attention_mask disambiguates.
+        batch = _batch([0, 1, 2, 3, 0, 1, 2], attention_mask=[1, 1, 1, 1, 0, 0, 0])
+        assert (
+            _has_multiple_documents(batch["position_ids"], batch["attention_mask"])
+            is False
+        )
+
+    def test_two_docs_with_range_padding_still_detected(self):
+        # Two real documents ([0,1,2] then [0,1]) followed by range(3) padding.
+        batch = _batch(
+            [0, 1, 2, 0, 1, 0, 1, 2], attention_mask=[1, 1, 1, 1, 1, 0, 0, 0]
+        )
+        assert (
+            _has_multiple_documents(batch["position_ids"], batch["attention_mask"])
+            is True
+        )
 
 
 class TestBatchRingRejectsPackedDocuments:
@@ -81,3 +107,23 @@ class TestBatchRingRejectsPackedDocuments:
         )
         assert orig_len == 8
         assert batch["input_ids"].shape[1] == 8
+
+    def test_batch_ring_multi_doc_raises_with_micro_batch_size_gt_1(self):
+        # Packed multi-doc rows can also show up with micro_batch_size > 1 (multiple
+        # rows per batch); the guard must not be skipped just because batch_size != 1.
+        position_ids = torch.tensor(
+            [[0, 1, 2, 3, 0, 1, 2, 3], [0, 1, 2, 3, 4, 5, 6, 7]], dtype=torch.long
+        )
+        batch = {
+            "input_ids": torch.ones(2, 8, dtype=torch.long),
+            "labels": torch.ones(2, 8, dtype=torch.long),
+            "position_ids": position_ids,
+        }
+        with pytest.raises(ValueError, match="varlen_llama3"):
+            apply_sequence_parallelism(
+                batch=batch,
+                local_rank=0,
+                local_world_size=1,
+                gradient_accumulation_steps=1,
+                ring_attn_func=RingAttnFunc.BATCH_RING,
+            )
