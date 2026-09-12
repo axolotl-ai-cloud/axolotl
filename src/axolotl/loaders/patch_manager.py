@@ -3,23 +3,43 @@
 Applies pre- and post-model load patches for various fixes and optimizations.
 """
 
+from __future__ import annotations
+
 import importlib.util
 import os
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 import addict
 import torch
 import transformers
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import (
+    PretrainedConfig,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+)
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
+from axolotl.model_support import (
+    ModelHookContext,
+    ModelHookPhase,
+    Unsupported,
+    check_capability,
+    get_model_support,
+    get_model_support_for_cfg,
+    resolve_model_support,
+    run_model_support_hooks,
+)
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
@@ -38,16 +58,12 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        if (
-            hasattr(cfg, "base_model_config")
-            and cfg.base_model_config
-            and "kimi-linear" in cfg.base_model_config.lower()
-        ):
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_config,
-            )
-
-            patch_kimi_config()
+        support = get_model_support_for_cfg(cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_CONFIG_LOAD,
+            ModelHookContext(cfg=cfg, inference=cfg.inference),
+        )
 
     @staticmethod
     def apply_pre_tokenizer_load_patches(cfg: DictDefault):
@@ -59,22 +75,21 @@ class PatchManager:
         Args:
             cfg: Configuration dictionary with model and training settings.
         """
-        if (
-            hasattr(cfg, "tokenizer_config")
-            and cfg.tokenizer_config
-            and "kimi-linear" in cfg.tokenizer_config.lower()
-        ):
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_tokenizer,
-            )
-
-            patch_kimi_tokenizer()
+        support = get_model_support_for_cfg(cfg)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_TOKENIZER_LOAD,
+            ModelHookContext(cfg=cfg, inference=cfg.inference),
+        )
 
     def __init__(
         self,
         cfg: DictDefault,
         model_config: PretrainedConfig | addict.Dict,
         inference: bool = False,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        processor: ProcessorMixin | None = None,
+        reference_model: bool = False,
     ):
         """Initialize the `PatchManager`.
 
@@ -86,6 +101,20 @@ class PatchManager:
         self.cfg = cfg
         self.model_config = model_config
         self.inference = inference
+        self.tokenizer = tokenizer
+        self.processor = processor
+        self.reference_model = reference_model
+
+    def _hook_context(self, model: PreTrainedModel | None = None) -> ModelHookContext:
+        return ModelHookContext(
+            cfg=self.cfg,
+            model_config=self.model_config,
+            tokenizer=self.tokenizer,
+            processor=self.processor,
+            model=model,
+            inference=self.inference,
+            reference_model=self.reference_model,
+        )
 
     @cached_property
     def has_flash_attn(self) -> bool:
@@ -101,18 +130,21 @@ class PatchManager:
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_sageattn_patches()
-        self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         # Must precede fused-RoPE patches: re-parses ``Attention.forward``
         # via ``inspect.getsource``; the QKV regex misses on a patched body.
         self._apply_self_attention_lora_patch()
+        self._apply_model_support_registrations()
+        self._apply_model_support_pre_load_hook()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
         self._apply_gradient_checkpointing_patches()
         self._patch_attention()
         self._apply_multipack_patches()
+        self._apply_sdpa_varlen_patch()
+        self._apply_large_head_attention_patch()
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
@@ -145,10 +177,16 @@ class PatchManager:
 
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""
+        support = get_model_support(self.cfg.model_config_type)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.AFTER_BASE_MODEL_BUILD,
+            self._hook_context(model),
+        )
+
         if self.cfg.model_config_type == "nemotron_h":
-            # Must run after model build because NemotronHForCausalLM.__init__
-            # calls register_nemotron_h_conversion_mapping() with overwrite=True,
-            # which would clobber any earlier fix.
+            # Runs after model build so a re-registration during checkpoint
+            # construction cannot clobber the fix.
             self._fix_nemotron_h_conversion_mapping()
 
         # Gemma 4 hybrid attention runs here in post-build (NOT post-load):
@@ -160,15 +198,89 @@ class PatchManager:
         # cleanly in the same call even though one is instance-scoped
         # and the other is module-scoped.
         self._apply_gemma_hybrid_attention(model)
+        self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
+
+    def _apply_model_support_registrations(self):
+        support = get_model_support(self.cfg.model_config_type)
+        if support is None:
+            return
+        registrations = resolve_model_support(support).registrations
+
+        conversions_provider = registrations.weight_conversions
+        conversions = (
+            conversions_provider() if conversions_provider is not None else None
+        )
+        if conversions:
+            from axolotl.utils.weight_conversions import register_weight_conversions
+
+            for key, entries in conversions.items():
+                entries = list(entries)
+                register_weight_conversions(key, entries)
+                self._warn_irreversible_weight_transforms(key, entries)
+
+        patch_provider = registrations.patch_mappings
+        patch_mapping = patch_provider() if patch_provider is not None else None
+        if patch_mapping:
+            from transformers.monkey_patching import register_patch_mapping
+
+            register_patch_mapping(dict(patch_mapping), overwrite=True)
+
+    @staticmethod
+    def _warn_irreversible_weight_transforms(key: str, transforms: list) -> None:
+        """``save_pretrained(save_original_format=True)`` reverses registered
+        conversions; surface irreversible entries at registration instead of at
+        save time."""
+        for transform in transforms:
+            problems = []
+            if getattr(transform, "quantization_operation", None) is not None:
+                problems.append("a quantization operation")
+            for operation in getattr(transform, "operations", None) or ():
+                try:
+                    _ = operation.reverse_op
+                except Exception:  # pylint: disable=broad-exception-caught
+                    problems.append(f"no reverse for {type(operation).__name__}")
+            if problems:
+                LOG.warning(
+                    "Weight conversion registered for %s cannot be reversed at save "
+                    "time (%s); saving will fail or emit the converted (non-original) "
+                    "checkpoint layout.",
+                    key,
+                    "; ".join(problems),
+                )
+
+    def _apply_model_support_pre_load_hook(self):
+        support = get_model_support(self.cfg.model_config_type)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+            self._hook_context(),
+        )
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
+        support = get_model_support(self.cfg.model_config_type)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.AFTER_ADAPTER_LOAD,
+            self._hook_context(model),
+        )
         self._apply_llama_flash_attn_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
         self._apply_tiled_mlp_post_load(model)
+
+    def _apply_gemma4_loss_kwargs(self):
+        # Flip accepts_loss_kwargs True so the Trainer normalizes loss by
+        # num_items_in_batch under grad accumulation (must run before trainer init).
+        if self.cfg.model_config_type not in ("gemma4", "gemma4_unified"):
+            return
+        from axolotl.monkeypatch.gemma4_loss_kwargs import (
+            patch_gemma4_accepts_loss_kwargs,
+        )
+
+        patch_gemma4_accepts_loss_kwargs()
 
     def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
         """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
@@ -190,9 +302,21 @@ class PatchManager:
 
         import copy
 
-        from axolotl.monkeypatch.gemma4_hybrid_mask import patch_gemma4_hybrid_mask
+        from axolotl.monkeypatch.attention.large_head import (
+            resolve_large_head_policy,
+            set_large_head_packed,
+            set_large_head_policy,
+        )
+        from axolotl.monkeypatch.gemma4_hybrid_mask import (
+            GLOBAL_PACKED_SDPA,
+            patch_gemma4_hybrid_mask,
+        )
 
         patch_gemma4_hybrid_mask()
+        # Gemma-4 global layers reuse the generic large-head router. Default policy 'sdpa' (flash is
+        # opt-in via large_head_attention / the deprecated flash_attn_d512), preserving prior default.
+        set_large_head_policy(resolve_large_head_policy(self.cfg))
+        set_large_head_packed(bool(self.cfg.sample_packing))
 
         # Navigate to the module that has 'layers' - varies by model structure:
         # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
@@ -232,16 +356,19 @@ class PatchManager:
         patched_count = 0
         for layer_idx, layer in enumerate(layers):
             if layer_types[layer_idx] != "sliding_attention":
-                # Global / full_attention layer - use SDPA instead of FA2
+                # Global / full_attention layer (head_dim=512, FA2 can't serve it). Use the
+                # packing-aware SDPA impl: it rebuilds the block-diagonal mask from position_ids so
+                # the layer respects document boundaries under sample packing (plain "sdpa" gets a
+                # None mask here and would attend across packed documents).
                 attn_module = getattr(layer, "self_attn", None)
                 if attn_module is not None and hasattr(attn_module, "config"):
                     sdpa_config = copy.copy(attn_module.config)
-                    sdpa_config._attn_implementation = "sdpa"
+                    sdpa_config._attn_implementation = GLOBAL_PACKED_SDPA
                     attn_module.config = sdpa_config
                     patched_count += 1
 
         LOG.info(
-            "gemma4_hybrid_attn_impl: patched %d global layers to use SDPA "
+            "gemma4_hybrid_attn_impl: patched %d global layers to use packing-aware SDPA "
             "(remaining %d sliding layers use flash_attention_2)",
             patched_count,
             len(layers) - patched_count,
@@ -249,6 +376,12 @@ class PatchManager:
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
+        from axolotl.monkeypatch.attention.fa2_hub_kernel import (
+            patch_fa2_hub_kernel_version,
+        )
+
+        patch_fa2_hub_kernel_version()
+
         if self.cfg.attn_implementation == "xformers":
             from axolotl.monkeypatch.attention import register_xformers_attn
 
@@ -290,6 +423,20 @@ class PatchManager:
 
             patch_initialize_missing_keys_for_fsdp()
 
+            # Only for adapter (frozen-base) runs: this patch leaves non-rank-0 base params on meta
+            # (FSDP broadcasts rank-0's weights into them), which avoids world_size× CPU
+            # materialization of large unrecognized-quantizer (NVFP4-modelopt) checkpoints. Those are
+            # always trained with a frozen base, so no base optimizer state exists. For a FULL
+            # fine-tune the base params DO carry optimizer state, and leaving them on meta deadlocks
+            # the FSDP2 optimizer-state all-gather at checkpoint save (rank-0 real DTensors vs
+            # non-rank-0 meta) — so fall back to the stock materialize-to-cpu path there.
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading and self.cfg.adapter:
+                from axolotl.monkeypatch.accelerate.fsdp2 import (
+                    patch_move_missing_keys_meta_for_fsdp,
+                )
+
+                patch_move_missing_keys_meta_for_fsdp()
+
         if self.cfg.context_parallel_size > 1 or (
             self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
         ):
@@ -299,26 +446,21 @@ class PatchManager:
 
             patch_parallelism_config()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
+            from axolotl.monkeypatch.accelerate.float8_fsdp import patch_float8_fsdp
             from axolotl.monkeypatch.accelerate.fsdp2 import (
                 patch_accelerate_fsdp2,
                 patch_tied_keys_for_meta_device,
             )
 
             patch_accelerate_fsdp2()
+            # FSDP2 sharding for any torchao Float8Tensor weights (no-op without torchao)
+            patch_float8_fsdp()
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
                 patch_tied_keys_for_meta_device()
             if self.cfg.rl:
                 from axolotl.monkeypatch.trainer.trl import patch_trl_prepare_fsdp2
 
                 patch_trl_prepare_fsdp2()
-
-        # if self.cfg.fsdp_config:
-        #     # see transformers#39152
-        #     from axolotl.monkeypatch.trainer_fsdp_optim import (
-        #         patch_training_loop_for_fsdp,
-        #     )
-        #
-        #     patch_training_loop_for_fsdp()
 
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
@@ -344,15 +486,6 @@ class PatchManager:
 
             patch_sageattn()
 
-    def _apply_flash_attn_4_patches(self):
-        """Auto-apply FA4 when flash_attention is enabled and FA4 is available on SM90+."""
-        if not self.cfg.attn_uses_flash_lib:
-            return
-
-        from axolotl.monkeypatch.attention.flash_attn_4 import patch_flash_attn_4
-
-        patch_flash_attn_4(self.model_config)
-
     _FUSED_ATTN_KERNEL_SUPPORTED = (
         "qwen3",
         "qwen3_moe",
@@ -364,6 +497,8 @@ class PatchManager:
         "qwen3_5_moe_text",
         "gemma4",
         "gemma4_text",
+        "gemma4_unified",
+        "gemma4_unified_text",
     )
 
     @staticmethod
@@ -386,16 +521,10 @@ class PatchManager:
         """Apply patches specific to model architectures."""
         self._warn_if_fused_attn_unsupported(self.cfg)
 
-        if self.cfg.model_config_type == "gemma4" and self.cfg.use_kernels:
-            # transformers' Gemma4VisionAttention registers a bare function via
-            # @use_kernelized_func, which crashes model.kernelize() (triggered by
-            # use_kernels=True) when it tries to register_module() a non-Module.
-            # Strip the dead entry so kernelize() succeeds. The MoE itself is
-            # accelerated via the ExpertsInterface (experts_implementation),
-            # independent of this path.
-            from axolotl.monkeypatch.gemma4_kernelize import patch_gemma4_kernelize
+        if getattr(self.cfg, "use_kernels", None):
+            from axolotl.monkeypatch.kernelize_fixes import patch_kernelize_fixes
 
-            patch_gemma4_kernelize()
+            patch_kernelize_fixes()
 
         if (
             self.cfg.model_config_type == "llama4"
@@ -407,32 +536,24 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
-        if self.cfg.model_config_type == "kimi_linear":
-            from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
-                patch_kimi_model,
-            )
-
-            patch_kimi_model()
-
         ssm_hybrid_patch_needed = (
             self.cfg.sample_packing or self.cfg.context_parallel_size > 1
         )
 
-        if self.cfg.model_config_type == "nemotron_h" and ssm_hybrid_patch_needed:
-            from transformers.models.nemotron_h.modeling_nemotron_h import (
-                NemotronHPreTrainedModel,
-            )
-
+        if self.cfg.model_config_type == "nemotron_h":
             from axolotl.monkeypatch.models.nemotron_h.modeling import (
+                guard_nemotron_h_fused_scan,
                 patch_nemotron_h_modeling_packing,
             )
 
-            patch_nemotron_h_modeling_packing()
-            # supports_gradient_checkpointing is only enabled after
-            # patch_nemotron_h_modeling_packing() installs the GC-compatible
-            # NemotronHBlock.forward. Without the patch, upstream marks this
-            # False because the original block forward is not GC-safe.
-            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+            # The fused Mamba2 kernel applies out_proj itself, which a
+            # quantized weight cannot serve; guard it for every run.
+            guard_nemotron_h_fused_scan()
+
+            if ssm_hybrid_patch_needed:
+                patch_nemotron_h_modeling_packing(
+                    kernels_enabled=bool(getattr(self.cfg, "use_kernels", False))
+                )
 
         if self.cfg.model_config_type == "falcon_h1" and ssm_hybrid_patch_needed:
             from axolotl.monkeypatch.models.falcon_h1.modeling import (
@@ -457,14 +578,20 @@ class PatchManager:
 
                 patch_qwen3_next_modeling_packing()
 
-            if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
+            if (
+                self.cfg.model_config_type in ("qwen3_5", "qwen3_5_text")
+                and self.cfg.sample_packing
+            ):
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
                     patch_qwen3_5_modeling_packing,
                 )
 
                 patch_qwen3_5_modeling_packing()
 
-            if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
+            if (
+                self.cfg.model_config_type in ("qwen3_5_moe", "qwen3_5_moe_text")
+                and self.cfg.sample_packing
+            ):
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
                     patch_qwen3_5_moe_modeling_packing,
                 )
@@ -482,19 +609,12 @@ class PatchManager:
 
                 patch_qwen3_5_vlm_flash_attention()
 
-            if self.cfg.model_config_type in ("gemma4", "gemma4_text"):
-                # The fused attn path is now compatible with
-                # ``gemma4_hybrid_attn_impl``: the kernel handles partial
-                # rotary (cos.shape[-1] < head_dim) and the fused forward
-                # mirrors the current ``Gemma4TextAttention.forward`` API
-                # for shared kv (read from / write to
-                # ``past_key_values.shared_layers``). See
-                # ``src/axolotl/kernels/GEMMA4_FUSED_ROPE_HYBRID_ATTN_BUG.md``
-                # for the history.
-                from axolotl.monkeypatch.models.gemma4.fused_attn import (
-                    patch_gemma4_fused_attn,
-                )
-
+            if self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
+            ):
                 # Shared-KV side channel when activation checkpointing (PR #3611).
                 fsdp_cfg = self.cfg.fsdp_config
                 needs_shared_kv_workaround = (not self.inference) and bool(
@@ -502,7 +622,18 @@ class PatchManager:
                     or self.cfg.activation_offloading
                     or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
                 )
-                patch_gemma4_fused_attn(
+                if self.cfg.model_config_type in (
+                    "gemma4_unified",
+                    "gemma4_unified_text",
+                ):
+                    from axolotl.monkeypatch.models.gemma4_unified.fused_attn import (
+                        patch_gemma4_unified_fused_attn as patch_fused_attn,
+                    )
+                else:
+                    from axolotl.monkeypatch.models.gemma4.fused_attn import (
+                        patch_gemma4_fused_attn as patch_fused_attn,
+                    )
+                patch_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
 
@@ -555,12 +686,12 @@ class PatchManager:
         """Remove the spurious embedding→embeddings WeightRenaming from the
         nemotron_h checkpoint conversion mapping.
 
-        The nvidia Hub model registers:
+        transformers registers:
             WeightRenaming("embedding.weight", "embeddings.weight")
-        to handle a legacy checkpoint variant. Its reverse (applied on save)
-        converts ``embeddings`` back to ``embedding``, which silently renames
-        ``backbone.embeddings.weight`` → ``backbone.embedding.weight`` when
-        merging LoRA adapters back into the base model.
+        to handle a legacy checkpoint variant. Released checkpoints already use
+        ``backbone.embeddings.weight``, and the rename's reverse (applied on
+        save) turns it back into ``backbone.embedding.weight`` when merging
+        LoRA adapters into the base model.
         """
         try:
             from transformers.conversion_mapping import (
@@ -596,13 +727,20 @@ class PatchManager:
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
+            from axolotl.monkeypatch.accelerate.float8_moe_filter import (
+                patch_fp8_exclude_moe_router,
+            )
             from axolotl.monkeypatch.trainer_accelerator_args import (
                 patch_create_accelerate_code_for_fp8,
             )
+            from axolotl.utils.schemas.fp8 import resolve_fp8_recipe
 
+            fp8_recipe = resolve_fp8_recipe(self.cfg.get("fp8_config"))
             patch_create_accelerate_code_for_fp8(
-                self.cfg.fp8_enable_fsdp_float8_all_gather
+                enable_fsdp_float8_all_gather=self.cfg.fp8_enable_fsdp_float8_all_gather,
+                fp8_recipe=fp8_recipe,
             )
+            patch_fp8_exclude_moe_router()
 
     def _apply_flash_attention_peft_patches(self):
         """Apply patches for Flash Attention with PEFT."""
@@ -651,20 +789,129 @@ class PatchManager:
     def _apply_self_attention_lora_patch(self):
         """Apply self-attention LoRA patches if configured."""
         if self.cfg.lora_qkv_kernel or self.cfg.lora_o_kernel:
-            # Only patch if conditions are met
-            can_patch = (
-                self.cfg.lora_dropout == 0
-                if hasattr(self.cfg, "lora_dropout")
-                else True
-            )  # default to True if lora_dropout is not set
-
-            if not can_patch:
-                LOG.warning("Cannot patch self-attention - requires no dropout")
-                return
-
+            check_capability(
+                get_model_support(self.cfg.model_config_type),
+                "lora_kernels",
+                self.cfg.model_config_type,
+                feature="LoRA QKV/O kernels",
+                hint="Set lora_qkv_kernel: false and lora_o_kernel: false.",
+            )
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)
+
+    def _apply_large_head_attention_patch(self):
+        """Generic head_dim>256 capability for plain SDPA models. Gemma-4's hybrid path routes its
+        globals through its own impl, so skip the generic sdpa wrapper there to avoid double-wiring."""
+        from axolotl.monkeypatch.attention.large_head import (
+            resolve_large_head_policy,
+            set_large_head_packed,
+            set_large_head_policy,
+            unpatch_sdpa_large_head,
+        )
+
+        policy = resolve_large_head_policy(self.cfg)
+        # Always (re)set the policy global from this run's config so a long-lived process can't
+        # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
+        set_large_head_policy(policy)
+        set_large_head_packed(bool(self.cfg.sample_packing))
+        if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
+            unpatch_sdpa_large_head()
+            return
+        from axolotl.monkeypatch.attention.large_head import patch_sdpa_large_head
+
+        patch_sdpa_large_head(policy)
+
+    def _apply_sdpa_varlen_patch(self):
+        """Route packed-row SDPA through cu_seqlens ``varlen_attn`` (no 4D mask).
+
+        Auto-enabled for ``sdpa`` + ``sample_packing`` when the varlen kernel can serve
+        the model (torch >= 2.10, head_dim <= 256, no sliding window). Opt in/out
+        explicitly with ``sdpa_varlen``. When varlen is unavailable/unsuitable, stock SDPA
+        stays and packing is still isolated via the dropped-mask block-diagonal path.
+        """
+        # False -> explicit opt-out; True -> explicit opt-in; None -> auto for sdpa packing.
+        if self.cfg.sdpa_varlen is False:
+            return
+        explicit = self.cfg.sdpa_varlen is True
+        auto = (
+            self.cfg.sdpa_varlen is None
+            and self.cfg.attn_implementation == "sdpa"
+            and self.cfg.sample_packing
+        )
+        if not (explicit or auto):
+            return
+
+        support = get_model_support(self.cfg.model_config_type)
+        resolved = resolve_model_support(support) if support is not None else None
+        capability = resolved.capabilities.get("sdpa_varlen") if resolved else None
+        if isinstance(capability, Unsupported):
+            if explicit:
+                LOG.warning(
+                    "sdpa_varlen is not supported for model_type=%s.%s Keeping stock SDPA.",
+                    self.cfg.model_config_type,
+                    f" {capability.reason}" if capability.reason else "",
+                )
+            return
+
+        from axolotl.monkeypatch.attention.sdpa_varlen import (
+            _VARLEN_MAX_HEAD_DIM,
+            patch_sdpa_varlen,
+            varlen_available,
+        )
+
+        if not varlen_available():
+            return  # torch < 2.10; block-diagonal packing path is correct
+
+        # Every call would fall back anyway, and patching drops the shared 4D mask.
+        half = self.cfg.torch_dtype in (torch.float16, torch.bfloat16)
+        if not (half and torch.cuda.is_available()):
+            if explicit:
+                LOG.info(
+                    "sdpa_varlen: varlen_attn needs CUDA fp16/bf16; keeping stock SDPA "
+                    "(packing still isolated via the block-diagonal mask)."
+                )
+            return
+
+        def _attr(name):
+            mc = self.model_config
+            return mc.get(name) if isinstance(mc, dict) else getattr(mc, name, None)
+
+        head_dim = _attr("head_dim")
+        if not head_dim and _attr("hidden_size") and _attr("num_attention_heads"):
+            head_dim = _attr("hidden_size") // _attr("num_attention_heads")
+        # MLA (DeepSeek-V3, Ling 3.0, ...) pairs wider query/key heads with a
+        # shorter value head, which the single-head_dim varlen layout cannot express.
+        qk_head_dim = _attr("qk_head_dim") or (
+            (_attr("qk_nope_head_dim") or 0) + (_attr("qk_rope_head_dim") or 0)
+        )
+        v_head_dim = _attr("v_head_dim")
+        mismatched_head_dims = bool(
+            qk_head_dim and v_head_dim and qk_head_dim != v_head_dim
+        )
+        sliding = _attr("sliding_window")
+        layer_types = _attr("layer_types")
+        uses_sliding = bool(sliding) and (
+            any(lt == "sliding_attention" for lt in layer_types)
+            if layer_types
+            else True
+        )
+
+        if (
+            (head_dim and head_dim > _VARLEN_MAX_HEAD_DIM)
+            or uses_sliding
+            or mismatched_head_dims
+        ):
+            if explicit:
+                LOG.info(
+                    "sdpa_varlen: model has head_dim > %d, a sliding window, or "
+                    "query/value heads of different width; keeping stock SDPA "
+                    "(packing still isolated via the block-diagonal mask).",
+                    _VARLEN_MAX_HEAD_DIM,
+                )
+            return
+
+        patch_sdpa_varlen()
 
     def _apply_multipack_patches(self):
         """Apply multipack patches if necessary."""
@@ -686,9 +933,8 @@ class PatchManager:
             else:
                 has_remote_code = False
 
-            if has_remote_code and self.cfg.trust_remote_code is not None:
-                # If explicitly set in YAML, prefer that
-                has_remote_code = self.cfg.trust_remote_code
+            if has_remote_code:
+                has_remote_code = bool(self.cfg.trust_remote_code)
 
             patch_for_multipack(
                 self.cfg.model_config_type,

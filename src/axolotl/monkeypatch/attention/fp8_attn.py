@@ -11,11 +11,11 @@ The torchao patch replaces F.scaled_dot_product_attention, so the model must use
 HF's "sdpa" attention implementation for the patch to intercept attention calls.
 """
 
-import logging
-
 import torch
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def patch_fp8_attention(model: torch.nn.Module) -> torch.nn.Module:

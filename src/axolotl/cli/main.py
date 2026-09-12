@@ -2,6 +2,7 @@
 
 import os
 import subprocess  # nosec B404
+from pathlib import Path
 from typing import Literal, Optional
 
 import click
@@ -16,8 +17,10 @@ from axolotl.cli.args import (
     VllmServeCliArgs,
 )
 from axolotl.cli.art import print_axolotl_text_art
+from axolotl.cli.config_options import AXOLOTL_CONFIG_CLI_OPTIONS
+from axolotl.cli.plugins import PluginCommandGroup
 from axolotl.cli.utils import (
-    add_options_from_config,
+    add_options_from_config_options,
     add_options_from_dataclass,
     build_command,
     fetch_from_github,
@@ -25,10 +28,8 @@ from axolotl.cli.utils import (
     generate_config_files,
     launch_training,
 )
-from axolotl.integrations.lm_eval.cli import lm_eval
 from axolotl.utils import set_misc_env, set_pytorch_cuda_alloc_conf
 from axolotl.utils.logging import get_logger
-from axolotl.utils.schemas.config import AxolotlInputConfig
 
 LOG = get_logger(__name__)
 
@@ -38,7 +39,7 @@ LAUNCHER_COMMAND_MAPPING = {
 }
 
 
-@click.group()
+@click.group(cls=PluginCommandGroup)
 @click.version_option(version=axolotl.__version__, prog_name="axolotl")
 def cli():
     """Axolotl CLI - Train and fine-tune large language models"""
@@ -52,7 +53,7 @@ def cli():
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(PreprocessCliArgs)
-@add_options_from_config(AxolotlInputConfig)
+@add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
     """
@@ -92,7 +93,7 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
     help="YAML config for sweeping hyperparameters",
 )
 @add_options_from_dataclass(TrainerCliArgs)
-@add_options_from_config(AxolotlInputConfig)
+@add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 @click.pass_context
 def train(
@@ -147,7 +148,7 @@ def train(
     help="Launcher to use for multi-GPU evaluation",
 )
 @add_options_from_dataclass(EvaluateCliArgs)
-@add_options_from_config(AxolotlInputConfig)
+@add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 @click.pass_context
 def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
@@ -191,11 +192,16 @@ def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
     help="Launcher to use for multi-GPU inference",
 )
 @click.option("--gradio", is_flag=True, help="Launch Gradio interface")
+@click.option(
+    "--chat", is_flag=True, help="Launch interactive multi-turn chat interface"
+)
 @add_options_from_dataclass(TrainerCliArgs)
-@add_options_from_config(AxolotlInputConfig)
+@add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 @click.pass_context
-def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kwargs):
+def inference(
+    ctx: click.Context, config: str, launcher: str, gradio: bool, chat: bool, **kwargs
+):
     """
     Run inference with a trained model.
 
@@ -204,9 +210,13 @@ def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kw
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for multi-GPU inference ("accelerate", "torchrun", or "python").
         gradio: Whether to use Gradio browser interface or command line for inference.
+        chat: Whether to use the interactive multi-turn chat interface.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
+    if gradio and chat:
+        raise click.UsageError("--gradio and --chat are mutually exclusive.")
+
     # Extract launcher args from extra args (after --)
     launcher_args = ctx.args if ctx.args else []
 
@@ -220,12 +230,14 @@ def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kw
             base_cmd.append(config)
         if gradio:
             base_cmd.append("--gradio")
+        if chat:
+            base_cmd.append("--chat")
         cmd = build_command(base_cmd, kwargs)
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.inference import do_cli
 
-        do_cli(config=config, gradio=gradio, **kwargs)
+        do_cli(config=config, gradio=gradio, chat=chat, **kwargs)
 
 
 @cli.command(
@@ -239,7 +251,7 @@ def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kw
     help="Launcher to use for weight merging",
 )
 @add_options_from_dataclass(TrainerCliArgs)
-@add_options_from_config(AxolotlInputConfig)
+@add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 @click.pass_context
 def merge_sharded_fsdp_weights(
@@ -276,8 +288,22 @@ def merge_sharded_fsdp_weights(
 
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--dequant",
+    is_flag=True,
+    default=False,
+    help="Dequantize a quantized base to bf16 in the merged checkpoint instead of "
+    "re-quantizing to the base's format.",
+)
+@click.option(
+    "--override-quantizer",
+    is_flag=True,
+    default=False,
+    help="Merge a merge-aware adapter despite a quantizer-identity mismatch "
+    "(e.g. different torchao version than trained with).",
+)
 @add_options_from_dataclass(TrainerCliArgs)
-@add_options_from_config(AxolotlInputConfig)
+@add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
 @filter_none_kwargs
 def merge_lora(config: str, **kwargs):
     """
@@ -343,6 +369,22 @@ def delinearize_llama4(model: str, output: str):
     do_delinearize_llama4(model, output)
 
 
+@cli.command("generate-cli-config-options")
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=Path("src/axolotl/cli/config_options.py"),
+    show_default=True,
+    help="Path to write generated option metadata.",
+)
+@click.option("--check", is_flag=True, help="Fail if generated metadata is stale.")
+def generate_cli_config_options(output: Path, check: bool):
+    """Regenerate CLI config override option metadata."""
+    from axolotl.cli.generate_config_options import write_options
+
+    write_options(output, check=check)
+
+
 @cli.command("agent-docs")
 @click.argument("topic", required=False, default=None)
 @click.option("--list", "list_topics", is_flag=True, help="List available topics")
@@ -398,6 +440,8 @@ def config_schema(output_format: str, field: Optional[str]):
     """
     import json
 
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
     try:
         schema = AxolotlInputConfig.model_json_schema()
     except (TypeError, ValueError, AttributeError) as exc:
@@ -447,9 +491,6 @@ def config_schema(output_format: str, field: Optional[str]):
         click.echo(yaml.dump(schema, default_flow_style=False, sort_keys=False))
     else:
         click.echo(json.dumps(schema, indent=2))
-
-
-cli.add_command(lm_eval)
 
 
 def main():

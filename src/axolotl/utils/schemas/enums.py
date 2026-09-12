@@ -11,6 +11,7 @@ class TorchAOQuantDType(Enum):
     float8_e4m3fn = torch.float8_e4m3fn
     nvfp4 = "nvfp4"
     mxfp4 = "mxfp4"
+    ternary = "ternary"
 
     def from_string(str):
         if str == "int4":
@@ -23,6 +24,8 @@ class TorchAOQuantDType(Enum):
             return TorchAOQuantDType.nvfp4
         if str == "mxfp4":
             return TorchAOQuantDType.mxfp4
+        if str == "ternary":
+            return TorchAOQuantDType.ternary
 
 
 class RLType(str, Enum):
@@ -73,6 +76,7 @@ class ChatTemplate(str, Enum):
     gemma3 = "gemma3"
     gemma3n = "gemma3n"
     gemma4 = "gemma4"
+    gemma4_unified = "gemma4_unified"
     command_a = "command_a"
     command_a_tool_use = "command_a_tool_use"
     command_a_rag = "command_a_rag"
@@ -87,9 +91,12 @@ class CustomSupportedOptimizers(str, Enum):
     ao_adamw_8bit = "ao_adamw_8bit"
     ao_adamw_fp8 = "ao_adamw_fp8"
     adopt_adamw = "adopt_adamw"
+    adamc = "adamc"
     came_pytorch = "came_pytorch"
     muon = "muon"
     dion = "dion"
+    sinkgd = "sinkgd"
+    polora = "polora"
     flash_adamw = "flash_adamw"
     flash_adam = "flash_adam"
     flash_sgd = "flash_sgd"
@@ -105,6 +112,8 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "sdpa",
         "flash_attention_2",
         "flash_attention_3",
+        "flash_attention_4",
+        "flash_attention_torch",
         "flex_attention",
         "xformers",
         "sage",
@@ -134,6 +143,8 @@ ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
     {
         "flash_attention_2",
         "flash_attention_3",
+        "flash_attention_4",
+        "flash_attention_torch",
         "flex_attention",
         "xformers",
         "sage",
@@ -155,6 +166,30 @@ ATTN_IMPLS_USING_FLASH_LIB = frozenset(
 
 # Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
 ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
+
+
+def attn_impl_base(attn_implementation: str | None) -> str | None:
+    """Strip the `@revision` / `:kernel_name` suffix so `org/name@v2` still matches above."""
+    if attn_implementation is None:
+        return None
+    return attn_implementation.split(":", 1)[0].split("@", 1)[0].strip()
+
+
+# Narrow allowlist of real torch._inductor.config attrs (verified on torch 2.11; sentinel test guards renames).
+INDUCTOR_COMPILE_OPTIONS_ALLOWLIST = frozenset(
+    {
+        "coordinate_descent_tuning",
+        "coordinate_descent_check_all_directions",
+        "shape_padding",
+        "epilogue_fusion",
+        "max_autotune_gemm",
+        "fx_graph_cache",
+        "assume_aligned_inputs",
+        "comprehensive_padding",
+        "decompose_mem_bound_mm",
+        "triton.cudagraphs",
+    }
+)
 
 
 class RingAttnFunc(str, Enum):

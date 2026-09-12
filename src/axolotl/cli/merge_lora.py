@@ -116,12 +116,20 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         nf4_blocksize=nf4_blocksize,
         nf4_double_quant=nf4_double_quant,
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
+        dequant=bool(getattr(cfg, "merge_dequant", False)),
+        override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
+        revision=cfg.revision_of_model,
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
+def do_cli(
+    config: Union[Path, str] = Path("examples/"),
+    dequant: bool = False,
+    override_quantizer: bool = False,
+    **kwargs,
+) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_merge_lora`. Note that various
     config values will be overwritten to allow the LoRA merge logic to work as expected
@@ -129,6 +137,11 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
 
     Args:
         config: Path to `axolotl` config YAML file.
+        dequant: If set (``--dequant``), dequantize a quantized base to bf16 in the merged
+            checkpoint. Default keeps the base's quantized dtypes (fp8/nvfp4) intact.
+        override_quantizer: If set (``--override-quantizer``), merge a merge-aware adapter
+            despite a quantizer-identity mismatch (e.g. different torchao version than the
+            one trained with) instead of hard-erroring.
         kwargs: Additional keyword arguments to override config file values.
 
     Raises:
@@ -141,24 +154,26 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
     original_adapter = getattr(raw_cfg, "adapter", None)
     original_quantize_moe_experts = getattr(raw_cfg, "quantize_moe_experts", False)
 
-    parsed_cfg = load_cfg(
-        config,
-        merge_lora=True,
-        load_in_8bit=False,
-        load_in_4bit=False,
-        quantize_moe_experts=False,
-        attn_implementation=None,
-        context_parallel_size=None,
-        deepspeed=None,
-        fsdp=None,
-        fsdp_config=None,
-        **kwargs,
-    )
+    merge_overrides = {
+        "merge_lora": True,
+        "load_in_8bit": False,
+        "load_in_4bit": False,
+        "quantize_moe_experts": False,
+        "ple_cpu_offload": False,
+        "attn_implementation": None,
+        "context_parallel_size": None,
+        "deepspeed": None,
+        "fsdp": None,
+        "fsdp_config": None,
+    }
+    parsed_cfg = load_cfg(config, **{**kwargs, **merge_overrides})
 
     # Stash original quantization settings for NF4 simulation in efficient merge
     parsed_cfg._original_load_in_4bit = original_load_in_4bit
     parsed_cfg._original_adapter = original_adapter
     parsed_cfg._original_quantize_moe_experts = original_quantize_moe_experts
+    parsed_cfg.merge_dequant = bool(dequant)
+    parsed_cfg.merge_override_quantizer = bool(override_quantizer)
 
     if not parsed_cfg.lora_model_dir and parsed_cfg.output_dir:
         parsed_cfg.lora_model_dir = parsed_cfg.output_dir

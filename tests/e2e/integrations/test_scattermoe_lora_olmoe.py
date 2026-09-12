@@ -19,6 +19,7 @@ Key things tested
 """
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -110,6 +111,21 @@ def make_olmoe_config(use_full=False):
     cfg = dict(FULL_OLMOE_CONFIG if use_full else SMALL_OLMOE_CONFIG)
     cfg["experts_implementation"] = "grouped_mm"
     return OlmoeConfig(**cfg)
+
+
+def make_local_layer_repository(
+    LocalLayerRepository: Any, repo_path: Path, layer_name: str
+):
+    try:
+        return LocalLayerRepository(
+            repo_path=repo_path,
+            package_name="scattermoe_lora",
+            layer_name=layer_name,
+        )
+    except TypeError as exc:
+        if "package_name" not in str(exc):
+            raise
+        return LocalLayerRepository(repo_path=repo_path, layer_name=layer_name)
 
 
 # =============================================================================
@@ -925,10 +941,10 @@ class TestKernelizeIntegration:
     ):
         """Register kernel mapping for tests."""
         repo_path = self._get_repo_path()
-        local_repo = LocalLayerRepository(
-            repo_path=repo_path,
-            package_name="scattermoe_lora",
-            layer_name="HFScatterMoEGatedMLP",
+        local_repo = make_local_layer_repository(
+            LocalLayerRepository,
+            repo_path,
+            "HFScatterMoEGatedMLP",
         )
 
         replace_kernel_forward_from_hub(
@@ -1201,10 +1217,10 @@ class TestSharedExpertHandling:
             / "libs"
             / "scattermoe_lora"
         )
-        local_repo = LocalLayerRepository(
-            repo_path=repo_path,
-            package_name="scattermoe_lora",
-            layer_name="HFScatterMoEGatedMLP",
+        local_repo = make_local_layer_repository(
+            LocalLayerRepository,
+            repo_path,
+            "HFScatterMoEGatedMLP",
         )
 
         replace_kernel_forward_from_hub(

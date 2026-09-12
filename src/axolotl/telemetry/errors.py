@@ -1,6 +1,5 @@
 """Telemetry utilities for exception and traceback information."""
 
-import logging
 import os
 import re
 import traceback
@@ -9,8 +8,9 @@ from inspect import getmodule
 from typing import Any, Callable
 
 from axolotl.telemetry.manager import TelemetryManager
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 ERROR_HANDLED = False
 

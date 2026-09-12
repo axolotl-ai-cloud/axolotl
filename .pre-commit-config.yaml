@@ -33,3 +33,11 @@ repos:
             '--ini',
             '.bandit',
         ]
+-   repo: local
+    hooks:
+    -   id: check-cli-config-options
+        name: check generated CLI config options are up to date
+        entry: axolotl generate-cli-config-options --check
+        language: system
+        files: ^src/axolotl/(utils/schemas/.*\.py|cli/config_options\.py)$
+        pass_filenames: false

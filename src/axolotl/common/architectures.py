@@ -14,6 +14,7 @@ MOE_ARCH_BLOCK = {
     "qwen3_moe": "Qwen3MoeSparseMoeBlock",
     "qwen3_5_moe": "Qwen3_5MoeSparseMoeBlock",
     "qwen3_vl_moe": "Qwen3VLMoeTextSparseMoeBlock",
+    "qwen4_exp_text": "Qwen4ExpTextSparseMoeBlock",
     "deepseek_v2": "DeepseekV2MoE",
     "deepseek_v3": "DeepseekV3MoE",
     "mistral4": "Mistral4MoE",
@@ -24,4 +25,6 @@ MOE_ARCH_BLOCK = {
     "glm4_moe_lite": "Glm4MoeLiteDecoderLayer",
     "glm_moe_dsa": "GlmMoeDsaDecoderLayer",
     "nemotron_h": "NemotronHMoE",
+    "minimax_m2": "MiniMaxM2SparseMoeBlock",
+    "bailing_hybrid": "BailingMoeV3SparseMoeBlock",
 }

@@ -22,7 +22,6 @@ Classes exported:
 
 import atexit
 import concurrent.futures
-import logging
 import queue
 import threading
 from abc import ABC, abstractmethod
@@ -89,6 +88,7 @@ try:
 except ImportError:
     _fused_selective_log_softmax = None
 
+from axolotl.utils.logging import get_logger
 
 # ---------------------------------------------------------------------------
 # Config
@@ -189,8 +189,8 @@ class AsyncGRPOConfig(GRPOConfig):
 # Data Producer Protocol (standalone — no transformers branch needed)
 # ---------------------------------------------------------------------------
 
-logger = logging.getLogger(__name__)
-_dp_logger = logging.getLogger(__name__ + ".data_producer")
+logger = get_logger(__name__)
+_dp_logger = get_logger(__name__ + ".data_producer")
 
 
 @dataclass
@@ -1296,9 +1296,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         if pad_id is not None and pad_id < embed.weight.shape[0]:
             with torch.no_grad():
                 embed.weight.data[pad_id].zero_()
-            import logging
-
-            logging.getLogger("async_grpo").info(
+            get_logger("async_grpo").info(
                 f"Zeroed pad token embedding (id={pad_id}) for FP8 NaN prevention"
             )
 

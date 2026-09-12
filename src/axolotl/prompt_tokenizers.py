@@ -132,7 +132,6 @@ class InstructionPromptTokenizingStrategy(PromptTokenizingStrategy):
         tokenized_prompt = self._tokenize(user_prompt, add_eos_token=False)
         if not self.train_on_inputs:
             user_prompt_len = len(tokenized_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
             tokenized_prompt["labels"] = [IGNORE_INDEX] * user_prompt_len
         tokenized_res_prompt = self._tokenize(
             response, strip_bos_token=True, add_eos_token=True
@@ -282,7 +281,6 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
             )
             tokenized_user_prompt = self._tokenize(user_prompt, add_eos_token=False)
             user_prompt_len = len(tokenized_user_prompt["input_ids"])
-            # TODO this could be sped up using numpy array slicing
             tokenized_full_prompt["labels"] = [
                 IGNORE_INDEX
             ] * user_prompt_len + tokenized_full_prompt["labels"][user_prompt_len:]
@@ -303,6 +301,10 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         )
 
     def _tokenize(self, prompt, add_eos_token=True, strip_bos_token=False):
+        empty = BatchEncoding(data={"input_ids": [], "attention_mask": []})
+        if not prompt:
+            LOG.warning_once("Empty text requested for tokenization.")
+            return empty
         result = self.tokenizer(
             prompt,
             truncation=True,
@@ -310,6 +312,9 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
             padding=False,
             return_tensors=None,
         )
+        if len(result["input_ids"]) == 0:
+            LOG.warning("Tokenizer result is empty. You may want to audit your dataset")
+            return empty
         if (
             result["input_ids"][-1] != self.tokenizer.eos_token_id
             and len(result["input_ids"]) < self.sequence_len

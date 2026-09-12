@@ -22,6 +22,8 @@ import torch.distributed as dist
 _BUFFER = None
 _EP_GROUP: Optional[dist.ProcessGroup] = None
 _NUM_NVL_BYTES = 256 << 20
+_DISPATCH_CONFIG = None
+_COMBINE_CONFIG = None
 _NUM_RDMA_BYTES = 0
 
 
@@ -56,7 +58,53 @@ def get_buffer():
     return _BUFFER
 
 
+def _ep_world() -> int:
+    grp = _EP_GROUP if _EP_GROUP is not None else dist.group.WORLD
+    return dist.get_world_size(grp)
+
+
+def get_dispatch_config():
+    """Recommended DeepEP dispatch Config for the EP group. DeepEP's own tests ALWAYS pass an
+    explicit config to dispatch/combine; the no-config default deadlocks / launch-fails the combine
+    on the singleton buffer's reuse across MoE layers (cudaErrorLaunchFailure)."""
+    global _DISPATCH_CONFIG
+    if _DISPATCH_CONFIG is None:
+        import deep_ep
+
+        _DISPATCH_CONFIG = deep_ep.Buffer.get_dispatch_config(_ep_world())
+    return _DISPATCH_CONFIG
+
+
+def get_combine_config():
+    """Recommended DeepEP combine Config for the EP group (see get_dispatch_config)."""
+    global _COMBINE_CONFIG
+    if _COMBINE_CONFIG is None:
+        import deep_ep
+
+        _COMBINE_CONFIG = deep_ep.Buffer.get_combine_config(_ep_world())
+    return _COMBINE_CONFIG
+
+
+def barrier_ep() -> None:
+    """Barrier on the EP group. Placed before each DeepEP ``combine`` so the fast ranks wait (on
+    NCCL, no short timeout) for any rank still AUTOTUNING the local expert kernel — otherwise the
+    combine collective hits DeepEP's short internal timeout (``value=0``) and aborts. Negligible cost
+    once kernels are cached (all ranks arrive together). Disable with AXOLOTL_EP_NO_BARRIER=1."""
+    import os
+
+    if os.environ.get("AXOLOTL_EP_NO_BARRIER"):
+        return
+    if not dist.is_initialized():
+        return
+    import torch
+
+    torch.cuda.synchronize()
+    dist.barrier(_EP_GROUP if _EP_GROUP is not None else dist.group.WORLD)
+
+
 def reset_buffer() -> None:
-    """Drop the cached Buffer. Used in tests."""
-    global _BUFFER
+    """Drop the cached Buffer + configs. Used in tests."""
+    global _BUFFER, _DISPATCH_CONFIG, _COMBINE_CONFIG
     _BUFFER = None
+    _DISPATCH_CONFIG = None
+    _COMBINE_CONFIG = None

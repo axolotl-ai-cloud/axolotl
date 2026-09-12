@@ -77,6 +77,16 @@ deepspeed_configs/               # DeepSpeed JSON configs (zero2, zero3)
 docs/                            # Quarto documentation site
 ```
 
+## Linting & Tests
+
+The repo pins CI tool versions in `.pre-commit-config.yaml` — never run system `ruff`/`mypy`.
+
+- `pre-commit run --all-files` — ruff, ruff-format, mypy, bandit at the CI-pinned versions
+- `uvx ruff@<rev> check --fix && uvx ruff@<rev> format` — auto-fix with the pinned ruff (`<rev>` = the `ruff-pre-commit` rev in `.pre-commit-config.yaml`)
+- `pytest -m 'not slow' --ignore=tests/e2e tests/` — CPU suite
+
+Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
+
 ## Code Conventions
 
 - Config-driven: features are toggled via YAML, not code changes
@@ -84,6 +94,7 @@ docs/                            # Quarto documentation site
 - Plugin system: `plugins:` list in config loads integration modules
 - Trainer mixins: `core/trainers/mixins/` for composable trainer behaviors
 - Schemas: all config validation via Pydantic in `utils/schemas/`
+- HF Hub kernels live at `huggingface.co/kernels/<org>/<name>` (API `/api/kernels/...`); the bare `huggingface.co/<org>/<name>` path is a different namespace that silently serves a stale mirror
 
 ## Comment Style
 
@@ -97,6 +108,7 @@ docs/                            # Quarto documentation site
 
 - [Getting Started](docs/getting-started.qmd) — quickstart tutorial
 - [Choosing a Method](docs/choosing_method.qmd) — SFT vs DPO vs GRPO decision guide
+- [Support Matrix](docs/support-matrix.qmd) — what Axolotl supports, feature couplings, and known gaps
 - [Config Reference](docs/config-reference.qmd) — all config options
 - [Dataset Formats](docs/dataset-formats/) — chat_template, alpaca, input_output, completion
 - [RLHF](docs/rlhf.qmd) — DPO, KTO, ORPO, GRPO, EBFT configs and dataset formats

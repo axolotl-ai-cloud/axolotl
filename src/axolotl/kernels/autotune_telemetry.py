@@ -7,8 +7,6 @@ selected configs alongside GPU identity so the per-hardware tuning that varies
 across architectures can be aggregated.
 """
 
-import logging
-
 import torch
 from transformers import (
     TrainerCallback,
@@ -17,7 +15,9 @@ from transformers import (
     TrainingArguments,
 )
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 # Give up looking for autotune data after this many training steps.
 _MAX_POLL_STEP = 5

@@ -1,24 +1,35 @@
 """Tests for ``axolotl.processing_strategies`` using fake tokenizers (offline/CI-safe)."""
 
 import logging
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 import torch
 from pydantic import ValidationError
 
+from axolotl.model_support.cohere_compass.processing import (
+    CohereCompassProcessingStrategy,
+)
+from axolotl.model_support.muse_glimmer.processing import MuseGlimmerProcessingStrategy
+from axolotl.model_support.paddleocr_vl.processing import PaddleOCRVLProcessingStrategy
 from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
     Gemma3ProcessingStrategy,
     Gemma4ProcessingStrategy,
+    Gemma4UnifiedProcessingStrategy,
+    Glm4vProcessingStrategy,
+    InternVLProcessingStrategy,
     Llama3_2VisionProcessingStrategy,
     Llama4ProcessingStrategy,
+    Mistral3ProcessingStrategy,
     MistralV7TekkenProcessingStrategy,
     PixtralProcessingStrategy,
     ProcessingStrategy,
     Qwen2VLProcessingStrategy,
     Qwen3_5ProcessingStrategy,
     RoleBoundary,
+    VoxtralProcessingStrategy,
     _apply_role_boundaries,
     get_processing_strategy,
 )
@@ -663,6 +674,334 @@ def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
 
 
 # --------------------------------------------------------------------------- #
+# PaddleOCR-VL
+#
+# Token ids captured from the real PaddlePaddle/PaddleOCR-VL-1.6 tokenizer
+# (ERNIE 4.5). The template writes literal "User: ", but the trailing space
+# only stays a standalone token (93919) when a special token follows (image
+# first); on text-only turns it BPE-merges into the first content word
+# (" hello" = 23013), so the strategy matches the stable "User:" prefix.
+# --------------------------------------------------------------------------- #
+
+_PADDLE_VOCAB = {
+    "User:": [2969, 93963],
+    "Assistant:\n": [92267, 93963, 23],
+    "<|IMAGE_PLACEHOLDER|>": [100295],
+}
+_PADDLE_EOS = 2
+# <bos> User : ␣ <img_start> <img_placeholder> <img_end> O CR : \n Assistant : \n hello ␣world </s>
+_PADDLE_SEQ_IMAGE = [100273, 2969, 93963, 93919, 101305, 100295, 101306]
+_PADDLE_SEQ_IMAGE += [93972, 2497, 93963, 23, 92267, 93963, 23, 18830, 3135, 2]
+# <bos> User : ␣hello ␣there \n Assistant : \n hi </s>
+_PADDLE_SEQ_TEXT = [100273, 2969, 93963, 23013, 883, 23, 92267, 93963, 23, 2488, 2]
+
+
+def _paddleocr_vl_fake_processor():
+    proc = _Processor(_Tokenizer(_PADDLE_VOCAB, pad_id=0, eos_id=_PADDLE_EOS))
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    return proc
+
+
+def test_paddleocr_vl_masks_user_prompt_and_image_tokens():
+    strategy = PaddleOCRVLProcessingStrategy(_paddleocr_vl_fake_processor())
+    labels = strategy.process_labels(torch.tensor([_PADDLE_SEQ_IMAGE])).tolist()[0]
+    # Everything through "Assistant:\n" (bos, user turn, image tokens) is
+    # masked; the assistant response plus eos trains to end of sequence.
+    assert labels == [-100] * 14 + [18830, 3135, 2]
+
+
+def test_paddleocr_vl_user_boundary_matches_text_only_turns():
+    """The trailing space of "User: " merges into text-only content; the
+    boundary must match on the two-token "User:" prefix or train_on_inputs
+    silently masks user turns."""
+    strategy = PaddleOCRVLProcessingStrategy(
+        _paddleocr_vl_fake_processor(), roles_to_train=["user", "assistant"]
+    )
+    user_bounds = [b for b in strategy.role_boundaries if b.role == "user"]
+    assert user_bounds and user_bounds[0].start_tokens == _PADDLE_VOCAB["User:"]
+
+    labels = strategy.process_labels(torch.tensor([_PADDLE_SEQ_TEXT])).tolist()[0]
+    # User content (" hello", " there", "\n") and assistant ("hi", eos) train;
+    # bos and both role markers stay masked.
+    assert labels == [-100, -100, -100, 23013, 883, 23, -100, -100, -100, 2488, 2]
+
+
+# Real ids from CohereLabs/North-Micro-Vision-Instruct.
+_COMPASS_VOCAB = {
+    "<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>": [255000, 255004],
+    "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>": [255000, 255002],
+    "<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>": [255000, 255003],
+    "<|END_OF_TURN_TOKEN|>": [255001],
+    "<|IMAGE_PAD|>": [255031],
+}
+_COMPASS_EOT = 255001
+# <bos> [system] sys <eot> [user] <vision_start> <img> <img> <vision_end> ask <eot>
+# [chatbot] ans1 ans2 <eot> <pad> <pad>
+_COMPASS_SEQ = [2, 255000, 255004, 700, 255001]
+_COMPASS_SEQ += [255000, 255002, 255028, 255031, 255031, 255029, 701, 255001]
+_COMPASS_SEQ += [255000, 255003, 702, 703, 255001, 0, 0]
+
+
+def _cohere_compass_fake_processor():
+    proc = _Processor(_Tokenizer(_COMPASS_VOCAB, pad_id=0, eos_id=_COMPASS_EOT))
+    proc.image_token = "<|IMAGE_PAD|>"
+    proc.vision_start_token_id = 255028
+    proc.vision_end_token_id = 255029
+    return proc
+
+
+def test_cohere_compass_masks_system_user_and_image_tokens():
+    strategy = CohereCompassProcessingStrategy(_cohere_compass_fake_processor())
+    labels = strategy.process_labels(torch.tensor([_COMPASS_SEQ])).tolist()[0]
+    # Only the chatbot turn's content plus its <|END_OF_TURN_TOKEN|> trains.
+    assert labels == [-100] * 15 + [702, 703, 255001, -100, -100]
+
+
+def test_cohere_compass_trains_user_turn_when_requested():
+    strategy = CohereCompassProcessingStrategy(
+        _cohere_compass_fake_processor(), roles_to_train=["user", "assistant"]
+    )
+    labels = strategy.process_labels(torch.tensor([_COMPASS_SEQ])).tolist()[0]
+    # User content trains, but the image span stays masked even inside a trained turn.
+    assert labels[7:13] == [-100, -100, -100, -100, 701, 255001]
+    assert labels[1:5] == [-100, -100, -100, -100]  # system turn still masked
+
+
+def test_cohere_compass_role_boundaries_cover_all_three_roles():
+    strategy = CohereCompassProcessingStrategy(_cohere_compass_fake_processor())
+    assert {b.role for b in strategy.role_boundaries} == {"system", "user", "assistant"}
+    assistant = next(b for b in strategy.role_boundaries if b.role == "assistant")
+    assert assistant.start_tokens == [255000, 255003]
+    assert assistant.end_tokens == [_COMPASS_EOT]
+
+
+def test_dispatch_cohere_compass():
+    pytest.importorskip("transformers.models.cohere_compass")
+    from transformers.models.cohere_compass import CohereCompassProcessor
+
+    proc = MagicMock(spec=CohereCompassProcessor)
+    proc.tokenizer = _Tokenizer(_COMPASS_VOCAB, pad_id=0, eos_id=_COMPASS_EOT)
+    proc.image_token = "<|IMAGE_PAD|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, CohereCompassProcessingStrategy)
+
+
+def test_dispatch_paddleocr_vl():
+    pytest.importorskip("transformers.models.paddleocr_vl")
+    from transformers.models.paddleocr_vl import PaddleOCRVLProcessor
+
+    proc = MagicMock(spec=PaddleOCRVLProcessor)
+    proc.tokenizer = _Tokenizer(_PADDLE_VOCAB, pad_id=0, eos_id=_PADDLE_EOS)
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
+
+
+def test_dispatch_paddleocr_vl_chat_template_key():
+    s = _dispatch(_paddleocr_vl_fake_processor(), "paddleocr_vl")
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
+
+
+# --------------------------------------------------------------------------- #
+# Voxtral / Mistral3 / InternVL / Glm4v
+#
+# Voxtral, InternVL and Glm4v do NOT declare role boundaries (mistral-common or
+# template-variant uncertainty); they fall back to pad + media masking. Mistral3
+# declares them from the tekken control ids, and falls back when those are
+# unreachable. Coverage focuses on the media-token masking surface plus
+# role-boundary override as the supported opt-in path.
+# --------------------------------------------------------------------------- #
+
+
+def _make_voxtral_strategy(**kwargs):
+    """Voxtral stub: special_ids live at processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder."""
+    tok = _Tokenizer({}, pad_id=0)
+    audio_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(audio=300, begin_audio=301)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(audio_encoder=audio_encoder)
+    )
+    return VoxtralProcessingStrategy(_Processor(tok), **kwargs)
+
+
+def test_voxtral_masks_pad_and_audio_tokens():
+    """Default Voxtral: no role boundaries → keep content, mask pad + audio markers."""
+    strategy = _make_voxtral_strategy()
+    # 300 = audio, 301 = begin_audio, 0 = pad. Other ids are kept.
+    seq = [7, 0, 300, 8, 301, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9]
+
+
+def test_voxtral_train_on_inputs_true_still_masks_audio():
+    """Even with train_on_inputs, audio/pad tokens must be masked."""
+    strategy = _make_voxtral_strategy(train_on_inputs=True)
+    seq = [7, 0, 300, 8, 301, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9]
+
+
+def test_voxtral_role_boundaries_override_enables_role_masking():
+    """Override opt-in: role masking applies on top of pad/audio masking."""
+    tok = _Tokenizer({"BOA": [50], "EOT": [60]}, pad_id=0)
+    audio_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(audio=300, begin_audio=301)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(audio_encoder=audio_encoder)
+    )
+    strategy = VoxtralProcessingStrategy(
+        _Processor(tok),
+        role_boundaries_override=[{"role": "assistant", "start": "BOA", "end": "EOT"}],
+    )
+    # Pre-BOA + post-EOT masked; BOA(50) and EOT(60) included by default;
+    # audio token 300 inside the span still masked.
+    seq = [7, 50, 8, 300, 9, 60, 1]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100, -100, 8, -100, 9, 60, -100]
+
+
+_TEKKEN_CONTROL_IDS = {
+    "[SYSTEM_PROMPT]": 17,
+    "[/SYSTEM_PROMPT]": 18,
+    "[INST]": 3,
+    "[/INST]": 4,
+}
+
+
+def _make_mistral3_strategy(control_ids=None, **kwargs):
+    tok = _Tokenizer({}, pad_id=0)
+    tok.eos_token_id = 2
+    image_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
+    )
+
+    def get_special_token(marker):
+        if control_ids is None or marker not in control_ids:
+            raise ValueError(f"Unknown control token {marker}")
+        return control_ids[marker]
+
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(
+            image_encoder=image_encoder,
+            tokenizer=SimpleNamespace(get_special_token=get_special_token),
+        )
+    )
+    return Mistral3ProcessingStrategy(_Processor(tok), **kwargs)
+
+
+def test_mistral3_masks_everything_but_the_assistant_turn():
+    """Control ids reachable → only the post-[/INST] span trains."""
+    strategy = _make_mistral3_strategy(control_ids=_TEKKEN_CONTROL_IDS)
+    #    [SYS] sys [/SYS]  [INST] usr  [IMG]  [/INST] ans eos
+    seq = [17, 7, 18, 3, 8, 400, 4, 9, 2]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100, -100, -100, -100, -100, -100, -100, 9, 2]
+
+
+def test_mistral3_without_control_ids_falls_back_to_media_masking():
+    """Non-tekken tokenizer → legacy pad + image masking, everything else kept."""
+    strategy = _make_mistral3_strategy()
+    seq = [7, 0, 400, 8, 401, 9, 402, 10]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9, -100, 10]
+
+
+def test_mistral3_train_on_inputs_true_still_masks_image_markers():
+    strategy = _make_mistral3_strategy(
+        control_ids=_TEKKEN_CONTROL_IDS, train_on_inputs=True
+    )
+    seq = [7, 0, 400, 8, 401, 9, 402, 10]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9, -100, 10]
+
+
+def test_internvl_masks_pad_and_image_id_list():
+    """InternVL stores a *list* of image ids on processor.image_ids."""
+    tok = _Tokenizer({}, pad_id=0)
+    proc = _Processor(tok)
+    proc.image_ids = [500, 501, 502]
+    strategy = InternVLProcessingStrategy(proc)
+    seq = [7, 0, 500, 8, 501, 9, 502, 10]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9, -100, 10]
+
+
+def test_internvl_raises_when_image_ids_missing():
+    """No image_ids on the processor → __init__ must surface a clear error."""
+    tok = _Tokenizer({}, pad_id=0)
+    with pytest.raises(ValueError, match="image_ids"):
+        InternVLProcessingStrategy(_Processor(tok))
+
+
+def test_internvl_image_ids_with_none_entries_skipped():
+    """None entries in image_ids must not be used as a mask value."""
+    tok = _Tokenizer({}, pad_id=0)
+    proc = _Processor(tok)
+    proc.image_ids = [500, None, 502]
+    strategy = InternVLProcessingStrategy(proc)
+    seq = [500, 7, 502, 8]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100, 7, -100, 8]
+
+
+def _glm4v_tokenizer():
+    vocab = {
+        "<|image|>": [600],
+        "<|begin_of_image|>": [601],
+        "<|end_of_image|>": [602],
+        "<|video|>": [610],
+        "<|begin_of_video|>": [611],
+        "<|end_of_video|>": [612],
+    }
+    return _Tokenizer(vocab, pad_id=0)
+
+
+def test_glm4v_masks_pad_image_and_video_markers():
+    strategy = Glm4vProcessingStrategy(_Processor(_glm4v_tokenizer()))
+    # All six markers + pad must be masked; surrounding text tokens kept.
+    seq = [7, 0, 600, 601, 602, 8, 610, 611, 612, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, -100, -100, 8, -100, -100, -100, 9]
+
+
+def test_glm4v_train_on_inputs_true_still_masks_media_markers():
+    strategy = Glm4vProcessingStrategy(
+        _Processor(_glm4v_tokenizer()), train_on_inputs=True
+    )
+    seq = [7, 0, 600, 8, 610, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9]
+
+
+def test_glm4v_role_boundaries_override_enables_role_masking():
+    """Override opt-in masks non-assistant role spans on top of media masking."""
+    tok = _glm4v_tokenizer()
+    tok.vocab["BOA"] = [50]
+    tok.vocab["EOT"] = [60]
+    strategy = Glm4vProcessingStrategy(
+        _Processor(tok),
+        role_boundaries_override=[{"role": "assistant", "start": "BOA", "end": "EOT"}],
+    )
+    seq = [7, 50, 8, 600, 9, 60, 1]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    # Pre-BOA + post-EOT masked; image marker 600 inside the assistant span
+    # is still masked post-scan.
+    assert out == [-100, -100, 8, -100, 9, 60, -100]
+
+
+def test_glm4v_batch_of_two_rows():
+    """Multiple rows independently masked; pad in trailing positions kept as -100."""
+    strategy = Glm4vProcessingStrategy(_Processor(_glm4v_tokenizer()))
+    row_a = [7, 600, 8, 610, 9]
+    row_b = [11, 601, 12, 0, 0]
+    out = strategy.process_labels(torch.tensor([row_a, row_b])).tolist()
+    assert out[0] == [7, -100, 8, -100, 9]
+    assert out[1] == [11, -100, 12, -100, -100]
+
+
+# --------------------------------------------------------------------------- #
 # Dispatcher routing
 # --------------------------------------------------------------------------- #
 
@@ -698,6 +1037,11 @@ def test_dispatch_gemma3n():
 def test_dispatch_gemma4():
     s = _dispatch(_FakeGemma4Processor(), "gemma4")
     assert isinstance(s, Gemma4ProcessingStrategy)
+
+
+def test_dispatch_gemma4_unified():
+    s = _dispatch(_FakeGemma4Processor(), "gemma4_unified")
+    assert isinstance(s, Gemma4UnifiedProcessingStrategy)
 
 
 def test_dispatch_llama3_2_vision():
@@ -789,6 +1133,85 @@ def test_dispatch_glm4v_via_Glm46VProcessor():
     )
     s = _dispatch(proc, None)
     assert isinstance(s, Glm4vProcessingStrategy)
+
+
+def test_dispatch_voxtral():
+    """VoxtralProcessor routes to VoxtralProcessingStrategy."""
+    pytest.importorskip("transformers.models.voxtral")
+    from transformers.models.voxtral import VoxtralProcessor
+
+    tok = _Tokenizer({}, pad_id=0)
+    audio_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(audio=300, begin_audio=301)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(audio_encoder=audio_encoder)
+    )
+    proc = MagicMock(spec=VoxtralProcessor)
+    proc.tokenizer = tok
+    if hasattr(proc, "image_token"):
+        del proc.image_token
+
+    s = _dispatch(proc, None)
+    assert isinstance(s, VoxtralProcessingStrategy)
+
+
+def test_dispatch_mistral3():
+    """Mistral3Processor (axolotl's optional wrapper) routes to Mistral3ProcessingStrategy."""
+    pytest.importorskip("mistral_common")
+    Mistral3Processor = pytest.importorskip(
+        "axolotl.utils.mistral.mistral3_processor"
+    ).Mistral3Processor
+
+    tok = _Tokenizer({}, pad_id=0)
+    image_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(image_encoder=image_encoder)
+    )
+    proc = MagicMock(spec=Mistral3Processor)
+    proc.tokenizer = tok
+    if hasattr(proc, "image_token"):
+        del proc.image_token
+
+    s = _dispatch(proc, None)
+    assert isinstance(s, Mistral3ProcessingStrategy)
+
+
+def test_dispatch_internvl():
+    """InternVLProcessor routes to InternVLProcessingStrategy."""
+    pytest.importorskip("transformers.models.internvl")
+    from transformers.models.internvl import InternVLProcessor
+
+    tok = _Tokenizer({}, pad_id=0)
+    proc = MagicMock(spec=InternVLProcessor)
+    proc.tokenizer = tok
+    proc.image_ids = [500, 501, 502]
+    if hasattr(proc, "image_token"):
+        del proc.image_token
+
+    s = _dispatch(proc, None)
+    assert isinstance(s, InternVLProcessingStrategy)
+
+
+def test_mistral3_role_boundaries_override_enables_role_masking():
+    """Mistral3 override opt-in: role masking applies on top of pad/image masking."""
+    tok = _Tokenizer({"BOA": [50], "EOT": [60]}, pad_id=0)
+    image_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(image_encoder=image_encoder)
+    )
+    strategy = Mistral3ProcessingStrategy(
+        _Processor(tok),
+        role_boundaries_override=[{"role": "assistant", "start": "BOA", "end": "EOT"}],
+    )
+    seq = [7, 50, 8, 400, 9, 60, 1]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    # Pre-BOA + post-EOT masked; image marker 400 inside the span also masked.
+    assert out == [-100, -100, 8, -100, 9, 60, -100]
 
 
 # --------------------------------------------------------------------------- #
@@ -1323,3 +1746,155 @@ def test_call_unknown_key_raises_value_error():
 
     with pytest.raises(ValueError):
         strategy([{"random_col": _openai_messages()}])
+
+
+# --------------------------------------------------------------------------- #
+# Muse Glimmer
+#
+# Token ids captured from the real meta-models/Muse-Glimmer-30B tokenizer. The
+# Harmony template writes assistant turns as "<|start|>assistant to=user<|message|>",
+# but add_generation_prompt emits only "<|start|>assistant" and the model produces
+# the recipient itself, so the marker stops there and " to=user<|message|>" has to
+# land inside the trained span.
+# --------------------------------------------------------------------------- #
+
+_MG_VOCAB = {
+    "<|start|>system<|message|>": [200022, 15651, 200023],
+    "<|start|>user<|message|>": [200022, 1556, 200023],
+    "<|start|>tool": [200022, 21188],
+    "<|start|>assistant": [200022, 140680],
+    "<|start|>": [200022],
+    "<|eot|>": [200008],
+    "<|eom|>": [200007],
+    "<|patch|>": [200092],
+}
+_MG_EOT = 200008
+_MG_EOM = 200007
+
+
+def _muse_glimmer_fake_processor():
+    proc = _Processor(_Tokenizer(_MG_VOCAB, pad_id=200018, eos_id=200001))
+    proc.image_token = "<|patch|>"
+    proc.image_token_id = 200092
+    proc.image_start_token_id = 200080
+    proc.image_end_token_id = 200081
+    proc.video_token_id = 200091
+    return proc
+
+
+def test_muse_glimmer_trains_recipient_prefix_and_masks_prompt():
+    """The recipient (" to=user<|message|>") must train: inference resumes from a
+    bare "<|start|>assistant", so the model has to generate it."""
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    seq = [200022, 15651, 200023, 100, 200008]  # system
+    seq += [200022, 1556, 200023, 101, 200008]  # user
+    seq += [200022, 140680, 328, 76976, 200023, 102, 200008]  # assistant to=user
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == [-100] * 12 + [328, 76976, 200023, 102, _MG_EOT]
+
+
+def test_muse_glimmer_reasoning_block_trains_as_its_own_span():
+    """A to=self reasoning block closes with <|eom|>, not <|eot|>. Ending the span
+    on <|start|> terminates it correctly and re-matches the following content turn."""
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    seq = [200022, 1556, 200023, 101, 200008]  # user
+    seq += [200022, 140680, 328, 19669, 200023, 103, _MG_EOM]  # assistant to=self
+    seq += [200022, 140680, 328, 76976, 200023, 102, 200008]  # assistant to=user
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == (
+        [-100] * 7
+        + [328, 19669, 200023, 103, _MG_EOM]
+        + [-100, -100]
+        + [328, 76976, 200023, 102, _MG_EOT]
+    )
+
+
+def test_muse_glimmer_eom_terminated_turn_does_not_leak_tool_output():
+    """An assistant turn with a non-"user" recipient closes with <|eom|>, whatever
+    follows it. Ending the span on <|eot|> would run straight through the <|eom|>
+    and train on the tool output that comes next."""
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    # assistant to=get_weather ... <|eom|>
+    seq = [200022, 140680, 328, 9999, 200023, 104, _MG_EOM]
+    # tool get_weather<|message|><tool_output ...><|eot|>
+    seq += [200022, 21188, 9999, 200023, 105, 200008]
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == [-100, -100, 328, 9999, 200023, 104, _MG_EOM] + [-100] * 6
+
+
+@pytest.mark.parametrize(
+    "train_on_eos, user_eot, first_eom, last_eot",
+    [
+        ("turn", -100, _MG_EOM, _MG_EOT),
+        ("all", _MG_EOT, _MG_EOM, _MG_EOT),
+        ("last", -100, -100, _MG_EOT),
+        ("none", -100, -100, -100),
+    ],
+)
+def test_muse_glimmer_train_on_eos_gates_assistant_terminators(
+    train_on_eos, user_eot, first_eom, last_eot
+):
+    """The assistant span ends on the next <|start|>, so its terminator sits in the span
+    body where the shared scanner cannot gate it. The strategy re-applies train_on_eos."""
+    strategy = MuseGlimmerProcessingStrategy(
+        _muse_glimmer_fake_processor(), train_on_eos=train_on_eos
+    )
+    seq = [200022, 1556, 200023, 101, _MG_EOT]  # user
+    seq += [200022, 140680, 328, 19669, 200023, 103, _MG_EOM]  # assistant to=self
+    seq += [200022, 140680, 328, 76976, 200023, 102, _MG_EOT]  # assistant to=user
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == (
+        [-100] * 4
+        + [user_eot]
+        + [-100, -100]
+        + [328, 19669, 200023, 103, first_eom]
+        + [-100, -100]
+        + [328, 76976, 200023, 102, last_eot]
+    )
+
+
+def test_muse_glimmer_media_tokens_masked_even_on_trainable_turns():
+    strategy = MuseGlimmerProcessingStrategy(
+        _muse_glimmer_fake_processor(), roles_to_train=["user", "assistant"]
+    )
+    # user turn wrapping two patches in <|image_start|> / <|image_end|>
+    seq = [200022, 1556, 200023, 200080, 200092, 200092, 200081, 101, 200008]
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == [-100] * 7 + [101, _MG_EOT]
+
+
+def test_muse_glimmer_declares_all_four_roles():
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    assert {b.role for b in strategy.role_boundaries} == {
+        "system",
+        "user",
+        "tool",
+        "assistant",
+    }
+    assistant = next(b for b in strategy.role_boundaries if b.role == "assistant")
+    # Must stop at "<|start|>assistant"; including the recipient would drop it from loss.
+    assert assistant.start_tokens == [200022, 140680]
+    # Ends on <|start|> rather than <|eot|>, so an <|eom|>-terminated turn cannot run on.
+    assert assistant.end_tokens == [200022]
+    assert assistant.include_end is False
+
+
+def test_dispatch_muse_glimmer():
+    pytest.importorskip("transformers.models.muse_glimmer")
+    from transformers.models.muse_glimmer import MuseGlimmerProcessor
+
+    proc = MagicMock(spec=MuseGlimmerProcessor)
+    proc.tokenizer = _Tokenizer(_MG_VOCAB, pad_id=200018, eos_id=200001)
+    proc.image_token = "<|patch|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, MuseGlimmerProcessingStrategy)
+
+
+def test_dispatch_muse_glimmer_chat_template_key():
+    s = _dispatch(_muse_glimmer_fake_processor(), "muse_glimmer")
+    assert isinstance(s, MuseGlimmerProcessingStrategy)

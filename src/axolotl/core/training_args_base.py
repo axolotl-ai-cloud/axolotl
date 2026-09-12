@@ -3,7 +3,7 @@ Base Axolotl Training Mixins shared across various trainer configs
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
 
 from PIL.Image import Resampling
 
@@ -235,9 +235,14 @@ class AxolotlTrainingMixins:
         },
     )
 
-    activation_offloading: bool | None = field(
-        default=None,
-        metadata={"help": "Use activation offloading with CUDA streams for training."},
+    activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
+        field(
+            default=None,
+            metadata={
+                "help": "Activation offloading mode: True (stream-overlapped), "
+                "'legacy' (synchronous), 'disk', 'hidden_states', or False."
+            },
+        )
     )
 
     layer_offloading: bool | None = field(

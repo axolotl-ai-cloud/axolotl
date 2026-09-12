@@ -30,8 +30,7 @@ import torch
 
 MX_BLOCK_SIZE = 32
 
-# Standard OCP-MX fp4 e2m1 codebook (sign bit | 2-bit exp | 1-bit mantissa).
-# Index by the raw 4-bit nibble. Cached fp32 tensor for kernel lookups.
+# Standard OCP-MX fp4 e2m1 codebook (sign | 2-bit exp | 1-bit mantissa), indexed by raw nibble.
 _FP4_E2M1_LUT = (
     0.0,
     0.5,
@@ -90,7 +89,12 @@ class MXWeights:
     layout:
         Which axis the block scaling runs along (see ``MXLayout``).
     block_size:
-        OCP MX block size; only ``32`` is supported by the kernels.
+        OCP block size: ``32`` for MXFP4 (E8M0 scales), ``16`` for NVFP4.
+    scale_is_linear:
+        ``False`` (default): scales are E8M0 (``uint8``), decoded in-kernel as
+        ``2^(byte-127)``. ``True``: scales are already a linear floating-point
+        multiplier (e.g. NVFP4's E4M3 block scale pre-multiplied by the per-tensor
+        scale), loaded and used directly with no exponent decode.
     """
 
     packed: torch.Tensor
@@ -101,14 +105,15 @@ class MXWeights:
     block_size: int = MX_BLOCK_SIZE
     num_experts: Optional[int] = None  # E_active; convenience field
     orig_dtype: torch.dtype = torch.bfloat16
+    scale_is_linear: bool = False
 
     def __post_init__(self) -> None:
-        assert self.block_size == MX_BLOCK_SIZE, (
-            f"only block_size={MX_BLOCK_SIZE} is supported, got {self.block_size}"
+        assert self.block_size in (16, 32), (
+            f"block_size must be 16 (NVFP4) or 32 (MXFP4), got {self.block_size}"
         )
-        # scales are E8M0 (float8_e8m0fnu) in torchao; viewed as uint8 here so
-        # the Triton kernel can load them with simple integer arithmetic.
-        if self.scales.dtype != torch.uint8:
+        if not self.scale_is_linear and self.scales.dtype != torch.uint8:
+            # E8M0 (float8_e8m0fnu) scales viewed as uint8 so the Triton kernel can
+            # load them with simple integer arithmetic. Linear scales stay floating.
             self.scales = self.scales.view(torch.uint8)
         assert self.packed.dtype == torch.uint8, (
             f"packed must be uint8, got {self.packed.dtype}"
@@ -203,10 +208,14 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
     assert mx_param.elem_dtype == torch.float4_e2m1fn_x2, (
         "only MXFP4 (float4_e2m1fn_x2) is supported"
     )
-    sub_qdata = _mx_qdata(mx_param)[active_experts].contiguous()
-    sub_scale = _mx_scale(mx_param)[active_experts].contiguous()
-    # Logical dims (kernel's K, N): the contraction axis is K, the OCP block
-    # axis is the LAST storage axis (= K). N is the leading non-expert axis.
+    # Dense routing: reference the resident param zero-copy (see selective_nvfp4_weights_fwd);
+    # fall back to the gather when sparse.
+    qd, sc = _mx_qdata(mx_param), _mx_scale(mx_param)
+    all_active = active_experts.numel() == qd.size(0)
+    sub_qdata = qd if all_active else qd[active_experts].contiguous()
+    sub_scale = sc if all_active else sc[active_experts].contiguous()
+    # Kernel's K = contraction axis = OCP block axis = LAST storage axis; N is the leading
+    # non-expert axis.
     N = sub_qdata.size(1)
     K = sub_qdata.size(2) * 2
     return MXWeights(
@@ -218,4 +227,68 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
         block_size=mx_param.block_size,
         num_experts=sub_qdata.size(0),
         orig_dtype=mx_param.orig_dtype,
+    )
+
+
+def _torchao_nvfp4tensor_cls():
+    """Return the torchao NVFP4Tensor class, or ``None`` if torchao is missing."""
+    try:
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+    except ImportError:
+        return None
+    return NVFP4Tensor
+
+
+def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWeights:
+    """Slice an NVFP4 expert parameter to the active set as an ``MXWeights`` with
+    ``scale_is_linear=True``.
+
+    NVFP4 shares the FP4 E2M1 element codebook with MXFP4 (same packed nibble layout)
+    but scales per 16-element block with an E4M3 (fp8) value, optionally times a
+    per-tensor fp32 scale. The dequant is ``codebook(nibble) * e4m3_block_scale *
+    per_tensor`` -- not a power-of-2 -- so the E4M3 block scale (folded with the
+    per-tensor scale) is decoded to a linear fp32 multiplier here and consumed
+    directly by the kernel (no in-kernel exponent decode). The packed buffer stays
+    4-bit; only the small ``[num_active, N, K/16]`` scale tensor is materialized.
+    """
+    NVFP4Tensor = _torchao_nvfp4tensor_cls()
+    if NVFP4Tensor is None:
+        raise ImportError("NVFP4 fused path requires torchao (install `torchao`).")
+    assert isinstance(nv_param, NVFP4Tensor), (
+        f"selective_nvfp4_weights_fwd expects an NVFP4Tensor, got {type(nv_param)}"
+    )
+    assert nv_param.block_size == 16, (
+        f"NVFP4 block_size must be 16, got {nv_param.block_size}"
+    )
+    # Dense routing (all experts active, the common case): remap is identity, so reference the
+    # resident param zero-copy instead of gathering the whole packed weight every layer. Falls
+    # back to the selective gather when routing is sparse.
+    all_active = active_experts.numel() == nv_param.qdata.size(0)
+    sub_qdata = (
+        nv_param.qdata if all_active else nv_param.qdata[active_experts].contiguous()
+    )
+    raw_scale = nv_param.scale if all_active else nv_param.scale[active_experts]
+    block_scale = raw_scale.to(torch.float32)  # [a, N, K/16]
+    per_tensor = getattr(nv_param, "per_tensor_scale", None)
+    if per_tensor is not None:
+        per_tensor = per_tensor.to(torch.float32)
+        # Per-expert scale reshaped to [a,1,1] to broadcast along block_scale's expert dim
+        # [a,N,K/16] (bare [a] would hit the last dim). A shared scalar just broadcasts.
+        if per_tensor.dim() >= 1 and per_tensor.size(0) == nv_param.qdata.size(0):
+            if not all_active:
+                per_tensor = per_tensor[active_experts]
+            per_tensor = per_tensor.reshape(-1, 1, 1)
+        block_scale = block_scale * per_tensor
+    N = sub_qdata.size(1)
+    K = sub_qdata.size(2) * 2
+    return MXWeights(
+        packed=sub_qdata,
+        scales=block_scale.contiguous(),
+        K=K,
+        N=N,
+        layout=MXLayout.FWD,
+        block_size=16,
+        num_experts=sub_qdata.size(0),
+        orig_dtype=nv_param.orig_dtype,
+        scale_is_linear=True,
     )

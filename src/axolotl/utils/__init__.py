@@ -2,11 +2,10 @@
 Basic utils for Axolotl
 """
 
+import importlib.metadata
 import importlib.util
 import os
 import re
-
-import torch
 
 
 def make_lazy_getattr(
@@ -62,7 +61,12 @@ def get_pytorch_version() -> tuple[int, int, int]:
     """
     Get Pytorch version as a tuple of (major, minor, patch).
     """
-    torch_version = torch.__version__
+    try:
+        torch_version = importlib.metadata.version("torch")
+    except importlib.metadata.PackageNotFoundError:
+        import torch
+
+        torch_version = torch.__version__
     version_match = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?", torch_version)
 
     if not version_match:
@@ -76,8 +80,7 @@ def get_pytorch_version() -> tuple[int, int, int]:
 
 def set_pytorch_cuda_alloc_conf():
     """Set up CUDA allocation config"""
-    torch_version = torch.__version__.split(".")
-    torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
+    torch_major, torch_minor, _ = get_pytorch_version()
     config_value = "expandable_segments:True"
     config_older_suffix = ",roundup_power2_divisions:16"
     if (

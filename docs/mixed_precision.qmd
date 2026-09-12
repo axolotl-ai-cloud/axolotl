@@ -14,7 +14,7 @@ Mixed precision training uses lower precision data types to reduce memory usage 
 
 - **FP16** - Half precision 16-bit (Pascal generation+)
 - **BF16** - Brain Float 16-bit (Ampere generation+)
-- **FP8** - 8-bit floating point (Hopper generation+)
+- **FP8** - 8-bit floating point (compatible Hopper or Blackwell GPUs)
 
 ## FP16 Mixed Precision {#sec-fp16}
 
@@ -77,16 +77,16 @@ implementation.
 ## FP8 Mixed Precision {#sec-fp8}
 
 ::: {.callout-note}
-FP8 support is experimental and requires compatible hardware (H100, H200) and recent PyTorch versions with TorchAO.
+FP8 support is experimental and requires compatible NVIDIA Hopper or Blackwell hardware (including supported consumer Blackwell devices) and recent PyTorch versions with TorchAO.
 :::
 
 ### What is FP8? {#sec-fp8-overview}
 
-FP8 (8-bit floating point) can provide significant time savings compared to FP16/BF16 while maintaining training stability. Axolotl's implementation uses PyTorch's TorchAO library with "tensorwise" scaling strategy.
+FP8 (8-bit floating point) can provide significant time savings compared to FP16/BF16 while maintaining training stability. Axolotl's implementation uses PyTorch's TorchAO library and supports `tensorwise`, `rowwise`, and `rowwise_with_gw_hp` scaling recipes.
 
 ### Requirements {#sec-fp8-software}
 
-- Hopper+ GPUs (H100/H200)
+- Compatible NVIDIA Hopper or Blackwell GPUs (including supported consumer Blackwell devices)
 - PyTorch 2.7+ (+ compatible TorchAO version)
 - CUDA 12.4+
 
@@ -97,6 +97,10 @@ Add to your YAML config:
 ```{.yaml}
 # Enable FP8 mixed precision
 fp8: true
+
+# Optional: Select the FP8 scaling recipe (tensorwise by default)
+fp8_config:
+  recipe: tensorwise
 
 # Optional: Enable FP8 for FSDP all-gather operations
 fp8_enable_fsdp_float8_all_gather: true
@@ -117,6 +121,8 @@ For [FSDP](multi-gpu.qmd#sec-fsdp) (Fully Sharded Data Parallel) training:
 
 ```{.yaml}
 fp8: true
+fp8_config:
+  recipe: tensorwise
 fp8_enable_fsdp_float8_all_gather: true
 
 torch_compile: true
@@ -137,7 +143,7 @@ fsdp_config:
 ### Choosing Precision Format {#sec-choosing-format}
 
 - **Start with automatic detection**: `bf16: auto`
-- **For Hopper+ (H100/H200)**: Try FP8 + torch.compile for maximum speed
+- **For compatible Hopper or Blackwell GPUs**: Try FP8 + torch.compile for maximum speed
 - **For Ampere (A100/RTX 30/40)**: Use BF16
 - **For older Pascal/Turing GPUs**: Use FP16 with caution
 - **For very old or unsupported GPUs**: Use FP32

@@ -10,7 +10,9 @@ from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
+from ..utils import requires_flash_attn, with_temp_dir
+
+pytestmark = requires_flash_attn
 
 
 class TestModelPatches(unittest.TestCase):
@@ -86,7 +88,9 @@ class TestModelPatches(unittest.TestCase):
         tokenizer = load_tokenizer(cfg)
         ModelLoader(cfg, tokenizer, inference=False).load()
 
+        # In-tree HF models pack natively via position_ids, so we no longer
+        # override `_get_unpad_data` for them; the stock function must remain.
         assert (
-            "torch.jit"
-            in transformers.modeling_flash_attention_utils._get_unpad_data.__module__
+            transformers.modeling_flash_attention_utils._get_unpad_data.__module__
+            == "transformers.modeling_flash_attention_utils"
         )

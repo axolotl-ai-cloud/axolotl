@@ -13,6 +13,8 @@ from transformers import AutoConfig
 
 from axolotl.kernels.lora import (
     apply_lora_embedding,
+    apply_lora_gdn_in_proj,
+    apply_lora_linear,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
@@ -208,6 +210,13 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Gemma4TextAttention
 
+    if model_type in ("gemma4_unified", "gemma4_unified_text"):
+        from transformers.models.gemma4_unified.modeling_gemma4_unified import (
+            Gemma4UnifiedTextAttention,
+        )
+
+        return Gemma4UnifiedTextAttention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
@@ -263,6 +272,32 @@ def patch_self_attn_lora(cfg: DictDefault):
     except ImportError:
         pass
 
+    # gemma4_unified's attention forward can't be source-rewritten (KV sharing); skip.
+    try:
+        from transformers.models.gemma4_unified.modeling_gemma4_unified import (
+            Gemma4UnifiedTextAttention,
+        )
+    except ImportError:
+        Gemma4UnifiedTextAttention = None
+
+    if (
+        Gemma4UnifiedTextAttention is not None
+        and attention_cls is Gemma4UnifiedTextAttention
+    ):
+        if cfg.fused_attn_kernel:
+            LOG.info(
+                "Gemma4UnifiedTextAttention uses the fused attention path "
+                "(apply_qkv/apply_o) - skipping LoRA source rewrite"
+            )
+        else:
+            LOG.warning(
+                "lora_qkv_kernel/lora_o_kernel cannot attach to gemma4_unified "
+                "without fused_attn_kernel: true - skipping QKV/O rewrite "
+                "(MLP/embedding kernels still apply). Set fused_attn_kernel: true "
+                "to enable them."
+            )
+        return
+
     self_attn_forward = inspect.getsource(attention_cls.forward)
     attention_cls._original_forward = self_attn_forward
     self_attn_forward, _ = detab_code(self_attn_forward)
@@ -317,20 +352,66 @@ def find_self_attn_in_layer(
             yield layer.self_attn
 
 
+# GatedDeltaNet projections routed through the fused kernels to avoid peft's
+# bf16->fp32->bf16 dtype round-trip. The in-projections share a single input
+# (post-norm hidden states) and are fused into one autograd node; out_proj has a
+# different input and is routed through the single-projection kernel.
+LINEAR_ATTN_IN_PROJS = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a")
+LINEAR_ATTN_OUT_PROJ = "out_proj"
+LINEAR_ATTN_PROJS = LINEAR_ATTN_IN_PROJS + (LINEAR_ATTN_OUT_PROJ,)
+
+
+def find_linear_attn_in_layer(layer: nn.Module) -> Generator[nn.Module, None, None]:
+    # Qwen3.5 / Qwen3.5-MoE hybrid layers (GatedDeltaNet). qwen3_next fuses its
+    # projections (in_proj_qkvz / in_proj_ba) under different names and must not
+    # match here. Require all four canonical in-projections: the fused node and the
+    # patched forward both index every one, so a partial match falls back to peft.
+    if hasattr(layer, "linear_attn"):
+        linear_attn = layer.linear_attn
+        if hasattr(linear_attn, LINEAR_ATTN_OUT_PROJ) and all(
+            hasattr(linear_attn, proj) for proj in LINEAR_ATTN_IN_PROJS
+        ):
+            yield linear_attn
+
+
+def _make_apply_lora_linear(proj_name: str):
+    def apply_linear(self, X: torch.Tensor) -> torch.Tensor:
+        return apply_lora_linear(getattr(self, proj_name), X)
+
+    apply_linear.__name__ = f"apply_{proj_name}"
+    return apply_linear
+
+
+def _make_apply_lora_gdn_in_proj(proj_names: tuple[str, ...]):
+    def apply_in_proj(self, X: torch.Tensor) -> dict:
+        return apply_lora_gdn_in_proj(self, X, proj_names)
+
+    return apply_in_proj
+
+
 def find_mlp_in_layer(
     layer: nn.Module,
+    skip_routed_experts: bool = False,
 ) -> Generator[Tuple[nn.Module, nn.Module, nn.Module, nn.Module], None, None]:
-    # general case of most models
+    # general case of most models: the dense (shared) MLP. Always eligible — a custom MoE expert
+    # kernel only owns the ROUTED experts, not this dense gate/up/down block (e.g. gemma4's per-layer
+    # Gemma4TextMLP). Sparse-block MoEs whose layer.mlp is the router (no gate_proj) don't match here.
     if hasattr(layer, "mlp"):
         if all(
             hasattr(layer.mlp, proj) for proj in ["gate_proj", "up_proj", "down_proj"]
         ):
             yield layer.mlp.gate_proj, layer.mlp.up_proj, layer.mlp.down_proj, layer.mlp
-    # llama4 linearized experts
+    # llama4 shared expert: also a dense MLP, not routed -> always eligible.
     if hasattr(layer, "feedforward") and hasattr(layer.feedforward, "shared_expert"):
         mlp = layer.feedforward.shared_expert
         yield mlp.gate_proj, mlp.up_proj, mlp.down_proj, mlp
-    if hasattr(layer, "feedforward") and hasattr(layer.feedforward, "experts"):
+    # llama4 linearized ROUTED experts: skip when a custom MoE expert kernel (ScatterMoE/SonicMoE)
+    # owns the experts — patching them here would double-own / conflict with the MoE kernel path.
+    if (
+        not skip_routed_experts
+        and hasattr(layer, "feedforward")
+        and hasattr(layer.feedforward, "experts")
+    ):
         if all(
             hasattr(layer.feedforward.experts, proj)
             for proj in ["gate_projs", "up_projs", "down_projs"]
@@ -447,6 +528,9 @@ def apply_lora_kernel_patches(
 
     layers = get_layers(model)
 
+    linear_attn_patched_layers = 0
+    linear_attn_patched_projs: set[str] = set()
+
     # Patch each layer
     for layer in layers:
         # Add QKV, O fallback implementations to start
@@ -500,7 +584,40 @@ def apply_lora_kernel_patches(
                     LOG.warning_once(
                         "Cannot patch some attention output projection - requires LoRA adapters"
                     )
-        for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
+        if cfg.lora_qkv_kernel or cfg.lora_o_kernel:
+            for linear_attn in find_linear_attn_in_layer(layer):
+                patched = False
+                # in_proj group mirrors self-attn qkv (lora_qkv_kernel); out_proj
+                # mirrors o_proj (lora_o_kernel). Base-only in-projections fold into
+                # the fused node too, so patch only when one carries a LoRA adapter.
+                if cfg.lora_qkv_kernel and any(
+                    hasattr(getattr(linear_attn, name), "lora_A")
+                    for name in LINEAR_ATTN_IN_PROJS
+                ):
+                    linear_attn.apply_in_proj_fused = types.MethodType(
+                        _make_apply_lora_gdn_in_proj(LINEAR_ATTN_IN_PROJS), linear_attn
+                    )
+                    linear_attn_patched_projs.update(LINEAR_ATTN_IN_PROJS)
+                    patched = True
+                out_proj = getattr(linear_attn, LINEAR_ATTN_OUT_PROJ, None)
+                if (
+                    cfg.lora_o_kernel
+                    and out_proj is not None
+                    and hasattr(out_proj, "lora_A")
+                ):
+                    linear_attn.apply_out_proj = types.MethodType(
+                        _make_apply_lora_linear(LINEAR_ATTN_OUT_PROJ), linear_attn
+                    )
+                    linear_attn_patched_projs.add(LINEAR_ATTN_OUT_PROJ)
+                    patched = True
+                if patched:
+                    linear_attn_patched_layers += 1
+        # When ScatterMoE/SonicMoE owns the routed experts, lora_mlp_kernel must only fuse the
+        # DENSE shared MLP, never the routed-expert containers (which the MoE kernel handles).
+        _moe_kernels_own_experts = bool(cfg.use_scattermoe) or bool(cfg.use_sonicmoe)
+        for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(
+            layer, skip_routed_experts=_moe_kernels_own_experts
+        ):
             if cfg.lora_mlp_kernel:
                 # Check is inside lora_mlp_kernel guard so models with an
                 # unsupported activation (e.g. nemotron_h uses relu2) can set
@@ -523,6 +640,12 @@ def apply_lora_kernel_patches(
                     LOG.warning_once(
                         "Cannot patch some MLP layers - requires LoRA adapters"
                     )
+
+    if linear_attn_patched_layers:
+        LOG.info(
+            f"Patched linear-attention LoRA projections {sorted(linear_attn_patched_projs)} "
+            f"with fused kernels on {linear_attn_patched_layers} layer(s)"
+        )
 
     # Patch embedding layers (model-level, not per-layer)
     if cfg.lora_embedding_kernel:

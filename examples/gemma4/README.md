@@ -11,39 +11,33 @@
 3. Run the finetuning example:
 
 ```bash
-# 26B MoE QLoRA (1x80GB @ ~50 GiB)
+# 26B MoE QLoRA (1x80GB)
 axolotl train examples/gemma4/26b-a4b-moe-qlora.yaml
 
-# 31B Dense QLoRA (1x80GB @ ~44 GiB)
+# 31B Dense QLoRA (1x80GB @ ~25.2 GiB)
 axolotl train examples/gemma4/31b-qlora.yaml
 
-# 31B Dense QLoRA Flex Attn (1x80GB @ ~26 GiB)
-axolotl train examples/gemma4/31b-qlora-flex.yaml
+# 31B Dense LoRA FSDP2, 32k sequences (multi-GPU)
+axolotl train examples/gemma4/31b-lora-fsdp.yaml
+
+# E2B vision LoRA (1x80GB @ ~10.4 GiB)
+axolotl train examples/gemma4/e2b-vision-lora.yaml
 ```
 
 ### MoE Expert Quantization & Expert LoRA (26B-A4B only)
 
 The 26B-A4B config uses ScatterMoE kernels via the transformers `ExpertsInterface` and quantizes expert weights on load. To learn about expert quantization, expert LoRA targeting, and related limitations, see the [MoE Expert Quantization](https://docs.axolotl.ai/docs/expert_quantization.html) docs.
 
-## Flex Attention
-
-Reduce ~40% VRAM (at the cost of up to half throughput) by setting the below (shown in `examples/gemma4/31b-qlora-flex.yaml`):
-
-```yaml
-torch_compile: true
-flex_attention: true
-```
-
-This works for both the MoE and Dense model.
-
 ## Limitations
 
-- **Flash Attention**: FA2 (max head_dim=256) and FA4 (max head_dim=128) cannot support Gemma 4's `global_head_dim=512`. Use SDP or flex attention instead.
-- **LoRA kernels**: Not supported due to KV-sharing layers.
-- **lora_target_linear**: Incompatible for multimodal models — use `lora_target_modules` with a regex to restrict LoRA to the text backbone.
+- **Flash Attention**: FA2 (max head_dim=256) and FA4 (max head_dim=128) cannot serve Gemma 4's `global_head_dim=512` on their own. Use `flex_attention`, or `gemma4_hybrid_attn_impl: true` to run the sliding-window layers under FA2 and the global (head_dim=512) layers under `sdpa` (requires `attn_implementation: flash_attention_2` and a flash-attn build for your GPU arch).
+- **LoRA kernels**: Not supported for models with KV-sharing layers.
+- **lora_target_linear**: Incompatible for multimodal models; use `lora_target_modules` with a regex to restrict LoRA to the text backbone.
 
 ### TIPS
 
+- **Gradient spikes**: Gemma 4's text attention uses `scaling=1.0` with QK-RMSNorm, leaving the softmax structurally near-saturated. LoRA runs hit intermittent pre-clip gradient norms 100-1000× their neighbours with no matching loss spike ([transformers#45676](https://github.com/huggingface/transformers/issues/45676)). The 31B configs compensate with `learning_rate: 5e-5` and `max_grad_norm: 0.1`; raise either at your own risk.
+- `gemma4_hybrid_attn_impl: true` trains ~2× faster than `flex_attention` on 31B (~25.2 GiB reserved, packing on) and avoids the flex `head_dim=512` kernel, which can exhaust shared memory on Blackwell.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - You can run full finetuning by removing `adapter: qlora`, `load_in_4bit: true`, and `quantize_moe_experts: true` from the config. This is heavy and has not been tested.
 

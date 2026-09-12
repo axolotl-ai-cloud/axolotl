@@ -21,6 +21,25 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def expert_shard_axis(mesh_dim_names) -> str | None:
+    """The non-``ep`` mesh axis the routed experts FSDP-shard on under EP composition, or ``None``.
+
+    Prefers ``dp_shard`` (EP×dp_shard: experts shard on the data axis); falls back to ``cp`` (EP×cp,
+    where the cp ranks of an ep-group hold the SAME experts since cp shards the sequence, not the
+    experts, so FSDP-sharding them on cp keeps each rank from holding the full ep-group slice). Returns
+    ``None`` for pure EP (no secondary axis) or when there is no ``ep`` axis to compose with — those
+    paths don't pre-wrap the experts here.
+    """
+    names = tuple(mesh_dim_names or ())
+    if "ep" not in names:
+        return None
+    if "dp_shard" in names:
+        return "dp_shard"
+    if "cp" in names:
+        return "cp"
+    return None
+
+
 class ExpertParallelPlugin(BasePlugin):
     """Plugin that swaps MoE dispatch/combine for DeepEP-fused kernels."""
 
@@ -75,6 +94,9 @@ class ExpertParallelPlugin(BasePlugin):
             num_nvl_bytes=cfg.expert_parallel_num_nvl_bytes,
             num_rdma_bytes=cfg.expert_parallel_num_rdma_bytes,
         )
+        from .experts_fn import set_token_capacity
+
+        set_token_capacity(getattr(cfg, "expert_parallel_token_capacity", None))
         # Pure-EP path: register the grad-scale hook now. FSDP+EP defers
         # registration to `fully_shard_experts` (after experts become DTensors).
         if (cfg.dp_shard_size or 1) <= 1:
@@ -91,6 +113,8 @@ class ExpertParallelPlugin(BasePlugin):
         """
         if not self._is_ep_enabled(cfg):
             return
+
+        self._register_padding_dispatch_hook(model)
 
         # Find the inner module that has the attribute (shard set it on whatever
         # was the top-level model at post_model_build time).
@@ -135,6 +159,55 @@ class ExpertParallelPlugin(BasePlugin):
             f"expert_parallel: propagated {len(resolved)} DDP-ignored param "
             f"name(s) onto outer wrapper {type(model).__name__}."
         )
+
+    @staticmethod
+    def _register_padding_dispatch_hook(model) -> None:
+        """Feed the batch's real-token mask to the DeepEP dispatch so padding tokens are
+        not routed (they'd otherwise pile onto one expert and break intranode dispatch).
+
+        A model-level forward pre-hook reads the 2D ``attention_mask`` (1=real, 0=pad) and
+        stashes a flattened ``[B*S]`` bool mask; ``_deep_ep_forward`` sentinels those rows.
+        Under sample packing there is no 2D mask, but the multipack collator pads partial
+        packs to ``seq_len`` — those identical pad embeddings still pile onto one expert and
+        break DeepEP intranode dispatch — so fall back to ``input_ids != pad_token_id``."""
+        from .experts_fn import set_valid_token_mask
+
+        if getattr(model, "_ep_padding_hook", False):
+            return
+
+        pad_id = getattr(getattr(model, "config", None), "pad_token_id", None)
+
+        def _pre_hook(_module, args, kwargs):
+            am = kwargs.get("attention_mask")
+            if am is None and args:
+                am = next(
+                    (a for a in args if torch.is_tensor(a) and a.dim() == 2), None
+                )
+            if am is not None and am.dim() == 2:
+                set_valid_token_mask((am != 0).reshape(-1))
+                return args, kwargs
+            # Packing (no 2D mask): exclude pad rows so they don't overload one expert.
+            ids = kwargs.get("input_ids")
+            if ids is None and args:
+                ids = next(
+                    (
+                        a
+                        for a in args
+                        if torch.is_tensor(a)
+                        and a.dim() == 2
+                        and a.dtype in (torch.long, torch.int, torch.int32)
+                    ),
+                    None,
+                )
+            set_valid_token_mask(
+                (ids != pad_id).reshape(-1)
+                if (ids is not None and pad_id is not None)
+                else None
+            )
+            return args, kwargs
+
+        model.register_forward_pre_hook(_pre_hook, with_kwargs=True)
+        model._ep_padding_hook = True
 
     @staticmethod
     def _infer_local_kernel(cfg) -> str:
@@ -219,24 +292,35 @@ class ExpertParallelPlugin(BasePlugin):
         if ep_size == world_size:
             return dist.group.WORLD
 
-        # EP + FSDP — read the ep group from accelerate's mesh, or build one
-        # ourselves if accelerate hasn't (e.g., topology unit tests that drive
-        # `_resolve_ep_group` directly without an Accelerator).
-        if dp_shard_size > 1:
-            if tp_size > 1 or cp_size > 1:
+        # EP composed with FSDP (`dp_shard`) and/or context parallel (`cp`) on orthogonal mesh
+        # axes — read the ep group from accelerate's mesh, or build one ourselves if accelerate
+        # hasn't (e.g., topology unit tests that drive `_resolve_ep_group` directly). Experts shard
+        # on `ep` (tokens move via all-to-all); the sequence shards on `cp` (DSA attention gathers
+        # the compressed KV on that axis); non-expert weights shard on `dp_shard`. TP is still
+        # unsupported in composition.
+        if dp_shard_size > 1 or cp_size > 1:
+            if tp_size > 1:
                 raise NotImplementedError(
-                    "EP composition with TP/CP not yet supported. Got "
+                    "EP × TP composition not yet supported. Got "
                     f"ep={ep_size}, dp_shard={dp_shard_size}, tp={tp_size}, cp={cp_size}. "
-                    "v1 supports only EP-only or EP × dp_shard."
+                    "Supported: EP, EP × dp_shard, EP × cp, EP × cp × dp_shard."
                 )
             mesh = ExpertParallelPlugin._accelerate_mesh()
-            if mesh is None or "ep" not in mesh.mesh_dim_names:
+            if mesh is None or "ep" not in (mesh.mesh_dim_names or ()):
                 from torch.distributed.device_mesh import init_device_mesh
 
+                # Fallback mesh from the >1 axes (ep outermost). Orthogonality of the ep/cp/dp
+                # groups is what matters; accelerate's mesh is preferred when present so the ep
+                # group matches the one used for the experts' FSDP exclusion.
+                axes = [("ep", ep_size)]
+                if cp_size > 1:
+                    axes.append(("cp", cp_size))
+                if dp_shard_size > 1:
+                    axes.append(("dp_shard", dp_shard_size))
                 mesh = init_device_mesh(
                     "cuda" if torch.cuda.is_available() else "cpu",
-                    (ep_size, dp_shard_size),
-                    mesh_dim_names=("ep", "dp_shard"),
+                    tuple(s for _, s in axes),
+                    mesh_dim_names=tuple(n for n, _ in axes),
                 )
             ExpertParallelPlugin._device_mesh = mesh
             LOG.debug(
@@ -246,13 +330,29 @@ class ExpertParallelPlugin(BasePlugin):
             )
             return mesh["ep"].get_group()
 
-        # ep_size > 1, ep_size < world_size, dp_shard_size == 1 — invalid.
+        # ep_size > 1, ep_size < world_size, no dp_shard/cp to fill the rest — invalid.
         raise ValueError(
             f"expert_parallel_size ({ep_size}) < world_size ({world_size}) "
-            "without dp_shard_size > 1 to fill the remaining axes is not supported. "
-            "Set dp_shard_size such that ep × dp_shard == world_size, or set "
-            "expert_parallel_size = world_size for pure EP."
+            "without dp_shard_size/context_parallel_size > 1 to fill the remaining axes is not "
+            "supported. Set dp_shard_size and/or context_parallel_size such that "
+            "ep × cp × dp_shard == world_size, or set expert_parallel_size = world_size for pure EP."
         )
+
+    @staticmethod
+    def _resolve_cp_group(cfg):
+        """Return the context-parallel ProcessGroup (the `cp` axis of the EP mesh), or None when
+        ``context_parallel_size <= 1``. The DSA attention shards the sequence on this axis (gathering
+        the compressed KV across it); experts shard on the orthogonal ``ep`` axis. Reads the mesh
+        built by ``_resolve_ep_group`` / accelerate."""
+        cp_size = getattr(cfg, "context_parallel_size", None) or 1
+        if cp_size <= 1:
+            return None
+        mesh = (
+            ExpertParallelPlugin._device_mesh or ExpertParallelPlugin._accelerate_mesh()
+        )
+        if mesh is not None and "cp" in (mesh.mesh_dim_names or ()):
+            return mesh["cp"].get_group()
+        return None
 
     @staticmethod
     def fully_shard_experts(model, dp_shard_mesh, fsdp2_kwargs):
@@ -265,7 +365,11 @@ class ExpertParallelPlugin(BasePlugin):
         """
         from torch.distributed.fsdp import fully_shard
 
-        from .shard import _detect_experts_modules
+        from .shard import (
+            _detect_experts_modules,
+            _is_param_wrapper,
+            _real_experts_base,
+        )
 
         kwargs = dict(fsdp2_kwargs)
         kwargs["mesh"] = dp_shard_mesh
@@ -274,9 +378,29 @@ class ExpertParallelPlugin(BasePlugin):
         for _name, module in _detect_experts_modules(model):
             fully_shard(module, **kwargs)
 
+        # `target_parameters` expert LoRA lives on the ParamWrapper chain wrapping the experts
+        # module (which `_detect_experts_modules` skips). Left to the outer decoder-layer auto-wrap
+        # it shards on the FULL ep×dp mesh — i.e. ACROSS the ep axis — corrupting the per-ep-rank
+        # expert slice (grads averaged over ranks owning different experts; save reconstructs the
+        # wrong shape). Wrap the OUTERMOST expert ParamWrapper as its own FSDP unit on dp_shard:
+        # its forward IS the fused-LoRA fastpath, so FSDP unshards the adapter (incl. the nested
+        # inner wrapper's, which is not a separate unit) to plain tensors right before the kernel
+        # reads them — sharded on the same axis as the weights, but gathered during use.
+        all_pws = [m for _n, m in model.named_modules() if _is_param_wrapper(m)]
+        inner = {getattr(pw, "base_layer", None) for pw in all_pws}
+        outer_expert_pws = [
+            pw
+            for pw in all_pws
+            if pw not in inner
+            and _real_experts_base(pw) is not None
+            and getattr(_real_experts_base(pw), "num_local_experts", None) is not None
+        ]
+        for pw in outer_expert_pws:
+            fully_shard(pw, **kwargs)
+
         LOG.debug(
-            f"expert_parallel: pre-wrapped Experts modules on dp_shard mesh "
-            f"(size={dp_shard_mesh.size()})."
+            f"expert_parallel: pre-wrapped Experts modules + {len(outer_expert_pws)} expert "
+            f"ParamWrapper(s) on dp_shard mesh (size={dp_shard_mesh.size()})."
         )
 
         root = dp_shard_mesh._get_root_mesh()
@@ -305,6 +429,11 @@ class ExpertParallelPlugin(BasePlugin):
         n_hooks = 0
         for _name, module in _detect_experts_modules(model):
             for p in module.parameters(recurse=True):
+                # Only trainable params have a grad to scale — and a hook can only be
+                # registered on a tensor that requires grad. Under LoRA the base expert
+                # weights are frozen (only the adapters train), so skip them.
+                if not p.requires_grad:
+                    continue
                 p.register_post_accumulate_grad_hook(_scale)
                 n_hooks += 1
         LOG.debug(

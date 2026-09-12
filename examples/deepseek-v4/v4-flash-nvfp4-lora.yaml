@@ -1,0 +1,58 @@
+# DeepSeek-V4-Flash MoE LoRA on an NVFP4 (modelopt) checkpoint via ScatterMoE. FSDP2 multi-GPU only.
+base_model: nvidia/DeepSeek-V4-Flash-NVFP4
+attn_implementation: eager  # required: the dsv4 kernels own the attention path (V4-Flash is eager-only)
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+
+use_kernels: true
+use_scattermoe: true
+use_dsv4_kernels: true
+lora_mlp_kernel: true
+dsv4_fp4_grouped_mode: nvfp4
+strict: false
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+val_set_size: 0.0
+output_dir: ./outputs/dsv4-flash-nvfp4-lora
+sequence_len: 4096
+sample_packing: true  # required: variable-length steps re-autotune the grouped GEMM and throughput collapses
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+num_epochs: 1
+optimizer: adamw_torch
+lr_scheduler: constant
+learning_rate: 0.0001
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+activation_offloading: false
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: DeepseekV4DecoderLayer
+  reshard_after_forward: true
+
+logging_steps: 1
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:

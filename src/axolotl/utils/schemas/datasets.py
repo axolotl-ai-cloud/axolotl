@@ -172,6 +172,12 @@ class SFTDataset(BaseModel):
             "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation, none: never train on EOS tokens"
         },
     )
+    train_on_eot: Literal["all", "turn", "last", "none"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Which EOT (end-of-turn) tokens to train on. Same values as train_on_eos. Defaults to the train_on_eos setting when unset."
+        },
+    )
     roles: dict[str, list[str]] | None = Field(
         default=None,
         json_schema_extra={
@@ -271,6 +277,8 @@ class DPODataset(BaseModel):
     data_files: list[str] | None = None
     revision: str | None = None
     field_messages: str | None = None
+    field_chosen: str | None = None
+    field_rejected: str | None = None
 
 
 class StepwiseSupervisedDataset(BaseModel):
@@ -291,7 +299,7 @@ class UserDefinedKTOType(BaseModel):
     field_system: str | None = None
     field_prompt: str | None = None
     field_completion: str | None = None
-    field_label: bool | None = None
+    field_label: str | None = None
     prompt_format: str | None = None
     completion_format: str | None = None
 

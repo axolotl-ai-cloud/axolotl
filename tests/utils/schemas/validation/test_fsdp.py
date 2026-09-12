@@ -245,3 +245,17 @@ class TestFSDPValidation:
             match="FSDP2 does not support load_in_8bit or load_in_4bit with ",
         ):
             validate_config(cfg)
+
+    def test_size_based_wrap_requires_min_num_params(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_version=2,
+            fsdp_config={
+                "auto_wrap_policy": "SIZE_BASED_WRAP",
+                "reshard_after_forward": True,
+            },
+        )
+        with pytest.raises(
+            ValueError,
+            match="min_num_params is required when auto_wrap_policy is SIZE_BASED_WRAP",
+        ):
+            validate_config(cfg)

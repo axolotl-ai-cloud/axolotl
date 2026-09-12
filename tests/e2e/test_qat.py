@@ -11,7 +11,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig, validate_ao_dtype
 
-from .utils import check_model_output_exists, check_tensorboard
+from .utils import check_model_output_exists, check_tensorboard, requires_flash_attn
 
 
 class TestQATLlama:
@@ -67,6 +67,54 @@ class TestQATLlama:
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
 
+    def test_qat_ternary(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "tokenizer_type": "AutoTokenizer",
+                "sequence_len": 1024,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mlabonne/FineTome-100k",
+                        "type": "chat_template",
+                        "field_messages": "conversations",
+                        "message_property_mappings": {
+                            "role": "from",
+                            "content": "value",
+                        },
+                        "drop_system_message": True,
+                        "split": "train[:1%]",
+                    },
+                ],
+                "chat_template": "chatml",
+                "qat": {
+                    "quantize_embedding": True,
+                    "activation_dtype": "int8",
+                    "weight_dtype": "ternary",
+                },
+                "num_epochs": 1,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 2,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "max_steps": 5,
+                "bf16": True,
+                "save_first_step": False,
+            }
+        )
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(Path(temp_dir) / "checkpoint-5", cfg)
+
+    @requires_flash_attn
     def test_qat_dpo(self, temp_dir):
         cfg = DictDefault(
             {

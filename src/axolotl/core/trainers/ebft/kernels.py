@@ -14,6 +14,8 @@ import torch
 import triton
 import triton.language as tl
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 # ---------------------------------------------------------------------------
 # 1. Fused log_softmax + gather (selective log softmax)
 # ---------------------------------------------------------------------------
@@ -61,6 +63,7 @@ def _fused_log_softmax_gather_kernel(
     tl.store(output_ptr + row, result)
 
 
+@register_kernel_op("ebft_fused_log_softmax_gather")
 def fused_log_softmax_gather(
     logits: torch.Tensor, labels: torch.Tensor
 ) -> torch.Tensor:
@@ -93,6 +96,11 @@ def fused_log_softmax_gather(
     )
 
     return output.view(orig_shape)
+
+
+@fused_log_softmax_gather.register_fake
+def _(logits, labels):
+    return torch.empty(logits.shape[:-1], device=logits.device, dtype=torch.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +137,7 @@ def _fused_reinforce_loss_kernel(
     tl.store(partial_cnt_ptr + block_id, block_cnt)
 
 
+@register_kernel_op("ebft_fused_reinforce_loss")
 def fused_reinforce_loss(
     per_token_logps: torch.Tensor,
     advantages: torch.Tensor,
@@ -162,6 +171,11 @@ def fused_reinforce_loss(
     total_sum = partial_sum.sum()
     total_cnt = partial_cnt.sum().clamp(min=1)
     return total_sum / total_cnt
+
+
+@fused_reinforce_loss.register_fake
+def _(per_token_logps, advantages, action_mask):
+    return torch.empty((), device=per_token_logps.device, dtype=torch.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +218,7 @@ def _fused_cosine_sim_kernel(
     tl.store(out_ptr + row, result)
 
 
+@register_kernel_op("ebft_fused_cosine_similarity")
 def fused_cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """Compute cosine similarity along the last dimension.
 
@@ -232,6 +247,11 @@ def fused_cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     )
 
     return output.view(orig_shape)
+
+
+@fused_cosine_similarity.register_fake
+def _(a, b):
+    return torch.empty(a.shape[:-1], device=a.device, dtype=torch.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +300,7 @@ def _fused_diversity_kernel(
     tl.store(out_ptr + b * N + i, result)
 
 
+@register_kernel_op("ebft_fused_diversity_penalty")
 def fused_diversity_penalty(embeddings: torch.Tensor) -> torch.Tensor:
     """Compute mean pairwise dot product (excluding self) per sample.
 
@@ -306,3 +327,10 @@ def fused_diversity_penalty(embeddings: torch.Tensor) -> torch.Tensor:
     )
 
     return output
+
+
+@fused_diversity_penalty.register_fake
+def _(embeddings):
+    return torch.empty(
+        embeddings.shape[:-1], device=embeddings.device, dtype=torch.float32
+    )

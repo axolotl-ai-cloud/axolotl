@@ -22,6 +22,8 @@ from liger_kernel.ops.utils import (
 )
 from liger_kernel.utils import is_npu_available
 
+from axolotl.kernels.op_registry import register_kernel_op
+
 if compare_version("triton", operator.ge, "3.0.0") and not is_npu_available():
     try:
         from triton.language.extra.libdevice import rsqrt
@@ -188,23 +190,20 @@ def _rms_norm_gated_backward_kernel(
     )
 
 
-def rms_norm_gated_forward(X, G, W, eps, offset):
-    shape = X.shape
-    dim = shape[-1]
-    X = X.view(-1, dim)
-    G = G.view(-1, dim)
+@register_kernel_op("rms_norm_gated_fwd")
+def _rms_norm_gated_fwd_op(
+    X: torch.Tensor,
+    G: torch.Tensor,
+    W: torch.Tensor,
+    eps: float,
+    offset: float,
+    BLOCK_SIZE: int,
+    num_warps: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
     n_rows, n_cols = X.shape
-    BLOCK_SIZE, num_warps = calculate_settings(n_cols)
 
     Y = torch.empty((n_rows, n_cols), dtype=X.dtype, device=X.device)
     RSTD = torch.empty(n_rows, dtype=torch.float32, device=X.device)
-
-    assert X.shape[1] == W.shape[0], (
-        f"Incompatible hidden size: X.shape[1]={X.shape[1]} vs W.shape[0]={W.shape[0]}"
-    )
-    assert X.shape == G.shape, (
-        f"X and G must have same shape, got {X.shape} and {G.shape}"
-    )
 
     _rms_norm_gated_forward_kernel[(n_rows,)](
         Y,
@@ -223,13 +222,27 @@ def rms_norm_gated_forward(X, G, W, eps, offset):
         BLOCK_SIZE=BLOCK_SIZE,
         num_warps=num_warps,
     )
-    return Y.view(*shape), X, G, RSTD, BLOCK_SIZE, num_warps
+    return Y, RSTD
 
 
-def rms_norm_gated_backward(dY, X, G, W, RSTD, offset, BLOCK_SIZE, num_warps):
-    shape = dY.shape
-    dim = shape[-1]
-    dY = dY.view(-1, dim)
+@_rms_norm_gated_fwd_op.register_fake
+def _(X, G, W, eps, offset, BLOCK_SIZE, num_warps):
+    return torch.empty_like(X), torch.empty(
+        X.shape[0], dtype=torch.float32, device=X.device
+    )
+
+
+@register_kernel_op("rms_norm_gated_bwd")
+def _rms_norm_gated_bwd_op(
+    dY: torch.Tensor,
+    X: torch.Tensor,
+    G: torch.Tensor,
+    W: torch.Tensor,
+    RSTD: torch.Tensor,
+    offset: float,
+    BLOCK_SIZE: int,
+    num_warps: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     n_rows, n_cols = dY.shape
 
     sm_count = torch.cuda.get_device_properties(X.device).multi_processor_count
@@ -267,9 +280,44 @@ def rms_norm_gated_backward(dY, X, G, W, RSTD, offset, BLOCK_SIZE, num_warps):
         num_warps=num_warps,
     )
 
+    dW = _dW.sum(dim=0).to(W.dtype)
+    return dX, dG, dW
+
+
+@_rms_norm_gated_bwd_op.register_fake
+def _(dY, X, G, W, RSTD, offset, BLOCK_SIZE, num_warps):
+    return torch.empty_like(dY), torch.empty_like(dY), torch.empty_like(W)
+
+
+def rms_norm_gated_forward(X, G, W, eps, offset):
+    shape = X.shape
+    dim = shape[-1]
+    X = X.view(-1, dim)
+    G = G.view(-1, dim)
+    BLOCK_SIZE, num_warps = calculate_settings(X.shape[-1])
+
+    assert X.shape[1] == W.shape[0], (
+        f"Incompatible hidden size: X.shape[1]={X.shape[1]} vs W.shape[0]={W.shape[0]}"
+    )
+    assert X.shape == G.shape, (
+        f"X and G must have same shape, got {X.shape} and {G.shape}"
+    )
+
+    Y, RSTD = _rms_norm_gated_fwd_op(X, G, W, eps, offset, BLOCK_SIZE, num_warps)
+    return Y.view(*shape), X, G, RSTD, BLOCK_SIZE, num_warps
+
+
+def rms_norm_gated_backward(dY, X, G, W, RSTD, offset, BLOCK_SIZE, num_warps):
+    shape = dY.shape
+    dim = shape[-1]
+    dY = dY.view(-1, dim)
+
+    dX, dG, dW = _rms_norm_gated_bwd_op(
+        dY, X, G, W, RSTD, offset, BLOCK_SIZE, num_warps
+    )
+
     dX = dX.view(*shape)
     dG = dG.view(*shape)
-    dW = _dW.sum(dim=0).to(W.dtype)
     return dX, dG, dW
 
 

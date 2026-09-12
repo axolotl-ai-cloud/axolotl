@@ -13,7 +13,6 @@ import torch
 import yaml
 from transformers.utils import is_torch_bf16_gpu_available, is_torch_tf32_available
 
-from axolotl.integrations.base import PluginManager
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.comet_ import setup_comet_env_vars
@@ -213,6 +212,8 @@ def prepare_plugins(cfg: DictDefault):
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
@@ -222,6 +223,8 @@ def prepare_plugins(cfg: DictDefault):
 
 def plugin_set_cfg(cfg: DictDefault):
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         plugin_manager.cfg = cfg
 
@@ -305,11 +308,20 @@ def load_cfg(
     else:
         capabilities, env_capabilities = gpu_capabilities()
 
-    cfg = validate_config(
-        cfg,
-        capabilities=capabilities,
-        env_capabilities=env_capabilities,
-    )
+    try:
+        cfg = validate_config(
+            cfg,
+            capabilities=capabilities,
+            env_capabilities=env_capabilities,
+        )
+    except Exception:
+        # a rejected config must not leave register()-time side effects (e.g.
+        # LIGER_KERNEL_IMPL) behind for the next config in this process
+        if cfg.get("plugins"):
+            from axolotl.integrations.base import PluginManager
+
+            PluginManager.get_instance().on_config_validation_error(cfg)
+        raise
 
     # NOTE(djsaunde): We start outputting to output_dir/debug.log at this point since we
     # have to wait for cfg.output to be resolved. We could call this earlier if we write
@@ -342,7 +354,7 @@ def compute_supports_fp8() -> bool:
     try:
         compute_capability = torch.cuda.get_device_capability()
         return compute_capability >= (9, 0)
-    except RuntimeError:
+    except (RuntimeError, AssertionError):
         return False
 
 

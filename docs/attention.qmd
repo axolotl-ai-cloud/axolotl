@@ -21,6 +21,8 @@ backends, axolotl-registered backends, or a hub-kernel path.
 | `sdpa` | PyTorch `scaled_dot_product_attention`. No packing support. |
 | `flash_attention_2` | Dao-AILab Flash Attention 2. |
 | `flash_attention_3` | Dao-AILab Flash Attention 3 (Hopper+). |
+| `flash_attention_4` | Dao-AILab Flash Attention 4 (Hopper+, `flash_attn.cute`). |
+| `flash_attention_torch` | Torch in-tree varlen attention (`torch.nn.attention.varlen`, torch ≥ 2.11, CUDA only). No `flash_attn` dependency. No dropout, attention sinks, or softcap. |
 | `flex_attention` | Torch Flex Attention (requires torch ≥ 2.6). |
 | `xformers` | xFormers memory-efficient attention. |
 | `sage` | SageAttention (QK int8 / PV fp16). |
@@ -94,8 +96,13 @@ python setup.py install
 
 #### Flash Attention 4
 
-Requirements: Hopper or Blackwell GPUs. Auto-applied when `attn_uses_flash_lib`
-is true and FA4 is importable.
+Requirements: Hopper or Blackwell GPUs, and `quack-kernels>=0.6.0`. When FA4 is importable
+and compatible with the model, Axolotl upgrades `flash_attention_2`/`flash_attention_3` to
+native `flash_attention_4`. You can also request it explicitly:
+
+```yaml
+attn_implementation: flash_attention_4
+```
 
 FA4 is still a pre-release on PyPI, so `--pre` is required:
 
@@ -115,10 +122,29 @@ pip install -e .
 rm -r $(python -c "import flash_attn; print(flash_attn.__path__[0])")/cute
 ```
 
-::: {.callout-note}
+::: {.callout-important}
 
-**Hopper (SM90) users**: The backward kernel is not yet included in the pip package. To use FA4
-for training on Hopper, install from source using the instructions above.
+FA4 training requires `quack-kernels>=0.6.0` on `nvidia-cutlass-dsl==4.6.0`. With an older
+quack (0.5.x targets the `4.6.0.dev0` prerelease) the FA4 backward raises
+`cudaErrorIllegalInstruction`. Upgrade with `pip install 'quack-kernels>=0.6.0'`; Axolotl
+warns and keeps your requested backend when the installed quack is too old.
+
+:::
+
+::: {.callout-important}
+
+## Blackwell (B200, GB200) needs a patched FA4
+
+On Blackwell the FA4 backward hangs with `nvidia-cutlass-dsl>=4.6.0`. Install the fix
+([Dao-AILab/flash-attention#2689](https://github.com/Dao-AILab/flash-attention/pull/2689))
+over your existing FA4:
+
+```bash
+pip install --no-deps --force-reinstall \
+  'git+https://github.com/dongxiao92/flash-attention@fix/sm100-elect-one-and-div-alignment#subdirectory=flash_attn/cute'
+```
+
+`--no-deps` keeps your existing cutlass and quack pins. Hopper (H100, H200) is unaffected.
 
 :::
 

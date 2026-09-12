@@ -11,10 +11,11 @@ is unavailable.
 
 from __future__ import annotations
 
-import logging
 import re
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def extract_boxed(text: str) -> str | None:

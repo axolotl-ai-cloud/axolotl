@@ -7,6 +7,7 @@ import gc
 import json
 import math
 import os
+import time
 from collections import defaultdict
 from functools import partial, wraps
 from typing import Any, Callable, Literal, Optional
@@ -45,13 +46,19 @@ from axolotl.core.trainers.mixins import (
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
+    trainable_tokens_per_sec_per_gpu,
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_distributed, is_main_process
+from axolotl.utils.distributed import (
+    get_world_size,
+    is_distributed,
+    is_main_process,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
 
@@ -124,6 +131,8 @@ class AxolotlTrainer(
                     self.model_accepts_loss_kwargs = False
 
         self.train_data_collator = self.data_collator
+        self._tkps_prev_trainable: float | None = None
+        self._tkps_prev_time: float | None = None
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
         )
@@ -401,8 +410,6 @@ class AxolotlTrainer(
                 self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
             )
             self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
-            # Store per-step trainable tokens for throughput calculation
-            self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
 
         # Gemma4 requires mm_token_type_ids during training (even for text-only).
         # Inject zeros (= text token type) when not provided by the data collator.
@@ -412,7 +419,7 @@ class AxolotlTrainer(
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
-            and _model_type == "gemma4"
+            and _model_type in ("gemma4", "gemma4_unified")
         ):
             inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
 
@@ -423,7 +430,7 @@ class AxolotlTrainer(
         # per-sequence causal masks.
         if (
             self.args.sample_packing
-            and _model_type in ("gemma4", "gemma3")
+            and _model_type in ("gemma4", "gemma3", "gemma4_unified")
             and "attention_mask" in inputs
             and "position_ids" in inputs
         ):
@@ -436,23 +443,6 @@ class AxolotlTrainer(
                 return_outputs=return_outputs,
                 num_items_in_batch=num_items_in_batch,
             )
-
-        # Gemma4ForConditionalGeneration computes loss with a manual
-        # nn.CrossEntropyLoss() that bypasses proper num_items_in_batch
-        # normalization and does redundant attention_mask filtering.
-        # Compute loss externally using the standard loss_function instead.
-        if _model_type == "gemma4" and "labels" in inputs:
-            labels = inputs.pop("labels")
-            outputs = model(**inputs)
-            logits = outputs.logits
-            unwrapped = self.accelerator.unwrap_model(model)
-            vocab_size = unwrapped.config.get_text_config().vocab_size
-            loss = unwrapped.loss_function(
-                logits, labels, vocab_size, num_items_in_batch=num_items_in_batch
-            )
-            if return_outputs:
-                return loss, outputs
-            return loss
 
         return super().compute_loss(
             model,
@@ -483,7 +473,7 @@ class AxolotlTrainer(
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
-            and _model_type == "gemma4"
+            and _model_type in ("gemma4", "gemma4_unified")
         ):
             inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
         return super().prediction_step(
@@ -602,9 +592,15 @@ class AxolotlTrainer(
             "attention_mask": concat_inputs["attention_mask"],
             "labels": concat_inputs["labels"],
         }
-        # Gemma4 requires mm_token_type_ids during training (even for text-only)
+        # Gemma4 requires mm_token_type_ids during training (even for text-only).
+        # Unwrap to read .config (DDP/DeepSpeed wrappers don't proxy it).
+        _orpo_model_type = getattr(
+            getattr(self.accelerator.unwrap_model(model), "config", None),
+            "model_type",
+            None,
+        )
         if (
-            getattr(getattr(model, "config", None), "model_type", None) == "gemma4"
+            _orpo_model_type in ("gemma4", "gemma4_unified")
             and "mm_token_type_ids" not in concat_inputs
         ):
             forward_kwargs["mm_token_type_ids"] = torch.zeros_like(
@@ -685,23 +681,29 @@ class AxolotlTrainer(
         super().create_accelerator_and_postprocess()
 
     def additional_accelerator_args(
-        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
+        self,
+        fp8: bool = False,
+        fp8_recipe: str = DEFAULT_FP8_RECIPE,
+        enable_fsdp_float8_all_gather: bool = False,
+        **kwargs,
     ) -> dict[str, Any]:
-        ret_kwargs = {}
+        ret_kwargs: dict[str, Any] = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
-            from torchao.float8 import Float8LinearConfig
 
-            # By default, Float8LinearConfig is instantiated using the "tensorwise"
-            # scaling strategy. See more details here:
-            # https://github.com/pytorch/ao/tree/main/torchao/float8.
-            config = Float8LinearConfig(
+            from axolotl.core.fp8 import build_fp8_linear_config
+
+            config = build_fp8_linear_config(
+                fp8_recipe=fp8_recipe,
                 enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
-                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
             )
 
+            # Trainer already set kwargs_handlers; overwriting drops every ddp_* setting.
+            handlers = list(kwargs.get("kwargs_handlers") or [])
+            handlers.append(AORecipeKwargs(config=config))  # type: ignore
+
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
+            ret_kwargs["kwargs_handlers"] = handlers
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
@@ -755,15 +757,27 @@ class AxolotlTrainer(
             and train_eval == "train"
             and hasattr(self.state, "tokens")
         ):
-            # each rank will log its own tokens per second
-            # for logging_steps > 1 we obtain a moving average of this metric
-            logs["tokens/train_per_sec_per_gpu"] = round(
-                self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
-            )
+            if "trainable" in self.state.tokens:
+                now = time.perf_counter()
+                curr_trainable = float(self.state.tokens["trainable"].item())
+                elapsed = (
+                    now - self._tkps_prev_time
+                    if self._tkps_prev_time is not None
+                    else 0.0
+                )
+                rate = trainable_tokens_per_sec_per_gpu(
+                    self._tkps_prev_trainable,
+                    curr_trainable,
+                    get_world_size(),
+                    elapsed,
+                )
+                if rate is not None:
+                    logs["tokens/train_per_sec_per_gpu"] = round(rate, 2)
+                self._tkps_prev_trainable = curr_trainable
+                self._tkps_prev_time = now
+                logs["tokens/trainable"] = int(curr_trainable)
             if "total" in self.state.tokens:
                 logs["tokens/total"] = int(self.state.tokens["total"].item())
-            if "trainable" in self.state.tokens:
-                logs["tokens/trainable"] = int(self.state.tokens["trainable"].item())
 
         del self._stored_metrics[train_eval]
 
@@ -792,12 +806,105 @@ class AxolotlTrainer(
             self._stored_metrics[train_eval][key]["values"].append(value)
             self._stored_metrics[train_eval][key]["reduction"] = _reduction
 
+    def _is_fsdp2_checkpoint_save_enabled(self) -> bool:
+        cfg = getattr(self, "axolotl_cfg", None)
+        cfg_fsdp2 = bool(
+            cfg
+            and str(getattr(cfg, "fsdp_version", "")) == "2"
+            and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
+        )
+        return bool(getattr(self, "is_fsdp_enabled", False) or cfg_fsdp2)
+
+    @staticmethod
+    def _is_fsdp2_quantized_param(param) -> bool:
+        quant_names = {"NVFP4Tensor", "Float8Tensor", "MXTensor"}
+        tensor = getattr(param, "_local_tensor", param)
+        return (
+            type(tensor).__name__ in quant_names
+            or type(getattr(tensor, "data", None)).__name__ in quant_names
+        )
+
+    def _save_fsdp2_quantized_lora_adapter(self, model, output_dir) -> bool:
+        """Save just the LoRA adapter (gathered via DTensor.full_tensor) when the run is FSDP2 + a
+        quantized (NVFP4/Float8) frozen base — the case where the DCP sharded save raises
+        "Failed to validate global plan". Returns True if it handled the save, else False (caller
+        falls back to the normal checkpoint path). No-op for non-PEFT / non-FSDP2 / non-quantized runs.
+        """
+        if not self._is_fsdp2_checkpoint_save_enabled():
+            return False
+        try:
+            from peft import PeftModel
+
+            unwrapped = self.accelerator.unwrap_model(model)
+            if not isinstance(unwrapped, PeftModel):
+                return False
+            # quantized base? (torchao tensor-subclass DTensors — what breaks DCP). Handle DTensor
+            # by inspecting the local tensor.
+            has_quant = any(
+                self._is_fsdp2_quantized_param(p) for p in unwrapped.parameters()
+            )
+            if not has_quant:
+                return False
+            from axolotl.integrations.expert_parallel.shard import (
+                save_fsdp2_lora_adapter,
+            )
+
+            cfg = getattr(self, "axolotl_cfg", None)
+            if cfg and (getattr(cfg, "expert_parallel_size", 1) or 1) > 1:
+                from axolotl.integrations.expert_parallel.plugin import (
+                    ExpertParallelPlugin,
+                )
+                from axolotl.integrations.expert_parallel.shard import (
+                    save_ep_lora_adapter,
+                )
+
+                ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+                if save_ep_lora_adapter(unwrapped, output_dir, ep_group):
+                    return True
+
+            return bool(save_fsdp2_lora_adapter(unwrapped, output_dir))
+        except Exception as exc:  # pylint: disable=broad-except
+            LOG.warning(
+                "FSDP2 quantized-LoRA adapter save failed (%s); falling back to default save.",
+                exc,
+            )
+            return False
+
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey
         checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
+
+        # FSDP2 + a quantized (NVFP4/Float8) frozen base breaks the DCP sharded save
+        # ("Failed to validate global plan" — the torchao tensor-subclass DTensors are unvalidatable).
+        # For a PEFT (LoRA) run we only need the adapter, so gather it directly and skip the DCP save.
+        if self._save_fsdp2_quantized_lora_adapter(model, output_dir):
+            # The adapter is written above in place of the DCP model state. Still persist the
+            # optimizer/scheduler/scaler/RNG and trainer state so the checkpoint stays RESUMABLE —
+            # only the trainable adapter carries optimizer state (the quantized base is frozen), so
+            # these saves don't touch the unvalidatable NVFP4 DTensors. Defensive: if any of them
+            # fails under FSDP2, keep the (already-written) adapter rather than aborting the save.
+            try:
+                if not self.args.save_only_model:
+                    self._save_optimizer_and_scheduler(output_dir)
+                    self._save_scaler(output_dir)
+                    self._save_rng_state(output_dir)
+                if self.args.should_save:
+                    # "trainer_state.json" is HF's canonical resume file (global_step, epoch, ...).
+                    self.state.save_to_json(
+                        os.path.join(output_dir, "trainer_state.json")
+                    )
+            except Exception as exc:  # pylint: disable=broad-except
+                LOG.warning(
+                    "Could not persist optimizer/RNG/trainer state for %s (%s); the checkpoint is "
+                    "adapter-only and not resumable.",
+                    output_dir,
+                    exc,
+                )
+            gc.collect()
+            return None
 
         # Save total_tokens state if tracking is enabled
         if self.args.include_tkps and hasattr(self.state, "tokens"):

@@ -14,7 +14,7 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_6_0
+from tests.e2e.utils import check_tensorboard, require_torch_2_6_0, requires_flash_attn
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -34,6 +34,7 @@ class TestMultiGPULlama:
     Test case for Llama models using LoRA
     """
 
+    @requires_flash_attn
     def test_lora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -56,7 +57,7 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
@@ -69,6 +70,7 @@ class TestMultiGPULlama:
                 "use_tensorboard": True,
                 "bf16": True,
                 "save_first_step": False,
+                "seed": 42,
             }
         )
 
@@ -90,9 +92,10 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.8, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
@@ -159,6 +162,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     def test_dpo_lora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -238,6 +242,7 @@ class TestMultiGPULlama:
             "Train Loss (%s) is too high",
         )
 
+    @requires_flash_attn
     def test_dpo_qlora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -317,6 +322,7 @@ class TestMultiGPULlama:
             "Train Loss (%s) is too high",
         )
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
@@ -388,6 +394,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
         [
@@ -467,7 +474,7 @@ class TestMultiGPULlama:
     @require_torch_2_6_0
     @pytest.mark.parametrize(
         "attention_backend",
-        ["flash", "flex"],
+        [pytest.param("flash", marks=requires_flash_attn), "flex"],
     )
     @pytest.mark.parametrize(
         "fsdp_reshard_after_forward",
@@ -546,6 +553,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
+    @requires_flash_attn
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         cfg = DictDefault(
             {
@@ -592,6 +600,10 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
+                    # pinned to FSDP1: accelerate's fsdp2_load_full_state_dict
+                    # cannot resolve prequantized bnb quant-state keys
+                    # (e.g. `...weight.absmax`)
+                    "fsdp_version": 1,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
@@ -642,6 +654,7 @@ class TestMultiGPULlama:
         "qlora",
         [True, False],
     )
+    @requires_flash_attn
     def test_ds_zero3_packed(
         self, temp_dir, gradient_accumulation_steps, deepspeed, qlora
     ):
@@ -719,6 +732,7 @@ class TestMultiGPULlama:
         "qlora",
         [True, False],
     )
+    @requires_flash_attn
     def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps, qlora):
         if qlora:
             adapter = {
@@ -795,6 +809,7 @@ class TestMultiGPULlama:
         "qlora",
         [True, False],
     )
+    @requires_flash_attn
     def test_ds_zero1_packed(self, temp_dir, gradient_accumulation_steps, qlora):
         if qlora:
             adapter = {

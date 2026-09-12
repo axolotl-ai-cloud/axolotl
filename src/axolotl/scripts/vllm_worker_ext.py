@@ -7,8 +7,6 @@ Subclasses TRL's WeightSyncWorkerExtension to add:
   including LoRA-wrapped models where vLLM inserts base_layer into the hierarchy
 """
 
-import logging
-
 import torch
 
 try:
@@ -18,7 +16,9 @@ except ImportError:
 
 from trl.scripts.vllm_serve import WeightSyncWorkerExtension
 
-logger = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Stacked param name mapping: shard_name -> (packed_name, shard_order)
 _STACKED_PARAMS = {

@@ -341,3 +341,70 @@ def test_patched_create_causal_mask_returns_4d_for_real_config(
 
     # Caller's config must be untouched — other code paths still read it.
     assert cfg._attn_implementation == "flash_attention_2"
+
+
+@pytest.fixture
+def restore_gemma4_hybrid_mask_both():
+    """Snapshot ``create_causal_mask`` in BOTH the gemma4 and gemma4_unified
+    namespaces (``patch_gemma4_hybrid_mask`` wraps each independently) and reset
+    the module flag so the patch re-installs cleanly."""
+    modeling_unified = pytest.importorskip(
+        "transformers.models.gemma4_unified.modeling_gemma4_unified",
+        reason="unified namespace coverage requires gemma4_unified",
+    )
+    from transformers.models.gemma4 import modeling_gemma4
+
+    from axolotl.monkeypatch import gemma4_hybrid_mask
+
+    saved_gemma4 = modeling_gemma4.create_causal_mask
+    saved_unified = modeling_unified.create_causal_mask
+    gemma4_hybrid_mask._PATCH_APPLIED = False
+    try:
+        yield modeling_unified
+    finally:
+        modeling_gemma4.create_causal_mask = saved_gemma4
+        modeling_unified.create_causal_mask = saved_unified
+        gemma4_hybrid_mask._PATCH_APPLIED = False
+
+
+def test_patch_covers_unified_namespace(restore_gemma4_hybrid_mask_both):
+    """The unified backbone redefines ``create_causal_mask`` in its own module,
+    so the patch must wrap it too — not just ``modeling_gemma4``."""
+    modeling_unified = restore_gemma4_hybrid_mask_both
+    from axolotl.monkeypatch.gemma4_hybrid_mask import patch_gemma4_hybrid_mask
+
+    original = modeling_unified.create_causal_mask
+    assert patch_gemma4_hybrid_mask() is True
+
+    assert modeling_unified.create_causal_mask is not original
+    assert modeling_unified.create_causal_mask._axolotl_original is original
+
+
+def test_gqa_guard_accepts_both_transformers_signatures():
+    """transformers 5.13 added a `value` positional to use_gqa_in_sdpa."""
+    import torch
+    import transformers.integrations.sdpa_attention as sdpa_mod
+
+    from axolotl.monkeypatch.gemma4_hybrid_mask import _patch_use_gqa_head_dim_guard
+
+    original = sdpa_mod.use_gqa_in_sdpa
+    unwrapped = getattr(original, "_axolotl_original", original)
+    try:
+        assert _patch_use_gqa_head_dim_guard()
+        guarded = sdpa_mod.use_gqa_in_sdpa
+        key_small = torch.zeros(1, 2, 4, 128)
+        key_large = torch.zeros(1, 2, 4, 512)
+
+        # the head_dim guard must reject under BOTH call conventions without
+        # touching the wrapped original
+        assert guarded(None, key_large) is False
+        assert guarded(None, key_large, key_large) is False
+
+        # pass-through must forward whatever the installed transformers accepts
+        import inspect
+
+        n_params = len(inspect.signature(unwrapped).parameters)
+        args = (None, key_small, key_small)[:n_params]
+        assert isinstance(guarded(*args), bool)
+    finally:
+        sdpa_mod.use_gqa_in_sdpa = unwrapped

@@ -13,6 +13,7 @@ from axolotl.utils.dict import DictDefault
 from tests.e2e.utils import (
     check_model_output_exists,
     check_tensorboard_loss_decreased,
+    requires_flash_attn,
 )
 
 
@@ -134,7 +135,7 @@ class TestCutCrossEntropyIntegration:
     @pytest.mark.parametrize(
         "attention_type",
         [
-            "flash_attention",
+            pytest.param("flash_attention", marks=requires_flash_attn),
             "sdp_attention",
             # "xformers_attention",
         ],

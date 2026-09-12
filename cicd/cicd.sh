@@ -24,6 +24,7 @@ done
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 \
   --ignore=tests/e2e/ \
+  --ignore=tests/integrations/ \
   --ignore=tests/patched/ \
   --ignore=tests/cli \
   /workspace/axolotl/tests/ \
@@ -57,9 +58,21 @@ pytest -v --durations=10 -s \
   --cov=axolotl \
   --cov-append
 
-# Run integration tests with coverage append
+# Run E2E integration tests with coverage append
 pytest -v --durations=10 \
   /workspace/axolotl/tests/e2e/integrations/ \
+  --cov=axolotl \
+  --cov-append
+
+pytest -v --durations=10 -n8 --dist loadfile \
+  --ignore=tests/integrations/kernels/ \
+  --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+  --ignore=tests/integrations/test_gemma4_moe.py \
+  --ignore=tests/integrations/test_scattermoe_lora.py \
+  --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+  --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+  --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+  /workspace/axolotl/tests/integrations/ \
   --cov=axolotl \
   --cov-append
 

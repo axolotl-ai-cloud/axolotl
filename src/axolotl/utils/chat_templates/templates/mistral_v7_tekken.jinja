@@ -7,7 +7,7 @@
     {%- if messages[0]['content'] is string %}
         {%- set system_message = messages[0]['content'] %}
     {%- else %}
-        {%- set system_message = messages[0]['content'][0]['text'] %}
+        {%- set system_message = messages[0]['content'] | selectattr('type', 'equalto', 'text') | map(attribute='text') | join('') %}
     {%- endif %}
     {%- set loop_messages = messages[1:] %}
 {%- else %}
@@ -37,13 +37,13 @@
         {%- if message['content'] is string %}
             {{- '[SYSTEM_PROMPT]' + message['content'] + '[/SYSTEM_PROMPT]' }}
         {%- else %}
-            {{- '[SYSTEM_PROMPT]' + message['content'][0]['text'] + '[/SYSTEM_PROMPT]' }}
+            {{- '[SYSTEM_PROMPT]' + (message['content'] | selectattr('type', 'equalto', 'text') | map(attribute='text') | join('')) + '[/SYSTEM_PROMPT]' }}
         {%- endif %}
     {%- elif message['role'] == 'assistant' %}
         {%- if message['content'] is string %}
             {{- message['content'] + eos_token }}
         {%- else %}
-            {{- message['content'][0]['text'] + eos_token }}
+            {{- (message['content'] | selectattr('type', 'equalto', 'text') | map(attribute='text') | join('')) + eos_token }}
         {%- endif %}
     {%- else %}
         {{- raise_exception('Only user, system and assistant roles are supported!') }}

@@ -144,3 +144,42 @@ def test_inference_backward_compatibility_no_launcher_args(cli_runner, config_pa
         # Should not contain any extra launcher args
         launcher_section = called_cmd[2 : called_cmd.index("-m")]
         assert len(launcher_section) == 0  # No launcher args between 'launch' and '-m'
+
+
+def test_inference_chat(cli_runner, config_path):
+    """Test basic inference (chat path)"""
+    with patch("axolotl.cli.chat.do_chat") as mock:
+        result = cli_runner.invoke(
+            cli,
+            ["inference", str(config_path), "--launcher", "python", "--chat"],
+            catch_exceptions=False,
+        )
+
+        assert mock.called
+        assert result.exit_code == 0
+
+
+def test_inference_chat_with_launcher(cli_runner, config_path):
+    """Test chat flag is forwarded through the launcher command"""
+    with patch("subprocess.run") as mock_subprocess:
+        result = cli_runner.invoke(
+            cli,
+            ["inference", str(config_path), "--launcher", "accelerate", "--chat"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        called_cmd = mock_subprocess.call_args.args[0]
+        assert "--chat" in called_cmd
+        assert "axolotl.cli.inference" in called_cmd
+
+
+def test_inference_chat_gradio_mutually_exclusive(cli_runner, config_path):
+    """Test that --chat and --gradio cannot be combined"""
+    result = cli_runner.invoke(
+        cli,
+        ["inference", str(config_path), "--chat", "--gradio"],
+    )
+
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output

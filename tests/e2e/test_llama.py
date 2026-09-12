@@ -9,7 +9,9 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_model_output_exists
+from tests.e2e.utils import check_model_output_exists, requires_flash_attn
+
+pytestmark = requires_flash_attn
 
 
 class TestLlama:

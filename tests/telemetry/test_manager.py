@@ -2,6 +2,7 @@
 
 # pylint: disable=redefined-outer-name,protected-access
 
+import logging
 import os
 from unittest.mock import patch
 
@@ -249,19 +250,19 @@ def test_disable_telemetry(manager):
         assert not mock_capture.called
 
 
-def test_exception_handling_during_send(manager):
+def test_exception_handling_during_send(manager, caplog):
     """Test that exceptions in PostHog are handled gracefully"""
-    with (
-        patch("posthog.capture", side_effect=Exception("Test error")),
-        patch("logging.Logger.warning") as mock_warning,
-    ):
-        manager.send_event("test_event")
-        warning_logged = False
-        for call in mock_warning.call_args_list:
-            if "Failed to send telemetry event" in str(call):
-                warning_logged = True
-                break
-        assert warning_logged
+    # axolotl loggers set propagate=False (logging_config.py), so caplog's root
+    # handler never sees them; attach it to the named logger directly.
+    logger = logging.getLogger("axolotl.telemetry.manager")
+    logger.addHandler(caplog.handler)
+    try:
+        with patch("posthog.capture", side_effect=Exception("Test error")):
+            manager.send_event("test_event")
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert "Failed to send telemetry event: Test error" in caplog.text
 
 
 def test_shutdown(manager):

@@ -29,6 +29,11 @@ class ExpertParallelArgs(BaseModel):
 
     expert_parallel_num_rdma_bytes: int = 0
 
+    expert_parallel_token_capacity: int | None = None
+    """Max tokens routed to any single expert per forward; the lowest-weight excess (token,expert)
+    assignments are dropped. DeepEP's intranode combine deadlocks once one expert is overloaded, and
+    GLM-style routers concentrate more with depth — set this (e.g. 1024) for them. ``None`` = no cap."""
+
     expert_parallel_fallback_on_unsupported: bool = True
 
     @model_validator(mode="after")
@@ -37,6 +42,15 @@ class ExpertParallelArgs(BaseModel):
             raise ValueError(
                 f"expert_parallel_size must be >= 1 (got {self.expert_parallel_size!r}). "
                 f"Use 1 to disable EP."
+            )
+
+        if (
+            self.expert_parallel_token_capacity is not None
+            and self.expert_parallel_token_capacity < 1
+        ):
+            raise ValueError(
+                f"expert_parallel_token_capacity must be >= 1 when set "
+                f"(got {self.expert_parallel_token_capacity!r}). Use None to disable the cap."
             )
 
         if self.expert_parallel_size > 1 and self.expert_parallel_num_rdma_bytes != 0:
