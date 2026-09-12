@@ -1,16 +1,18 @@
 """Data handling specific to streaming datasets."""
 
 import functools
+import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
 import torch
 from datasets import Dataset
 from torch.utils.data import RandomSampler
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mm_cpt import is_mm_cpt_entry
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
@@ -176,12 +178,133 @@ def encode_streaming(
     return ret
 
 
+def encode_streaming_multimodal(
+    examples: Dict[str, List],
+    tokenizer: PreTrainedTokenizerBase,
+    max_tokens: int,
+    image_token: str,
+    image_token_id: int,
+    text_column: str = "text",
+    image_column: str = "images",
+    skip_bad_rows: bool = False,
+    marker_prefix: Optional[str] = None,
+    marker_suffix: Optional[str] = None,
+    max_images_per_row: Optional[int] = None,
+) -> Dict[str, List]:
+    texts: List[str] = examples[text_column]
+    imgs_list: List[List[str]] = examples[image_column]
+
+    # Wrap bare placeholders with the model's flanking markers (Qwen's
+    # vision_start/end); already-wrapped occurrences are left alone.
+    bare_placeholder = None
+    if marker_prefix and marker_suffix:
+        bare_placeholder = re.compile(
+            rf"(?<!{re.escape(marker_prefix)})"
+            rf"{re.escape(image_token)}"
+            rf"(?!{re.escape(marker_suffix)})"
+        )
+
+    if len(texts) != len(imgs_list):
+        raise ValueError(
+            f"encode_streaming_multimodal: text column has {len(texts)} rows "
+            f"but image column has {len(imgs_list)}"
+        )
+
+    keep_images: List[List[str]] = []
+    keep_text: List[str] = []
+
+    for text, imgs in zip(texts, imgs_list, strict=True):
+        if not isinstance(text, str):
+            raise TypeError(
+                f"encode_streaming_multimodal: `{text_column}` must be str, "
+                f"got {type(text).__name__}."
+            )
+        if imgs is None:
+            imgs = []
+        if not isinstance(imgs, (list, tuple)):
+            raise ValueError(
+                f"encode_streaming_multimodal: row's `{image_column}` must be "
+                f"a list; got {type(imgs).__name__}"
+            )
+        for j, ip in enumerate(imgs):
+            if not isinstance(ip, str):
+                raise TypeError(
+                    f"encode_streaming_multimodal: image {j} in row must be "
+                    f"str, got {type(ip).__name__}."
+                )
+        if max_images_per_row and len(imgs) > max_images_per_row:
+            msg = (
+                f"Multimodal CPT row has {len(imgs)} images, exceeding "
+                f"max_images_per_row={max_images_per_row}. Each image expands "
+                f"to a large pixel tensor at the processor; raise the cap "
+                f"deliberately if your rows legitimately carry this many."
+            )
+            if skip_bad_rows:
+                LOG.warning("%s — dropping row.", msg)
+                continue
+            raise ValueError(msg)
+        if bare_placeholder is not None:
+            text = bare_placeholder.sub(
+                f"{marker_prefix}{image_token}{marker_suffix}", text
+            )
+        # Validation-only tokenize (the collator's processor call produces the
+        # model's input_ids); no truncation, or trailing placeholders vanish.
+        enc = tokenizer(text, add_special_tokens=True)
+        ids = list(enc["input_ids"])
+        # Budget the EOS the collator will append.
+        eos_id = tokenizer.eos_token_id
+        n_tokens = len(ids)
+        if eos_id is not None and (not ids or ids[-1] != eos_id):
+            n_tokens += 1
+        # Count by id — `text.count` substring-matches `<image>` in `<image_soft_token>`.
+        n_placeholders = sum(1 for t in ids if t == image_token_id)
+        if n_placeholders != len(imgs):
+            msg = (
+                f"Multimodal CPT row has {n_placeholders} occurrence(s) of "
+                f"{image_token!r} in text but {len(imgs)} image path(s). "
+                f"Text and image count must match (one placeholder per image)."
+            )
+            if skip_bad_rows:
+                LOG.warning("%s — dropping row.", msg)
+                continue
+            raise ValueError(msg)
+        if n_tokens > max_tokens:
+            msg = (
+                f"Multimodal CPT row tokenizes to {n_tokens} tokens which "
+                f"exceeds sequence_len={max_tokens}. Pre-chunk your text or "
+                f"raise sequence_len (image patch expansion at the processor "
+                f"may push the final length even higher)."
+            )
+            if skip_bad_rows:
+                LOG.warning("%s — dropping row.", msg)
+                continue
+            raise ValueError(msg)
+        keep_images.append(list(imgs))
+        keep_text.append(text)
+
+    # Only what the collator consumes; token columns would be dead weight
+    # (the processor re-tokenizes) at ~3x the payload.
+    return {
+        "images": keep_images,
+        "_mm_text": keep_text,
+    }
+
+
 def wrap_streaming_dataset(
     dataset,
     tokenizer,
     cfg,
     ds_wrapper_fn,
+    processor: Optional[ProcessorMixin] = None,
+    pretraining_config=None,
+    is_eval: bool = False,
 ):
+    # Eval streams honor cfg.eval_sequence_len when set, else cfg.sequence_len.
+    effective_seq_len = (
+        cfg.eval_sequence_len
+        if is_eval and getattr(cfg, "eval_sequence_len", None)
+        else cfg.sequence_len
+    )
     if cfg.sample_packing:
         # For SFT (non-pretraining) datasets, always use multipack_attn=True to ensure
         # attention isolation between packed sequences
@@ -213,16 +336,67 @@ def wrap_streaming_dataset(
         # NOTE: This is not reachable for SFT datasets since we use the pre-existing
         # loading function for non-packed streaming datasets. Refer to
         # _prepare_streaming_datasets in sft.py for that code path.
-        text_column = (
-            getattr(cfg.pretraining_dataset[0], "text_column", "text") or "text"
+        # Prefer the resolved per-entry config so eval (test_datasets) doesn't
+        # silently inherit the training entry's columns/image_token.
+        if pretraining_config is not None:
+            ds_first = pretraining_config
+        elif cfg.pretraining_dataset:
+            ds_first = cfg.pretraining_dataset[0]
+        else:
+            ds_first = {}
+        # Plain dicts need `.get`; pydantic/DictDefault need `getattr`.
+        get_ds_value = (
+            ds_first.get
+            if isinstance(ds_first, dict)
+            else lambda key, default=None: getattr(ds_first, key, default)
         )
-        encode = functools.partial(
-            encode_streaming,
-            tokenizer=tokenizer,
-            max_tokens=cfg.sequence_len,
-            text_column=text_column,
-            concatenate=cfg.pretraining_sample_concatenation is True,
-        )
+        text_column = get_ds_value("text_column", "text") or "text"
+
+        if is_mm_cpt_entry(ds_first):
+            if processor is None:
+                raise ValueError(
+                    "Multimodal CPT (type: multimodal_pretrain) requires a "
+                    "processor. Set `processor_type: AutoProcessor` (or the "
+                    "concrete processor class) in your config."
+                )
+            from axolotl.prompt_strategies.multimodal_pretrain import (
+                build_image_token_spec,
+                check_processor_compatibility,
+            )
+
+            check_processor_compatibility(processor)
+            spec = build_image_token_spec(
+                processor,
+                override=get_ds_value("image_token", None),
+            )
+            image_column = get_ds_value("image_column", None) or "images"
+            skip_bad_rows = bool(get_ds_value("skip_bad_images", False))
+            max_images_per_row = get_ds_value("max_images_per_row", 32)
+            LOG.info(
+                f"multimodal streaming CPT: placeholder={spec.image_token!r} "
+                f"(id={spec.image_token_id})"
+            )
+            encode = functools.partial(
+                encode_streaming_multimodal,
+                tokenizer=tokenizer,
+                max_tokens=effective_seq_len,
+                image_token=spec.image_token,
+                image_token_id=spec.image_token_id,
+                text_column=text_column,
+                image_column=image_column,
+                skip_bad_rows=skip_bad_rows,
+                marker_prefix=spec.marker_prefix,
+                marker_suffix=spec.marker_suffix,
+                max_images_per_row=max_images_per_row,
+            )
+        else:
+            encode = functools.partial(
+                encode_streaming,
+                tokenizer=tokenizer,
+                max_tokens=effective_seq_len,
+                text_column=text_column,
+                concatenate=cfg.pretraining_sample_concatenation is True,
+            )
 
     if cfg.shuffle_merged_datasets:
         dataset = dataset.shuffle(
