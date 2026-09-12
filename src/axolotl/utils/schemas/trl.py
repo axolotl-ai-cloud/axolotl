@@ -189,7 +189,6 @@ class TRLConfig(BaseModel):
             "description": "Whether to exclude truncated completions from loss calculation."
         },
     )
-
     # Entropy regularization (TRL >= 1.8)
     entropy_coef: float | None = Field(
         default=None,

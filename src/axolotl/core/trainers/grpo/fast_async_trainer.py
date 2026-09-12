@@ -478,6 +478,8 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         s_start: int | None = None,
         s_end: int | None = None,
         is_last_chunk: bool = True,
+        rewards: torch.Tensor | None = None,
+        process_slice: slice | None = None,
     ) -> None:
         """Replay buffer store/replace + re-roll buffering."""
         from trl.models.utils import disable_gradient_checkpointing
@@ -586,7 +588,7 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                             ):
                                 if fk in data:
                                     r_fwd_kwargs[fk] = data[fk]
-                            r_logps, _ = self._get_per_token_logps_and_entropies(
+                            r_logps, _, _ = self._get_per_token_logps_and_entropies(
                                 self.model,
                                 r_ids,
                                 r_mask,
