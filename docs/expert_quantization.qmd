@@ -100,6 +100,25 @@ execute an individual wrapped layer, including its dequantized weights.
 an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
 DeepSpeed, tensor/context/expert parallelism, DoRA and `modules_to_save` are unsupported.
 
+### Long staging runs and progress
+
+```yaml
+ddp_timeout: 21600  # Seconds; six hours for rank-zero loading and metadata exchange.
+```
+
+NF4 staging creates a dedicated Gloo control group on every rank before loading.
+Its timeout uses `AXOLOTL_NCCL_TIMEOUT` when set, otherwise `ddp_timeout`, otherwise
+1800 seconds. This applies even if the default process group was initialized earlier.
+Status and metadata broadcasts use CPU tensors on this group, so peers do not enter
+NCCL bootstrap while rank zero is quantizing. This does not change an existing
+training process group's timeout or the launcher's rendezvous timeout.
+
+Logs identify checkpoint conversion, cache writes/reads, metadata preparation and
+broadcast, adapter initialization, FSDP wrapping, and shard distribution. Long phases
+emit elapsed-time messages every minute; shard distribution also reports tensor counts.
+An elapsed-time message indicates the phase has not finished, not proof that it is
+making progress. Peer metadata is built on meta without copying CPU tensor data.
+
 ### Prefetch and reusable quantized caches
 
 ```yaml

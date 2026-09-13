@@ -2,8 +2,12 @@
 
 import torch
 import torch.distributed as dist
+from tqdm.auto import tqdm
+
+from axolotl.utils.nf4_loading import nf4_phase
 
 
+@nf4_phase("NF4 parameter shard distribution")
 def load_staged_nf4_state(
     accelerator,
     model: torch.nn.Module,
@@ -15,7 +19,12 @@ def load_staged_nf4_state(
 
     state = {}
     device = accelerator.device
-    for name, target in model.state_dict().items():
+    for name, target in tqdm(
+        model.state_dict().items(),
+        desc="Distributing NF4 tensors",
+        disable=not accelerator.is_main_process,
+        mininterval=5,
+    ):
         source = full_state.get(name) if accelerator.is_main_process else None
         if isinstance(target, DTensor):
             mesh = target.device_mesh

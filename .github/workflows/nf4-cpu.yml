@@ -23,13 +23,15 @@ env:
 
 jobs:
   nf4-distributed:
-    name: NF4 CPU / PyTorch ${{ matrix.pytorch_version }}
+    name: NF4 CPU / ${{ matrix.stack }} / PyTorch ${{ matrix.pytorch_version }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         pytorch_version: ${{ fromJSON(inputs.pytorch_versions) }}
+        stack: ["${{ inputs.nightly && 'nightly' || 'pinned' }}"]
+        include: ${{ inputs.nightly && fromJSON('[]') || fromJSON('[{"pytorch_version":"2.11.0","stack":"compatibility"}]') }}
     steps:
       - name: Free runner disk space
         run: |
@@ -55,6 +57,10 @@ jobs:
           uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install pytest pytest-cov pytest-xdist
+      - name: Install compatibility stack
+        if: matrix.stack == 'compatibility'
+        run: |
+          uv pip install --no-deps transformers==5.17.0 accelerate==1.15.0 torchao==0.18.0
       - name: Override with nightly HF packages
         if: inputs.nightly
         run: |
@@ -65,18 +71,35 @@ jobs:
             "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
             "trl @ git+https://github.com/huggingface/trl.git@main" \
             "datasets @ git+https://github.com/huggingface/datasets.git@main"
-      - name: Verify PyTorch version
+      - name: Report dependency versions
         run: |
+          python - <<'PY'
+          from importlib.metadata import version
+          for name in ("torch", "transformers", "accelerate", "torchao", "bitsandbytes", "peft"):
+              print(f"{name}=={version(name)}", flush=True)
+          PY
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, torch.__version__"
+      - name: Run fast NF4 compatibility checks
+        run: |
+          pytest -v --durations=10 -n0 -m "not slow and not nf4_distributed" \
+            --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
+            --junitxml=nf4-compat-junit.xml \
+            --cov=axolotl --cov-report=xml:nf4-cpu-coverage.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          report = ET.parse("nf4-compat-junit.xml")
+          assert list(report.iter("testcase")), "No NF4 compatibility tests ran"
+          assert not list(report.iter("skipped")), "NF4 compatibility tests must not skip"
+          PY
       - name: Run distributed CPU tests
         run: |
           pytest -v --durations=10 -n0 -m nf4_distributed \
             --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
-            --cov=axolotl --cov-report=xml:nf4-cpu-coverage.xml
+            --cov=axolotl --cov-append --cov-report=xml:nf4-cpu-coverage.xml
       - name: Upload coverage
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./nf4-cpu-coverage.xml
-          flags: nf4-cpu,pytorch-${{ matrix.pytorch_version }}
+          flags: nf4-cpu,${{ matrix.stack }},pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false

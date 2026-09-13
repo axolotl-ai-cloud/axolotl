@@ -1598,3 +1598,269 @@ def test_cuda_nf4_cache_resume(backend, architecture, tmp_path):
             ),
             nprocs=2,
         )
+
+
+def _nf4_delayed_loading_worker(
+    rank, checkpoint, rendezvous, timeout_source, device_type
+):
+    import os
+    import time
+    from datetime import timedelta
+    from unittest.mock import patch
+
+    import torch.distributed as dist
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    if device_type == "cuda":
+        torch.cuda.set_device(rank)
+    dist.init_process_group(
+        "nccl" if device_type == "cuda" else "gloo",
+        init_method=f"file://{rendezvous}",
+        rank=rank,
+        world_size=2,
+        timeout=timedelta(seconds=3),
+    )
+    cfg = DictDefault(
+        base_model=checkpoint,
+        fsdp_config={"cpu_ram_efficient_loading": True},
+        nf4_backend="bitsandbytes",
+        torch_dtype=torch.float32,
+        ddp_timeout=1 if timeout_source == "env" else 30,
+    )
+    original = LlamaForCausalLM.from_pretrained
+
+    def delayed(*args, **kwargs):
+        assert rank == 0
+        time.sleep(4)
+        return original(*args, **kwargs)
+
+    try:
+        with patch.dict(
+            os.environ,
+            {"AXOLOTL_NCCL_TIMEOUT": "30"} if timeout_source == "env" else {},
+        ):
+            with patch.object(LlamaForCausalLM, "from_pretrained", delayed):
+                model = load_nf4_model(
+                    LlamaForCausalLM,
+                    LlamaConfig.from_pretrained(checkpoint),
+                    {"dtype": torch.float32, "device_map": {"": "cpu"}},
+                    cfg,
+                    torch.device(device_type, rank) if device_type == "cuda" else "cpu",
+                )
+        assert all(parameter.is_meta == (rank != 0) for parameter in model.parameters())
+    finally:
+        dist.destroy_process_group()
+
+
+def _run_nf4_delayed_loading(tmp_path, timeout_source, device_type):
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    base = tmp_path / "base"
+    LlamaForCausalLM(
+        LlamaConfig(
+            hidden_size=128,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+            vocab_size=128,
+        )
+    ).save_pretrained(base)
+    torch.multiprocessing.spawn(
+        _nf4_delayed_loading_worker,
+        args=(str(base), str(tmp_path / "delay"), timeout_source, device_type),
+        nprocs=2,
+    )
+
+
+@pytest.mark.nf4_distributed
+@pytest.mark.parametrize("timeout_source", ["config", "env"])
+def test_nf4_staging_outlives_default_group_timeout(
+    tmp_path, timeout_source, monkeypatch
+):
+    monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
+    _run_nf4_delayed_loading(tmp_path, timeout_source, "cpu")
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="Requires two CUDA GPUs")
+@pytest.mark.parametrize("timeout_source", ["config", "env"])
+def test_cuda_nf4_staging_outlives_default_group_timeout(
+    tmp_path, timeout_source, monkeypatch
+):
+    monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
+    _run_nf4_delayed_loading(tmp_path, timeout_source, "cuda")
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+def test_nf4_peer_metadata_does_not_copy_cpu_buffers(backend, monkeypatch):
+    from axolotl.loaders.nf4 import _collect_nf4_structures
+
+    value = torch.randn(128, 128)
+    if backend == "torchao":
+        data, transform = quantize_torchao_nf4(value)
+    else:
+        data, state = quantize_bnb_4bit(value)
+        transform = BnbNF4Parametrization(state)
+    model = nn.Linear(128, 128, bias=False)
+    model.weight = nn.Parameter(data, requires_grad=False)
+    parametrize.register_parametrization(model, "weight", transform, unsafe=True)
+
+    def reject_copy(*args, **kwargs):
+        pytest.fail("Peer metadata must not copy tensor data")
+
+    monkeypatch.setattr(torch.Tensor, "__deepcopy__", reject_copy)
+    structures = []
+    _collect_nf4_structures(model, structures)
+    assert structures and all(buffer.is_meta for buffer in structures[0][2].buffers())
+    assert all(buffer.device.type == "cpu" for buffer in transform.buffers())
+
+
+def test_nf4_phase_reports_progress_and_failure(monkeypatch):
+    import threading
+
+    from axolotl.utils import nf4_loading
+
+    messages = []
+    heartbeat = threading.Event()
+
+    def record(message, *args):
+        messages.append(message % args)
+        if "still running" in message:
+            heartbeat.set()
+
+    monkeypatch.setattr(nf4_loading.LOG, "info", record)
+    with pytest.raises(ValueError, match="failed conversion"):
+        with nf4_loading.nf4_phase("Test phase", interval=0.01):
+            assert heartbeat.wait(5)
+            raise ValueError("failed conversion")
+    assert any("starting" in message for message in messages)
+    assert any("failed after" in message for message in messages)
+    assert not any(thread.name == "nf4-progress" for thread in threading.enumerate())
+
+
+@pytest.mark.parametrize(
+    "environment,configured,expected",
+    [(None, None, 1800), (None, 21600, 21600), ("36000", 21600, 36000)],
+)
+def test_nf4_loading_group_timeout_and_cleanup(
+    environment, configured, expected, monkeypatch
+):
+    from datetime import timedelta
+    from unittest.mock import Mock
+
+    from axolotl.utils import nf4_loading
+    from axolotl.utils.dict import DictDefault
+
+    if environment is None:
+        monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
+    else:
+        monkeypatch.setenv("AXOLOTL_NCCL_TIMEOUT", environment)
+    group = object()
+    create = Mock(return_value=group)
+    destroy = Mock()
+    monkeypatch.setattr(nf4_loading.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(nf4_loading.dist, "get_rank", lambda: 0)
+    monkeypatch.setattr(nf4_loading.dist, "new_group", create)
+    monkeypatch.setattr(nf4_loading.dist, "barrier", Mock())
+    monkeypatch.setattr(nf4_loading.dist, "destroy_process_group", destroy)
+    cfg = DictDefault(
+        fsdp_config={"cpu_ram_efficient_loading": True}, ddp_timeout=configured
+    )
+    with pytest.raises(RuntimeError, match="loading failed"):
+        with nf4_loading.nf4_loading_group(cfg) as actual:
+            assert actual is group
+            raise RuntimeError("loading failed")
+    create.assert_called_once_with(backend="gloo", timeout=timedelta(seconds=expected))
+    destroy.assert_called_once_with(group)
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.parametrize("architecture", ["dense", "moe"])
+def test_nf4_prefetch_transformers_checkpoint(
+    backend, architecture, tmp_path, monkeypatch
+):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    import transformers.core_model_loading as loading
+    from transformers import (
+        LlamaConfig,
+        LlamaForCausalLM,
+        Qwen3MoeConfig,
+        Qwen3MoeForCausalLM,
+    )
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    options = dict(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    if architecture == "moe":
+        cls = Qwen3MoeForCausalLM
+        config = Qwen3MoeConfig(
+            **options, moe_intermediate_size=128, num_experts=2, num_experts_per_tok=1
+        )
+    else:
+        cls = LlamaForCausalLM
+        config = LlamaConfig(**options)
+    cls(config).save_pretrained(tmp_path, max_shard_size="100KB")
+    assert len(list(tmp_path.glob("*.safetensors"))) > 1
+    cfg = DictDefault(
+        base_model=str(tmp_path),
+        nf4_backend=backend,
+        quantize_moe_experts=True,
+        torch_dtype=torch.float32,
+        nf4_prefetch_memory_mb=0,
+    )
+
+    def load():
+        return load_nf4_model(
+            cls,
+            copy.deepcopy(config),
+            {"dtype": torch.float32, "device_map": {"": "cpu"}},
+            cfg,
+            "cpu",
+        )
+
+    reference = load()
+    original_spawn = loading.spawn_materialize
+    original_materialize = loading.WeightTransform.materialize_tensors
+    original_progress = loading.tqdm
+    submit = ThreadPoolExecutor.submit
+    workers = []
+
+    def observe_submit(executor, fn, *args, **kwargs):
+        def observed():
+            workers.append(threading.current_thread().name)
+            return fn(*args, **kwargs)
+
+        return submit(executor, observed)
+
+    monkeypatch.setattr(ThreadPoolExecutor, "submit", observe_submit)
+    cfg.nf4_prefetch_memory_mb = 16
+    actual = load()
+    assert workers, "Transformers checkpoint loading bypassed NF4 prefetch"
+    assert all(name.startswith("nf4-prefetch") for name in workers)
+    assert loading.spawn_materialize is original_spawn
+    assert loading.WeightTransform.materialize_tensors is original_materialize
+    assert loading.tqdm is original_progress
+    assert not any(
+        thread.name.startswith("nf4-prefetch") for thread in threading.enumerate()
+    )
+    for name, value in reference.state_dict().items():
+        torch.testing.assert_close(actual.state_dict()[name], value, rtol=0, atol=0)
+    tokens = torch.randint(0, 128, (1, 4))
+    with torch.no_grad():
+        torch.testing.assert_close(
+            actual(tokens).logits, reference(tokens).logits, rtol=0, atol=0
+        )
