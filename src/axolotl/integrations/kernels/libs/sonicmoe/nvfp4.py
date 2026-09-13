@@ -84,12 +84,14 @@ def dequantize_expert_slice(w: torch.Tensor, e: int) -> torch.Tensor:
         "swizzled NVFP4 scales unsupported (our loaders emit row-major)"
     )
     pts = w.per_tensor_scale
+    if pts is not None and pts.numel() > 1:
+        pts = pts[e : e + 1]
     sliced = type(w)(
         w.qdata[e : e + 1],
         w.scale[e : e + 1],
         w.block_size,
         w.orig_dtype,
-        per_tensor_scale=pts[e : e + 1] if pts is not None else None,
+        per_tensor_scale=pts,
     )
     return sliced.dequantize().squeeze(0)
 

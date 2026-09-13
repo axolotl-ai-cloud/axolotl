@@ -241,12 +241,8 @@ def fake_quant_nvfp4(
     packed, scale = quantize_nvfp4_merge(x, per_tensor_scale, scale_mode="fresh")
     pts = _normalize_pts(per_tensor_scale, x)
     if pts is not None:
-        # dimensioned (never 0-dim), like the loader's fused [E,1,1] pts: a 0-dim pts
-        # loses the promotion to fp32 in get_hp_scales (bf16 * 0-dim f32 stays bf16),
-        # rounding the scale product differently than the fused-load dequant
-        pts = (
-            pts.reshape([-1] + [1] * (x.dim() - 1)) if pts.dim() else pts.reshape(1, 1)
-        )
+        # Rank 3 satisfies torchao's shape contract and preserves fp32 promotion on older versions.
+        pts = pts.reshape(-1, 1, 1)
     # orig_dtype bf16 = the loader's construction, so scale math matches it bitwise
     nv = NVFP4Tensor(packed, scale, SF_VEC_SIZE, torch.bfloat16, per_tensor_scale=pts)
     return nv.dequantize(x.dtype)

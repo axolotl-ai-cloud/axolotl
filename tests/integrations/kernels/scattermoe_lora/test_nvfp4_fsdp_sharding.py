@@ -17,10 +17,7 @@ the reconstructed tensor dequantizes equal to the unsharded original across seve
 sizes including one where the expert axis does NOT divide evenly. Covers the B11 data-
 independent FSDP2 collective contract for the NVFP4 substrate.
 
-Round-trip verification uses a unit (scalar) per_tensor_scale - the real DSV4 frozen-expert
-case and the only one torchao's ``NVFP4Tensor.dequantize`` supports against per-block scales.
-A per-expert per_tensor_scale buffer is checked at the tensor-shape level (its split/narrow
-slicing) since torchao cannot dequantize that shape for an equality check.
+Round-trip verification covers shared scalar and per-expert scales with numeric equality.
 
 Skip gate: requires torchao's NVFP4Tensor. The substrate module is loaded by file path so the
 scattermoe_lora package __init__ (which imports triton) is NOT executed - the ops are pure CPU
@@ -75,12 +72,12 @@ def _make_nvfp4(E: int, N: int, K: int, seed: int = 0, per_expert_pts: bool = Fa
     """Build a frozen ``NVFP4Tensor`` [E,N,K] (qdata [E,N,K//2], scale [E,N,K//16]).
 
     per_expert_pts=False uses a unit scalar per_tensor_scale (the real DSV4 case, dequant-able);
-    True uses a per-expert [E] buffer to exercise the per-expert pts split path at the shape level.
+    True uses per-expert [E, 1, 1] scales.
     """
     torch.manual_seed(seed)
     packed = torch.randint(0, 255, (E, N, K // 2), dtype=torch.uint8)
     scale = (torch.rand(E, N, K // 16) * 0.5 + 0.5).to(torch.float8_e4m3fn)
-    pts = (torch.rand(E) * 0.5 + 0.5) if per_expert_pts else torch.ones(())
+    pts = (torch.rand(E, 1, 1) * 0.5 + 0.5) if per_expert_pts else torch.tensor(0.37)
     return NVFP4Tensor(packed.contiguous(), scale.contiguous(), 16, torch.bfloat16, pts)
 
 
@@ -89,8 +86,7 @@ def _shard_all_gather_reconstruct(nv, world: int):
 
     Pads the expert axis to a per-rank-equal count (FSDP2 pads uneven shards via new_zeros +
     copy_ into a narrow), chunks into ``world`` shards, runs each shard's fsdp_pre_all_gather,
-    concatenates the gathered inner tensors (a scalar per_tensor_scale is replicated, not
-    concatenated), and reconstructs via fsdp_post_all_gather. Returns the unpadded NVFP4Tensor.
+    concatenates every gathered inner tensor on dim 0, and reconstructs via fsdp_post_all_gather. Returns the unpadded NVFP4Tensor.
     """
     E = nv.shape[0]
     shard = _cdiv(E, world)
@@ -107,13 +103,12 @@ def _shard_all_gather_reconstruct(nv, world: int):
     gathered = []
     for k in range(len(pre[0][0])):
         tensors = [p[0][k] for p in pre]
-        if tensors[0].dim() == 0:
-            gathered.append(
-                tensors[0]
-            )  # scalar per_tensor_scale: replicated, not sharded
-        else:
-            gathered.append(torch.cat(tensors, 0))
+        assert all(t.dim() > 0 for t in tensors)
+        gathered.append(torch.cat(tensors, 0))
     recon, _ = shards[0].fsdp_post_all_gather(tuple(gathered), meta, torch.bfloat16)
+    reused = recon.clone()
+    shards[0].fsdp_post_all_gather(tuple(gathered), meta, torch.bfloat16, out=reused)
+    assert torch.equal(reused.dequantize(), recon.dequantize())
     return recon.narrow(0, 0, E)
 
 
@@ -154,13 +149,18 @@ def test_nvfp4_clone_detach_as_strided_roundtrip():
     [(6, (1, 2, 3)), (6, (4,)), (8, (3,))],
     ids=["even_1_2_3", "uneven_world4_E6", "uneven_world3_E8"],
 )
-def test_nvfp4_fsdp_all_gather_roundtrip(E, worlds):
+@pytest.mark.parametrize("scale_kind", ["none", "scalar", "shared", "per_expert"])
+def test_nvfp4_fsdp_all_gather_roundtrip(E, worlds, scale_kind):
     """FSDP2 shard -> all-gather -> reconstruct round-trips across worlds, incl. uneven expert splits.
 
     world=4 over E=6 and world=3 over E=8 do NOT divide evenly: the shard is padded on the expert
     axis (new_zeros + copy_ into a narrow) and narrowed back after reconstruct. Pure CPU logic.
     """
-    nv = _make_nvfp4(E, 8, 32)
+    nv = _make_nvfp4(E, 8, 32, per_expert_pts=scale_kind == "per_expert")
+    if scale_kind == "none":
+        nv.per_tensor_scale = None
+    elif scale_kind == "shared":
+        nv.per_tensor_scale = nv.per_tensor_scale.reshape(1, 1, 1)
     orig = nv.dequantize(torch.bfloat16)
     for world in worlds:
         recon = _shard_all_gather_reconstruct(nv, world)
@@ -178,16 +178,12 @@ def test_nvfp4_new_zeros_preserves_trailing_shapes():
 
 
 def test_nvfp4_per_expert_pts_split_narrow_shapes():
-    """A per-expert per_tensor_scale [E] is sliced alongside the expert axis on split/narrow.
-
-    torchao cannot dequantize a per-expert per_tensor_scale against per-block scales, so this
-    checks the slicing at the shape level (the FSDP substrate must carry the [E] buffer through).
-    """
+    """Per-expert scales are sliced alongside packed weights without changing their values."""
     nv = _make_nvfp4(6, 8, 32, per_expert_pts=True)
-    assert nv.per_tensor_scale is not None and nv.per_tensor_scale.shape == (6,)
+    assert nv.per_tensor_scale is not None and nv.per_tensor_scale.shape == (6, 1, 1)
 
     parts = torch.split(nv, 2, 0)
-    assert all(p.per_tensor_scale.shape == (2,) for p in parts), (
+    assert all(p.per_tensor_scale.shape == (2, 1, 1) for p in parts), (
         "per-expert per_tensor_scale not split on the expert axis"
     )
     assert torch.equal(
@@ -195,8 +191,10 @@ def test_nvfp4_per_expert_pts_split_narrow_shapes():
     )
 
     nar = torch.narrow(nv, 0, 1, 3)
-    assert nar.per_tensor_scale.shape == (3,)
+    assert nar.per_tensor_scale.shape == (3, 1, 1)
     assert torch.equal(nar.per_tensor_scale, nv.per_tensor_scale[1:4])
+    assert torch.equal(nar.dequantize(), nv.dequantize()[1:4])
+    assert torch.equal(torch.cat([p.dequantize() for p in parts]), nv.dequantize())
 
 
 def test_nvfp4_split_dim_other_than_zero_rejected():
