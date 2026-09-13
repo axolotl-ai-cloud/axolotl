@@ -5,6 +5,7 @@ from typing import Generator
 from transformers import BatchEncoding
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
+from axolotl.utils.tokenization import get_fast_encoder
 
 
 class PretrainTokenizer:
@@ -30,17 +31,27 @@ class PretrainTokenizationStrategy(PromptTokenizingStrategy):
     def _tokenize(
         self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False
     ) -> BatchEncoding:
+        max_length = self.max_length - 1
         # keep the overlap below the window size so small sequence_len values don't
         # violate the tokenizer's `stride < effective max_length` constraint
-        stride = min(256, (self.max_length - 1) // 2)
-        res = self.tokenizer(
-            prompt,
-            truncation=True,
-            max_length=self.max_length - 1,
-            add_special_tokens=True,
-            return_overflowing_tokens=True,
-            stride=stride,
-        )
+        stride = min(256, max_length // 2)
+        encoder = get_fast_encoder(self.tokenizer)
+
+        res = None
+        if encoder:
+            res = encoder([prompt] if isinstance(prompt, str) else prompt)
+
+        # fast encoders ignore return_overflowing_tokens; overflow needs the tokenizer
+        if res is None or any(len(seq) > max_length for seq in res["input_ids"]):
+            res = self.tokenizer(
+                prompt,
+                truncation=True,
+                max_length=max_length,
+                add_special_tokens=True,
+                return_overflowing_tokens=True,
+                stride=stride,
+            )
+
         res["input_ids"] = [
             seq + [self.tokenizer.eos_token_id] for seq in res["input_ids"]
         ]
