@@ -246,6 +246,51 @@ class TestFSDPValidation:
         ):
             validate_config(cfg)
 
+    def test_fp32_master_weights_fsdp2(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_version=2,
+            fsdp_config={
+                "reshard_after_forward": True,
+            },
+            fp32_master_weights=False,
+        )
+        cfg = validate_config(cfg)
+        assert cfg.fp32_master_weights is False
+
+    def test_fp32_master_weights_requires_fsdp2(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_version=1,
+            fsdp_config={
+                "fsdp_offload_params": False,
+            },
+            fp32_master_weights=True,
+        )
+        with pytest.raises(
+            ValueError, match="fp32_master_weights requires fsdp_version: 2"
+        ):
+            validate_config(cfg)
+
+    def test_fp32_master_weights_requires_fsdp(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(fp32_master_weights=True)
+        with pytest.raises(
+            ValueError, match="fp32_master_weights requires fsdp_version: 2"
+        ):
+            validate_config(cfg)
+
+    def test_fp32_master_weights_incompatible_with_fp8(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_version=2,
+            fsdp_config={
+                "reshard_after_forward": True,
+            },
+            fp32_master_weights=True,
+            fp8=True,
+        )
+        with pytest.raises(
+            ValueError, match="fp32_master_weights is incompatible with fp8"
+        ):
+            validate_config(cfg)
+
     def test_size_based_wrap_requires_min_num_params(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             fsdp_version=2,
