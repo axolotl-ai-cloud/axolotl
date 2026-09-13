@@ -2477,6 +2477,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Number of top logits for entropy approximation (default: 20)",
     ),
     (
+        ("--use-dft/--no-use-dft",),
+        None,
+        None,
+        "Enable Dynamic Fine-Tuning loss (DFT): per-token cross entropy weighted by its own detached probability",
+    ),
+    (
         ("--tiled-mlp/--no-tiled-mlp",),
         None,
         None,
