@@ -1122,6 +1122,13 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_custom_loss_conflicts(cls, data):
+        if data.get("use_dft") and data.get("use_eaft"):
+            raise ValueError("`use_dft` and `use_eaft` cannot be enabled together.")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_fsdp_version(cls, data):
         fsdp_config = data.get("fsdp_config", {})
         if fsdp_config and str(data.get("fsdp_version")) != "2":
