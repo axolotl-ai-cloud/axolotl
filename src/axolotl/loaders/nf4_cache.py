@@ -19,6 +19,7 @@ from axolotl.utils.nf4 import (
     checkpoint_nf4_linear,
     torchao_nf4_module,
 )
+from axolotl.utils.nf4_loading import nf4_phase
 
 
 def nf4_cache_path(cfg, model_config, model_kwargs, quantization, device):
@@ -139,6 +140,7 @@ def _transform_metadata(transform):
     }
 
 
+@nf4_phase("NF4 cache serialization")
 def save_nf4_cache(path, model):
     """Atomically publish packed tensors and primitive reconstruction metadata."""
     from axolotl.monkeypatch.moe_quant import _moe_load_state
@@ -173,6 +175,7 @@ def save_nf4_cache(path, model):
         Path(temporary).unlink(missing_ok=True)
 
 
+@nf4_phase("NF4 cache reconstruction")
 def load_nf4_cache(path, factory):
     """Reconstruct a CPU base model without reading or quantizing source weights."""
     from axolotl.monkeypatch.moe_quant import _moe_load_state

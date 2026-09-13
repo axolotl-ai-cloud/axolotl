@@ -192,24 +192,29 @@ class ModelLoader:
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
 
         skip_move_to_device = self._build_model()
-        self.patch_manager.apply_post_model_build_patches(self.model)
+        from axolotl.utils.nf4_loading import nf4_phase
 
-        PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
+        staged_nf4 = getattr(self.model, "_axolotl_staged_nf4", False)
+        with nf4_phase("NF4 post-load configuration", enabled=staged_nf4):
+            self.patch_manager.apply_post_model_build_patches(self.model)
 
-        # Post-build model configuration
-        self._apply_post_model_load_setup()
+            PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
-        # Load adapters (LoRA, etc.)
-        PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
-        lora_config = self._load_adapters()
-        PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
-        self._materialize_trainable_meta_params()
+            # Post-build model configuration
+            self._apply_post_model_load_setup()
 
-        # Apply remaining patches and finalize
-        self._apply_post_lora_load_setup(skip_move_to_device)
-        self.patch_manager.apply_post_model_load_patches(self.model)
-        PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+        with nf4_phase("NF4 adapter initialization", enabled=staged_nf4):
+            # Load adapters (LoRA, etc.)
+            PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
+            lora_config = self._load_adapters()
+            PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
+            self._materialize_trainable_meta_params()
 
+        with nf4_phase("NF4 post-adapter configuration", enabled=staged_nf4):
+            # Apply remaining patches and finalize
+            self._apply_post_lora_load_setup(skip_move_to_device)
+            self.patch_manager.apply_post_model_load_patches(self.model)
+            PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
         if self.cfg.fp32_norms:
             tag_model_fp32_norms(self.model, self.cfg)
 
