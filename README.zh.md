@@ -197,7 +197,7 @@ axolotl agent-docs reward_modelling    # 结果奖励模型与过程奖励模型
 axolotl agent-docs pretraining         # 持续预训练 (Continual Pretraining)
 axolotl agent-docs --list              # 列出所有可查询的文档主题
 
-# 以编程方式导出 YAML 配置 Schema 校验模型
+# 以编程方式导出 JSON 配置 Schema 校验模型
 axolotl config-schema
 axolotl config-schema --field adapter
 ```
@@ -217,7 +217,7 @@ axolotl config-schema --field adapter
 
 ## 📈 遥测与数据隐私
 
-Axolotl 内置了可退出的遥测机制（Opt-out Telemetry），用于帮助维护团队了解项目在社区中的使用模式并优先安排功能改进。我们仅收集基础系统信息、模型架构类型与异常报错率，**绝不会收集任何用户隐私数据、密钥或文件路径**。
+Axolotl 内置了可退出的遥测机制（Opt-out Telemetry），用于帮助维护团队了解项目在社区中的使用模式并优先安排功能改进。我们收集基础系统信息、模型架构类型与异常报错率；已知的路径字段会进行脱敏，但异常消息可能包含路径或其他敏感内容。
 遥测默认处于开启状态；如需关闭，仅需在环境中设置环境变量 `AXOLOTL_DO_NOT_TRACK=1`。更多细节请参阅[遥测说明文档](https://docs.axolotl.ai/docs/telemetry.html)。
 
 ## ❤️ 赞助支持
