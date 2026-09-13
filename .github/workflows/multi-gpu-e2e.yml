@@ -15,6 +15,7 @@ on:
       - "cicd/Dockerfile*.jinja"
       - "src/axolotl/loaders/**.py"
       - "src/axolotl/utils/nf4.py"
+      - "src/axolotl/utils/nf4_loading.py"
       - "src/axolotl/utils/schemas/**.py"
       - "src/axolotl/monkeypatch/accelerate/**.py"
       - "src/axolotl/monkeypatch/bnb_large_tensors.py"

@@ -12,6 +12,7 @@ from torch import nn
 from torch.nn.utils import parametrize
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.nf4_loading import nf4_loading_device, nf4_loading_group, nf4_phase
 
 if TYPE_CHECKING:
     from transformers import BitsAndBytesConfig, PretrainedConfig, PreTrainedModel
@@ -44,6 +45,15 @@ def load_nf4_model(
     Returns:
         A frozen model ready for adapter creation and FSDP2 sharding.
     """
+    with nf4_loading_group(cfg) as control_group:
+        return _load_nf4_model(
+            loader, model_config, model_kwargs, cfg, quantization_device, control_group
+        )
+
+
+def _load_nf4_model(
+    loader, model_config, model_kwargs, cfg, quantization_device, control_group
+):
     import torch.distributed as dist
     from accelerate import init_empty_weights
 
@@ -82,8 +92,6 @@ def load_nf4_model(
     error = None
     if main:
         try:
-            from accelerate import PartialState
-
             from axolotl.loaders.nf4_cache import (
                 load_nf4_cache,
                 nf4_cache_path,
@@ -91,7 +99,7 @@ def load_nf4_model(
             )
             from axolotl.utils.logging import get_logger
 
-            device = quantization_device or PartialState().device
+            device = quantization_device or nf4_loading_device()
             cache = nf4_cache_path(
                 cfg, model_config, model_kwargs, quantization, device
             )
@@ -99,8 +107,11 @@ def load_nf4_model(
                 get_logger(__name__).info("Loading packed NF4 cache: %s", cache)
                 model = load_nf4_cache(cache, empty_model)
             else:
-                with staged_nf4_loading(
-                    cfg, device=device, quantization_config=quantization
+                with (
+                    nf4_phase("NF4 checkpoint loading and quantization"),
+                    staged_nf4_loading(
+                        cfg, device=device, quantization_config=quantization
+                    ),
                 ):
                     model = loader.from_pretrained(
                         cfg.base_model, config=model_config, **model_kwargs
@@ -114,7 +125,9 @@ def load_nf4_model(
             error = f"{type(exc).__name__}: {exc}"
     if distributed:
         status = [error]
-        dist.broadcast_object_list(status, src=0)
+        dist.broadcast_object_list(
+            status, src=0, group=control_group, device=torch.device("cpu")
+        )
         if status[0] is not None:
             raise RuntimeError(f"Rank-zero NF4 loading failed: {status[0]}")
     if not main:
@@ -122,19 +135,13 @@ def load_nf4_model(
     if distributed:
         structures = []
         if main:
-            for path, module in model.named_modules():
-                for name, chain in getattr(module, "parametrizations", {}).items():
-                    structures.append(
-                        (
-                            path,
-                            name,
-                            copy.deepcopy(chain[0]).to("meta"),
-                            tuple(chain.original.shape),
-                            chain.original.dtype,
-                        )
-                    )
+            with nf4_phase("NF4 metadata preparation"):
+                _collect_nf4_structures(model, structures)
         payload = [structures]
-        dist.broadcast_object_list(payload, src=0)
+        with nf4_phase("NF4 metadata broadcast"):
+            dist.broadcast_object_list(
+                payload, src=0, group=control_group, device=torch.device("cpu")
+            )
         if not main:
             from axolotl.monkeypatch.moe_quant import _moe_load_state
 
@@ -164,6 +171,25 @@ def load_nf4_model(
     return model
 
 
+def _collect_nf4_structures(model, structures):
+    for path, module in model.named_modules():
+        for name, chain in getattr(module, "parametrizations", {}).items():
+            transform = chain[0]
+            memo = {
+                id(buffer): torch.empty_like(buffer, device="meta")
+                for buffer in transform.buffers()
+            }
+            structures.append(
+                (
+                    path,
+                    name,
+                    copy.deepcopy(transform, memo),
+                    tuple(chain.original.shape),
+                    chain.original.dtype,
+                )
+            )
+
+
 def uses_staged_nf4(cfg: DictDefault) -> bool:
     return bool(
         cfg.load_in_4bit
@@ -188,9 +214,7 @@ def staged_nf4_loading(
     from axolotl.monkeypatch.moe_quant import _moe_load_state
 
     original = loading.set_param_for_module
-    from accelerate import PartialState
-
-    device = device or PartialState().device
+    device = device or nf4_loading_device()
     storage = "cpu"
     backend = cfg.get("nf4_backend") or "bitsandbytes"
     from axolotl.utils.nf4 import nf4_should_quantize, nf4_skip_modules
