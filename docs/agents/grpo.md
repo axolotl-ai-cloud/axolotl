@@ -20,7 +20,7 @@ Terminal 1 (GPU 0)                    Terminal 2 (GPU 1)
 
 1. A YAML config with `rl: grpo`
 2. A reward module (Python file with reward functions)
-3. A running vLLM server (`axolotl vllm-serve config.yaml`)
+3. A vLLM backend: a running server (`axolotl vllm-serve config.yaml`, `vllm_mode: server`), or `vllm_mode: colocate` to host the engine on the training GPU (single-GPU; engine options come from the `vllm:` block)
 
 ## Reward Function Signature
 
