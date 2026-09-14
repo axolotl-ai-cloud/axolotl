@@ -67,15 +67,12 @@ LOG = get_logger(__name__)
 def model_loss_accepts_num_items_in_batch(model) -> bool:
     """Whether ``model``'s loss function consumes ``num_items_in_batch``.
 
-    ``num_items_in_batch`` is a parameter of the model's ``loss_function``; it is
-    never named in ``forward()``, which receives it through ``**kwargs``. Inspecting
-    ``forward()`` therefore never finds it.
-
-    PEFT wrappers are unwrapped via ``get_base_model()``. We deliberately do not walk
-    ``.base_model`` / ``.model`` generically: ``base_model`` is a property on every
-    ``PreTrainedModel`` (it returns ``getattr(self, self.base_model_prefix, self)``),
-    so such a walk descends from e.g. ``LlamaForCausalLM`` into ``LlamaModel``, the
-    module that never computes a loss at all.
+    The kwarg is a parameter of ``loss_function``, not of ``forward()``, which only
+    receives it through ``**kwargs``, so inspecting ``forward()`` never finds it.
+    PEFT wrappers are unwrapped via ``get_base_model()`` rather than by walking
+    ``.base_model``, which is a property on every ``PreTrainedModel`` and would
+    descend from e.g. ``LlamaForCausalLM`` into the ``LlamaModel`` that computes no
+    loss at all.
     """
     if hasattr(model, "get_base_model"):
         model = model.get_base_model()
@@ -141,17 +138,10 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
 
-        # Gemma4 (and similar multimodal models) declare **kwargs in forward() for
-        # extra inputs like mm_token_type_ids. HF Trainer interprets VAR_KEYWORD as
-        # "the model handles num_items_in_batch internally". Override to False only
-        # when the model's loss really does not consume num_items_in_batch.
-        #
-        # Setting this flag False is not cosmetic: transformers then skips counting
-        # items per accumulation window, each micro-batch loss becomes a mean over
-        # its own supervised tokens, and the step reduces to a mean of micro-batch
-        # means rather than (sum of token losses / total tokens). When micro-batches
-        # carry different numbers of supervised tokens the gradient direction moves,
-        # not just the logged loss.
+        # Gemma4-style models declare **kwargs in forward(), which HF Trainer reads as
+        # "handles num_items_in_batch internally". Only override when the loss really
+        # does not take it: a wrong False mis-normalises the loss under gradient
+        # accumulation and moves the gradient, not just the logged value.
         if self.model_accepts_loss_kwargs:
             model_to_check = self.accelerator.unwrap_model(self.model)
             if not model_loss_accepts_num_items_in_batch(model_to_check):
