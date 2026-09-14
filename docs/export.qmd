@@ -20,14 +20,17 @@ Export shells out to a built [llama.cpp](https://github.com/ggml-org/llama.cpp) 
 
 ```bash
 git clone https://github.com/ggml-org/llama.cpp
-cmake -B build llama.cpp && cmake --build build --config Release -j
-pip install -r llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
 export LLAMA_CPP_DIR=$PWD/llama.cpp
+cmake -S $LLAMA_CPP_DIR -B $LLAMA_CPP_DIR/build && cmake --build $LLAMA_CPP_DIR/build --config Release -j
 ```
 
-The conversion script runs under Axolotl's interpreter, so install its requirements into the same environment.
+Point at it with `$LLAMA_CPP_DIR` or the `export.llama_cpp_dir` config key. Building is only required if you request quantized outputs; `llama-quantize` is looked up in `$LLAMA_CPP_DIR/build/bin/`, `$LLAMA_CPP_DIR/`, then `$PATH`.
 
-Point at it with `$LLAMA_CPP_DIR` or the `export.llama_cpp_dir` config key. Building is only required if you request quantized outputs.
+::: {.callout-warning}
+
+Do not `pip install -r llama.cpp/requirements/...` into your training environment. Those files pin an older `transformers` and a CPU-only `torch`, which would replace the versions Axolotl depends on. The conversion script runs under Axolotl's interpreter, which already has everything it needs, and it loads `gguf-py` from the checkout itself.
+
+:::
 
 ## Usage
 

@@ -45,7 +45,8 @@ def resolve_quantize_bin(llama_cpp_dir: Path) -> Path:
 
     raise ValueError(
         f"`llama-quantize` not found in {llama_cpp_dir}. Build llama.cpp first: "
-        "`cmake -B build && cmake --build build --config Release -j`."
+        f"`cmake -S {llama_cpp_dir} -B {llama_cpp_dir}/build && "
+        f"cmake --build {llama_cpp_dir}/build --config Release -j`."
     )
 
 
