@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "purpose": "Golden kernel-launch-count/name budgets for the B200 factored LoRA MLP kernel (axolotl.kernels.blackwell), keyed by compute capability. test_blackwell_lora_mlp.py asserts measured == budget for a single fully-warmed fwd+bwd step. An INCREASE fails loudly (silent launch-count creep is the exact mechanism that historically produced multi-percent speed regressions in this kernel's lineage); a DECREASE also fails, with a distinct message, so genuine improvements get locked in deliberately rather than drifting the budget without re-certifying the rest of the suite.",
+    "how_to_update": "When a deliberate kernel change moves a number: (1) run the launch-budget test on the target hardware; the failure message reports the measured launch count; (2) verify with torch.profiler that the delta is explained by your change (inspect the per-kernel-name list); (3) update 'launches' (and 'total_self_cuda_us', informational) to the NEW measured values; (4) update required/forbidden kernel substrings if the kernel-name set changed; (5) update 'locked' with the date and a one-line reason; (6) re-run the full blackwell kernel test file, not just the budget test. Never widen an assertion to accept a range.",
+    "provenance": "Ported from the B200 LoRA-kernel optimization campaign handoff (lora_kernel_experiments/b200_handoff, M15 final state, locked 2026-07-26). Certified envelope: B200 (sm_100), bf16, BATCH=8 SEQ=512 (4096 tokens), HIDDEN=4096 INTER=14336, rank 16 for the budget entry."
+  },
+  "sm_100": {
+    "lora_mlp_factored_fwdbwd_r16_M4096": {
+      "launches": 29,
+      "total_self_cuda_us": 2350.84,
+      "locked": "2026-07-26 (campaign M15 final; ported into axolotl 2026-07-28)",
+      "required_kernel_substrings": [
+        "nvjet_sm100",
+        "_swiglu_fwd_view_kernel",
+        "_swiglu_bwd_view_kernel",
+        "splitKreduce_kernel"
+      ],
+      "forbidden_kernel_substrings": [
+        "_fg_kernel",
+        "_DWf_DW_dfg_kernel",
+        "MulFunctor"
+      ],
+      "forbidden_kernel_note": "_fg_kernel/_DWf_DW_dfg_kernel are third-party fused-SwiGLU kernel names -- their appearance would indicate an import mixup. MulFunctor would mean a scalar multiply regressed out of its GEMM's addmm alpha into a separate elementwise kernel."
+    }
+  },
+  "perf_vs_axolotl_lora_mlp": {
+    "sm_100": {
+      "threshold_min_ratio": null,
+      "note": "Relative wall-clock ratio (axolotl standard LoRA_MLP time / B200 factored time) for a K=8 fwd+bwd loop at rank 16, min-of-3 interleaved trials after warmup. null = not yet certified: the campaign certified the kernel against external reference implementations and its own internal baseline, never against axolotl's LoRA_MLP. To certify: run test_perf_vs_axolotl_lora_mlp on a B200; it skips but reports the measured ratio; set threshold_min_ratio to a value safely below the observed ratio (the campaign used ~0.05-0.15 headroom below the certified minimum across ranks) and record the date here. Never an absolute-ms threshold: node-to-node clock/thermal variance is ~15%."
+    }
+  }
+}

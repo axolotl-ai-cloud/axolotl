@@ -240,6 +240,7 @@ markers = [
     "slow: marks tests as slow",
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
     "integration: marks tests as integration tests (real model modeling paths)",
+    "b200: marks tests that need a B200 (sm_100) GPU; run by the dedicated B200 CI suite, excluded elsewhere",
 ]
 
 # UV specific configuration
