@@ -53,7 +53,7 @@ def load_staged_nf4_state(
                     transfer = torch.empty(shape, dtype=target.dtype, device=device)
                 dist.broadcast(transfer, src=0, group=group)
                 if owner == rank:
-                    local = transfer.cpu() if offload_to_cpu else transfer
+                    local = transfer
                 del transfer
             value = DTensor.from_local(
                 local,
@@ -63,6 +63,8 @@ def load_staged_nf4_state(
                 shape=target.shape,
                 stride=target.stride(),
             )
+            if offload_to_cpu:
+                value = value.cpu()
         else:
             value = (
                 source.to(device)
@@ -133,3 +135,33 @@ def patch_nf4_adapter_state() -> None:
     get_state._axolotl_nf4 = True
     fsdp_utils._get_model_state_dict = get_state
     fsdp_utils._set_model_state_dict = set_state
+
+
+def patch_nf4_optimizer_mapping() -> None:
+    """Give meta adapters distinct storage before Accelerate remaps optimizer parameters."""
+    from functools import wraps
+
+    from accelerate import Accelerator
+
+    original = Accelerator._prepare_fsdp2
+    if getattr(original, "_axolotl_nf4", False):
+        return
+
+    @wraps(original)
+    def prepare(self, *args):
+        for model in args:
+            if not isinstance(model, torch.nn.Module) or not getattr(
+                model, "_axolotl_staged_nf4", False
+            ):
+                continue
+            for parameter in model.parameters():
+                if parameter.requires_grad and parameter.is_meta:
+                    # Accelerate keys its optimizer remapping by data_ptr; all meta pointers are zero.
+                    torch.utils.swap_tensors(
+                        parameter,
+                        torch.nn.Parameter(torch.empty_like(parameter, device="cpu")),
+                    )
+        return original(self, *args)
+
+    prepare._axolotl_nf4 = True
+    Accelerator._prepare_fsdp2 = prepare

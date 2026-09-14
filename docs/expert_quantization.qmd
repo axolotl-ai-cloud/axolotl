@@ -85,7 +85,9 @@ For other configurations, the default remains false.
 Replace `YourDecoderLayer` with the decoder class for your model. Rank zero reads
 and quantizes the original floating-point checkpoint in bounded GPU chunks,
 storing packed weights in CPU memory. Other ranks construct the model on the
-meta device. After FSDP wrapping, rank zero transfers individual parameter shards;
+meta device. Trainable adapters receive CPU storage before optimizer preparation so
+Accelerate can map each adapter to its sharded parameter; frozen base weights remain
+on meta on peer ranks. After FSDP wrapping, rank zero transfers individual parameter shards;
 no rank needs a complete GPU replica during loading. Rank zero still needs CPU RAM
 for the complete packed model and checkpoint conversion temporaries. A CPU worker
 prefetches at most one upcoming conversion group's inputs while the current group
