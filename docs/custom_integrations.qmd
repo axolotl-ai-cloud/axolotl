@@ -45,6 +45,7 @@ To enable them, please check the respective documentations.
 
 # Sections
 sections = [
+    ("Benchmark API", "benchmark_api"),
     ("Cut Cross Entropy", "cut_cross_entropy"),
     ("Grokfast", "grokfast"),
     ("Knowledge Distillation (KD)", "kd"),
