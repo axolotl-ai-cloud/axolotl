@@ -171,6 +171,7 @@ def _distributed_nf4_worker(
     activation_checkpointing=False,
     offload=False,
     sharding_case=None,
+    prepare_optimizer=False,
 ):
     from unittest.mock import patch
 
@@ -287,7 +288,34 @@ def _distributed_nf4_worker(
                 parallelism_config=SimpleNamespace(fsdp_dim_names=("dp_shard",)),
             ),
         )
-        model = fsdp2_prepare_model(accelerator, model)
+        optimizer = None
+        if prepare_optimizer:
+            from accelerate import Accelerator
+
+            from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
+
+            patch_accelerate_fsdp2()
+            partial_state = PartialState()
+            partial_state.process_index = rank
+            partial_state.local_process_index = rank
+            partial_state.num_processes = world_size
+            real_accelerator = Accelerator(cpu=device_type == "cpu")
+            real_accelerator.state.fsdp_plugin = plugin
+            real_accelerator.state.device_mesh = mesh
+            real_accelerator.state.parallelism_config = SimpleNamespace(
+                fsdp_dim_names=("dp_shard",)
+            )
+            optimizer = torch.optim.AdamW(
+                [p for p in model.parameters() if p.requires_grad], lr=0.001
+            )
+            model, optimizer = real_accelerator._prepare_fsdp2(model, optimizer)
+            assert {
+                id(p) for group in optimizer.param_groups for p in group["params"]
+            } == {id(p) for p in model.parameters() if p.requires_grad}
+        else:
+            model = fsdp2_prepare_model(accelerator, model)
+        if offload:
+            assert all(p.device.type == "cpu" for p in model.parameters())
         if shape_snapshot:
             _assert_sharded_shapes(model, shape_snapshot, rank, world_size)
             _install_logical_shape_checks(model, shape_snapshot)
@@ -308,7 +336,7 @@ def _distributed_nf4_worker(
         if shape_snapshot:
             _assert_sharded_shapes(model, shape_snapshot, rank, world_size)
         if phase is None:
-            _check_fsdp_resume(model, rank, tokens, checkpoint)
+            _check_fsdp_resume(model, rank, tokens, checkpoint, optimizer)
         else:
             _check_fresh_trainer_resume(model, rank, tokens, checkpoint, phase)
         if shape_snapshot:
@@ -317,16 +345,17 @@ def _distributed_nf4_worker(
         dist.destroy_process_group()
 
 
-def _check_fsdp_resume(model, rank, tokens, checkpoint):
+def _check_fsdp_resume(model, rank, tokens, checkpoint, optimizer=None):
     from pathlib import Path
 
     import torch.distributed as dist
     from accelerate.utils import fsdp_utils
     from torch.distributed.fsdp import StateDictType
 
-    optimizer = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad], lr=0.001
-    )
+    if optimizer is None:
+        optimizer = torch.optim.AdamW(
+            [p for p in model.parameters() if p.requires_grad], lr=0.001
+        )
     optimizer.step()
     optimizer.zero_grad()
     accelerator = SimpleNamespace(
@@ -425,6 +454,10 @@ def test_rank_zero_load_shard_and_backward(backend, dtype, tmp_path):
             None,
             "cpu",
             dtype,
+            False,
+            False,
+            None,
+            True,
         ),
         nprocs=2,
     )
@@ -1864,3 +1897,35 @@ def test_nf4_prefetch_transformers_checkpoint(
         torch.testing.assert_close(
             actual(tokens).logits, reference(tokens).logits, rtol=0, atol=0
         )
+
+
+def test_nf4_meta_optimizer_parameters_keep_identity(monkeypatch):
+    from accelerate import Accelerator
+
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_optimizer_mapping
+
+    model = nn.Linear(4, 4, device="meta")
+    model.register_parameter(
+        "frozen", nn.Parameter(torch.empty(4, device="meta"), requires_grad=False)
+    )
+    parameters = [model.weight, model.bias]
+    optimizer = torch.optim.AdamW(parameters)
+    unrelated = nn.Linear(4, 4, device="meta")
+    model._axolotl_staged_nf4 = True
+
+    def prepare(self, *args):
+        assert model.weight is parameters[0] and model.bias is parameters[1]
+        assert optimizer.param_groups[0]["params"][0] is model.weight
+        assert optimizer.param_groups[0]["params"][1] is model.bias
+        assert all(p.device.type == "cpu" for p in parameters)
+        assert len({p.data_ptr() for p in parameters}) == 2
+        assert model.frozen.is_meta
+        assert all(p.is_meta for p in unrelated.parameters())
+        return args
+
+    monkeypatch.setattr(Accelerator, "_prepare_fsdp2", prepare)
+    patch_nf4_optimizer_mapping()
+    patched = Accelerator._prepare_fsdp2
+    patch_nf4_optimizer_mapping()
+    assert Accelerator._prepare_fsdp2 is patched
+    assert patched(None, model, optimizer, unrelated) == (model, optimizer, unrelated)
