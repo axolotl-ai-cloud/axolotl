@@ -395,9 +395,21 @@ def _check_fsdp_resume(model, rank, tokens, checkpoint, optimizer=None):
             for name, p in model.named_parameters()
             if p.requires_grad
         }
+        probe = None
+        if tokens.device.type == "cpu" and kind == StateDictType.FULL_STATE_DICT:
+            from torch._subclasses.fake_tensor import FakeTensorMode
+
+            with FakeTensorMode():
+                probe = torch.empty(4, device="cuda")
+            model.register_buffer("_nf4_restore_device_probe", probe)
+        parameter_ids = {name: id(p) for name, p in model.named_parameters()}
         fsdp_utils.load_fsdp_model(
             plugin, accelerator, model, directory, adapter_only=True
         )
+        assert parameter_ids == {name: id(p) for name, p in model.named_parameters()}
+        if probe is not None:
+            assert model._nf4_restore_device_probe is probe
+            del model._nf4_restore_device_probe
         for name, p in model.named_parameters():
             if p.requires_grad:
                 torch.testing.assert_close(
