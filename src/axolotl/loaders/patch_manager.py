@@ -270,6 +270,18 @@ class PatchManager:
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
         self._apply_tiled_mlp_post_load(model)
+        self._apply_mrope_packing_patch(model)
+
+    def _apply_mrope_packing_patch(self, model: PreTrainedModel):
+        # mRoPE text models only isolate packed samples given [4, B, L] position ids;
+        # the packed collator emits (B, L), which transformers expands to 3 grids.
+        if self.inference or not (self.cfg.processor_type or self.cfg.is_multimodal):
+            return
+        if not (self.cfg.sample_packing or self.cfg.eval_sample_packing):
+            return
+        from axolotl.monkeypatch.mrope_packing import patch_mrope_packing
+
+        patch_mrope_packing(model)
 
     def _apply_gemma4_loss_kwargs(self):
         # Flip accepts_loss_kwargs True so the Trainer normalizes loss by
