@@ -179,8 +179,11 @@ def quantize_nvfp4_merge(
         return packed, scale.view(*x.shape[:-1], x.shape[-1] // SF_VEC_SIZE)
     if scale_mode == "reuse":
         assert base_block_scale is not None, "reuse mode needs base_block_scale"
+        pts = _normalize_pts(per_tensor_scale, x)
+        if pts is not None and pts.dim():
+            pts = pts.reshape(-1, 1, 1)
         return _quantize_nvfp4_reuse_grid(
-            x, base_block_scale, 1.0 if per_tensor_scale is None else per_tensor_scale
+            x, base_block_scale, 1.0 if pts is None else pts
         )
     raise ValueError(f"unknown scale_mode {scale_mode!r}")
 

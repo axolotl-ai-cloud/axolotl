@@ -2112,6 +2112,34 @@ class TestQuantizedBaseMerge:
                 want = (base_f.float() + delta.float()).to(torch.bfloat16)
                 assert torch.allclose(merged2[key].float(), want.float(), atol=1e-2)
 
+    @pytest.mark.parametrize("num_experts", [1, 2, 3])
+    @pytest.mark.parametrize("scale_shape", ["vector", "broadcast"])
+    def test_nvfp4_reuse_per_expert_scales_match_slices(self, num_experts, scale_shape):
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+            quantize_nvfp4_merge,
+        )
+
+        torch.manual_seed(42)
+        weight = torch.randn(num_experts, 3, 32) * 0.02
+        pts = torch.linspace(0.001, 0.004, num_experts)
+        scales = torch.full((num_experts, 3, 2), 2.0).to(torch.float8_e4m3fn)
+        supplied_pts = pts if scale_shape == "vector" else pts.reshape(-1, 1, 1)
+        packed, actual_scales = quantize_nvfp4_merge(
+            weight, supplied_pts, scale_mode="reuse", base_block_scale=scales
+        )
+        for expert in range(num_experts):
+            expected_packed, expected_scales = quantize_nvfp4_merge(
+                weight[expert],
+                pts[expert],
+                scale_mode="reuse",
+                base_block_scale=scales[expert],
+            )
+            assert torch.equal(packed[expert], expected_packed)
+            assert torch.equal(
+                actual_scales[expert].view(torch.uint8),
+                expected_scales.view(torch.uint8),
+            )
+
     @pytest.mark.parametrize("num_experts", [1, 4])
     def test_nvfp4_merge_aware_quantizer_identity(self, num_experts):
         """The merge-aware invariant: one quantizer, bitwise, on both sides. Fresh mode

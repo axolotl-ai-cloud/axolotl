@@ -570,10 +570,9 @@ if __name__ == "__main__":  # local self-consistency test on real layer-0 data
     _, _scheme = _detect_scheme(wmap)
     _base_fmt = _scheme["base_fmt"]
     dev = "cuda"
-    # fused gate_up qdata+scale from w1+w3 (expert 0 only via n_experts=1 slice below)
-    gqd, gscale, gpts = _build_expert_nvfp4(
-        REPO, wmap, _base_fmt, 0, ("w1", "w3"), 4, dev
-    )
+    gate_up = _build_expert_nvfp4(REPO, wmap, _base_fmt, 0, ("w1", "w3"), 1, dev)
+    gqd, gscale = gate_up.qdata, gate_up.scale
+    gpts = gate_up.per_tensor_scale.reshape(())
     print(
         "fused gate_up qdata",
         gqd.shape,
@@ -588,7 +587,12 @@ if __name__ == "__main__":  # local self-consistency test on real layer-0 data
     qd3 = f.get_tensor("layers.0.ffn.experts.0.w3.weight").to(dev)
     s1 = f.get_tensor("layers.0.ffn.experts.0.w1.weight_scale").to(dev)
     s3 = f.get_tensor("layers.0.ffn.experts.0.w3.weight_scale").to(dev)
-    p = f.get_tensor("layers.0.ffn.experts.0.w1.weight_scale_2").to(dev).float()
+    p = (
+        f.get_tensor("layers.0.ffn.experts.0.w1.weight_scale_2")
+        .to(dev)
+        .float()
+        .reshape(())
+    )
     d1 = NVFP4Tensor(qd1, s1, 16, torch.bfloat16, per_tensor_scale=p).dequantize(
         torch.bfloat16
     )

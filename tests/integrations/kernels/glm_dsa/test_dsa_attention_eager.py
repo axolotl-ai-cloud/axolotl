@@ -59,29 +59,36 @@ def _build(index_topk, seed=0):
     return cfg, attn, rope
 
 
+@pytest.mark.parametrize("mask_dtype", [torch.bool, torch.bfloat16])
 @pytest.mark.parametrize("S,index_topk", [(64, 16), (48, 128)], ids=["sparse", "dense"])
 @pytest.mark.parametrize(
     "use_fused_indexer", [False, True], ids=["eager_idx", "fused_idx"]
 )
-def test_dsa_attention_matches_hf_eager(S, index_topk, use_fused_indexer):
+def test_dsa_attention_matches_hf_eager(S, index_topk, use_fused_indexer, mask_dtype):
     cfg, attn, rope = _build(index_topk)
     B = 1
     hidden = torch.randn(B, S, cfg.hidden_size, device=DEV, dtype=DT)
     position_ids = torch.arange(S, device=DEV).unsqueeze(0)
     cos, sin = rope(hidden, position_ids)
     pe = (cos, sin)
+    allowed = torch.ones(S, S, device=DEV, dtype=torch.bool).tril()
+    attention_mask = allowed[None, None]
+    if mask_dtype != torch.bool:
+        attention_mask = torch.zeros_like(attention_mask, dtype=mask_dtype).masked_fill(
+            ~attention_mask, torch.finfo(mask_dtype).min
+        )
 
     import torch.nn as nn
 
     with torch.no_grad():
-        out_eager = attn(hidden, pe, None, position_ids=position_ids)[0]
+        out_eager = attn(hidden, pe, attention_mask, position_ids=position_ids)[0]
         wrapper = nn.Module()
         wrapper.add_module("a", attn)
         assert (
             patch_glm_moe_dsa_attention(wrapper, use_fused_indexer=use_fused_indexer)
             == 1
         )
-        out_kernel = attn(hidden, pe, None, position_ids=position_ids)[0]
+        out_kernel = attn(hidden, pe, attention_mask, position_ids=position_ids)[0]
 
     assert torch.isfinite(out_kernel).all()
     err = (out_eager.float() - out_kernel.float()).abs().max().item()
