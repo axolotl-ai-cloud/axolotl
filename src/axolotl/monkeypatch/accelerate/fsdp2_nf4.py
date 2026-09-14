@@ -15,12 +15,20 @@ def load_staged_nf4_state(
     offload_to_cpu: bool = False,
 ) -> None:
     """Consume rank-zero CPU state by broadcasting bounded shards into a wrapped model."""
+    state = _distribute_nf4_state(
+        accelerator, model.state_dict(), full_state, offload_to_cpu
+    )
+    model.load_state_dict(state, assign=True, strict=True)
+
+
+def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None):
+    """Distribute selected tensors, preserving target devices unless offload is specified."""
     from torch.distributed.tensor import DTensor, Shard
 
     state = {}
     device = accelerator.device
     for name, target in tqdm(
-        model.state_dict().items(),
+        targets.items(),
         desc="Distributing NF4 tensors",
         disable=not accelerator.is_main_process,
         mininterval=5,
@@ -63,7 +71,9 @@ def load_staged_nf4_state(
                 shape=target.shape,
                 stride=target.stride(),
             )
-            if offload_to_cpu:
+            if offload_to_cpu is None:
+                value = value.to(target.device)
+            elif offload_to_cpu:
                 value = value.cpu()
         else:
             value = (
@@ -72,15 +82,18 @@ def load_staged_nf4_state(
                 else torch.empty_like(target, device=device)
             )
             dist.broadcast(value, src=0)
+            if offload_to_cpu is None:
+                value = value.to(target.device)
         state[name] = value
         full_state.pop(name, None)
-    model.load_state_dict(state, assign=True, strict=True)
+    return state
 
 
 def patch_nf4_adapter_state() -> None:
     """Preserve FSDP2 gather/broadcast semantics for full adapter checkpoints."""
     from dataclasses import replace
     from functools import wraps
+    from types import SimpleNamespace
 
     from accelerate.utils import fsdp_utils
     from peft import get_peft_model_state_dict
@@ -121,15 +134,30 @@ def patch_nf4_adapter_state() -> None:
                 model, state_dict, adapter_only=adapter_only, sd_options=sd_options
             )
         adapter = model.active_adapter
-        names = {
-            name.replace(f".{adapter}.", "."): name
-            for name in get_model_state_dict(
-                model, options=StateDictOptions(ignore_frozen_params=True)
-            )
-        }
+        local_state = get_model_state_dict(
+            model, options=StateDictOptions(ignore_frozen_params=True)
+        )
+        names = {name.replace(f".{adapter}.", "."): name for name in local_state}
+        adapter_state = get_peft_model_state_dict(
+            model, state_dict=local_state, adapter_name=adapter
+        )
+        targets = {names[name]: local_state[names[name]] for name in adapter_state}
         state = {names[name]: value for name, value in state_dict.items()}
+        target = next(iter(targets.values()))
+        accelerator = SimpleNamespace(
+            device=torch.device(target.device_mesh.device_type),
+            is_main_process=dist.get_rank() == 0,
+        )
+        state = _distribute_nf4_state(accelerator, targets, state)
         return set_model_state_dict(
-            model, state, options=replace(sd_options, strict=False)
+            model,
+            state,
+            options=replace(
+                sd_options,
+                strict=False,
+                full_state_dict=False,
+                broadcast_from_rank0=False,
+            ),
         )
 
     get_state._axolotl_nf4 = True
