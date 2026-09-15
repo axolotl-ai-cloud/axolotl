@@ -33,8 +33,10 @@ class TestKernelsArgsValidator:
     since lora_mlp_kernel / mlp_kernel are not declared model fields.
     """
 
-    def test_disables_lora_mlp_kernel_when_scattermoe(self):
-        """lora_mlp_kernel=True gets set to False when use_scattermoe=True."""
+    def test_lora_mlp_kernel_kept_for_scattermoe_dense_shared_mlp(self):
+        """lora_mlp_kernel stays enabled under scattermoe (non-DSV4): it fuses only the DENSE
+        shared MLP (layer.mlp); the routed experts are handled by the MoE kernel. The non-LoRA
+        mlp_kernel is still force-disabled."""
         from axolotl.integrations.kernels.args import KernelsArgs
 
         data = {
@@ -43,7 +45,23 @@ class TestKernelsArgsValidator:
             "lora_mlp_kernel": True,
         }
         result = KernelsArgs.disable_mlp_kernel(data)
+        assert result["lora_mlp_kernel"] is True
+        assert result["mlp_kernel"] is False
+
+    def test_lora_mlp_kernel_translated_and_disabled_for_dsv4(self):
+        """On DSV4 the generic lora_mlp_kernel is translated to dsv4_shared_mlp_lora_kernel and the
+        generic path disabled (DSV4's shared MLP needs the dedicated clamped-SwiGLU kernel)."""
+        from axolotl.integrations.kernels.args import KernelsArgs
+
+        data = {
+            "use_kernels": True,
+            "use_scattermoe": True,
+            "use_dsv4_kernels": True,
+            "lora_mlp_kernel": True,
+        }
+        result = KernelsArgs.disable_mlp_kernel(data)
         assert result["lora_mlp_kernel"] is False
+        assert result["dsv4_shared_mlp_lora_kernel"] is True
         assert result["mlp_kernel"] is False
 
     def test_mlp_kernel_disabled_without_lora(self):

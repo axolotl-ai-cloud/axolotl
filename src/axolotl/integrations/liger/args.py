@@ -16,11 +16,15 @@
 Module for handling LIGER input arguments.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+LIGER_KERNEL_IMPLS = ("cutile", "cutedsl")
 
 
 class LigerArgs(BaseModel):
@@ -28,8 +32,26 @@ class LigerArgs(BaseModel):
     Input args for LIGER.
     """
 
-    liger_rope: bool | None = None
+    liger_rope: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Enables Liger's fused RoPE kernel. For Qwen2-VL / Qwen2.5-VL / "
+                "Qwen3-VL (text and VL model_config_types) this auto-defaults to "
+                "True when unset, swapping in the fused multimodal/rotary kernel."
+            )
+        },
+    )
     liger_rms_norm: bool | None = None
+    liger_rms_norm_gated: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Enables fused RMSNorm+SiLU gate Triton kernel for models with "
+                "gated RMSNorm (e.g. Qwen3.5 / Qwen3.5 MoE linear attention layers)."
+            )
+        },
+    )
     liger_layer_norm: bool | None = None
     liger_swiglu: bool | None = None
     liger_glu_activation: bool | None = None
@@ -41,6 +63,20 @@ class LigerArgs(BaseModel):
             "description": (
                 "Enables use_token_scaling in fused_linear_cross_entropy. "
                 "When True, each token's loss is multiplied by its predicted probability (detached from gradients)."
+            )
+        },
+    )
+    liger_kernel_impl: Literal["cutile", "cutedsl"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Selects an alternative liger kernel backend via the "
+                "LIGER_KERNEL_IMPL env var (liger-kernel >= 0.8.1). 'cutile' "
+                "(requires cuda-tile) covers cross_entropy/geglu/layer_norm/rope "
+                "and more; 'cutedsl' (requires nvidia-cutlass-dsl, tuned for "
+                "Blackwell) covers cross_entropy/rms_norm. "
+                "fused_linear_cross_entropy stays Triton on both backends. "
+                "Unset keeps liger's default kernels."
             )
         },
     )

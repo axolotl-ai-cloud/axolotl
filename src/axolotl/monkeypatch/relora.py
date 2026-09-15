@@ -6,9 +6,8 @@ import os.path
 import shutil
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Literal, Union
 
-import bitsandbytes as bnb
 import peft
 import safetensors.torch as st
 import torch
@@ -28,9 +27,15 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+try:
+    import bitsandbytes as bnb
+except ImportError:  # pragma: no cover - optional dependency for 8-bit merge paths
+    bnb = None
+
 
 @torch.no_grad()
 def magnitude_pruning_(tensor, prune_ratio):
+    """Zero the lowest ``prune_ratio`` fraction of values by absolute magnitude, in place."""
     tensor_magnitude = torch.abs(tensor)
     threshold = torch.quantile(
         tensor_magnitude.flatten().to(dtype=torch.float32), prune_ratio
@@ -40,15 +45,43 @@ def magnitude_pruning_(tensor, prune_ratio):
     tensor.mul_(mask.to(dtype=tensor.dtype))
 
 
+@torch.no_grad()
+def random_pruning_(tensor, prune_ratio):
+    """Zero a random ``prune_ratio`` fraction of values, in place."""
+    mask = (
+        torch.rand(tensor.shape, dtype=torch.float32, device=tensor.device)
+        > prune_ratio
+    )
+    tensor.mul_(mask.to(dtype=tensor.dtype))
+
+
+# 0.999 mirrors the reference implementation. True zeroing breaks
+# ZeroRedundancyOptimizer.consolidate_state_dict; see Guitaricet/relora's
+# peft_pretraining/training_utils.py for the original note on this.
+_FULL_RESET_RATIO = 0.999
+
+
 def reset_optimizer(
     optimizer: torch.optim.Optimizer,
     *,
-    reset_params: List[str],  # where str is the key to a torch.nn.Parameter
+    reset_params: List[torch.nn.Parameter],
     optimizer_state_keys: List[str],
-    optimizer_magnitude_pruning: float = 0.9,
+    prune_method: Literal["magnitude", "random", "reset"] = "magnitude",
+    prune_ratio: float = 0.9,
 ):
-    # pylint:disable=unused-argument
-    pruning_fn = partial(magnitude_pruning_, prune_ratio=optimizer_magnitude_pruning)
+    """Prune optimizer state for ``reset_params`` only."""
+    if prune_method == "magnitude":
+        pruning_fn = partial(magnitude_pruning_, prune_ratio=prune_ratio)
+    elif prune_method in ("random", "reset"):
+        # "reset" is random pruning at a near-full ratio; the caller is responsible
+        # for supplying the appropriate prune_ratio (see ReLoRACallback.on_step_begin).
+        pruning_fn = partial(random_pruning_, prune_ratio=prune_ratio)
+    else:
+        raise ValueError(
+            f"Unknown prune_method {prune_method!r}; expected one of "
+            "'magnitude', 'random', 'reset'"
+        )
+
     n_zeros = 0
     n_total = 0
 
@@ -56,22 +89,22 @@ def reset_optimizer(
     if isinstance(optimizer, ZeroRedundancyOptimizer):
         optimizer_state = optimizer.optim.state
 
-    for group in optimizer.param_groups:
-        for param in group["params"]:
-            state = optimizer_state[param]
-            for key, value in state.items():
-                if key not in optimizer_state_keys:
+    for param in reset_params:
+        state = optimizer_state.get(param, {})
+        if not state:
+            continue
+        for key in optimizer_state_keys:
+            value = state.get(key)
+            if value is None or not torch.is_tensor(value):
+                continue
+            try:
+                pruning_fn(value)
+                n_total += value.numel()
+                n_zeros += torch.sum(value == 0).item()
+            except RuntimeError as exc:
+                if "quantile() input tensor is too large" in str(exc):
                     continue
-                if torch.is_tensor(value):
-                    try:
-                        pruning_fn(value)
-                        n_total += value.numel()
-                        n_zeros += torch.sum(value == 0).item()
-                    except RuntimeError as exc:
-                        if "quantile() input tensor is too large" in str(exc):
-                            pass
-                        else:
-                            raise exc
+                raise
 
     _zeroed = n_zeros / (1e-7 + n_total) * 100
     LOG.info(f"Percent of optimizer states zeroed: {_zeroed:.2f}")
@@ -82,11 +115,12 @@ class ReLoRACallback(TrainerCallback):
     """Callback to merge LoRA weights into the base model and save full-weight checkpoints"""
 
     def __init__(self, cfg: DictDefault):
-        self.relora_steps = cfg.jagged_restart_steps
+        self.jagged_restart_steps = cfg.jagged_restart_steps
         self.cpu_offload = cfg.relora_cpu_offload
         self.quantized = cfg.load_in_4bit or cfg.load_in_8bit
         self.last_full_model = cfg.base_model
         self.resume_from_checkpoint = cfg.resume_from_checkpoint
+        self.prune_method = cfg.relora_prune_method or "magnitude"
 
         if not os.path.exists(self.last_full_model):
             self.last_full_model = str(Path(snapshot_download(cfg.base_model)))
@@ -128,7 +162,7 @@ class ReLoRACallback(TrainerCallback):
     ):
         if not optimizer:
             optimizer = state.optimizer
-        if state.global_step > 0 and state.global_step % self.relora_steps == 0:
+        if state.global_step > 0 and state.global_step % self.jagged_restart_steps == 0:
             checkpoint_folder = os.path.join(
                 args.output_dir,
                 f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
@@ -144,7 +178,7 @@ class ReLoRACallback(TrainerCallback):
                 raise ValueError(f"Optimizer {args.optim} not supported with ReLoRA")
 
             lora_params = [
-                n
+                p
                 for n, p in model.named_parameters()
                 if p.requires_grad and "lora_" in n
             ]
@@ -166,11 +200,19 @@ class ReLoRACallback(TrainerCallback):
                     actually_save=is_main_process(),
                     cpu_offload=self.cpu_offload,
                 )
+                # When relora_prune_ratio is not set, use _FULL_RESET_RATIO for
+                # "reset" (paper-style near-full reset) and 0.9 for other methods.
+                prune_ratio = args.relora_prune_ratio
+                if prune_ratio is None:
+                    prune_ratio = (
+                        _FULL_RESET_RATIO if self.prune_method == "reset" else 0.9
+                    )
                 reset_optimizer(
                     optimizer,
                     reset_params=lora_params,
                     optimizer_state_keys=optimizer_state_keys,
-                    optimizer_magnitude_pruning=args.relora_prune_ratio,
+                    prune_method=self.prune_method,
+                    prune_ratio=prune_ratio,
                 )
 
             if self.quantized:
@@ -191,8 +233,8 @@ class ReLoRACallback(TrainerCallback):
             args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}", "relora"
         )
         if (
-            state.global_step >= self.relora_steps
-            and state.global_step % self.relora_steps != 0
+            state.global_step >= self.jagged_restart_steps
+            and state.global_step % self.jagged_restart_steps != 0
         ):
             if self.quantized:
                 if is_main_process() and self.last_full_model != checkpoint_folder:
@@ -320,6 +362,8 @@ def update_weights(
         target.weight.data = new_weight.cpu()
         target.to(device)
     elif isinstance(target, peft.tuners.lora.Linear8bitLt):
+        if bnb is None:
+            raise ImportError("bitsandbytes is required to merge 8-bit LoRA weights")
         target.weight.data = (
             bnb.nn.Int8Params(new_weight, requires_grad=False).to(device).data
         )

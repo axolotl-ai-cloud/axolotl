@@ -1,0 +1,102 @@
+---
+title: "NVFP4 MoE LoRA"
+description: "Fine-tune 4-bit NVFP4 MoE checkpoints with LoRA and merge the adapter back into a plain NVFP4 model"
+back-to-top-navigation: true
+toc: true
+toc-depth: 3
+---
+
+ModelOpt NVFP4 checkpoints (e.g. [nvidia/Qwen3-30B-A3B-NVFP4](https://huggingface.co/nvidia/Qwen3-30B-A3B-NVFP4))
+store weights as packed 4-bit FP4 with per-block scales. Axolotl trains LoRA adapters directly on these
+checkpoints: the base stays 4-bit-packed in memory while the LoRA `A`/`B` matrices train in bf16.
+
+Two expert kernels support the NVFP4 expert path:
+
+| Kernel | Config | Compute | Hardware |
+|---|---|---|---|
+| SonicMoE | `use_sonicmoe: true` | W4A4 native (W4A16 fallback) | Datacenter Blackwell SM100 (W4A4), Hopper (W4A16); consumer Blackwell sm_120 not yet supported |
+| ScatterMoE | `use_scattermoe: true` | W4A16 (Marlin) | any CUDA GPU sm80+ |
+
+## Usage
+
+```yaml
+base_model: nvidia/Qwen3-30B-A3B-NVFP4
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+use_sonicmoe: true
+nvfp4_merge_aware: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+```
+
+Full config: [examples/qwen3/30b-a3b-nvfp4-lora.yaml](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml).
+
+## Merging the adapter
+
+Merging LoRA into a 4-bit base is normally lossy: the NVFP4 grid step is 25-50% of a block's max weight, while a typical trained LoRA delta is well under 1% of the weight magnitude. Re-quantizing `base + delta` onto the base grid therefore rounds most of the delta away. `axolotl merge-lora` detects this and warns `NEAR-NO-OP expert merge` when the delta is far below the grid step.
+
+### Merge-aware training (`nvfp4_merge_aware`)
+
+`nvfp4_merge_aware: true` solves this by making training optimize the merged model directly. The forward pass computes
+
+```
+out = x @ Q(dequant(base) + scaling * (B @ A))^T
+```
+
+where `Q` is the exact quantizer `merge-lora` writes with (fresh block scales on the base's per-tensor scale grid). Gradients flow through the quantizer with a straight-through estimator, so sub-grid-step updates accumulate in `A`/`B` until they cross FP4 code boundaries. The merged NVFP4 checkpoint is then bitwise identical to the weights training fake-quantized against: what you trained is what you serve.
+
+```yaml
+use_sonicmoe: true
+nvfp4_merge_aware: true
+# optional warm-up before the fake-quant kicks in:
+# int = absolute optimizer step, float in (0, 1) = fraction of total steps
+# nvfp4_merge_aware_start_step: 0.1
+```
+
+Then merge as usual:
+
+```bash
+axolotl merge-lora config.yaml
+```
+
+The saved adapter's `adapter_config.json` carries an `nvfp4_merge_aware` stamp recording the quantizer identity (scale mode, per-tensor-scale policy, torchao version). `merge-lora` reads it to select the matching writer mode and errors if the environment's torchao version differs from the one trained with (`--override-quantizer` downgrades this to a warning). Tools other than Axolotl ignore the extra key; the merged checkpoint itself is a fully standard NVFP4 model.
+
+::: {.callout-important}
+
+With `nvfp4_merge_aware`, the **merged checkpoint is the trained model**; the raw adapter is only an intermediate artifact. Training optimizes the snapped weights `Q(W_eff)` while the un-snapped `base + scaling * (B @ A)` drifts freely (the straight-through estimator erases sub-boundary drift every forward), so serving `base + adapter` unmerged, or merging with `--dequant`, gives a model that was never trained and can score worse than the base. Both are rejected or warned against; always serve the merged output.
+
+:::
+
+Constraints:
+
+- Requires `use_sonicmoe: true` and `adapter: lora` (enforced at config validation). ScatterMoE is not supported.
+- Incompatible with the fused LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`): they bypass `lora.Linear.forward`, silently skipping the fake-quant. Axolotl does not auto-enable them under this flag and rejects the explicit combination.
+- DoRA modules are skipped with a warning.
+- Single-node only: under FSDP, ranks that load on the meta device cannot capture the base scale grid.
+- Step-time overhead is roughly 1.3x versus plain NVFP4 LoRA (fake-quant plus losing the fused LoRA kernels); peak memory is unchanged.
+
+On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter's improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.
+
+### Merging without merge-aware training
+
+For adapters trained without the flag, the format-preserving merge reuses the base scale grid and re-rounds codes, which preserves only the part of the delta that crosses code boundaries. Alternatives:
+
+- `axolotl merge-lora config.yaml --dequant`: dequantize the base to bf16 and merge losslessly. The output is a bf16 model (~4x larger).
+- Serve `base + adapter` unmerged (only valid for adapters trained *without* `nvfp4_merge_aware`).
+
+## See also
+
+- [Expert kernels](optimizations.qmd#expert-kernels) for SonicMoE/ScatterMoE details
+- [MoE expert quantization](expert_quantization.qmd) for on-load quantization of bf16 checkpoints
+- [Quantization with torchao](quantize.qmd) and [QAT](qat.qmd) for producing quantized checkpoints

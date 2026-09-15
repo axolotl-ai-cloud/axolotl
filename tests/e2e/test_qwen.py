@@ -11,13 +11,17 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
+from .utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
+
 
 class TestE2eQwen:
     """
     Test cases for qwen models
     """
 
-    @pytest.mark.parametrize("base_model", ["Qwen/Qwen2-0.5B", "Qwen/Qwen2.5-0.5B"])
+    @pytest.mark.parametrize("base_model", ["axolotl-ai-co/tiny-qwen2-129m"])
     def test_dpo(self, base_model, temp_dir):
         cfg = DictDefault(
             {

@@ -1,6 +1,6 @@
 """Pydantic models for TRL trainer configuration"""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -66,6 +66,12 @@ class TRLConfig(BaseModel):
             "description": "List of reward weights for the reward functions."
         },
     )
+    generation_batch_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Batch size for generation. Controls how many unique prompts are generated per step. Should be num_generations * data_parallel_size for full DP utilization."
+        },
+    )
     num_generations: int | None = Field(
         default=None,
         json_schema_extra={"description": "Number of generations to sample."},
@@ -100,10 +106,12 @@ class TRLConfig(BaseModel):
         default=64,
         json_schema_extra={"description": "Sync steps for the reference model."},
     )
-    scale_rewards: bool = Field(
+    scale_rewards: bool | Literal["group", "batch", "none"] = Field(
         default=True,
         json_schema_extra={
-            "description": "Whether to scale rewards by their standard deviation."
+            "description": "How to scale rewards by their standard deviation. One of "
+            "'group' (per prompt-group, GRPO default), 'batch' (whole batch), or 'none'. "
+            "Booleans are accepted for back-compat (True->'group', False->'none')."
         },
     )
 
@@ -131,6 +139,20 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Penalty for tokens that appear in prompt and generated text."
+        },
+    )
+    generation_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional generation parameters passed to vLLM SamplingParams. "
+            "Useful for stop_token_ids, seed, frequency_penalty, etc."
+        },
+    )
+    chat_template_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional kwargs for the chat template. "
+            "E.g., {enable_thinking: false} for Qwen3.5 models."
         },
     )
     num_iterations: int | None = Field(
@@ -167,6 +189,65 @@ class TRLConfig(BaseModel):
             "description": "Whether to exclude truncated completions from loss calculation."
         },
     )
+
+    # Entropy regularization (TRL >= 1.8)
+    entropy_coef: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Static entropy regularization coefficient for GRPO, adding an "
+            "entropy bonus to encourage exploration."
+        },
+    )
+    use_adaptive_entropy: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable adaptive entropy regularization (Skywork-OR1 style), "
+            "adjusting entropy_coef toward entropy_target."
+        },
+    )
+    entropy_target: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Target entropy when use_adaptive_entropy is enabled."
+        },
+    )
+    entropy_coef_delta: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Step size for adjusting entropy_coef toward entropy_target."
+        },
+    )
+    entropy_coef_min: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Lower bound for the adaptive entropy_coef."},
+    )
+    entropy_coef_max: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Upper bound for the adaptive entropy_coef."},
+    )
+
+    # Bidirectional vLLM importance-sampling clip (TRL >= 1.6)
+    vllm_importance_sampling_clip_min: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Lower clip bound for the vLLM/training importance-sampling ratio."
+        },
+    )
+    vllm_importance_sampling_clip_max: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Upper clip bound for the vLLM/training importance-sampling ratio."
+        },
+    )
+
+    log_multimodal: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to log multimodal content (images, videos) alongside "
+            "completions. Disable to reduce log size."
+        },
+    )
+
     vllm_enable_sleep_mode: bool | None = Field(
         default=None,
         json_schema_extra={

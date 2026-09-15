@@ -20,7 +20,6 @@ import torch
 from torch import nn
 
 
-@torch.jit.script
 def loss(
     student_logits: torch.Tensor,
     target_token_ids: torch.Tensor,
@@ -30,7 +29,7 @@ def loss(
     kd_temperature: float = 1.0,
 ) -> torch.Tensor:
     """
-    A KD loss function that is TorchScript-friendly.
+    Top-k forward KL divergence KD loss.
 
     Arguments:
         student_logits (torch.Tensor): The logits of the student model.
@@ -53,27 +52,25 @@ def loss(
     # student_logits shape:   [B, student_seq_len, vocab_size]
     teacher_seq_len = target_token_ids.shape[1]
 
-    # Slice student logits to match teacher-provided sequence length
-    student_logits_for_kd = (
-        student_logits[:, :teacher_seq_len, :] / kd_temperature
-    )  # [B, teacher_seq_len, vocab_size]
-
+    # Slice student logits to match teacher-provided sequence length and
     # keep in full precision for numerical stability of loss
-    student_logits_for_kd = student_logits_for_kd.float()
+    student_logits_for_kd = student_logits[
+        :, :teacher_seq_len, :
+    ].float()  # [B, teacher_seq_len, vocab_size]
 
-    # Gather student logits for teacher's top-K tokens
-    student_logits_topk = torch.gather(
-        student_logits_for_kd, dim=-1, index=target_token_ids
+    if kd_temperature != 1.0:
+        student_logits_for_kd = student_logits_for_kd / kd_temperature
+
+    # log_softmax + gather peaks one full-vocab backward buffer lower than the
+    # gather + logsumexp formulation
+    student_logprobs = torch.log_softmax(student_logits_for_kd, dim=-1)
+
+    # Gather student logprobs for teacher's top-K tokens
+    student_logprobs_topk = torch.gather(
+        student_logprobs, dim=-1, index=target_token_ids
     )  # [B, teacher_seq_len, K]
 
-    # Compute logsumexp across full vocabulary
-    student_lse = torch.logsumexp(student_logits_for_kd, dim=-1, keepdim=True)
-
-    #  Convert just the top-k logits to logprobs
-    student_logprobs_topk = student_logits_topk - student_lse
-
     # Convert teacher_mask to boolean for indexing
-    # In TorchScript, .bool() is sometimes unsupported, so we do:
     valid_mask = target_mask.to(torch.bool)
 
     # Prune tensors to only keep valid tokens

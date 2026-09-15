@@ -48,6 +48,17 @@ class AxolotlOrWarnErrorFilter(logging.Filter):
         )
 
 
+class HubUnauthenticatedNagFilter(logging.Filter):
+    """
+    Drops the server-sent "sending unauthenticated requests" nag (an X-HF-Warning
+    response header that huggingface_hub logs with no env var to disable it).
+    Other hub warnings (retries, rate limits) pass through.
+    """
+
+    def filter(self, record: LogRecord) -> bool:
+        return "unauthenticated requests" not in record.getMessage()
+
+
 class AxolotlLogger(Logger):
     """Logger that applies filtering to non-axolotl loggers."""
 
@@ -98,6 +109,9 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
         "ax_or_warn": {
             "()": "axolotl.logging_config.AxolotlOrWarnErrorFilter",
         },
+        "hub_unauthenticated_nag": {
+            "()": "axolotl.logging_config.HubUnauthenticatedNagFilter",
+        },
     },
     "handlers": {
         "console": {
@@ -134,6 +148,11 @@ DEFAULT_LOGGING_CONFIG: Dict[str, Any] = {
             "handlers": ["color_console", "ax_file_only"],
             "level": os.getenv("AXOLOTL_LOG_LEVEL", DEFAULT_AXOLOTL_LOG_LEVEL).upper(),
             "propagate": False,
+        },
+        # filter at the emitting logger so the nag is dropped before it reaches
+        # both huggingface_hub's own handler and our root handlers
+        "huggingface_hub.utils._http": {
+            "filters": ["hub_unauthenticated_nag"],
         },
     },
 }

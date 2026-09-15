@@ -16,14 +16,14 @@
 Chat template prompt strategy loader with KD support
 """
 
-import logging
 from typing import Any, Dict
 
 import torch
 
 from axolotl.prompt_strategies.chat_template import ChatTemplateStrategy, StrategyLoader
+from axolotl.utils.logging import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 
 class ChatTemplateStrategyWithKD(ChatTemplateStrategy):

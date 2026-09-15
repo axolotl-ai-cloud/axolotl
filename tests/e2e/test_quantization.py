@@ -5,14 +5,13 @@ Tests for axolotl.utils.quantization
 import pytest
 import torch
 from torch import nn
-from torchao.prototype.qat import MXFakeQuantizeConfig
-from torchao.quantization import LinearActivationQuantizedTensor
+from torchao.quantization import IntxUnpackedToInt8Tensor
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
-    Int8DynamicActivationInt4WeightConfig,
+    Int8DynamicActivationIntxWeightConfig,
 )
 from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 from transformers import AutoModelForCausalLM
@@ -24,6 +23,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     prepare_model_for_qat,
     quantize_model,
+    save_quantized_model,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig
@@ -46,7 +46,7 @@ def _get_fake_quant_config_dtype(config):
 @pytest.fixture()
 def model():
     dummy_model = AutoModelForCausalLM.from_pretrained(
-        "Qwen/Qwen2-0.5B",
+        "axolotl-ai-co/tiny-qwen2-129m",
         device_map="auto",
         dtype=torch.bfloat16,
     )
@@ -66,7 +66,7 @@ ptq_config_test_cases = [
         TorchAOQuantDType.int4,
         TorchAOQuantDType.int8,
         None,
-        Int8DynamicActivationInt4WeightConfig,
+        Int8DynamicActivationIntxWeightConfig,
     ),
     (
         TorchAOQuantDType.float8_e4m3fn,
@@ -91,7 +91,7 @@ ptq_test_cases = [
         8,
         False,
         None,
-        LinearActivationQuantizedTensor,
+        IntxUnpackedToInt8Tensor,
     ),
     # (
     #     TorchAOQuantDType.int4,
@@ -129,8 +129,11 @@ class TestQuantization:
     @require_torch_2_8_0
     @requires_sm_ge_100
     def test_get_ptq_config_mxfp4(self):
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
+
         config = get_quantization_config(TorchAOQuantDType.mxfp4, None, 32)
-        assert isinstance(config, MXFakeQuantizeConfig)
+        assert isinstance(config, MXDynamicActivationMXWeightConfig)
+        assert config.weight_dtype == torch.float4_e2m1fn_x2
         assert config.block_size == 32
 
     @require_torch_2_8_0
@@ -298,7 +301,6 @@ class TestQuantization:
         "weight_dtype,activation_dtype,group_size,quantize_embedding",
         [
             (TorchAOQuantDType.mxfp4, None, 32, False),
-            (TorchAOQuantDType.mxfp4, None, 32, True),
         ],
     )
     @require_torch_2_8_0
@@ -314,14 +316,16 @@ class TestQuantization:
             quantize_embedding,
         )
 
+        from torchao.prototype.qat import MXFakeQuantizedLinear
+
         if quantize_embedding:
             assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
             assert hasattr(model.model.embed_tokens, "weight_fake_quantizer")
 
         for child in list(model.children()):
             if isinstance(child, torch.nn.Linear):
-                assert isinstance(child, FakeQuantizedLinear)
-                assert hasattr(child, "weight_fake_quantizer")
+                assert isinstance(child, MXFakeQuantizedLinear)
+                assert hasattr(child, "weight_config")
 
     @require_torch_2_8_0
     @requires_cuda_ge_8_9
@@ -357,6 +361,176 @@ class TestQuantization:
         # ensure weights have been quantized
         assert isinstance(model.model.embed_tokens.weight, nn.Parameter)
         assert isinstance(model.lm_head.weight, nn.Parameter)
+
+
+class TestMXQuantizeSaveLoad:
+    """Tests for MX format (mxfp4) quantize-save-load round-trip via save_pretrained.
+
+    Uses a tiny HF model built from config (no download) so tests exercise the
+    real save_pretrained / from_pretrained code path — the same one the CLI uses.
+    MX format models are saved with safe_serialization=False (torch.save) because
+    MXTensor does not yet support safetensors serialization.
+    """
+
+    @staticmethod
+    def _make_tiny_model():
+        """Build a minimal HF causal-LM that can be quantized on CPU."""
+        from transformers import Qwen2Config
+
+        config = Qwen2Config(
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            vocab_size=256,
+            max_position_embeddings=64,
+            torch_dtype="bfloat16",
+        )
+        model = AutoModelForCausalLM.from_config(config).to(torch.bfloat16)
+        return model
+
+    @require_torch_2_8_0
+    def test_mxfp4_quantize_save_pretrained(self, tmp_path):
+        """quantize_model(mxfp4) -> save_pretrained -> from_pretrained round-trip."""
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+
+        model = self._make_tiny_model()
+        original_keys = set(model.state_dict().keys())
+
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+
+        # Weights should be MXTensor after quantization
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module.weight, MXTensor)
+
+        # Model should be flagged for MX-style save
+        assert getattr(model, "_is_mx_quantized", False)
+
+        # save_pretrained with safe_serialization=False (torch.save path)
+        save_dir = str(tmp_path / "mxfp4_model")
+        save_quantized_model(model, save_dir)
+
+        # Verify checkpoint files were written
+        import glob
+
+        assert glob.glob(f"{save_dir}/*.bin") or glob.glob(f"{save_dir}/**/*.bin")
+
+        # from_pretrained should load without error
+        loaded = AutoModelForCausalLM.from_pretrained(
+            save_dir, torch_dtype=torch.bfloat16
+        )
+        loaded_keys = set(loaded.state_dict().keys())
+        assert original_keys == loaded_keys, (
+            f"Key mismatch: missing={original_keys - loaded_keys}, "
+            f"extra={loaded_keys - original_keys}"
+        )
+
+    @require_torch_2_8_0
+    def test_mxfp4_is_mx_flag_set(self):
+        """quantize_model sets _is_mx_quantized for MX configs."""
+        model = self._make_tiny_model()
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        assert getattr(model, "_is_mx_quantized", False)
+
+    @require_torch_2_8_0
+    @requires_cuda_ge_8_9
+    def test_non_mx_uses_torchao_quantizer(self):
+        """Non-MX quantization attaches TorchAoHfQuantizer, not _is_mx_quantized."""
+        model = self._make_tiny_model()
+        try:
+            quantize_model(model, TorchAOQuantDType.int4, group_size=32)
+        except ImportError:
+            pytest.skip("int4 quantization requires mslk >= 1.0.0")
+        assert not getattr(model, "_is_mx_quantized", False)
+        assert hasattr(model, "hf_quantizer")
+
+    @require_torch_2_8_0
+    def test_mxfp4_qat_then_ptq_save_pretrained(self, tmp_path):
+        """Full QAT -> convert -> PTQ -> save_pretrained -> from_pretrained."""
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+        from torchao.prototype.qat import MXFakeQuantizedLinear
+
+        model = self._make_tiny_model()
+        original_keys = set(model.state_dict().keys())
+
+        # QAT preparation
+        prepare_model_for_qat(model, TorchAOQuantDType.mxfp4, 32)
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module, MXFakeQuantizedLinear)
+
+        # Convert QAT back to normal linear
+        convert_qat_model(model)
+
+        # PTQ quantize
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module.weight, MXTensor)
+
+        # save_pretrained round-trip
+        save_dir = str(tmp_path / "mxfp4_qat_model")
+        save_quantized_model(model, save_dir)
+
+        loaded = AutoModelForCausalLM.from_pretrained(
+            save_dir, torch_dtype=torch.bfloat16
+        )
+        loaded_keys = set(loaded.state_dict().keys())
+        assert original_keys == loaded_keys
+
+    @require_torch_2_8_0
+    def test_mxfp4_cross_process_load(self, tmp_path):
+        """A saved MX checkpoint loads in a fresh interpreter that never quantized.
+
+        The other tests call ``quantize_model`` in-process, which installs the
+        transformers init guard as a side effect, masking the real reload path.
+        Here we save, then load in a subprocess that only installs the guard the
+        way ``ModelLoader._apply_pre_model_load_setup`` does — no ``quantize_model``.
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        model = self._make_tiny_model()
+        save_dir = str(tmp_path / "mxfp4_xproc_model")
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        save_quantized_model(model, save_dir)
+
+        script = textwrap.dedent(
+            f"""
+            import torch
+            from torch import nn
+            from transformers import AutoModelForCausalLM
+            # mirrors ModelLoader._apply_pre_model_load_setup (no quantize_model here)
+            from axolotl.utils.quantization import (
+                patch_transformers_skip_quantized_init,
+            )
+
+            patch_transformers_skip_quantized_init()
+            model = AutoModelForCausalLM.from_pretrained(
+                {save_dir!r}, dtype=torch.bfloat16
+            )
+            from torchao.prototype.mx_formats.mx_tensor import MXTensor
+            assert any(
+                isinstance(m.weight, MXTensor)
+                for m in model.modules()
+                if isinstance(m, nn.Linear)
+            ), "expected MXTensor weights after reload"
+            print("CROSS_PROCESS_LOAD_OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert "CROSS_PROCESS_LOAD_OK" in result.stdout, (
+            f"cross-process MX load failed:\nstdout={result.stdout}\n"
+            f"stderr={result.stderr[-2000:]}"
+        )
 
 
 class TestQuantizationCallback:

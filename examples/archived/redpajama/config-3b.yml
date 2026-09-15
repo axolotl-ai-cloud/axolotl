@@ -40,7 +40,6 @@ bf16: auto
 tf32: true
 resume_from_checkpoint:
 logging_steps: 5
-flash_attention:
 gptq_groupsize:
 gptq_model_v1:
 warmup_ratio: 0.1

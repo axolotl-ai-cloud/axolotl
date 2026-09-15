@@ -23,7 +23,7 @@ class LMEvalPlugin(BasePlugin):
             for lm_eval_args in build_lm_eval_command(
                 cfg.lm_eval_tasks,
                 bfloat16=cfg.bfloat16 or cfg.bf16,
-                flash_attention=cfg.flash_attention,
+                flash_attention=cfg.attn_uses_flash_lib,
                 output_dir=cfg.output_dir,
                 batch_size=cfg.lm_eval_batch_size,
                 wandb_project=cfg.wandb_project,

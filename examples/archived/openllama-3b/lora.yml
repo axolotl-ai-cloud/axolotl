@@ -47,7 +47,7 @@ tf32: false
 gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: true
+attn_implementation: flash_attention_2
 gptq_groupsize:
 gptq_model_v1:
 warmup_ratio: 0.1

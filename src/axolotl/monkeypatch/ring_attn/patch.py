@@ -219,7 +219,12 @@ def update_ring_attn_params(position_ids: torch.Tensor | None):
     Args:
         position_ids: Optional tensor of position IDs (for sample packed data).
     """
-    from ring_flash_attn import update_ring_flash_attn_params
+    try:
+        from ring_flash_attn import update_ring_flash_attn_params
+    except ImportError:
+        # No ring attention was substituted (e.g. the GLM DSA kernels own context-parallel attention
+        # and derive their own cu_seqlens from position_ids), so there is nothing to update here.
+        return
 
     cu_seqlens, _ = get_cu_seqlens_from_pos_ids(position_ids)
     cu_seqlens = cu_seqlens.squeeze().to(device=torch.cuda.current_device())

@@ -11,12 +11,11 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.7.1 min)
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-pip3 install packaging==26.0 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn]'
+uv pip install --no-build-isolation -e '.'
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
 python scripts/cutcrossentropy_install.py | sh

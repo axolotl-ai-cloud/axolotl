@@ -29,6 +29,7 @@ def default(cfg, dataset_idx=0, **kwargs):
             "user": ["user"],
             "assistant": ["assistant"],
             "system": ["system"],
+            "tool": ["tool"],
         },
     )
     role_map = {}
@@ -174,6 +175,7 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
             "user": ["user"],
             "assistant": ["assistant"],
             "system": ["system"],
+            "tool": ["tool"],
         },
     )
     role_map = {}

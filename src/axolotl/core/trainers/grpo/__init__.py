@@ -29,7 +29,7 @@ class GRPOStrategy:
     @classmethod
     def get_trainer_class(
         cls,
-        sequence_parallel: bool,
+        sequence_parallel: bool = False,
         async_grpo: bool = False,
     ) -> (
         type[AxolotlGRPOTrainer]
@@ -82,12 +82,15 @@ class GRPOStrategy:
             if trl.vllm_server_timeout:
                 grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
             if trl.vllm_guided_decoding_regex:
-                grpo_args_kwargs["vllm_guided_decoding_regex"] = (
+                # TRL >=1.7 renamed guided decoding to structured outputs.
+                grpo_args_kwargs["vllm_structured_outputs_regex"] = (
                     trl.vllm_guided_decoding_regex
                 )
 
         if trl.num_generations:
             grpo_args_kwargs["num_generations"] = trl.num_generations
+        if trl.generation_batch_size is not None:
+            grpo_args_kwargs["generation_batch_size"] = trl.generation_batch_size
 
         if trl.sync_ref_model:
             grpo_args_kwargs["sync_ref_model"] = trl.sync_ref_model
@@ -149,6 +152,33 @@ class GRPOStrategy:
                 trl.multi_objective_aggregation
             )
 
+        # Entropy regularization (TRL >= 1.8)
+        if trl.entropy_coef is not None:
+            grpo_args_kwargs["entropy_coef"] = trl.entropy_coef
+        if trl.use_adaptive_entropy is not None:
+            grpo_args_kwargs["use_adaptive_entropy"] = trl.use_adaptive_entropy
+        if trl.entropy_target is not None:
+            grpo_args_kwargs["entropy_target"] = trl.entropy_target
+        if trl.entropy_coef_delta is not None:
+            grpo_args_kwargs["entropy_coef_delta"] = trl.entropy_coef_delta
+        if trl.entropy_coef_min is not None:
+            grpo_args_kwargs["entropy_coef_min"] = trl.entropy_coef_min
+        if trl.entropy_coef_max is not None:
+            grpo_args_kwargs["entropy_coef_max"] = trl.entropy_coef_max
+
+        # Bidirectional vLLM importance-sampling clip (TRL >= 1.6)
+        if trl.vllm_importance_sampling_clip_min is not None:
+            grpo_args_kwargs["vllm_importance_sampling_clip_min"] = (
+                trl.vllm_importance_sampling_clip_min
+            )
+        if trl.vllm_importance_sampling_clip_max is not None:
+            grpo_args_kwargs["vllm_importance_sampling_clip_max"] = (
+                trl.vllm_importance_sampling_clip_max
+            )
+
+        if trl.log_multimodal is not None:
+            grpo_args_kwargs["log_multimodal"] = trl.log_multimodal
+
         # Async GRPO fields
         if getattr(trl, "use_data_producer", None) is not None:
             grpo_args_kwargs["use_data_producer"] = trl.use_data_producer
@@ -198,6 +228,10 @@ class GRPOStrategy:
             )
         if getattr(trl, "vllm_lora_sync", None) is not None:
             grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
+
+        # Batch flattening (top-level config, not under trl)
+        if getattr(cfg, "batch_flattening", None):
+            grpo_args_kwargs["batch_flattening"] = cfg.batch_flattening
 
         return grpo_args_kwargs
 

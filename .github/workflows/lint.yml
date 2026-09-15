@@ -4,14 +4,17 @@ on:
   merge_group:
   pull_request:
       types: [opened, synchronize, reopened, ready_for_review]
+      # code/pyproject/workflow linting is covered by the pre-commit job in tests.yml;
+      # this workflow handles the doc/example paths that tests.yml does not trigger on
       paths:
-       - '**.py'
-       - 'requirements.txt'
-       - '.github/workflows/*.yml'
        - "*.[q]md"
        - "examples/**/*.y[a]?ml"
        - ".pre-commit-config.yaml"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -22,9 +25,15 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
           cache: 'pip' # caching pip dependencies
-      - uses: pre-commit/action@v3.0.1
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        env:
+          # check-cli-config-options needs an installed axolotl; the dedicated
+          # tests.yml step covers it in CI
+          SKIP: check-cli-config-options

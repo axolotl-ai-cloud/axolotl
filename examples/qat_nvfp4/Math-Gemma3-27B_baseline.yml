@@ -16,6 +16,8 @@ liger_layer_norm: true
 liger_fused_linear_cross_entropy: true
 seed: 42
 chat_template: gemma3
+eot_tokens:
+  - <end_of_turn>
 datasets:
   - path: AI-MO/NuminaMath-CoT
     type: chat_template
@@ -24,7 +26,7 @@ output_dir: ./outputs/out_math_gemma27/
 
 sequence_len: 4096
 sample_packing: true
-flash_attention: true
+attn_implementation: flash_attention_2
 
 wandb_entity:
 wandb_watch:

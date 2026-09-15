@@ -16,7 +16,7 @@ template_loader = jinja2.FileSystemLoader(searchpath=cicd_path)
 template_env = jinja2.Environment(
     loader=template_loader, autoescape=select_autoescape()
 )
-dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile.jinja")
+dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile-uv.jinja")
 df_template = template_env.get_template(dockerfile)
 
 df_args = {
@@ -43,7 +43,6 @@ with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
 cicd_image = modal.experimental.raw_dockerfile_image(
     pathlib.Path(temp_dir) / "Dockerfile",
     # context_mount=None,
-    force_build=True,
     # gpu="A10G",
 ).env(df_args)
 

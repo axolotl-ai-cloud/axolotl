@@ -10,7 +10,7 @@
 
 3. Install FLA for sample packing support with the Gated DeltaNet linear attention layers:
   ```bash
-  pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.4.1
+  uv pip uninstall causal-conv1d && uv pip install flash-linear-attention==0.4.1
   ```
   > FLA is required when `sample_packing: true`. Without it, training raises a `RuntimeError` on packed sequences. Vision configs use `sample_packing: false` so FLA is optional there.
 
@@ -59,11 +59,20 @@ lora_target_parameters:
 
 ### Shared Experts (MoE)
 
-Routed experts and shared experts both have `gate_up_proj`/`down_proj`, so a plain module name in `lora_target_modules` would match both. Use a regex to target only attention and shared expert projections, while `lora_target_parameters` above handles routed experts separately:
+Shared experts use `nn.Linear` (unlike routed experts which are 3D `nn.Parameter` tensors), so they can be targeted via `lora_target_modules`. To also train shared expert projections alongside attention, uncomment `gate_up_proj` and `down_proj` in `lora_target_modules`:
 
 ```yaml
-lora_target_modules: 'model\.(language_model\.)?layers\.[\d]+\.(mlp|self_attn)\.(shared_expert\.)?(up|down|gate|gate_up|q|k|v|o)_proj'
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):
+  # - gate_up_proj
+  # - down_proj
 ```
+
+Use `lora_target_parameters` (see [Routed Experts](#routed-experts-moe) above) to target routed experts separately.
 
 ### TIPS
 

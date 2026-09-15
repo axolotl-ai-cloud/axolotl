@@ -4,10 +4,16 @@ test module for the axolotl.utils.data module
 
 import unittest
 
+from datasets import Dataset
 from transformers import LlamaTokenizer
 
+from axolotl.prompt_strategies.pretrain import load as load_pretrain
 from axolotl.utils.data import encode_streaming, md5
-from axolotl.utils.trainer import filter_sequences_by_length
+from axolotl.utils.dict import DictDefault
+from axolotl.utils.trainer import (
+    filter_sequences_by_length,
+    process_datasets_for_packing,
+)
 
 from tests.hf_offline_utils import enable_hf_offline
 
@@ -58,6 +64,61 @@ class TestEncodePretraining(unittest.TestCase):
         self.assertEqual(result["input_ids"][0][13], self.tokenizer.eos_token_id)
         self.assertEqual(result["input_ids"][0][14], self.tokenizer.pad_token_id)
 
+    def _pretrain_strategy(self, sequence_len):
+        cfg = DictDefault(
+            {
+                "train_on_inputs": False,
+                "sequence_len": sequence_len,
+                "pretraining_dataset": [{"text_column": "text"}],
+            }
+        )
+        return load_pretrain(self.tokenizer, cfg)
+
+    def test_long_document_is_chunked_not_dropped(self):
+        """Long docs must be chunked into windows that survive the length filter (#3441)."""
+        for sequence_len in (256, 512, 2048):
+            with self.subTest(sequence_len=sequence_len):
+                strat = self._pretrain_strategy(sequence_len)
+                long_doc = " ".join(f"token{i}" for i in range(4 * sequence_len))
+                windows = strat._tokenize(long_doc)["input_ids"]
+
+                # the document spans more than one window (i.e. it was chunked)
+                self.assertGreater(len(windows), 1)
+
+                for window in windows:
+                    # every window survives the downstream length filter ...
+                    self.assertLessEqual(len(window), sequence_len)
+                    self.assertTrue(
+                        filter_sequences_by_length(
+                            {"input_ids": window}, sequence_len=sequence_len
+                        )
+                    )
+                    # ... and ends with EOS
+                    self.assertEqual(window[-1], self.tokenizer.eos_token_id)
+
+    def test_no_tokens_dropped_for_oversized_docs(self):
+        """A doc longer than sequence_len must not be dropped entirely (#3441)."""
+        sequence_len = 256
+        strat = self._pretrain_strategy(sequence_len)
+        long_doc = " ".join(f"token{i}" for i in range(2000))
+        windows = strat._tokenize(long_doc)["input_ids"]
+
+        kept = [
+            w
+            for w in windows
+            if filter_sequences_by_length({"input_ids": w}, sequence_len=sequence_len)
+        ]
+        self.assertTrue(kept, "all windows were dropped — oversized doc lost entirely")
+        self.assertEqual(len(kept), len(windows))
+
+    def test_stride_below_window_size(self):
+        """Tokenization must not raise from a stride >= effective max length."""
+        for sequence_len in (256, 2048):
+            with self.subTest(sequence_len=sequence_len):
+                strat = self._pretrain_strategy(sequence_len)
+                # would raise ValueError from the tokenizer if stride were too large
+                strat._tokenize(" ".join(f"token{i}" for i in range(sequence_len * 3)))
+
     def test_md5(self):
         self.assertEqual(md5("hello world"), "5eb63bbbe01eeed093cb22bb8f5acdc3")
         self.assertEqual(
@@ -103,6 +164,56 @@ class TestEncodePretraining(unittest.TestCase):
         # This should keep the first but drop the second entry
         dropped = filter_sequences_by_length(data, 15)
         self.assertEqual(dropped, [True, False])
+
+
+class TestDropNoTrainableTokens(unittest.TestCase):
+    """
+    test that process_datasets_for_packing drops samples with no trainable tokens
+    """
+
+    def _process(self, labels):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        return process_datasets_for_packing(
+            cfg,
+            Dataset.from_dict({"labels": labels}),
+            Dataset.from_dict({"labels": labels}),
+        )
+
+    def test_fully_masked_sample_is_dropped(self):
+        train_dataset, eval_dataset = self._process(
+            [[-100, -100, -100], [-100, 7, -100]]
+        )
+        self.assertEqual(train_dataset["labels"], [[-100, 7, -100]])
+        self.assertEqual(eval_dataset["labels"], [[-100, 7, -100]])
+
+    def test_all_samples_masked_raises(self):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        with self.assertRaisesRegex(ValueError, "dataset has no samples left"):
+            process_datasets_for_packing(
+                cfg,
+                Dataset.from_dict({"labels": [[-100, -100], [-100, -100, -100]]}),
+                None,
+            )
+
+    def test_all_eval_samples_masked_raises(self):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        with self.assertRaisesRegex(ValueError, "dataset has no samples left"):
+            process_datasets_for_packing(
+                cfg,
+                Dataset.from_dict({"labels": [[1, 2, 3]]}),
+                Dataset.from_dict({"labels": [[-100, -100]]}),
+            )
+
+    def test_already_empty_dataset_does_not_raise(self):
+        # nothing was dropped here, so the all-masked error would misreport the cause
+        train_dataset, _ = self._process([])
+        self.assertEqual(len(train_dataset), 0)
+
+    def test_samples_with_trainable_tokens_are_kept(self):
+        labels = [[1, 2, 3], [-100, 4, -100]]
+        train_dataset, eval_dataset = self._process(labels)
+        self.assertEqual(train_dataset["labels"], labels)
+        self.assertEqual(eval_dataset["labels"], labels)
 
 
 if __name__ == "__main__":
