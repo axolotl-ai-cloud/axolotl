@@ -137,21 +137,22 @@ def _load_nf4_model(
         if main:
             with nf4_phase("NF4 metadata preparation"):
                 _collect_nf4_structures(model, structures)
-        payload = [structures]
+        # the broadcast shapes are packed NF4 storage, so peers cannot re-derive which
+        # parameters were experts; take rank zero's classification instead
+        payload = [
+            structures,
+            _moe_load_state["expert_param_order"] if main else None,
+            _moe_load_state["count"] if main else None,
+        ]
         with nf4_phase("NF4 metadata broadcast"):
             dist.broadcast_object_list(
                 payload, src=0, group=control_group, device=torch.device("cpu")
             )
         if not main:
-            from axolotl.monkeypatch.moe_quant import _moe_load_state
-
+            _moe_load_state["expert_param_order"] = payload[1]
+            _moe_load_state["count"] = payload[2]
             for path, name, transform, shape, dtype in payload[0]:
                 module = model.get_submodule(path)
-                if "expert" in path:
-                    _moe_load_state["expert_param_order"].setdefault(
-                        path, list(module._parameters)
-                    )
-                    _moe_load_state["count"] += 1
                 setattr(
                     module,
                     name,

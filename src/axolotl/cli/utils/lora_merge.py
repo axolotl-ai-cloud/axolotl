@@ -1997,6 +1997,7 @@ def merge_lora_sharded_efficient(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    staged_nf4: bool = False,
     trust_remote_code: bool = False,
     dequant: bool = False,
     override_quantizer: bool = False,
@@ -2017,6 +2018,7 @@ def merge_lora_sharded_efficient(
         nf4_backend: NF4 implementation used for the training base.
         nf4_skips: Resolved module exclusions; when provided, use the staged loading policy.
         nf4_dtype: Training weight dtype used before quantization.
+        staged_nf4: Training used CPU-staged NF4, which has no legacy merge fallback.
         simulate_nf4: Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)
         simulate_nf4_experts: Apply NF4 roundtrip only to MoE expert tensors
             (for quantize_moe_experts). Expert tensors are identified by having
@@ -2131,10 +2133,14 @@ def merge_lora_sharded_efficient(
 
     if unsupported_methods:
         methods_str = ", ".join(unsupported_methods)
+        recovery = (
+            "Staged NF4 training has no legacy merge path, so this adapter cannot be merged."
+            if staged_nf4
+            else "Please use the legacy merge method for advanced LoRA variants."
+        )
         raise NotImplementedError(
             f"Memory-efficient LoRA merge only supports standard LoRA. "
-            f"Detected unsupported methods: {methods_str}. "
-            f"Please use the legacy merge method for advanced LoRA variants."
+            f"Detected unsupported methods: {methods_str}. {recovery}"
         )
 
     use_rslora = bool(lora_config_dict.get("use_rslora", False))
