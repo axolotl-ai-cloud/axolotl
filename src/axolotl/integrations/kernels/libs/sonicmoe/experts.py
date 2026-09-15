@@ -234,12 +234,18 @@ def _sonicmoe_nongated_forward(
     if b1 is not None or b2 is not None:
         raise NotImplementedError("sonicmoe non-gated experts do not support bias")
 
+    # EP sentinel rows sort past the last segment end here, so their output rows are never
+    # written and the combine would fold uninitialized memory into real tokens.
+    if getattr(self, "num_experts_global", self.num_experts) != self.num_experts:
+        raise NotImplementedError(
+            "sonicmoe non-gated experts do not support expert parallelism yet; "
+            "set experts_implementation: deep_ep (eager) or expert_parallel_size: 1"
+        )
+
     transposed = getattr(self, "is_transposed", False)
     if os.environ.get("AXOLOTL_SONICMOE_NONGATED_FUSED") == "1":
-        # relu²(h) == h · relu(h) exactly, so duplicate the up projection into the
-        # gate half and run the CUTLASS REGLU epilogue (relu(gate) * up); autograd
-        # sums both halves' grads back into up_proj. Requires a sonic-moe build
-        # whose op layer allows reglu (quack ships the epilogue + dreglu backward).
+        # relu²(h) == h · relu(h), so the duplicated up projection through the REGLU epilogue
+        # is exact and autograd sums both halves' grads back into it. Needs a build allowing reglu.
         from transformers.integrations.sonicmoe import sonicmoe_experts_forward
 
         w1 = torch.cat([w1, w1], dim=2 if transposed else 1)
@@ -323,8 +329,16 @@ def _sonicmoe_nvfp4_forward(
     act = resolve_gated_activation(self.config)
     limit = getattr(self, "limit", None)
     concat = getattr(self, "is_concatenated", True)
-    # `gated_activation` honors `limit`, so this path additionally accepts clamped SwiGLU.
-    check_epilogue(self, act, concat=concat, limit=limit, path="NVFP4 grouped")
+    if not getattr(self, "has_gate", True):
+        # `_apply_gate` is not the contract for non-gated experts, so check `act` directly.
+        if act not in ("relu2", "relu_squared"):
+            raise NotImplementedError(
+                f"sonicmoe non-gated NVFP4 experts support only the relu² activation "
+                f"(nemotron_h); got {act!r}"
+            )
+    else:
+        # `gated_activation` honors `limit`, so this path additionally accepts clamped SwiGLU.
+        check_epilogue(self, act, concat=concat, limit=limit, path="NVFP4 grouped")
 
     lora1 = (lora_w1[0], lora_w1[1]) if lora_w1 is not None else None
     lora2 = (lora_w2[0], lora_w2[1]) if lora_w2 is not None else None
