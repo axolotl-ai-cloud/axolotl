@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-pytestmark = [
-    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
-]
+requires_cuda = pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA required"
+)
 
 pytest.importorskip("transformers.models.qwen3_5")
 pytest.importorskip("transformers.models.qwen3_5_moe")
@@ -32,7 +32,7 @@ def restore_qwen3_5_attention():
         _clear_patched_flag(Qwen3_5Attention)
 
 
-def _build_qwen3_5_text_model(seed: int = 0):
+def _build_qwen3_5_text_model(seed: int = 0, device: str = "cuda"):
     from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
     from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5TextModel
 
@@ -51,11 +51,13 @@ def _build_qwen3_5_text_model(seed: int = 0):
         layer_types=["full_attention", "full_attention"],
     )
     cfg._attn_implementation = "sdpa"
-    return Qwen3_5TextModel(cfg).cuda().to(torch.bfloat16).eval()
+    return Qwen3_5TextModel(cfg).to(device=device, dtype=torch.bfloat16).eval()
 
 
 def _run_attention(model, layer_idx, hidden_states, position_ids):
     attn = model.layers[layer_idx].self_attn
+    if position_ids.ndim == 2:
+        position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
     cos, sin = model.rotary_emb(hidden_states, position_ids)
     out, _ = attn(
         hidden_states=hidden_states,
@@ -65,11 +67,15 @@ def _run_attention(model, layer_idx, hidden_states, position_ids):
     return out
 
 
+@requires_cuda
 class TestQwen3_5FusedAttnParity:
     """Single-layer parity vs stock."""
 
+    @pytest.mark.parametrize("multimodal_positions", [False, True])
     @pytest.mark.parametrize("layer_idx", [0, 1])
-    def test_forward_matches_stock(self, restore_qwen3_5_attention, layer_idx):
+    def test_forward_matches_stock(
+        self, restore_qwen3_5_attention, layer_idx, multimodal_positions
+    ):
         from axolotl.monkeypatch.models.qwen3_5.fused_attn import (
             patch_qwen3_5_fused_attn,
         )
@@ -77,6 +83,8 @@ class TestQwen3_5FusedAttnParity:
         m = _build_qwen3_5_text_model(seed=1)
         hs = torch.randn(2, 16, 128, device="cuda", dtype=torch.bfloat16)
         pos = torch.arange(16, device="cuda").unsqueeze(0).expand(2, -1)
+        if multimodal_positions:
+            pos = torch.stack((pos, pos // 2, pos % 2))
 
         with torch.no_grad():
             ref = _run_attention(m, layer_idx, hs, pos)
@@ -96,6 +104,7 @@ class TestQwen3_5FusedAttnParity:
         torch.testing.assert_close(got, ref, rtol=5e-2, atol=5e-2)
 
 
+@requires_cuda
 class TestQwen3_5FusedAttnBackward:
     def test_q_k_norm_grads_finite_nonzero(self, restore_qwen3_5_attention):
         from axolotl.monkeypatch.models.qwen3_5.fused_attn import (
@@ -122,6 +131,7 @@ class TestQwen3_5FusedAttnBackward:
             assert attn.k_norm.weight.grad.abs().sum() > 0
 
 
+@requires_cuda
 class TestQwen3_5FusedAttnLoRACompose:
     """Pin LoRA-QKV → fused composition; ``QKV_PATCHES`` includes a chunk-2 variant for Qwen3.5's ``q_proj * 2``."""
 
@@ -219,6 +229,7 @@ def _build_qwen3_5_moe_model(seed: int = 0):
     return Qwen3_5MoeTextModel(cfg).cuda().to(torch.bfloat16).eval()
 
 
+@requires_cuda
 class TestQwen3_5MoeFusedAttnParity:
     """End-to-end parity on the MoE variant (attention is structurally identical to dense Qwen3.5)."""
 
@@ -250,6 +261,7 @@ class TestQwen3_5MoeFusedAttnParity:
         assert cos_sim > 0.999, f"qwen3_5_moe end-to-end cosine_sim={cos_sim:.6f}"
 
 
+@requires_cuda
 class TestQwen3_5MoeFusedAttnBackward:
     """Backward grad flow through the fused Q/K-norm kernels on Qwen3.5-MoE."""
 
@@ -278,6 +290,7 @@ class TestQwen3_5MoeFusedAttnBackward:
             assert attn.k_norm.weight.grad.abs().sum() > 0
 
 
+@requires_cuda
 class TestQwen3_5MoeFusedAttnLoRACompose:
     """MoE mirror of the Qwen3.5 LoRA-compose test."""
 
@@ -328,6 +341,7 @@ class TestQwen3_5MoeFusedAttnLoRACompose:
                 pass
 
 
+@requires_cuda
 class TestQwen3_5FusedAttnLigerRMSNormCompose:
     """Liger swaps ``Qwen3_5RMSNorm`` for a subclass that exposes ``variance_epsilon`` instead of ``eps``."""
 
@@ -362,6 +376,7 @@ class TestQwen3_5FusedAttnLigerRMSNormCompose:
         assert torch.isfinite(out.last_hidden_state).all()
 
 
+@requires_cuda
 class TestPatchManagerQwen3_5TextDispatch:
     """Pin that ``_apply_model_specific_patches`` covers the ``*_text`` config types of multimodal Qwen3.5 / Qwen3.5-MoE checkpoints."""
 
@@ -422,3 +437,27 @@ class TestPatchManagerQwen3_5TextDispatch:
             f"PatchManager skipped fused-attn for model_config_type="
             f"{model_config_type!r}; dispatch is missing the _text variant"
         )
+
+
+@pytest.mark.parametrize("multimodal_positions", [False, True])
+def test_attention_rotary_matches_model_position_layout(multimodal_positions):
+    model = _build_qwen3_5_text_model(device="cpu")
+    ids = torch.randint(0, 128, (2, 16))
+    positions = torch.arange(16).unsqueeze(0).expand(2, -1)
+    if multimodal_positions:
+        positions = torch.stack((positions, positions // 2, positions % 2))
+    rotary_outputs = []
+    hook = model.rotary_emb.register_forward_hook(
+        lambda _module, _args, output: rotary_outputs.append(output)
+    )
+    try:
+        with torch.no_grad():
+            model(input_ids=ids, position_ids=positions, use_cache=False)
+            output = _run_attention(model, 0, model.embed_tokens(ids), positions)
+    finally:
+        hook.remove()
+    assert output.shape == (2, 16, 128)
+    assert torch.isfinite(output).all()
+    assert len(rotary_outputs) == 2
+    for actual, expected in zip(rotary_outputs[1], rotary_outputs[0], strict=True):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)

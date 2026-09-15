@@ -1626,7 +1626,7 @@ class TestQuantizedBaseMerge:
         torch.manual_seed(4)
         N, K = 32, 64
         w = torch.randn(N, K, dtype=torch.bfloat16) * 0.2
-        p = (w.abs().max() / (6.0 * 448.0)).reshape(1).float().clamp(min=1e-12)
+        p = (w.abs().max() / (6.0 * 448.0)).reshape(()).float().clamp(min=1e-12)
         try:
             nv = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=p, is_swizzled_scales=False)
         except Exception as ex:  # pragma: no cover - torchao API / device gaps
@@ -1930,7 +1930,7 @@ class TestQuantizedBaseMerge:
         E, H, I, r, alpha = 4, 64, 16, 4, 8
 
         def quant(w2d):
-            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(()).clamp_min(1e-12)
             nv = NVFP4Tensor.to_nvfp4(
                 w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
             )
@@ -2112,7 +2112,36 @@ class TestQuantizedBaseMerge:
                 want = (base_f.float() + delta.float()).to(torch.bfloat16)
                 assert torch.allclose(merged2[key].float(), want.float(), atol=1e-2)
 
-    def test_nvfp4_merge_aware_quantizer_identity(self):
+    @pytest.mark.parametrize("num_experts", [1, 2, 3])
+    @pytest.mark.parametrize("scale_shape", ["vector", "broadcast"])
+    def test_nvfp4_reuse_per_expert_scales_match_slices(self, num_experts, scale_shape):
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+            quantize_nvfp4_merge,
+        )
+
+        torch.manual_seed(42)
+        weight = torch.randn(num_experts, 3, 32) * 0.02
+        pts = torch.linspace(0.001, 0.004, num_experts)
+        scales = torch.full((num_experts, 3, 2), 2.0).to(torch.float8_e4m3fn)
+        supplied_pts = pts if scale_shape == "vector" else pts.reshape(-1, 1, 1)
+        packed, actual_scales = quantize_nvfp4_merge(
+            weight, supplied_pts, scale_mode="reuse", base_block_scale=scales
+        )
+        for expert in range(num_experts):
+            expected_packed, expected_scales = quantize_nvfp4_merge(
+                weight[expert],
+                pts[expert],
+                scale_mode="reuse",
+                base_block_scale=scales[expert],
+            )
+            assert torch.equal(packed[expert], expected_packed)
+            assert torch.equal(
+                actual_scales[expert].view(torch.uint8),
+                expected_scales.view(torch.uint8),
+            )
+
+    @pytest.mark.parametrize("num_experts", [1, 4])
+    def test_nvfp4_merge_aware_quantizer_identity(self, num_experts):
         """The merge-aware invariant: one quantizer, bitwise, on both sides. Fresh mode
         must equal torchao's ``to_nvfp4`` (the ecosystem encoder), quantizing the fused
         ``[E, 2I, H]`` training view must equal quantizing per-projection row slices with
@@ -2136,7 +2165,7 @@ class TestQuantizedBaseMerge:
             s.view(torch.uint8), ref.scale.reshape(s.shape).view(torch.uint8)
         )
 
-        E, N, K = 4, 64, 128
+        E, N, K = num_experts, 64, 128
         wf = (torch.randn(E, N, K) * 0.02).to(torch.bfloat16)
         pts_e = torch.rand(E) * 1e-4 + 1e-5
         pf, sf = quantize_nvfp4_merge(wf, pts_e, scale_mode="fresh")
@@ -2156,7 +2185,8 @@ class TestQuantizedBaseMerge:
         assert torch.equal(fq, nv.dequantize(torch.bfloat16))
         assert torch.equal(fake_quant_nvfp4(fq, pts_e), fq)
 
-    def test_nonexpert_fresh_requant_matches_training_snap(self):
+    @pytest.mark.parametrize("scale_shape", [(), (1,), (1, 1), (1, 1, 1)])
+    def test_nonexpert_fresh_requant_matches_training_snap(self, scale_shape):
         """The non-expert (2D linear, e.g. attention) writer path: fresh-mode
         ``_requant_by_format`` on the merged bf16 weight must reproduce bitwise the
         grid the merge-aware LoRA-linear forward trained against (same
@@ -2170,7 +2200,7 @@ class TestQuantizedBaseMerge:
 
         torch.manual_seed(0)
         w0 = (torch.randn(32, 64) * 0.02).to(torch.bfloat16)
-        pts = (w0.float().abs().max() / (6.0 * 448.0)).reshape(())
+        pts = (w0.float().abs().max() / (6.0 * 448.0)).reshape(scale_shape)
         base_w = fake_quant_nvfp4(w0, pts)
         _, base_scale = quantize_nvfp4_merge(base_w, pts, scale_mode="fresh")
 
@@ -2189,6 +2219,10 @@ class TestQuantizedBaseMerge:
             out["_scale"].view(torch.uint8), train_scale.view(torch.uint8)
         )
         assert torch.equal(out["_scale_2"], pts)
+        reloaded = lm._dequant_nvfp4(out[""], out["_scale"], out["_scale_2"], "cpu")
+        train_view = fake_quant_nvfp4(w_eff, pts)
+        assert train_view.shape == w_eff.shape
+        assert torch.equal(reloaded, train_view)
 
     def test_nvfp4_expert_writer_fresh_mode_matches_training_grid(self):
         """``scale_mode="fresh"``: the expert writer's bytes ARE the training grid.
@@ -2213,7 +2247,7 @@ class TestQuantizedBaseMerge:
         E, H, I, r, alpha = 2, 64, 32, 4, 8
 
         def quant(w2d):
-            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(()).clamp_min(1e-12)
             nv = NVFP4Tensor.to_nvfp4(
                 w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
             )
@@ -2391,7 +2425,7 @@ class TestQuantizedBaseMerge:
     def _quant_expert(w2d):
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
-        p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+        p = (w2d.abs().max() / (6.0 * 448.0)).reshape(()).clamp_min(1e-12)
         nv = NVFP4Tensor.to_nvfp4(
             w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
         )
@@ -2651,7 +2685,7 @@ class TestQuantizedBaseMerge:
             64,
         )  # N<128 -> swizzle pads the scale grid, so numel differs from N*K/16
         w = torch.randn(N, K, dtype=torch.bfloat16) * 0.2
-        p = (w.abs().max() / (6.0 * 448.0)).reshape(1).float().clamp(min=1e-12)
+        p = (w.abs().max() / (6.0 * 448.0)).reshape(()).float().clamp(min=1e-12)
         try:
             nv = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=p, is_swizzled_scales=True)
         except Exception as ex:  # pragma: no cover

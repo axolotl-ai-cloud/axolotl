@@ -150,8 +150,8 @@ def indexer_topk(
 ) -> torch.Tensor:
     """Fused indexer scoring + causal mask + top-k. Returns int32 indices [B,S,topk].
 
-    ``attention_mask`` (additive, broadcastable to [B,S,T]) is added if given; otherwise a causal
-    mask from ``position_ids`` (or arange) is applied. Mirrors GlmMoeDsaIndexer's masking + topk.
+    ``attention_mask`` is boolean (True means allowed) or additive, broadcastable to [B,S,T].
+    When absent, a causal mask is applied. Mirrors GlmMoeDsaIndexer's masking + topk.
 
     Under sample packing, ``seq_q`` [B,S] / ``seq_k`` [B,T] give each query/key its document id;
     the mask then forbids cross-document keys (a key in an earlier packed document is causally
@@ -164,7 +164,10 @@ def indexer_topk(
     B, S, T = scores.shape
     packed = seq_q is not None and seq_k is not None
     if attention_mask is not None and not packed:
-        scores = scores + attention_mask.to(scores.dtype)
+        if attention_mask.dtype == torch.bool:
+            scores = scores.masked_fill(~attention_mask, float("-inf"))
+        else:
+            scores = scores + attention_mask.to(scores.dtype)
     else:
         kpos = torch.arange(T, device=scores.device)
         qpos = q_offset + torch.arange(S, device=scores.device)

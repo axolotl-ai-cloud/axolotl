@@ -50,13 +50,7 @@ def flash_attn_available() -> bool:
     try:
         from transformers.utils import is_flash_attn_2_available
 
-        from axolotl.monkeypatch.attention.fa2_hub_kernel import (
-            is_fa2_hub_kernel_available,
-        )
-
-        # transformers probes the hub at v1, which has no build for newer torch; ask
-        # about the version we pin or these tests silently skip instead of running.
-        return is_flash_attn_2_available() or is_fa2_hub_kernel_available()
+        return is_flash_attn_2_available(kernels_fallback_ok=True)
     except Exception:  # pylint: disable=broad-except
         return False
 
