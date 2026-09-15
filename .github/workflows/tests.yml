@@ -61,6 +61,13 @@ jobs:
         run: |
           curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
+  nf4-distributed:
+    name: NF4 distributed CPU
+    if: ${{ !github.event.pull_request.draft }}
+    uses: ./.github/workflows/nf4-cpu.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
@@ -138,7 +145,7 @@ jobs:
       - name: Run tests
         run: |
           pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
@@ -248,7 +255,7 @@ jobs:
       - name: Run tests
         run: |
           pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
