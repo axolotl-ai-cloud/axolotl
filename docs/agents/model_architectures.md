@@ -60,7 +60,9 @@ lora_target_parameters:
   - experts.down_proj
 ```
 
-Supported: Gemma4 (`gemma4_text`), Mixtral, Qwen MoE variants. The plugin auto-detects model type and routing function. Without ScatterMoE, expert LoRA still works but runs base expert matmul and LoRA as separate operations.
+Supported: Gemma4 (`gemma4_text`), Mixtral, Qwen MoE variants, Nemotron-3 (`nemotron_h`). The plugin auto-detects model type and routing function. Without ScatterMoE, expert LoRA still works but runs base expert matmul and LoRA as separate operations.
+
+Nemotron-3 latentmoe (`nemotron_h`) experts are non-gated (`up_proj`/`down_proj`, relu², no gate_proj) in `moe_latent_size` width: target `experts.up_proj`/`experts.down_proj` in `lora_target_parameters`, and add `fc1_latent_proj`/`fc2_latent_proj` to `lora_target_modules` for the shared latent projections. NVFP4 checkpoints (modelopt MIXED_PRECISION) use the same plugin with `dsv4_fp4_grouped_mode: nvfp4`; only the routed experts stay packed NVFP4, everything else dequantizes to bf16 at load.
 
 ## Gemma 4
 

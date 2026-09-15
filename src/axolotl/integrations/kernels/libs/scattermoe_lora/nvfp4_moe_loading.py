@@ -184,12 +184,23 @@ def inspect_nvfp4_layout(repo_id: str) -> dict:
     routed_projs: list[str] = []
     routed_sample: dict[str, tuple | None] = {}
     nonrouted: dict[str, dict] = {}
+    fp8: dict[str, dict] = {}
     qdata_names: set[str] = set()
     per_tensor_names: set[str] = set()
     for base, parts in bases.items():
         qd = _qdata(parts)
         is_nvfp4 = qd is not None and any(g in parts for g in _GROUP_SCALE_LEAVES)
-        if not is_nvfp4:  # bf16 (excluded) or fp8 module — not NVFP4
+        if not is_nvfp4:  # bf16, fp8, or unscaled: not NVFP4
+            # static-FP8 linear (e4m3 weight + weight_scale). Collected so the caller registers
+            # a dequant converter; without one the raw fp8 loads unscaled into the bf16 skeleton.
+            wmeta = parts.get("weight")
+            if (
+                wmeta is not None
+                and str(wmeta[0]).upper().startswith("F8")
+                and "weight_scale" in parts
+                and not routed_re.search(base)
+            ):
+                fp8.setdefault(layer_re.sub("", base), parts)
             continue
         qdata_names.add(qd)
         for leaf in _PER_TENSOR_LEAVES:
@@ -218,6 +229,7 @@ def inspect_nvfp4_layout(repo_id: str) -> dict:
         "routed_sample_shapes": routed_sample,
         "nonrouted_suffixes": sorted(nonrouted),
         "nonrouted_sample_shapes": nonrouted,
+        "fp8_suffixes": sorted(fp8),
         "qdata_names": sorted(qdata_names),
         "per_tensor_names": sorted(per_tensor_names),
         "naming": naming,
@@ -467,6 +479,8 @@ def patch_skip_missing_expert_init() -> None:
     def patched(self, *args, **kwargs):
         for mod in self.modules():
             gup = getattr(mod, "gate_up_proj", None)
+            if gup is None:  # non-gated experts have no gate to fuse
+                gup = getattr(mod, "up_proj", None)
             dn = getattr(mod, "down_proj", None)
             if (
                 isinstance(gup, torch.Tensor)
@@ -560,6 +574,15 @@ def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> i
             nvfp4 = fuse_nvfp4_experts(projs)
             setattr(mod, fused, torch.nn.Parameter(nvfp4, requires_grad=False))
             n += 1
+    if n == 0:
+        # Missing-expert init is patched out on this path, so filling nothing trains on noise.
+        raise RuntimeError(
+            f"AXOLOTL_DIRECT_EXPERT_LOAD: no routed experts matched in {repo_id!r}. This "
+            f"path needs checkpoint keys '<prefix>.layers.N.mlp.experts.E.{proj0}.weight' "
+            "whose prefix also names the module (it does not handle layouts that rename the "
+            "root, e.g. nemotron_h's backbone. -> model.). Unset AXOLOTL_DIRECT_EXPERT_LOAD "
+            "to use the standard converter path."
+        )
     return n
 
 
