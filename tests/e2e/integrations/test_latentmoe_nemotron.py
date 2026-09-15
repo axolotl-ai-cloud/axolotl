@@ -210,9 +210,7 @@ def test_nvfp4_mixed_precision_checkpoint_load(tmp_path):
 
     ckpt = {}
     for k, v in sd.items():
-        hub_key = k.replace("model.", "backbone.", 1).replace(
-            "backbone.embeddings.weight", "backbone.embedding.weight"
-        )
+        hub_key = k.replace("model.", "backbone.", 1)
         if ".mixer.experts." in hub_key and hub_key.endswith(("up_proj", "down_proj")):
             proj = "up_proj" if hub_key.endswith("up_proj") else "down_proj"
             prefix = hub_key[: hub_key.rfind(".experts.")] + ".experts"
