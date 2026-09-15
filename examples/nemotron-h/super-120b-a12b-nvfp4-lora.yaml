@@ -1,7 +1,5 @@
-# Nemotron-3 Super NVFP4 checkpoint + ScatterMoE expert kernels.
-# The routed experts stay packed NVFP4 (modelopt MIXED_PRECISION: experts NVFP4,
-# shared path FP8 -> dequantized to bf16 at load); LoRA trains on the experts via
-# the grouped fp4 path and on the shared projections as regular LoRA modules.
+# Nemotron-3 Super NVFP4 + ScatterMoE expert kernels: routed experts stay packed NVFP4,
+# everything else dequantizes to bf16 at load; LoRA trains on experts and shared projections.
 # See examples/nemotron-h/README.md for architecture notes and requirements.
 base_model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
 
@@ -19,7 +17,7 @@ use_kernels: true
 use_scattermoe: true
 dsv4_fp4_grouped_mode: nvfp4
 
-# LoRA kernel patches are incompatible with this architecture — see README.
+# LoRA kernel patches are incompatible with this architecture (see README).
 lora_mlp_kernel: false
 lora_qkv_kernel: false
 lora_o_kernel: false
