@@ -34,6 +34,12 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+_FP8_DTYPES = tuple(
+    getattr(torch, n)
+    for n in ("float8_e4m3fn", "float8_e5m2", "float8_e4m3fnuz", "float8_e5m2fnuz")
+    if hasattr(torch, n)
+)
+
 
 def _nvfp4_cls():
     try:
@@ -320,15 +326,15 @@ class Nvfp4ExpertsDeserialize:
 
 
 class Nvfp4LinearDequantize:
-    """ConversionOps that dequantizes one NVFP4 ``nn.Linear`` weight to bf16 in place.
+    """ConversionOps that dequantizes one non-routed ``nn.Linear`` weight to bf16 in place.
 
-    Consumes a single module's NVFP4 triple — ``weight`` (uint8 qdata ``[out, in/2]``),
-    ``weight_scale`` (e4m3 group-16 ``[out, in/16]``), ``weight_scale_2`` (per-tensor scalar) —
-    and assigns ``dequantize(NVFP4Tensor(...))`` to the target ``.weight`` param. Used for whatever
-    non-routed linears a given checkpoint quantizes (the caller decides which, from the index);
-    this op makes no assumption about which modules those are. ``input_dict`` holds the three
-    source tensors (each a 1-element list under a non-wildcard source pattern); ``full_layer_name``
-    is the target ``....weight``.
+    ``input_dict`` holds a single module's source tensors (each a 1-element list under a
+    non-wildcard source pattern); ``full_layer_name`` is the target ``....weight``.
+
+    modelopt MIXED_PRECISION exports quantize per LAYER, not per module name, while converters
+    are registered per suffix, so the branch comes from the keys THIS layer ships:
+    ``weight_scale_2`` -> NVFP4 (uint8 qdata ``[out, in/2]`` + e4m3 group-16 scale + per-tensor
+    scalar), ``weight_scale`` alone -> static FP8 (``weight · scale``), neither -> passthrough.
     """
 
     def convert(
@@ -343,31 +349,42 @@ class Nvfp4LinearDequantize:
     ) -> dict[str, Any]:
         from transformers.quantizers.quantizers_utils import get_module_from_name
 
-        NVFP4Tensor = _nvfp4_cls()
-        if NVFP4Tensor is None:
+        def _get(pat_suffix: str):
+            for key, val in input_dict.items():
+                if key.endswith(pat_suffix):
+                    return val[0] if isinstance(val, (list, tuple)) else val
+            return None
+
+        def _one(pat_suffix: str) -> torch.Tensor:
+            val = _get(pat_suffix)
+            if val is None:
+                raise KeyError(
+                    f"Nvfp4LinearDequantize: could not find '{pat_suffix}' in "
+                    f"input_dict keys: {list(input_dict.keys())}"
+                )
+            return val
+
+        w = _one(".weight")
+        # key presence, not dtype: dtype is unavailable on the meta path.
+        is_nvfp4 = _get(".weight_scale_2") is not None
+        is_fp8 = not is_nvfp4 and _get(".weight_scale") is not None
+
+        module, param_name = get_module_from_name(model, full_layer_name)
+        if is_nvfp4 and _nvfp4_cls() is None:
+            # checked before the meta branch so every rank fails, not just rank 0
             raise RuntimeError(
                 "torchao.prototype.mx_formats.nvfp4_tensor.NVFP4Tensor not found; "
                 "install torchao with NVFP4 support"
             )
 
-        def _one(pat_suffix: str) -> torch.Tensor:
-            for key, val in input_dict.items():
-                if key.endswith(pat_suffix):
-                    return val[0] if isinstance(val, (list, tuple)) else val
-            raise KeyError(
-                f"Nvfp4LinearDequantize: could not find '{pat_suffix}' in "
-                f"input_dict keys: {list(input_dict.keys())}"
-            )
-
-        w = _one(".weight")
-
+        pts = None
         # cpu_ram_efficient_loading: non-local-rank-0 stays on meta (FSDP broadcasts rank 0's
         # weights). qdata is packed [out, in/2] uint8 -> dequantized weight is [out, in] bf16.
         if _nonrank0_meta_load():
-            weight = torch.empty(
-                (w.shape[0], w.shape[1] * 2), dtype=torch.bfloat16, device="meta"
-            )
-        else:
+            shape = (w.shape[0], w.shape[1] * 2) if is_nvfp4 else tuple(w.shape)
+            weight = torch.empty(shape, dtype=torch.bfloat16, device="meta")
+        elif is_nvfp4:
+            NVFP4Tensor = _nvfp4_cls()
             # spawn_materialize casts checkpoint tensors to the skeleton dtype (bf16); recast the
             # raw uint8 qdata / e4m3 scale back (both roundtrip exactly through bf16).
             qdata = w if w.dtype == torch.uint8 else w.to(torch.int32).to(torch.uint8)
@@ -381,10 +398,30 @@ class Nvfp4LinearDequantize:
             weight = NVFP4Tensor(
                 qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts
             ).dequantize(torch.bfloat16)
+        elif is_fp8:
+            scale = _one(".weight_scale").to(torch.float32).reshape(-1)
+            # per-tensor (scalar) or per-row scales both broadcast over the last dim
+            scale = scale if scale.numel() == 1 else scale.view(-1, 1)
+            weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
+        else:
+            # The loader casts sources to the skeleton dtype before we see them, so a packed
+            # weight is only detectable by shape; a scaleless fp8 one only when that cast is
+            # bypassed (rank0-only loading). Both would otherwise load as garbage.
+            expected = getattr(module, param_name, None)
+            if (
+                expected is not None
+                and not isinstance(expected, property)
+                and tuple(w.shape) != tuple(expected.shape)
+            ) or w.dtype in _FP8_DTYPES:
+                raise KeyError(
+                    f"{full_layer_name}: quantized weight ({w.dtype}, shape {tuple(w.shape)}) "
+                    f"with no scale in the checkpoint (keys: {list(input_dict.keys())}); "
+                    "it would load unscaled"
+                )
+            weight = w
 
-        module, param_name = get_module_from_name(model, full_layer_name)
         setattr(module, param_name, nn.Parameter(weight, requires_grad=False))
-        if not weight.is_meta:
+        if pts is not None and not weight.is_meta:
             # merge-aware LoRA needs the original grid's per-tensor scale after dequant
             module._nvfp4_pts = pts.detach().reshape(()).clone()
         if missing_keys is not None:
@@ -399,91 +436,12 @@ class Nvfp4LinearDequantize:
         return _IdentityOp()
 
 
-class Fp8LinearDequantize:
-    """ConversionOps that dequantizes one static-FP8 ``nn.Linear`` weight to bf16 in place.
-
-    modelopt MIXED_PRECISION checkpoints (e.g. Nemotron-3 NVFP4) keep the non-expert linears —
-    latent projections, shared experts, attention, mamba — as static FP8: ``weight`` (e4m3) with a
-    per-tensor ``weight_scale`` (dequant = weight · weight_scale). transformers doesn't recognize
-    ``quant_method: modelopt``, so without this the fp8 weight would load raw (unscaled) into the
-    bf16 skeleton. ``input_scale`` (static activation scale) is claimed and dropped — training
-    activations stay bf16 (W8-dequant), matching how NVFP4 non-expert linears are handled.
-    """
-
-    def convert(
-        self,
-        input_dict: dict[str, Any],
-        source_patterns: list[str] | None = None,
-        target_patterns: list[str] | None = None,
-        full_layer_name: str | None = None,
-        model: nn.Module | None = None,
-        missing_keys: set | None = None,
-        **kwargs,
-    ) -> dict[str, Any]:
-        from transformers.quantizers.quantizers_utils import get_module_from_name
-
-        def _one(pat_suffix: str, required: bool = True):
-            for key, val in input_dict.items():
-                if key.endswith(pat_suffix):
-                    return val[0] if isinstance(val, (list, tuple)) else val
-            if required:
-                raise KeyError(
-                    f"Fp8LinearDequantize: could not find '{pat_suffix}' in "
-                    f"input_dict keys: {list(input_dict.keys())}"
-                )
-            return None
-
-        w = _one(".weight")
-        if _nonrank0_meta_load():
-            weight = torch.empty(w.shape, dtype=torch.bfloat16, device="meta")
-        else:
-            scale = _one(".weight_scale").to(torch.float32).reshape(-1)
-            # per-tensor (scalar) or per-row scales both broadcast over the last dim
-            scale = scale if scale.numel() == 1 else scale.view(-1, 1)
-            weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
-
-        module, param_name = get_module_from_name(model, full_layer_name)
-        setattr(module, param_name, nn.Parameter(weight, requires_grad=False))
-        if missing_keys is not None:
-            missing_keys.discard(full_layer_name)
-        module._is_hf_initialized = True
-        return {}
-
-    @property
-    def reverse_op(self):
-        from transformers.core_model_loading import _IdentityOp
-
-        return _IdentityOp()
-
-
-def fp8_dequant_converters(fp8_suffixes: list[str]) -> list:
-    """Dequant converters for the static-FP8 linears a checkpoint actually quantizes.
-
-    ``fp8_suffixes`` are layer-relative module paths detected from the safetensors headers
-    (e.g. ``"mixer.fc1_latent_proj"``). ``input_scale`` is claimed so it doesn't land
-    UNEXPECTED. Empty list -> no converters."""
-    from transformers.core_model_loading import WeightConverter
-
-    return [
-        WeightConverter(
-            source_patterns=[
-                f"{suf}.weight_scale",
-                f"{suf}.input_scale",
-                f"{suf}.weight",
-            ],
-            target_patterns=f"{suf}.weight",
-            operations=[Fp8LinearDequantize()],
-        )
-        for suf in fp8_suffixes
-    ]
-
-
 def _nvfp4_linear_dequant_converter(target_weight: str):
-    """A WeightConverter that dequantizes one NVFP4 linear (``<target_weight>``) to bf16.
+    """A WeightConverter that dequantizes one non-routed linear (``<target_weight>``) to bf16.
 
-    ``target_weight`` is the distinctive suffix of the linear's ``.weight`` param (e.g.
-    ``"shared_experts.gate_proj.weight"``). The three source patterns claim the NVFP4 triple so
-    none lands UNEXPECTED; longest-suffix-first so ``.weight`` doesn't steal ``.weight_scale*``.
+    ``target_weight`` is the linear's ``.weight`` suffix (e.g. ``"shared_experts.gate_proj.weight"``).
+    Claims the NVFP4 triple, the static-FP8 pair and ``input_scale`` (dropped: training activations
+    stay bf16) so none lands UNEXPECTED; longest-suffix-first so ``.weight`` can't steal a scale.
     """
     from transformers.core_model_loading import WeightConverter
 
@@ -492,6 +450,7 @@ def _nvfp4_linear_dequant_converter(target_weight: str):
         source_patterns=[
             f"{base}.weight_scale_2",
             f"{base}.weight_scale",
+            f"{base}.input_scale",
             f"{base}.weight",
         ],
         target_patterns=target_weight,
@@ -500,26 +459,21 @@ def _nvfp4_linear_dequant_converter(target_weight: str):
 
 
 def nonrouted_dequant_converters(nonrouted_suffixes: list[str]) -> list:
-    """Dequant converters for the non-routed NVFP4 linears a checkpoint actually quantizes.
+    """Dequant converters for the non-routed linears a checkpoint quantizes (NVFP4 or static FP8).
 
-    ``nonrouted_suffixes`` are the layer-relative module paths detected from the safetensors
-    index (e.g. ``"mlp.shared_experts.gate_proj"``, ``"mlp.gate_proj"``) — NOT hardcoded — each
-    pointing at a ``.weight`` to dequantize to bf16. Empty list -> no converters (e.g. a
-    checkpoint that leaves all non-routed linears bf16)."""
+    ``nonrouted_suffixes`` are layer-relative module paths detected from the safetensors index
+    (e.g. ``"mixer.fc1_latent_proj"``), NOT hardcoded. Exactly one converter per suffix: two
+    would share source-pattern strings and transformers resolves those to a single op."""
     return [
         _nvfp4_linear_dequant_converter(f"{suf}.weight") for suf in nonrouted_suffixes
     ]
 
 
 def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> list:
-    """Return the two WeightConverter instances for NVFP4 routed experts.
+    """The two WeightConverter instances for NVFP4 routed experts.
 
-    Gated layout (default; gemma4/qwen3/...): per-expert ``gate/up`` fuse into
-    ``experts.gate_up_proj``. When ``routed_projs`` shows an up/down-only layout
-    (non-gated, nemotron_h), the up converter targets ``experts.up_proj`` instead.
-    Registered in the transformers conversion_mapping cache so the loader finds and
-    applies them during ``from_pretrained``.
-    """
+    Gated (default): per-expert ``gate/up`` fuse into ``experts.gate_up_proj``. When
+    ``routed_projs`` has no gate, the up converter targets ``experts.up_proj`` instead."""
     from transformers.core_model_loading import WeightConverter
 
     op = Nvfp4ExpertsDeserialize()
@@ -606,14 +560,13 @@ def register_nvfp4_expert_converters(
         return any("experts." in t for t in tp)
 
     def _is_ours(conv) -> bool:
-        ours = (Nvfp4ExpertsDeserialize, Nvfp4LinearDequantize, Fp8LinearDequantize)
+        ours = (Nvfp4ExpertsDeserialize, Nvfp4LinearDequantize)
         return any(
             isinstance(op, ours) for op in (getattr(conv, "operations", None) or [])
         )
 
-    # The direct-expert-load fast path (include_routed=False) relies on the stock bf16
-    # expert-fusion converters being absent, so only the non-expert entries are kept and
-    # the list replaces (rather than merges with) whatever is registered.
+    # The direct-expert-load fast path (include_routed=False) needs the stock bf16 expert-fusion
+    # converters gone, so keep only non-expert entries and replace rather than merge.
     existing = get_checkpoint_conversion_mapping(model_type) or []
     keep = [c for c in existing if not _targets_experts(c) and not _is_ours(c)]
     converters = keep + converters
@@ -634,12 +587,17 @@ def register_gemma4_nvfp4_converters() -> None:
 def register_nvfp4_converters_for_layout(model_type: str, layout: dict) -> None:
     """Register NVFP4 converters built from a detected checkpoint ``layout`` (see
     :func:`...nvfp4_moe_loading.inspect_nvfp4_layout`): routed experts fused into packed
-    NVFP4Tensor (when present), each detected non-routed NVFP4 linear dequantized to bf16,
-    and each static-FP8 linear (MIXED_PRECISION checkpoints) dequantized to bf16."""
+    NVFP4Tensor when present, plus every non-routed quantized linear dequantized to bf16.
+
+    The two suffix lists overlap (a suffix can be NVFP4 in one layer, FP8 in the rest), so they
+    are unioned into ONE converter per suffix; the op picks its branch per layer.
+    """
+    nonrouted = sorted(
+        set(layout.get("nonrouted_suffixes", [])) | set(layout.get("fp8_suffixes", []))
+    )
     register_nvfp4_expert_converters(
         model_type,
         include_routed=layout.get("routed_present", False),
         routed_projs=layout.get("routed_projs"),
-        extra=nonrouted_dequant_converters(layout.get("nonrouted_suffixes", []))
-        + fp8_dequant_converters(layout.get("fp8_suffixes", [])),
+        extra=nonrouted_dequant_converters(nonrouted),
     )
