@@ -993,7 +993,7 @@ class ModelLoader:
             self.model._moe_experts_quantized = bool(self.cfg.quantize_moe_experts)
             if not self.cfg.fsdp_config:
                 self.model.to(
-                    torch.device("cuda", int(os.environ.get("LOCAL_RANK", 0)))
+                    f"{str(get_device_type())}:{int(os.environ.get('LOCAL_RANK', 0))}"
                 )
             return True
 

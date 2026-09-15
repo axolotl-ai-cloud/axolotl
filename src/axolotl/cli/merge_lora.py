@@ -80,7 +80,8 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     Does not load the full model into memory.
 
     Supports standard LoRA, RSLoRA, and DoRA. Unsupported methods (AdaLoRA, VeRA)
-    will raise NotImplementedError — use legacy method for those.
+    will raise NotImplementedError — use legacy method for those, unless training
+    used staged NF4, which the legacy path cannot reconstruct.
     """
     LOG.debug("Using memory-efficient LoRA merging method...")
 
@@ -125,6 +126,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         nf4_skips=nf4_skip_modules(cfg.model_config_type, bnb_config_kwargs),
         nf4_dtype=cfg.torch_dtype,
         nf4_double_quant=nf4_double_quant,
+        staged_nf4=bool(getattr(cfg, "_original_staged_nf4", False)),
         nf4_backend=getattr(cfg, "_original_nf4_backend", None)
         or cfg.nf4_backend
         or "bitsandbytes",
