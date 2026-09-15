@@ -480,6 +480,8 @@ def patch_skip_missing_expert_init() -> None:
     def patched(self, *args, **kwargs):
         for mod in self.modules():
             gup = getattr(mod, "gate_up_proj", None)
+            if gup is None:  # non-gated experts have no gate to fuse
+                gup = getattr(mod, "up_proj", None)
             dn = getattr(mod, "down_proj", None)
             if (
                 isinstance(gup, torch.Tensor)
@@ -573,6 +575,15 @@ def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> i
             nvfp4 = fuse_nvfp4_experts(projs)
             setattr(mod, fused, torch.nn.Parameter(nvfp4, requires_grad=False))
             n += 1
+    if n == 0:
+        # Missing-expert init is patched out on this path, so filling nothing trains on noise.
+        raise RuntimeError(
+            f"AXOLOTL_DIRECT_EXPERT_LOAD: no routed experts matched in {repo_id!r}. This "
+            f"path needs checkpoint keys '<prefix>.layers.N.mlp.experts.E.{proj0}.weight' "
+            "whose prefix also names the module (it does not handle layouts that rename the "
+            "root, e.g. nemotron_h's backbone. -> model.). Unset AXOLOTL_DIRECT_EXPERT_LOAD "
+            "to use the standard converter path."
+        )
     return n
 
 
