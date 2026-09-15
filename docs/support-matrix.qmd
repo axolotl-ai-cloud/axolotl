@@ -172,7 +172,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | DeepSeek V2/V3/V4 | DSv4 fused attn/RoPE/MLP kernels, NVFP4 grouped experts (LoRA) |
 | GLM 4.x / 4.7 / 5.2 (+MoE-DSA) | DSA sparse-attention kernels, NVFP4 grouped experts (LoRA) |
 | Hybrid SSM (Mamba, Nemotron-H, Falcon-H1, GraniteMoE-Hybrid) | packing + CP for Mamba2 layers |
-| OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, Apertus, SEED-OSS | packing / tokenizer / activation patches |
+| OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, K2-Horizon, Apertus, SEED-OSS | packing / tokenizer / activation patches |
 | Multimodal 🟡 (Qwen-VL, Pixtral, Llama-Vision, LLaVA, InternVL, SmolVLM2, Voxtral, LFM2-VL) | processor + VL attention support (no full feature parity) |
 | BitNet (1.58-bit) ⚪ | full fine-tune only, **LoRA not supported** (see [1_58bit_finetuning](1_58bit_finetuning.qmd)) |
 
