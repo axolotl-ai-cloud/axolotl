@@ -141,7 +141,7 @@ def _gmm(a, b, offs):
 
 
 def _swiglu(gu, limit, act_type="silu"):
-    # 'relu2' marks the NON-gated relu² MLP (nemotron_h): gu is [Mt, I], no chunk.
+    # 'relu2' is the non-gated MLP: gu is [Mt, I], not a chunked gate/up pair.
     if act_type == "relu2":
         return torch.relu(gu).square()
     from .cutlass_fp4.swiglu import swiglu_fwd
@@ -314,7 +314,7 @@ class _GroupedExperts(torch.autograd.Function):
     """x[Mt,H] -> gate_up(cutlass fp4 base + LoRA) -> activation -> down(...) -> [Mt,H].
     Frozen NVFP4 experts; trainable LoRA A/B (stacked [E,r,K]/[E,N,r]).
     act_type: 'silu' (DSV4 clamped SwiGLU), 'gelu_tanh' (Gemma4 GeGLU), or 'relu2'
-    (nemotron_h NON-gated relu² — the first projection is up-only [E, I, H])."""
+    (non-gated: the first projection is up-only [E, I, H])."""
 
     @staticmethod
     def forward(

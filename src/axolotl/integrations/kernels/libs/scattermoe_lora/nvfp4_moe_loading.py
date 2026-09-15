@@ -190,10 +190,9 @@ def inspect_nvfp4_layout(repo_id: str) -> dict:
     for base, parts in bases.items():
         qd = _qdata(parts)
         is_nvfp4 = qd is not None and any(g in parts for g in _GROUP_SCALE_LEAVES)
-        if not is_nvfp4:  # bf16 (excluded), fp8, or unscaled module — not NVFP4
-            # static-FP8 linear (modelopt MIXED_PRECISION group_0): e4m3 weight + weight_scale.
-            # Collected so the caller can register bf16-dequant converters — without them the
-            # raw (unscaled) fp8 values would load into the bf16 skeleton.
+        if not is_nvfp4:  # bf16, fp8, or unscaled: not NVFP4
+            # static-FP8 linear (e4m3 weight + weight_scale). Collected so the caller registers
+            # a dequant converter; without one the raw fp8 loads unscaled into the bf16 skeleton.
             wmeta = parts.get("weight")
             if (
                 wmeta is not None

@@ -537,8 +537,7 @@ def grouped_expert_mlp_lora(
 ) -> torch.Tensor:
     """Chain up-LoRA -> activation -> down-LoRA over grouped tokens.
 
-    ``gated=False`` (nemotron_h non-gated experts): ``w1`` is up-only ``[E, I, H]``
-    and the activation applies elementwise (no gate/up split).
+    ``gated=False``: ``w1`` is up-only ``[E, I, H]``.
 
     ``lora1`` / ``lora2`` are ``(lora_A, lora_B)`` tuples or ``None`` (``None``
     means plain base grouped GEMM, no low-rank path). ``b1`` / ``b2`` are

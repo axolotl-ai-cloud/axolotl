@@ -3,17 +3,10 @@
 
 """Non-gated (relu²) grouped experts forward for the sonicmoe backend.
 
-The sonic-moe op layer currently asserts gated epilogues (swiglu/geglu) even
-though quack ships reglu/relu_sq, so non-gated experts (nemotron_h) route here:
-a single-launch ``torch._grouped_mm`` MLP with a hand-written backward
-(``_grouped_mm`` has no usable autograd). Differentiable to ``x``, ``w1``,
-``w2`` — full-param training gets real weight grads, and LoRA composes by
-passing the ``MoELoRAMaterialize``-built ``W_eff`` in as the weights. The
-per-expert ``F.linear`` loop keeps CPU/float64 correctness for tests.
-
-``AXOLOTL_SONICMOE_NONGATED_FUSED=1`` instead takes the REGLU-duplication path
-through the CUTLASS kernel (``relu²(h) == relu(h)·h``); it requires a
-sonic-moe build whose op layer allows the reglu epilogue.
+The sonic-moe op layer asserts gated epilogues (swiglu/geglu), so non-gated experts
+route to a ``torch._grouped_mm`` MLP here with a hand-written backward (``_grouped_mm``
+has no usable autograd). ``AXOLOTL_SONICMOE_NONGATED_FUSED=1`` takes the REGLU-duplication
+path (``relu²(h) == relu(h)·h``) instead, and needs a build that allows the reglu epilogue.
 """
 
 from __future__ import annotations
@@ -122,11 +115,7 @@ def sonicmoe_nongated_forward(
     w2: torch.Tensor,
     num_experts: int,
 ) -> torch.Tensor:
-    """Route → grouped non-gated relu² MLP → weighted combine.
-
-    ``w1`` / ``w2`` may be ``MoELoRAMaterialize`` outputs (LoRA) or the raw
-    params (full-param); both receive gradients through the Function.
-    """
+    """Route → grouped non-gated relu² MLP → weighted combine."""
     from .nvfp4_lora import combine_expert_outputs, route_and_group
 
     x_g, expert_offsets, gather_idx, w_g = route_and_group(

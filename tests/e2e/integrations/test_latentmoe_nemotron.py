@@ -4,17 +4,13 @@
 
 """Nemotron-3 latentmoe (non-gated relu² experts) through the MoE kernels.
 
-Parity vs the eager NemotronH experts at three depths:
-  - experts module (fwd + full-param grads), latent and non-latent widths
-  - single-MoE-layer causal LM ("*E" hybrid pattern), full-param and PEFT
-    ``target_parameters`` LoRA
-  - NVFP4 (modelopt-style block-16) base + LoRA via the grouped fp4 (scattermoe)
-    and grouped dequant (sonicmoe) paths
+Parity vs the eager NemotronH experts at three depths: the experts module (fwd +
+full-param grads), a single-MoE-layer causal LM (full-param and ``target_parameters``
+LoRA), and an NVFP4 base + LoRA through the scattermoe and sonicmoe paths.
 
-The latent geometry is what makes this arch distinct: tokens reach the experts
-already projected to ``moe_latent_size`` (¼ of hidden), so the expert weights
-are [E, I, L] / [E, L, I] with L != hidden_size and the router still scores in
-full hidden width.
+Latent geometry is what makes this arch distinct: tokens reach the experts already
+projected to ``moe_latent_size``, so expert weights are [E, I, L] / [E, L, I] with
+L != hidden_size while the router still scores in full hidden width.
 """
 
 import pytest
@@ -182,10 +178,9 @@ except ImportError:
 
 @pytest.mark.skipif(NVFP4Tensor is None, reason="torchao required")
 def test_nvfp4_mixed_precision_checkpoint_load(tmp_path):
-    """Synthetic Nemotron-3 NVFP4 checkpoint (modelopt MIXED_PRECISION hub layout:
-    backbone.* keys, per-expert NVFP4 up/down triples, static-FP8 latent projs) loads
-    through the layout-driven converters: experts land as fused NVFP4Tensor, FP8
-    linears dequantize, and the scattermoe forward matches a bf16 reference model."""
+    """Synthetic Nemotron-3 NVFP4 checkpoint (backbone.* keys, per-expert NVFP4 triples,
+    static-FP8 latent projs) loads through the layout-driven converters, and the
+    scattermoe forward matches a bf16 reference."""
     import json
 
     from safetensors.torch import save_file

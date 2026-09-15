@@ -22,8 +22,6 @@ from .selective_dequant import (
 
 
 def _w1_name(module) -> str:
-    """First-projection param name: ``gate_up_proj`` (gated) or ``up_proj`` (non-gated,
-    e.g. nemotron_h latent experts)."""
     return "gate_up_proj" if hasattr(module, "gate_up_proj") else "up_proj"
 
 
@@ -274,11 +272,9 @@ def _detect_act_type(module) -> str:
 
 
 def scattermoe_supports_layout(self) -> bool:
-    """True iff this experts module uses a layout scattermoe handles: gate_up
-    concatenated as [E, 2I, H] gated SwiGLU, OR the non-gated up/down layout
-    ([E, I, H] up_proj, e.g. nemotron_h latent experts) — both non-transposed and
-    biasless. gpt_oss-style experts (interleaved gate/up, transposed [E, H, 2I],
-    expert bias) return False."""
+    """True iff scattermoe handles this expert layout: non-transposed and biasless, with
+    either concatenated ``[E, 2I, H]`` gate_up or a bare ``[E, I, H]`` ``up_proj`` (non-gated).
+    gpt_oss-style experts (interleaved, transposed, biased) return False."""
     if getattr(self, "is_transposed", False) or getattr(self, "has_bias", False):
         return False
     if not getattr(self, "has_gate", True):
@@ -290,7 +286,7 @@ def _check_supported_layout(self):
     """Reject expert layouts the fixed transpose/chunk below would miscompute."""
     if not scattermoe_supports_layout(self):
         raise NotImplementedError(
-            "scattermoe supports concatenated, non-transposed, biasless experts — "
+            "scattermoe supports concatenated, non-transposed, biasless experts: "
             "gated (qwen/mixtral/deepseek/glm/...) or non-gated up/down (nemotron_h). "
             "This model's experts use an unsupported layout; use use_sonicmoe or a "
             "built-in experts_implementation."
@@ -605,7 +601,6 @@ def scattermoe_experts_forward(
             h = h.clamp(min=-_limit, max=_limit)
         h = self.act_fn(gates) * h
     else:
-        # non-gated experts (e.g. nemotron_h relu2): plain act between up and down
         h = self.act_fn(gates_h)
 
     output = _parallel_linear_maybe_lora(

@@ -2,11 +2,10 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
-"""Non-gated (relu²) expert support for the MoE kernels — nemotron_h latent experts.
+"""Non-gated (relu²) expert support for the MoE kernels (nemotron_h latent experts).
 
-CPU-tier coverage: layout acceptance, activation detection/resolution, the
-non-gated activation itself, and the sonicmoe grouped fallback math (float64,
-per-expert loop path) against a per-token oracle.
+CPU tier: layout acceptance, activation resolution, and the sonicmoe grouped
+fallback math against a per-token oracle.
 """
 
 from types import SimpleNamespace

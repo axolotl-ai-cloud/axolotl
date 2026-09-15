@@ -207,8 +207,7 @@ class TestExpertsClassMetadata:
     """
 
     def test_non_gated_requires_relu2(self):
-        # non-gated experts (nemotron_h) are supported, but only with the relu²
-        # activation; any other act on a non-gated module must fail loudly.
+        # non-gated experts are supported only with relu²; any other act must fail loudly.
         from axolotl.integrations.kernels.libs.sonicmoe.experts import (
             sonicmoe_experts_forward_with_lora,
         )
@@ -240,8 +239,7 @@ class TestExpertsClassMetadata:
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
     def test_non_gated_rejects_bias(self):
-        # a down-proj-only bias must fail loudly, not be silently dropped by the
-        # grouped fallback (which takes no bias operands)
+        # the grouped fallback takes no bias operands, so a bias must fail loudly, not be dropped
         from axolotl.integrations.kernels.libs.sonicmoe.experts import (
             sonicmoe_experts_forward_with_lora,
         )

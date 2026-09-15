@@ -77,8 +77,7 @@ def modelopt_quant_model_config(cfg, algos=("NVFP4",)):
 
 
 def modelopt_nvfp4_model_config(cfg):
-    """The base model's HF config iff it declares a modelopt-NVFP4 quantization
-    (``quant_method=modelopt`` / ``quant_algo=NVFP4``), else None. Callers narrow by model_type."""
+    """``modelopt_quant_model_config`` narrowed to ``quant_algo=NVFP4``."""
     return modelopt_quant_model_config(cfg, algos=("NVFP4",))
 
 

@@ -122,8 +122,7 @@ class _LoRAExpertsFacade:
         from .nvfp4 import resolve_gated_activation
 
         concat = getattr(experts_module, "is_concatenated", True)
-        # An explicit ``act`` means the caller rewrote non-gated weights into a gated layout;
-        # ``_apply_gate`` is not the contract for those experts, so there is nothing to probe.
+        # An explicit ``act`` means rewritten non-gated weights: no ``_apply_gate`` to probe.
         if act is None:
             from .epilogue import check_epilogue
 
@@ -256,8 +255,6 @@ def _sonicmoe_nongated_forward(
             top_k_weights,
         )
 
-    # Default: single-launch grouped-GEMM MLP (the current sonic-moe op layer
-    # asserts gated epilogues).
     from .nongated import sonicmoe_nongated_forward
 
     if transposed:

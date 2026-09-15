@@ -19,8 +19,7 @@ def _is_sonicmoe_experts(module) -> bool:
     impl = getattr(cfg, "_experts_implementation", None)
     if impl != "sonicmoe":
         return False
-    # gated experts, or the non-gated up/down layout (nemotron_h); num_experts guards
-    # against dense-MLP modules that also carry an up_proj attr.
+    # `num_experts` guards against dense-MLP modules that also carry an `up_proj`.
     return hasattr(module, "gate_up_proj") or (
         hasattr(module, "up_proj") and hasattr(module, "num_experts")
     )

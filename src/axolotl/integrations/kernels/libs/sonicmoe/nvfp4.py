@@ -95,12 +95,10 @@ def dequantize_expert_slice(w: torch.Tensor, e: int) -> torch.Tensor:
 
 
 def resolve_gated_activation(config) -> str:
-    """Canonical gated-activation name from an HF text config.
+    """Canonical activation name from an HF text config.
 
-    Honors ``hidden_activation`` (Gemma's key, e.g. ``gelu_pytorch_tanh``) before
-    ``hidden_act`` (most other models), then ``mlp_hidden_act`` (nemotron_h, which
-    has NO ``hidden_act`` — reading only that would silently run SwiGLU where the
-    model wants relu²).
+    Tries ``hidden_activation`` (Gemma), ``hidden_act``, then ``mlp_hidden_act``
+    (nemotron_h, which has no ``hidden_act``). Missing a key silently runs SwiGLU.
     """
     act = (
         getattr(config, "hidden_activation", None)
@@ -123,9 +121,8 @@ def gated_activation(
     Returns ``[..., I]``. ``concat=True`` (HF default) splits gate/up as the
     first/second half; ``concat=False`` (interleaved) takes even/odd lanes.
 
-    ``gated=False`` (non-gated experts, e.g. nemotron_h): ``h`` is ``[..., I]``
-    and the activation applies elementwise with no gate/up split — supported
-    ``act``: ``relu2``/``relu_squared`` (relu²), ``relu``, ``silu``, ``gelu``.
+    ``gated=False``: ``h`` is ``[..., I]`` and the activation applies elementwise
+    (``relu2``/``relu_squared``, ``relu``, ``silu``, ``gelu``).
 
     Supported ``act`` (``up * f(gate)``):
       - swiglu / silu -> ``f = silu``

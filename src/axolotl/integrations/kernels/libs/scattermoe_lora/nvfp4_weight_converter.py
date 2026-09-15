@@ -245,7 +245,6 @@ class Nvfp4ExpertsDeserialize:
         if full_layer_name is not None and "gate_up_proj" in full_layer_name:
             proj = "gate_up_proj"
         elif full_layer_name is not None and full_layer_name.endswith("up_proj"):
-            # non-gated (nemotron_h) layout: single up projection, no gate to fuse
             proj = "up_proj"
         else:
             proj = "down_proj"
@@ -292,9 +291,8 @@ class Nvfp4ExpertsDeserialize:
                 "pts": list(_find(f"{proj_name}.weight_scale_2")),
             }
 
-        # gate/up fuse on the N axis (each ships its own per-tensor scale, reconciled in the core);
-        # up (non-gated) and down are single projections. Fusion + scale reconciliation live in
-        # fuse_nvfp4_experts.
+        # gate/up fuse on the N axis (each ships its own per-tensor scale, reconciled in
+        # fuse_nvfp4_experts); up (non-gated) and down are single projections.
         if proj == "gate_up_proj":
             projs = [_proj_parts("gate_proj"), _proj_parts("up_proj")]
         else:
@@ -499,7 +497,7 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
         up_converter = WeightConverter(
             source_patterns=[
                 # gate and up each ship their own weight_scale_2 scalar; claim BOTH so neither lands
-                # as an UNEXPECTED key (the op reconciles them — equal in practice, folded if not).
+                # as an UNEXPECTED key (the op reconciles them: equal in practice, folded if not).
                 "experts.*.gate_proj.weight_scale_2",
                 "experts.*.up_proj.weight_scale_2",
                 "experts.*.gate_proj.weight_scale",
@@ -532,16 +530,13 @@ def register_nvfp4_expert_converters(
 ) -> None:
     """Seed the transformers conversion_mapping cache with NVFP4 converters for ``model_type``.
 
-    The routed-expert converters (``Nvfp4ExpertsDeserialize`` + the ``experts.*.{proj}.weight*``
-    source patterns) fuse per-expert ``gate/up/down`` (or non-gated ``up/down`` when
-    ``routed_projs`` shows no gate) into the model's 3D expert params; they are registered when
-    ``include_routed`` (gate this on the checkpoint actually exporting per-expert NVFP4).
-    ``extra`` carries any per-checkpoint non-routed dequant converters (built from the detected
-    index layout). Non-expert entries of the model's EXISTING mapping (e.g. nemotron_h's
-    ``backbone.`` → ``model.`` renames) are preserved — registration replaces the whole
-    per-model list, so dropping them would break the load. The model's built-in bf16 expert-merge
-    converters are replaced (they'd fight ours for the same source keys). Safe to call repeatedly
-    (our converters are tagged and filtered out of the preserved set on re-entry).
+    The routed-expert converters fuse per-expert ``gate/up/down`` (or ``up/down`` when
+    ``routed_projs`` has no gate) into the model's 3D expert params, registered only when
+    ``include_routed``. ``extra`` carries the per-checkpoint non-routed dequant converters.
+    Registration replaces the whole per-model list, so the model's non-expert entries (e.g.
+    nemotron_h's ``backbone.`` -> ``model.`` renames) must be re-added or the load breaks; its
+    built-in bf16 expert-merge converters are dropped (they fight ours for the same keys).
+    Idempotent: our converters are filtered out of the preserved set on re-entry.
     """
     from transformers.conversion_mapping import get_checkpoint_conversion_mapping
 
