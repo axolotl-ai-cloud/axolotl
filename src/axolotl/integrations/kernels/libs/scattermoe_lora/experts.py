@@ -454,8 +454,8 @@ def scattermoe_experts_forward(
                     "disable dsv4_fp4_grouped_mode."
                 )
             # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
-            _recipe = lambda: (  # noqa: E731
-                _get_base_param(self.gate_up_proj),
+            _recipe = lambda p=w1_attr: (  # noqa: E731
+                _get_base_param(getattr(self, p)),
                 _get_base_param(self.down_proj),
             )
             # persistent per-module cache so the backend requantizes the frozen weight to mxfp4
@@ -738,8 +738,8 @@ def scattermoe_experts_forward_ep(
             from .grouped_train import grouped_fp4_available
 
             if grouped_fp4_available(_fp4_grouped_mode_g):
-                _recipe_g = lambda: (  # noqa: E731
-                    _get_base_param(self.gate_up_proj),
+                _recipe_g = lambda p=_w1_attr: (  # noqa: E731
+                    _get_base_param(getattr(self, p)),
                     _get_base_param(self.down_proj),
                 )
                 _cache_g = self.__dict__.setdefault("_dg_mxfp4_cache", {})
