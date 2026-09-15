@@ -26,6 +26,11 @@ from axolotl.integrations.kernels.libs.sonicmoe.nvfp4 import (
 
 
 class TestLayoutAcceptance:
+    """scattermoe layout gating; importing its experts module pulls in triton."""
+
+    def setup_method(self):
+        pytest.importorskip("triton")
+
     def _mod(self, **kw):
         base = {
             "is_transposed": False,
@@ -66,6 +71,7 @@ class TestLayoutAcceptance:
 
 class TestActResolution:
     def test_detect_relu2(self):
+        pytest.importorskip("triton")
         from transformers.activations import ACT2FN
 
         from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
@@ -160,3 +166,27 @@ class TestNonGatedGroupedMLP:
         w2 = torch.randn(E, L, I, dtype=torch.float64)
         y = _NonGatedGroupedMLP.apply(x, w1, w2, offs)
         assert torch.allclose(y, F.relu(x @ w1[1].T).square() @ w2[1].T)
+
+
+def test_expert_parallelism_rejected():
+    """EP sentinel rows would combine as uninitialized memory, so the path must refuse."""
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+        _sonicmoe_nongated_forward,
+    )
+
+    experts = SimpleNamespace(
+        config=SimpleNamespace(mlp_hidden_act="relu2"),
+        num_experts=4,
+        num_experts_global=8,
+    )
+    with pytest.raises(NotImplementedError, match="expert parallelism"):
+        _sonicmoe_nongated_forward(
+            experts,
+            torch.randn(2, 8),
+            torch.zeros(2, 1, dtype=torch.long),
+            torch.ones(2, 1),
+            torch.randn(4, 16, 8),
+            None,
+            torch.randn(4, 8, 16),
+            None,
+        )
