@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">K2-Horizon</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -722,6 +728,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exporting to GGUF</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
@@ -899,6 +911,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.cli.main.cli" id="toc-axolotl.cli.main.cli" class="nav-link" data-scroll-target="#axolotl.cli.main.cli">cli</a></li>
   <li><a href="#axolotl.cli.main.config_schema" id="toc-axolotl.cli.main.config_schema" class="nav-link" data-scroll-target="#axolotl.cli.main.config_schema">config_schema</a></li>
   <li><a href="#axolotl.cli.main.evaluate" id="toc-axolotl.cli.main.evaluate" class="nav-link" data-scroll-target="#axolotl.cli.main.evaluate">evaluate</a></li>
+  <li><a href="#axolotl.cli.main.export" id="toc-axolotl.cli.main.export" class="nav-link" data-scroll-target="#axolotl.cli.main.export">export</a></li>
   <li><a href="#axolotl.cli.main.fetch" id="toc-axolotl.cli.main.fetch" class="nav-link" data-scroll-target="#axolotl.cli.main.fetch">fetch</a></li>
   <li><a href="#axolotl.cli.main.generate_cli_config_options" id="toc-axolotl.cli.main.generate_cli_config_options" class="nav-link" data-scroll-target="#axolotl.cli.main.generate_cli_config_options">generate_cli_config_options</a></li>
   <li><a href="#axolotl.cli.main.inference" id="toc-axolotl.cli.main.inference" class="nav-link" data-scroll-target="#axolotl.cli.main.inference">inference</a></li>
@@ -948,30 +961,34 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Evaluate a model.</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.cli.main.export">export</a></td>
+<td>Export a trained model to a deployment format (GGUF).</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.cli.main.fetch">fetch</a></td>
 <td>Fetch example configs or other resources.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.cli.main.generate_cli_config_options">generate_cli_config_options</a></td>
 <td>Regenerate CLI config override option metadata.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.cli.main.inference">inference</a></td>
 <td>Run inference with a trained model.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.cli.main.merge_lora">merge_lora</a></td>
 <td>Merge trained LoRA adapters into a base model.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.cli.main.merge_sharded_fsdp_weights">merge_sharded_fsdp_weights</a></td>
 <td>Merge sharded FSDP model weights.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.cli.main.preprocess">preprocess</a></td>
 <td>Preprocess datasets before training.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.cli.main.train">train</a></td>
 <td>Train or fine-tune a model.</td>
 </tr>
@@ -1057,9 +1074,14 @@ axolotl config-schema –field adapter # single field</p>
 </table>
 </section>
 </section>
+<section id="axolotl.cli.main.export" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.main.export">export</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.main.export(config, <span class="op">**</span>cli_args)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Export a trained model to a deployment format (GGUF).</p>
+</section>
 <section id="axolotl.cli.main.fetch" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.fetch">fetch</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.main.fetch(directory, dest)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cli.main.fetch(directory, dest)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Fetch example configs or other resources.</p>
 <p>Available directories:
 - examples: Example configuration files
@@ -1101,12 +1123,12 @@ axolotl config-schema –field adapter # single field</p>
 </section>
 <section id="axolotl.cli.main.generate_cli_config_options" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.generate_cli_config_options">generate_cli_config_options</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cli.main.generate_cli_config_options(output, check)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>cli.main.generate_cli_config_options(output, check)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Regenerate CLI config override option metadata.</p>
 </section>
 <section id="axolotl.cli.main.inference" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.inference">inference</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>cli.main.inference(ctx, config, launcher, gradio, chat, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>cli.main.inference(ctx, config, launcher, gradio, chat, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Run inference with a trained model.</p>
 <section id="parameters-2" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
@@ -1168,7 +1190,7 @@ axolotl config-schema –field adapter # single field</p>
 </section>
 <section id="axolotl.cli.main.merge_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.merge_lora">merge_lora</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>cli.main.merge_lora(config, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>cli.main.merge_lora(config, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Merge trained LoRA adapters into a base model.</p>
 <section id="parameters-3" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>
@@ -1206,7 +1228,7 @@ axolotl config-schema –field adapter # single field</p>
 </section>
 <section id="axolotl.cli.main.merge_sharded_fsdp_weights" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.merge_sharded_fsdp_weights">merge_sharded_fsdp_weights</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>cli.main.merge_sharded_fsdp_weights(ctx, config, launcher, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>cli.main.merge_sharded_fsdp_weights(ctx, config, launcher, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Merge sharded FSDP model weights.</p>
 <section id="parameters-4" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-4">Parameters</h4>
@@ -1256,7 +1278,7 @@ axolotl config-schema –field adapter # single field</p>
 </section>
 <section id="axolotl.cli.main.preprocess" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.preprocess">preprocess</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>cli.main.preprocess(config, cloud<span class="op">=</span><span class="va">None</span>, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>cli.main.preprocess(config, cloud<span class="op">=</span><span class="va">None</span>, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Preprocess datasets before training.</p>
 <section id="parameters-5" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-5">Parameters</h4>
@@ -1300,14 +1322,14 @@ axolotl config-schema –field adapter # single field</p>
 </section>
 <section id="axolotl.cli.main.train" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.train">train</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>cli.main.train(</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    config,</span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    launcher<span class="op">=</span><span class="st">'accelerate'</span>,</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    cloud<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    sweep<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>cli.main.train(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    config,</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    launcher<span class="op">=</span><span class="st">'accelerate'</span>,</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    cloud<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    sweep<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Train or fine-tune a model.</p>
 <section id="parameters-6" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-6">Parameters</h4>

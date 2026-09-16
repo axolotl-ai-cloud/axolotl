@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">K2-Horizon</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -722,6 +728,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exporting to GGUF</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
@@ -937,10 +949,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>telemetry.runtime_metrics.RuntimeMetrics(</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    start_time,</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    peak_cpu_memory<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    total_steps<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    current_epoch<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    current_step<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    gpu_peak_memory_source<span class="op">=</span><span class="bu">dict</span>(),</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    total_steps<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    current_epoch<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    current_step<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Container for runtime metrics to be tracked throughout training.</p>
 <section id="attributes" class="level4">
 <h4 class="anchored" data-anchor-id="attributes">Attributes</h4>
@@ -1036,10 +1049,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Record the start of a new epoch.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_gpu_memory_metrics">update_gpu_memory_metrics</a></td>
+<td>Accumulate allocator high-water marks, falling back to samples.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_memory_metrics">update_memory_metrics</a></td>
 <td>Update peak memory usage metrics.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_step">update_step</a></td>
 <td>Update the current step count.</td>
 </tr>
@@ -1060,14 +1077,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>telemetry.runtime_metrics.RuntimeMetricsTracker.start_epoch(epoch)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Record the start of a new epoch.</p>
 </section>
+<section id="axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_gpu_memory_metrics" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_gpu_memory_metrics">update_gpu_memory_metrics</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>telemetry.runtime_metrics.RuntimeMetricsTracker.update_gpu_memory_metrics()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Accumulate allocator high-water marks, falling back to samples.</p>
+</section>
 <section id="axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_memory_metrics" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_memory_metrics">update_memory_metrics</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>telemetry.runtime_metrics.RuntimeMetricsTracker.update_memory_metrics()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>telemetry.runtime_metrics.RuntimeMetricsTracker.update_memory_metrics()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Update peak memory usage metrics.</p>
 </section>
 <section id="axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_step" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker.update_step">update_step</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>telemetry.runtime_metrics.RuntimeMetricsTracker.update_step(step)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>telemetry.runtime_metrics.RuntimeMetricsTracker.update_step(step)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Update the current step count.</p>
 
 

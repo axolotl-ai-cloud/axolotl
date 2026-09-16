@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">K2-Horizon</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -722,6 +728,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exporting to GGUF</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
@@ -952,6 +964,14 @@ sending telemetry at configurable intervals.</p>
 <td>Handle epoch end.</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.telemetry.callbacks.TelemetryCallback.on_log">on_log</a></td>
+<td>Record training metrics with the step at which they were logged.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.telemetry.callbacks.TelemetryCallback.on_prediction_step">on_prediction_step</a></td>
+<td>Capture evaluation peaks before the memory logger resets them.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.telemetry.callbacks.TelemetryCallback.on_step_end">on_step_end</a></td>
 <td>Handle step end.</td>
 </tr>
@@ -985,34 +1005,55 @@ sending telemetry at configurable intervals.</p>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Handle epoch end.</p>
 </section>
-<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_step_end" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_step_end">on_step_end</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_step_end(</span>
+<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_log" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_log">on_log</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_log(</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    args,</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    state,</span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    control,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Handle step end.</p>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    logs<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Record training metrics with the step at which they were logged.</p>
 </section>
-<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_begin" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_begin">on_train_begin</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_train_begin(</span>
+<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_prediction_step" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_prediction_step">on_prediction_step</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_prediction_step(</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    args,</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    state,</span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    control,</span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Handle training start.</p>
+<p>Capture evaluation peaks before the memory logger resets them.</p>
 </section>
-<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_end" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_end">on_train_end</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_train_end(</span>
+<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_step_end" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_step_end">on_step_end</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_step_end(</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    args,</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    state,</span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    control,</span>
 <span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
 <span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Handle step end.</p>
+</section>
+<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_begin" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_begin">on_train_begin</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_train_begin(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    args,</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    state,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    control,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Handle training start.</p>
+</section>
+<section id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_end" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.telemetry.callbacks.TelemetryCallback.on_train_end">on_train_end</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>telemetry.callbacks.TelemetryCallback.on_train_end(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    args,</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    state,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    control,</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Handle training end.</p>
 
 

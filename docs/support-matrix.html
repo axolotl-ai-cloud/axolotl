@@ -181,6 +181,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">K2-Horizon</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -684,6 +690,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/export.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exporting to GGUF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1366,7 +1378,8 @@ Note
 </tr>
 </tbody>
 </table>
-<p><strong>With Expert Parallel:</strong> ScatterMoE composes with EP (registered as <code>deep_ep_scattermoe</code>), as does SonicMoE (<code>deep_ep_sonicmoe</code>, bf16 experts only; the NVFP4 path does not support EP).</p>
+<p><strong>With Expert Parallel:</strong> ScatterMoE composes with EP (registered as <code>deep_ep_scattermoe</code>), as does SonicMoE (<code>deep_ep_sonicmoe</code>, bf16 gated experts only; neither the NVFP4 nor the non-gated path supports EP).</p>
+<p><strong>Non-gated (latentmoe) experts:</strong> Nemotron-3 (<code>nemotron_h</code>) uses non-gated relu² experts (<code>up_proj</code>/<code>down_proj</code>, no gate) in <code>moe_latent_size</code> width. Both kernels support it: ScatterMoE natively, SonicMoE via a grouped-GEMM path (the fused CUTLASS epilogue lands with the next sonic-moe kernel build). NVFP4 checkpoints (modelopt <code>MIXED_PRECISION</code>) keep the routed experts packed NVFP4 and dequantize every other quantized weight to bf16 at load.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -1377,7 +1390,7 @@ Warning
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p><strong>NVFP4 MoE training is LoRA-only</strong> (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base). SonicMoE covers Qwen3-MoE / Qwen3-Next (W4A4, lossless merge via <a href="../docs/nvfp4_lora.html"><code>nvfp4_merge_aware</code></a>); ScatterMoE covers <strong>DeepSeek-V4</strong> and <strong>GLM-4.7/5.2</strong> (<code>glm_moe_dsa</code>, W4A16). See <a href="#precision-x-trainable-params">Precision x trainable params</a>.</p>
+<p><strong>NVFP4 MoE training is LoRA-only</strong> (frozen fp4 experts + fused low-rank; no full fine-tune of the fp4 base). SonicMoE covers Qwen3-MoE / Qwen3-Next (W4A4, lossless merge via <a href="../docs/nvfp4_lora.html"><code>nvfp4_merge_aware</code></a>) and Nemotron-3 (<code>nemotron_h</code>, non-gated relu²; W4A4 on SM100, W4A16 elsewhere); ScatterMoE covers <strong>DeepSeek-V4</strong>, <strong>GLM-4.7/5.2</strong> (<code>glm_moe_dsa</code>, W4A16), and <strong>Nemotron-3</strong> (<code>nemotron_h</code>, grouped fp4). See <a href="#precision-x-trainable-params">Precision x trainable params</a>.</p>
 </div>
 </div>
 </section>
@@ -1536,7 +1549,7 @@ Warning
 <td>packing + CP for Mamba2 layers</td>
 </tr>
 <tr class="even">
-<td>OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, Apertus, SEED-OSS</td>
+<td>OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, K2-Horizon, Apertus, SEED-OSS</td>
 <td>packing / tokenizer / activation patches</td>
 </tr>
 <tr class="odd">
@@ -1717,7 +1730,7 @@ Warning
 <td><strong>GGUF / llama.cpp K-quants</strong> (Q4_K, Q6_K, …)</td>
 <td style="text-align: center;">⚪ ❌</td>
 <td style="text-align: center;">⚪ ❌</td>
-<td><strong>not trainable</strong>, inference / merge-export format only</td>
+<td><strong>not trainable</strong>, export-only — see <a href="../docs/export.html"><code>axolotl export</code></a></td>
 </tr>
 </tbody>
 </table>

@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">K2-Horizon</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -722,6 +728,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exporting to GGUF</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
@@ -895,6 +907,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.telemetry.errors.exception_properties" id="toc-axolotl.telemetry.errors.exception_properties" class="nav-link" data-scroll-target="#axolotl.telemetry.errors.exception_properties">exception_properties</a></li>
+  <li><a href="#axolotl.telemetry.errors.sanitize_filename" id="toc-axolotl.telemetry.errors.sanitize_filename" class="nav-link" data-scroll-target="#axolotl.telemetry.errors.sanitize_filename">sanitize_filename</a></li>
   <li><a href="#axolotl.telemetry.errors.sanitize_stack_trace" id="toc-axolotl.telemetry.errors.sanitize_stack_trace" class="nav-link" data-scroll-target="#axolotl.telemetry.errors.sanitize_stack_trace">sanitize_stack_trace</a></li>
   <li><a href="#axolotl.telemetry.errors.send_errors" id="toc-axolotl.telemetry.errors.send_errors" class="nav-link" data-scroll-target="#axolotl.telemetry.errors.send_errors">send_errors</a></li>
   </ul></li>
@@ -923,116 +937,44 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.telemetry.errors.exception_properties">exception_properties</a></td>
+<td>Collect frame metadata without formatting messages or reading source code.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.telemetry.errors.sanitize_filename">sanitize_filename</a></td>
+<td>Keep package-relative paths or a local file’s basename.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.telemetry.errors.sanitize_stack_trace">sanitize_stack_trace</a></td>
-<td>Remove personal information from stack trace messages while keeping Python package codepaths.</td>
+<td>Retain only sanitized frame locations from a formatted traceback.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.telemetry.errors.send_errors">send_errors</a></td>
-<td>Decorator to send exception info in a function. If an exception is raised, we send</td>
+<td>Report each exception once within a nested chain of decorated calls.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.telemetry.errors.exception_properties" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.telemetry.errors.exception_properties">exception_properties</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>telemetry.errors.exception_properties(exception)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Collect frame metadata without formatting messages or reading source code.</p>
+</section>
+<section id="axolotl.telemetry.errors.sanitize_filename" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.telemetry.errors.sanitize_filename">sanitize_filename</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>telemetry.errors.sanitize_filename(filename)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Keep package-relative paths or a local file’s basename.</p>
+</section>
 <section id="axolotl.telemetry.errors.sanitize_stack_trace" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.telemetry.errors.sanitize_stack_trace">sanitize_stack_trace</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>telemetry.errors.sanitize_stack_trace(stack_trace)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Remove personal information from stack trace messages while keeping Python package codepaths.</p>
-<p>This function identifies Python packages by looking for common patterns in virtual environment
-and site-packages directories, preserving the package path while removing user-specific paths.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>stack_trace</td>
-<td>str</td>
-<td>The original stack trace string.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 8%">
-<col style="width: 82%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>str</td>
-<td>A sanitized version of the stack trace with Python package paths preserved.</td>
-</tr>
-</tbody>
-</table>
-</section>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>telemetry.errors.sanitize_stack_trace(stack_trace)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Retain only sanitized frame locations from a formatted traceback.</p>
 </section>
 <section id="axolotl.telemetry.errors.send_errors" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.telemetry.errors.send_errors">send_errors</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>telemetry.errors.send_errors(func)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Decorator to send exception info in a function. If an exception is raised, we send
-telemetry containing the stack trace and error message.</p>
-<p>If an error occurs in a decorated function that is called by another decorated
-function, we’ll only send telemetry corresponding to the lower-level function.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>func</td>
-<td>Callable</td>
-<td>Function to decorate.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-1" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>Callable</td>
-<td>Decorated function.</td>
-</tr>
-</tbody>
-</table>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>telemetry.errors.send_errors(func)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Report each exception once within a nested chain of decorated calls.</p>
 
 
-</section>
 </section>
 </section>
 </section>

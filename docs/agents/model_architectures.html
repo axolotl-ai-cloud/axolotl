@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">K2-Horizon</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -722,6 +728,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exporting to GGUF</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
@@ -967,7 +979,8 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_parameters</span><span class="kw">:</span></span>
 <span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> experts.gate_up_proj</span></span>
 <span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> experts.down_proj</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Supported: Gemma4 (<code>gemma4_text</code>), Mixtral, Qwen MoE variants. The plugin auto-detects model type and routing function. Without ScatterMoE, expert LoRA still works but runs base expert matmul and LoRA as separate operations.</p>
+<p>Supported: Gemma4 (<code>gemma4_text</code>), Mixtral, Qwen MoE variants, Nemotron-3 (<code>nemotron_h</code>). The plugin auto-detects model type and routing function. Without ScatterMoE, expert LoRA still works but runs base expert matmul and LoRA as separate operations.</p>
+<p>Nemotron-3 latentmoe (<code>nemotron_h</code>) experts are non-gated (<code>up_proj</code>/<code>down_proj</code>, relu², no gate_proj) in <code>moe_latent_size</code> width: target <code>experts.up_proj</code>/<code>experts.down_proj</code> in <code>lora_target_parameters</code>, and add <code>fc1_latent_proj</code>/<code>fc2_latent_proj</code> to <code>lora_target_modules</code> for the shared latent projections. NVFP4 checkpoints (modelopt MIXED_PRECISION) use the same plugin with <code>dsv4_fp4_grouped_mode: nvfp4</code>; only the routed experts stay packed NVFP4, everything else dequantizes to bf16 at load.</p>
 </section>
 </section>
 <section id="gemma-4" class="level2">

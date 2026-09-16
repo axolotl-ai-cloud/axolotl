@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="A description of the telemetry implementation in Axolotl.">
 
-<title>Telemetry – Axolotl</title>
+<title>Exporting to GGUF – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -148,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/telemetry.html">Telemetry</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/export.html">Exporting to GGUF</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -528,7 +527,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Telemetry</span></a>
   </div>
 </li>
@@ -729,7 +728,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/export.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/export.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Exporting to GGUF</span></a>
   </div>
 </li>
@@ -900,36 +899,26 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc" class="toc-active">
+        <nav id="TOC" role="doc-toc" class="toc-active" data-toc-expanded="2">
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#telemetry-in-axolotl" id="toc-telemetry-in-axolotl" class="nav-link active" data-scroll-target="#telemetry-in-axolotl">Telemetry in Axolotl</a>
-  <ul class="collapse">
-  <li><a href="#data-collection" id="toc-data-collection" class="nav-link" data-scroll-target="#data-collection">Data Collection</a></li>
-  <li><a href="#implementation" id="toc-implementation" class="nav-link" data-scroll-target="#implementation">Implementation</a></li>
-  <li><a href="#training-metric-properties" id="toc-training-metric-properties" class="nav-link" data-scroll-target="#training-metric-properties">Training metric properties</a></li>
-  <li><a href="#error-event-properties" id="toc-error-event-properties" class="nav-link" data-scroll-target="#error-event-properties">Error event properties</a></li>
-  <li><a href="#memory-metrics" id="toc-memory-metrics" class="nav-link" data-scroll-target="#memory-metrics">Memory metrics</a></li>
-  <li><a href="#opt-out-mechanism" id="toc-opt-out-mechanism" class="nav-link" data-scroll-target="#opt-out-mechanism">Opt-Out Mechanism</a></li>
-  <li><a href="#privacy" id="toc-privacy" class="nav-link" data-scroll-target="#privacy">Privacy</a></li>
-  </ul></li>
+  <li><a href="#prerequisites" id="toc-prerequisites" class="nav-link active" data-scroll-target="#prerequisites">Prerequisites</a></li>
+  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
+  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
+  <li><a href="#preflight-checks" id="toc-preflight-checks" class="nav-link" data-scroll-target="#preflight-checks">Preflight checks</a></li>
+  <li><a href="#known-gaps" id="toc-known-gaps" class="nav-link" data-scroll-target="#known-gaps">Known gaps</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/telemetry.html">Telemetry</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/export.html">Exporting to GGUF</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Telemetry</h1>
+<h1 class="title">Exporting to GGUF</h1>
 </div>
 
-<div>
-  <div class="description">
-    A description of the telemetry implementation in Axolotl.
-  </div>
-</div>
 
 
 <div class="quarto-title-meta">
@@ -944,126 +933,79 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </header>
 
 
-<section id="telemetry-in-axolotl" class="level1">
-<h1>Telemetry in Axolotl</h1>
-<p>Axolotl implements anonymous telemetry to help maintainers understand how the library
-is used and where users encounter issues. This data helps prioritize features, optimize
-performance, and fix bugs.</p>
-<section id="data-collection" class="level2">
-<h2 class="anchored" data-anchor-id="data-collection">Data Collection</h2>
-<p>We collect:</p>
+<p><code>axolotl export</code> converts a trained checkpoint into <a href="https://github.com/ggml-org/ggml/blob/master/docs/gguf.md">GGUF</a>, the format used by llama.cpp, Ollama, LM Studio, and llamafile.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>GGUF is for the llama.cpp family of runtimes. For <strong>vLLM, SGLang, or TGI</strong>, serve the merged safetensors checkpoint directly (see <a href="../docs/cli.html#merge-lora">merge-lora</a>), optionally quantized with <a href="../docs/quantize.html">torchao</a> or llm-compressor — vLLM’s GGUF loader is experimental and slower than its native path.</p>
+</div>
+</div>
+<section id="prerequisites" class="level2">
+<h2 class="anchored" data-anchor-id="prerequisites">Prerequisites</h2>
+<p>Export shells out to a built <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> checkout, which is not a Python dependency of Axolotl:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/ggml-org/llama.cpp</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">LLAMA_CPP_DIR</span><span class="op">=</span><span class="va">$PWD</span>/llama.cpp</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake</span> <span class="at">-S</span> <span class="va">$LLAMA_CPP_DIR</span> <span class="at">-B</span> <span class="va">$LLAMA_CPP_DIR</span>/build <span class="kw">&amp;&amp;</span> <span class="fu">cmake</span> <span class="at">--build</span> <span class="va">$LLAMA_CPP_DIR</span>/build <span class="at">--config</span> Release <span class="at">-j</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Point at it with <code>$LLAMA_CPP_DIR</code> or the <code>export.llama_cpp_dir</code> config key. Building is only required if you request quantized outputs; <code>llama-quantize</code> is looked up in <code>$LLAMA_CPP_DIR/build/bin/</code>, <code>$LLAMA_CPP_DIR/</code>, then <code>$PATH</code>.</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Do not <code>pip install -r llama.cpp/requirements/...</code> into your training environment. Those files pin an older <code>transformers</code> and a CPU-only <code>torch</code>, which would replace the versions Axolotl depends on. The conversion script runs under Axolotl’s interpreter, which already has everything it needs, and it loads <code>gguf-py</code> from the checkout itself.</p>
+</div>
+</div>
+</section>
+<section id="usage" class="level2">
+<h2 class="anchored" data-anchor-id="usage">Usage</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> export config.yml <span class="at">--quantize</span> Q4_K_M,Q8_0</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>LoRA/QLoRA runs must be merged first — export refuses an adapter-only directory:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> merge-lora config.yml</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> export config.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="configuration" class="level2">
+<h2 class="anchored" data-anchor-id="configuration">Configuration</h2>
+<p>Options are named after their <code>convert_hf_to_gguf.py</code> counterparts:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">export</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">format</span><span class="kw">:</span><span class="at"> gguf</span><span class="co">         # Optional[str] = "gguf". Deployment format.</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">outtype</span><span class="kw">:</span><span class="at"> f16</span><span class="co">         # Optional[str] = "f16". Weight type of the conversion: f32, f16, bf16, q8_0, tq1_0, tq2_0, auto.</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">quantize</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">Q4_K_M</span><span class="kw">]</span><span class="co">   # Optional[list[str]] = []. Additional llama.cpp quant types to emit.</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">outfile</span><span class="kw">:</span><span class="co">             # Optional[str]. Defaults to {output_dir}/gguf/{run}-{ftype}.gguf.</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">llama_cpp_dir</span><span class="kw">:</span><span class="co">       # Optional[str]. Defaults to $LLAMA_CPP_DIR.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Every key can be overridden from the CLI (<code>--outtype</code>, <code>--quantize</code>, <code>--outfile</code>, <code>--llama-cpp-dir</code>), and <code>--model-dir</code> exports an arbitrary checkpoint instead of the one in <code>output_dir</code>.</p>
+<p>As in llama.cpp, <code>{ftype}</code> in <code>outfile</code> is replaced by the weight type, so each requested quant type is written as its own file alongside the unquantized conversion:</p>
+<pre><code>outputs/my-run/gguf/
+├── my-run-f16.gguf
+├── my-run-Q4_K_M.gguf
+└── my-run-Q8_0.gguf</code></pre>
+</section>
+<section id="preflight-checks" class="level2">
+<h2 class="anchored" data-anchor-id="preflight-checks">Preflight checks</h2>
+<p>Conversion is slow, so a few failure modes are caught up front:</p>
 <ul>
-<li>System info: OS, Python version, Axolotl version, PyTorch version, Transformers
-version, etc.</li>
-<li>Hardware info: CPU count, memory, GPU count and models</li>
-<li>Runtime metrics: Training progress, memory usage, timing information</li>
-<li>Usage patterns: Models (from a whitelist) and configurations used</li>
-<li>Error tracking: Exception types and sanitized stack-frame locations</li>
+<li><strong>Pre-quantized checkpoints</strong> (torchao fp8/nvfp4, bitsandbytes) cannot be converted — re-export in bf16 with <code>axolotl merge-lora --dequant</code>.</li>
+<li><strong>Vocab mismatch</strong> between <code>tokenizer.json</code> and <code>config.json</code> (a common outcome of adding tokens without resizing embeddings).</li>
+<li><strong>Multi-token-prediction layers</strong> (<code>num_nextn_predict_layers</code>), which llama.cpp cannot load. See <a href="../docs/models/glm45.html">GLM-4.5</a>.</li>
+<li><strong>Missing chat template</strong>, which is only a warning but usually means the runtime will fall back to a default template and undo your fine-tune.</li>
 </ul>
-<p>Personally identifiable information (PII) is not collected.</p>
 </section>
-<section id="implementation" class="level2">
-<h2 class="anchored" data-anchor-id="implementation">Implementation</h2>
-<p>Telemetry is implemented using PostHog and consists of:</p>
-<ul>
-<li><code>axolotl.telemetry.TelemetryManager</code>: A singleton class that initializes the
-telemetry system and provides methods for tracking events.</li>
-<li><code>axolotl.telemetry.errors.send_errors</code>: A decorator that captures exceptions and
-sends sanitized stack traces.</li>
-<li><code>axolotl.telemetry.runtime_metrics.RuntimeMetricsTracker</code>: A class that tracks
-runtime metrics during training.</li>
-<li><code>axolotl.telemetry.callbacks.TelemetryCallback</code>: A Trainer callback that sends
-runtime metrics telemetry.</li>
-</ul>
-<p>The telemetry system will block training startup for 10 seconds to ensure users are
-aware of data collection, unless telemetry is explicitly enabled or disabled.</p>
-</section>
-<section id="training-metric-properties" class="level2">
-<h2 class="anchored" data-anchor-id="training-metric-properties">Training metric properties</h2>
-<p>Missing metrics are omitted rather than reported as zero. Finite values remain
-numbers, including zero. Non-finite values are encoded as the strings <code>"NaN"</code>,
-<code>"Infinity"</code>, and <code>"-Infinity"</code> so numerical failures survive JSON serialization.
-Filter these strings separately when aggregating numeric metrics.</p>
-<p><code>train-end</code> separates the trainer’s aggregate loss from the latest logged training
-metrics:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"step"</span><span class="fu">:</span> <span class="dv">1200</span><span class="fu">,</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"start_step"</span><span class="fu">:</span> <span class="dv">1000</span><span class="fu">,</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"total_steps"</span><span class="fu">:</span> <span class="dv">200</span><span class="fu">,</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"aggregate"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"train_loss"</span><span class="fu">:</span> <span class="fl">1.8</span><span class="fu">},</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"latest_step"</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"loss"</span><span class="fu">:</span> <span class="fl">1.5</span><span class="fu">,</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"grad_norm"</span><span class="fu">:</span> <span class="st">"NaN"</span><span class="fu">,</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"metric_steps"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"loss"</span><span class="fu">:</span> <span class="dv">1200</span><span class="fu">,</span> <span class="dt">"grad_norm"</span><span class="fu">:</span> <span class="dv">1200</span><span class="fu">}</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>aggregate.train_loss</code> is the summary value supplied by the trainer.
-<code>latest_step.loss</code> is the last logged loss, which can average a logging interval
-rather than represent a single optimizer step. Train-end queries previously using
-<code>loss</code> or other top-level training metrics must use their <code>latest_step</code> fields.</p>
-<p><code>train-progress</code> retains top-level training metrics and includes a <code>metric_steps</code>
-object recording each metric’s source step. Progress callbacks run before the
-current step is logged, so these values can come from earlier steps. Metrics are
-collected through <code>on_log</code>; evaluation and summary entries do not erase them.</p>
-<p>Timing, <code>total_steps</code>, and throughput cover the current training invocation.
-<code>step</code> is the cumulative trainer step, and <code>start_step</code> is its value at training
-start, including checkpoint resume. Cached metrics reset at training start, so a
-resumed run reports only newly logged metrics. Epoch numbering follows trainer
-state.</p>
-</section>
-<section id="error-event-properties" class="level2">
-<h2 class="anchored" data-anchor-id="error-event-properties">Error event properties</h2>
-<p>Error events retain their existing <code>&lt;module&gt;.&lt;function&gt;-error</code> names. The
-<code>exception</code> property is now an object containing <code>type</code> and <code>module</code>.
-<code>stack_trace.frames</code> is a list of objects containing <code>filename</code>, <code>function</code>, and
-<code>lineno</code>. Package paths are relative to <code>site-packages</code>, <code>dist-packages</code>, or
-<code>axolotl</code>; other file paths are reduced to basenames.</p>
-<p>Raw exception messages, source lines, local variables, and exception notes are
-excluded. Queries that previously treated <code>exception</code> or <code>stack_trace</code> as strings
-must use the structured fields. These remain ordinary PostHog events, not native
-Error Tracking <code>$exception</code> events.</p>
-<p>Nested decorated calls report the same propagating exception once. Independent
-failures remain reportable, including later calls in the same process.</p>
-</section>
-<section id="memory-metrics" class="level2">
-<h2 class="anchored" data-anchor-id="memory-metrics">Memory metrics</h2>
-<p>GPU peak values use allocator high-water marks where available. They are collected
-each training and evaluation step before trainer logging resets the allocator’s
-peak counters, and refreshed at training end. Telemetry retains the greatest value
-observed and does not reset shared allocator counters itself. Allocator peaks may
-include allocations preceding training if the counters have not been reset.</p>
-<p><code>gpu_&lt;id&gt;_peak_memory_source</code> identifies <code>allocator_high_water_mark</code> or <code>sampled</code>.
-Devices without a peak allocation API, including MPS, use sampled allocations and
-can miss transient peaks. CPU peak memory remains a sampled resident-memory value.
-GPU values describe the reporting process’s allocations, not cluster-wide memory.</p>
-</section>
-<section id="opt-out-mechanism" class="level2">
-<h2 class="anchored" data-anchor-id="opt-out-mechanism">Opt-Out Mechanism</h2>
-<p>Telemetry is <strong>enabled by default</strong> on an opt-out basis. To disable it, set
-<code>AXOLOTL_DO_NOT_TRACK=1</code> or <code>DO_NOT_TRACK=1</code>.</p>
-<p>A warning message will be logged on start to clearly inform users about telemetry.
-We will remove this after some period.</p>
-<p>To hide the warning message about telemetry that is displayed on train, etc. startup,
-explicitly set: <code>AXOLOTL_DO_NOT_TRACK=0</code> (enable telemetry) or <code>AXOLOTL_DO_NOT_TRACK=1</code>
-(explicitly disable telemetry).</p>
-</section>
-<section id="privacy" class="level2">
-<h2 class="anchored" data-anchor-id="privacy">Privacy</h2>
-<ul>
-<li>All path-like config information is automatically redacted from telemetry data</li>
-<li>Model information is only collected for whitelisted organizations
-<ul>
-<li>See <code>axolotl/telemetry/whitelist.yaml</code> for the set of whitelisted organizations</li>
-</ul></li>
-<li>Each run generates a unique anonymous ID
-<ul>
-<li>This allows us to link different telemetry events in a single same training run</li>
-</ul></li>
-<li>Telemetry is only sent from the main process to avoid duplicate events</li>
-</ul>
+<section id="known-gaps" class="level2">
+<h2 class="anchored" data-anchor-id="known-gaps">Known gaps</h2>
+<p>Not yet supported: importance-matrix (<code>imatrix</code>) calibration, <code>gguf-split</code> for large models, multimodal <code>mmproj</code> files, exporting a LoRA adapter as a standalone GGUF, and pushing to the Hub.</p>
 
 
-</section>
 </section>
 
 </main> <!-- /main -->

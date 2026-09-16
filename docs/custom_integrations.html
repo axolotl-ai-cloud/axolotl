@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">K2-Horizon</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -722,6 +728,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/export.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exporting to GGUF</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
@@ -1138,7 +1150,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>If you are installing from pip</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@4dfa522"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@3574df5"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="usage" class="level3">
 <h3 class="anchored" data-anchor-id="usage">Usage</h3>
@@ -1850,9 +1862,17 @@ on the <code>cp</code> axis (e.g.&nbsp;GLM-5.2 DSA via the kernels plugin); stoc
 <td style="text-align: center;">-</td>
 <td style="text-align: center;">-</td>
 </tr>
+<tr class="odd">
+<td><code>nemotron_h</code></td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes¹</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes¹</td>
+</tr>
 </tbody>
 </table>
 <p>NVFP4 for <code>deepseek_v4</code> is supported via ScatterMoE with <code>use_dsv4_kernels</code> (its own fused-kernel path), so it is not a row above.</p>
+<p>¹ <code>nemotron_h</code> covers Nemotron-3 latentmoe: <strong>non-gated</strong> relu² experts (<code>up_proj</code>/<code>down_proj</code>, no gate), operating in <code>moe_latent_size</code> when set (tokens arrive pre-projected by the block’s <code>fc1/fc2_latent_proj</code>). ScatterMoE handles that layout natively; SonicMoE routes it through a <code>torch._grouped_mm</code> MLP because the current sonic-moe op layer only allows gated epilogues, and <code>AXOLOTL_SONICMOE_NONGATED_FUSED=1</code> switches to the exact REGLU rewrite (<code>relu²(h) == h·relu(h)</code>) once a build relaxes that assert. Nemotron-3 NVFP4 checkpoints (modelopt <code>MIXED_PRECISION</code>) keep the routed experts packed NVFP4 and dequantize every other quantized linear to bf16 at load; quantization there is per layer, not per module name, so one converter per suffix picks its branch from the keys each layer ships.</p>
 <p><code>gpt_oss</code> carries the decorator with <code>is_concatenated=False, is_transposed=True, has_bias=True</code> and uses a clamped sigmoid-GLU activation. The ScatterMoE forward handles the transposed/interleaved/biased layout and that epilogue via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM).</p>
 </section>
 <section id="epilogue-check-why-gpt_oss-is-no-on-sonicmoe" class="level3">
