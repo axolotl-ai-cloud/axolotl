@@ -1980,3 +1980,95 @@ def test_nf4_distribution_plan_mismatch_raises(tmp_path):
     torch.multiprocessing.spawn(
         _divergent_plan_worker, args=(str(tmp_path / "plan"),), nprocs=2
     )
+
+
+def _shard_traffic_worker(rank, rendezvous):
+    import torch.distributed as dist
+    from torch.distributed.device_mesh import init_device_mesh
+    from torch.distributed.fsdp import fully_shard
+
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import load_staged_nf4_state
+
+    world_size = 3
+    dist.init_process_group(
+        "gloo", init_method=f"file://{rendezvous}", rank=rank, world_size=world_size
+    )
+    try:
+        torch.manual_seed(0)
+        full = {"0.weight": torch.randn(128, 64), "1.weight": torch.randn(2, 4)}
+        model = nn.Sequential(
+            nn.Linear(64, 128, bias=False, device="meta"),
+            nn.Linear(4, 2, bias=False, device="meta"),
+        )
+        fully_shard(
+            model,
+            mesh=init_device_mesh("cpu", (world_size,), mesh_dim_names=("dp_shard",)),
+        )
+        traffic = []
+        original = {name: getattr(dist, name) for name in ("broadcast", "scatter")}
+
+        def counted(name):
+            def call(tensor, *args, **kwargs):
+                traffic.append((name, tensor.numel() * tensor.element_size()))
+                return original[name](tensor, *args, **kwargs)
+
+            return call
+
+        for name in original:
+            setattr(dist, name, counted(name))
+        try:
+            load_staged_nf4_state(
+                SimpleNamespace(device=torch.device("cpu"), is_main_process=rank == 0),
+                model,
+                dict(full) if rank == 0 else {},
+            )
+        finally:
+            for name, value in original.items():
+                setattr(dist, name, value)
+
+        state = model.state_dict()
+        budget = 0
+        for name, value in full.items():
+            rows = -(-value.shape[0] // world_size)
+            start = min(rank * rows, value.shape[0])
+            end = min(start + rows, value.shape[0])
+            torch.testing.assert_close(
+                state[name].to_local(), value[start:end], rtol=0, atol=0
+            )
+            budget += rows * value[0].numel() * value.element_size()
+        moved = sum(size for _, size in traffic)
+        assert moved <= budget, (
+            f"rank {rank} moved {moved} bytes through {traffic}, but its own "
+            f"shards are only {budget} bytes"
+        )
+        assert len(traffic) == len(full), (
+            f"rank {rank} issued {len(traffic)} data collectives for "
+            f"{len(full)} sharded parameters: {traffic}"
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.nf4_distributed
+def test_nf4_shard_distribution_traffic(tmp_path):
+    """Every rank receives its own shard only, not one copy of every rank's shard."""
+    torch.multiprocessing.spawn(
+        _shard_traffic_worker, args=(str(tmp_path / "traffic"),), nprocs=3
+    )
+
+
+@pytest.mark.parametrize("rows", list(range(40)) + [128, 1000, 151936])
+def test_nf4_shard_bounds_match_torch_chunk(rows):
+    """Shard boundaries must stay bit-identical to what FSDP2's chunking produces."""
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import _shard_bounds
+
+    for size in range(1, 9):
+        offset = 0
+        expected = []
+        for chunk in torch.empty(rows, 1).chunk(size):
+            expected.append((offset, offset + chunk.shape[0]))
+            offset += chunk.shape[0]
+        expected += [(rows, rows)] * (size - len(expected))
+        bounds = _shard_bounds(rows, size)
+        assert bounds == expected, f"{rows} rows over {size} ranks"
+        assert all(0 <= start <= end <= rows for start, end in bounds)

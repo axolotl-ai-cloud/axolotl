@@ -60,6 +60,13 @@ def _agree_distribution_plan(accelerator, targets, device):
     return plan
 
 
+def _shard_bounds(rows: int, size: int) -> list[tuple[int, int]]:
+    """Reproduce ``torch.chunk(dim=0)`` boundaries, empty tails included."""
+    height = (rows + size - 1) // size
+    starts = [min(owner * height, rows) for owner in range(size)]
+    return [(start, min(start + height, rows)) for start in starts]
+
+
 def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None):
     """Distribute selected tensors, preserving target devices unless offload is specified."""
     from torch.distributed.tensor import DTensor, Shard
@@ -97,23 +104,34 @@ def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None)
                     "CPU-staged NF4 requires the full data-parallel world mesh"
                 )
             size = mesh.size()
-            rows = (target.shape[0] + size - 1) // size
-            local = None
-            for owner in range(size):
-                start = min(owner * rows, target.shape[0])
-                end = min(start + rows, target.shape[0])
-                shape = (end - start, *target.shape[1:])
-                if accelerator.is_main_process:
-                    transfer = source[start:end].contiguous().to(device)
-                else:
-                    transfer = torch.empty(shape, dtype=target.dtype, device=device)
-                # the default group for every transfer: the mesh group is the same
-                # member set, but a second communicator is a second ordering to keep
-                # in step and desynchronizes the ranks when a branch disagrees
-                dist.broadcast(transfer, src=0)
-                if owner == rank:
-                    local = transfer
-                del transfer
+            bounds = _shard_bounds(target.shape[0], size)
+            # FSDP2 pads every shard up to the first chunk's height, so scattering
+            # at that height is both the layout it wants and the equal-size chunks
+            # scatter demands
+            _, height = bounds[0]
+            start, end = bounds[rank]
+            chunks = None
+            if accelerator.is_main_process:
+                padded = torch.zeros(
+                    (height * size, *target.shape[1:]),
+                    dtype=target.dtype,
+                    device=device,
+                )
+                padded[: target.shape[0]].copy_(source)
+                chunks = [
+                    padded.narrow(0, owner * height, height) for owner in range(size)
+                ]
+                del padded
+            transfer = torch.empty(
+                (height, *target.shape[1:]), dtype=target.dtype, device=device
+            )
+            # the default group for every transfer: the mesh group is the same
+            # member set, but a second communicator is a second ordering to keep
+            # in step and desynchronizes the ranks when a branch disagrees
+            dist.scatter(transfer, chunks, src=0)
+            del chunks
+            local = transfer[: end - start]
+            del transfer
             value = DTensor.from_local(
                 local,
                 mesh,
