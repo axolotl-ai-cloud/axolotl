@@ -602,34 +602,6 @@ def test_sharded_nf4_loading_default_outside_fsdp2_qlora(setting, overrides):
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-def test_staged_nf4_validation(backend):
-    from axolotl.utils.dict import DictDefault
-    from axolotl.utils.schemas.validation import OptimizationValidationMixin
-
-    cfg = DictDefault(
-        nf4_backend=backend,
-        adapter="qlora",
-        load_in_4bit=True,
-        fsdp_version=2,
-        qlora_sharded_model_loading=True,
-        fsdp_config=DictDefault(cpu_ram_efficient_loading=True),
-    )
-    validate = OptimizationValidationMixin.check_staged_nf4
-    assert validate(cfg) is cfg
-    cfg.fsdp_config.cpu_ram_efficient_loading = False
-    with pytest.raises(ValueError, match="cpu_ram_efficient_loading"):
-        validate(cfg)
-    cfg.fsdp_config.cpu_ram_efficient_loading = True
-    cfg.dp_replicate_size = 2
-    with pytest.raises(ValueError, match="dp_replicate_size"):
-        validate(cfg)
-    cfg.dp_replicate_size = 1
-    cfg.bnb_config_kwargs = {"bnb_4bit_quant_type": "fp4"}
-    with pytest.raises(ValueError, match="quant_type"):
-        validate(cfg)
-
-
-@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 def test_linear_backward_does_not_retain_dense_weights(backend, dtype):
     from axolotl.utils.nf4 import checkpoint_nf4_linear
@@ -2428,3 +2400,206 @@ def test_nf4_cache_key_separates_distinct_exclusion_inputs(tmp_path):
 
     assert nf4_cache_path(user_skips, config, {}, None, "cpu") != baseline
     assert nf4_cache_path(architecture, config, {}, None, "cpu") != baseline
+
+
+_UNSET = object()
+
+_STAGED_NF4_BASE = dict(
+    base_model="test",
+    learning_rate=1e-4,
+    datasets=[{"path": "test", "type": "alpaca"}],
+    micro_batch_size=1,
+    gradient_accumulation_steps=1,
+    adapter="qlora",
+    load_in_4bit=True,
+    fsdp_version=2,
+    fsdp_config={"cpu_ram_efficient_loading": True},
+    qlora_sharded_model_loading=True,
+)
+
+
+def _staged_nf4_config(**overrides):
+    config = dict(_STAGED_NF4_BASE)
+    config.update(overrides)
+    return {key: value for key, value in config.items() if value is not _UNSET}
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, None),
+        ({"nf4_cache_dir": "/tmp/nf4-cache"}, None),
+        ({"load_in_4bit": False}, "adapter: qlora and load_in_4bit: true"),
+        ({"adapter": "lora"}, "adapter: qlora and load_in_4bit: true"),
+        ({"load_in_8bit": True}, "adapter: qlora and load_in_4bit: true"),
+        ({"peft_use_dora": True}, "without DoRA or modules_to_save"),
+        ({"lora_modules_to_save": ["embed_tokens"]}, "without DoRA or modules_to_save"),
+        ({"dp_replicate_size": 2}, "dp_replicate_size must be 1"),
+        (
+            {"bnb_config_kwargs": {"bnb_4bit_quant_type": "fp4"}},
+            "requires bnb_4bit_quant_type: nf4",
+        ),
+        ({"tensor_parallel_size": 2}, "tensor, expert or context parallelism"),
+        (
+            {"deepspeed": "deepspeed_configs/zero3.json"},
+            "tensor, expert or context parallelism",
+        ),
+        (
+            {"fsdp_config": {"cpu_ram_efficient_loading": False}},
+            "requires FSDP2, cpu_ram_efficient_loading",
+        ),
+    ],
+    ids=[
+        "staged-ok",
+        "nf4_cache_dir-allowed-when-staged",
+        "load_in_4bit-false",
+        "adapter-not-qlora",
+        "load_in_8bit",
+        "peft_use_dora",
+        "lora_modules_to_save",
+        "dp_replicate_size",
+        "bnb_4bit_quant_type",
+        "tensor_parallel_size",
+        "deepspeed",
+        "cpu_ram_efficient_loading-false",
+    ],
+)
+def test_staged_nf4_validation_via_config(backend, overrides, expected):
+    """check_staged_nf4 through the real pydantic model, not as an unbound call."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(nf4_backend=backend, **overrides)
+    if expected is None:
+        validated = AxolotlInputConfig(**config)
+        assert validated.qlora_sharded_model_loading is True
+    else:
+        with pytest.raises(ValueError, match=expected):
+            AxolotlInputConfig(**config)
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({"adapter": "lora"}, "adapter: qlora and load_in_4bit"),
+        ({"load_in_4bit": False}, "adapter: qlora and load_in_4bit"),
+        ({"load_in_8bit": True}, "adapter: qlora and load_in_4bit"),
+        (
+            {"bnb_config_kwargs": {"blocksize": 128}},
+            "torchao NF4 requires blocksize 64",
+        ),
+        (
+            {"bnb_config_kwargs": {"bnb_4bit_use_double_quant": False}},
+            "torchao NF4 requires blocksize 64",
+        ),
+        ({"nf4_cache_dir": "/tmp/nf4-cache"}, None),
+    ],
+    ids=[
+        "adapter-not-qlora",
+        "load_in_4bit-false",
+        "load_in_8bit",
+        "torchao-blocksize",
+        "torchao-double-quant",
+        "nf4_cache_dir-allowed",
+    ],
+)
+def test_staged_nf4_validation_torchao_without_fsdp(overrides, expected):
+    """nf4_backend: torchao stages with no fsdp_config at all, a second route in."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(
+        nf4_backend="torchao",
+        fsdp_version=_UNSET,
+        fsdp_config=_UNSET,
+        qlora_sharded_model_loading=_UNSET,
+        **overrides,
+    )
+    if expected is None:
+        AxolotlInputConfig(**config)
+    else:
+        with pytest.raises(ValueError, match=expected):
+            AxolotlInputConfig(**config)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"fsdp_version": 1},
+        {"fsdp_version": _UNSET, "fsdp_config": _UNSET},
+        {
+            "adapter": "lora",
+            "load_in_4bit": False,
+            "fsdp_config": {"cpu_ram_efficient_loading": False},
+        },
+    ],
+    ids=["fsdp1", "no-fsdp", "not-4bit"],
+)
+def test_staged_nf4_validation_rejects_cache_dir_when_not_staged(overrides):
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(
+        nf4_backend="bitsandbytes",
+        nf4_cache_dir="/tmp/nf4-cache",
+        qlora_sharded_model_loading=_UNSET,
+        **overrides,
+    )
+    with pytest.raises(ValueError, match="nf4_cache_dir requires CPU-staged"):
+        AxolotlInputConfig(**config)
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({"load_in_4bit": False}, "Require cfg.load_in_4bit to be True for qlora"),
+        ({"adapter": "lora"}, "FSDP2 does not support `cpu_ram_efficient_loading`"),
+        (
+            {"qlora_sharded_model_loading": False},
+            "FSDP2 does not support `cpu_ram_efficient_loading`",
+        ),
+    ],
+    ids=["load_in_4bit-false", "adapter-not-qlora", "sharded-false"],
+)
+def test_staged_nf4_validation_shadowed_when_sharding_is_defaulted(overrides, expected):
+    """Without an explicit qlora_sharded_model_loading, earlier validators reject first."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(
+        **{
+            "nf4_backend": "bitsandbytes",
+            "qlora_sharded_model_loading": _UNSET,
+            **overrides,
+        }
+    )
+    with pytest.raises(ValueError, match=expected):
+        AxolotlInputConfig(**config)
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+def test_staged_nf4_validation_defaults_before_staged_checks(backend):
+    """qlora_sharded_model_loading must be defaulted before check_staged_nf4 reads it."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(
+        nf4_backend=backend,
+        qlora_sharded_model_loading=_UNSET,
+        nf4_cache_dir="/tmp/nf4-cache",
+    )
+    validated = AxolotlInputConfig(**config)
+    assert validated.qlora_sharded_model_loading is True
+
+    with pytest.raises(ValueError, match="without DoRA or modules_to_save"):
+        AxolotlInputConfig(**dict(config, peft_use_dora=True))
+
+
+def test_staged_nf4_validation_expert_parallel():
+    """expert_parallel_size only exists once its plugin args are merged in."""
+    from axolotl.integrations.expert_parallel.args import ExpertParallelArgs
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    class _EPConfig(AxolotlInputConfig, ExpertParallelArgs):
+        pass
+
+    config = _staged_nf4_config(nf4_backend="bitsandbytes")
+    assert _EPConfig(**config).expert_parallel_size == 1
+    with pytest.raises(ValueError, match="tensor, expert or context parallelism"):
+        _EPConfig(**dict(config, expert_parallel_size=2))

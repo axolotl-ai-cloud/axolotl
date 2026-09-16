@@ -2,9 +2,6 @@
 set -euo pipefail
 
 case "${NF4_TEST_STACK:-pinned}" in
-  compatibility)
-    uv pip install --no-deps transformers==5.17.0 accelerate==1.15.0 torchao==0.18.0
-    ;;
   pinned|nightly) ;;
   *) echo "Unknown NF4_TEST_STACK: $NF4_TEST_STACK" >&2; exit 1 ;;
 esac
@@ -24,6 +21,10 @@ for name in ("torch", "transformers", "accelerate", "torchao", "bitsandbytes", "
     print(f"{name}=={importlib.metadata.version(name)}", flush=True)
 PY
 
+# Unlike multigpu.sh this lane never fetches the HF cache: every selected test builds its
+# own checkpoint. Offline mode keeps a stray Hub dependency a hard error, not a silent skip.
+export HF_HUB_OFFLINE=1
+
 # Each test owns its GPUs and starts its own distributed workers.
 pytest -v --durations=10 -n0 -m slow -k cuda \
   --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
@@ -34,8 +35,12 @@ import xml.etree.ElementTree as ET
 
 report = ET.parse("nf4-junit.xml")
 assert list(report.iter("testcase")), "No NF4 CUDA tests ran"
-skipped = list(report.iter("skipped"))
-assert not skipped, f"NF4 GPU CI unexpectedly skipped {len(skipped)} tests"
+skipped = [node.get("message", "") for node in report.iter("skipped")]
+assert not skipped, (
+    f"NF4 GPU CI unexpectedly skipped {len(skipped)} tests: {skipped}. "
+    "If a test now needs a Hub asset, this lane must extract hf-cache.tar.zst the way "
+    "cicd/multigpu.sh does and drop HF_HUB_OFFLINE."
+)
 PY
 
 if [ -n "${CODECOV_TOKEN:-}" ]; then

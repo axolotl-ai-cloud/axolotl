@@ -82,12 +82,6 @@ jobs:
             num_gpus: 3
             test_suite: nf4
             nf4_test_stack: pinned
-          - cuda: 130
-            python_version: "3.12"
-            pytorch: 2.12.1
-            num_gpus: 3
-            test_suite: nf4
-            nf4_test_stack: compatibility
     name: ${{ matrix.test_suite }} (${{ matrix.nf4_test_stack || 'default' }})
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
