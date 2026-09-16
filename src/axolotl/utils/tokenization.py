@@ -6,6 +6,21 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+FAST_ENCODER_ATTR = "_axolotl_fast_encoder"
+
+
+def set_fast_encoder(tokenizer, encoder) -> None:
+    """Attach an accelerated drop-in encoder for raw-text tokenization.
+
+    The tokenizer itself is left untouched so prompt strategies keep the full HF API.
+    """
+    setattr(tokenizer, FAST_ENCODER_ATTR, encoder)
+
+
+def get_fast_encoder(tokenizer):
+    """Return the accelerated encoder attached by a plugin, if any."""
+    return getattr(tokenizer, FAST_ENCODER_ATTR, None)
+
 
 def check_dataset_labels(
     dataset,
