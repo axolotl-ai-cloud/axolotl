@@ -2325,3 +2325,106 @@ def test_nf4_phase_heartbeat_reports_conversion_progress(tmp_path, monkeypatch):
     assert any(re.search(r"\b[1-9]\d* tensors", message) for message in heartbeats), (
         heartbeats
     )
+
+
+def test_selective_expert_weights_accepts_tuple_quant_state_shape(monkeypatch):
+    """A plain-tuple 1-D quant_state shape must still take the selective fast path."""
+    import bitsandbytes.functional as F
+
+    from axolotl.integrations.kernels.libs.scattermoe_lora import selective_dequant
+
+    num_experts, d1, d2 = 4, 8, 8
+    flat = torch.randn(num_experts * d1 * d2, dtype=torch.bfloat16)
+    packed, quant_state = F.quantize_4bit(
+        flat, blocksize=64, compress_statistics=False, quant_type="nf4"
+    )
+    # bnb hands back a torch.Size; a caller that rebuilt the state may hand back a tuple.
+    quant_state.shape = (num_experts * d1 * d2,)
+
+    class _ParamList:
+        def __init__(self, original, transform):
+            self.original = original
+            self._transform = transform
+
+        def __getitem__(self, index):
+            return self._transform
+
+    experts_module = nn.Module()
+    experts_module.num_experts = num_experts
+    experts_module.hidden_dim = d2
+    experts_module.parametrizations = {
+        "gate_up_proj": _ParamList(packed, SimpleNamespace(quant_state=quant_state))
+    }
+    # Present so the non-selective fallback returns cleanly instead of raising.
+    experts_module.gate_up_proj = torch.zeros(num_experts, d1, d2, dtype=torch.bfloat16)
+
+    calls = []
+
+    def record(raw_param, qs, active, expert_shape):
+        calls.append(expert_shape)
+        return torch.zeros(len(active), *expert_shape, dtype=torch.bfloat16)
+
+    monkeypatch.setattr(selective_dequant, "_selective_dequant_bnb4", record)
+
+    active_experts = torch.tensor([0, 2])
+    selective_dequant.selective_expert_weights(
+        experts_module, "gate_up_proj", active_experts
+    )
+
+    assert calls == [(d1, d2)]
+
+
+def test_nf4_cache_key_tracks_resolved_exclusions(tmp_path, monkeypatch):
+    """Changing the architecture exclusion rules must invalidate existing caches."""
+    from transformers import LlamaConfig
+
+    from axolotl.loaders import nf4_cache
+    from axolotl.utils.dict import DictDefault
+
+    source = tmp_path / "model.safetensors"
+    source.write_bytes(b"first")
+    cfg = DictDefault(
+        base_model=str(tmp_path),
+        nf4_cache_dir=str(tmp_path / "cache"),
+        torch_dtype=torch.float32,
+    )
+    config = LlamaConfig()
+    baseline = nf4_cache.nf4_cache_path(cfg, config, {}, None, "cpu")
+
+    monkeypatch.setattr(
+        nf4_cache,
+        "nf4_skip_modules",
+        lambda *args, **kwargs: {"lm_head", "embed_out", "extra_rule"},
+        raising=False,
+    )
+
+    assert nf4_cache.nf4_cache_path(cfg, config, {}, None, "cpu") != baseline
+
+
+def test_nf4_cache_key_separates_distinct_exclusion_inputs(tmp_path):
+    """Both inputs that feed nf4_skip_modules must key the cache independently."""
+    from transformers import LlamaConfig
+
+    from axolotl.loaders.nf4_cache import nf4_cache_path
+    from axolotl.utils.dict import DictDefault
+
+    source = tmp_path / "model.safetensors"
+    source.write_bytes(b"first")
+
+    def build(**overrides):
+        cfg = DictDefault(
+            base_model=str(tmp_path),
+            nf4_cache_dir=str(tmp_path / "cache"),
+            torch_dtype=torch.float32,
+        )
+        for key, value in overrides.items():
+            cfg[key] = value
+        return cfg
+
+    config = LlamaConfig()
+    baseline = nf4_cache_path(build(), config, {}, None, "cpu")
+    user_skips = build(bnb_config_kwargs={"llm_int8_skip_modules": ["out_proj"]})
+    architecture = build(model_config_type="falcon_h1")
+
+    assert nf4_cache_path(user_skips, config, {}, None, "cpu") != baseline
+    assert nf4_cache_path(architecture, config, {}, None, "cpu") != baseline

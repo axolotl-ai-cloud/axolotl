@@ -17,6 +17,7 @@ from axolotl.utils.nf4 import (
     BnbNF4Parametrization,
     TorchaoNF4Parametrization,
     checkpoint_nf4_linear,
+    nf4_skip_modules,
     torchao_nf4_module,
 )
 from axolotl.utils.nf4_loading import nf4_phase
@@ -86,20 +87,22 @@ def nf4_cache_path(cfg, model_config, model_kwargs, quantization, device):
             "force_download",
         }
     }
+    # Same resolution staged_nf4_loading uses, so the key and the loader cannot disagree.
+    quantization_settings = (
+        quantization.to_dict() if quantization else dict(cfg.bnb_config_kwargs or {})
+    )
     settings = {
         "format": 1,
         "source": source_id,
         "identity": identity,
         "config": model_config.to_dict(),
         "options": options,
-        "quantization": quantization.to_dict()
-        if quantization
-        else cfg.bnb_config_kwargs,
+        "quantization": quantization_settings,
         "backend": backend,
         "dtype": cfg.torch_dtype,
         "experts": cfg.quantize_moe_experts,
         "model_type": cfg.model_config_type,
-        "skips": cfg.lora_modules_to_save,
+        "skips": sorted(nf4_skip_modules(cfg.model_config_type, quantization_settings)),
         "device": torch.device(device).type,
         "versions": versions,
     }

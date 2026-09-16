@@ -288,10 +288,10 @@ def selective_expert_weights(
             qs = parametrization.quant_state
             # qs.shape is the original tensor shape before flattening.
             # For MoE experts it's [E, d1, d2] (3D) or [total_elements] (1D).
-            orig_shape = qs.shape
+            orig_shape = tuple(qs.shape)
             if len(orig_shape) == 3:
                 expert_shape = (orig_shape[1], orig_shape[2])
-            elif isinstance(orig_shape, torch.Size) and len(orig_shape) == 1:
+            elif len(orig_shape) == 1:
                 # Flattened; infer the expert shape from module attributes.
                 E_total = getattr(experts_module, "num_experts", None)
                 if E_total is None:
