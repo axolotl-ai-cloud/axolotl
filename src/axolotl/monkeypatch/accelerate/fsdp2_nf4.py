@@ -21,34 +21,82 @@ def load_staged_nf4_state(
     model.load_state_dict(state, assign=True, strict=True)
 
 
+def _agree_distribution_plan(accelerator, targets, device):
+    """Settle the transfer order and per-parameter layout on rank zero for every rank.
+
+    Each rank deriving its own plan from its own ``state_dict`` is what makes a
+    mismatch hang: the ranks issue different collectives and wait on each other
+    forever. Distributing rank zero's plan turns any disagreement into a raise.
+    """
+    from torch.distributed.tensor import DTensor
+
+    def describe(target):
+        return (
+            isinstance(target, DTensor),
+            tuple(target.shape),
+            str(target.dtype),
+        )
+
+    payload = [
+        [(name, *describe(target)) for name, target in targets.items()]
+        if accelerator.is_main_process
+        else None
+    ]
+    dist.broadcast_object_list(payload, src=0, device=device)
+    plan = payload[0]
+
+    local = {name: describe(target) for name, target in targets.items()}
+    for name, sharded, shape, dtype in plan:
+        if name not in local:
+            raise ValueError(f"CPU-staged NF4 distribution: rank is missing {name}")
+        if local[name] != (sharded, shape, dtype):
+            raise ValueError(
+                f"CPU-staged NF4 distribution disagrees on {name}: "
+                f"rank zero has {(sharded, shape, dtype)}, this rank has {local[name]}"
+            )
+    if len(local) != len(plan):
+        extra = sorted(set(local) - {name for name, *_ in plan})
+        raise ValueError(f"CPU-staged NF4 distribution: rank has extra keys {extra}")
+    return plan
+
+
 def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None):
     """Distribute selected tensors, preserving target devices unless offload is specified."""
     from torch.distributed.tensor import DTensor, Shard
 
     state = {}
     device = accelerator.device
-    for name, target in tqdm(
-        targets.items(),
+    world = dist.get_world_size()
+    rank = dist.get_rank()
+    plan = _agree_distribution_plan(accelerator, targets, device)
+    for name, sharded, _, _ in tqdm(
+        plan,
         desc="Distributing NF4 tensors",
         disable=not accelerator.is_main_process,
         mininterval=5,
     ):
+        target = targets[name]
         source = full_state.get(name) if accelerator.is_main_process else None
-        if isinstance(target, DTensor):
+        if accelerator.is_main_process:
+            if source is None:
+                raise ValueError(f"CPU-staged NF4 distribution: no source for {name}")
+            if tuple(source.shape) != tuple(target.shape):
+                raise ValueError(
+                    f"CPU-staged NF4 distribution: {name} is {tuple(source.shape)} on "
+                    f"rank zero but {tuple(target.shape)} in the wrapped model"
+                )
+            source = source.to(target.dtype)
+        if sharded:
             mesh = target.device_mesh
             if mesh.ndim != 1 or target.placements != (Shard(0),):
                 raise ValueError(
                     "CPU-staged NF4 currently requires a one-dimensional Shard(0) mesh"
                 )
-            group = mesh.get_group()
-            if dist.get_process_group_ranks(group) != list(
-                range(dist.get_world_size())
-            ):
+            if dist.get_process_group_ranks(mesh.get_group()) != list(range(world)):
                 raise ValueError(
                     "CPU-staged NF4 requires the full data-parallel world mesh"
                 )
             size = mesh.size()
-            rank = dist.get_rank(group)
             rows = (target.shape[0] + size - 1) // size
             local = None
             for owner in range(size):
@@ -59,7 +107,10 @@ def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None)
                     transfer = source[start:end].contiguous().to(device)
                 else:
                     transfer = torch.empty(shape, dtype=target.dtype, device=device)
-                dist.broadcast(transfer, src=0, group=group)
+                # the default group for every transfer: the mesh group is the same
+                # member set, but a second communicator is a second ordering to keep
+                # in step and desynchronizes the ranks when a branch disagrees
+                dist.broadcast(transfer, src=0)
                 if owner == rank:
                     local = transfer
                 del transfer
