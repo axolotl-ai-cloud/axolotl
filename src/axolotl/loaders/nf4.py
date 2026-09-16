@@ -12,7 +12,12 @@ from torch import nn
 from torch.nn.utils import parametrize
 
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.nf4_loading import nf4_loading_device, nf4_loading_group, nf4_phase
+from axolotl.utils.nf4_loading import (
+    nf4_loading_device,
+    nf4_loading_group,
+    nf4_phase,
+    record_progress,
+)
 
 if TYPE_CHECKING:
     from transformers import BitsAndBytesConfig, PretrainedConfig, PreTrainedModel
@@ -90,6 +95,8 @@ def _load_nf4_model(
             return loader._from_config(model_config, **options)
 
     error = None
+    model = None
+    structures = []
     if main:
         try:
             from axolotl.loaders.nf4_cache import (
@@ -119,24 +126,22 @@ def _load_nf4_model(
                 if cache is not None:
                     save_nf4_cache(cache, model)
                     get_logger(__name__).info("Saved packed NF4 cache: %s", cache)
+            # before the status exchange, so peers never block on a broadcast a
+            # failed rank zero cannot reach
+            if distributed:
+                with nf4_phase("NF4 metadata preparation"):
+                    _collect_nf4_structures(model, structures)
         except Exception as exc:
             if not distributed:
                 raise
             error = f"{type(exc).__name__}: {exc}"
+    else:
+        try:
+            model = empty_model()
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
     if distributed:
-        status = [error]
-        dist.broadcast_object_list(
-            status, src=0, group=control_group, device=torch.device("cpu")
-        )
-        if status[0] is not None:
-            raise RuntimeError(f"Rank-zero NF4 loading failed: {status[0]}")
-    if not main:
-        model = empty_model()
-    if distributed:
-        structures = []
-        if main:
-            with nf4_phase("NF4 metadata preparation"):
-                _collect_nf4_structures(model, structures)
+        _raise_on_any_rank_failure(error, control_group)
         # the broadcast shapes are packed NF4 storage, so peers cannot re-derive which
         # parameters were experts; take rank zero's classification instead
         payload = [
@@ -149,27 +154,43 @@ def _load_nf4_model(
                 payload, src=0, group=control_group, device=torch.device("cpu")
             )
         if not main:
-            _moe_load_state["expert_param_order"] = payload[1]
-            _moe_load_state["count"] = payload[2]
-            for path, name, transform, shape, dtype in payload[0]:
-                module = model.get_submodule(path)
-                setattr(
-                    module,
-                    name,
-                    nn.Parameter(
-                        torch.empty(shape, dtype=dtype, device="meta"),
-                        requires_grad=False,
-                    ),
-                )
-                if isinstance(module, nn.Linear) and name == "weight":
-                    checkpoint_nf4_linear(module)
-                parametrize.register_parametrization(
-                    module, name, transform, unsafe=True
-                )
+            try:
+                _apply_nf4_structures(model, payload, _moe_load_state)
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
         del payload, structures
+        _raise_on_any_rank_failure(error, control_group)
     model.requires_grad_(False)
     model._axolotl_staged_nf4 = True
     return model
+
+
+def _raise_on_any_rank_failure(error, control_group):
+    """Abort every rank with the real cause when any rank failed."""
+    import torch.distributed as dist
+
+    statuses: list = [None] * dist.get_world_size(group=control_group)
+    dist.all_gather_object(statuses, error, group=control_group)
+    failures = [f"rank {rank}: {msg}" for rank, msg in enumerate(statuses) if msg]
+    if failures:
+        raise RuntimeError("NF4 loading failed on " + "; ".join(failures))
+
+
+def _apply_nf4_structures(model, payload, moe_load_state):
+    moe_load_state["expert_param_order"] = payload[1]
+    moe_load_state["count"] = payload[2]
+    for path, name, transform, shape, dtype in payload[0]:
+        module = model.get_submodule(path)
+        setattr(
+            module,
+            name,
+            nn.Parameter(
+                torch.empty(shape, dtype=dtype, device="meta"), requires_grad=False
+            ),
+        )
+        if isinstance(module, nn.Linear) and name == "weight":
+            checkpoint_nf4_linear(module)
+        parametrize.register_parametrization(module, name, transform, unsafe=True)
 
 
 def _collect_nf4_structures(model, structures):
@@ -226,7 +247,6 @@ def staged_nf4_loading(
         else dict(cfg.bnb_config_kwargs or {})
     )
     skips = nf4_skip_modules(cfg.model_config_type, quantization)
-    skips.update(cfg.lora_modules_to_save or [])
 
     def set_param(model, target_name, param_value, *args, **kwargs):
         value = param_value
@@ -263,6 +283,7 @@ def staged_nf4_loading(
         if linear:
             checkpoint_nf4_linear(module)
         parametrize.register_parametrization(module, name, transform, unsafe=True)
+        record_progress(value.numel() * value.element_size())
         if expert:
             _moe_load_state["count"] += 1
 

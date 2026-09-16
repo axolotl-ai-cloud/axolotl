@@ -2072,3 +2072,256 @@ def test_nf4_shard_bounds_match_torch_chunk(rows):
         bounds = _shard_bounds(rows, size)
         assert bounds == expected, f"{rows} rows over {size} ranks"
         assert all(0 <= start <= end <= rows for start, end in bounds)
+
+
+def test_init_distributed_state_warns_when_timeout_cannot_apply(tmp_path, monkeypatch):
+    """A timeout the already-initialized process group cannot honor must be surfaced."""
+    import logging
+    from datetime import timedelta
+
+    import torch.distributed as dist
+    from accelerate import PartialState
+
+    from axolotl.utils import distributed as axolotl_distributed
+
+    records = []
+
+    class Collector(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = Collector(level=logging.WARNING)
+    logger = logging.getLogger("axolotl.utils.distributed")
+    logger.addHandler(handler)
+    monkeypatch.setenv("AXOLOTL_NCCL_TIMEOUT", "21600")
+    monkeypatch.setattr(axolotl_distributed, "distributed_state", None)
+    PartialState._reset_state()
+    dist.init_process_group(
+        "gloo",
+        init_method=f"file://{tmp_path / 'rendezvous'}",
+        rank=0,
+        world_size=1,
+        timeout=timedelta(seconds=5),
+    )
+    try:
+        axolotl_distributed.init_distributed_state()
+        assert any(
+            "21600" in message and "0:00:05" in message for message in records
+        ), records
+    finally:
+        logger.removeHandler(handler)
+        dist.destroy_process_group()
+        PartialState._reset_state()
+        axolotl_distributed.distributed_state = None
+
+
+def test_init_distributed_state_surfaces_partialstate_errors(monkeypatch):
+    """A PartialState construction failure must not be swallowed silently."""
+    import logging
+
+    from axolotl.utils import distributed as axolotl_distributed
+
+    records = []
+
+    class Collector(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    class Exploding:
+        _shared_state: dict = {}
+
+        def __init__(self, *args, **kwargs):
+            raise ValueError("backend mismatch")
+
+    handler = Collector(level=logging.WARNING)
+    logger = logging.getLogger("axolotl.utils.distributed")
+    logger.addHandler(handler)
+    monkeypatch.setattr(axolotl_distributed, "PartialState", Exploding)
+    monkeypatch.setattr(axolotl_distributed, "distributed_state", None)
+    try:
+        axolotl_distributed.init_distributed_state()
+        assert axolotl_distributed.distributed_state is None
+        assert any("backend mismatch" in message for message in records), records
+    finally:
+        logger.removeHandler(handler)
+
+
+def _nf4_failure_propagation_worker(rank, checkpoint, rendezvous, results, failing):
+    import json
+    import time
+    from datetime import timedelta
+    from pathlib import Path
+    from unittest.mock import patch
+
+    import torch.distributed as dist
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    import axolotl.loaders.nf4 as nf4_loader
+    from axolotl.utils.dict import DictDefault
+
+    dist.init_process_group(
+        "gloo",
+        init_method=f"file://{rendezvous}",
+        rank=rank,
+        world_size=2,
+        timeout=timedelta(seconds=5),
+    )
+    cfg = DictDefault(
+        base_model=checkpoint,
+        fsdp_config={"cpu_ram_efficient_loading": True},
+        nf4_backend="bitsandbytes",
+        torch_dtype=torch.float32,
+        ddp_timeout=5,
+    )
+
+    def peer_boom(*args, **kwargs):
+        raise RuntimeError("peer boom")
+
+    def meta_boom(*args, **kwargs):
+        raise RuntimeError("meta boom")
+
+    def payload_boom(*args, **kwargs):
+        raise RuntimeError("payload boom")
+
+    patches = []
+    if failing == "peer" and rank == 1:
+        patches.append(patch.object(LlamaForCausalLM, "_from_config", peer_boom))
+    if failing == "rank_zero_metadata" and rank == 0:
+        patches.append(patch.object(nf4_loader, "_collect_nf4_structures", meta_boom))
+    if failing == "peer_payload" and rank == 1:
+        patches.append(patch.object(nf4_loader, "checkpoint_nf4_linear", payload_boom))
+
+    error = None
+    start = time.monotonic()
+    try:
+        for entry in patches:
+            entry.start()
+        try:
+            nf4_loader.load_nf4_model(
+                LlamaForCausalLM,
+                LlamaConfig.from_pretrained(checkpoint),
+                {"dtype": torch.float32, "device_map": {"": "cpu"}},
+                cfg,
+                "cpu",
+            )
+        finally:
+            for entry in reversed(patches):
+                entry.stop()
+    except BaseException as exc:  # pylint: disable=broad-except
+        error = f"{type(exc).__name__}: {exc}"
+    elapsed = time.monotonic() - start
+    Path(results, f"rank{rank}.json").write_text(
+        json.dumps({"error": error, "elapsed": elapsed})
+    )
+    try:
+        dist.destroy_process_group()
+    except BaseException:  # pylint: disable=broad-except
+        pass
+
+
+def _run_nf4_failure_propagation(tmp_path, failing):
+    import json
+
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    base = tmp_path / "base"
+    LlamaForCausalLM(
+        LlamaConfig(
+            hidden_size=128,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+            vocab_size=128,
+        )
+    ).save_pretrained(base)
+    results = tmp_path / "results"
+    results.mkdir()
+    torch.multiprocessing.spawn(
+        _nf4_failure_propagation_worker,
+        args=(str(base), str(tmp_path / "fail"), str(results), failing),
+        nprocs=2,
+    )
+    return [json.loads((results / f"rank{rank}.json").read_text()) for rank in range(2)]
+
+
+@pytest.mark.nf4_distributed
+@pytest.mark.parametrize("failing", ["peer", "peer_payload"])
+def test_nf4_peer_load_failure_propagates_to_rank_zero(failing, tmp_path, monkeypatch):
+    """A peer that fails before or after the metadata broadcast must abort rank zero."""
+    monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
+    cause = "peer boom" if failing == "peer" else "payload boom"
+    outcomes = _run_nf4_failure_propagation(tmp_path, failing)
+    assert outcomes[1]["error"] and cause in outcomes[1]["error"]
+    assert outcomes[0]["error"], "rank zero completed while a peer failed"
+    assert "rank 1" in outcomes[0]["error"], outcomes[0]["error"]
+    assert cause in outcomes[0]["error"], outcomes[0]["error"]
+    assert outcomes[0]["elapsed"] < 5, outcomes[0]
+
+
+@pytest.mark.nf4_distributed
+def test_nf4_rank_zero_metadata_failure_propagates_to_peers(tmp_path, monkeypatch):
+    """A rank-zero metadata failure must abort peers with the real cause, not a timeout."""
+    monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
+    outcomes = _run_nf4_failure_propagation(tmp_path, "rank_zero_metadata")
+    assert outcomes[0]["error"] and "meta boom" in outcomes[0]["error"]
+    assert outcomes[1]["error"], "peer completed while rank zero failed"
+    assert "rank 0" in outcomes[1]["error"], outcomes[1]["error"]
+    assert "meta boom" in outcomes[1]["error"], outcomes[1]["error"]
+    assert outcomes[1]["elapsed"] < 5, outcomes[1]
+
+
+def test_nf4_phase_heartbeat_reports_conversion_progress(tmp_path, monkeypatch):
+    """The heartbeat must distinguish a slow conversion from a hung one."""
+    import re
+    import time
+
+    from transformers import BitsAndBytesConfig, LlamaConfig, LlamaForCausalLM
+
+    import axolotl.loaders.nf4 as nf4_loader
+    from axolotl.utils import nf4_loading
+    from axolotl.utils.dict import DictDefault
+
+    checkpoint = tmp_path / "base"
+    LlamaForCausalLM(
+        LlamaConfig(
+            hidden_size=128,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+            vocab_size=128,
+        )
+    ).save_pretrained(checkpoint)
+
+    original = nf4_loader.quantize_bnb_4bit
+
+    def slow(*args, **kwargs):
+        time.sleep(0.02)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(nf4_loader, "quantize_bnb_4bit", slow)
+
+    messages = []
+    monkeypatch.setattr(
+        nf4_loading.LOG, "info", lambda message, *args: messages.append(message % args)
+    )
+    cfg = DictDefault(
+        base_model=str(checkpoint),
+        nf4_backend="bitsandbytes",
+        torch_dtype=torch.float32,
+    )
+    with (
+        nf4_loading.nf4_phase("NF4 checkpoint loading and quantization", interval=0.01),
+        nf4_loader.staged_nf4_loading(
+            cfg, device="cpu", quantization_config=BitsAndBytesConfig(load_in_4bit=True)
+        ),
+    ):
+        LlamaForCausalLM.from_pretrained(
+            checkpoint, dtype=torch.float32, device_map={"": "cpu"}
+        )
+    heartbeats = [message for message in messages if "still running" in message]
+    assert heartbeats, messages
+    assert any(re.search(r"\b[1-9]\d* tensors", message) for message in heartbeats), (
+        heartbeats
+    )

@@ -12,6 +12,15 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+# only the rank-zero conversion thread writes these, so plain ints need no lock
+_progress = {"tensors": 0, "bytes": 0}
+
+
+def record_progress(nbytes: int) -> None:
+    """Count one converted tensor so staging heartbeats can show forward progress."""
+    _progress["tensors"] += 1
+    _progress["bytes"] += nbytes
+
 
 @contextmanager
 def nf4_loading_group(cfg):
@@ -55,10 +64,27 @@ def nf4_phase(name: str, interval: float = 60, enabled: bool = True):
         return
     start = time.monotonic()
     done = threading.Event()
+    base = last = (_progress["tensors"], _progress["bytes"])
 
     def heartbeat():
+        nonlocal last
         while not done.wait(interval):
-            LOG.info("%s: still running after %.0fs", name, time.monotonic() - start)
+            current = (_progress["tensors"], _progress["bytes"])
+            tensors = current[0] - base[0]
+            if tensors:
+                detail = (
+                    f"{tensors} tensors / {(current[1] - base[1]) / 1024**3:.2f} GiB "
+                    f"converted, +{current[0] - last[0]} since the last report"
+                )
+            else:
+                detail = "no tensors converted yet"
+            last = current
+            LOG.info(
+                "%s: still running after %.0fs (%s)",
+                name,
+                time.monotonic() - start,
+                detail,
+            )
 
     LOG.info("%s: starting", name)
     thread = threading.Thread(target=heartbeat, name="nf4-progress", daemon=True)
