@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e
+
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 set -o pipefail
@@ -9,8 +11,12 @@ for i in 1 2 3; do
     echo "HF cache extracted successfully"
     break
   fi
+  if [ "$i" -eq 3 ]; then
+    echo "HF cache download failed after 3 attempts" >&2
+    exit 1
+  fi
   echo "Attempt $i failed, cleaning up and retrying in 15s..."
-  rm -rf "${HF_HOME}/hub/"*
+  rm -rf "${HF_HOME:?}/hub/"*
   sleep 15
 done
 
