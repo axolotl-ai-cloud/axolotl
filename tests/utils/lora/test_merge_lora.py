@@ -353,6 +353,67 @@ class TestEfficientMerge:
             base_weights["model.embed_tokens.weight"],
         )
 
+    def test_nf4_gate_follows_prefixed_layer_type_map(self, tmp_path):
+        """The exclusion gate must use the same prefix fallback as the layer lookup."""
+        hidden, r = 64, 8
+        base = torch.randn(hidden, hidden)
+        lora_state = {
+            "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                r, hidden
+            ),
+            "base_model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                hidden, r
+            ),
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base,
+            "layers.0.self_attn.q_proj.weight",
+            lora_state,
+            2.0,
+            {"r": r, "lora_alpha": 16},
+            "cpu",
+            simulate_nf4=True,
+            nf4_skips=set(),
+            layer_type_map={"model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert was_merged
+        # zero LoRA, so any difference from base is the NF4 roundtrip
+        assert not torch.equal(merged, base)
+
+    def test_bitsandbytes_merge_without_introspection(self, tmp_path):
+        """An empty layer_type_map must not raise a torchao-specific error on bnb."""
+        hidden, r, alpha = 32, 8, 16
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=alpha)
+        safetensors.torch.save_file(
+            {
+                "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                    r, hidden
+                ),
+                "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                    hidden, r
+                ),
+            },
+            adapter_dir / "adapter_model.safetensors",
+        )
+        output_dir = tmp_path / "output"
+
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+            simulate_nf4=True,
+            nf4_backend="bitsandbytes",
+            nf4_skips={"lm_head", "embed_out"},
+        )
+
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        assert not torch.equal(merged[q_key], base_weights[q_key])
+
     def test_resolve_alpha_for_key_returns_none_without_pattern(self):
         assert (
             _resolve_lora_alpha_for_key("model.layers.0.self_attn.q_proj.weight", {})

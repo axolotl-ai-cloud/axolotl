@@ -1384,6 +1384,26 @@ def _warn_if_quant_undequantized(key: str, tensor: torch.Tensor, do_nf4: bool) -
     )
 
 
+def _lookup_layer_type(
+    layer_type_map: Optional[Dict[str, str]], key: str
+) -> Optional[str]:
+    """Resolve a checkpoint key to its runtime module type across prefix variations."""
+    if not layer_type_map:
+        return None
+    mod_path = key.removesuffix(".weight")
+    layer_type = layer_type_map.get(mod_path)
+    if layer_type is None:
+        for prefix in (
+            "model.",
+            "model.language_model.",
+            "model.language_model.model.",
+        ):
+            layer_type = layer_type_map.get(prefix + mod_path)
+            if layer_type:
+                break
+    return layer_type
+
+
 def _should_nf4_roundtrip(
     key: str,
     tensor: torch.Tensor,
@@ -1444,13 +1464,16 @@ def _merge_tensor_with_lora(
     if nf4_backend == "torchao" or nf4_skips is not None:
         from axolotl.utils.nf4 import nf4_should_quantize
 
-        module_name = key.removesuffix(".weight")
         do_nf4 = nf4_should_quantize(
             key,
             linear=bool(
                 simulate_nf4
                 and tensor.ndim == 2
-                and (layer_type_map or {}).get(module_name) == "Linear"
+                and (
+                    _lookup_layer_type(layer_type_map, key) == "Linear"
+                    if layer_type_map
+                    else nf4_backend != "torchao"
+                )
             ),
             expert=bool(
                 simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
@@ -1482,20 +1505,7 @@ def _merge_tensor_with_lora(
         )
 
         # Look up layer type from meta-device model introspection
-        _layer_type = None
-        if layer_type_map:
-            mod_path = key.rsplit(".weight", 1)[0] if key.endswith(".weight") else key
-            _layer_type = layer_type_map.get(mod_path)
-            # Try common prefix variations (e.g. with/without "model." prefix)
-            if _layer_type is None:
-                for prefix in [
-                    "model.",
-                    "model.language_model.",
-                    "model.language_model.model.",
-                ]:
-                    _layer_type = layer_type_map.get(prefix + mod_path)
-                    if _layer_type:
-                        break
+        _layer_type = _lookup_layer_type(layer_type_map, key)
 
         delta = _build_peft_layer_and_get_delta(
             lora_a.to(device),
@@ -2085,11 +2095,7 @@ def merge_lora_sharded_efficient(
         base_model_path, trust_remote_code=trust_remote_code, meta_model=meta_model
     )
     del meta_model
-    if (
-        (nf4_backend == "torchao" or nf4_skips is not None)
-        and simulate_nf4
-        and not layer_type_map
-    ):
+    if nf4_backend == "torchao" and simulate_nf4 and not layer_type_map:
         raise ValueError(
             "torchao NF4 merge requires model introspection to identify quantized Linear weights"
         )
