@@ -94,6 +94,7 @@ class CustomSupportedOptimizers(str, Enum):
     adamc = "adamc"
     came_pytorch = "came_pytorch"
     muon = "muon"
+    normuon = "normuon"
     dion = "dion"
     sinkgd = "sinkgd"
     polora = "polora"
