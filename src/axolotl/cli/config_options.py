@@ -1677,6 +1677,36 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "The number of elements in each group for per-group fake quantization",
     ),
     (
+        ("--export.format",),
+        "export__format",
+        None,
+        "Deployment format to export to.",
+    ),
+    (
+        ("--export.outtype",),
+        "export__outtype",
+        None,
+        "Weight type of the GGUF conversion.",
+    ),
+    (
+        ("--export.quantize",),
+        "export__quantize",
+        None,
+        "llama.cpp quant types to additionally emit, e.g. ['Q4_K_M', 'Q8_0'].",
+    ),
+    (
+        ("--export.outfile",),
+        "export__outfile",
+        "str",
+        "Output path; `{ftype}` is replaced by each weight type. Default: {output_dir}/gguf/{run}-{ftype}.gguf",
+    ),
+    (
+        ("--export.llama-cpp-dir",),
+        "export__llama_cpp_dir",
+        "str",
+        "Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
+    ),
+    (
         ("--reward-model/--no-reward-model",),
         None,
         None,
