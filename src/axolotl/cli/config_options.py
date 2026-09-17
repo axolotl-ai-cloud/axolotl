@@ -691,12 +691,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
     ),
     (
-        ("--nf4-prefetch-memory-mb",),
-        None,
-        None,
-        "Maximum MiB of CPU inputs prefetched for one upcoming staged NF4 conversion group. Set to 0 for sequential loading.",
-    ),
-    (
         ("--adapter",),
         None,
         None,

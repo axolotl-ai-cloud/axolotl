@@ -64,12 +64,14 @@ def _load_nf4_model(
 
     from axolotl.monkeypatch.moe_quant import patch_peft_target_parameters_matching
     from axolotl.monkeypatch.peft.nf4 import patch_nf4_merge
+    from axolotl.utils.quantization import patch_transformers_skip_quantized_init
 
     if cfg.fsdp_config:
         from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_adapter_state
 
         patch_nf4_adapter_state()
     patch_nf4_merge()
+    patch_transformers_skip_quantized_init()
     patch_peft_target_parameters_matching()
     from axolotl.monkeypatch.moe_quant import _moe_load_state
 
@@ -215,7 +217,6 @@ def staged_nf4_loading(
     import transformers.core_model_loading as loading
     import transformers.modeling_utils as modeling
 
-    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
     from axolotl.monkeypatch.moe_quant import _moe_load_state
 
     original = loading.set_param_for_module
@@ -280,7 +281,6 @@ def staged_nf4_loading(
                 "HF_DEACTIVATE_ASYNC_LOAD": "true",
             },
         ),
-        prefetch_nf4_weights(int(cfg.get("nf4_prefetch_memory_mb", 1024)) * 1024**2),
         patch.object(loading, "set_param_for_module", set_param),
         patch.object(modeling, "caching_allocator_warmup", lambda *a, **k: None),
     ):

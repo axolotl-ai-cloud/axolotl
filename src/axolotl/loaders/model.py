@@ -248,17 +248,9 @@ class ModelLoader:
         self._set_attention_config()
         self._check_model_requirements()
 
-        # MX-quantized checkpoints carry MXTensor weights but no HF quantizer, so
-        # transformers' load-time weight re-init would crash on them; this guards it.
-        # torchao is absent on macOS/aarch64, where MX checkpoints can't exist anyway.
-        try:
-            from axolotl.utils.quantization import (
-                patch_transformers_skip_quantized_init,
-            )
+        from axolotl.utils.quantization import patch_transformers_skip_quantized_init
 
-            patch_transformers_skip_quantized_init()
-        except ImportError:
-            pass
+        patch_transformers_skip_quantized_init()
 
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""

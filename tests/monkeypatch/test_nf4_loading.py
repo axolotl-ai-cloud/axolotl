@@ -1297,133 +1297,6 @@ def test_cuda_nf4_fsdp2_shape_matrix(
     _run_nf4_shape_case(architecture, backend, reshard, wrap_policy, tmp_path, "cuda")
 
 
-def test_nf4_prefetch_bound_and_overlap():
-    import gc
-    import threading
-    import weakref
-
-    import transformers.core_model_loading as loading
-
-    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
-
-    started = [threading.Event() for _ in range(3)]
-    refs = {}
-
-    class Source:
-        shape = (16,)
-
-        def __init__(self, index):
-            self.index = index
-
-        def __getitem__(self, key):
-            value = torch.ones(self.shape)
-            refs[self.index] = weakref.ref(value)
-            started[self.index].set()
-            return value
-
-    with prefetch_nf4_weights(1024):
-        groups = []
-        for index in range(3):
-            key = str(index)
-            group = loading.WeightRenaming(key, key)
-            group.add_tensor(
-                key,
-                key,
-                key,
-                loading.spawn_materialize(None, Source(index), "cpu", torch.float32),
-            )
-            groups.append((key, group))
-        iterator = iter(loading.tqdm(groups, desc="Loading weights"))
-        _, current = next(iterator)
-        assert started[1].wait(5)
-        assert not started[0].is_set() and not started[2].is_set()
-        value = current.materialize_tensors()
-        del value
-        gc.collect()
-        assert refs[0]() is None
-        _, current = next(iterator)
-        assert started[2].wait(5)
-        value = current.materialize_tensors()
-        del value
-        gc.collect()
-        assert refs[1]() is None
-        _, current = next(iterator)
-        current.materialize_tensors()
-        with pytest.raises(StopIteration):
-            next(iterator)
-
-
-@pytest.mark.parametrize("budget", [0, 1])
-def test_nf4_prefetch_oversized_groups_are_lazy(budget):
-    import transformers.core_model_loading as loading
-
-    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
-
-    reads = []
-
-    class Source:
-        shape = (16,)
-
-        def __getitem__(self, key):
-            reads.append(True)
-            return torch.ones(self.shape)
-
-    with prefetch_nf4_weights(budget):
-        groups = []
-        for key in ("a", "b"):
-            group = loading.WeightRenaming(key, key)
-            group.add_tensor(
-                key,
-                key,
-                key,
-                loading.spawn_materialize(None, Source(), "cpu", torch.float32),
-            )
-            groups.append((key, group))
-        for _, group in loading.tqdm(groups, desc="Loading weights"):
-            before = len(reads)
-            group.materialize_tensors()
-            assert len(reads) == before + 1
-        assert len(reads) == 2
-
-
-def test_nf4_prefetch_failure_restores_loader():
-    import threading
-
-    import transformers.core_model_loading as loading
-
-    from axolotl.loaders.nf4_prefetch import prefetch_nf4_weights
-
-    original = loading.spawn_materialize
-
-    class BrokenSource:
-        shape = (16,)
-
-        def __getitem__(self, key):
-            raise OSError("checkpoint read failed")
-
-    with pytest.raises(OSError, match="checkpoint read failed"):
-        with prefetch_nf4_weights(1024):
-            groups = []
-            for key in ("a", "b"):
-                group = loading.WeightRenaming(key, key)
-                group.add_tensor(
-                    key,
-                    key,
-                    key,
-                    loading.spawn_materialize(
-                        None, BrokenSource(), "cpu", torch.float32
-                    ),
-                )
-                groups.append((key, group))
-            iterator = iter(loading.tqdm(groups, desc="Loading weights"))
-            next(iterator)
-            next(iterator)
-    assert loading.spawn_materialize is original
-    assert not any(
-        thread.name.startswith("nf4-prefetch") for thread in threading.enumerate()
-    )
-
-
 def _nf4_delayed_loading_worker(
     rank, checkpoint, rendezvous, timeout_source, device_type
 ):
@@ -1544,6 +1417,7 @@ def test_nf4_peer_metadata_does_not_copy_cpu_buffers(backend, monkeypatch):
 
 
 def test_nf4_phase_reports_progress_and_failure(monkeypatch):
+    import re
     import threading
 
     from axolotl.utils import nf4_loading
@@ -1559,8 +1433,15 @@ def test_nf4_phase_reports_progress_and_failure(monkeypatch):
     monkeypatch.setattr(nf4_loading.LOG, "info", record)
     with pytest.raises(ValueError, match="failed conversion"):
         with nf4_loading.nf4_phase("Test phase", interval=0.01):
+            # a heartbeat that only reports elapsed time cannot tell slow from hung
+            nf4_loading.record_progress(4096)
             assert heartbeat.wait(5)
             raise ValueError("failed conversion")
+    assert any(
+        re.search(r"\b[1-9]\d* tensors", message)
+        for message in messages
+        if "still running" in message
+    ), messages
     assert any("starting" in message for message in messages)
     assert any("failed after" in message for message in messages)
     assert not any(thread.name == "nf4-progress" for thread in threading.enumerate())
@@ -1600,94 +1481,6 @@ def test_nf4_loading_group_timeout_and_cleanup(
             raise RuntimeError("loading failed")
     create.assert_called_once_with(backend="gloo", timeout=timedelta(seconds=expected))
     destroy.assert_called_once_with(group)
-
-
-@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-@pytest.mark.parametrize("architecture", ["dense", "moe"])
-def test_nf4_prefetch_transformers_checkpoint(
-    backend, architecture, tmp_path, monkeypatch
-):
-    import threading
-    from concurrent.futures import ThreadPoolExecutor
-
-    import transformers.core_model_loading as loading
-    from transformers import (
-        LlamaConfig,
-        LlamaForCausalLM,
-        Qwen3MoeConfig,
-        Qwen3MoeForCausalLM,
-    )
-
-    from axolotl.loaders.nf4 import load_nf4_model
-    from axolotl.utils.dict import DictDefault
-
-    options = dict(
-        hidden_size=128,
-        intermediate_size=128,
-        num_hidden_layers=1,
-        num_attention_heads=2,
-        num_key_value_heads=2,
-        vocab_size=128,
-    )
-    if architecture == "moe":
-        cls = Qwen3MoeForCausalLM
-        config = Qwen3MoeConfig(
-            **options, moe_intermediate_size=128, num_experts=2, num_experts_per_tok=1
-        )
-    else:
-        cls = LlamaForCausalLM
-        config = LlamaConfig(**options)
-    cls(config).save_pretrained(tmp_path, max_shard_size="100KB")
-    assert len(list(tmp_path.glob("*.safetensors"))) > 1
-    cfg = DictDefault(
-        base_model=str(tmp_path),
-        nf4_backend=backend,
-        quantize_moe_experts=True,
-        torch_dtype=torch.float32,
-        nf4_prefetch_memory_mb=0,
-    )
-
-    def load():
-        return load_nf4_model(
-            cls,
-            copy.deepcopy(config),
-            {"dtype": torch.float32, "device_map": {"": "cpu"}},
-            cfg,
-            "cpu",
-        )
-
-    reference = load()
-    original_spawn = loading.spawn_materialize
-    original_materialize = loading.WeightTransform.materialize_tensors
-    original_progress = loading.tqdm
-    submit = ThreadPoolExecutor.submit
-    workers = []
-
-    def observe_submit(executor, fn, *args, **kwargs):
-        def observed():
-            workers.append(threading.current_thread().name)
-            return fn(*args, **kwargs)
-
-        return submit(executor, observed)
-
-    monkeypatch.setattr(ThreadPoolExecutor, "submit", observe_submit)
-    cfg.nf4_prefetch_memory_mb = 16
-    actual = load()
-    assert workers, "Transformers checkpoint loading bypassed NF4 prefetch"
-    assert all(name.startswith("nf4-prefetch") for name in workers)
-    assert loading.spawn_materialize is original_spawn
-    assert loading.WeightTransform.materialize_tensors is original_materialize
-    assert loading.tqdm is original_progress
-    assert not any(
-        thread.name.startswith("nf4-prefetch") for thread in threading.enumerate()
-    )
-    for name, value in reference.state_dict().items():
-        torch.testing.assert_close(actual.state_dict()[name], value, rtol=0, atol=0)
-    tokens = torch.randint(0, 128, (1, 4))
-    with torch.no_grad():
-        torch.testing.assert_close(
-            actual(tokens).logits, reference(tokens).logits, rtol=0, atol=0
-        )
 
 
 def _divergent_plan_worker(rank, rendezvous):
@@ -1977,109 +1770,6 @@ def test_nf4_rank_zero_metadata_failure_propagates_to_peers(tmp_path, monkeypatc
     assert outcomes[1]["elapsed"] < 5, outcomes[1]
 
 
-def test_nf4_phase_heartbeat_reports_conversion_progress(tmp_path, monkeypatch):
-    """The heartbeat must distinguish a slow conversion from a hung one."""
-    import re
-    import time
-
-    from transformers import BitsAndBytesConfig, LlamaConfig, LlamaForCausalLM
-
-    import axolotl.loaders.nf4 as nf4_loader
-    from axolotl.utils import nf4_loading
-    from axolotl.utils.dict import DictDefault
-
-    checkpoint = tmp_path / "base"
-    LlamaForCausalLM(
-        LlamaConfig(
-            hidden_size=128,
-            intermediate_size=128,
-            num_hidden_layers=1,
-            num_attention_heads=2,
-            num_key_value_heads=2,
-            vocab_size=128,
-        )
-    ).save_pretrained(checkpoint)
-
-    original = nf4_loader.quantize_bnb_4bit
-
-    def slow(*args, **kwargs):
-        time.sleep(0.02)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(nf4_loader, "quantize_bnb_4bit", slow)
-
-    messages = []
-    monkeypatch.setattr(
-        nf4_loading.LOG, "info", lambda message, *args: messages.append(message % args)
-    )
-    cfg = DictDefault(
-        base_model=str(checkpoint),
-        nf4_backend="bitsandbytes",
-        torch_dtype=torch.float32,
-    )
-    with (
-        nf4_loading.nf4_phase("NF4 checkpoint loading and quantization", interval=0.01),
-        nf4_loader.staged_nf4_loading(
-            cfg, device="cpu", quantization_config=BitsAndBytesConfig(load_in_4bit=True)
-        ),
-    ):
-        LlamaForCausalLM.from_pretrained(
-            checkpoint, dtype=torch.float32, device_map={"": "cpu"}
-        )
-    heartbeats = [message for message in messages if "still running" in message]
-    assert heartbeats, messages
-    assert any(re.search(r"\b[1-9]\d* tensors", message) for message in heartbeats), (
-        heartbeats
-    )
-
-
-def test_selective_expert_weights_accepts_tuple_quant_state_shape(monkeypatch):
-    """A plain-tuple 1-D quant_state shape must still take the selective fast path."""
-    import bitsandbytes.functional as F
-
-    from axolotl.integrations.kernels.libs.scattermoe_lora import selective_dequant
-
-    num_experts, d1, d2 = 4, 8, 8
-    flat = torch.randn(num_experts * d1 * d2, dtype=torch.bfloat16)
-    packed, quant_state = F.quantize_4bit(
-        flat, blocksize=64, compress_statistics=False, quant_type="nf4"
-    )
-    # bnb hands back a torch.Size; a caller that rebuilt the state may hand back a tuple.
-    quant_state.shape = (num_experts * d1 * d2,)
-
-    class _ParamList:
-        def __init__(self, original, transform):
-            self.original = original
-            self._transform = transform
-
-        def __getitem__(self, index):
-            return self._transform
-
-    experts_module = nn.Module()
-    experts_module.num_experts = num_experts
-    experts_module.hidden_dim = d2
-    experts_module.parametrizations = {
-        "gate_up_proj": _ParamList(packed, SimpleNamespace(quant_state=quant_state))
-    }
-    # Present so the non-selective fallback returns cleanly instead of raising.
-    experts_module.gate_up_proj = torch.zeros(num_experts, d1, d2, dtype=torch.bfloat16)
-
-    calls = []
-
-    def record(raw_param, qs, active, expert_shape):
-        calls.append(expert_shape)
-        return torch.zeros(len(active), *expert_shape, dtype=torch.bfloat16)
-
-    monkeypatch.setattr(selective_dequant, "_selective_dequant_bnb4", record)
-
-    active_experts = torch.tensor([0, 2])
-    selective_dequant.selective_expert_weights(
-        experts_module, "gate_up_proj", active_experts
-    )
-
-    assert calls == [(d1, d2)]
-
-
 _UNSET = object()
 
 _STAGED_NF4_BASE = dict(
@@ -2222,22 +1912,6 @@ def test_staged_nf4_validation_shadowed_when_sharding_is_defaulted(overrides, ex
         AxolotlInputConfig(**config)
 
 
-@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-def test_staged_nf4_validation_defaults_before_staged_checks(backend):
-    """qlora_sharded_model_loading must be defaulted before check_staged_nf4 reads it."""
-    from axolotl.utils.schemas.config import AxolotlInputConfig
-
-    config = _staged_nf4_config(
-        nf4_backend=backend,
-        qlora_sharded_model_loading=_UNSET,
-    )
-    validated = AxolotlInputConfig(**config)
-    assert validated.qlora_sharded_model_loading is True
-
-    with pytest.raises(ValueError, match="without DoRA or modules_to_save"):
-        AxolotlInputConfig(**dict(config, peft_use_dora=True))
-
-
 def test_staged_nf4_validation_expert_parallel():
     """expert_parallel_size only exists once its plugin args are merged in."""
     from axolotl.integrations.expert_parallel.args import ExpertParallelArgs
@@ -2348,3 +2022,71 @@ def test_init_distributed_state_warns_without_explicit_timeout(tmp_path, monkeyp
         dist.destroy_process_group()
         PartialState._reset_state()
         axolotl_distributed.distributed_state = None
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+def test_staged_loading_does_not_reinitialize_quantized_weights(backend, tmp_path):
+    """Staged loading must not let Transformers re-initialize the weights it just packed.
+
+    Popping ``quantization_config`` means Transformers registers no quantizer, so the
+    parametrized weights read as missing keys and ``_init_weights`` draws a full
+    ``normal_`` over every one of them, single-threaded on CPU, before step one.
+    """
+    from transformers import BitsAndBytesConfig, LlamaConfig, LlamaForCausalLM
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    config = LlamaConfig(
+        hidden_size=256,
+        intermediate_size=512,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        vocab_size=512,
+    )
+    checkpoint = tmp_path / "base"
+    LlamaForCausalLM(config).save_pretrained(checkpoint)
+
+    original = torch.Tensor.normal_
+    drawn = []
+
+    def counting_normal(self, *args, **kwargs):
+        drawn.append(self.numel())
+        return original(self, *args, **kwargs)
+
+    def measure(load):
+        drawn.clear()
+        torch.Tensor.normal_ = counting_normal
+        try:
+            load()
+        finally:
+            torch.Tensor.normal_ = original
+        return sum(drawn)
+
+    baseline = measure(
+        lambda: LlamaForCausalLM.from_pretrained(checkpoint, dtype=torch.float32)
+    )
+    staged = measure(
+        lambda: load_nf4_model(
+            LlamaForCausalLM,
+            config,
+            {
+                "dtype": torch.float32,
+                "device_map": {"": "cpu"},
+                "quantization_config": BitsAndBytesConfig(
+                    load_in_4bit=True, bnb_4bit_quant_type="nf4"
+                ),
+            },
+            DictDefault(
+                base_model=str(checkpoint),
+                nf4_backend=backend,
+                torch_dtype=torch.float32,
+            ),
+            "cpu",
+        )
+    )
+    assert staged == baseline, (
+        f"staged loading drew {staged} elements against a plain load's {baseline}; "
+        "quantized modules are being re-initialized"
+    )

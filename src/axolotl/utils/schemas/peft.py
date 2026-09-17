@@ -43,12 +43,6 @@ class LoraConfig(BaseModel):
         description="NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
     )
 
-    nf4_prefetch_memory_mb: int = Field(
-        default=1024,
-        ge=0,
-        description="Maximum MiB of CPU inputs prefetched for one upcoming staged NF4 conversion group. Set to 0 for sequential loading.",
-    )
-
     adapter: str | None = Field(
         default=None,
         json_schema_extra={

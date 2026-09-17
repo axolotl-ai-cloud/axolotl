@@ -172,16 +172,28 @@ def _attach_torchao_quantizer(
 
 
 def patch_transformers_skip_quantized_init():
-    """Stop ``from_pretrained`` from re-initializing already-loaded quantized weights.
+    """Stop ``from_pretrained`` from re-initializing already-quantized weights.
 
-    transformers re-runs ``_init_weights`` on every module, skipping only tensors
-    flagged ``_is_hf_initialized``. Quantized weights lose the flag because reading
-    them returns a fresh tensor: ``.float()`` on a torchao subclass (which then
-    raises on ``normal_``), or the dequant behind a parametrization (NF4, load-time
-    MoE quant), which silently redraws every expert stack.
+    transformers re-runs ``_init_weights`` on every module during loading; the
+    generic implementation does ``init.normal_(module.weight.float(), ...)``.
+    Re-initializing an already-loaded quantized weight is never correct, so we skip
+    those modules entirely. Two shapes reach this, both because the weights are
+    quantized but no HF quantizer is registered to claim them:
+
+    - a torchao tensor subclass (e.g. ``MXTensor``) as the parameter itself, where
+      ``.float()`` returns a new tensor that drops the ``_is_hf_initialized`` flag and
+      does not implement ``normal_``, so an MX checkpoint raises NotImplementedError;
+    - an NF4 parametrization, where the packed weight hides behind
+      ``module.parametrizations`` and reads as a missing key, so the module is
+      re-initialized silently: one dequantization plus a full ``normal_`` draw each,
+      on CPU, before the first step.
     """
-    from torchao.utils import TorchAOBaseTensor
     from transformers import PreTrainedModel
+
+    try:
+        from torchao.utils import TorchAOBaseTensor
+    except ImportError:  # torchao is absent on macOS/aarch64
+        TorchAOBaseTensor = ()
 
     if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
         return
