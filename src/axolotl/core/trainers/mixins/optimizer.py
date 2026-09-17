@@ -198,6 +198,24 @@ class OptimizerMixin(Trainer):
 
         return self.optimizer
 
+    def _load_optimizer_and_scheduler(self, checkpoint):
+        # torch's load_state_dict takes every hyperparameter from the checkpoint, and
+        # nothing re-applies weight_decay afterwards the way the scheduler re-applies lr,
+        # so a resumed run would silently keep the decay it was checkpointed with.
+        restore_weight_decay = (
+            [group["weight_decay"] for group in self.optimizer.param_groups]
+            if self.optimizer is not None and not self.is_deepspeed_enabled
+            else None
+        )
+
+        super()._load_optimizer_and_scheduler(checkpoint)
+
+        if restore_weight_decay is not None:
+            for group, weight_decay in zip(
+                self.optimizer.param_groups, restore_weight_decay, strict=True
+            ):
+                group["weight_decay"] = weight_decay
+
 
 class OptimizerInitMixin:
     """

@@ -4,8 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import torch
 import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
+from transformers.trainer import OPTIMIZER_NAME, SCHEDULER_NAME
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
@@ -164,6 +166,31 @@ class TestHFCausalTrainerBuilder:
         # polora takes no Adam betas/eps; the builder branch must not merge them in
         assert "betas" not in optimizer_kwargs
         assert "eps" not in optimizer_kwargs
+
+    def test_resume_keeps_configured_weight_decay(
+        self, sft_cfg, model, tokenizer, tmp_path
+    ):
+        cfg = sft_cfg.copy()
+        cfg["weight_decay"] = 0.05
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(10)
+        trainer.create_optimizer()
+        trainer.create_scheduler(num_training_steps=10, optimizer=trainer.optimizer)
+        configured = [group["weight_decay"] for group in trainer.optimizer.param_groups]
+        assert 0.05 in configured
+
+        state = trainer.optimizer.state_dict()
+        for group in state["param_groups"]:
+            group["weight_decay"] = 0.0
+        torch.save(state, tmp_path / OPTIMIZER_NAME)
+        torch.save(trainer.lr_scheduler.state_dict(), tmp_path / SCHEDULER_NAME)
+
+        trainer._load_optimizer_and_scheduler(str(tmp_path))
+
+        assert [
+            group["weight_decay"] for group in trainer.optimizer.param_groups
+        ] == configured
 
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
