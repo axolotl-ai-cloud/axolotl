@@ -110,9 +110,9 @@ The multi-GPU workflow also runs a separate NF4 suite on three H100s. It selects
 all CUDA tests in `tests/monkeypatch/test_nf4_loading.py` with `-m slow -k cuda`,
 including dense/MoE shape matrices, loading and checkpoint resume, disk caches,
 CPU offload, and tensors exceeding the bitsandbytes int32 limit. Tests run serially;
-the job fails if any are skipped. PR and scheduled runs cover the repository pins
-and Transformers 5.17.0 / Accelerate 1.15.0 / torchao 0.18.0. The nightly workflow
-runs the same suite with its nightly Hugging Face dependencies. See `cicd/nf4.sh`.
+the job fails if any are skipped. PR and scheduled runs cover the repository pins. The
+nightly workflow runs the same suite with its nightly Hugging Face dependencies. See
+`cicd/nf4.sh`.
 
 
 ## Style Guidelines

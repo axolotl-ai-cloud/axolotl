@@ -96,7 +96,10 @@ load synchronously. A fused MoE conversion can still require a complete floating
 expert tensor and its source tensors on CPU. Quantization metadata
 is replicated across ranks. Frozen base linear operations are checkpointed internally
 so backward recomputes dense weights instead of retaining them for every layer. Training still needs enough GPU memory to gather and
-execute an individual wrapped layer, including its dequantized weights.
+execute an individual wrapped layer, including its dequantized weights. While shards are
+distributed, rank zero also briefly holds one full packed tensor on its accelerator, bounded
+by the largest quantized tensor; this peak is smaller than the wrapped-layer requirement
+above.
 
 `offload_params` controls FSDP parameter offloading after loading. This path requires
 an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;

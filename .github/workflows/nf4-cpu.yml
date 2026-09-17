@@ -31,7 +31,6 @@ jobs:
       matrix:
         pytorch_version: ${{ fromJSON(inputs.pytorch_versions) }}
         stack: ["${{ inputs.nightly && 'nightly' || 'pinned' }}"]
-        include: ${{ inputs.nightly && fromJSON('[]') || fromJSON('[{"pytorch_version":"2.11.0","stack":"compatibility"}]') }}
     steps:
       - name: Free runner disk space
         run: |
@@ -57,10 +56,6 @@ jobs:
           uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install pytest pytest-cov pytest-xdist
-      - name: Install compatibility stack
-        if: matrix.stack == 'compatibility'
-        run: |
-          uv pip install --no-deps transformers==5.17.0 accelerate==1.15.0 torchao==0.18.0
       - name: Override with nightly HF packages
         if: inputs.nightly
         run: |
