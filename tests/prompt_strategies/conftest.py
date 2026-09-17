@@ -164,6 +164,16 @@ def fixture_muse_glimmer_tokenizer(
     return tokenizer
 
 
+@pytest.fixture(name="minicpm5_tokenizer", scope="session")
+@enable_hf_offline
+def fixture_minicpm5_tokenizer(
+    download_minicpm5_tokenizer_fixture,
+):
+    tokenizer = AutoTokenizer.from_pretrained("openbmb/MiniCPM5-2B")
+
+    return tokenizer
+
+
 @pytest.fixture(name="magistral_tokenizer", scope="session")
 @enable_hf_offline
 def fixture_magistral_tokenizer(
