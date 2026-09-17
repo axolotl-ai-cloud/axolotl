@@ -1,10 +1,9 @@
 """
 Load-balanced multiprocess tokenization.
 
-``Dataset.map(num_proc=N)`` hands each worker one contiguous shard, so a shard
-that happens to hold the long examples leaves the rest of the pool idle. Here
-workers pull small chunks of row indices instead, and the results are streamed
-into an Arrow cache file.
+``Dataset.map(num_proc=N)`` gives each worker one contiguous shard, so a shard
+holding the long examples leaves the rest of the pool idle. Workers here pull
+chunks of row indices instead.
 """
 
 import math
@@ -27,15 +26,13 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 MAX_CHUNK_SIZE = 1000
-# Enough chunks per worker that a slow one gets overtaken, few enough that the
-# per-chunk IPC round trip stays amortized.
-CHUNKS_PER_WORKER = 32
 MIN_CHUNK_SIZE = 8
-# Cap on chunks submitted but not yet collected, so fast workers cannot run far
-# enough ahead of the single writer to exhaust memory.
+# Enough chunks that a slow worker gets overtaken, few enough to amortize the IPC.
+CHUNKS_PER_WORKER = 32
+# Bounds submitted-but-uncollected chunks so workers cannot outrun the writer.
 MAX_IN_FLIGHT_PER_WORKER = 4
-# Match ``map``'s writer_batch_size: the first write fixes the Arrow schema, so
-# it has to see enough rows to infer types for optional/empty columns.
+# The first write fixes the Arrow schema, so it must see enough rows to infer
+# types for columns that are empty in early rows.
 WRITER_BATCH_SIZE = 1000
 
 # Set once per worker by the pool initializer so tasks only ship row indices.
@@ -71,6 +68,7 @@ def _tokenize_chunk(bounds: tuple[int, int]) -> dict[str, list]:
     ]
     # A row that tokenizes to nothing must not take its chunk-mates with it.
     rows = [row for row in rows if row]
+
     if not rows:
         return {}
 
@@ -143,11 +141,11 @@ def tokenize_with_work_queue(
     num_proc: int,
     keep_in_memory: bool | None = False,
 ) -> Dataset:
-    """Tokenize ``dataset`` with ``prompt_tokenizer`` across ``num_proc`` workers.
+    """Tokenize ``dataset`` across ``num_proc`` workers, dropping input columns.
 
-    Like ``dataset.map(prompt_tokenizer.tokenize_prompt, num_proc=...,
-    remove_columns=<all>)``, but workers take the next chunk as soon as they
-    finish the current one rather than owning a fixed shard.
+    Equivalent to ``dataset.map(..., remove_columns=<all>)`` except that workers
+    take the next chunk as they finish rather than owning a fixed shard. A hung
+    worker is not detected; only a dead one.
     """
     fingerprint = update_fingerprint(
         dataset._fingerprint,
@@ -157,8 +155,8 @@ def tokenize_with_work_queue(
             "batched": prompt_tokenizer.supports_batched,
         },
     )
-    # ``map`` only caches datasets that are already file-backed; for in-memory
-    # ones a cache path would land in a per-session temp dir and never be reused.
+    # Matching ``map``: an in-memory dataset has no cache dir, so a cache path
+    # would land in a per-session temp dir and never be reused.
     cache_file = (
         dataset._get_cache_file_path(fingerprint)
         if not keep_in_memory and dataset.cache_files

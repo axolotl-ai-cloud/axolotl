@@ -3,7 +3,7 @@
 import pytest
 from datasets import Dataset
 
-from axolotl.datasets_work_queue import tokenize_with_work_queue
+from axolotl.utils.data.work_queue import tokenize_with_work_queue
 
 
 class FakeStrategy:
