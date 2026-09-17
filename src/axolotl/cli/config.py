@@ -308,11 +308,20 @@ def load_cfg(
     else:
         capabilities, env_capabilities = gpu_capabilities()
 
-    cfg = validate_config(
-        cfg,
-        capabilities=capabilities,
-        env_capabilities=env_capabilities,
-    )
+    try:
+        cfg = validate_config(
+            cfg,
+            capabilities=capabilities,
+            env_capabilities=env_capabilities,
+        )
+    except Exception:
+        # a rejected config must not leave register()-time side effects (e.g.
+        # LIGER_KERNEL_IMPL) behind for the next config in this process
+        if cfg.get("plugins"):
+            from axolotl.integrations.base import PluginManager
+
+            PluginManager.get_instance().on_config_validation_error(cfg)
+        raise
 
     # NOTE(djsaunde): We start outputting to output_dir/debug.log at this point since we
     # have to wait for cfg.output to be resolved. We could call this earlier if we write

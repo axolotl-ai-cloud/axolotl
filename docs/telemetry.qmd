@@ -18,8 +18,7 @@ version, etc.
 - Hardware info: CPU count, memory, GPU count and models
 - Runtime metrics: Training progress, memory usage, timing information
 - Usage patterns: Models (from a whitelist) and configurations used
-- Error tracking: Stack traces and error messages (sanitized to remove personal
-information)
+- Error tracking: Exception types and sanitized stack-frame locations
 
 Personally identifiable information (PII) is not collected.
 
@@ -38,6 +37,75 @@ runtime metrics telemetry.
 
 The telemetry system will block training startup for 10 seconds to ensure users are
 aware of data collection, unless telemetry is explicitly enabled or disabled.
+
+## Training metric properties
+
+Missing metrics are omitted rather than reported as zero. Finite values remain
+numbers, including zero. Non-finite values are encoded as the strings `"NaN"`,
+`"Infinity"`, and `"-Infinity"` so numerical failures survive JSON serialization.
+Filter these strings separately when aggregating numeric metrics.
+
+`train-end` separates the trainer's aggregate loss from the latest logged training
+metrics:
+
+```json
+{
+  "step": 1200,
+  "start_step": 1000,
+  "total_steps": 200,
+  "aggregate": {"train_loss": 1.8},
+  "latest_step": {
+    "loss": 1.5,
+    "grad_norm": "NaN",
+    "metric_steps": {"loss": 1200, "grad_norm": 1200}
+  }
+}
+```
+
+`aggregate.train_loss` is the summary value supplied by the trainer.
+`latest_step.loss` is the last logged loss, which can average a logging interval
+rather than represent a single optimizer step. Train-end queries previously using
+`loss` or other top-level training metrics must use their `latest_step` fields.
+
+`train-progress` retains top-level training metrics and includes a `metric_steps`
+object recording each metric's source step. Progress callbacks run before the
+current step is logged, so these values can come from earlier steps. Metrics are
+collected through `on_log`; evaluation and summary entries do not erase them.
+
+Timing, `total_steps`, and throughput cover the current training invocation.
+`step` is the cumulative trainer step, and `start_step` is its value at training
+start, including checkpoint resume. Cached metrics reset at training start, so a
+resumed run reports only newly logged metrics. Epoch numbering follows trainer
+state.
+
+## Error event properties
+
+Error events retain their existing `<module>.<function>-error` names. The
+`exception` property is now an object containing `type` and `module`.
+`stack_trace.frames` is a list of objects containing `filename`, `function`, and
+`lineno`. Package paths are relative to `site-packages`, `dist-packages`, or
+`axolotl`; other file paths are reduced to basenames.
+
+Raw exception messages, source lines, local variables, and exception notes are
+excluded. Queries that previously treated `exception` or `stack_trace` as strings
+must use the structured fields. These remain ordinary PostHog events, not native
+Error Tracking `$exception` events.
+
+Nested decorated calls report the same propagating exception once. Independent
+failures remain reportable, including later calls in the same process.
+
+## Memory metrics
+
+GPU peak values use allocator high-water marks where available. They are collected
+each training and evaluation step before trainer logging resets the allocator's
+peak counters, and refreshed at training end. Telemetry retains the greatest value
+observed and does not reset shared allocator counters itself. Allocator peaks may
+include allocations preceding training if the counters have not been reset.
+
+`gpu_<id>_peak_memory_source` identifies `allocator_high_water_mark` or `sampled`.
+Devices without a peak allocation API, including MPS, use sampled allocations and
+can miss transient peaks. CPU peak memory remains a sampled resident-memory value.
+GPU values describe the reporting process's allocations, not cluster-wide memory.
 
 ## Opt-Out Mechanism
 

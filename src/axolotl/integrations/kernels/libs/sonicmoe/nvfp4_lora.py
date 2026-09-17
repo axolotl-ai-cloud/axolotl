@@ -218,16 +218,18 @@ def _lora_backward_per_group(
         return dx, d_lora_A, d_lora_B
 
     dx = torch.zeros_like(x_grouped)
-    d_A_3d = grad_h.new_zeros((E, r, dim2))
-    d_B_3d = grad_h.new_zeros((E, dim1, r))
+    # this is the fallback the grouped-mm guard takes on a dtype mismatch, so x,
+    # grad and the LoRA factors may all differ here and none of them can be assumed
+    d_A_3d = torch.zeros((E, r, dim2), dtype=lora_A.dtype, device=grad_h.device)
+    d_B_3d = torch.zeros((E, dim1, r), dtype=lora_A.dtype, device=grad_h.device)
 
     for e in range(E):
         start = int(expert_offsets[e])
         end = int(expert_offsets[e + 1])
         if end <= start:
             continue
-        x_e = x_grouped[start:end]  # [T_e, dim2]
         g_e = grad_h[start:end]  # [T_e, dim1]
+        x_e = x_grouped[start:end].to(g_e.dtype)  # [T_e, dim2]
 
         # dx_e = g_e @ W_eff_e with W_eff_e = W_e + scaling * (B_e @ A_e),
         # split so W_eff is never materialized and the NVFP4 base dequantizes
@@ -235,10 +237,12 @@ def _lora_backward_per_group(
         w_e = dequantize_expert_slice(base_weight, e)  # [dim1, dim2]
         dx[start:end] = g_e @ w_e.to(g_e.dtype)
         if not dx_via_weight_only:
-            dx[start:end] += scaling * ((g_e @ B_3d[e]) @ A_3d[e])
+            dx[start:end] += scaling * (
+                (g_e @ B_3d[e].to(g_e.dtype)) @ A_3d[e].to(g_e.dtype)
+            )
 
         # dW_eff_e = grad_h_e^T @ x_e  ([dim1, dim2], the [E, dim1, dim2] convention)
-        dW_e = g_e.transpose(0, 1) @ x_e  # [dim1, dim2]
+        dW_e = (g_e.transpose(0, 1) @ x_e).to(lora_A.dtype)  # [dim1, dim2]
 
         # Same map as MoELoRAMaterialize.backward:
         #   dA_e = scaling * B_e^T @ dW_e     ([r, dim1] @ [dim1, dim2] = [r, dim2])
@@ -529,8 +533,11 @@ def grouped_expert_mlp_lora(
     ma_pts1: Optional[torch.Tensor] = None,
     merge_aware2: bool = False,
     ma_pts2: Optional[torch.Tensor] = None,
+    gated: bool = True,
 ) -> torch.Tensor:
-    """Chain up-LoRA -> gated activation -> down-LoRA over grouped tokens.
+    """Chain up-LoRA -> activation -> down-LoRA over grouped tokens.
+
+    ``gated=False``: ``w1`` is up-only ``[E, I, H]``.
 
     ``lora1`` / ``lora2`` are ``(lora_A, lora_B)`` tuples or ``None`` (``None``
     means plain base grouped GEMM, no low-rank path). ``b1`` / ``b2`` are
@@ -548,6 +555,7 @@ def grouped_expert_mlp_lora(
         and b1 is None
         and limit is None
         and concat
+        and gated
         and act in ("silu", "swiglu")
         and _fused_up_act_enabled()
     ):
@@ -575,7 +583,7 @@ def grouped_expert_mlp_lora(
         if b1 is not None:
             h = _add_expert_bias(h, expert_offsets, b1)
 
-        a = gated_activation(h, act, concat=concat, limit=limit)
+        a = gated_activation(h, act, concat=concat, limit=limit, gated=gated)
 
     if lora2 is not None:
         A2, B2 = lora2
@@ -740,6 +748,7 @@ def grouped_moe_reference_forward(
     scaling1: float,
     scaling2: float,
     limit: Optional[float] = None,
+    gated: bool = True,
 ) -> torch.Tensor:
     """End-to-end NVFP4 MoE forward: route -> grouped gated MLP -> combine.
 
@@ -801,6 +810,7 @@ def grouped_moe_reference_forward(
         ma_pts1=ma_pts1,
         merge_aware2=ma2,
         ma_pts2=ma_pts2,
+        gated=gated,
     )
     return combine_expert_outputs(
         y_grouped, gather_token_idx, weights_grouped, hidden_states.shape[0]

@@ -41,9 +41,16 @@ async def handler(job):
     # Handle credentials
     credentials = inputs.get("credentials", {})
 
-    if "wandb_api_key" in credentials:
+    # Workers are reused across jobs, so endpoint-level credentials have to survive
+    # the per-job cleanup below while job-supplied ones must not leak into the next job.
+    endpoint_credentials = {
+        key: os.environ.get(key) for key in ("WANDB_API_KEY", "HF_TOKEN")
+    }
+
+    # Empty values are treated as absent so they don't clobber endpoint-level credentials.
+    if credentials.get("wandb_api_key"):
         os.environ["WANDB_API_KEY"] = credentials["wandb_api_key"]
-    if "hf_token" in credentials:
+    if credentials.get("hf_token"):
         os.environ["HF_TOKEN"] = credentials["hf_token"]
 
     if os.environ.get("HF_TOKEN"):
@@ -57,10 +64,11 @@ async def handler(job):
     logger.info("Training Complete.")
 
     # Cleanup
-    if "WANDB_API_KEY" in os.environ:
-        del os.environ["WANDB_API_KEY"]
-    if "HF_TOKEN" in os.environ:
-        del os.environ["HF_TOKEN"]
+    for key, value in endpoint_credentials.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 runpod.serverless.start({"handler": handler, "return_aggregate_stream": True})

@@ -21,6 +21,19 @@ from axolotl.utils.schemas.enums import (
 from tests.conftest import capture_axolotl_warnings as _capture_axolotl_warnings
 
 
+@pytest.fixture(autouse=True)
+def _stub_flash_attn_available(monkeypatch):
+    # These tests exercise attn config semantics, not whether this box has flash-attn.
+    import transformers.utils
+
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_2_available", lambda **_: True
+    )
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_3_available", lambda **_: True
+    )
+
+
 @lru_cache(maxsize=1)
 def _xformers_available():
     try:

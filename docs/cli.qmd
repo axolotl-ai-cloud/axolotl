@@ -252,6 +252,16 @@ axolotl quantize config.yml
 
 See [Quantization](./quantize.qmd) for more details.
 
+### export
+
+Exports a trained model to GGUF for llama.cpp, Ollama, and LM Studio.
+
+```bash
+axolotl export config.yml --quantize Q4_K_M
+```
+
+See [Exporting to GGUF](./export.qmd) for more details.
+
 
 ## Legacy CLI Usage
 

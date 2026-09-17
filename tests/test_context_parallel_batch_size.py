@@ -9,6 +9,19 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 
+@pytest.fixture(autouse=True)
+def _stub_flash_attn_available(monkeypatch):
+    # These tests exercise batch-size math, not whether this box has flash-attn.
+    import transformers.utils
+
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_2_available", lambda **_: True
+    )
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_3_available", lambda **_: True
+    )
+
+
 @pytest.fixture(name="cp_base_cfg")
 def fixture_cp_base_cfg(min_base_cfg):
     return (
