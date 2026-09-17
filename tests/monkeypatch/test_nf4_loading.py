@@ -2046,8 +2046,12 @@ def test_nf4_shard_bounds_match_torch_chunk(rows):
         assert all(0 <= start <= end <= rows for start, end in bounds)
 
 
-def test_init_distributed_state_warns_when_timeout_cannot_apply(tmp_path, monkeypatch):
-    """A timeout the already-initialized process group cannot honor must be surfaced."""
+def test_init_distributed_state_raises_when_timeout_cannot_apply(tmp_path, monkeypatch):
+    """An explicitly requested timeout the process group cannot honor must fail fast.
+
+    The alternative is a warning nobody reads across N ranks of launcher output, followed
+    30+ minutes later by a collective timeout that points at nothing.
+    """
     import logging
     from datetime import timedelta
 
@@ -2076,10 +2080,10 @@ def test_init_distributed_state_warns_when_timeout_cannot_apply(tmp_path, monkey
         timeout=timedelta(seconds=5),
     )
     try:
-        axolotl_distributed.init_distributed_state()
-        assert any(
-            "21600" in message and "0:00:05" in message for message in records
-        ), records
+        with pytest.raises(RuntimeError, match="21600") as excinfo:
+            axolotl_distributed.init_distributed_state()
+        assert "0:00:05" in str(excinfo.value)
+        assert not records, records
     finally:
         logger.removeHandler(handler)
         dist.destroy_process_group()
@@ -2603,3 +2607,101 @@ def test_staged_nf4_validation_expert_parallel():
     assert _EPConfig(**config).expert_parallel_size == 1
     with pytest.raises(ValueError, match="tensor, expert or context parallelism"):
         _EPConfig(**dict(config, expert_parallel_size=2))
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+@pytest.mark.parametrize("double_quant", [False, True])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+def test_cuda_merge_roundtrip_matches_training(double_quant, dtype):
+    """The merge roundtrip must reproduce the training-time parametrization exactly.
+
+    Nothing asserted this on CUDA before: the only parity coverage ran CPU against CPU.
+    """
+    from axolotl.cli.utils.lora_merge import _simulate_nf4_roundtrip
+
+    torch.manual_seed(0)
+    value = torch.randn(512, 512, dtype=dtype)
+    merged = _simulate_nf4_roundtrip(
+        value, device="cuda", compress_statistics=double_quant
+    )
+    assert merged.device.type == "cpu"
+    assert merged.dtype == dtype
+
+    data, state = quantize_bnb_4bit(
+        value,
+        device=torch.device("cuda"),
+        storage_device=torch.device("cuda"),
+        compress_statistics=double_quant,
+    )
+    trained = BnbNF4Parametrization(state)(data).reshape(value.shape).cpu()
+    torch.testing.assert_close(merged, trained, rtol=0, atol=0)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+@pytest.mark.parametrize("double_quant", [False, True])
+def test_nf4_dequant_is_device_independent(double_quant):
+    """One quantization dequantized on either device must agree bit-for-bit.
+
+    Quantization itself is not device-independent: bnb rounds the blockwise double-quant of
+    the scale vector differently on CPU and CUDA (~18 of 4096 codes on a 512x512 draw), so a
+    CPU merge and a GPU merge of the same weight legitimately differ. Dequantization must not
+    add to that, since it is what the merge and the training forward pass share.
+    """
+    torch.manual_seed(0)
+    value = torch.randn(512, 512, dtype=torch.bfloat16)
+    data, state = quantize_bnb_4bit(
+        value,
+        device=torch.device("cuda"),
+        storage_device=torch.device("cuda"),
+        compress_statistics=double_quant,
+    )
+    on_gpu = dequantize_bnb_4bit(data, state).reshape(value.shape).cpu()
+    on_cpu = dequantize_bnb_4bit(
+        data, state, out=torch.empty(state.shape, dtype=state.dtype, device="cpu")
+    ).reshape(value.shape)
+    torch.testing.assert_close(on_gpu, on_cpu, rtol=0, atol=0)
+
+
+def test_init_distributed_state_warns_without_explicit_timeout(tmp_path, monkeypatch):
+    """A launcher-managed group must not be hard-failed when the user asked for nothing.
+
+    Ray and torchrun create the process group themselves; only an explicit
+    AXOLOTL_NCCL_TIMEOUT (which prepare_optim_env derives from ddp_timeout) is intent.
+    """
+    import logging
+    from datetime import timedelta
+
+    import torch.distributed as dist
+    from accelerate import PartialState
+
+    from axolotl.utils import distributed as axolotl_distributed
+
+    records = []
+
+    class Collector(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = Collector(level=logging.WARNING)
+    logger = logging.getLogger("axolotl.utils.distributed")
+    logger.addHandler(handler)
+    monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
+    monkeypatch.setattr(axolotl_distributed, "distributed_state", None)
+    PartialState._reset_state()
+    dist.init_process_group(
+        "gloo",
+        init_method=f"file://{tmp_path / 'rendezvous'}",
+        rank=0,
+        world_size=1,
+        timeout=timedelta(seconds=5),
+    )
+    try:
+        axolotl_distributed.init_distributed_state()
+        assert any("0:00:05" in message for message in records), records
+    finally:
+        logger.removeHandler(handler)
+        dist.destroy_process_group()
+        PartialState._reset_state()
+        axolotl_distributed.distributed_state = None

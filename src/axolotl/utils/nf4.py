@@ -129,7 +129,9 @@ def dequantize_bnb_4bit(
             quant_type=state.quant_type,
         )
         chunk_data = raw[start // 2 : (end + 1) // 2].reshape(-1, 1)
-        if data.device.type == "cpu":
+        # the kernel can only write into an output on its own device, so a CPU
+        # destination for accelerator-resident data goes through a chunk-sized copy
+        if data.device.type == "cpu" or out.device != data.device:
             flat[start:end].copy_(
                 F.dequantize_4bit(chunk_data, chunk_state).reshape(-1)
             )

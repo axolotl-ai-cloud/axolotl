@@ -92,7 +92,7 @@ def nf4_cache_path(cfg, model_config, model_kwargs, quantization, device):
         quantization.to_dict() if quantization else dict(cfg.bnb_config_kwargs or {})
     )
     settings = {
-        "format": 1,
+        "format": 2,
         "source": source_id,
         "identity": identity,
         "config": model_config.to_dict(),

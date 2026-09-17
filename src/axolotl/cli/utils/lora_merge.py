@@ -217,17 +217,21 @@ def _simulate_nf4_roundtrip(
         return transform(data).reshape(original_shape).to(original_dtype).cpu()
     if backend != "bitsandbytes":
         raise ValueError(f"Unknown NF4 backend: {backend}")
+    # dequantize on quant_device rather than falling back to the CPU kernel, streaming the
+    # result into a CPU output so a large fused expert tensor never lands on the accelerator
+    # in full. Values are unchanged either way: dequantization is device-independent.
     data, state = quantize_bnb_4bit(
         tensor,
         device=quant_device,
+        storage_device=quant_device,
         blocksize=blocksize or 64,
         compress_statistics=compress_statistics,
     )
+    out = torch.empty(state.shape, dtype=state.dtype, device="cpu")
     return (
-        dequantize_bnb_4bit(data, state)
+        dequantize_bnb_4bit(data, state, out=out)
         .reshape(original_shape)
         .to(original_dtype)
-        .cpu()
     )
 
 
