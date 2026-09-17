@@ -75,7 +75,7 @@ Conversion is slow, so a few failure modes are caught up front:
 
 - **Pre-quantized checkpoints** (torchao fp8/nvfp4, bitsandbytes) cannot be converted — re-export in bf16 with `axolotl merge-lora --dequant`.
 - **Vocab mismatch** between `tokenizer.json` and `config.json` (a common outcome of adding tokens without resizing embeddings).
-- **Multi-token-prediction layers** (`num_nextn_predict_layers`), which llama.cpp cannot load. See [GLM-4.5](./models/glm45.qmd).
+- **Multi-token-prediction layers** (`num_nextn_predict_layers`), which llama.cpp cannot load. See the [GLM-4.5 example](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45).
 - **Missing chat template**, which is only a warning but usually means the runtime will fall back to a default template and undo your fine-tune.
 
 ## Known gaps
