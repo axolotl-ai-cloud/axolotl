@@ -3,20 +3,23 @@ Load-balanced multiprocess tokenization.
 
 ``Dataset.map(num_proc=N)`` hands each worker one contiguous shard, so a shard
 that happens to hold the long examples leaves the rest of the pool idle. Here
-workers pull small chunks of row indices from a shared pool instead, and the
-results are streamed into an Arrow cache file the same way ``map`` does.
+workers pull small chunks of row indices instead, and the results are streamed
+into an Arrow cache file.
 """
 
+import math
+import multiprocessing
 import os
 import tempfile
-from typing import Any
+from collections import deque
+from concurrent.futures import BrokenExecutor, ProcessPoolExecutor
+from typing import Any, Iterator
 
 import pyarrow as pa
 from datasets import Dataset
 from datasets.arrow_writer import ArrowWriter
 from datasets.fingerprint import update_fingerprint
 from datasets.utils import tqdm as hf_tqdm
-from multiprocess import Pool, TimeoutError
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.utils.logging import get_logger
@@ -24,12 +27,27 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 MAX_CHUNK_SIZE = 1000
+# Enough chunks per worker that a slow one gets overtaken, few enough that the
+# per-chunk IPC round trip stays amortized.
 CHUNKS_PER_WORKER = 32
-WORKER_POLL_SECONDS = 1.0
+MIN_CHUNK_SIZE = 8
+# Cap on chunks submitted but not yet collected, so fast workers cannot run far
+# enough ahead of the single writer to exhaust memory.
+MAX_IN_FLIGHT_PER_WORKER = 4
+# Match ``map``'s writer_batch_size: the first write fixes the Arrow schema, so
+# it has to see enough rows to infer types for optional/empty columns.
+WRITER_BATCH_SIZE = 1000
 
 # Set once per worker by the pool initializer so tasks only ship row indices.
 _strategy: PromptTokenizingStrategy | None = None
 _dataset: Dataset | None = None
+
+
+def _mp_context():
+    """Prefer fork so the dataset and tokenizer reach workers without pickling."""
+    if "fork" in multiprocessing.get_all_start_methods():
+        return multiprocessing.get_context("fork")
+    return multiprocessing.get_context()
 
 
 def _init_worker(strategy: PromptTokenizingStrategy, dataset: Dataset) -> None:
@@ -39,7 +57,8 @@ def _init_worker(strategy: PromptTokenizingStrategy, dataset: Dataset) -> None:
 
 
 def _tokenize_chunk(bounds: tuple[int, int]) -> dict[str, list]:
-    assert _strategy is not None and _dataset is not None
+    if _strategy is None or _dataset is None:
+        raise RuntimeError("tokenization worker was not initialized")
     start, end = bounds
     batch = _dataset[start:end]
     if _strategy.supports_batched:
@@ -50,34 +69,72 @@ def _tokenize_chunk(bounds: tuple[int, int]) -> dict[str, list]:
         _strategy.tokenize_prompt(dict(zip(columns, values, strict=True)))
         for values in zip(*batch.values(), strict=True)
     ]
+    # A row that tokenizes to nothing must not take its chunk-mates with it.
+    rows = [row for row in rows if row]
     if not rows:
         return {}
-    return {key: [row[key] for row in rows] for key in rows[0]}
+
+    keys = rows[0].keys()
+    for row in rows[1:]:
+        if row.keys() != keys:
+            raise ValueError(
+                f"tokenize_prompt returned inconsistent keys within rows "
+                f"{start}-{end}: {sorted(keys)} then {sorted(row.keys())}. "
+                "Every row must produce the same set of columns."
+            )
+    return {key: [row[key] for row in rows] for key in keys}
 
 
 def _chunk_bounds(num_rows: int, num_proc: int) -> list[tuple[int, int]]:
-    chunk_size = max(1, min(MAX_CHUNK_SIZE, num_rows // (num_proc * CHUNKS_PER_WORKER)))
+    chunk_size = math.ceil(num_rows / (num_proc * CHUNKS_PER_WORKER))
+    chunk_size = max(MIN_CHUNK_SIZE, min(MAX_CHUNK_SIZE, chunk_size))
     return [
         (start, min(start + chunk_size, num_rows))
         for start in range(0, num_rows, chunk_size)
     ]
 
 
-def _iter_results(pool: Pool, chunks: list[tuple[int, int]]):
-    """Yield results in order, failing fast instead of hanging if a worker is killed."""
-    initial_pids = {proc.pid for proc in pool._pool}
-    results = pool.imap(_tokenize_chunk, chunks)
-    for _ in chunks:
-        while True:
-            try:
-                yield results.next(timeout=WORKER_POLL_SECONDS)
+def _iter_results(
+    executor: ProcessPoolExecutor, chunks: list[tuple[int, int]], num_proc: int
+) -> Iterator[dict[str, list]]:
+    """Yield chunk results in order, keeping only a bounded number in flight."""
+    max_in_flight = max(1, num_proc * MAX_IN_FLIGHT_PER_WORKER)
+    remaining = iter(chunks)
+    pending: deque = deque()
+    try:
+        for bounds in remaining:
+            pending.append(executor.submit(_tokenize_chunk, bounds))
+            if len(pending) >= max_in_flight:
                 break
-            except TimeoutError:
-                if {proc.pid for proc in pool._pool} != initial_pids:
-                    raise RuntimeError(
-                        "A tokenization worker died unexpectedly (possibly OOM-killed). "
-                        "Set dataset_num_proc: 1 to debug."
-                    ) from None
+        while pending:
+            result = pending.popleft().result()
+            next_bounds = next(remaining, None)
+            if next_bounds is not None:
+                pending.append(executor.submit(_tokenize_chunk, next_bounds))
+            yield result
+    except BrokenExecutor as exc:
+        raise RuntimeError(
+            "A tokenization worker died unexpectedly (possibly OOM-killed). "
+            "Set dataset_num_proc: 1 to debug."
+        ) from exc
+
+
+def _num_rows(batch: dict[str, list]) -> int:
+    return len(next(iter(batch.values()))) if batch else 0
+
+
+def _extend(into: dict[str, list], batch: dict[str, list]) -> None:
+    if not into:
+        into.update({key: list(values) for key, values in batch.items()})
+        return
+    if into.keys() != batch.keys():
+        raise ValueError(
+            f"tokenize_prompt returned inconsistent keys across chunks: "
+            f"{sorted(into)} then {sorted(batch)}. "
+            "Every row must produce the same set of columns."
+        )
+    for key, values in batch.items():
+        into[key].extend(values)
 
 
 def tokenize_with_work_queue(
@@ -88,9 +145,9 @@ def tokenize_with_work_queue(
 ) -> Dataset:
     """Tokenize ``dataset`` with ``prompt_tokenizer`` across ``num_proc`` workers.
 
-    Equivalent to ``dataset.map(prompt_tokenizer.tokenize_prompt, num_proc=...,
-    remove_columns=<all>)`` but with dynamic scheduling: workers take the next
-    chunk as soon as they finish the current one.
+    Like ``dataset.map(prompt_tokenizer.tokenize_prompt, num_proc=...,
+    remove_columns=<all>)``, but workers take the next chunk as soon as they
+    finish the current one rather than owning a fixed shard.
     """
     fingerprint = update_fingerprint(
         dataset._fingerprint,
@@ -100,7 +157,13 @@ def tokenize_with_work_queue(
             "batched": prompt_tokenizer.supports_batched,
         },
     )
-    cache_file = None if keep_in_memory else dataset._get_cache_file_path(fingerprint)
+    # ``map`` only caches datasets that are already file-backed; for in-memory
+    # ones a cache path would land in a per-session temp dir and never be reused.
+    cache_file = (
+        dataset._get_cache_file_path(fingerprint)
+        if not keep_in_memory and dataset.cache_files
+        else None
+    )
     if cache_file and os.path.exists(cache_file):
         LOG.info(f"Loading cached tokenized dataset at {cache_file}")
         return Dataset.from_file(cache_file, split=dataset.split)
@@ -130,23 +193,41 @@ def tokenize_with_work_queue(
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     try:
         writer = ArrowWriter(**writer_kwargs)
-        with (
-            Pool(
-                num_proc,
-                initializer=_init_worker,
-                initargs=(prompt_tokenizer, dataset),
-            ) as pool,
-            hf_tqdm(
-                total=len(dataset), desc="Tokenizing Prompts", unit=" examples"
-            ) as pbar,
-        ):
-            for (start, end), batch in zip(
-                chunks, _iter_results(pool, chunks), strict=True
+        try:
+            with (
+                ProcessPoolExecutor(
+                    num_proc,
+                    mp_context=_mp_context(),
+                    initializer=_init_worker,
+                    initargs=(prompt_tokenizer, dataset),
+                ) as executor,
+                hf_tqdm(
+                    total=len(dataset), desc="Tokenizing Prompts", unit=" examples"
+                ) as pbar,
             ):
-                if batch:
-                    writer.write_batch(batch)
-                pbar.update(end - start)
-        writer.finalize()
+                buffered: dict[str, list] = {}
+                written = 0
+                for (start, end), batch in zip(
+                    chunks, _iter_results(executor, chunks, num_proc), strict=True
+                ):
+                    if batch:
+                        _extend(buffered, batch)
+                    if _num_rows(buffered) >= WRITER_BATCH_SIZE:
+                        writer.write_batch(buffered)
+                        written += _num_rows(buffered)
+                        buffered = {}
+                    pbar.update(end - start)
+                if buffered:
+                    writer.write_batch(buffered)
+                    written += _num_rows(buffered)
+            if not written:
+                raise ValueError(
+                    "Tokenization produced no rows. Every example was dropped by "
+                    "the prompt strategy; check the dataset and its `type:` config."
+                )
+            writer.finalize()
+        finally:
+            writer.close()
     except BaseException:
         if tmp_path:
             os.remove(tmp_path)
@@ -159,6 +240,9 @@ def tokenize_with_work_queue(
 
     if cache_file and tmp_path:
         os.replace(tmp_path, cache_file)
+        umask = os.umask(0o666)
+        os.umask(umask)
+        os.chmod(cache_file, 0o666 & ~umask)
         return Dataset.from_file(cache_file, split=dataset.split)
     assert buf_writer is not None
     return Dataset.from_buffer(buf_writer.getvalue(), split=dataset.split)
