@@ -165,21 +165,26 @@ class TestHFCausalTrainerBuilder:
         assert "betas" not in optimizer_kwargs
         assert "eps" not in optimizer_kwargs
 
-    def test_loraplus_optimizer_weight_decay(self, sft_cfg, model, tokenizer):
+    @pytest.mark.parametrize("weight_decay", [0.0, 0.05])
+    def test_loraplus_optimizer_weight_decay(
+        self, sft_cfg, model, tokenizer, weight_decay
+    ):
         cfg = sft_cfg.copy()
         cfg["loraplus_lr_ratio"] = 16
+        cfg["weight_decay"] = weight_decay
 
         builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
         trainer = builder.build(100)
+        assert trainer.args.weight_decay == weight_decay
+
         optim = trainer.create_optimizer()
 
-        decayed = [
-            group
-            for group in optim.param_groups
-            if group["params"] and group["weight_decay"] > 0
-        ]
-        assert decayed
-        assert all(group["weight_decay"] == 0.01 for group in decayed)
+        # loraplus zeroes its no-decay group regardless; every other group tracks the config
+        decays = {
+            group["weight_decay"] for group in optim.param_groups if group["params"]
+        }
+        assert decays <= {weight_decay, 0.0}
+        assert weight_decay in decays
 
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
