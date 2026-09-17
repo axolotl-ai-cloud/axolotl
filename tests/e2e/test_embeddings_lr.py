@@ -9,7 +9,14 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, check_tensorboard, with_temp_dir
+from .utils import (
+    check_model_output_exists,
+    check_tensorboard,
+    requires_flash_attn,
+    with_temp_dir,
+)
+
+pytestmark = requires_flash_attn
 
 
 class TestEmbeddingsLrScale(unittest.TestCase):
@@ -44,7 +51,6 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "embedding_lr_scale": 0.5,
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
                 "save_first_step": False,
@@ -89,7 +95,6 @@ class TestEmbeddingsLrScale(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "embedding_lr": 0.000005,
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
                 "save_first_step": False,

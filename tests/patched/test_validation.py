@@ -13,9 +13,25 @@ from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.schemas.config import AxolotlConfigWCapabilities
+from axolotl.utils.schemas.datasets import SFTDataset
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
+from tests.conftest import capture_axolotl_warnings
+
 warnings.filterwarnings("error")
+
+
+@pytest.fixture(autouse=True)
+def _stub_flash_attn_available(monkeypatch):
+    # These tests exercise config validation semantics, not whether this box has flash-attn.
+    import transformers.utils
+
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_2_available", lambda **_: True
+    )
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_3_available", lambda **_: True
+    )
 
 
 @pytest.fixture(name="minimal_cfg")
@@ -276,6 +292,34 @@ class TestValidation(BaseValidation):
 
         new_cfg = validate_config(cfg)
         assert new_cfg.type_of_model == "AutoModelForCausalLM"
+
+    def test_reward_model_defaults(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "reward_model": True,
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.num_labels == 1
+        assert new_cfg.type_of_model == "AutoModelForSequenceClassification"
+
+    def test_process_reward_model_defaults(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "process_reward_model": True,
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.num_labels == 2
+        assert new_cfg.type_of_model == "AutoModelForTokenClassification"
 
     def test_model_revision_remap(self, minimal_cfg):
         cfg = (
@@ -697,8 +741,12 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with pytest.raises(ValueError, match=r".*AMP is not supported on this GPU*"):
+        with self._caplog.at_level("WARNING"):
             AxolotlConfigWCapabilities(**cfg.to_dict())
+            assert any(
+                "AMP is not supported" in record.message
+                for record in self._caplog.records
+            )
 
         cfg = (
             DictDefault(
@@ -1162,6 +1210,141 @@ class TestValidation(BaseValidation):
             assert new_cfg["dpo_beta"] is None
             assert len(self._caplog.records) == 1
 
+    def test_dpo_liger_kernel_rejects_ipo(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": ["ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
+            validate_config(cfg)
+
+    def test_dpo_liger_kernel_rejects_rl_ipo(self, minimal_cfg):
+        cfg = DictDefault({"rl": "ipo", "dpo_use_liger_kernel": True}) | minimal_cfg
+
+        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
+            validate_config(cfg)
+
+    def test_dpo_liger_kernel_allows_ignored_ipo_entry(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": ["sigmoid", "ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        with self._caplog.at_level("WARNING"):
+            validate_config(cfg)
+            assert any(
+                "only the first entry" in record.message
+                for record in self._caplog.records
+            )
+
+    def test_dpo_liger_kernel_warns_on_multiple_loss_types(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": ["hinge", "sigmoid"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        with self._caplog.at_level("WARNING"):
+            validate_config(cfg)
+            assert any(
+                "only the first entry" in record.message
+                for record in self._caplog.records
+            )
+
+    def test_dpo_liger_kernel_rejects_ipo_in_coerced_set(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": {"ipo"},
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("truthy", ["true", 1])
+    def test_dpo_liger_kernel_coerced_true_still_guards_ipo(self, minimal_cfg, truthy):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": truthy,
+                    "dpo_loss_type": ["ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
+            validate_config(cfg)
+
+    def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": "false",
+                    "dpo_loss_type": ["ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["dpo_use_liger_kernel"] is False
+
+    def test_dpo_liger_kernel_malformed_loss_type_hits_schema_error(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": 123,
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValidationError):
+            validate_config(cfg)
+
+    def test_dpo_liger_kernel_allows_new_liger_loss_types(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": ["discopop"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["dpo_loss_type"] == ["discopop"]
+
     def test_eval_strategy_remap(self, minimal_cfg):
         cfg = (
             DictDefault(
@@ -1212,20 +1395,6 @@ class TestValidation(BaseValidation):
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
         )
 
-    def test_cfg_throws_error_with_s2_attention_and_sample_packing(self, minimal_cfg):
-        test_cfg = DictDefault(
-            {
-                "s2_attention": True,
-                "sample_packing": True,
-            }
-            | minimal_cfg
-        )
-        with pytest.raises(
-            ValidationError,
-            match=r".*shifted-sparse attention does not currently support sample packing*",
-        ):
-            validate_config(test_cfg)
-
 
 class TestTorchCompileValidation(BaseValidation):
     """
@@ -1265,6 +1434,196 @@ class TestTorchCompileValidation(BaseValidation):
         )
 
         assert updated_cfg.torch_compile is False
+
+    def test_torch_compile_options_default_is_none(self, minimal_cfg):
+        updated_cfg = validate_config(
+            minimal_cfg, capabilities={"bf16": True}, env_capabilities={}
+        )
+        assert updated_cfg.torch_compile_options is None
+
+    def test_torch_compile_options_accepts_inductor_dict(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {
+                        "coordinate_descent_tuning": True,
+                        "shape_padding": True,
+                        "epilogue_fusion": True,
+                    },
+                }
+            )
+            | minimal_cfg
+        )
+        updated_cfg = validate_config(
+            cfg, capabilities={"bf16": True}, env_capabilities={}
+        )
+        assert updated_cfg.torch_compile_options == {
+            "coordinate_descent_tuning": True,
+            "shape_padding": True,
+            "epilogue_fusion": True,
+        }
+
+    def test_torch_compile_options_rejects_disallowed_key(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {
+                        "coordinate_descent_tuning": True,
+                        "not_a_real_inductor_flag": True,
+                    },
+                }
+            )
+            | minimal_cfg
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "not_a_real_inductor_flag" in str(exc_info.value)
+        assert "Allowed" in str(exc_info.value)
+
+    def test_torch_compile_options_requires_torch_compile_enabled(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "torch_compile_options" in str(exc_info.value)
+        assert "torch_compile" in str(exc_info.value)
+
+    def test_torch_compile_options_rejects_when_torch_compile_false(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": False,
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "torch_compile_options" in str(exc_info.value)
+
+    def test_torch_compile_options_with_auto_compile_passes(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": "auto",
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        env_capabilities = {"torch_version": "2.11.0"}
+        updated_cfg = validate_config(
+            cfg, capabilities={"bf16": True}, env_capabilities=env_capabilities
+        )
+        assert updated_cfg.torch_compile_options == {"coordinate_descent_tuning": True}
+
+    def test_torch_compile_options_with_auto_resolved_false_warns_and_ignores(
+        self, minimal_cfg, caplog
+    ):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": "auto",
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        env_capabilities = {"torch_version": "2.4.0"}
+        with capture_axolotl_warnings(caplog):
+            updated_cfg = validate_config(
+                cfg, capabilities={"bf16": True}, env_capabilities=env_capabilities
+            )
+        assert updated_cfg.torch_compile is False
+        assert updated_cfg.torch_compile_options is None
+        assert "ignoring torch_compile_options" in caplog.text
+
+    def test_cudagraphs_with_sample_packing_warns(self, minimal_cfg, caplog):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {"triton.cudagraphs": True},
+                    "sample_packing": True,
+                    "pad_to_sequence_len": True,
+                }
+            )
+            | minimal_cfg
+        )
+        with capture_axolotl_warnings(caplog):
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "CUDA graphs require static shapes" in caplog.text
+
+    def test_cudagraphs_without_sample_packing_no_warn(self, minimal_cfg, caplog):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {"triton.cudagraphs": True},
+                    "sample_packing": False,
+                }
+            )
+            | minimal_cfg
+        )
+        with capture_axolotl_warnings(caplog):
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "CUDA graphs require static shapes" not in caplog.text
+
+
+class TestFP8RecipeValidation:
+    """Validate FP8 recipe defaults and incompatible FSDP combinations."""
+
+    def test_fp8_config_defaults_to_tensorwise(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "fp8": True, "fp8_config": {}})
+        updated_cfg = validate_config(cfg)
+
+        assert updated_cfg.fp8_config.recipe == "tensorwise"
+
+    @pytest.mark.parametrize("fp8_config", [{}, {"recipe": "rowwise"}])
+    def test_fp8_config_requires_fp8_enabled(self, minimal_cfg, fp8_config):
+        cfg = DictDefault({**minimal_cfg, "fp8_config": fp8_config})
+
+        with pytest.raises(ValidationError, match=r"requires `fp8: true`"):
+            validate_config(cfg)
+
+    def test_fp8_config_rejects_nested_all_gather_key(self, minimal_cfg):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "fp8": True,
+                "fp8_config": {
+                    "recipe": "rowwise",
+                    "enable_fsdp_float8_all_gather": True,
+                },
+            }
+        )
+
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("recipe", ["rowwise", "rowwise_with_gw_hp"])
+    def test_rowwise_recipe_rejects_fsdp_float8_all_gather(self, minimal_cfg, recipe):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "fp8": True,
+                "fp8_config": {"recipe": recipe},
+                "fp8_enable_fsdp_float8_all_gather": True,
+                "fsdp_version": 2,
+            }
+        )
+
+        with pytest.raises(ValidationError, match="only supports the tensorwise"):
+            validate_config(cfg)
 
 
 class TestSampleOptimConfigValidation(BaseValidation):
@@ -1703,3 +2062,101 @@ class TestDataloaderValidation(BaseValidation):
         assert new_cfg.dataloader_num_workers == 8
         assert new_cfg.dataloader_pin_memory is True
         assert new_cfg.dataloader_prefetch_factor == 256
+
+
+class TestGCStepsMigration(BaseValidation):
+    """
+    Tests for gc_steps -> torch_empty_cache_steps / gc_collect_steps migration
+    """
+
+    def test_gc_steps_maps_to_new_options(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": 10})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.torch_empty_cache_steps == 10
+        assert new_cfg.gc_collect_steps == 10
+
+    def test_gc_steps_negative_maps_gc_collect_only(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": -1})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        # -1 means only epoch end/eval GC, not periodic; torch_empty_cache_steps
+        # should not be set for negative values
+        assert new_cfg.torch_empty_cache_steps is None
+        assert new_cfg.gc_collect_steps == -1
+
+    def test_new_options_take_precedence(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": 10, "torch_empty_cache_steps": 5})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        # New options take precedence; gc_steps migration is skipped
+        assert new_cfg.torch_empty_cache_steps == 5
+        assert new_cfg.gc_collect_steps is None
+
+    def test_torch_empty_cache_steps_standalone(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "torch_empty_cache_steps": 8})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.torch_empty_cache_steps == 8
+        assert new_cfg.gc_collect_steps is None
+
+    def test_gc_collect_steps_standalone(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_collect_steps": 5})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.gc_collect_steps == 5
+        assert new_cfg.torch_empty_cache_steps is None
+
+
+class TestSyntheticDatasetValidation(BaseValidation):
+    """
+    Tests for synthetic dataset config validation
+    """
+
+    @staticmethod
+    def _make_cfg(minimal_cfg, datasets):
+        raw = dict(minimal_cfg)
+        raw["datasets"] = datasets
+        return DictDefault(raw)
+
+    def test_synthetic_dict_config_validates(self, minimal_cfg):
+        """Synthetic dataset passed as a raw dict should not raise."""
+        cfg = self._make_cfg(
+            minimal_cfg,
+            [
+                {
+                    "path": "synthetic",
+                    "type": "_synthetic",
+                    "length": 100,
+                    "sequence_length": 64,
+                }
+            ],
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.datasets[0]["path"] == "synthetic"
+
+    def test_synthetic_already_sft_does_not_crash(self, minimal_cfg):
+        """Synthetic dataset already parsed as SFTDataset should not raise AttributeError."""
+        sft = SFTDataset(path="synthetic", type="_synthetic")
+        cfg = self._make_cfg(minimal_cfg, [sft])
+
+        # Before the fix, this raised:
+        #   AttributeError: 'SFTDataset' object has no attribute 'get'
+        new_cfg = validate_config(cfg)
+        assert new_cfg.datasets[0]["path"] == "synthetic"
+
+    def test_non_synthetic_sft_validates(self, minimal_cfg):
+        """A regular SFT dataset should validate without being treated as synthetic."""
+        cfg = self._make_cfg(
+            minimal_cfg,
+            [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.datasets[0]["path"] == "mhenrichsen/alpaca_2k_test"

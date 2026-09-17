@@ -17,6 +17,14 @@ class DeprecatedParameters(BaseModel):
     noisy_embedding_alpha: float | None = None
     dpo_beta: float | None = None
     evaluation_strategy: str | None = None
+    eval_table_size: int | None = None
+    eval_max_new_tokens: int | None = None
+    dpo_use_logits_to_keep: bool | None = None
+    dpo_generate_during_eval: bool | None = None
+    dpo_norm_loss: bool | None = None
+    rpo_alpha: float | None = None
+    s2_attention: bool | None = None
+    flash_attn_rms_norm: bool | None = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -54,6 +62,83 @@ class DeprecatedParameters(BaseModel):
         if evaluation_strategy is not None:
             LOG.warning("evaluation_strategy is deprecated, use eval_strategy instead")
         return evaluation_strategy
+
+    @field_validator("eval_table_size")
+    @classmethod
+    def validate_eval_table_size(cls, eval_table_size):
+        if eval_table_size is not None:
+            LOG.warning(
+                "eval_table_size is deprecated and superseded by generate_samples config. "
+                "Please use generate_samples: true and num_generation_samples instead. "
+                "The LogPredictionCallback is replaced by the new sample generation feature."
+            )
+        return eval_table_size
+
+    @field_validator("eval_max_new_tokens")
+    @classmethod
+    def validate_eval_max_new_tokens(cls, eval_max_new_tokens):
+        if eval_max_new_tokens is not None:
+            LOG.warning(
+                "eval_max_new_tokens is deprecated and superseded by generate_samples config. "
+                "Please use generation_max_new_tokens instead."
+            )
+        return eval_max_new_tokens
+
+    @field_validator("dpo_use_logits_to_keep")
+    @classmethod
+    def validate_dpo_use_logits_to_keep(cls, dpo_use_logits_to_keep):
+        if dpo_use_logits_to_keep is not None:
+            raise DeprecationWarning(
+                "`dpo_use_logits_to_keep` is no longer supported, "
+                "it has been removed in TRL >= 0.29.0"
+            )
+        return dpo_use_logits_to_keep
+
+    @field_validator("dpo_generate_during_eval")
+    @classmethod
+    def validate_dpo_generate_during_eval(cls, dpo_generate_during_eval):
+        if dpo_generate_during_eval is not None:
+            raise DeprecationWarning(
+                "`dpo_generate_during_eval` is no longer supported, "
+                "it has been removed in TRL >= 0.29.0"
+            )
+        return dpo_generate_during_eval
+
+    @field_validator("dpo_norm_loss")
+    @classmethod
+    def validate_dpo_norm_loss(cls, dpo_norm_loss):
+        if dpo_norm_loss is not None:
+            raise DeprecationWarning(
+                "`dpo_norm_loss` is no longer supported, "
+                "due to breaking changes in TRL >= 0.29.0"
+            )
+        return dpo_norm_loss
+
+    @field_validator("rpo_alpha")
+    @classmethod
+    def validate_rpo_alpha(cls, rpo_alpha):
+        if rpo_alpha is not None:
+            raise DeprecationWarning(
+                "`rpo_alpha` has been deprecated in TRL >= 0.29.0, "
+                "and now requires passing multiple loss types, which is not yet supported by Axolotl."
+            )  # TODO: change this warning once multiple dpo loss types are supported.
+        return rpo_alpha
+
+    @field_validator("s2_attention")
+    @classmethod
+    def validate_s2_attention(cls, s2_attention):
+        if s2_attention:
+            raise DeprecationWarning(
+                "`s2_attention` (shifted-sparse attention) is no longer supported."
+            )
+        return s2_attention
+
+    @field_validator("flash_attn_rms_norm")
+    @classmethod
+    def validate_flash_attn_rms_norm(cls, flash_attn_rms_norm):
+        if flash_attn_rms_norm:
+            raise DeprecationWarning("`flash_attn_rms_norm` is no longer supported.")
+        return flash_attn_rms_norm
 
 
 class RemappedParameters(BaseModel):

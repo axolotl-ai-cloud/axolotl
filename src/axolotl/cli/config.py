@@ -5,15 +5,14 @@ import os
 import tempfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Union
+from typing import Any, Optional, Union
 from urllib.parse import urlparse
 
 import requests
 import torch
 import yaml
-from transformers.utils import is_torch_bf16_gpu_available
+from transformers.utils import is_torch_bf16_gpu_available, is_torch_tf32_available
 
-from axolotl.integrations.base import PluginManager
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.comet_ import setup_comet_env_vars
@@ -31,6 +30,63 @@ from axolotl.utils.trainer import prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 LOG = get_logger(__name__)
+
+
+def _coerce_value(value: Any, existing: Optional[Any] = None) -> Any:
+    """Coerce a string CLI value to its most likely Python type.
+
+    If an existing value is present in the config, its type is used to guide
+    casting.  Otherwise, YAML-style inference is applied: booleans, ints,
+    floats, and None literals are recognised automatically.
+
+    Args:
+        value: The raw value (typically a string from the CLI).
+        existing: An optional existing config value whose type guides coercion.
+
+    Returns:
+        The value cast to the inferred or expected type.
+    """
+    if not isinstance(value, str):
+        return value
+
+    # If the config already has a typed value, cast to match
+    if existing is not None:
+        if isinstance(existing, bool):
+            return value.lower() in ("true", "1", "yes")
+        if isinstance(existing, int):
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return value
+        if isinstance(existing, float):
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return value
+        # For other types (str, list, dict, etc.), return as-is
+        return value
+
+    # No existing value -- use YAML-style inference
+    lower = value.lower()
+    if lower in ("true", "yes"):
+        return True
+    if lower in ("false", "no"):
+        return False
+    if lower in ("null", "none", "~"):
+        return None
+
+    # Try int then float
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+    return value
+
 
 API_KEY_FIELDS = {"comet_api_key"}
 
@@ -156,6 +212,8 @@ def prepare_plugins(cfg: DictDefault):
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)
@@ -165,6 +223,8 @@ def prepare_plugins(cfg: DictDefault):
 
 def plugin_set_cfg(cfg: DictDefault):
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         plugin_manager.cfg = cfg
 
@@ -208,34 +268,60 @@ def load_cfg(
     # If there are any options passed in the cli, if it is something that seems valid
     # from the yaml, then overwrite the value
     cfg_keys = cfg.keys()
+
+    # Separate nested (dot-notation) kwargs from flat kwargs
+    nested_kwargs: dict[str, dict[str, Any]] = {}
+    flat_kwargs: dict[str, Any] = {}
     for key, value in kwargs.items():
+        if "__" in key:
+            parent, child = key.split("__", 1)
+            nested_kwargs.setdefault(parent, {})[child] = value
+        else:
+            flat_kwargs[key] = value
+
+    # Apply flat kwargs
+    for key, value in flat_kwargs.items():
         # If not strict, allow writing to cfg even if it's not in the yml already
         if key in cfg_keys or not cfg.strict:
-            if isinstance(cfg[key], bool):
-                cfg[key] = bool(value)
-            else:
-                cfg[key] = value
+            cfg[key] = _coerce_value(value, cfg.get(key))
 
-    try:
-        device_props = torch.cuda.get_device_properties("cuda")
-        gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
-    except:
-        gpu_version = None
+    # Apply nested kwargs (e.g., trl__beta -> cfg.trl.beta)
+    for parent, children in nested_kwargs.items():
+        if parent not in cfg_keys and cfg.strict:
+            continue
+        if cfg[parent] is None:
+            cfg[parent] = {}
+        if not isinstance(cfg[parent], dict):
+            LOG.warning(
+                "Overwriting non-dict value for '%s' with nested CLI overrides", parent
+            )
+            cfg[parent] = {}
+        for child_key, child_value in children.items():
+            existing_child = cfg[parent].get(child_key)
+            cfg[parent][child_key] = _coerce_value(child_value, existing_child)
 
     prepare_plugins(cfg)
 
-    cfg = validate_config(
-        cfg,
-        capabilities={
-            "bf16": is_torch_bf16_gpu_available(),
-            "fp8": compute_supports_fp8(),
-            "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
-            "compute_capability": gpu_version,
-        },
-        env_capabilities={
-            "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
-        },
-    )
+    if cfg.use_ray:
+        # Ray drivers typically have no GPU; defer capability checks to the worker.
+        capabilities, env_capabilities = None, None
+    else:
+        capabilities, env_capabilities = gpu_capabilities()
+
+    try:
+        cfg = validate_config(
+            cfg,
+            capabilities=capabilities,
+            env_capabilities=env_capabilities,
+        )
+    except Exception:
+        # a rejected config must not leave register()-time side effects (e.g.
+        # LIGER_KERNEL_IMPL) behind for the next config in this process
+        if cfg.get("plugins"):
+            from axolotl.integrations.base import PluginManager
+
+            PluginManager.get_instance().on_config_validation_error(cfg)
+        raise
 
     # NOTE(djsaunde): We start outputting to output_dir/debug.log at this point since we
     # have to wait for cfg.output to be resolved. We could call this earlier if we write
@@ -268,5 +354,31 @@ def compute_supports_fp8() -> bool:
     try:
         compute_capability = torch.cuda.get_device_capability()
         return compute_capability >= (9, 0)
-    except RuntimeError:
+    except (RuntimeError, AssertionError):
         return False
+
+
+def gpu_capabilities() -> tuple[dict, dict]:
+    """Probe the local GPU and return ``(capabilities, env_capabilities)`` dicts
+    suitable for :func:`axolotl.utils.config.validate_config`.
+
+    Must be called on a GPU-enabled host (e.g. a Ray worker), otherwise the
+    detected values reflect the driver/CPU node and not the training device.
+    """
+    try:
+        device_props = torch.cuda.get_device_properties("cuda")
+        gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
+    except (RuntimeError, AssertionError):
+        gpu_version = None
+
+    capabilities = {
+        "bf16": is_torch_bf16_gpu_available(),
+        "fp8": compute_supports_fp8(),
+        "tf32": is_torch_tf32_available(),
+        "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
+        "compute_capability": gpu_version,
+    }
+    env_capabilities = {
+        "torch_version": str(torch.__version__).split("+", maxsplit=1)[0]
+    }
+    return capabilities, env_capabilities

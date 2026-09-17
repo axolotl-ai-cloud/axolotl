@@ -3,9 +3,9 @@
 from peft.optimizers import create_loraplus_optimizer
 from torch import nn
 from transformers.trainer import Trainer
+from transformers.trainer_optimizer import is_optimizer_factory
 from transformers.utils import is_sagemaker_mp_enabled
 
-from axolotl.integrations.base import BaseOptimizerFactory
 from axolotl.utils.logging import get_logger
 
 if is_sagemaker_mp_enabled():
@@ -104,7 +104,7 @@ class OptimizerMixin(Trainer):
 
         return optimizer_grouped_parameters
 
-    def create_optimizer(self):
+    def create_optimizer(self, model=None):
         if (
             self.args.loraplus_lr_ratio is None
             and self.args.embedding_lr_scale is None
@@ -112,16 +112,17 @@ class OptimizerMixin(Trainer):
             and self.args.lr_groups is None
             and self.optimizer_cls_and_kwargs is None
         ):
-            return super().create_optimizer()
+            return super().create_optimizer(model=model)
 
-        opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
+        opt_model = self.model if model is None else model
 
         if (
             not self.optimizer
             and self.optimizer_cls_and_kwargs is not None
-            and issubclass(self.optimizer_cls_and_kwargs[0], BaseOptimizerFactory)
+            and is_optimizer_factory(self.optimizer_cls_and_kwargs[0])
         ):
             optimizer_factory_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
+            # forward training_args for back-compat with our factory signatures
             self.optimizer = optimizer_factory_cls()(
                 opt_model, self.args, **optimizer_kwargs
             )

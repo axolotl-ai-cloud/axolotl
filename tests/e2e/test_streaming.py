@@ -9,7 +9,9 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, check_tensorboard
+from .utils import check_model_output_exists, check_tensorboard, requires_flash_attn
+
+pytestmark = requires_flash_attn
 
 
 class TestStreamingDatasets:
@@ -30,7 +32,7 @@ class TestStreamingDatasets:
                 "sample_packing": sample_packing,
                 "pretrain_multipack_attn": sample_packing,
                 "streaming_multipack_buffer_size": 10000,
-                "dataset_processes": 1,
+                "dataset_num_proc": 1,
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
@@ -42,7 +44,7 @@ class TestStreamingDatasets:
                 ],
                 # Streaming config
                 "streaming": True,
-                "max_steps": 3,
+                "max_steps": 10,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 1,
                 "val_set_size": 0.0,
@@ -50,7 +52,6 @@ class TestStreamingDatasets:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
                 "save_first_step": False,

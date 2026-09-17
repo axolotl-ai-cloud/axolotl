@@ -64,6 +64,12 @@ class ModelInputConfig(BaseModel):
     processor_type: str | None = Field(
         default=None, json_schema_extra={"description": "transformers processor class"}
     )
+    processor_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "kwargs forwarded to the processor's from_pretrained(), overriding processor config (e.g. image_seq_length, min_pixels, etc.)."
+        },
+    )
     tokenizer_save_jinja_files: bool | None = Field(
         default=True,  # match the default behavior from transformers
         json_schema_extra={
@@ -87,13 +93,21 @@ class ModelInputConfig(BaseModel):
         json_schema_extra={"description": "Use custom kernels, e.g. MegaBlocks."},
     )
 
-    model_quantization_config: Literal["Mxfp4Config"] | None = Field(
-        default=None,
-        json_schema_extra={"description": "Model loading quantization config"},
+    model_quantization_config: Literal["Mxfp4Config", "FineGrainedFP8Config"] | None = (
+        Field(
+            default=None,
+            json_schema_extra={"description": "Model loading quantization config"},
+        )
     )
     model_quantization_config_kwargs: dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={"description": "kwargs for model quantization config"},
+    )
+    use_onebitllms: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use `onebitllms` for 1.58bit training (only for bitnet models)."
+        },
     )
 
     @field_validator("trust_remote_code")
@@ -104,6 +118,22 @@ class ModelInputConfig(BaseModel):
                 "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
             )
         return trust_remote_code
+
+    @field_validator("processor_kwargs")
+    @classmethod
+    def reject_reserved_processor_kwargs(cls, processor_kwargs):
+        if not processor_kwargs:
+            return processor_kwargs
+        reserved = {"revision", "trust_remote_code"}
+        conflicts = reserved.intersection(processor_kwargs)
+        if conflicts:
+            raise ValueError(
+                "Do not set reserved keys "
+                f"{sorted(conflicts)} inside `processor_kwargs`; "
+                "use the top-level `revision_of_model` / `trust_remote_code` "
+                "config keys instead."
+            )
+        return processor_kwargs
 
 
 class ModelOutputConfig(BaseModel):
@@ -120,12 +150,30 @@ class ModelOutputConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "how to push checkpoints to hub"},
     )
+    hub_revision: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "branch/revision to push to on hub (default: main)"
+        },
+    )
     save_safetensors: bool | None = Field(
         default=True,
         json_schema_extra={
-            "description": "Save model as safetensors (require safetensors package). Default True"
+            "description": "Whether to save the model using safetensors format. Defaults to True."
         },
     )
+
+    @field_validator("save_safetensors")
+    @classmethod
+    def validate_save_safetensors(cls, v):
+        if v is False:
+            raise ValueError(
+                "save_safetensors=False is not supported in Transformers V5. "
+                "Transformers V5 always uses safetensors format for model serialization. "
+                "This field is deprecated and will be removed in a future version."
+            )
+        # Allow None and True, will default to True if None
+        return True if v is None else v
 
 
 class SpecialTokensConfig(BaseModel):

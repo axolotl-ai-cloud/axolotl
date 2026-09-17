@@ -12,7 +12,9 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, with_temp_dir
+from .utils import check_model_output_exists, requires_flash_attn, with_temp_dir
+
+pytestmark = requires_flash_attn
 
 
 class TestSaveFirstStepCallback(unittest.TestCase):
@@ -46,7 +48,6 @@ class TestSaveFirstStepCallback(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
-                "save_safetensors": True,
                 "save_first_step": True,
             }
         )
@@ -86,7 +87,6 @@ class TestSaveFirstStepCallback(unittest.TestCase):
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
-                "save_safetensors": True,
                 "save_first_step": False,
             }
         )

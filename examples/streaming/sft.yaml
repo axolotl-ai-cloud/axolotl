@@ -18,7 +18,7 @@ output_dir: ./outputs/smollm2-135m-sft-streaming
 # Sequence and packing settings
 sequence_len: 1024
 sample_packing: true
-flash_attention: true
+attn_implementation: flash_attention_2
 
 # Batch size settings
 gradient_accumulation_steps: 4

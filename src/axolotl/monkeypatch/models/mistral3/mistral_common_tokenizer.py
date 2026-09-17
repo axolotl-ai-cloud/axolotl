@@ -1,5 +1,5 @@
 """
-Monkeypatch to fix inefficient tensor conversion in MistralCommonTokenizer.apply_chat_template
+Monkeypatch to fix inefficient tensor conversion in MistralCommonBackend.apply_chat_template
 """
 
 import importlib
@@ -12,11 +12,11 @@ LOG = get_logger(__name__)
 
 
 def apply_mistral_tokenizer_image_patch():
-    """Apply patch to MistralCommonTokenizer.apply_chat_template to fix image tensor conversion."""
-    from transformers.tokenization_mistral_common import MistralCommonTokenizer
+    """Apply patch to MistralCommonBackend.apply_chat_template to fix image tensor conversion."""
+    from transformers.tokenization_mistral_common import MistralCommonBackend
 
     # Get original source
-    original_source = inspect.getsource(MistralCommonTokenizer.apply_chat_template)
+    original_source = inspect.getsource(MistralCommonBackend.apply_chat_template)
     original_source, _ = detab_code(original_source)
 
     # Define the replacement
@@ -41,7 +41,7 @@ def apply_mistral_tokenizer_image_patch():
         )
 
         # Load necessary imports from the module
-        module_name = MistralCommonTokenizer.__module__
+        module_name = MistralCommonBackend.__module__
         module = importlib.import_module(module_name)
 
         # Detect what needs to be imported
@@ -79,7 +79,7 @@ def apply_mistral_tokenizer_image_patch():
         exec(patched_source, globals())  # nosec B102
 
         # Replace the method
-        MistralCommonTokenizer.apply_chat_template = patched_apply_chat_template
-        LOG.info("Successfully applied MistralCommonTokenizer tensor conversion patch")
+        MistralCommonBackend.apply_chat_template = patched_apply_chat_template
+        LOG.info("Successfully applied MistralCommonBackend tensor conversion patch")
     else:
-        LOG.warning("Could not find target code for MistralCommonTokenizer patching")
+        LOG.warning("Could not find target code for MistralCommonBackend patching")

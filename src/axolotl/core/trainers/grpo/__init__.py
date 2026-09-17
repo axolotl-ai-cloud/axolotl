@@ -9,8 +9,9 @@ from huggingface_hub import snapshot_download
 from requests import HTTPError
 from trl.trainer.grpo_trainer import RewardFunc
 
-from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
+from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
 from axolotl.core.trainers.grpo.trainer import (
+    AxolotlAsyncGRPOTrainer,
     AxolotlGRPOSequenceParallelTrainer,
     AxolotlGRPOTrainer,
 )
@@ -27,14 +28,31 @@ class GRPOStrategy:
 
     @classmethod
     def get_trainer_class(
-        cls, sequence_parallel: bool
-    ) -> type[AxolotlGRPOTrainer] | type[AxolotlGRPOSequenceParallelTrainer]:
+        cls,
+        sequence_parallel: bool = False,
+        async_grpo: bool = False,
+    ) -> (
+        type[AxolotlGRPOTrainer]
+        | type[AxolotlGRPOSequenceParallelTrainer]
+        | type[AxolotlAsyncGRPOTrainer]
+    ):
+        if sequence_parallel and async_grpo:
+            raise ValueError(
+                "sequence_parallel and async_grpo cannot both be enabled. "
+                "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
+            )
         if sequence_parallel:
             return AxolotlGRPOSequenceParallelTrainer
+        if async_grpo:
+            return AxolotlAsyncGRPOTrainer
         return AxolotlGRPOTrainer
 
     @classmethod
-    def get_training_args_class(cls) -> type[AxolotlGRPOConfig]:
+    def get_training_args_class(
+        cls, async_grpo: bool = False
+    ) -> type[AxolotlGRPOConfig] | type[AxolotlAsyncGRPOConfig]:
+        if async_grpo:
+            return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
 
     @classmethod
@@ -64,12 +82,15 @@ class GRPOStrategy:
             if trl.vllm_server_timeout:
                 grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
             if trl.vllm_guided_decoding_regex:
-                grpo_args_kwargs["vllm_guided_decoding_regex"] = (
+                # TRL >=1.7 renamed guided decoding to structured outputs.
+                grpo_args_kwargs["vllm_structured_outputs_regex"] = (
                     trl.vllm_guided_decoding_regex
                 )
 
         if trl.num_generations:
             grpo_args_kwargs["num_generations"] = trl.num_generations
+        if trl.generation_batch_size is not None:
+            grpo_args_kwargs["generation_batch_size"] = trl.generation_batch_size
 
         if trl.sync_ref_model:
             grpo_args_kwargs["sync_ref_model"] = trl.sync_ref_model
@@ -124,15 +145,93 @@ class GRPOStrategy:
             grpo_args_kwargs["epsilon_high"] = trl.epsilon_high
 
         if trl.use_liger_loss is not None:
-            grpo_args_kwargs["use_liger_loss"] = trl.use_liger_loss
-
-        if trl.rollout_func:
-            grpo_args_kwargs["rollout_func"] = cls.get_rollout_func(trl.rollout_func)
+            grpo_args_kwargs["use_liger_kernel"] = trl.use_liger_loss
 
         if trl.multi_objective_aggregation is not None:
             grpo_args_kwargs["multi_objective_aggregation"] = (
                 trl.multi_objective_aggregation
             )
+
+        # Entropy regularization (TRL >= 1.8)
+        if trl.entropy_coef is not None:
+            grpo_args_kwargs["entropy_coef"] = trl.entropy_coef
+        if trl.use_adaptive_entropy is not None:
+            grpo_args_kwargs["use_adaptive_entropy"] = trl.use_adaptive_entropy
+        if trl.entropy_target is not None:
+            grpo_args_kwargs["entropy_target"] = trl.entropy_target
+        if trl.entropy_coef_delta is not None:
+            grpo_args_kwargs["entropy_coef_delta"] = trl.entropy_coef_delta
+        if trl.entropy_coef_min is not None:
+            grpo_args_kwargs["entropy_coef_min"] = trl.entropy_coef_min
+        if trl.entropy_coef_max is not None:
+            grpo_args_kwargs["entropy_coef_max"] = trl.entropy_coef_max
+
+        # Bidirectional vLLM importance-sampling clip (TRL >= 1.6)
+        if trl.vllm_importance_sampling_clip_min is not None:
+            grpo_args_kwargs["vllm_importance_sampling_clip_min"] = (
+                trl.vllm_importance_sampling_clip_min
+            )
+        if trl.vllm_importance_sampling_clip_max is not None:
+            grpo_args_kwargs["vllm_importance_sampling_clip_max"] = (
+                trl.vllm_importance_sampling_clip_max
+            )
+
+        if trl.log_multimodal is not None:
+            grpo_args_kwargs["log_multimodal"] = trl.log_multimodal
+
+        # Async GRPO fields
+        if getattr(trl, "use_data_producer", None) is not None:
+            grpo_args_kwargs["use_data_producer"] = trl.use_data_producer
+        if getattr(trl, "async_prefetch", None) is not None:
+            grpo_args_kwargs["async_prefetch"] = trl.async_prefetch
+        if getattr(trl, "prefetch_depth", None) is not None:
+            grpo_args_kwargs["prefetch_depth"] = trl.prefetch_depth
+        if getattr(trl, "vllm_sync_interval", None) is not None:
+            grpo_args_kwargs["vllm_sync_interval"] = trl.vllm_sync_interval
+        if getattr(trl, "streaming_partial_batch", None) is not None:
+            grpo_args_kwargs["streaming_partial_batch"] = trl.streaming_partial_batch
+        if getattr(trl, "streaming_min_groups", None) is not None:
+            grpo_args_kwargs["streaming_min_groups"] = trl.streaming_min_groups
+        if getattr(trl, "vllm_importance_sampling_correction", None) is not None:
+            grpo_args_kwargs["vllm_importance_sampling_correction"] = (
+                trl.vllm_importance_sampling_correction
+            )
+        if getattr(trl, "vllm_importance_sampling_mode", None) is not None:
+            grpo_args_kwargs["vllm_importance_sampling_mode"] = (
+                trl.vllm_importance_sampling_mode
+            )
+        if getattr(trl, "vllm_importance_sampling_cap", None) is not None:
+            grpo_args_kwargs["vllm_importance_sampling_cap"] = (
+                trl.vllm_importance_sampling_cap
+            )
+        if getattr(trl, "off_policy_mask_threshold", None) is not None:
+            grpo_args_kwargs["off_policy_mask_threshold"] = (
+                trl.off_policy_mask_threshold
+            )
+        if getattr(trl, "use_bias_correction_kl", None) is not None:
+            grpo_args_kwargs["use_bias_correction_kl"] = trl.use_bias_correction_kl
+
+        # Fast Async GRPO fields
+        if getattr(trl, "reward_num_workers", None) is not None:
+            grpo_args_kwargs["reward_num_workers"] = trl.reward_num_workers
+        if getattr(trl, "replay_buffer_size", None) is not None:
+            grpo_args_kwargs["replay_buffer_size"] = trl.replay_buffer_size
+        if getattr(trl, "replay_recompute_logps", None) is not None:
+            grpo_args_kwargs["replay_recompute_logps"] = trl.replay_recompute_logps
+        if getattr(trl, "reroll_start_fraction", None) is not None:
+            grpo_args_kwargs["reroll_start_fraction"] = trl.reroll_start_fraction
+        if getattr(trl, "reroll_max_groups", None) is not None:
+            grpo_args_kwargs["reroll_max_groups"] = trl.reroll_max_groups
+        if getattr(trl, "skip_zero_advantage_batches", None) is not None:
+            grpo_args_kwargs["skip_zero_advantage_batches"] = (
+                trl.skip_zero_advantage_batches
+            )
+        if getattr(trl, "vllm_lora_sync", None) is not None:
+            grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
+
+        # Batch flattening (top-level config, not under trl)
+        if getattr(cfg, "batch_flattening", None):
+            grpo_args_kwargs["batch_flattening"] = cfg.batch_flattening
 
         return grpo_args_kwargs
 
@@ -154,6 +253,8 @@ class GRPOStrategy:
             trainer_kwargs["reward_processing_classes"] = (
                 cfg.trl.reward_processing_classes
             )
+        if cfg.trl and cfg.trl.rollout_func:
+            trainer_kwargs["rollout_func"] = cls.get_rollout_func(cfg.trl.rollout_func)
 
         return trainer_kwargs
 
@@ -164,7 +265,12 @@ class GRPOStrategy:
 
     @classmethod
     def get_blocklist_args_kwargs(cls) -> list[str]:
-        return ["dataset_num_proc", "max_length", "include_tokens_per_second"]
+        return [
+            "dataset_num_proc",
+            "max_length",
+            "include_tokens_per_second",
+            "max_prompt_length",
+        ]
 
     @classmethod
     def get_reward_func(cls, reward_func_fqn: str) -> RewardFunc:

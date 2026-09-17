@@ -348,8 +348,14 @@ def _load_raw_datasets(
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
             dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
-        if cfg.sample_packing:
+        if (split == "train" and cfg.sample_packing) or (
+            split == "test" and cfg.eval_sample_packing
+        ):
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
+
+        # Deduplicate before saving so the saved dataset is already de-duplicated
+        if cfg.dataset_exact_deduplication:
+            dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
 
         # Save the prepared dataset
         dataset_hash = generate_dataset_hash_from_config(
@@ -370,10 +376,14 @@ def _load_and_process_single_dataset(
     streaming: bool = False,
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
-    # Load the dataset
-    dataset = load_dataset_with_config(
-        dataset_config, cfg.hf_use_auth_token, streaming=streaming
-    )
+    # For synthetic datasets, create a minimal placeholder instead of loading from path
+    if dataset_config.type == "_synthetic":
+        dataset = Dataset.from_dict({"text": [""]})
+    else:
+        # Load the dataset
+        dataset = load_dataset_with_config(
+            dataset_config, cfg.hf_use_auth_token, streaming=streaming
+        )
 
     # Parse dataset type
     d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
@@ -396,6 +406,29 @@ def _load_and_process_single_dataset(
         dataset = dataset.shuffle(seed=seed).shard(
             num_shards=dataset_config.shards, index=shards_idx
         )
+
+    # Apply weight-based subsampling before tokenization to save compute
+    if (
+        dataset_config.weight is not None
+        and dataset_config.weight < 1.0
+        and not streaming
+    ):
+        original_len = len(dataset)
+        if original_len == 0:
+            LOG.warning(
+                f"Skipping weight subsampling for dataset "
+                f"'{dataset_config.path}' because it is empty."
+            )
+        else:
+            num_samples = min(
+                original_len,
+                max(1, int(original_len * dataset_config.weight)),
+            )
+            dataset = dataset.shuffle(seed=seed).select(range(num_samples))
+            LOG.info(
+                f"Applied weight={dataset_config.weight} to dataset "
+                f"'{dataset_config.path}': {original_len} -> {num_samples} samples"
+            )
 
     # Apply dataset wrapper
     dataset_wrapper, dataset_prompter = get_dataset_wrapper(
@@ -438,25 +471,8 @@ def _handle_train_dataset_split(
         )
         return train_dataset, eval_dataset
 
-    # No validation split - apply deduplication if needed and return as train dataset
-    if cfg.dataset_exact_deduplication:
-        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
-    else:
-        train_dataset = dataset
-
-    return train_dataset, None
-
-
-def _handle_test_dataset_split(
-    dataset: Dataset, cfg: DictDefault
-) -> tuple[None, Dataset | None]:
-    """Handle processing for test split."""
-    if cfg.dataset_exact_deduplication:
-        eval_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
-    else:
-        eval_dataset = dataset
-
-    return None, eval_dataset
+    # No validation split - deduplication already applied during preprocessing
+    return dataset, None
 
 
 def _apply_dataset_sharding(dataset: Dataset, cfg: DictDefault) -> Dataset:
@@ -515,6 +531,7 @@ def _load_and_prepare_datasets(
     if split == "train":
         train_dataset, eval_dataset = _handle_train_dataset_split(dataset, cfg)
     else:
-        train_dataset, eval_dataset = _handle_test_dataset_split(dataset, cfg)
+        # Deduplication already applied during preprocessing
+        train_dataset, eval_dataset = None, dataset
 
     return train_dataset, eval_dataset, prompters

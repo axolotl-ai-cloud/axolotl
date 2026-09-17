@@ -31,12 +31,13 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
-from axolotl.utils.freeze import freeze_layers_except
+from axolotl.utils.freeze import freeze_layers_except, freeze_mm_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.train import determine_last_checkpoint
@@ -69,7 +70,6 @@ def setup_model_and_tokenizer(
     # Load tokenizer
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-        main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
 
@@ -83,12 +83,24 @@ def setup_model_and_tokenizer(
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()
-    if model.generation_config is not None:
+    if getattr(model, "generation_config", None) is not None:
         model.generation_config.do_sample = True
 
-    TELEMETRY_MANAGER.send_event(
-        event_type="model-load", properties=model.config.to_dict()
-    )
+    model_properties = model.config.to_dict()
+    try:
+        model_properties["num_parameters"] = model.num_parameters()
+    except Exception:  # pylint: disable=broad-exception-caught
+        model_properties["num_parameters"] = sum(p.numel() for p in model.parameters())
+    # if the num_parameters is less than 2B, let's round to nearest 100M, else round to nearest 1B
+    if model_properties["num_parameters"] < 2e9:
+        model_properties["num_parameters_est"] = (
+            f"{round(model_properties['num_parameters'] / 1e8) * 100}M"
+        )
+    else:
+        model_properties["num_parameters_est"] = (
+            f"{round(model_properties['num_parameters'] / 1e9)}B"
+        )
+    TELEMETRY_MANAGER.send_event(event_type="model-load", properties=model_properties)
     if peft_config:
         TELEMETRY_MANAGER.send_event(
             event_type="peft-config-load", properties=peft_config.to_dict()
@@ -97,17 +109,25 @@ def setup_model_and_tokenizer(
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
+        # unfreezing can promote base params the loader left on meta (non-rank-0) to trainable
+        materialize_trainable_meta_params(model)
         if any(
             any(embed in param for embed in ["lm_head", "embed_tokens"])
             for param in cfg.unfrozen_parameters
         ):
             model.enable_input_require_grads()
 
+    # Freeze multimodal modules for text-only training of multimodal models
+    if cfg.freeze_mm_modules:
+        freeze_mm_modules(model)
+
     return model, tokenizer, peft_config, processor
 
 
 def setup_reference_model(
-    cfg: DictDefault, tokenizer: PreTrainedTokenizer
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None = None,
 ) -> PreTrainedModel | None:
     """
     Set up the reference model for RL training if needed.
@@ -115,6 +135,7 @@ def setup_reference_model(
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         tokenizer: The tokenizer to use for the reference model.
+        processor: The processor to use for a multimodal reference model.
 
     Returns:
         Reference model if needed for RL training, `None` otherwise.
@@ -127,24 +148,30 @@ def setup_reference_model(
             model_ref = None  # explicit setting to None
         else:
             reference_model: bool = True
-            if cfg.rl == RLType.GRPO and cfg.trl.beta == 0:
+            trl_cfg = getattr(cfg, "trl", None)
+            if (
+                cfg.rl in {RLType.GRPO, RLType.EBFT}
+                and getattr(trl_cfg, "beta", 0) == 0
+            ):
                 reference_model = False
             # load the model again for model_ref/baseline
-            model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
+            model_loader = ModelLoader(
+                cfg,
+                tokenizer,
+                processor=processor,
+                reference_model=reference_model,
+            )
             model_ref, _ = model_loader.load()
     return model_ref
 
 
-def setup_signal_handler(
-    cfg: DictDefault, model: PreTrainedModel, safe_serialization: bool
-):
+def setup_signal_handler(cfg: DictDefault, model: PreTrainedModel):
     """
     Set up signal handler for graceful termination.
 
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
         model: The model to save on termination
-        safe_serialization: Whether to use safe serialization when saving
     """
     # ray workers don't have access to this signal
     if cfg.local_rank == 0 and not cfg.use_ray:
@@ -152,9 +179,7 @@ def setup_signal_handler(
         def terminate_handler(_, __, model_weakref):
             if model_weakref() is not None:
                 _model = model_weakref()
-                _model.save_pretrained(
-                    cfg.output_dir, safe_serialization=safe_serialization
-                )
+                _model.save_pretrained(cfg.output_dir)
 
             cleanup_distributed()
             sys.exit(0)
@@ -200,7 +225,7 @@ def execute_training(
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,
-                    gather_outputs=cfg.rl is RLType.GRPO,
+                    gather_outputs=cfg.rl in {RLType.GRPO, RLType.EBFT},
                     device_mesh=trainer.accelerator.torch_device_mesh,
                 )
             )
@@ -215,11 +240,32 @@ def execute_training(
         PLUGIN_MANAGER.post_train(cfg, trainer.model)
 
 
+def _rename_fsdp_merged_to_adapter(merged_dir: Path):
+    """Rename model*.safetensors files to adapter_model* in place.
+
+    Also rewrites the index JSON weight_map if sharded output was produced.
+    """
+    for file in sorted(merged_dir.iterdir()):
+        if file.name.startswith("model") and ".safetensors" in file.name:
+            file.rename(merged_dir / file.name.replace("model", "adapter_model", 1))
+
+    index = merged_dir / "adapter_model.safetensors.index.json"
+    if index.exists():
+        data = json.loads(index.read_text(encoding="utf-8"))
+        if "weight_map" in data:
+            data["weight_map"] = {
+                k: v.replace("model", "adapter_model", 1)
+                for k, v in data["weight_map"].items()
+            }
+        index.write_text(
+            json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+
 def save_trained_model(
     cfg: DictDefault,
     trainer: Any,
     model: PreTrainedModel,
-    safe_serialization: bool,
 ):
     """
     Save the trained model according to configuration and training setup.
@@ -228,7 +274,6 @@ def save_trained_model(
         cfg: Dictionary mapping `axolotl` config keys to values.
         trainer: The trainer object.
         model: The trained model to save.
-        safe_serialization: Whether to use safe serialization.
     """
     LOG.info(f"Training completed! Saving trained model to {cfg.output_dir}.")
 
@@ -251,10 +296,35 @@ def save_trained_model(
         )
     # Handle ReLoRA early return case
     if cfg.relora:
-        if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
+        if hasattr(model, "merge_and_unload") and not (
+            cfg.load_in_4bit or cfg.load_in_8bit
+        ):
             model = model.merge_and_unload()
         else:
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
+            return
+
+    # EP-sharded expert LoRA: the adapter is split across the EP axis, so the normal
+    # FSDP/PEFT save would persist only the local rank's experts. Gather across EP and
+    # write a complete adapter.
+    if cfg.adapter and (getattr(cfg, "expert_parallel_size", 1) or 1) > 1:
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+        from axolotl.integrations.expert_parallel.shard import save_ep_lora_adapter
+
+        ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+        if save_ep_lora_adapter(model, cfg.output_dir, ep_group):
+            return
+
+    # FSDP2 (no EP) LoRA: the DCP sharded save fails ("Failed to validate global plan") on the
+    # frozen NVFP4 base DTensors, so gather just the adapter and write it directly.
+    if (
+        cfg.adapter
+        and (trainer.is_fsdp_enabled or cfg.fsdp_config)
+        and str(cfg.fsdp_version) == "2"
+    ):
+        from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
+
+        if save_fsdp2_lora_adapter(model, cfg.output_dir):
             return
 
     if trainer.is_fsdp_enabled or cfg.fsdp_config:
@@ -283,16 +353,20 @@ def save_trained_model(
                 merge_fsdp_weights(
                     checkpoint_dir=str(fsdp_dir),
                     output_path=merged_path,
-                    safe_serialization=True,
                 )
                 trainer.accelerator.wait_for_everyone()
                 if trainer.accelerator.is_main_process:
-                    # move all files in merged_path to cfg.output_dir
+                    # FSDP checkpoints for PEFT only contain adapter weights;
+                    # rename model* → adapter_model* so it loads correctly.
+                    is_peft = cfg.adapter and not cfg.relora
+                    if is_peft:
+                        _rename_fsdp_merged_to_adapter(Path(merged_path))
                     for merged_file in Path(merged_path).iterdir():
-                        if (Path(cfg.output_dir) / merged_file.name).exists():
-                            (Path(cfg.output_dir) / merged_file.name).unlink()
-                        shutil.move(str(merged_file), cfg.output_dir)
-                    shutil.rmtree(merged_path)  # remove what should be an empty dir
+                        dest = Path(cfg.output_dir) / merged_file.name
+                        if dest.exists():
+                            dest.unlink()
+                        shutil.move(str(merged_file), dest)
+                    shutil.rmtree(merged_path)
         # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
         # cleanup the FSDP prefix in the model config.json
         if trainer.accelerator.is_main_process:
@@ -301,9 +375,10 @@ def save_trained_model(
             ) as config_file_io:
                 # read the model config as an OrderedDict
                 config = json.load(config_file_io, object_pairs_hook=OrderedDict)
-                config["architectures"] = [
-                    name.lstrip("FSDP") for name in config["architectures"]
-                ]
+                if config.get("architectures"):
+                    config["architectures"] = [
+                        name.removeprefix("FSDP") for name in config["architectures"]
+                    ]
             # write the updated model config back
             with open(
                 os.path.join(cfg.output_dir, "config.json"), "w", encoding="utf-8"
@@ -330,11 +405,9 @@ def save_trained_model(
                 pass
     elif cfg.local_rank == 0:
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
-            trainer.model.save_pretrained(
-                cfg.output_dir, safe_serialization=safe_serialization
-            )
+            trainer.model.save_pretrained(cfg.output_dir)
 
-        model.save_pretrained(cfg.output_dir, safe_serialization=safe_serialization)
+        model.save_pretrained(cfg.output_dir)
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
@@ -344,7 +417,6 @@ def save_trained_model(
             model=model,
             output_dir=cfg.output_dir,
             trainer=trainer,
-            safe_serialization=safe_serialization,
             save_compressed=cfg.llmcompressor.save_compressed,
         )
 
@@ -449,7 +521,6 @@ def handle_untrained_tokens_fix(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizer,
     train_dataset: Dataset,
-    safe_serialization: bool,
 ):
     """
     Apply fixes for untrained tokens if configured.
@@ -459,7 +530,6 @@ def handle_untrained_tokens_fix(
         model: The model to apply fixes to.
         tokenizer: The tokenizer for token identification.
         train_dataset: The training dataset to use.
-        safe_serialization: Whether to use safe serialization when saving.
     """
     if not cfg.fix_untrained_tokens:
         return
@@ -483,9 +553,7 @@ def handle_untrained_tokens_fix(
     fix_untrained_tokens(model, tokenizer, train_dataset, **fix_kwargs)
 
     if cfg.local_rank == 0:
-        model.save_pretrained(
-            str(Path(cfg.output_dir)), safe_serialization=safe_serialization
-        )
+        model.save_pretrained(str(Path(cfg.output_dir)))
 
 
 def setup_model_and_trainer(
@@ -517,7 +585,7 @@ def setup_model_and_trainer(
     model, tokenizer, peft_config, processor = setup_model_and_tokenizer(cfg)
 
     # Set up reference model for RL if needed
-    model_ref = setup_reference_model(cfg, tokenizer)
+    model_ref = setup_reference_model(cfg, tokenizer, processor)
 
     # Get datasets from metadata
     train_dataset = dataset_meta.train_dataset
@@ -582,15 +650,12 @@ def train(
     ) = setup_model_and_trainer(cfg, dataset_meta)
 
     # Handle untrained tokens if configured
-    safe_serialization = cfg.save_safetensors is True
     train_dataset = dataset_meta.train_dataset
-    handle_untrained_tokens_fix(
-        cfg, model, tokenizer, train_dataset, safe_serialization
-    )
+    handle_untrained_tokens_fix(cfg, model, tokenizer, train_dataset)
 
     # Additional setup
     save_initial_configs(cfg, tokenizer, model, peft_config, processor)
-    setup_signal_handler(cfg, model, safe_serialization)
+    setup_signal_handler(cfg, model)
     setup_model_card(cfg)
 
     # Execute the training
@@ -602,7 +667,7 @@ def train(
         torch.cuda.empty_cache()
 
     # Save the trained model and cleanup
-    save_trained_model(cfg, trainer, model, safe_serialization)
+    save_trained_model(cfg, trainer, model)
     tokenizer.save_pretrained(
         str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
     )

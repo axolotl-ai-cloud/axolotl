@@ -25,6 +25,7 @@ from functools import partial
 import torch
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.model_support import check_capability, get_model_support
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
@@ -35,7 +36,7 @@ LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@318b7e2"`'
+    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@3574df5"`'
 )
 
 
@@ -86,6 +87,12 @@ class CutCrossEntropyPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
         if cfg.cut_cross_entropy:
+            check_capability(
+                get_model_support(cfg.model_config_type),
+                "cut_cross_entropy",
+                cfg.model_config_type,
+                hint="Disable cut_cross_entropy for this model.",
+            )
             self._check_requirements()
             self.patch_llama_like(cfg.model_config_type)
 
@@ -104,7 +111,7 @@ class CutCrossEntropyPlugin(BasePlugin):
 
     def patch_llama_like(
         self,
-        model_type: str,
+        model_type_to_patch: str,
     ) -> None:
         """
         Generic patch for model architectures with causal lm similar to llama
@@ -112,7 +119,10 @@ class CutCrossEntropyPlugin(BasePlugin):
         from cut_cross_entropy.transformers.patch import PATCH_FNS
 
         def patch_generic(
-            maybe_model, patch_options, model_type: str, remote_model_id: str | None
+            maybe_model,
+            patch_options,
+            remote_model_id: str | None,
+            model_type: str,
         ):
             import cut_cross_entropy.transformers.llama
             from cut_cross_entropy.transformers.llama import cce_forward
@@ -136,11 +146,13 @@ class CutCrossEntropyPlugin(BasePlugin):
                     f"Error: {str(e)}"
                 ) from e
 
-        if model_type not in PATCH_FNS:
+        if model_type_to_patch not in PATCH_FNS:
             LOG.warning_once(
-                "Setting up generic cce patch for model type: %s", model_type
+                "Setting up generic cce patch for model type: %s", model_type_to_patch
             )
             LOG.warning_once(
-                f"Generic Cut Cross Entropy + {model_type} support is experimental and may not work as expected."
+                f"Generic Cut Cross Entropy + {model_type_to_patch} support is experimental and may not work as expected."
             )
-            PATCH_FNS[model_type] = partial(patch_generic, model_type=model_type)
+            PATCH_FNS[model_type_to_patch] = partial(
+                patch_generic, model_type=model_type_to_patch
+            )

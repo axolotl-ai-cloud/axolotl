@@ -4,14 +4,19 @@ import os
 from typing import Optional
 
 import numpy as np
+from mistral_common.protocol.instruct.request import ModelSettings
 from mistral_common.protocol.instruct.validator import ValidationMode
-from mistral_common.tokens.tokenizers.utils import download_tokenizer_from_hf_hub
+from mistral_common.tokens.tokenizers.utils import (
+    download_tokenizer_from_hf_hub,
+    get_one_valid_tokenizer_file,
+)
+from pydantic import ValidationError
 from torch import Tensor
-from transformers.tokenization_mistral_common import MistralCommonTokenizer
+from transformers.tokenization_mistral_common import MistralCommonBackend
 from transformers.tokenization_utils_base import VERY_LARGE_INTEGER
 
 
-class HFMistralTokenizer(MistralCommonTokenizer):
+class HFMistralTokenizer(MistralCommonBackend):
     """
     Wraps mistral_common.tokens.tokenizers.mistral.MistralTokenizer
     and exposes HuggingFace API for special tokens.
@@ -32,15 +37,24 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
         # set mode as is not set upstream
         self._set_mode(mode)
+        self._patch_instruct_request_normalizer()
 
     @property
     def name_or_path(self) -> str:
         return self._name_or_path
 
+    @name_or_path.setter
+    def name_or_path(self, name_or_path: str) -> None:
+        self._name_or_path = name_or_path
+
     @property
     def chat_template(self) -> str | None:
         """Chat template is not supported. Dummy method to satisfy HuggingFace API."""
         return "[This is a dummy chat template]"
+
+    @chat_template.setter
+    def chat_template(self, chat_template: str | None) -> None:
+        pass
 
     def _set_mode(self, mode: ValidationMode):
         """Set the mode of the MistralRequestValidator.
@@ -71,6 +85,60 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
         self.tokenizer._chat_completion_request_validator._mode = mode
 
+    @staticmethod
+    def _missing_instruct_request_defaults(exc: ValidationError) -> bool:
+        missing_fields = {
+            err["loc"][0]
+            for err in exc.errors()
+            if err.get("type") == "missing" and len(err.get("loc", ())) == 1
+        }
+        return {
+            "truncate_at_max_tokens",
+            "continue_final_message",
+        }.issubset(missing_fields)
+
+    def _patch_instruct_request_normalizer(self) -> None:
+        normalizer = getattr(self.tokenizer, "_instruct_request_normalizer", None)
+        if normalizer is None or getattr(
+            normalizer, "_axolotl_instruct_defaults_patched", False
+        ):
+            return
+
+        original = normalizer.from_chat_completion_request
+
+        def from_chat_completion_request(request):
+            try:
+                return original(request)
+            except ValidationError as exc:
+                if not self._missing_instruct_request_defaults(exc):
+                    raise
+
+                messages = normalizer._aggregate_messages(request.messages)
+                settings = normalizer.build_settings(request)
+                if settings != ModelSettings.none():
+                    raise
+
+                try:
+                    system_prompt = normalizer._aggregate_system_prompts(
+                        request.messages
+                    )
+                except (AttributeError, NotImplementedError):
+                    system_prompt = None
+
+                return normalizer._instruct_request_class(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    available_tools=request.tools,
+                    truncate_at_max_tokens=None,
+                    continue_final_message=getattr(
+                        request, "continue_final_message", False
+                    ),
+                    settings=settings,
+                )
+
+        normalizer.from_chat_completion_request = from_chat_completion_request
+        normalizer._axolotl_instruct_defaults_patched = True
+
     def apply_chat_template(  # type: ignore
         self,
         conversation: list[dict] | list[list[dict]],
@@ -78,16 +146,17 @@ class HFMistralTokenizer(MistralCommonTokenizer):
         add_generation_prompt: bool = False,
         **kwargs,
     ) -> str | list[int]:
-        """Patched fn to handle setting serving mode, continue_final_message, remove chat_template and add_generation_prompt kwarg"""
+        """Patched fn to handle setting test mode, remove chat_template and add_generation_prompt kwarg"""
 
         # pop unnecessary kwarg for mistral
         kwargs.pop("real_last_index", None)
+        kwargs.pop("add_special_tokens", None)
 
         try:
             if add_generation_prompt:
-                self._set_mode(ValidationMode.serving)
-                kwargs["continue_final_message"] = True
+                self._set_mode(ValidationMode.test)
 
+            self._patch_instruct_request_normalizer()
             out = super().apply_chat_template(conversation, **kwargs)
 
             return out  # type: ignore
@@ -133,7 +202,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
         r"""
         Patched fn to pass `name_or_path` and remove extra kwargs.
 
-        Instantiate a `MistralCommonTokenizer` from a predefined
+        Instantiate a `MistralCommonBackend` from a predefined
         tokenizer.
 
         Args:
@@ -142,7 +211,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
 
                 - A string, the *model id* of a predefined tokenizer hosted inside a model repo on huggingface.co.
                 - A path to a *directory* containing the tokenizer config, for instance saved
-                  using the [`MistralCommonTokenizer.tokenization_mistral_common.save_pretrained`] method, e.g.,
+                  using the [`MistralCommonBackend.tokenization_mistral_common.save_pretrained`] method, e.g.,
                   `./my_model_directory/`.
             mode (`ValidationMode`, *optional*, defaults to `ValidationMode.test`):
                 Validation mode for the `MistralTokenizer` tokenizer.
@@ -154,7 +223,7 @@ class HFMistralTokenizer(MistralCommonTokenizer):
                 exist.
             token (`str` or *bool*, *optional*):
                 The token to use as HTTP bearer authorization for remote files. If `True`, will use the token generated
-                when running `huggingface-cli login` (stored in `~/.huggingface`).
+                when running `hf auth login` (stored in `~/.huggingface`).
             local_files_only (`bool`, *optional*, defaults to `False`):
                 Whether or not to only rely on local files and not to attempt to download any files.
             revision (`str`, *optional*, defaults to `"main"`):
@@ -179,12 +248,12 @@ class HFMistralTokenizer(MistralCommonTokenizer):
                 Whether or not the model should cleanup the spaces that were added when splitting the input text during the
                 tokenization process.
             kwargs (additional keyword arguments, *optional*):
-                Not supported by `MistralCommonTokenizer.from_pretrained`.
+                Not supported by `MistralCommonBackend.from_pretrained`.
                 Will raise an error if used.
         """
         if init_inputs:
             raise ValueError(
-                "`init_inputs` are not supported by `MistralCommonTokenizer.from_pretrained`."
+                "`init_inputs` are not supported by `MistralCommonBackend.from_pretrained`."
             )
 
         # Delete trust_remote_code as it does nothing
@@ -196,20 +265,26 @@ class HFMistralTokenizer(MistralCommonTokenizer):
         # Handle kwargs and AutoTokenizer case
         if kwargs and not kwargs.keys() == {"_from_auto"}:
             raise ValueError(
-                f"Kwargs {list(kwargs.keys())} are not supported by `MistralCommonTokenizer.from_pretrained`."
+                f"Kwargs {list(kwargs.keys())} are not supported by `MistralCommonBackend.from_pretrained`."
             )
 
-        if not os.path.isfile(pretrained_model_name_or_path):
+        if os.path.isfile(pretrained_model_name_or_path):
+            tokenizer_path = str(pretrained_model_name_or_path)
+        elif os.path.isdir(pretrained_model_name_or_path):
+            # Local dir (e.g. a merge-lora output), as upstream MistralCommonBackend does
+            tokenizer_path = os.path.join(
+                pretrained_model_name_or_path,
+                get_one_valid_tokenizer_file(os.listdir(pretrained_model_name_or_path)),
+            )
+        else:
             tokenizer_path = download_tokenizer_from_hf_hub(
                 repo_id=str(pretrained_model_name_or_path),
-                cache_dir=str(cache_dir),
+                cache_dir=str(cache_dir) if cache_dir is not None else None,
                 token=token,
                 revision=revision,
                 force_download=force_download,
                 local_files_only=local_files_only,
             )
-        else:
-            tokenizer_path = str(pretrained_model_name_or_path)
 
         return cls(
             name_or_path=str(pretrained_model_name_or_path),

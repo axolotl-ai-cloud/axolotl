@@ -5,7 +5,7 @@ CLI to post-training quantize a model using torchao
 from pathlib import Path
 from typing import Union
 
-from transformers import AutoConfig, AutoModelForCausalLM, TorchAoConfig
+from transformers import AutoConfig, AutoModelForCausalLM
 
 from axolotl.cli.config import load_cfg
 from axolotl.loaders import load_processor, load_tokenizer
@@ -15,6 +15,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     quantization_config_to_str,
     quantize_model,
+    save_quantized_model,
 )
 
 LOG = get_logger(__name__)
@@ -93,21 +94,18 @@ def do_quantize(
         weight_dtype, activation_dtype, group_size
     )
 
-    ao_config = TorchAoConfig(
-        quant_type=quantization_config,
-        include_input_output_embeddings=quantize_embedding,
-    )
-    model.config.quantization_config = ao_config
-
-    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
-    model.save_pretrained(
-        str(Path(output_dir) / "quantized"),
-        safe_serialization=False,
-        progressbar=True,
-    )
+    save_path = str(Path(output_dir) / "quantized")
+    is_mx = getattr(model, "_is_mx_quantized", False)
+    if is_mx:
+        LOG.info(
+            f"Saving MX-quantized model to: {save_path} "
+            "(using torch.save — MXTensor does not support safetensors yet)."
+        )
+    else:
+        LOG.info(f"Saving quantized model to: {save_path}.")
+    save_quantized_model(model, save_path, progressbar=True)
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
-        safe_serialization=False,
         progressbar=True,
         save_jinja_files=cfg.tokenizer_save_jinja_files,
     )
@@ -121,7 +119,7 @@ def do_quantize(
             hub_model_id.rstrip("-")
             + f"-{quantization_config_to_str[type(quantization_config)]}"
         )
-        model.push_to_hub(hub_model_id, safe_serialization=False)
+        model.push_to_hub(hub_model_id)
         tokenizer.push_to_hub(hub_model_id)
         if processor:
             processor.push_to_hub(hub_model_id)

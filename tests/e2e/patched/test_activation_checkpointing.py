@@ -11,7 +11,9 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists
+from ..utils import check_model_output_exists, requires_flash_attn
+
+pytestmark = requires_flash_attn
 
 
 @pytest.fixture()
@@ -66,7 +68,6 @@ class TestActivationCheckpointing:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
-                "save_safetensors": True,
                 "gradient_checkpointing": gradient_checkpointing,
                 "save_first_step": False,
                 "dataset_num_proc": 4,

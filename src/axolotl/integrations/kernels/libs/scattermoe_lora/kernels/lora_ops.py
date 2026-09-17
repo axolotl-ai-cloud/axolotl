@@ -1,0 +1,3463 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
+"""
+Fused ScatterMoE + LoRA Triton Kernels
+=======================================
+
+Provides fused forward and backward kernels for ScatterMoE with LoRA adapters.
+
+Forward: Y = X @ W + scaling * (X @ A^T) @ B^T
+Backward (LoRA training, W frozen):
+  - dX = dY @ W^T + scaling * (dY @ B) @ A    (input gradient)
+  - dA = scaling * (dY @ B)^T @ X              (LoRA A gradient)
+  - dB = scaling * dY^T @ (X @ A^T)            (LoRA B gradient)
+
+LoRA weight layout (from PEFT ParamWrapper):
+  - A: [r*E, K]  -- for expert e, rows [e*r : (e+1)*r] give A_e of shape [r, K]
+  - B: [N, r*E]  -- for expert e, cols [e*r : (e+1)*r] give B_e of shape [N, r]
+
+Key design decisions:
+  - The forward kernel fuses X@W and X@A^T in the same K-loop for data reuse on X,
+    then computes (X@A^T) @ B^T in the epilogue.
+  - The backward dA/dB kernel operates on grouped (expert-contiguous) data and
+    iterates over tokens per expert, accumulating gradients in registers.
+  - R (LoRA rank) is a tl.constexpr, allowing tl.arange(0, R). We pad R to a
+    power-of-2 for Triton tile compatibility; typical ranks (4, 8, 16, 32, 64)
+    already satisfy this.
+"""
+
+from itertools import product
+from typing import Optional
+
+import torch
+import triton
+import triton.language as tl
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+BLOCK_M = 128
+ALLOW_TF32 = True
+
+
+def _next_power_of_2(n: int) -> int:
+    """Round up to next power of 2."""
+    n -= 1
+    n |= n >> 1
+    n |= n >> 2
+    n |= n >> 4
+    n |= n >> 8
+    n |= n >> 16
+    return n + 1
+
+
+# Granularity for the autotune cache key on M. The kernel still runs on the
+# real M (loop bounds + masks); only the @triton.autotune key is bucketed so
+# that varying seqlens/routing don't keep invalidating the cache.
+_M_BUCKET_GRANULARITY = 1024
+# Large-M / expert-parallel regime: bucket coarsely so per-rank token-count variation (DeepEP
+# dispatch is imbalanced) collapses to ONE autotune key. Otherwise ranks land on different
+# M_BUCKETs, re-autotune at scattered layers, and the resulting per-rank timing skew trips DeepEP's
+# combine barrier. The kernel still runs on the real M; only the @triton.autotune key is bucketed.
+_M_BUCKET_COARSE = 131072
+_M_BUCKET_COARSE_THRESHOLD = 16384
+
+
+def _bucket_m(m: int) -> int:
+    g = _M_BUCKET_COARSE if m >= _M_BUCKET_COARSE_THRESHOLD else _M_BUCKET_GRANULARITY
+    return ((m + g - 1) // g) * g
+
+
+# Triton tl.dot requires minimum tile dimensions of 16 on modern GPUs.
+MIN_TRITON_DOT_SIZE = 16
+
+
+def _block_r_for_rank(r: int) -> int:
+    """Compute BLOCK_R: next power-of-2 >= max(r, MIN_TRITON_DOT_SIZE)."""
+    return _next_power_of_2(max(r, MIN_TRITON_DOT_SIZE))
+
+
+# =============================================================================
+# Token Rounding: pad expert counts to BLOCK_M multiples
+# =============================================================================
+
+
+def round_expert_counts(
+    sorted_expert_idxs: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    E: int,
+    block_m: int = BLOCK_M,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Pad each expert's token count to a multiple of block_m to eliminate
+    partial-tile waste in the backward kernel.
+
+    Padding is done by duplicating the last valid token index for each expert.
+    The kernel's M_mask = M_idx < real_end_idx masks these padding entries, so
+    correctness is preserved (they contribute 0 to the accumulation via other=0.0).
+
+    This only helps the backward dA/dB kernel where per-expert iteration is
+    explicit. The forward scatter2scatter kernel handles partial tiles via masking.
+
+    Args:
+        sorted_expert_idxs: Expert assignments sorted [M*k]
+        sorted_scattered_idxs: Original indices sorted [M*k]
+        expert_offsets: Cumulative token counts per expert [E]
+        E: Number of experts
+        block_m: Block size for token dimension (default: BLOCK_M)
+
+    Returns:
+        padded_expert_idxs: [M_padded] expert assignments with padding
+        padded_scattered_idxs: [M_padded] original indices with padding
+        padded_offsets: [E] cumulative padded counts (for kernel iteration range)
+        real_offsets: [E] original cumulative counts (for M_mask in kernel)
+    """
+    device = sorted_expert_idxs.device
+
+    # Compute per-expert counts
+    counts = torch.zeros(E, dtype=torch.int64, device=device)
+    prev = 0
+    for e in range(E):
+        curr = expert_offsets[e].item()
+        counts[e] = curr - prev
+        prev = curr
+
+    # Round up each count to multiple of block_m
+    padded_counts = ((counts + block_m - 1) // block_m) * block_m
+    # Experts with 0 tokens stay at 0
+    padded_counts = torch.where(
+        counts > 0, padded_counts, torch.zeros_like(padded_counts)
+    )
+    total_padded = padded_counts.sum().item()
+
+    padded_expert_idxs = torch.empty(
+        total_padded, dtype=sorted_expert_idxs.dtype, device=device
+    )
+    padded_scattered_idxs = torch.empty(
+        total_padded, dtype=sorted_scattered_idxs.dtype, device=device
+    )
+
+    src_offset = 0
+    dst_offset = 0
+    for e in range(E):
+        count = counts[e].item()
+        padded_count = padded_counts[e].item()
+
+        if count > 0:
+            # Copy original tokens
+            padded_expert_idxs[dst_offset : dst_offset + count] = sorted_expert_idxs[
+                src_offset : src_offset + count
+            ]
+            padded_scattered_idxs[dst_offset : dst_offset + count] = (
+                sorted_scattered_idxs[src_offset : src_offset + count]
+            )
+
+            # Pad with last valid token (masked out by kernel via M_mask)
+            if padded_count > count:
+                padded_expert_idxs[dst_offset + count : dst_offset + padded_count] = (
+                    sorted_expert_idxs[src_offset + count - 1]
+                )
+                padded_scattered_idxs[
+                    dst_offset + count : dst_offset + padded_count
+                ] = sorted_scattered_idxs[src_offset + count - 1]
+
+        src_offset += count
+        dst_offset += padded_count
+
+    # Padded offsets: cumulative padded counts (for iteration range in kernel)
+    padded_offsets = padded_counts.cumsum(-1).to(expert_offsets.dtype)
+    # Real offsets: original cumulative counts (for M_mask in kernel)
+    real_offsets = expert_offsets.clone()
+
+    return padded_expert_idxs, padded_scattered_idxs, padded_offsets, real_offsets
+
+
+# =============================================================================
+# Autotuning: SMEM estimation and config pruning
+# =============================================================================
+
+_SMEM_CAPACITY: int | None = None
+
+
+def _get_smem_capacity() -> int:
+    """Get device shared memory capacity (bytes). Cached after first call."""
+    global _SMEM_CAPACITY
+    if _SMEM_CAPACITY is None:
+        props = triton.runtime.driver.active.utils.get_device_properties(
+            torch.cuda.current_device()
+        )
+        _SMEM_CAPACITY = props["max_shared_mem"]
+    return _SMEM_CAPACITY
+
+
+def _estimate_smem_usage(
+    num_stages: int, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, dtype_bytes: int = 2
+) -> int:
+    """Estimate shared memory in bytes for a GEMM-style tile.
+
+    Formula: stages * BLOCK_K * (BLOCK_M + BLOCK_N) + BLOCK_M * BLOCK_N
+    Multiply by dtype_bytes (2 for fp16/bf16).
+    """
+    return (
+        num_stages * BLOCK_K * (BLOCK_M + BLOCK_N) + BLOCK_M * BLOCK_N
+    ) * dtype_bytes
+
+
+# Conservative margin (bytes) subtracted from SMEM capacity to account for
+# estimation inaccuracies and kernel overhead (registers spilled to SMEM, etc.)
+_SMEM_SLACK = 10_000
+
+
+def _estimate_register_pressure(
+    num_warps: int,
+    *tile_sizes: tuple[int, int],
+) -> float:
+    """Rough estimate of per-thread register footprint from live tile sizes.
+
+    This is a heuristic, NOT an accurate register count.  Triton uses tensor
+    core MMA fragments that pack multiple elements per register, and can spill
+    to local memory when the hardware limit (255 regs/thread) is exceeded.
+
+    The estimate is used to prune only truly extreme configs that would cause
+    excessive spilling or compilation failures.  The threshold is set high
+    (``_MAX_REGS_SOFT_LIMIT``) because the heuristic overestimates — it
+    doesn't account for MMA fragment packing.  Configs like M=64,N=64,K=64
+    (est ~520) work fine in practice via spilling.
+
+    Returns estimated registers per thread.
+    """
+    # Each thread in a warp holds ~1/32 of the tile elements
+    tile_regs = sum(r * c for r, c in tile_sizes) / 32
+    scalar_overhead = 40
+    return tile_regs + scalar_overhead
+
+
+# Soft limit for register pressure pruning.  Only prune configs with extreme
+# tile products (e.g. M=128,K=256,N=256) that reliably crash on Blackwell.
+# Moderate configs (M=64,N=64,K=64, est ~520) work via register spilling.
+_MAX_REGS_SOFT_LIMIT = 1024
+
+
+# =============================================================================
+# Forward Kernel: scatter2scatter with fused LoRA
+# =============================================================================
+
+
+@triton.jit
+def _compute_expert_block_lora(
+    E_idx,
+    E_mask,
+    M_in_idx,
+    N_block,
+    N_mask,
+    # Base weight
+    X_ptr,
+    stride_xm,
+    stride_xk,
+    W_ptr,
+    stride_we,
+    stride_wk,
+    stride_wn,
+    # LoRA weights
+    A_ptr,
+    stride_ar,
+    stride_ak,  # A: [r*E, K], stride_ar = stride for r*E dim, stride_ak = stride for K dim
+    B_ptr,
+    stride_bn,
+    stride_br,  # B: [N, r*E], stride_bn = stride for N dim, stride_br = stride for r*E dim
+    # Dimensions
+    K,
+    ACTUAL_R: tl.constexpr,  # True LoRA rank (for indexing into weight arrays)
+    acc,
+    no_k_mask,
+    BLOCK_M: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_R: tl.constexpr,  # Padded tile size >= max(ACTUAL_R, 16)
+    scaling,
+    allow_tf32: tl.constexpr,
+):
+    """
+    Compute Y_block = X_block @ W_e + scaling * (X_block @ A_e^T) @ B_e^T
+
+    for tokens in this M-block assigned to expert E_idx.
+
+    ACTUAL_R is the true LoRA rank used for indexing into A[e*r:(e+1)*r, :].
+    BLOCK_R >= ACTUAL_R is the padded tile dimension (must be >= 16 for tl.dot).
+    When BLOCK_R > ACTUAL_R, loads are masked on the R dimension.
+    """
+    K_block = tl.arange(0, BLOCK_K)
+    R_block = tl.arange(0, BLOCK_R)
+    R_mask = R_block < ACTUAL_R  # Mask for padding when BLOCK_R > ACTUAL_R
+
+    # Base weight pointers: W[E_idx, :, :] is [K, N], load [BLOCK_K, BLOCK_N]
+    X_blk_ptrs = X_ptr + M_in_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
+    # i64 expert offset: E_idx * stride_we overflows i32 on a >2^31-element expert stack
+    W_blk_ptrs = (
+        W_ptr
+        + E_idx.to(tl.int64) * stride_we
+        + K_block[:, None] * stride_wk
+        + N_block[None, :] * stride_wn
+    )
+
+    # LoRA A pointers: A[e*ACTUAL_R:(e+1)*ACTUAL_R, :] for expert e, shape [r, K]
+    A_expert_offset = E_idx * ACTUAL_R
+    A_blk_ptrs = (
+        A_ptr
+        + (A_expert_offset + R_block)[:, None] * stride_ar
+        + K_block[None, :] * stride_ak
+    )
+
+    iters = tl.cdiv(K, BLOCK_K)
+
+    # Accumulator for X @ A^T: [BLOCK_M, BLOCK_R]
+    xa_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
+
+    # Determine the input element type for consistent casting.
+    # Masked tl.load with other=0.0 can upcast bf16->fp32 in some Triton versions,
+    # causing dtype mismatches in tl.dot.  We cast all tiles to the same type.
+    INPUT_DTYPE = X_ptr.dtype.element_ty
+
+    for i in range(iters):
+        if no_k_mask:
+            x = tl.load(X_blk_ptrs, mask=E_mask[:, None], other=0.0).to(INPUT_DTYPE)
+            w = tl.load(W_blk_ptrs, mask=N_mask[None, :], other=0.0).to(INPUT_DTYPE)
+            a = tl.load(A_blk_ptrs, mask=R_mask[:, None], other=0.0).to(INPUT_DTYPE)
+        else:
+            K_mask = (i * BLOCK_K + K_block) < K
+            x = tl.load(
+                X_blk_ptrs, mask=E_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+            w = tl.load(
+                W_blk_ptrs, mask=K_mask[:, None] & N_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+            a = tl.load(
+                A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+
+        # Base: acc += X @ W  ([M, K] @ [K, N] -> [M, N])
+        acc += tl.dot(x, w, allow_tf32=allow_tf32).to(tl.float32)
+
+        # LoRA: xa_acc += X @ A^T  ([M, K] @ [K, R] -> [M, R])
+        xa_acc += tl.dot(x, tl.trans(a), allow_tf32=allow_tf32).to(tl.float32)
+
+        X_blk_ptrs += BLOCK_K * stride_xk
+        W_blk_ptrs += BLOCK_K * stride_wk
+        A_blk_ptrs += BLOCK_K * stride_ak
+
+    # Epilogue: load B[e] and compute (X @ A^T) @ B^T
+    # B[e] is B[:, e*ACTUAL_R:(e+1)*ACTUAL_R], shape [N, r]. Load [BLOCK_N, BLOCK_R].
+    B_expert_offset = E_idx * ACTUAL_R
+    B_blk_ptrs = (
+        B_ptr
+        + N_block[:, None] * stride_bn
+        + (B_expert_offset + R_block)[None, :] * stride_br
+    )
+    b = tl.load(
+        B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0
+    )  # [BLOCK_N, BLOCK_R]
+
+    # tl.dot requires non-float32 inputs (tensor cores); cast back to input dtype
+    b_inp = b.to(INPUT_DTYPE)
+
+    # (X @ A^T) @ B^T: [M, R] @ [R, N] -> [M, N]
+    lora_out = tl.dot(xa_acc.to(INPUT_DTYPE), tl.trans(b_inp), allow_tf32=allow_tf32)
+
+    acc += scaling * lora_out
+    return acc
+
+
+def _scatter2scatter_lora_configs():
+    """Generate forward kernel autotune configs.
+
+    Search space includes BLOCK_M to allow trading token-tile size for
+    larger BLOCK_K/BLOCK_N tiles.  On GPUs with ~99KB SMEM, BLOCK_M=128
+    forces BLOCK_K=32 and BLOCK_N=32; BLOCK_M=64 allows BLOCK_K=128
+    (4× fewer inner-loop iterations).
+
+    Search space:
+      BLOCK_M:    {32, 64, 128}
+      BLOCK_N:    {32, 64}
+      BLOCK_K:    {32, 64, 128}
+      num_warps:  {4, 8}
+      num_stages: {3, 4, 5}
+    """
+    configs = []
+    for block_m, block_n, block_k, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M
+        [32, 64],  # BLOCK_N
+        [32, 64, 128],  # BLOCK_K
+        [4, 8],  # num_warps
+        [3, 4, 5],  # num_stages
+    ):
+        configs.append(
+            triton.Config(
+                {"BLOCK_M": block_m, "BLOCK_N": block_n, "BLOCK_K": block_k},
+                num_stages=stages,
+                num_warps=warps,
+            )
+        )
+    return configs
+
+
+def _prune_fwd_configs(configs, named_args, **kwargs):
+    """Prune forward configs based on SMEM capacity and register pressure.
+
+    The forward kernel inner loop loads three tiles per pipeline stage:
+      X[BLOCK_M, BLOCK_K], W[BLOCK_K, BLOCK_N], A[BLOCK_R, BLOCK_K].
+    The base estimate only accounts for X and W. We add:
+      - A tile [BLOCK_R, BLOCK_K] per pipeline stage (loaded in the inner loop)
+      - B tile [BLOCK_N, BLOCK_R] loaded once in the epilogue
+      - Extra headroom for compiler overhead (register spills, metadata)
+    """
+    smem_cap = _get_smem_capacity()
+
+    # Get BLOCK_R from named_args if available, else assume worst case
+    block_r = named_args.get("BLOCK_R", 64)
+
+    scored = []
+    for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
+        block_n = config.kwargs["BLOCK_N"]
+        block_k = config.kwargs["BLOCK_K"]
+        # Base: stages * BLOCK_K * (BLOCK_M + BLOCK_N) + BLOCK_M * BLOCK_N
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_n, block_k)
+        # A tile [BLOCK_R, BLOCK_K] loaded per stage in the inner loop
+        smem_lora_loop = config.num_stages * block_r * block_k * 2
+        # B tile [BLOCK_N, BLOCK_R] loaded once in epilogue
+        smem_lora_epilogue = block_n * block_r * 2
+        smem = smem_base + smem_lora_loop + smem_lora_epilogue
+
+        # Register pressure: live tiles are acc[M,N], xa_acc[M,R],
+        # x[M,K], w[K,N], a[R,K], plus epilogue b[N,R]
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_m, block_n),  # acc
+            (block_m, block_r),  # xa_acc
+            (block_m, block_k),  # x tile
+            (block_k, block_n),  # w tile
+            (block_r, block_k),  # a tile
+            (block_n, block_r),  # b tile (epilogue)
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
+        scored.append((smem, config))
+
+    pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
+    if pruned:
+        return pruned
+    if scored:
+        # All surviving configs exceed SMEM — return the one with smallest usage
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    # All configs pruned by register pressure — fall back to smallest tiles
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_N"] * c.kwargs["BLOCK_K"]
+            ),
+        )
+    ]
+
+
+@triton.autotune(
+    configs=_scatter2scatter_lora_configs(),
+    key=["M_BUCKET", "N", "K"],
+    prune_configs_by={"early_config_prune": _prune_fwd_configs},
+)
+@triton.heuristics(
+    {
+        "NO_K_MASK": lambda args: (args["K"] % args["BLOCK_K"]) == 0,
+        "NO_N_MASK": lambda args: (args["N"] % args["BLOCK_N"]) == 0,
+    }
+)
+@triton.jit
+def _scatter2scatter_lora(
+    # Input/Output
+    X_ptr,
+    stride_xm: tl.constexpr,
+    stride_xk: tl.constexpr,
+    W_ptr,
+    stride_we,
+    stride_wk: tl.constexpr,
+    stride_wn: tl.constexpr,
+    Y_ptr,
+    stride_ym: tl.constexpr,
+    stride_yn: tl.constexpr,
+    # Bias
+    Bias_ptr,
+    stride_bias_e: tl.constexpr,
+    stride_bias_n: tl.constexpr,
+    # LoRA weights
+    LA_ptr,
+    stride_la_r,
+    stride_la_k,  # A: [r*E, K]
+    LB_ptr,
+    stride_lb_n,
+    stride_lb_r,  # B: [N, r*E]
+    # Routing
+    grouped_idx_ptr,
+    expert_idxs_ptr,
+    # Dimensions
+    FAN_OUT: tl.constexpr,
+    M,
+    M_BUCKET,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    E: tl.constexpr,
+    ACTUAL_R: tl.constexpr,  # True LoRA rank (for weight indexing)
+    # Block sizes
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_R: tl.constexpr,  # Padded tile size >= max(ACTUAL_R, 16)
+    # Config
+    ACC_TYPE: tl.constexpr,
+    scaling,
+    allow_tf32: tl.constexpr,
+    x_grouped: tl.constexpr,
+    y_grouped: tl.constexpr,
+    NO_K_MASK: tl.constexpr,
+    NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
+):
+    """
+    Fused scatter2scatter with LoRA: Y = X @ W + scaling * (X @ A^T) @ B^T + bias
+    """
+    pid = tl.program_id(axis=0)
+
+    N_BLOCK_COUNT = tl.cdiv(N, BLOCK_N)
+    M_block_id = pid // N_BLOCK_COUNT
+    N_block_id = pid % N_BLOCK_COUNT
+
+    M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
+    N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
+    N_mask = N_block < N
+    M_boundary_mask = M_block < (FAN_OUT * M)
+
+    E_idxs = tl.load(expert_idxs_ptr + M_block, mask=M_boundary_mask, other=E)
+
+    no_k_mask = NO_K_MASK
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=ACC_TYPE)
+
+    E_first_idx = tl.min(E_idxs)
+    E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+
+    for E_idx in range(E_first_idx, E_last_idx + 1):
+        E_mask = E_idxs == E_idx
+        if x_grouped:
+            M_in_idx = M_block
+        else:
+            M_in_idx = M_idx // FAN_OUT
+
+        acc = _compute_expert_block_lora(
+            E_idx,
+            E_mask,
+            M_in_idx,
+            N_block,
+            N_mask,
+            X_ptr,
+            stride_xm,
+            stride_xk,
+            W_ptr,
+            stride_we,
+            stride_wk,
+            stride_wn,
+            LA_ptr,
+            stride_la_r,
+            stride_la_k,
+            LB_ptr,
+            stride_lb_n,
+            stride_lb_r,
+            K,
+            ACTUAL_R,
+            acc,
+            no_k_mask,
+            BLOCK_M,
+            BLOCK_K,
+            BLOCK_N,
+            BLOCK_R,
+            scaling,
+            allow_tf32=allow_tf32,
+        )
+
+    # Add bias if present
+    if Bias_ptr is not None:
+        B_blk_ptrs = (
+            Bias_ptr
+            + E_idxs[:, None] * stride_bias_e
+            + N_block[None, :] * stride_bias_n
+        )
+        acc += tl.load(B_blk_ptrs, mask=M_boundary_mask[:, None] & N_mask[None, :])
+
+    # Store output
+    if y_grouped:
+        M_out_idx = M_block
+    else:
+        M_out_idx = M_idx
+    Y_blk_ptrs = Y_ptr + (M_out_idx[:, None] * stride_ym + N_block[None, :] * stride_yn)
+    tl.store(Y_blk_ptrs, acc, mask=M_boundary_mask[:, None] & N_mask[None, :])
+
+
+def _scatter2scatter_lora_split(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    sorted_expert_idxs: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    k: int,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    b: Optional[torch.Tensor] = None,
+    x_grouped: bool = False,
+    y_grouped: bool = False,
+    out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
+) -> torch.Tensor:
+    """Split base+LoRA forward: 3 scatter2scatter calls, no fused LoRA kernel.
+
+    Faster for models with few large experts (e.g. Mixtral E=8, I=14336)
+    because the base kernel runs at full speed without LoRA SMEM overhead,
+    and the LoRA matmuls (R=16) are tiny separate passes.
+
+    Y = scatter(X, W) + scaling * scatter(scatter(X, A^T), B^T)
+    """
+    from axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops import (
+        scatter2scatter,
+    )
+
+    E = W.size(0)
+    R = lora_A.size(0) // E
+    K = W.size(1)
+    N = W.size(2)
+
+    # 1. Base: Y_base = X @ W  (uses base kernel with optimal tile sizes)
+    output = scatter2scatter(
+        X=X,
+        W=W,
+        b=b,
+        sorted_expert_idxs=sorted_expert_idxs,
+        sorted_scattered_idxs=sorted_scattered_idxs,
+        k=k,
+        x_grouped=x_grouped,
+        y_grouped=y_grouped,
+        out=out,
+        int64_indices=int64_indices,
+    )
+
+    # 2. XA = X @ A^T  (tiny: output is [M*k, R])
+    # Reshape A: [R*E, K] → [E, K, R] (expert weights for scatter2scatter)
+    W_A = lora_A.reshape(E, R, K).permute(0, 2, 1).contiguous()
+    XA = scatter2scatter(
+        X=X,
+        W=W_A,
+        sorted_expert_idxs=sorted_expert_idxs,
+        sorted_scattered_idxs=sorted_scattered_idxs,
+        k=k,
+        x_grouped=x_grouped,
+        y_grouped=True,
+        int64_indices=int64_indices,
+    )
+
+    # 3. Y_lora = XA @ B^T  (R is tiny, so this is very fast)
+    # Reshape B: [N, R*E] → [E, R, N]
+    W_B = lora_B.T.reshape(E, R, N).contiguous()
+    Y_lora = scatter2scatter(
+        X=XA,
+        W=W_B,
+        sorted_expert_idxs=sorted_expert_idxs,
+        sorted_scattered_idxs=sorted_scattered_idxs,
+        k=1,
+        x_grouped=True,
+        y_grouped=y_grouped,
+        int64_indices=int64_indices,
+    )
+
+    # 4. Y = Y_base + scaling * Y_lora
+    output.add_(Y_lora, alpha=scaling)
+    return output
+
+
+# Threshold for switching from fused to split LoRA forward.
+# Split wins when per-expert matmul is large (bandwidth-bound LoRA tile
+# loads dominate in the fused kernel's inner loop).
+# Empirically: split wins for E<=32 with K*N > 20M (e.g. Mixtral, Phi-MoE).
+_SPLIT_LORA_FWD_THRESHOLD = 20_000_000  # per-expert K*N
+_SPLIT_LORA_FWD_MAX_EXPERTS = 32
+
+
+def scatter2scatter_lora(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    sorted_expert_idxs: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    k: int,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    b: Optional[torch.Tensor] = None,
+    x_grouped: bool = False,
+    y_grouped: bool = False,
+    out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
+) -> torch.Tensor:
+    """
+    Scatter2scatter with LoRA: Y[i] = X[i] @ W[e] + scaling * (X[i] @ A[e]^T) @ B[e]^T + b[e]
+
+    Automatically selects between:
+    - Fused kernel: single Triton kernel with LoRA in the inner loop.
+      Best for many small experts (E>=64, small K*N).
+    - Split dispatch: 3 separate scatter2scatter calls (base + XA + lora).
+      Best for few large experts (E<=32, large K*N like Mixtral).
+
+    Args:
+        X: Input [M, K] or [M*k, K] if x_grouped
+        W: Expert weights [E, K, N]
+        sorted_expert_idxs: Expert assignments sorted [M*k]
+        sorted_scattered_idxs: Original indices sorted [M*k]
+        k: Fan-out (top-k)
+        lora_A: LoRA A weights [r*E, K]
+        lora_B: LoRA B weights [N, r*E]
+        scaling: LoRA scaling factor (alpha/r)
+        b: Optional bias [E, N]
+        x_grouped: Input pre-grouped by expert
+        y_grouped: Keep output grouped
+        out: Optional pre-allocated output buffer
+
+    Returns:
+        Y: Output [M*k, N]
+    """
+    E = W.size(0)
+    K = W.size(1)
+    N = W.size(2)
+
+    # Dispatch: split for few large experts, fused for many small experts
+    if E <= _SPLIT_LORA_FWD_MAX_EXPERTS and K * N >= _SPLIT_LORA_FWD_THRESHOLD:
+        return _scatter2scatter_lora_split(
+            X,
+            W,
+            sorted_expert_idxs,
+            sorted_scattered_idxs,
+            k,
+            lora_A,
+            lora_B,
+            scaling,
+            b,
+            x_grouped,
+            y_grouped,
+            out,
+            int64_indices=int64_indices,
+        )
+
+    assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
+    assert sorted_scattered_idxs.size(0) == X.size(0) * k
+
+    R = lora_A.size(0) // E
+
+    # Pad R to power of 2 for Triton tile size
+    BLOCK_R = _block_r_for_rank(R)
+
+    L_scattered = sorted_expert_idxs.size(0)
+
+    if out is None:
+        output = torch.empty((L_scattered, N), device=X.device, dtype=X.dtype)
+    else:
+        assert out.size(0) == L_scattered and out.size(1) == N
+        output = out
+
+    def grid(META):
+        return (
+            triton.cdiv(L_scattered, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),
+        )
+
+    if b is None:
+        stride_be = stride_bn = 0
+        b_ptr = None
+    else:
+        stride_be, stride_bn = b.stride()
+        b_ptr = b
+
+    _scatter2scatter_lora[grid](
+        X,
+        X.stride(0),
+        X.stride(1),
+        W,
+        W.stride(0),
+        W.stride(1),
+        W.stride(2),
+        output,
+        output.stride(0),
+        output.stride(1),
+        b_ptr,
+        stride_be,
+        stride_bn,
+        lora_A,
+        lora_A.stride(0),
+        lora_A.stride(1),
+        lora_B,
+        lora_B.stride(0),
+        lora_B.stride(1),
+        sorted_scattered_idxs,
+        sorted_expert_idxs,
+        FAN_OUT=k,
+        M=X.size(0),
+        M_BUCKET=_bucket_m(X.size(0)),
+        K=K,
+        N=N,
+        E=E,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        ACC_TYPE=tl.float32,
+        scaling=scaling,
+        allow_tf32=ALLOW_TF32,
+        x_grouped=x_grouped,
+        y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
+    )
+
+    return output
+
+
+# =============================================================================
+# Backward Kernel: Fused dX = dY @ W^T + scaling * (dY @ B) @ A
+# =============================================================================
+
+
+@triton.jit
+def _compute_expert_block_lora_dX(
+    E_idx,
+    E_mask,
+    M_in_idx,
+    K_block,
+    K_mask,
+    # Input: DY (gradient w.r.t. output)
+    DY_ptr,
+    stride_dym,
+    stride_dyn,
+    # Base weight W^T: we load W[e] as [K, N] and index as W^T[e] = [N, K]
+    W_ptr,
+    stride_we,
+    stride_wk,
+    stride_wn,
+    # LoRA weights
+    A_ptr,
+    stride_ar,
+    stride_ak,  # A: [r*E, K]
+    B_ptr,
+    stride_bn,
+    stride_br,  # B: [N, r*E]
+    # Dimensions
+    N,
+    ACTUAL_R: tl.constexpr,
+    acc,
+    no_n_mask,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    scaling,
+    allow_tf32: tl.constexpr,
+):
+    """
+    Compute dX_block = DY_block @ W_e^T + scaling * (DY_block @ B_e) @ A_e
+
+    for tokens in this M-block assigned to expert E_idx.
+
+    Inner loop over N dimension (reduction dim for dY @ W^T and dY @ B).
+    Output dimension is K.
+    Epilogue computes (dY @ B) @ A.
+
+    Transpose mapping from forward:
+      Forward: X@W (K-loop), X@A^T (K-loop), (X@A^T)@B^T (epilogue)
+      Backward: DY@W^T (N-loop), DY@B (N-loop), (DY@B)@A (epilogue)
+    """
+    N_block = tl.arange(0, BLOCK_N)
+    R_block = tl.arange(0, BLOCK_R)
+    R_mask = R_block < ACTUAL_R
+
+    # DY pointers: DY is [M_total, N], load [BLOCK_M, BLOCK_N]
+    DY_blk_ptrs = (
+        DY_ptr + M_in_idx[:, None] * stride_dym + N_block[None, :] * stride_dyn
+    )
+
+    # W^T pointers: W[e] is [K, N], W^T[e] is [N, K]. We load W^T as [BLOCK_N, BLOCK_K].
+    # W stored as [E, K, N], so W^T[e][n, k] = W[e][k, n] = W_ptr + e*stride_we + k*stride_wk + n*stride_wn
+    # As [BLOCK_N, BLOCK_K] tile: row=n, col=k
+    WT_blk_ptrs = (
+        W_ptr
+        + E_idx.to(tl.int64) * stride_we
+        + N_block[:, None] * stride_wn  # row = n dimension
+        + K_block[None, :] * stride_wk
+    )  # col = k dimension
+
+    # B pointers: B[e] is B[:, e*R:(e+1)*R], shape [N, R]. Load [BLOCK_N, BLOCK_R].
+    B_expert_offset = E_idx * ACTUAL_R
+    B_blk_ptrs = (
+        B_ptr
+        + N_block[:, None] * stride_bn
+        + (B_expert_offset + R_block)[None, :] * stride_br
+    )
+
+    iters = tl.cdiv(N, BLOCK_N)
+
+    # Accumulator for DY @ B: [BLOCK_M, BLOCK_R]
+    dy_b_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
+
+    # Determine the input element type for consistent casting.
+    INPUT_DTYPE = DY_ptr.dtype.element_ty
+
+    for i in range(iters):
+        if no_n_mask:
+            dy = tl.load(DY_blk_ptrs, mask=E_mask[:, None], other=0.0).to(INPUT_DTYPE)
+            wt = tl.load(WT_blk_ptrs, mask=K_mask[None, :], other=0.0).to(INPUT_DTYPE)
+            b = tl.load(B_blk_ptrs, mask=R_mask[None, :], other=0.0).to(INPUT_DTYPE)
+        else:
+            N_mask_iter = (i * BLOCK_N + N_block) < N
+            dy = tl.load(
+                DY_blk_ptrs, mask=E_mask[:, None] & N_mask_iter[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+            wt = tl.load(
+                WT_blk_ptrs, mask=N_mask_iter[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+            b = tl.load(
+                B_blk_ptrs, mask=N_mask_iter[:, None] & R_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+
+        # Base: acc += DY @ W^T  ([M, N] @ [N, K] -> [M, K])
+        acc += tl.dot(dy, wt, allow_tf32=allow_tf32).to(tl.float32)
+
+        # LoRA: dy_b_acc += DY @ B  ([M, N] @ [N, R] -> [M, R])
+        dy_b_acc += tl.dot(dy, b, allow_tf32=allow_tf32).to(tl.float32)
+
+        DY_blk_ptrs += BLOCK_N * stride_dyn
+        WT_blk_ptrs += BLOCK_N * stride_wn
+        B_blk_ptrs += BLOCK_N * stride_bn
+
+    # Epilogue: load A[e] and compute (DY @ B) @ A
+    # A[e] is A[e*R:(e+1)*R, :], shape [R, K]. Load [BLOCK_R, BLOCK_K].
+    A_expert_offset = E_idx * ACTUAL_R
+    A_blk_ptrs = (
+        A_ptr
+        + (A_expert_offset + R_block)[:, None] * stride_ar
+        + K_block[None, :] * stride_ak
+    )
+    a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0).to(
+        INPUT_DTYPE
+    )
+
+    # (DY @ B) @ A: [M, R] @ [R, K] -> [M, K]
+    # tl.dot requires non-float32 inputs (tensor cores); cast accumulator back to input dtype
+    lora_dx = tl.dot(dy_b_acc.to(INPUT_DTYPE), a_e, allow_tf32=allow_tf32)
+
+    acc += scaling * lora_dx
+    return acc
+
+
+def _scatter2scatter_lora_dX_configs():
+    """Generate backward dX kernel autotune configs.
+
+    The inner loop is over N (not K as in forward). The output dimension is K.
+    So BLOCK_K tiles the output and BLOCK_N tiles the reduction.
+
+    BLOCK_M is now autotunable (was fixed at 128).
+
+    Search space:
+      BLOCK_M:    {32, 64, 128}        (token tile)
+      BLOCK_K:    {32, 64, 128}   (output tile)
+      BLOCK_N:    {32, 64}   (reduction tile)
+      num_warps:  {4, 8}
+      num_stages: {3, 4, 5}
+    """
+    configs = []
+    for block_m, block_k, block_n, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M
+        [32, 64, 128],  # BLOCK_K (output dimension)
+        [32, 64],  # BLOCK_N (reduction dimension)
+        [4, 8],  # num_warps
+        [3, 4, 5],  # num_stages
+    ):
+        configs.append(
+            triton.Config(
+                {"BLOCK_M": block_m, "BLOCK_K": block_k, "BLOCK_N": block_n},
+                num_stages=stages,
+                num_warps=warps,
+            )
+        )
+    return configs
+
+
+def _prune_dX_configs(configs, named_args, **kwargs):
+    """Prune backward dX configs based on SMEM capacity and register pressure.
+
+    The dX kernel inner loop loads three tiles per pipeline stage:
+      DY[BLOCK_M, BLOCK_N], W^T[BLOCK_N, BLOCK_K], B[BLOCK_N, BLOCK_R].
+    The base estimate only accounts for DY and W^T. We add:
+      - B tile [BLOCK_N, BLOCK_R] per pipeline stage (loaded in the inner loop)
+      - A tile [BLOCK_R, BLOCK_K] loaded once in the epilogue
+      - Extra headroom for compiler overhead (register spills, metadata)
+    """
+    smem_cap = _get_smem_capacity()
+
+    # Get BLOCK_R from named_args if available, else assume worst case
+    block_r = named_args.get("BLOCK_R", 64)
+
+    scored = []
+    for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
+        block_k = config.kwargs["BLOCK_K"]
+        block_n = config.kwargs["BLOCK_N"]
+        # Base: stages * BLOCK_N * (BLOCK_M + BLOCK_K) + BLOCK_M * BLOCK_K
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_k, block_n)
+        # B tile [BLOCK_N, BLOCK_R] loaded per stage in the inner loop
+        smem_lora_loop = config.num_stages * block_n * block_r * 2
+        # A tile [BLOCK_R, BLOCK_K] loaded once in epilogue
+        smem_lora_epilogue = block_r * block_k * 2
+        smem = smem_base + smem_lora_loop + smem_lora_epilogue
+
+        # Register pressure: live tiles are acc[M,K], dy_b_acc[M,R],
+        # dy[M,N], wt[N,K], b[N,R], plus epilogue a[R,K]
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_m, block_k),  # acc
+            (block_m, block_r),  # dy_b_acc
+            (block_m, block_n),  # dy tile
+            (block_n, block_k),  # wt tile
+            (block_n, block_r),  # b tile
+            (block_r, block_k),  # a tile (epilogue)
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
+        scored.append((smem, config))
+
+    pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
+    if pruned:
+        return pruned
+    if scored:
+        # All surviving configs exceed SMEM — return the one with smallest usage
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    # All configs pruned by register pressure — fall back to smallest tiles
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_K"] * c.kwargs["BLOCK_N"]
+            ),
+        )
+    ]
+
+
+@triton.autotune(
+    configs=_scatter2scatter_lora_dX_configs(),
+    key=["M_BUCKET", "N", "K"],
+    prune_configs_by={"early_config_prune": _prune_dX_configs},
+)
+@triton.heuristics(
+    {
+        "NO_K_MASK": lambda args: (args["K"] % args["BLOCK_K"]) == 0,
+        "NO_N_MASK": lambda args: (args["N"] % args["BLOCK_N"]) == 0,
+    }
+)
+@triton.jit
+def _scatter2scatter_lora_dX(
+    # Input: DY (gradient w.r.t. output, grouped)
+    DY_ptr,
+    stride_dym: tl.constexpr,
+    stride_dyn: tl.constexpr,
+    # Base weight: W [E, K, N] (we compute DY @ W^T)
+    W_ptr,
+    stride_we,
+    stride_wk: tl.constexpr,
+    stride_wn: tl.constexpr,
+    # Output: dX
+    DX_ptr,
+    stride_dxm: tl.constexpr,
+    stride_dxk: tl.constexpr,
+    # LoRA weights
+    LA_ptr,
+    stride_la_r,
+    stride_la_k,  # A: [r*E, K]
+    LB_ptr,
+    stride_lb_n,
+    stride_lb_r,  # B: [N, r*E]
+    # Routing
+    grouped_idx_ptr,
+    expert_idxs_ptr,
+    # Dimensions
+    FAN_OUT: tl.constexpr,
+    M,
+    M_BUCKET,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    E: tl.constexpr,
+    ACTUAL_R: tl.constexpr,
+    # Block sizes
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    # Config
+    ACC_TYPE: tl.constexpr,
+    scaling,
+    allow_tf32: tl.constexpr,
+    dy_grouped: tl.constexpr,
+    dx_grouped: tl.constexpr,
+    NO_K_MASK: tl.constexpr,
+    NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
+):
+    """
+    Fused backward dX = DY @ W^T + scaling * (DY @ B) @ A
+
+    DY is in expert-grouped order (x_grouped=True).
+    dX is output in ungrouped or grouped order based on dx_grouped.
+
+    Grid: (cdiv(M_total, BLOCK_M) * cdiv(K, BLOCK_K),)
+    """
+    pid = tl.program_id(axis=0)
+
+    K_BLOCK_COUNT = tl.cdiv(K, BLOCK_K)
+    M_block_id = pid // K_BLOCK_COUNT
+    K_block_id = pid % K_BLOCK_COUNT
+
+    M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
+    K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
+    K_mask = K_block < K
+    M_boundary_mask = M_block < (FAN_OUT * M)
+
+    E_idxs = tl.load(expert_idxs_ptr + M_block, mask=M_boundary_mask, other=E)
+
+    no_n_mask = NO_N_MASK
+
+    acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=ACC_TYPE)
+
+    E_first_idx = tl.min(E_idxs)
+    E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+
+    for E_idx in range(E_first_idx, E_last_idx + 1):
+        E_mask = E_idxs == E_idx
+        if dy_grouped:
+            M_in_idx = M_block
+        else:
+            M_in_idx = M_idx // FAN_OUT
+
+        acc = _compute_expert_block_lora_dX(
+            E_idx,
+            E_mask,
+            M_in_idx,
+            K_block,
+            K_mask,
+            DY_ptr,
+            stride_dym,
+            stride_dyn,
+            W_ptr,
+            stride_we,
+            stride_wk,
+            stride_wn,
+            LA_ptr,
+            stride_la_r,
+            stride_la_k,
+            LB_ptr,
+            stride_lb_n,
+            stride_lb_r,
+            N,
+            ACTUAL_R,
+            acc,
+            no_n_mask,
+            BLOCK_M,
+            BLOCK_N,
+            BLOCK_K,
+            BLOCK_R,
+            scaling,
+            allow_tf32=allow_tf32,
+        )
+
+    # Store output
+    if dx_grouped:
+        M_out_idx = M_block
+    else:
+        M_out_idx = M_idx
+    DX_blk_ptrs = DX_ptr + (
+        M_out_idx[:, None] * stride_dxm + K_block[None, :] * stride_dxk
+    )
+    tl.store(DX_blk_ptrs, acc, mask=M_boundary_mask[:, None] & K_mask[None, :])
+
+
+def scatter2scatter_lora_dX(
+    DY: torch.Tensor,
+    W: torch.Tensor,
+    sorted_expert_idxs: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    k: int,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    dy_grouped: bool = True,
+    dx_grouped: bool = False,
+    out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
+) -> torch.Tensor:
+    """
+    Fused backward dX = DY @ W^T + scaling * (DY @ B) @ A
+
+    Replaces the separate:
+      1. base_ops.scatter2scatter(DY, W^T, x_grouped=True, ...)
+      2. _compute_lora_input_grad(DY, A, B, ...)
+
+    Args:
+        DY: Gradient w.r.t. output [M*k, N] (grouped by expert)
+        W: Expert weights [E, K, N] (NOT transposed — kernel handles W^T internally)
+        sorted_expert_idxs: Expert assignments sorted [M*k]
+        sorted_scattered_idxs: Original indices sorted [M*k]
+        k: Fan-out (top-k)
+        lora_A: LoRA A weights [r*E, K]
+        lora_B: LoRA B weights [N, r*E]
+        scaling: LoRA scaling factor
+        dy_grouped: Whether DY is in grouped (expert-sorted) order (default True)
+        dx_grouped: Whether to output dX in grouped order (default False)
+        out: Optional pre-allocated output buffer
+
+    Returns:
+        dX: Input gradient [M*k, K]
+    """
+    assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
+
+    E = W.size(0)
+    K = W.size(1)
+    N = W.size(2)
+    R = lora_A.size(0) // E
+
+    BLOCK_R = _block_r_for_rank(R)
+
+    L_scattered = sorted_expert_idxs.size(0)
+
+    # M for the kernel is DY.size(0) when dy_grouped, else the original M
+    if dy_grouped:
+        M = DY.size(0)
+        fan_out = 1  # DY is already expanded
+    else:
+        M = DY.size(0)
+        fan_out = k
+
+    if out is None:
+        output = torch.empty((L_scattered, K), device=DY.device, dtype=DY.dtype)
+    else:
+        assert out.size(0) == L_scattered and out.size(1) == K
+        output = out
+
+    def grid(META):
+        return (
+            triton.cdiv(L_scattered, META["BLOCK_M"]) * triton.cdiv(K, META["BLOCK_K"]),
+        )
+
+    _scatter2scatter_lora_dX[grid](
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        W,
+        W.stride(0),
+        W.stride(1),
+        W.stride(2),
+        output,
+        output.stride(0),
+        output.stride(1),
+        lora_A,
+        lora_A.stride(0),
+        lora_A.stride(1),
+        lora_B,
+        lora_B.stride(0),
+        lora_B.stride(1),
+        sorted_scattered_idxs,
+        sorted_expert_idxs,
+        FAN_OUT=fan_out,
+        M=M,
+        M_BUCKET=_bucket_m(M),
+        K=K,
+        N=N,
+        E=E,
+        ACTUAL_R=R,
+        # BLOCK_M is autotuned (injected by triton.autotune from Config kwargs)
+        BLOCK_R=BLOCK_R,
+        ACC_TYPE=tl.float32,
+        scaling=scaling,
+        allow_tf32=ALLOW_TF32,
+        dy_grouped=dy_grouped,
+        dx_grouped=dx_grouped,
+        INT64_INDICES=int64_indices,
+    )
+
+    return output
+
+
+# =============================================================================
+# Backward Kernel: LoRA gradient computation (dA, dB)
+# =============================================================================
+
+
+def _group_bwd_lora_configs():
+    """Generate backward (dA/dB) kernel autotune configs.
+
+    Search space includes smaller tile sizes and fewer pipeline stages to
+    support GPUs with limited shared memory (e.g. ~99KB on some GPUs).
+
+    Search space:
+      BLOCK_M:    {32, 64, 128}   (token-loop tile)
+      BLOCK_K:    {32, 64, 128}
+      BLOCK_N:    {32, 64}
+      num_warps:  {4, 8}
+      num_stages: {3, 4, 5}
+
+    The backward kernel also uses BLOCK_R (from LoRA rank), but that is
+    determined by the rank and not autotunable.
+    """
+    configs = []
+    for block_m, block_k, block_n, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M
+        [32, 64, 128],  # BLOCK_K
+        [32, 64],  # BLOCK_N
+        [4, 8],  # num_warps
+        [3, 4, 5],  # num_stages
+    ):
+        configs.append(
+            triton.Config(
+                {"BLOCK_M": block_m, "BLOCK_K": block_k, "BLOCK_N": block_n},
+                num_stages=stages,
+                num_warps=warps,
+            )
+        )
+    return configs
+
+
+def _prune_bwd_lora_configs(configs, named_args, **kwargs):
+    """Prune backward configs based on SMEM capacity and register pressure.
+
+    The backward kernel loads X[BLOCK_M, BLOCK_K] and DY[BLOCK_M, BLOCK_N]
+    in the inner loop, plus holds A[BLOCK_R, BLOCK_K] and B[BLOCK_N, BLOCK_R]
+    for the full expert. We estimate SMEM based on the dominant terms.
+    """
+    smem_cap = _get_smem_capacity()
+    block_r = named_args.get("BLOCK_R", 64)
+
+    scored = []
+    for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
+        block_k = config.kwargs["BLOCK_K"]
+        block_n = config.kwargs["BLOCK_N"]
+        # Inner loop loads X[M,K] and DY[M,N], pipeline over M iterations
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_n, block_k)
+        # A[BLOCK_R, BLOCK_K] and B[BLOCK_N, BLOCK_R] held for the full expert
+        smem_lora = (block_r * block_k + block_n * block_r) * 2
+        smem = smem_base + smem_lora
+
+        # Register pressure: dA_acc[R,K], dB_acc[N,R], x[M,K], dy[M,N],
+        # a[R,K], b[N,R], xa[M,R], dy_b[M,R]
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_r, block_k),  # dA_acc
+            (block_n, block_r),  # dB_acc
+            (block_m, block_k),  # x tile
+            (block_m, block_n),  # dy tile
+            (block_r, block_k),  # a tile
+            (block_n, block_r),  # b tile
+            (block_m, block_r),  # xa intermediate
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
+        scored.append((smem, config))
+
+    pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
+    if pruned:
+        return pruned
+    if scored:
+        # All surviving configs exceed SMEM — return the one with smallest usage
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    # All configs pruned by register pressure — fall back to smallest tiles
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_K"] * c.kwargs["BLOCK_N"]
+            ),
+        )
+    ]
+
+
+@triton.autotune(
+    configs=_group_bwd_lora_configs(),
+    key=["M_BUCKET", "N", "K"],
+    prune_configs_by={"early_config_prune": _prune_bwd_lora_configs},
+    reset_to_zero=["DLA_ptr", "DLB_ptr"],
+)
+@triton.heuristics(
+    {
+        "NO_K_MASK": lambda args: (args["K"] % args["BLOCK_K"]) == 0,
+        "NO_N_MASK": lambda args: (args["N"] % args["BLOCK_N"]) == 0,
+    }
+)
+@triton.jit
+def _group_bwd_lora(
+    # Inputs
+    DY_ptr,
+    stride_dym,
+    stride_dyn,
+    X_ptr,
+    stride_xm,
+    stride_xk,
+    # LoRA weights (needed for cross-terms)
+    LA_ptr,
+    stride_la_r,
+    stride_la_k,  # A: [r*E, K]
+    LB_ptr,
+    stride_lb_n,
+    stride_lb_r,  # B: [N, r*E]
+    # Gradient outputs
+    DLA_ptr,
+    stride_dla_r,
+    stride_dla_k,
+    DLB_ptr,
+    stride_dlb_n,
+    stride_dlb_r,
+    # Expert offsets
+    expert_offsets_ptr,
+    # Dimensions
+    M,
+    M_BUCKET,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    ACTUAL_R: tl.constexpr,  # True LoRA rank (for weight indexing)
+    BLOCK_R: tl.constexpr,  # Padded tile size >= max(ACTUAL_R, 16)
+    scaling,
+    # Block sizes
+    BLOCK_M: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    ACC_TYPE: tl.constexpr,
+    allow_tf32: tl.constexpr,
+    NO_K_MASK: tl.constexpr,
+    NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
+):
+    """
+    Compute LoRA gradients for each expert on grouped data.
+
+    Grid: (E * cdiv(K, BLOCK_K), cdiv(N, BLOCK_N))
+
+    For expert e:
+      dA[e] = scaling * (dY @ B[e])^T @ X   -> [r, K], accumulate over M tokens
+      dB[e] = scaling * dY^T @ (X @ A[e]^T)  -> [N, r], accumulate over M tokens
+
+    ACTUAL_R is the true LoRA rank. BLOCK_R >= ACTUAL_R is padded for tl.dot min size.
+    """
+    pid0 = tl.program_id(axis=0)
+    pid1 = tl.program_id(axis=1)
+
+    K_BLOCK_COUNT = tl.cdiv(K, BLOCK_K)
+    E_idx = pid0 // K_BLOCK_COUNT
+    K_block_id = pid0 % K_BLOCK_COUNT
+    N_block_id = pid1
+
+    # Get expert's token range from cumulative offsets
+    if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
+    else:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+    num_tokens = end_idx - start_idx
+
+    if num_tokens > 0:
+        M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
+        K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
+        K_mask = K_block < K
+        N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
+        N_mask = N_block < N
+        R_block = tl.arange(0, BLOCK_R)
+        R_mask = R_block < ACTUAL_R  # Mask for padding
+
+        lora_offset = E_idx * ACTUAL_R
+
+        # Determine input element type for consistent casting.
+        INPUT_DTYPE = X_ptr.dtype.element_ty
+
+        # Load B[e]: [BLOCK_N, BLOCK_R] (masked on R and N, other=0 for padding)
+        B_blk_ptrs = (
+            LB_ptr
+            + N_block[:, None] * stride_lb_n
+            + (lora_offset + R_block)[None, :] * stride_lb_r
+        )
+        b_e = tl.load(B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
+
+        # Load A[e]: [BLOCK_R, BLOCK_K] (masked on R and K, other=0 for padding)
+        A_blk_ptrs = (
+            LA_ptr
+            + (lora_offset + R_block)[:, None] * stride_la_r
+            + K_block[None, :] * stride_la_k
+        )
+        a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
+
+        # Accumulators
+        dA_acc = tl.zeros((BLOCK_R, BLOCK_K), dtype=ACC_TYPE)
+        dB_acc = tl.zeros((BLOCK_N, BLOCK_R), dtype=ACC_TYPE)
+
+        iters = tl.cdiv(num_tokens, BLOCK_M)
+        for i in range(iters):
+            M_idx = start_idx + i * BLOCK_M + M_block
+            M_mask = M_idx < end_idx
+
+            # Load X: [BLOCK_M, BLOCK_K]
+            X_blk_ptrs = (
+                X_ptr + M_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
+            )
+            x = tl.load(
+                X_blk_ptrs, mask=M_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+
+            # Load dY: [BLOCK_M, BLOCK_N]
+            DY_blk_ptrs = (
+                DY_ptr + M_idx[:, None] * stride_dym + N_block[None, :] * stride_dyn
+            )
+            dy = tl.load(
+                DY_blk_ptrs, mask=M_mask[:, None] & N_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+
+            # X @ A[e]^T: [M, K] @ [K, R] -> [M, R]
+            xa = tl.dot(x, tl.trans(a_e), allow_tf32=allow_tf32)
+
+            # dY @ B[e]: [M, N] @ [N, R] -> [M, R]
+            dy_b = tl.dot(dy, b_e, allow_tf32=allow_tf32)
+
+            # Cast intermediates to input dtype for subsequent tl.dot calls
+            # (tl.dot requires both operands to have the same dtype)
+            dy_b_cast = dy_b.to(INPUT_DTYPE)
+            xa_cast = xa.to(INPUT_DTYPE)
+
+            # dA += (dY @ B)^T @ X: [R, M] @ [M, K] -> [R, K]
+            dA_acc += tl.dot(tl.trans(dy_b_cast), x, allow_tf32=allow_tf32)
+
+            # dB += dY^T @ (X @ A^T): [N, M] @ [M, R] -> [N, R]
+            dB_acc += tl.dot(tl.trans(dy), xa_cast, allow_tf32=allow_tf32)
+
+        # Store dA with scaling (atomic add since multiple N_blocks contribute)
+        # Only store the actual R rows, not the padded ones
+        DLA_blk_ptrs = (
+            DLA_ptr
+            + (lora_offset + R_block)[:, None] * stride_dla_r
+            + K_block[None, :] * stride_dla_k
+        )
+        tl.atomic_add(
+            DLA_blk_ptrs,
+            (dA_acc * scaling).to(DLA_ptr.dtype.element_ty),
+            mask=R_mask[:, None] & K_mask[None, :],
+        )
+
+        # Store dB with scaling (atomic add since multiple K_blocks contribute)
+        DLB_blk_ptrs = (
+            DLB_ptr
+            + N_block[:, None] * stride_dlb_n
+            + (lora_offset + R_block)[None, :] * stride_dlb_r
+        )
+        tl.atomic_add(
+            DLB_blk_ptrs,
+            (dB_acc * scaling).to(DLB_ptr.dtype.element_ty),
+            mask=N_mask[:, None] & R_mask[None, :],
+        )
+
+
+def _group_bwd_split_configs():
+    """Autotune configs for split dA/dB kernels."""
+    configs = []
+    for block_m, block_dim, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M (token tile)
+        [32, 64, 128, 256],  # BLOCK_DIM (K for dA, N for dB — output tile)
+        [4, 8],  # num_warps
+        [3, 4, 5],  # num_stages
+    ):
+        configs.append(
+            triton.Config(
+                {"BLOCK_M": block_m, "BLOCK_DIM": block_dim},
+                num_stages=stages,
+                num_warps=warps,
+            )
+        )
+    return configs
+
+
+def _prune_split_configs(configs, named_args, **kwargs):
+    """Prune split kernel configs based on SMEM capacity and register pressure."""
+    smem_cap = _get_smem_capacity()
+    block_r = named_args.get("BLOCK_R", 64)
+
+    # Fixed inner tile for reduction dimension
+    BLOCK_INNER = 64
+
+    pruned = []
+    for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
+        block_dim = config.kwargs["BLOCK_DIM"]
+        # Inner loop loads: input[M, INNER] and other[M, INNER_or_DIM]
+        smem = config.num_stages * BLOCK_INNER * (block_m + block_dim) * 2
+        # LoRA weights held in registers: [INNER, R] or [R, DIM]
+        smem += (block_r * max(block_dim, BLOCK_INNER)) * 2
+
+        # Register pressure check
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_r, block_dim),  # acc
+            (block_m, BLOCK_INNER),  # input tile
+            (block_m, block_dim),  # other tile
+            (block_r, BLOCK_INNER),  # lora weight
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
+        if smem <= smem_cap - _SMEM_SLACK:
+            pruned.append(config)
+
+    if pruned:
+        return pruned
+    configs.sort(key=lambda c: c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_DIM"])
+    return [configs[0]]
+
+
+@triton.autotune(
+    configs=_group_bwd_split_configs(),
+    key=["M_BUCKET", "K", "N"],
+    prune_configs_by={"early_config_prune": _prune_split_configs},
+)
+@triton.heuristics(
+    {
+        "NO_DIM_MASK": lambda args: (
+            (args["K"] % args["BLOCK_DIM"]) == 0
+            if args["COMPUTE_DA"]
+            else (args["N"] % args["BLOCK_DIM"]) == 0
+        ),
+    }
+)
+@triton.jit
+def _group_bwd_lora_split(
+    # Data tensors (DY and X are always present)
+    DY_ptr,
+    stride_dym,
+    stride_dyn,
+    X_ptr,
+    stride_xm,
+    stride_xk,
+    # LoRA weight for the inner reduction (B for dA, A for dB)
+    LW_ptr,
+    stride_lw0,
+    stride_lw1,
+    # Output gradient tensor (dA or dB)
+    OUT_ptr,
+    stride_out0,
+    stride_out1,
+    # Expert offsets
+    expert_offsets_ptr,
+    # Dimensions
+    M,
+    M_BUCKET,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    ACTUAL_R: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    INNER_DIM: tl.constexpr,  # reduction dimension (N for dA, K for dB)
+    scaling,
+    # Mode flag
+    COMPUTE_DA: tl.constexpr,  # True = compute dA, False = compute dB
+    # Tile sizes
+    BLOCK_M: tl.constexpr,
+    BLOCK_DIM: tl.constexpr,
+    ACC_TYPE: tl.constexpr,
+    allow_tf32: tl.constexpr,
+    NO_DIM_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
+):
+    """
+    Unified split kernel for LoRA gradient computation.
+
+    When COMPUTE_DA=True:
+      dA[e] = scaling * (dY @ B[e])^T @ X  →  [R, K]
+      Grid: (E, cdiv(K, BLOCK_DIM))
+      - outer_ptr/stride = X (read [M, K_block])
+      - inner reduction over N using DY and B
+      - output shape [BLOCK_R, BLOCK_DIM]
+
+    When COMPUTE_DA=False:
+      dB[e] = scaling * dY^T @ (X @ A[e]^T)  →  [N, R]
+      Grid: (E, cdiv(N, BLOCK_DIM))
+      - outer_ptr/stride = DY (read [M, N_block])
+      - inner reduction over K using X and A
+      - output shape [BLOCK_DIM, BLOCK_R]
+
+    No atomic adds — each (E, dim_block) pair is written by exactly one block.
+    """
+    E_idx = tl.program_id(0)
+    dim_block_id = tl.program_id(1)
+
+    if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
+    else:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+    num_tokens = end_idx - start_idx
+
+    # Output dimension tile (K for dA, N for dB)
+    if COMPUTE_DA:
+        OUT_DIM: tl.constexpr = K  # type: ignore[no-redef]
+    else:
+        OUT_DIM: tl.constexpr = N  # type: ignore[no-redef]
+    dim_block = dim_block_id * BLOCK_DIM + tl.arange(0, BLOCK_DIM)
+    dim_mask = dim_block < OUT_DIM
+    R_block = tl.arange(0, BLOCK_R)
+    R_mask = R_block < ACTUAL_R
+    lora_offset = E_idx * ACTUAL_R
+
+    # Output pointers — layout differs: dA is [R, K], dB is [N, R]
+    if COMPUTE_DA:
+        out_blk_ptrs = (
+            OUT_ptr
+            + (lora_offset + R_block)[:, None] * stride_out0
+            + dim_block[None, :] * stride_out1
+        )
+        out_mask = R_mask[:, None] & dim_mask[None, :]
+    else:
+        out_blk_ptrs = (
+            OUT_ptr
+            + dim_block[:, None] * stride_out0
+            + (lora_offset + R_block)[None, :] * stride_out1
+        )
+        out_mask = dim_mask[:, None] & R_mask[None, :]
+
+    if num_tokens > 0:
+        M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
+        INPUT_DTYPE = X_ptr.dtype.element_ty
+        BLOCK_INNER: tl.constexpr = 64
+        inner_iters = tl.cdiv(INNER_DIM, BLOCK_INNER)
+
+        if COMPUTE_DA:
+            acc = tl.zeros((BLOCK_R, BLOCK_DIM), dtype=ACC_TYPE)
+        else:
+            acc = tl.zeros((BLOCK_DIM, BLOCK_R), dtype=ACC_TYPE)
+
+        M_iters = tl.cdiv(num_tokens, BLOCK_M)
+        for i in range(M_iters):
+            M_idx = start_idx + i * BLOCK_M + M_block
+            M_mask = M_idx < end_idx
+
+            if COMPUTE_DA:
+                # Load X[M, K_block] (the "outer" tensor for dA)
+                outer = tl.load(
+                    X_ptr + M_idx[:, None] * stride_xm + dim_block[None, :] * stride_xk,
+                    mask=M_mask[:, None] & dim_mask[None, :],
+                    other=0.0,
+                ).to(INPUT_DTYPE)
+
+                # Reduce DY[M, :] @ B[e][:, R] over N → [M, R]
+                reduced = tl.zeros((BLOCK_M, BLOCK_R), dtype=ACC_TYPE)
+                inner_range = tl.arange(0, BLOCK_INNER)
+                for j in range(inner_iters):
+                    inn_off = j * BLOCK_INNER + inner_range
+                    inn_mask = inn_off < N
+
+                    dy_tile = tl.load(
+                        DY_ptr
+                        + M_idx[:, None] * stride_dym
+                        + inn_off[None, :] * stride_dyn,
+                        mask=M_mask[:, None] & inn_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    # B layout: [N, r*E] → stride_lw0=N stride, stride_lw1=r*E stride
+                    lw_tile = tl.load(
+                        LW_ptr
+                        + inn_off[:, None] * stride_lw0
+                        + (lora_offset + R_block)[None, :] * stride_lw1,
+                        mask=inn_mask[:, None] & R_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    reduced += tl.dot(dy_tile, lw_tile, allow_tf32=allow_tf32)
+
+                # dA += (DY@B)^T @ X: [R, M] @ [M, K_block] → [R, K_block]
+                acc += tl.dot(
+                    tl.trans(reduced.to(INPUT_DTYPE)), outer, allow_tf32=allow_tf32
+                )
+            else:
+                # Load DY[M, N_block] (the "outer" tensor for dB)
+                outer = tl.load(
+                    DY_ptr
+                    + M_idx[:, None] * stride_dym
+                    + dim_block[None, :] * stride_dyn,
+                    mask=M_mask[:, None] & dim_mask[None, :],
+                    other=0.0,
+                ).to(INPUT_DTYPE)
+
+                # Reduce X[M, :] @ A[e][:, :].T over K → [M, R]
+                reduced = tl.zeros((BLOCK_M, BLOCK_R), dtype=ACC_TYPE)
+                inner_range = tl.arange(0, BLOCK_INNER)
+                for j in range(inner_iters):
+                    inn_off = j * BLOCK_INNER + inner_range
+                    inn_mask = inn_off < K
+
+                    x_tile = tl.load(
+                        X_ptr
+                        + M_idx[:, None] * stride_xm
+                        + inn_off[None, :] * stride_xk,
+                        mask=M_mask[:, None] & inn_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    # A layout: [r*E, K] → stride_lw0=r*E stride, stride_lw1=K stride
+                    # We want A[e]^T: [K, R], so load as [K_inner, R]
+                    lw_tile = tl.load(
+                        LW_ptr
+                        + (lora_offset + R_block)[None, :] * stride_lw0
+                        + inn_off[:, None] * stride_lw1,
+                        mask=inn_mask[:, None] & R_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    reduced += tl.dot(x_tile, lw_tile, allow_tf32=allow_tf32)
+
+                # dB += DY^T @ (X@A^T): [N_block, M] @ [M, R] → [N_block, R]
+                acc += tl.dot(
+                    tl.trans(outer), reduced.to(INPUT_DTYPE), allow_tf32=allow_tf32
+                )
+
+        tl.store(
+            out_blk_ptrs, (acc * scaling).to(OUT_ptr.dtype.element_ty), mask=out_mask
+        )
+    else:
+        # Zero out this expert's slice — needed because output uses empty_like
+        if COMPUTE_DA:
+            tl.store(
+                out_blk_ptrs,
+                tl.zeros((BLOCK_R, BLOCK_DIM), dtype=OUT_ptr.dtype.element_ty),
+                mask=out_mask,
+            )
+        else:
+            tl.store(
+                out_blk_ptrs,
+                tl.zeros((BLOCK_DIM, BLOCK_R), dtype=OUT_ptr.dtype.element_ty),
+                mask=out_mask,
+            )
+
+
+def group_bwd_lora(
+    DY: torch.Tensor,
+    X: torch.Tensor,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    E: int,
+    scaling: float,
+    sorted_scattered_idxs: Optional[torch.Tensor] = None,
+    k: int = 1,
+    int64_indices: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute LoRA gradients for A and B on expert-grouped data.
+
+    Uses split dA/dB kernels that eliminate atomic adds by giving each
+    (expert, output_block) pair its own thread block.
+
+    Args:
+        DY: Gradient w.r.t. output [M_total, N] (grouped by expert)
+        X: Input [M_total, K] (grouped by expert)
+        lora_A: LoRA A weights [r*E, K]
+        lora_B: LoRA B weights [N, r*E]
+        expert_offsets: Cumulative token counts per expert [E]
+        E: Number of experts
+        scaling: LoRA scaling factor
+
+    Returns:
+        dA: Gradient for A [r*E, K]
+        dB: Gradient for B [N, r*E]
+    """
+    R = lora_A.size(0) // E
+    K = X.size(1)
+    N = DY.size(1)
+
+    # No zero-init needed: the split kernels write zeros for experts with
+    # zero routed tokens directly in the kernel (else branch).
+    dA = torch.empty_like(lora_A)
+    dB = torch.empty_like(lora_B)
+
+    BLOCK_R = _block_r_for_rank(R)
+
+    def grid_dA(META):
+        return (E, triton.cdiv(K, META["BLOCK_DIM"]))
+
+    _group_bwd_lora_split[grid_dA](
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        X,
+        X.stride(0),
+        X.stride(1),
+        lora_B,
+        lora_B.stride(0),
+        lora_B.stride(1),
+        dA,
+        dA.stride(0),
+        dA.stride(1),
+        expert_offsets,
+        M=DY.size(0),
+        M_BUCKET=_bucket_m(DY.size(0)),
+        K=K,
+        N=N,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        INNER_DIM=N,
+        scaling=scaling,
+        COMPUTE_DA=True,
+        ACC_TYPE=tl.float32,
+        allow_tf32=ALLOW_TF32,
+        INT64_INDICES=int64_indices,
+    )
+
+    def grid_dB(META):
+        return (E, triton.cdiv(N, META["BLOCK_DIM"]))
+
+    _group_bwd_lora_split[grid_dB](
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        X,
+        X.stride(0),
+        X.stride(1),
+        lora_A,
+        lora_A.stride(0),
+        lora_A.stride(1),
+        dB,
+        dB.stride(0),
+        dB.stride(1),
+        expert_offsets,
+        M=DY.size(0),
+        M_BUCKET=_bucket_m(DY.size(0)),
+        K=K,
+        N=N,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        INNER_DIM=K,
+        scaling=scaling,
+        COMPUTE_DA=False,
+        ACC_TYPE=tl.float32,
+        allow_tf32=ALLOW_TF32,
+        INT64_INDICES=int64_indices,
+    )
+
+    return dA, dB
+
+
+# =============================================================================
+# Backward Kernel: Fused gather + LoRA gradient (dA, dB) — eliminates group()
+# =============================================================================
+
+
+@triton.autotune(
+    configs=_group_bwd_lora_configs(),
+    key=["M_BUCKET", "N", "K"],
+    prune_configs_by={"early_config_prune": _prune_bwd_lora_configs},
+    reset_to_zero=["DLA_ptr", "DLB_ptr"],
+)
+@triton.heuristics(
+    {
+        "NO_K_MASK": lambda args: (args["K"] % args["BLOCK_K"]) == 0,
+        "NO_N_MASK": lambda args: (args["N"] % args["BLOCK_N"]) == 0,
+    }
+)
+@triton.jit
+def _group_bwd_lora_fused(
+    # Inputs (ungrouped or grouped)
+    DY_ptr,
+    stride_dym,
+    stride_dyn,
+    X_ptr,
+    stride_xm,
+    stride_xk,
+    # Scatter indices for gather-on-load
+    sorted_scattered_idxs_ptr,
+    FAN_OUT: tl.constexpr,
+    # LoRA weights (needed for cross-terms)
+    LA_ptr,
+    stride_la_r,
+    stride_la_k,  # A: [r*E, K]
+    LB_ptr,
+    stride_lb_n,
+    stride_lb_r,  # B: [N, r*E]
+    # Gradient outputs
+    DLA_ptr,
+    stride_dla_r,
+    stride_dla_k,
+    DLB_ptr,
+    stride_dlb_n,
+    stride_dlb_r,
+    # Expert offsets
+    expert_offsets_ptr,
+    # Real expert offsets (for M_mask when using token rounding, else same as expert_offsets_ptr)
+    real_expert_offsets_ptr,
+    # Dimensions
+    M,
+    M_BUCKET,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    ACTUAL_R: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    scaling,
+    # Block sizes
+    BLOCK_M: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    ACC_TYPE: tl.constexpr,
+    allow_tf32: tl.constexpr,
+    NO_K_MASK: tl.constexpr,
+    NO_N_MASK: tl.constexpr,
+    # Whether DY is already in grouped (expert-sorted) order
+    dy_grouped: tl.constexpr = False,
+    INT64_INDICES: tl.constexpr = False,
+):
+    """
+    Fused gather + LoRA gradient computation. Same as _group_bwd_lora but
+    reads X from ungrouped buffers using sorted_scattered_idxs for indirect
+    indexing, eliminating the need for a separate group(X) call.
+
+    When dy_grouped=False (default): both X and DY are read via indirect
+    indexing through sorted_scattered_idxs.  This eliminates both group()
+    calls entirely.
+
+    When dy_grouped=True: DY is already in grouped order (e.g. gate_up_proj
+    backward where grouped_out=True) and is read directly.  Only X uses
+    indirect indexing.  This avoids the group(X) allocation while
+    still supporting the grouped DY case.
+
+    Grid: (E * cdiv(K, BLOCK_K), cdiv(N, BLOCK_N))
+
+    For expert e:
+      dA[e] = scaling * (dY @ B[e])^T @ X   -> [r, K]
+      dB[e] = scaling * dY^T @ (X @ A[e]^T)  -> [N, r]
+
+    Supports token rounding: expert_offsets_ptr gives the iteration range
+    (padded to BLOCK_M multiples), real_expert_offsets_ptr gives the real
+    token count for M_mask (to exclude padding tokens).
+    """
+    pid0 = tl.program_id(axis=0)
+    pid1 = tl.program_id(axis=1)
+
+    K_BLOCK_COUNT = tl.cdiv(K, BLOCK_K)
+    E_idx = pid0 // K_BLOCK_COUNT
+    K_block_id = pid0 % K_BLOCK_COUNT
+    N_block_id = pid1
+
+    # Get expert's token range from cumulative offsets
+    # start_idx/end_idx from expert_offsets_ptr: iteration range (possibly padded)
+    # real_end_idx from real_expert_offsets_ptr: for M_mask (real token count)
+    if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+            real_start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
+        real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int64)
+    else:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+            real_start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int32)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+        real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int32)
+    num_tokens = end_idx - start_idx
+
+    if num_tokens > 0:
+        M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
+        K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
+        K_mask = K_block < K
+        N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
+        N_mask = N_block < N
+        R_block = tl.arange(0, BLOCK_R)
+        R_mask = R_block < ACTUAL_R
+
+        lora_offset = E_idx * ACTUAL_R
+
+        # Determine input element type for consistent casting.
+        INPUT_DTYPE = X_ptr.dtype.element_ty
+
+        # Load B[e] and A[e] — same as non-fused kernel
+        B_blk_ptrs = (
+            LB_ptr
+            + N_block[:, None] * stride_lb_n
+            + (lora_offset + R_block)[None, :] * stride_lb_r
+        )
+        b_e = tl.load(B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
+
+        A_blk_ptrs = (
+            LA_ptr
+            + (lora_offset + R_block)[:, None] * stride_la_r
+            + K_block[None, :] * stride_la_k
+        )
+        a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0).to(
+            INPUT_DTYPE
+        )
+
+        # Accumulators
+        dA_acc = tl.zeros((BLOCK_R, BLOCK_K), dtype=ACC_TYPE)
+        dB_acc = tl.zeros((BLOCK_N, BLOCK_R), dtype=ACC_TYPE)
+
+        real_num_tokens = real_end_idx - real_start_idx
+        iters = tl.cdiv(num_tokens, BLOCK_M)
+        for i in range(iters):
+            M_idx = start_idx + i * BLOCK_M + M_block
+            # Use real token count for masking (excludes padding tokens)
+            M_local = i * BLOCK_M + M_block
+            M_mask = M_local < real_num_tokens
+
+            # Fused gather: load scatter indices for indirect X access
+            if INT64_INDICES:
+                scatter_idx = tl.load(
+                    sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
+                ).to(tl.int64)
+            else:
+                scatter_idx = tl.load(
+                    sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
+                ).to(tl.int32)
+            X_token_idx = scatter_idx // FAN_OUT  # X is [M, K], not expanded by k
+
+            # Load X via indirect index: [BLOCK_M, BLOCK_K]
+            X_blk_ptrs = (
+                X_ptr + X_token_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
+            )
+            x = tl.load(
+                X_blk_ptrs, mask=M_mask[:, None] & K_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+
+            # Load DY: indirect via scatter_idx when ungrouped, direct via M_idx when grouped
+            if dy_grouped:
+                DY_blk_ptrs = (
+                    DY_ptr + M_idx[:, None] * stride_dym + N_block[None, :] * stride_dyn
+                )
+            else:
+                DY_blk_ptrs = (
+                    DY_ptr
+                    + scatter_idx[:, None] * stride_dym
+                    + N_block[None, :] * stride_dyn
+                )
+            dy = tl.load(
+                DY_blk_ptrs, mask=M_mask[:, None] & N_mask[None, :], other=0.0
+            ).to(INPUT_DTYPE)
+
+            # X @ A[e]^T: [M, K] @ [K, R] -> [M, R]
+            xa = tl.dot(x, tl.trans(a_e), allow_tf32=allow_tf32)
+
+            # dY @ B[e]: [M, N] @ [N, R] -> [M, R]
+            dy_b = tl.dot(dy, b_e, allow_tf32=allow_tf32)
+
+            dy_b_cast = dy_b.to(INPUT_DTYPE)
+            xa_cast = xa.to(INPUT_DTYPE)
+
+            # dA += (dY @ B)^T @ X: [R, M] @ [M, K] -> [R, K]
+            dA_acc += tl.dot(tl.trans(dy_b_cast), x, allow_tf32=allow_tf32)
+
+            # dB += dY^T @ (X @ A^T): [N, M] @ [M, R] -> [N, R]
+            dB_acc += tl.dot(tl.trans(dy), xa_cast, allow_tf32=allow_tf32)
+
+        # Store dA with scaling (atomic add since multiple N_blocks contribute)
+        DLA_blk_ptrs = (
+            DLA_ptr
+            + (lora_offset + R_block)[:, None] * stride_dla_r
+            + K_block[None, :] * stride_dla_k
+        )
+        tl.atomic_add(
+            DLA_blk_ptrs,
+            (dA_acc * scaling).to(DLA_ptr.dtype.element_ty),
+            mask=R_mask[:, None] & K_mask[None, :],
+        )
+
+        # Store dB with scaling (atomic add since multiple K_blocks contribute)
+        DLB_blk_ptrs = (
+            DLB_ptr
+            + N_block[:, None] * stride_dlb_n
+            + (lora_offset + R_block)[None, :] * stride_dlb_r
+        )
+        tl.atomic_add(
+            DLB_blk_ptrs,
+            (dB_acc * scaling).to(DLB_ptr.dtype.element_ty),
+            mask=N_mask[:, None] & R_mask[None, :],
+        )
+
+
+def group_bwd_lora_fused(
+    DY: torch.Tensor,
+    X: torch.Tensor,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    E: int,
+    k: int,
+    scaling: float,
+    real_expert_offsets: Optional[torch.Tensor] = None,
+    dy_grouped: bool = False,
+    int64_indices: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Fused gather + LoRA gradient computation. Same result as
+    group(X) + group(DY) + group_bwd_lora(DY, X, ...) but without
+    the intermediate grouped buffers.
+
+    Args:
+        DY: Gradient w.r.t. output [M*k, N].
+            If dy_grouped=False: ungrouped (original token order), read via
+            indirect indexing through sorted_scattered_idxs.
+            If dy_grouped=True: already in grouped (expert-sorted) order,
+            read directly.
+        X: Input [M, K] (ungrouped, original token order).  Always read via
+            indirect indexing through sorted_scattered_idxs.
+        lora_A: LoRA A weights [r*E, K]
+        lora_B: LoRA B weights [N, r*E]
+        expert_offsets: Cumulative token counts per expert [E]
+            (or padded offsets if using token rounding)
+        sorted_scattered_idxs: Maps grouped position -> original position [M*k]
+            (or padded version if using token rounding)
+        E: Number of experts
+        k: Fan-out (top-k)
+        scaling: LoRA scaling factor
+        real_expert_offsets: Original cumulative counts for M_mask when using
+            token rounding. If None, expert_offsets is used for both.
+        dy_grouped: Whether DY is already in grouped order (default False).
+            When True, avoids indirect indexing for DY, used for gate_up_proj
+            backward where grouped_out=True.
+
+    Returns:
+        dA: Gradient for A [r*E, K]
+        dB: Gradient for B [N, r*E]
+    """
+    R = lora_A.size(0) // E
+    K = X.size(1)
+    N = DY.size(1)
+
+    # Zero-init for atomic accumulation
+    dA = torch.zeros_like(lora_A)
+    dB = torch.zeros_like(lora_B)
+
+    BLOCK_R = _block_r_for_rank(R)
+
+    if real_expert_offsets is None:
+        real_expert_offsets = expert_offsets
+
+    def grid(META):
+        return (
+            E * triton.cdiv(K, META["BLOCK_K"]),
+            triton.cdiv(N, META["BLOCK_N"]),
+        )
+
+    _group_bwd_lora_fused[grid](
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        X,
+        X.stride(0),
+        X.stride(1),
+        sorted_scattered_idxs,
+        FAN_OUT=k,
+        LA_ptr=lora_A,
+        stride_la_r=lora_A.stride(0),
+        stride_la_k=lora_A.stride(1),
+        LB_ptr=lora_B,
+        stride_lb_n=lora_B.stride(0),
+        stride_lb_r=lora_B.stride(1),
+        DLA_ptr=dA,
+        stride_dla_r=dA.stride(0),
+        stride_dla_k=dA.stride(1),
+        DLB_ptr=dB,
+        stride_dlb_n=dB.stride(0),
+        stride_dlb_r=dB.stride(1),
+        expert_offsets_ptr=expert_offsets,
+        real_expert_offsets_ptr=real_expert_offsets,
+        M=sorted_scattered_idxs.size(0),
+        M_BUCKET=_bucket_m(sorted_scattered_idxs.size(0)),
+        K=K,
+        N=N,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        scaling=scaling,
+        ACC_TYPE=tl.float32,
+        allow_tf32=ALLOW_TF32,
+        dy_grouped=dy_grouped,
+        INT64_INDICES=int64_indices,
+    )
+
+    return dA, dB
+
+
+# =============================================================================
+# Fused MXFP4 Forward / dX Kernels
+# =============================================================================
+#
+# These mirror ``_scatter2scatter_lora`` and ``_scatter2scatter_lora_dX`` but
+# load the base weight tile from a packed MXFP4 buffer + E8M0 scale buffer
+# instead of a dense bf16 tile. The K-loop unpacks two fp4 values per uint8
+# byte, looks them up in a 16-entry fp32 codebook, multiplies by
+# ``2^(scale_byte - 127)``, and casts back to bf16 for ``tl.dot``.
+#
+# Layout conventions (kernel coordinates):
+#   * Forward kernel: logical W is ``[E, K, N]`` (block axis = K).
+#     - packed: ``[E, N, K/2]`` uint8 — stored with the contraction axis K
+#       contiguous (matches torchao MXTensor's natural last-dim block layout
+#       once you treat the W storage as ``[E, N, K]``).
+#     - scale:  ``[E, N, K/32]`` uint8 (E8M0).
+#   * dX kernel: reuses the *forward* MX layout ``[E, N, K/2]`` (no
+#     pre-transpose). The kernel iterates the N reduction in outer tiles and,
+#     for each (K_tile, N_tile), decodes nibbles along the K rows of the
+#     packed tile and broadcasts scales within each ``MX_BLOCK_SIZE`` K-block,
+#     yielding the same dequantized ``W[e, k, n]`` values the forward path
+#     consumes. This deliberately avoids a "pre-transpose for dX" step that
+#     would dequantize + transpose + re-quantize the active-experts slice:
+#     that round-trip introduces a second MX rounding error on top of the
+#     forward quantization, perturbing dX in ways that are hard to bound.
+#     Reusing the forward buffer keeps numerics bitwise-comparable to a
+#     dequant-then-MMA dX reference.
+#
+# ``BLOCK_K`` must be a multiple of the OCP block size (32) so that each
+# K-tile aligns with whole scale blocks for both the forward and dX
+# kernels. The autotune config search space is pruned accordingly in
+# ``_prune_fwd_mx_configs`` / ``_prune_dX_mx_configs``.
+
+_MX_BLOCK_SIZE = 32
+
+
+@triton.jit
+def _compute_expert_block_lora_mxfp4(
+    E_idx,
+    E_mask,
+    M_in_idx,
+    N_block,
+    N_mask,
+    # X
+    X_ptr,
+    stride_xm,
+    stride_xk,
+    # Packed MXFP4 weight: [E, N, K/2] uint8
+    Wp_ptr,
+    stride_wpe,
+    stride_wpn,
+    stride_wpk,
+    # E8M0 scale: [E, N, K/32] uint8
+    Ws_ptr,
+    stride_wse,
+    stride_wsn,
+    stride_wsk,
+    # FP4 -> fp32 codebook (16 values)
+    Codebook_ptr,
+    # LoRA
+    A_ptr,
+    stride_ar,
+    stride_ak,
+    B_ptr,
+    stride_bn,
+    stride_br,
+    K,
+    ACTUAL_R: tl.constexpr,
+    acc,
+    no_k_mask,
+    BLOCK_M: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
+    scaling,
+    allow_tf32: tl.constexpr,
+):
+    """Forward inner loop for MXFP4 expert weights.
+
+    Computes ``acc += X @ dequant(W_e) + scaling * (X @ A_e^T) @ B_e^T`` for
+    the active token rows in this M-tile assigned to expert ``E_idx``.
+
+    Each K-loop iteration loads a ``[BLOCK_N, BLOCK_K/2]`` packed tile and a
+    ``[BLOCK_N, BLOCK_K/MX_BLOCK_SIZE]`` scale tile, unpacks to bf16, and
+    transposes for the matmul.
+    """
+    K_block = tl.arange(0, BLOCK_K)
+    K_byte_block = K_block // 2
+    K_is_high = (K_block % 2) == 1
+    K_scale_block = K_block // MX_BLOCK_SIZE
+    R_block = tl.arange(0, BLOCK_R)
+    R_mask = R_block < ACTUAL_R
+
+    INPUT_DTYPE = X_ptr.dtype.element_ty
+
+    # X pointers
+    X_blk_ptrs = X_ptr + M_in_idx[:, None] * stride_xm + K_block[None, :] * stride_xk
+
+    # LoRA A pointers
+    A_expert_offset = E_idx * ACTUAL_R
+    A_blk_ptrs = (
+        A_ptr
+        + (A_expert_offset + R_block)[:, None] * stride_ar
+        + K_block[None, :] * stride_ak
+    )
+
+    # Packed W pointers: tile shape [BLOCK_N, BLOCK_K] (each byte loaded twice)
+    Wp_blk_ptrs = (
+        Wp_ptr
+        + E_idx.to(tl.int64) * stride_wpe
+        + N_block[:, None] * stride_wpn
+        + K_byte_block[None, :] * stride_wpk
+    )
+    # Scale pointers: tile shape [BLOCK_N, BLOCK_K] (broadcast within block)
+    Ws_blk_ptrs = (
+        Ws_ptr
+        + E_idx.to(tl.int64) * stride_wse
+        + N_block[:, None] * stride_wsn
+        + K_scale_block[None, :] * stride_wsk
+    )
+
+    iters = tl.cdiv(K, BLOCK_K)
+    xa_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
+
+    for i in range(iters):
+        if no_k_mask:
+            K_mask_iter = K_block >= 0  # all-true [BLOCK_K]
+        else:
+            K_mask_iter = (i * BLOCK_K + K_block) < K
+        x_mask = E_mask[:, None] & K_mask_iter[None, :]
+        a_mask = R_mask[:, None] & K_mask_iter[None, :]
+        w_mask = N_mask[:, None] & K_mask_iter[None, :]
+
+        x = tl.load(X_blk_ptrs, mask=x_mask, other=0.0).to(INPUT_DTYPE)
+        a = tl.load(A_blk_ptrs, mask=a_mask, other=0.0).to(INPUT_DTYPE)
+
+        # MXFP4 dequant
+        packed = tl.load(Wp_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
+        nibble = tl.where(K_is_high[None, :], (packed >> 4) & 0xF, packed & 0xF)
+        codebook_val = tl.load(Codebook_ptr + nibble)  # [BLOCK_N, BLOCK_K] fp32
+        if SCALE_LINEAR:
+            # NVFP4: scale is a linear fp multiplier (E4M3 block scale * per-tensor)
+            scale_fp = tl.load(Ws_blk_ptrs, mask=w_mask, other=0.0).to(tl.float32)
+        else:
+            # MXFP4: E8M0 scale, decode as 2^(byte-127)
+            scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
+            scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
+        w_dq_nk = (codebook_val * scale_fp).to(INPUT_DTYPE)  # [BLOCK_N, BLOCK_K]
+        w_tile = tl.trans(w_dq_nk)  # [BLOCK_K, BLOCK_N]
+
+        # Base: acc += X @ W
+        acc += tl.dot(x, w_tile, allow_tf32=allow_tf32).to(tl.float32)
+        # LoRA: xa_acc += X @ A^T
+        xa_acc += tl.dot(x, tl.trans(a), allow_tf32=allow_tf32).to(tl.float32)
+
+        X_blk_ptrs += BLOCK_K * stride_xk
+        A_blk_ptrs += BLOCK_K * stride_ak
+        Wp_blk_ptrs += (BLOCK_K // 2) * stride_wpk
+        Ws_blk_ptrs += (BLOCK_K // MX_BLOCK_SIZE) * stride_wsk
+
+    # Epilogue (B @ xa_acc^T) — identical to dense path
+    B_expert_offset = E_idx * ACTUAL_R
+    B_blk_ptrs = (
+        B_ptr
+        + N_block[:, None] * stride_bn
+        + (B_expert_offset + R_block)[None, :] * stride_br
+    )
+    b = tl.load(B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0)
+    b_inp = b.to(INPUT_DTYPE)
+    lora_out = tl.dot(xa_acc.to(INPUT_DTYPE), tl.trans(b_inp), allow_tf32=allow_tf32)
+    acc += scaling * lora_out
+    return acc
+
+
+def _scatter2scatter_lora_mx_configs():
+    """Forward MX kernel configs. BLOCK_K must be a multiple of MX_BLOCK_SIZE.
+
+    ``num_stages=2`` is included: a single-GPU microbench found it optimal for the GLM expert
+    shapes on sm90, and it was absent from the original [3,4,5] search. For recognized
+    (arch, shape) profiles, :func:`_prune_fwd_mx_configs` narrows this full matrix to a small
+    pre-tuned subset (see ``_FWD_MX_PROFILES``); all other hardware/shapes keep the full
+    SMEM/register-pruned search.
+    """
+    configs = []
+    for block_m, block_n, block_k, warps, stages in product(
+        [32, 64, 128],
+        [32, 64],
+        [32, 64, 128],  # all multiples of MX_BLOCK_SIZE=32
+        [4, 8],
+        [2, 3, 4, 5],
+    ):
+        configs.append(
+            triton.Config(
+                {"BLOCK_M": block_m, "BLOCK_N": block_n, "BLOCK_K": block_k},
+                num_stages=stages,
+                num_warps=warps,
+            )
+        )
+    return configs
+
+
+# Pre-tuned forward-MX config subsets for known (GPU arch, expert-GEMM shape) profiles. Emitting a
+# small *measured* subset instead of running the full autotune avoids per-rank sweep-time skew under
+# expert parallelism (DeepEP) — where each rank's recv-token count lands on a different M_BUCKET, so
+# a large per-rank sweep desyncs ranks and trips DeepEP's combine barrier. Any arch/shape not in the
+# table keeps the full SMEM/register-pruned search. spec = (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages).
+_GLM_MX_SUBSET = [
+    (
+        128,
+        64,
+        32,
+        4,
+        2,
+    ),  # H200/sm90 microbench winner (invariant over M_BUCKET 32k-237k)
+    (128, 32, 64, 4, 2),  # near-tie alternate
+    (128, 32, 64, 8, 3),  # robust fallback within the stock search space
+    (128, 64, 64, 4, 2),  # neighbor
+]
+_FWD_MX_PROFILES = {
+    # sm90 (H200), GLM-5.2 expert GEMMs: gate_up (N=4096, K=6144), down (N=6144, K=2048).
+    (9, 0): {(4096, 6144): _GLM_MX_SUBSET, (6144, 2048): _GLM_MX_SUBSET},
+}
+
+
+def _profile_fwd_mx_configs(configs, meta):
+    """If the running GPU + this kernel's (N, K) match a known profile and M is in the tuned
+    (large) regime, return the pre-measured config subset (filtered from ``configs``). Else None.
+
+    ``meta`` is the kernel's compile-time kwargs (N, K, M_BUCKET, ...) that Triton passes to the
+    ``early_config_prune`` hook — the constexpr values are NOT in ``named_args`` (pointers/strides)."""
+    try:
+        cap = torch.cuda.get_device_capability()
+    except Exception:  # pragma: no cover
+        return None
+    table = _FWD_MX_PROFILES.get(cap)
+    if not table:
+        return None
+    specs = table.get((meta.get("N"), meta.get("K")))
+    mb = meta.get("M_BUCKET")
+    if (
+        not specs or mb is None or mb < 16384
+    ):  # only the large-M EP regime this was tuned for
+        return None
+    want = set(specs)
+    sel = [
+        c
+        for c in configs
+        if (
+            c.kwargs["BLOCK_M"],
+            c.kwargs["BLOCK_N"],
+            c.kwargs["BLOCK_K"],
+            c.num_warps,
+            c.num_stages,
+        )
+        in want
+    ]
+    return sel or None
+
+
+def _prune_fwd_mx_configs(configs, named_args, **kwargs):
+    """Prune MX forward configs by SMEM and register pressure.
+
+    MX-aware accounting adds the packed W tile and the scale tile per
+    pipeline stage to the base GEMM SMEM estimate. Both tiles are sized
+    [BLOCK_N, BLOCK_K] uint8 in the kernel: the packed buffer reads each
+    byte twice (because K_byte = K // 2 indexes a [BLOCK_K]-wide vector
+    into a K/2-stride buffer), and the scale buffer reads each byte
+    MX_BLOCK_SIZE times (broadcast within each K-block). This matches
+    the conservative full-tile accounting in ``_prune_dX_mx_configs``.
+    Also require BLOCK_K % MX_BLOCK_SIZE == 0.
+    """
+    # Known (arch, shape) profile -> emit the small pre-tuned subset, skipping the full sweep.
+    # N/K/M_BUCKET are constexpr -> they're in **kwargs, not named_args (pointers/strides).
+    profiled = _profile_fwd_mx_configs(configs, kwargs)
+    if profiled is not None:
+        return profiled
+
+    smem_cap = _get_smem_capacity()
+    block_r = named_args.get("BLOCK_R", 64)
+
+    scored = []
+    for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
+        block_n = config.kwargs["BLOCK_N"]
+        block_k = config.kwargs["BLOCK_K"]
+        if block_k % _MX_BLOCK_SIZE != 0:
+            continue
+        # Base GEMM tiles (X, dequantized W, acc)
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_n, block_k)
+        # MX-specific loads per pipeline stage: packed and scale tiles are
+        # both [BLOCK_N, BLOCK_K] bytes (see docstring for why each is full
+        # tile size, not BLOCK_K/2 or BLOCK_K/MX_BLOCK_SIZE).
+        smem_packed = config.num_stages * block_n * block_k * 1
+        smem_scale = config.num_stages * block_n * block_k * 1
+        # LoRA tiles
+        smem_lora_loop = config.num_stages * block_r * block_k * 2
+        smem_lora_epilogue = block_n * block_r * 2
+        smem = (
+            smem_base + smem_packed + smem_scale + smem_lora_loop + smem_lora_epilogue
+        )
+
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_m, block_n),  # acc
+            (block_m, block_r),  # xa_acc
+            (block_m, block_k),  # x tile
+            (block_n, block_k),  # dequantized w (before transpose)
+            (block_r, block_k),  # a tile
+            (block_n, block_r),  # b tile (epilogue)
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
+        scored.append((smem, config))
+
+    pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
+    if pruned:
+        return pruned
+    if scored:
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_N"] * c.kwargs["BLOCK_K"]
+            ),
+        )
+    ]
+
+
+@triton.autotune(
+    configs=_scatter2scatter_lora_mx_configs(),
+    key=["M_BUCKET", "N", "K"],
+    prune_configs_by={"early_config_prune": _prune_fwd_mx_configs},
+)
+@triton.heuristics(
+    {
+        "NO_K_MASK": lambda args: (args["K"] % args["BLOCK_K"]) == 0,
+        "NO_N_MASK": lambda args: (args["N"] % args["BLOCK_N"]) == 0,
+    }
+)
+@triton.jit
+def _scatter2scatter_lora_mx(
+    # X
+    X_ptr,
+    stride_xm: tl.constexpr,
+    stride_xk: tl.constexpr,
+    # Packed MXFP4 W [E, N, K/2]
+    Wp_ptr,
+    stride_wpe,
+    stride_wpn: tl.constexpr,
+    stride_wpk: tl.constexpr,
+    # E8M0 scale [E, N, K/32]
+    Ws_ptr,
+    stride_wse,
+    stride_wsn: tl.constexpr,
+    stride_wsk: tl.constexpr,
+    # FP4 codebook (16 fp32 values)
+    Codebook_ptr,
+    # Output
+    Y_ptr,
+    stride_ym: tl.constexpr,
+    stride_yn: tl.constexpr,
+    # Bias
+    Bias_ptr,
+    stride_bias_e: tl.constexpr,
+    stride_bias_n: tl.constexpr,
+    # LoRA
+    LA_ptr,
+    stride_la_r,
+    stride_la_k,
+    LB_ptr,
+    stride_lb_n,
+    stride_lb_r,
+    # Routing
+    grouped_idx_ptr,
+    expert_idxs_ptr,
+    # Dimensions
+    FAN_OUT: tl.constexpr,
+    M,
+    M_BUCKET,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    E: tl.constexpr,
+    ACTUAL_R: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
+    ACC_TYPE: tl.constexpr,
+    scaling,
+    allow_tf32: tl.constexpr,
+    x_grouped: tl.constexpr,
+    y_grouped: tl.constexpr,
+    NO_K_MASK: tl.constexpr,
+    NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
+):
+    """Fused scatter2scatter forward with MXFP4/NVFP4 base weights + LoRA."""
+    pid = tl.program_id(axis=0)
+    N_BLOCK_COUNT = tl.cdiv(N, BLOCK_N)
+    M_block_id = pid // N_BLOCK_COUNT
+    N_block_id = pid % N_BLOCK_COUNT
+
+    M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
+    N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
+    N_mask = N_block < N
+    M_boundary_mask = M_block < (FAN_OUT * M)
+
+    E_idxs = tl.load(expert_idxs_ptr + M_block, mask=M_boundary_mask, other=E)
+    no_k_mask = NO_K_MASK
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=ACC_TYPE)
+
+    E_first_idx = tl.min(E_idxs)
+    E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+
+    for E_idx in range(E_first_idx, E_last_idx + 1):
+        E_mask = E_idxs == E_idx
+        if x_grouped:
+            M_in_idx = M_block
+        else:
+            M_in_idx = M_idx // FAN_OUT
+
+        acc = _compute_expert_block_lora_mxfp4(
+            E_idx,
+            E_mask,
+            M_in_idx,
+            N_block,
+            N_mask,
+            X_ptr,
+            stride_xm,
+            stride_xk,
+            Wp_ptr,
+            stride_wpe,
+            stride_wpn,
+            stride_wpk,
+            Ws_ptr,
+            stride_wse,
+            stride_wsn,
+            stride_wsk,
+            Codebook_ptr,
+            LA_ptr,
+            stride_la_r,
+            stride_la_k,
+            LB_ptr,
+            stride_lb_n,
+            stride_lb_r,
+            K,
+            ACTUAL_R,
+            acc,
+            no_k_mask,
+            BLOCK_M,
+            BLOCK_K,
+            BLOCK_N,
+            BLOCK_R,
+            MX_BLOCK_SIZE,
+            SCALE_LINEAR,
+            scaling,
+            allow_tf32=allow_tf32,
+        )
+
+    if Bias_ptr is not None:
+        B_blk_ptrs = (
+            Bias_ptr
+            + E_idxs[:, None] * stride_bias_e
+            + N_block[None, :] * stride_bias_n
+        )
+        acc += tl.load(B_blk_ptrs, mask=M_boundary_mask[:, None] & N_mask[None, :])
+
+    if y_grouped:
+        M_out_idx = M_block
+    else:
+        M_out_idx = M_idx
+    Y_blk_ptrs = Y_ptr + (M_out_idx[:, None] * stride_ym + N_block[None, :] * stride_yn)
+    tl.store(Y_blk_ptrs, acc, mask=M_boundary_mask[:, None] & N_mask[None, :])
+
+
+def scatter2scatter_lora_mx(
+    X: torch.Tensor,
+    W_mx,  # MXWeights with layout=FWD
+    sorted_expert_idxs: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    k: int,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    b: Optional[torch.Tensor] = None,
+    x_grouped: bool = False,
+    y_grouped: bool = False,
+    out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
+) -> torch.Tensor:
+    """Forward dispatcher for the fused MXFP4 + LoRA kernel.
+
+    ``W_mx`` is an ``MXWeights`` instance in ``FWD`` layout (block axis = K).
+    """
+    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
+        MXLayout,
+        fp4_codebook,
+    )
+
+    assert W_mx.layout == MXLayout.FWD, (
+        f"scatter2scatter_lora_mx requires FWD layout, got {W_mx.layout}"
+    )
+    assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
+    assert sorted_scattered_idxs.size(0) == X.size(0) * k
+
+    K = W_mx.K
+    N = W_mx.N
+    E = W_mx.packed.size(0)
+    R = lora_A.size(0) // E
+    BLOCK_R = _block_r_for_rank(R)
+    L_scattered = sorted_expert_idxs.size(0)
+
+    if out is None:
+        output = torch.empty((L_scattered, N), device=X.device, dtype=X.dtype)
+    else:
+        assert out.size(0) == L_scattered and out.size(1) == N
+        output = out
+
+    def grid(META):
+        return (
+            triton.cdiv(L_scattered, META["BLOCK_M"]) * triton.cdiv(N, META["BLOCK_N"]),
+        )
+
+    if b is None:
+        stride_be = stride_bn = 0
+        b_ptr = None
+    else:
+        stride_be, stride_bn = b.stride()
+        b_ptr = b
+
+    codebook = fp4_codebook(X.device)
+
+    _scatter2scatter_lora_mx[grid](
+        X,
+        X.stride(0),
+        X.stride(1),
+        W_mx.packed,
+        W_mx.packed.stride(0),
+        W_mx.packed.stride(1),
+        W_mx.packed.stride(2),
+        W_mx.scales,
+        W_mx.scales.stride(0),
+        W_mx.scales.stride(1),
+        W_mx.scales.stride(2),
+        codebook,
+        output,
+        output.stride(0),
+        output.stride(1),
+        b_ptr,
+        stride_be,
+        stride_bn,
+        lora_A,
+        lora_A.stride(0),
+        lora_A.stride(1),
+        lora_B,
+        lora_B.stride(0),
+        lora_B.stride(1),
+        sorted_scattered_idxs,
+        sorted_expert_idxs,
+        FAN_OUT=k,
+        M=X.size(0),
+        M_BUCKET=_bucket_m(X.size(0)),
+        K=K,
+        N=N,
+        E=E,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        MX_BLOCK_SIZE=W_mx.block_size,
+        SCALE_LINEAR=W_mx.scale_is_linear,
+        ACC_TYPE=tl.float32,
+        scaling=scaling,
+        allow_tf32=ALLOW_TF32,
+        x_grouped=x_grouped,
+        y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
+    )
+    return output
+
+
+@triton.jit
+def _compute_expert_block_lora_dX_mxfp4(
+    E_idx,
+    E_mask,
+    M_in_idx,
+    K_block,
+    K_mask,
+    # dY [M, N]
+    DY_ptr,
+    stride_dym,
+    stride_dyn,
+    # Packed MXFP4 W in FWD layout: [E, N, K/2] uint8 (block axis = K)
+    Wp_ptr,
+    stride_wpe,
+    stride_wpn,
+    stride_wpk,
+    # Scale [E, N, K/32]
+    Ws_ptr,
+    stride_wse,
+    stride_wsn,
+    stride_wsk,
+    # FP4 codebook
+    Codebook_ptr,
+    # LoRA
+    A_ptr,
+    stride_ar,
+    stride_ak,
+    B_ptr,
+    stride_bn,
+    stride_br,
+    N,
+    ACTUAL_R: tl.constexpr,
+    acc,
+    no_n_mask,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
+    scaling,
+    allow_tf32: tl.constexpr,
+):
+    """dX inner loop for MXFP4 base weights, FWD layout (block axis = K).
+
+    Computes ``acc += DY @ dequant(W_e)^T + scaling * (DY @ B_e) @ A_e`` for
+    the active token rows in this M-tile assigned to expert ``E_idx``.
+
+    W storage is the *forward* MX layout: packed ``[E, N, K/2]`` and scale
+    ``[E, N, K/32]`` — the same buffer used by the forward kernel, no
+    pre-transpose / re-quantize required. Per N-loop iter we load packed
+    ``[BLOCK_K, BLOCK_N]`` and scale ``[BLOCK_K, BLOCK_N]`` tiles indexed
+    K-as-row × N-as-col; nibbles are extracted along the K axis (the byte
+    is shared by adjacent K rows) and scales broadcast within their
+    ``MX_BLOCK_SIZE``-element K block.
+    """
+    N_block = tl.arange(0, BLOCK_N)
+    # K-axis decode tables (K-along-rows of the W tile)
+    K_byte_block = K_block // 2
+    K_is_high = (K_block % 2) == 1
+    K_scale_block = K_block // MX_BLOCK_SIZE
+    R_block = tl.arange(0, BLOCK_R)
+    R_mask = R_block < ACTUAL_R
+
+    INPUT_DTYPE = DY_ptr.dtype.element_ty
+
+    DY_blk_ptrs = (
+        DY_ptr + M_in_idx[:, None] * stride_dym + N_block[None, :] * stride_dyn
+    )
+    # Packed W in FWD layout [E, N, K/2]
+    # Tile shape [BLOCK_K, BLOCK_N]: row=K_byte (each byte loaded twice across
+    # adjacent K rows), col=N — note N is the *fast* axis here because
+    # stride_wpn (= K/2) is large, but the K row stride is 1.
+    Wp_blk_ptrs = (
+        Wp_ptr
+        + E_idx.to(tl.int64) * stride_wpe
+        + N_block[None, :] * stride_wpn
+        + K_byte_block[:, None] * stride_wpk
+    )
+    # Scale [E, N, K/32]; row=K_scale_idx (broadcast within MX_BLOCK_SIZE), col=N
+    Ws_blk_ptrs = (
+        Ws_ptr
+        + E_idx.to(tl.int64) * stride_wse
+        + N_block[None, :] * stride_wsn
+        + K_scale_block[:, None] * stride_wsk
+    )
+    B_expert_offset = E_idx * ACTUAL_R
+    B_blk_ptrs = (
+        B_ptr
+        + N_block[:, None] * stride_bn
+        + (B_expert_offset + R_block)[None, :] * stride_br
+    )
+
+    iters = tl.cdiv(N, BLOCK_N)
+    dy_b_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
+
+    for i in range(iters):
+        if no_n_mask:
+            N_mask_iter = N_block >= 0  # all-true [BLOCK_N]
+        else:
+            N_mask_iter = (i * BLOCK_N + N_block) < N
+        dy_mask = E_mask[:, None] & N_mask_iter[None, :]
+        w_mask = K_mask[:, None] & N_mask_iter[None, :]
+        b_mask = N_mask_iter[:, None] & R_mask[None, :]
+
+        dy = tl.load(DY_blk_ptrs, mask=dy_mask, other=0.0).to(INPUT_DTYPE)
+
+        # MXFP4 dequant of W tile [BLOCK_K, BLOCK_N]
+        packed = tl.load(Wp_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
+        nibble = tl.where(K_is_high[:, None], (packed >> 4) & 0xF, packed & 0xF)
+        codebook_val = tl.load(Codebook_ptr + nibble)
+        if SCALE_LINEAR:
+            scale_fp = tl.load(Ws_blk_ptrs, mask=w_mask, other=0.0).to(tl.float32)
+        else:
+            scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
+            scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
+        w_dq = (codebook_val * scale_fp).to(INPUT_DTYPE)  # [BLOCK_K, BLOCK_N]
+
+        # Base: acc += DY @ W^T  ([M, N] @ [N, K] -> [M, K])
+        # W tile is [BLOCK_K, BLOCK_N]; W^T = tl.trans(w_dq) -> [BLOCK_N, BLOCK_K]
+        acc += tl.dot(dy, tl.trans(w_dq), allow_tf32=allow_tf32).to(tl.float32)
+
+        # LoRA: dy_b_acc += DY @ B
+        b = tl.load(B_blk_ptrs, mask=b_mask, other=0.0).to(INPUT_DTYPE)
+        dy_b_acc += tl.dot(dy, b, allow_tf32=allow_tf32).to(tl.float32)
+
+        DY_blk_ptrs += BLOCK_N * stride_dyn
+        Wp_blk_ptrs += BLOCK_N * stride_wpn
+        Ws_blk_ptrs += BLOCK_N * stride_wsn
+        B_blk_ptrs += BLOCK_N * stride_bn
+
+    # Epilogue: (DY @ B) @ A  ([M, R] @ [R, K] -> [M, K])
+    A_expert_offset = E_idx * ACTUAL_R
+    A_blk_ptrs = (
+        A_ptr
+        + (A_expert_offset + R_block)[:, None] * stride_ar
+        + K_block[None, :] * stride_ak
+    )
+    a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0).to(
+        INPUT_DTYPE
+    )
+    lora_dx = tl.dot(dy_b_acc.to(INPUT_DTYPE), a_e, allow_tf32=allow_tf32)
+    acc += scaling * lora_dx
+    return acc
+
+
+def _scatter2scatter_lora_dX_mx_configs():
+    """dX MX kernel configs. BLOCK_K must be a multiple of MX_BLOCK_SIZE
+    because scales broadcast within MX_BLOCK_SIZE-element K-blocks.
+
+    The grid is deliberately conservative: the largest configs (BLOCK_M=128 /
+    BLOCK_K=128 / BLOCK_N=64 / num_stages=5) only fit on big-SMEM GPUs (sm90's
+    228 KB) and at least one of them issues an out-of-bounds access in the
+    grouped (expert-parallel) backward there — while the SMEM *estimate* used to
+    prune is too loose to exclude it reliably. Restricting the search space to
+    the validated low-resource configs keeps the kernel correct on every arch;
+    the dX (backward) path is far less autotune-sensitive than the forward.
+    ``AXOLOTL_MX_DX_SAFE_CONFIG`` pins a single config as an escape hatch."""
+    import os
+
+    if os.environ.get("AXOLOTL_MX_DX_SAFE_CONFIG"):
+        return [
+            triton.Config(
+                {"BLOCK_M": 64, "BLOCK_K": 32, "BLOCK_N": 32},
+                num_stages=3,
+                num_warps=4,
+            )
+        ]
+    configs = []
+    for block_m, block_k, block_n, warps, stages in product(
+        [32, 64],
+        [32, 64],  # all multiples of MX_BLOCK_SIZE=32
+        [32],
+        [4, 8],
+        [2, 3],
+    ):
+        configs.append(
+            triton.Config(
+                {"BLOCK_M": block_m, "BLOCK_K": block_k, "BLOCK_N": block_n},
+                num_stages=stages,
+                num_warps=warps,
+            )
+        )
+    return configs
+
+
+# dX MX configs needing more shared memory than this are excluded from autotune even on
+# GPUs that physically have more (e.g. sm90's 228 KB). The larger configs are only reachable
+# on those GPUs, were never exercised on the 100 KB-class GPUs this kernel was validated on,
+# and at least one of them issues an out-of-bounds access on sm90 in the grouped (EP) layout.
+# Capping to the validated budget keeps autotune among known-good configs across all arches.
+_DX_MX_VALIDATED_SMEM = 101_376  # 99 KB — sm120 / Ada / sm89 opt-in budget
+
+
+# Pre-tuned dX-MX subsets for known (arch, shape) profiles — see _FWD_MX_PROFILES for the rationale.
+# spec = (BLOCK_M, BLOCK_K, BLOCK_N, warps, stages).
+_GLM_DX_MX_SUBSET = [
+    (32, 64, 32, 4, 2),  # H200/sm90 microbench winner
+    (64, 64, 32, 4, 2),  # larger BLOCK_M
+    (32, 32, 32, 4, 2),  # smaller BLOCK_K
+    (64, 32, 32, 8, 3),  # fallback
+]
+_DX_MX_PROFILES = {
+    (9, 0): {(4096, 6144): _GLM_DX_MX_SUBSET, (6144, 2048): _GLM_DX_MX_SUBSET},
+}
+
+
+def _profile_dX_mx_configs(configs, meta):
+    """Known GPU arch + (N, K) + large M -> pre-measured dX subset (filtered from ``configs``)."""
+    try:
+        cap = torch.cuda.get_device_capability()
+    except Exception:  # pragma: no cover
+        return None
+    table = _DX_MX_PROFILES.get(cap)
+    if not table:
+        return None
+    specs = table.get((meta.get("N"), meta.get("K")))
+    mb = meta.get("M_BUCKET")
+    if not specs or mb is None or mb < 16384:
+        return None
+    want = set(specs)
+    sel = [
+        c
+        for c in configs
+        if (
+            c.kwargs["BLOCK_M"],
+            c.kwargs["BLOCK_K"],
+            c.kwargs["BLOCK_N"],
+            c.num_warps,
+            c.num_stages,
+        )
+        in want
+    ]
+    return sel or None
+
+
+def _prune_dX_mx_configs(configs, named_args, **kwargs):
+    """Prune dX MX configs by SMEM and register pressure (MX-aware)."""
+    profiled = _profile_dX_mx_configs(configs, kwargs)
+    if profiled is not None:
+        return profiled
+
+    smem_cap = min(_get_smem_capacity(), _DX_MX_VALIDATED_SMEM)
+    block_r = named_args.get("BLOCK_R", 64)
+
+    scored = []
+    for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
+        block_k = config.kwargs["BLOCK_K"]
+        block_n = config.kwargs["BLOCK_N"]
+        if block_k % _MX_BLOCK_SIZE != 0:
+            continue
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_k, block_n)
+        # Per stage: packed W tile [BLOCK_K, BLOCK_N] (bytes — each byte
+        # serves two K rows) and scale tile [BLOCK_K, BLOCK_N] (bytes, broadcast
+        # within each K-block of size MX_BLOCK_SIZE). Approximate to BLOCK_K *
+        # BLOCK_N bytes for each (overestimates SMEM slightly, conservative).
+        smem_packed = config.num_stages * block_k * block_n * 1
+        smem_scale = config.num_stages * block_k * block_n * 1
+        smem_lora_loop = config.num_stages * block_n * block_r * 2
+        smem_lora_epilogue = block_r * block_k * 2
+        smem = (
+            smem_base + smem_packed + smem_scale + smem_lora_loop + smem_lora_epilogue
+        )
+
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_m, block_k),
+            (block_m, block_r),
+            (block_m, block_n),
+            (block_k, block_n),
+            (block_n, block_r),
+            (block_r, block_k),
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
+        scored.append((smem, config))
+
+    pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
+    if pruned:
+        return pruned
+    if scored:
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_K"] * c.kwargs["BLOCK_N"]
+            ),
+        )
+    ]
+
+
+@triton.autotune(
+    configs=_scatter2scatter_lora_dX_mx_configs(),
+    key=["M_BUCKET", "N", "K"],
+    prune_configs_by={"early_config_prune": _prune_dX_mx_configs},
+)
+@triton.heuristics(
+    {
+        "NO_N_MASK": lambda args: (args["N"] % args["BLOCK_N"]) == 0,
+    }
+)
+@triton.jit
+def _scatter2scatter_lora_dX_mx(
+    DY_ptr,
+    stride_dym: tl.constexpr,
+    stride_dyn: tl.constexpr,
+    # Packed W in FWD layout [E, N, K/2]
+    Wp_ptr,
+    stride_wpe,
+    stride_wpn: tl.constexpr,
+    stride_wpk: tl.constexpr,
+    # Scale [E, N, K/32]
+    Ws_ptr,
+    stride_wse,
+    stride_wsn: tl.constexpr,
+    stride_wsk: tl.constexpr,
+    Codebook_ptr,
+    DX_ptr,
+    stride_dxm: tl.constexpr,
+    stride_dxk: tl.constexpr,
+    LA_ptr,
+    stride_la_r,
+    stride_la_k,
+    LB_ptr,
+    stride_lb_n,
+    stride_lb_r,
+    grouped_idx_ptr,
+    expert_idxs_ptr,
+    FAN_OUT: tl.constexpr,
+    M,
+    M_BUCKET,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    E: tl.constexpr,
+    ACTUAL_R: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
+    ACC_TYPE: tl.constexpr,
+    scaling,
+    allow_tf32: tl.constexpr,
+    dy_grouped: tl.constexpr,
+    dx_grouped: tl.constexpr,
+    NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
+):
+    """Fused MXFP4/NVFP4 dX kernel."""
+    pid = tl.program_id(axis=0)
+    K_BLOCK_COUNT = tl.cdiv(K, BLOCK_K)
+    M_block_id = pid // K_BLOCK_COUNT
+    K_block_id = pid % K_BLOCK_COUNT
+
+    M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
+    K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
+    K_mask = K_block < K
+    M_boundary_mask = M_block < (FAN_OUT * M)
+
+    E_idxs = tl.load(expert_idxs_ptr + M_block, mask=M_boundary_mask, other=E)
+    no_n_mask = NO_N_MASK
+    acc = tl.zeros((BLOCK_M, BLOCK_K), dtype=ACC_TYPE)
+
+    E_first_idx = tl.min(E_idxs)
+    E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+
+    for E_idx in range(E_first_idx, E_last_idx + 1):
+        E_mask = E_idxs == E_idx
+        if dy_grouped:
+            M_in_idx = M_block
+        else:
+            M_in_idx = M_idx // FAN_OUT
+
+        acc = _compute_expert_block_lora_dX_mxfp4(
+            E_idx,
+            E_mask,
+            M_in_idx,
+            K_block,
+            K_mask,
+            DY_ptr,
+            stride_dym,
+            stride_dyn,
+            Wp_ptr,
+            stride_wpe,
+            stride_wpn,
+            stride_wpk,
+            Ws_ptr,
+            stride_wse,
+            stride_wsn,
+            stride_wsk,
+            Codebook_ptr,
+            LA_ptr,
+            stride_la_r,
+            stride_la_k,
+            LB_ptr,
+            stride_lb_n,
+            stride_lb_r,
+            N,
+            ACTUAL_R,
+            acc,
+            no_n_mask,
+            BLOCK_M,
+            BLOCK_N,
+            BLOCK_K,
+            BLOCK_R,
+            MX_BLOCK_SIZE,
+            SCALE_LINEAR,
+            scaling,
+            allow_tf32=allow_tf32,
+        )
+
+    if dx_grouped:
+        M_out_idx = M_block
+    else:
+        M_out_idx = M_idx
+    DX_blk_ptrs = DX_ptr + (
+        M_out_idx[:, None] * stride_dxm + K_block[None, :] * stride_dxk
+    )
+    tl.store(DX_blk_ptrs, acc, mask=M_boundary_mask[:, None] & K_mask[None, :])
+
+
+def scatter2scatter_lora_dX_mx(
+    DY: torch.Tensor,
+    W_mx,  # MXWeights in FWD layout (same buffer as forward)
+    sorted_expert_idxs: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    k: int,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    dy_grouped: bool = True,
+    dx_grouped: bool = False,
+    out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
+) -> torch.Tensor:
+    """Backward-dX dispatcher for the fused MXFP4 kernel.
+
+    Reuses the *forward* MX layout (block axis = K). The kernel iterates the
+    N reduction in tiles, and for each (K_tile, N_tile) sub-tile, decodes
+    nibbles along the K rows of the tile (K_byte = K // 2) and broadcasts
+    scales within each ``MX_BLOCK_SIZE`` K-block. This avoids the
+    dequant + re-quantize "pre-transpose" round-trip and the extra MX
+    rounding error that would have introduced.
+    """
+    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
+        MXLayout,
+        fp4_codebook,
+    )
+
+    assert W_mx.layout == MXLayout.FWD, (
+        f"scatter2scatter_lora_dX_mx requires FWD layout, got {W_mx.layout}"
+    )
+    assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
+
+    K = W_mx.K
+    N = W_mx.N
+    E = W_mx.packed.size(0)
+    R = lora_A.size(0) // E
+    BLOCK_R = _block_r_for_rank(R)
+    L_scattered = sorted_expert_idxs.size(0)
+
+    if dy_grouped:
+        M = DY.size(0)
+        fan_out = 1
+    else:
+        M = DY.size(0)
+        fan_out = k
+
+    if out is None:
+        output = torch.empty((L_scattered, K), device=DY.device, dtype=DY.dtype)
+    else:
+        assert out.size(0) == L_scattered and out.size(1) == K
+        output = out
+
+    def grid(META):
+        return (
+            triton.cdiv(L_scattered, META["BLOCK_M"]) * triton.cdiv(K, META["BLOCK_K"]),
+        )
+
+    codebook = fp4_codebook(DY.device)
+
+    _scatter2scatter_lora_dX_mx[grid](
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        W_mx.packed,
+        W_mx.packed.stride(0),
+        W_mx.packed.stride(1),
+        W_mx.packed.stride(2),
+        W_mx.scales,
+        W_mx.scales.stride(0),
+        W_mx.scales.stride(1),
+        W_mx.scales.stride(2),
+        codebook,
+        output,
+        output.stride(0),
+        output.stride(1),
+        lora_A,
+        lora_A.stride(0),
+        lora_A.stride(1),
+        lora_B,
+        lora_B.stride(0),
+        lora_B.stride(1),
+        sorted_scattered_idxs,
+        sorted_expert_idxs,
+        FAN_OUT=fan_out,
+        M=M,
+        M_BUCKET=_bucket_m(M),
+        K=K,
+        N=N,
+        E=E,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        MX_BLOCK_SIZE=W_mx.block_size,
+        SCALE_LINEAR=W_mx.scale_is_linear,
+        ACC_TYPE=tl.float32,
+        scaling=scaling,
+        allow_tf32=ALLOW_TF32,
+        dy_grouped=dy_grouped,
+        dx_grouped=dx_grouped,
+        INT64_INDICES=int64_indices,
+    )
+    return output

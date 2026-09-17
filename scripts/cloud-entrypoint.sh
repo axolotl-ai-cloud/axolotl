@@ -2,6 +2,12 @@
 
 # Export specific ENV variables to /etc/rp_environment
 echo "Exporting environment variables..."
+if [ -f /workspace/axolotl/scripts/cuda13_env.sh ]; then
+    source /workspace/axolotl/scripts/cuda13_env.sh
+    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        echo "export LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\"" >> /etc/rp_environment
+    fi
+fi
 printenv | grep -E '^HF_|^BNB_|^CUDA_|^NCCL_|^NV|^RUNPOD_|^PATH=|^_=' | sed 's/^\([^=]*\)=\(.*\)$/export \1="\2"/' | grep -v 'printenv' >> /etc/rp_environment
 echo 'source /etc/rp_environment' >> ~/.bashrc
 

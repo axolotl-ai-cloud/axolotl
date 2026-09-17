@@ -7,7 +7,9 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, check_tensorboard
+from .utils import check_model_output_exists, check_tensorboard, requires_flash_attn
+
+pytestmark = requires_flash_attn
 
 
 class TestPretrainLlama:
@@ -49,7 +51,6 @@ class TestPretrainLlama:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "save_safetensors": True,
                 "bf16": "auto",
                 "use_tensorboard": True,
                 "save_first_step": False,

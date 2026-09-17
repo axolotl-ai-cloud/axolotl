@@ -59,7 +59,6 @@ class DynamicCheckpointCallback(TrainerCallback):
             f"Dynamic checkpoint enabled. To trigger checkpoint save:\n"
             f"  • File: touch {cfg.output_dir}/{self.trigger_filename}\n"
             f"  • Check interval: every {self.check_interval} steps",
-            main_process_only=True,
         )
 
     def on_step_end(
@@ -89,12 +88,10 @@ class DynamicCheckpointCallback(TrainerCallback):
                         LOG.info(
                             f"Dynamic checkpoint triggered via file '{self.trigger_filename}' "
                             f"at step {state.global_step}",
-                            main_process_only=True,
                         )
                     except OSError as exc:
                         LOG.warning(
                             f"Failed to delete trigger file: {exc}",
-                            main_process_only=True,
                         )
 
                 if self.should_save_checkpoint:
@@ -127,6 +124,5 @@ class DynamicCheckpointCallback(TrainerCallback):
             control.should_save = True
             LOG.info(
                 f"Saving dynamic checkpoint at step {state.global_step}",
-                main_process_only=True,
             )
         return control

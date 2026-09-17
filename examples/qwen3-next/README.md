@@ -6,39 +6,27 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 ## Getting started
 
-1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html). You need to install from main as Qwen3-Next is only on nightly or use our latest [Docker images](https://docs.axolotl.ai/docs/docker.html).
+1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
-    Here is an example of how to install from main for pip:
-
-```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
-git clone https://github.com/axolotl-ai-cloud/axolotl.git
-cd axolotl
-
-pip3 install packaging==26.0 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn]'
-
-# Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
-python scripts/cutcrossentropy_install.py | sh
-```
-
-2. Install Qwen3-Next transformers commit
-```bash
-pip3 uninstall -y transformers && pip3 install "git+https://github.com/huggingface/transformers.git@b9282355bea846b54ed850a066901496b19da654"
-```
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
 
 3. Install FLA for improved performance
 ```bash
-pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.3.2
+uv pip uninstall causal-conv1d && uv pip install flash-linear-attention==0.4.1
 ```
 
 4. Run the finetuning example:
 
 ```bash
+# ~47 GiB (no target experts) and ~71GiB (target experts) VRAM.
 axolotl train examples/qwen3-next/qwen3-next-80b-a3b-qlora.yaml
-```
 
-This config uses about 45.62 GiB VRAM.
+# NVFP4 MoE-LoRA (~86 GiB at sequence_len 2048, ~106 GiB at 16k tokens/step)
+axolotl train examples/qwen3-next/qwen3-next-80b-a3b-nvfp4-lora.yaml
+
+# bake the adapter back into a plain NVFP4 checkpoint (see docs: NVFP4 MoE LoRA)
+axolotl merge-lora examples/qwen3-next/qwen3-next-80b-a3b-nvfp4-lora.yaml
+```
 
 Let us know how it goes. Happy finetuning! 🚀
 

@@ -108,6 +108,14 @@ datasets:
     type: chat_template
 ```
 
+::: {.callout-tip}
+`chat_template_jinja` also accepts a file path to a `.jinja2` file instead of an inline string:
+
+```yaml
+chat_template_jinja: ./path/to/my_template.jinja2
+```
+:::
+
 ::: {.callout-important}
 Please make sure that your `tokenizer.eos_token` is same as EOS (End-of-Sequence) token in template. Otherwise, set `eos_token` under `special_tokens: `.
 :::
@@ -293,6 +301,113 @@ datasets:
 ::: {.callout-tip}
 It is not necessary to set both `message_field_training` and `message_field_training_detail` at once.
 :::
+
+#### Content parts with per-part training control
+
+Instead of using character offsets with `train_detail`, you can split a message's content into a list of parts, each with its own training flag. This is useful when you want to mask specific sections of a response (e.g., mask reasoning but train on the answer).
+
+```{.json filename="data.jsonl"}
+{
+  "messages": [
+    {"role": "user", "content": [{"type": "text", "text": "What is 2+2?"}]},
+    {
+      "role": "assistant",
+      "content": [
+        {"type": "text", "text": "Let me think step by step...", "train": false},
+        {"type": "text", "text": " The answer is 4.", "train": true}
+      ]
+    }
+  ]
+}
+```
+
+The configuration is the same as standard `chat_template` — no extra fields needed:
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+    roles_to_train: ["assistant"]
+```
+
+Each content part supports:
+
+- `type`: `"text"` (required)
+- `text`: the text value (also accepts `content` or `value` as the key)
+- `train`: `true`/`false` (optional) — whether to train on this part
+- `weight`: `0`/`1` (optional) — alternative to `train`
+
+If a part has no `train` or `weight` flag, it inherits the turn-level training decision (from `roles_to_train`, `message_field_training`, or `train_on_inputs`).
+
+::: {.callout-warning title="Whitespace at part boundaries"}
+BPE tokenizers (used by Llama, Qwen, Mistral, GPT, etc.) prepend spaces to word tokens. For example, `" answer"` is a single token — the space is part of it. This means **where you place whitespace between content parts matters**:
+
+**Split BEFORE spaces** (space goes with the next part):
+
+```json
+[
+  {"type": "text", "text": "Let me think...", "train": false},
+  {"type": "text", "text": " The answer is 4.", "train": true}
+]
+```
+
+**DON'T put trailing spaces** on a part (the space merges with the next word into one token that straddles the boundary, and straddling tokens are masked):
+
+```json
+[
+  {"type": "text", "text": "Let me think... ", "train": false},
+  {"type": "text", "text": "The answer is 4.", "train": true}
+]
+```
+
+In the bad example, `" The"` becomes a single token that spans both parts. Because it straddles the boundary, it is conservatively **masked** (not trained) — even though the second part has `train: true`.
+
+**Newlines** typically merge with preceding punctuation (e.g., `":\n"` is one token). Keep newlines with the preceding part:
+
+```json
+[
+  {"type": "text", "text": "Thinking:\n", "train": false},
+  {"type": "text", "text": "The answer is 4.", "train": true}
+]
+```
+
+Axolotl will log a warning if it detects trailing whitespace at a boundary between parts with different training flags.
+:::
+
+::: {.callout-note}
+When all content parts in a message are strings, they are concatenated before being passed to the chat template. This means content parts work with **any** Jinja template — the template sees a plain string, and the per-part training flags are applied during tokenization.
+:::
+
+##### Per-part training on reasoning_content
+
+For templates that support a separate `reasoning_content` field (e.g., `qwen3`), the same content-parts format works on `reasoning_content`. This is useful for masking incorrect reasoning steps while training on self-corrections:
+
+```{.json filename="data.jsonl"}
+{
+  "messages": [
+    {"role": "user", "content": [{"type": "text", "text": "What is 2+2?"}]},
+    {
+      "role": "assistant",
+      "reasoning_content": [
+        {"type": "text", "text": "Hmm maybe 2+2=5.", "train": false},
+        {"type": "text", "text": " Wait no, 2+2=4.", "train": true}
+      ],
+      "content": [
+        {"type": "text", "text": "The answer is 4.", "train": true}
+      ]
+    }
+  ]
+}
+```
+
+The `reasoning_content` and `content` fields are handled independently — each has its own token boundaries and per-part masking. No additional configuration is needed beyond what the template already requires.
+
+::: {.callout-tip}
+When `reasoning_content` is provided as a separate field, `split_thinking` is not needed — the reasoning is already separated from the content in the data.
+:::
+
+The same whitespace rules apply to `reasoning_content` parts as to `content` parts — split before spaces, keep newlines with the preceding part.
+
 
 #### Reasoning split
 

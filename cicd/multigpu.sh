@@ -2,7 +2,7 @@
 set -e
 
 # Only run two tests at a time to avoid OOM on GPU (with coverage collection)
-pytest -v --durations=10 -n2 --maxfail=4 \
+pytest -v --durations=10 -n2 --maxfail=3 \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/solo/ \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/patched/ \
   /workspace/axolotl/tests/e2e/multigpu/ \

@@ -64,15 +64,12 @@ def patch_flex_wrapper(**flex_attn_compile_kwargs):
                     LOG.info(
                         "Compiling flex attention with kwargs: %s. This may take a while...",
                         flex_attn_compile_kwargs,
-                        main_process_only=True,
                     )
                     self._compiled_flex_attention = torch.compile(
                         flex_attention,
                         **flex_attn_compile_kwargs,
                     )
-                    LOG.info(
-                        "Flex attention compiled successfully.", main_process_only=True
-                    )
+                    LOG.info("Flex attention compiled successfully.")
 
                 self._is_flex_compiled = True
 

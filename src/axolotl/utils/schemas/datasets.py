@@ -166,10 +166,16 @@ class SFTDataset(BaseModel):
             "description": "Roles to train on. The tokens from these roles will be considered for the loss."
         },
     )
-    train_on_eos: Literal["all", "turn", "last"] | None = Field(
+    train_on_eos: Literal["all", "turn", "last", "none"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation"
+            "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation, none: never train on EOS tokens"
+        },
+    )
+    train_on_eot: Literal["all", "turn", "last", "none"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Which EOT (end-of-turn) tokens to train on. Same values as train_on_eos. Defaults to the train_on_eos setting when unset."
         },
     )
     roles: dict[str, list[str]] | None = Field(
@@ -192,6 +198,17 @@ class SFTDataset(BaseModel):
         default=None,
         json_schema_extra={
             "description": "The specific revision of the dataset to use when loading from the Hugging Face Hub. This can be a commit hash, tag, or branch name. If not specified, the latest version will be used. This parameter is ignored for local datasets."
+        },
+    )
+    weight: float | None = Field(
+        default=None,
+        gt=0.0,
+        le=1.0,
+        json_schema_extra={
+            "description": "Sampling weight for dataset mixing. A float between 0 (exclusive) and 1 (inclusive). "
+            "When set, the dataset is shuffled and subsampled to (weight * dataset_size) examples before "
+            "merging with other datasets. For example, weight=0.5 uses 50% of the dataset. "
+            "If not set, the entire dataset is used (equivalent to weight=1.0)."
         },
     )
 
@@ -260,6 +277,8 @@ class DPODataset(BaseModel):
     data_files: list[str] | None = None
     revision: str | None = None
     field_messages: str | None = None
+    field_chosen: str | None = None
+    field_rejected: str | None = None
 
 
 class StepwiseSupervisedDataset(BaseModel):
@@ -280,7 +299,7 @@ class UserDefinedKTOType(BaseModel):
     field_system: str | None = None
     field_prompt: str | None = None
     field_completion: str | None = None
-    field_label: bool | None = None
+    field_label: str | None = None
     prompt_format: str | None = None
     completion_format: str | None = None
 
@@ -296,4 +315,42 @@ class KTODataset(BaseModel):
     revision: str | None = None
 
 
-DatasetConfig = SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset
+class SyntheticDataset(BaseModel):
+    """Synthetic dataset configuration for benchmarking and testing.
+
+    Generates datasets with configurable sequence length, dataset size, and token ID
+    ranges. Useful for benchmarking memory usage and speed by sequence length, and for
+    validating weighted dataset mixes.
+    """
+
+    path: Literal["synthetic"] = "synthetic"
+    type: Literal["_synthetic"] = "_synthetic"
+    length: int = Field(
+        default=1000,
+        json_schema_extra={"description": "Number of rows to generate"},
+    )
+    sequence_length: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Sequence length per row (defaults to sequence_len from config)"
+        },
+    )
+    min_input_id: int = Field(
+        default=100,
+        json_schema_extra={"description": "Minimum token ID for generation"},
+    )
+    max_input_id: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Maximum token ID for generation (defaults to tokenizer vocab_size)"
+        },
+    )
+    seed: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Random seed for reproducibility"},
+    )
+
+
+DatasetConfig = (
+    SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset | SyntheticDataset
+)

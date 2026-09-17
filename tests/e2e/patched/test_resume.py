@@ -9,12 +9,19 @@ import subprocess
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.common.datasets import load_datasets
+from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.train import train
-from axolotl.utils.callbacks.tokens_per_second import TOKENS_STATE_FILE
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists, most_recent_subdir, require_torch_2_6_0
+from ..utils import (
+    check_model_output_exists,
+    most_recent_subdir,
+    require_torch_2_6_0,
+    requires_flash_attn,
+)
+
+pytestmark = requires_flash_attn
 
 
 class TestResumeLlama:
@@ -58,7 +65,6 @@ class TestResumeLlama:
                 "save_total_limit": 5,
                 "max_steps": 15,
                 "use_tensorboard": True,
-                "save_safetensors": True,
                 "save_first_step": False,
                 "include_tkps": True,
             }

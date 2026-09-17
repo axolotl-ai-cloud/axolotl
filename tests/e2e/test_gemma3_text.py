@@ -11,6 +11,10 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
+from .utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
+
 
 class TestGemma3Text:
     """
@@ -60,7 +64,6 @@ class TestGemma3Text:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
                 "save_first_step": False,
             }
@@ -110,7 +113,6 @@ class TestGemma3Text:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
                 "save_first_step": False,
             }

@@ -19,7 +19,7 @@ python scripts/cutcrossentropy_install.py | sh
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@318b7e2"
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@3574df5"
 ```
 
 ## Usage
@@ -31,27 +31,45 @@ plugins:
 
 ## Supported Models
 
+- afmoe
 - apertus
 - arcee
 - cohere
 - cohere2
+- cohere2_moe
+- cohere2_vision
+- cohere_compass
+- cohere_compass_text
+- deepseek_v2
 - deepseek_v3
+- deepseek_v4
+- exaone4
+- exaone4_5
+- exaone_moe
 - gemma
 - gemma2
 - gemma3
 - gemma3_text
 - gemma3n
 - gemma3n_text
+- gemma4
+- gemma4_text
+- gemma4_unified
+- gemma4_unified_text
 - glm
 - glm4
 - glm4_moe
+- glm4_moe_lite
+- glm46v
 - glm4v
 - glm4v_moe
+- glm_image
+- glm_moe_dsa
 - gpt_oss
 - granite
 - granitemoe
-- granitemoeshared
 - granitemoehybrid
+- granitemoeshared
 - hunyuan_v1_dense
 - hunyuan_v1_moe
 - internvl
@@ -63,29 +81,43 @@ plugins:
 - llama4
 - llama4_text
 - llava
+- minimax
+- minimax_m2
 - ministral
 - ministral3
 - mistral
 - mistral3
+- mistral4
 - mixtral
 - mllama
+- muse_glimmer
+- nemotron_h
 - olmo
 - olmo2
 - olmo3
+- olmoe
 - phi
 - phi3
 - phi4_multimodal
 - qwen2
-- qwen2_vl
-- qwen2_moe
 - qwen2_5_vl
+- qwen2_moe
+- qwen2_vl
 - qwen3
+- qwen3_5
+- qwen3_5_text
+- qwen3_5_moe
+- qwen3_5_moe_text
 - qwen3_moe
+- qwen3_next
 - qwen3_vl
 - qwen3_vl_moe
-- qwen3_next
-- smollm3
+- qwen4_exp
+- qwen4_exp_text
 - seed_oss
+- smollm3
+- step3p5
+- step3p7
 - voxtral
 
 ## Citation

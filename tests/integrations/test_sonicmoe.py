@@ -1,0 +1,415 @@
+"""Unit tests for the SonicMoE ExpertsInterface registration."""
+
+from types import SimpleNamespace
+
+import pytest
+import torch
+
+from axolotl.integrations.kernels.args import KernelsArgs
+
+
+class TestKernelsArgs:
+    def test_mutual_exclusivity_raises(self):
+        with pytest.raises(ValueError, match="Cannot use both"):
+            KernelsArgs.model_validate({"use_scattermoe": True, "use_sonicmoe": True})
+
+    def test_sonicmoe_only(self):
+        result = KernelsArgs.model_validate({"use_sonicmoe": True})
+        assert result.use_sonicmoe is True
+        assert result.use_scattermoe is None
+
+    def test_scattermoe_only(self):
+        result = KernelsArgs.model_validate({"use_scattermoe": True})
+        assert result.use_scattermoe is True
+        assert result.use_sonicmoe is None
+
+    def test_neither_set(self):
+        result = KernelsArgs.model_validate({})
+        assert result.use_scattermoe is None
+        assert result.use_sonicmoe is None
+
+    def test_disables_mlp_kernel_when_sonicmoe(self):
+        # lora_mlp_kernel is kept (it fuses only the DENSE shared MLP; routed experts are handled
+        # by the MoE kernel); the non-LoRA mlp_kernel is still force-disabled under custom MoE.
+        data = {"use_sonicmoe": True, "lora_mlp_kernel": True}
+        result = KernelsArgs.disable_mlp_kernel(data)
+        assert result["lora_mlp_kernel"] is True
+        assert result["mlp_kernel"] is False
+
+    def test_experts_implementation_auto_sonicmoe(self):
+        out = KernelsArgs.check_experts_implementation({"use_sonicmoe": True})
+        assert out["experts_implementation"] == "sonicmoe"
+
+    def test_experts_implementation_auto_scattermoe(self):
+        out = KernelsArgs.check_experts_implementation({"use_scattermoe": True})
+        assert out["experts_implementation"] == "scattermoe"
+
+    def test_experts_implementation_default_eager(self):
+        out = KernelsArgs.check_experts_implementation({})
+        assert out["experts_implementation"] == "eager"
+
+    def test_sonicmoe_impl_requires_flag(self):
+        out = KernelsArgs.check_experts_implementation(
+            {"experts_implementation": "sonicmoe"}
+        )
+        assert out["experts_implementation"] == "eager"
+
+    def test_scattermoe_impl_requires_flag(self):
+        out = KernelsArgs.check_experts_implementation(
+            {"experts_implementation": "scattermoe"}
+        )
+        assert out["experts_implementation"] == "eager"
+
+    def test_unknown_impl_falls_back_to_eager(self):
+        out = KernelsArgs.check_experts_implementation(
+            {"experts_implementation": "not-a-real-impl"}
+        )
+        assert out["experts_implementation"] == "eager"
+
+    def test_builtin_impls_pass_through(self):
+        for impl in ("eager", "batched_mm", "grouped_mm"):
+            out = KernelsArgs.check_experts_implementation(
+                {"experts_implementation": impl}
+            )
+            assert out["experts_implementation"] == impl
+
+
+class TestSonicMoERegistration:
+    """Test that register_sonicmoe_experts plugs into ALL_EXPERTS_FUNCTIONS."""
+
+    def test_register_adds_entry(self):
+        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            register_sonicmoe_experts,
+            sonicmoe_experts_forward_with_lora,
+        )
+
+        register_sonicmoe_experts()
+        assert "sonicmoe" in ALL_EXPERTS_FUNCTIONS
+        assert ALL_EXPERTS_FUNCTIONS["sonicmoe"] is sonicmoe_experts_forward_with_lora
+
+    def test_register_is_idempotent(self):
+        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            register_sonicmoe_experts,
+        )
+
+        register_sonicmoe_experts()
+        register_sonicmoe_experts()
+        # Just one entry, no error
+        assert "sonicmoe" in ALL_EXPERTS_FUNCTIONS
+
+    def test_register_overrides_upstream(self):
+        """Axolotl's LoRA-aware variant replaces upstream's plain forward."""
+        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+        from transformers.integrations.sonicmoe import sonicmoe_experts_forward
+
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            register_sonicmoe_experts,
+            sonicmoe_experts_forward_with_lora,
+        )
+
+        register_sonicmoe_experts()
+        assert ALL_EXPERTS_FUNCTIONS["sonicmoe"] is sonicmoe_experts_forward_with_lora
+        assert ALL_EXPERTS_FUNCTIONS["sonicmoe"] is not sonicmoe_experts_forward
+
+
+class TestMoELoRAMaterialize:
+    """Verify the LoRA materialization autograd Function used by the registered forward."""
+
+    def test_forward_shape_and_identity_with_zero_lora(self):
+        """W_eff == base when LoRA tensors are zero, regardless of layout convention."""
+        from axolotl.integrations.kernels.libs.sonicmoe.lora import MoELoRAMaterialize
+
+        E, dim1, dim2, r = 4, 8, 6, 2
+        base = torch.randn(E, dim1, dim2)
+        lora_A = torch.zeros(r * E, dim2)
+        lora_B = torch.zeros(dim1, r * E)
+        scaling = 0.5
+
+        W_eff = MoELoRAMaterialize.apply(base, lora_A, lora_B, scaling)
+        assert W_eff.shape == base.shape
+        torch.testing.assert_close(W_eff, base, atol=1e-6, rtol=1e-6)
+
+    def test_forward_scaling_linearity(self):
+        """Doubling scaling should double the LoRA delta."""
+        from axolotl.integrations.kernels.libs.sonicmoe.lora import MoELoRAMaterialize
+
+        E, dim1, dim2, r = 4, 8, 6, 2
+        base = torch.randn(E, dim1, dim2)
+        lora_A = torch.randn(r * E, dim2)
+        lora_B = torch.randn(dim1, r * E)
+
+        W_1 = MoELoRAMaterialize.apply(base, lora_A, lora_B, 1.0)
+        W_2 = MoELoRAMaterialize.apply(base, lora_A, lora_B, 2.0)
+        torch.testing.assert_close(W_2 - base, 2 * (W_1 - base), atol=1e-5, rtol=1e-5)
+
+    def test_forward_matches_peft_einsum(self):
+        """Delta matches PEFT's ParamWrapper.get_delta_weight einsum convention.
+
+        Reference: ``peft.tuners.lora.layer.ParamWrapper.get_delta_weight``
+        on PEFT 0.19.x — ``einsum("o r e, e r i -> e o i", B_3d, A_3d)`` where
+        ``B_3d = lora_B.reshape(dim1, r, E)`` and ``A_3d = lora_A.reshape(E, r, dim2)``.
+        """
+        from axolotl.integrations.kernels.libs.sonicmoe.lora import MoELoRAMaterialize
+
+        E, dim1, dim2, r = 3, 5, 4, 2
+        base = torch.zeros(E, dim1, dim2)
+        lora_A = torch.randn(r * E, dim2)
+        lora_B = torch.randn(dim1, r * E)
+        scaling = 0.7
+
+        W_eff = MoELoRAMaterialize.apply(base, lora_A, lora_B, scaling)
+
+        # PEFT's reference computation
+        A_3d = lora_A.reshape(E, r, dim2)
+        B_3d = lora_B.reshape(dim1, r, E)
+        peft_delta = torch.einsum("o r e, e r i -> e o i", B_3d, A_3d) * scaling
+
+        torch.testing.assert_close(W_eff, peft_delta, atol=1e-5, rtol=1e-5)
+
+    def test_gradient_flows_to_lora(self):
+        from axolotl.integrations.kernels.libs.sonicmoe.lora import MoELoRAMaterialize
+
+        E, dim1, dim2, r = 4, 8, 6, 2
+        base = torch.randn(E, dim1, dim2, requires_grad=False)
+        lora_A = torch.randn(r * E, dim2, requires_grad=True)
+        lora_B = torch.randn(dim1, r * E, requires_grad=True)
+        scaling = 0.5
+
+        W_eff = MoELoRAMaterialize.apply(base, lora_A, lora_B, scaling)
+        loss = W_eff.sum()
+        loss.backward()
+
+        assert lora_A.grad is not None
+        assert lora_B.grad is not None
+        assert lora_A.grad.abs().max() > 0
+        assert lora_B.grad.abs().max() > 0
+        # Base weight is frozen — no grad expected.
+        assert base.grad is None
+
+    def test_no_lora_returns_base_unchanged(self):
+        from axolotl.integrations.kernels.libs.sonicmoe.lora import (
+            materialize_expert_lora,
+        )
+
+        base = torch.randn(4, 8, 6)
+        result = materialize_expert_lora(base, None)
+        assert result is base
+
+
+class TestExpertsClassMetadata:
+    """The forward reads `has_gate`/`has_bias`/`is_transposed`/`is_concatenated`
+    that are set by transformers' @use_experts_implementation decorator.
+    Verify our forward respects these without an actual CUDA kernel call.
+    """
+
+    def test_non_gated_requires_relu2(self):
+        # non-gated experts are supported only with relu²; any other act must fail loudly.
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            sonicmoe_experts_forward_with_lora,
+        )
+
+        fake_self = SimpleNamespace(
+            has_gate=False,
+            num_experts=2,
+            up_proj=torch.zeros(2, 4, 4),
+            down_proj=torch.zeros(2, 4, 4),
+            config=SimpleNamespace(mlp_hidden_act="silu"),
+        )
+        hidden = torch.zeros(2, 4)
+        top_k_index = torch.zeros(2, 1, dtype=torch.long)
+        top_k_weights = torch.ones(2, 1)
+
+        if torch.cuda.is_available():
+            fake_self.up_proj = fake_self.up_proj.cuda()
+            fake_self.down_proj = fake_self.down_proj.cuda()
+            with pytest.raises(NotImplementedError, match="relu"):
+                sonicmoe_experts_forward_with_lora(
+                    fake_self, hidden.cuda(), top_k_index.cuda(), top_k_weights.cuda()
+                )
+        else:
+            # CPU is rejected before the activation check
+            with pytest.raises(ValueError, match="CUDA"):
+                sonicmoe_experts_forward_with_lora(
+                    fake_self, hidden, top_k_index, top_k_weights
+                )
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+    def test_non_gated_rejects_bias(self):
+        # the grouped fallback takes no bias operands, so a bias must fail loudly, not be dropped
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            sonicmoe_experts_forward_with_lora,
+        )
+
+        fake_self = SimpleNamespace(
+            has_gate=False,
+            has_bias=True,
+            num_experts=2,
+            up_proj=torch.zeros(2, 4, 4, device="cuda"),
+            down_proj=torch.zeros(2, 4, 4, device="cuda"),
+            down_proj_bias=torch.zeros(2, 4, device="cuda"),
+            config=SimpleNamespace(mlp_hidden_act="relu2"),
+        )
+        with pytest.raises(NotImplementedError, match="bias"):
+            sonicmoe_experts_forward_with_lora(
+                fake_self,
+                torch.zeros(2, 4, device="cuda"),
+                torch.zeros(2, 1, dtype=torch.long, device="cuda"),
+                torch.ones(2, 1, device="cuda"),
+            )
+
+    def test_rejects_non_cuda(self):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            sonicmoe_experts_forward_with_lora,
+        )
+
+        fake_self = SimpleNamespace(has_gate=True)
+        hidden = torch.zeros(2, 4)  # CPU tensor
+        top_k_index = torch.zeros(2, 1, dtype=torch.long)
+        top_k_weights = torch.ones(2, 1)
+
+        with pytest.raises(ValueError, match="CUDA"):
+            sonicmoe_experts_forward_with_lora(
+                fake_self, hidden, top_k_index, top_k_weights
+            )
+
+
+class TestFacadeActivationResolution:
+    """The facade must hand upstream an activation name its ACT_MAP accepts.
+
+    Gemma4 declares ``hidden_activation="gelu_pytorch_tanh"`` and has no ``hidden_act``
+    key at all, so reading ``hidden_act`` alone silently yields SwiGLU on a GeGLU model.
+    """
+
+    @staticmethod
+    def _facade_act(config):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            _LoRAExpertsFacade,
+        )
+
+        module = SimpleNamespace(config=config, num_experts=8)
+        facade = _LoRAExpertsFacade(module, torch.zeros(1), None, torch.zeros(1), None)
+        return facade.config.hidden_act
+
+    def test_gemma4_resolves_to_geglu(self):
+        from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
+        config = Gemma4TextConfig()
+        assert not hasattr(config, "hidden_act")
+        assert config.hidden_activation == "gelu_pytorch_tanh"
+        assert self._facade_act(config) == "gelu"
+
+    def test_hidden_act_models_unchanged(self):
+        assert self._facade_act(SimpleNamespace(hidden_act="silu")) == "silu"
+        assert self._facade_act(SimpleNamespace(hidden_act="gelu")) == "gelu"
+        assert self._facade_act(SimpleNamespace(hidden_act="relu")) == "relu"
+
+    def test_unaliased_activation_still_raises_upstream(self):
+        """The `.get(act, act)` fallback must not coerce unknown names to a default."""
+        from transformers.integrations.sonicmoe import ACT_MAP
+
+        assert (
+            self._facade_act(SimpleNamespace(hidden_act="quadratic_glu")) not in ACT_MAP
+        )
+
+    def test_resolved_name_is_accepted_by_upstream(self):
+        """Upstream raises on anything outside its ACT_MAP, so aliases must land in it."""
+        from transformers.integrations.sonicmoe import ACT_MAP
+        from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
+        for config in (
+            Gemma4TextConfig(),
+            SimpleNamespace(hidden_activation="gelu_tanh"),
+            SimpleNamespace(hidden_act="silu"),
+        ):
+            assert self._facade_act(config) in ACT_MAP
+
+
+class TestEpilogueCheck:
+    """sonicmoe picks its epilogue from `hidden_act` and never calls `_apply_gate`, so an
+    epilogue the kernel cannot express must raise rather than silently run SwiGLU."""
+
+    @staticmethod
+    def _experts(model_type, cls_name, **overrides):
+        import importlib
+
+        from transformers import AutoConfig
+
+        config = AutoConfig.for_model(model_type)
+        config = getattr(config, "text_config", config)
+        for key, value in overrides.items():
+            setattr(config, key, value)
+        config._experts_implementation = None
+        module = importlib.import_module(
+            f"transformers.models.{model_type}.modeling_{model_type}"
+        )
+        with torch.device("meta"):
+            return getattr(module, cls_name)(config)
+
+    @staticmethod
+    def _check(experts, *, limit, path):
+        from axolotl.integrations.kernels.libs.sonicmoe.epilogue import check_epilogue
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4 import (
+            resolve_gated_activation,
+        )
+
+        check_epilogue(
+            experts,
+            resolve_gated_activation(experts.config),
+            concat=getattr(experts, "is_concatenated", True),
+            limit=limit,
+            path=path,
+        )
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name,overrides",
+        [
+            ("qwen3_moe", "Qwen3MoeExperts", {}),
+            (
+                "gemma4",
+                "Gemma4TextExperts",
+                {"num_experts": 8, "moe_intermediate_size": 64},
+            ),
+        ],
+    )
+    def test_representable_epilogues_pass(self, model_type, cls_name, overrides):
+        experts = self._experts(model_type, cls_name, **overrides)
+        self._check(experts, limit=None, path="dense")
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name",
+        [
+            ("gpt_oss", "GptOssExperts"),
+            ("deepseek_v4", "DeepseekV4Experts"),
+        ],
+    )
+    def test_custom_apply_gate_rejected_on_dense_path(self, model_type, cls_name):
+        experts = self._experts(model_type, cls_name)
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(experts, limit=None, path="dense")
+
+    def test_clamped_swiglu_accepted_on_nvfp4_path(self):
+        """DeepSeek-V4 is plain SwiGLU plus a clamp, which `gated_activation` honors."""
+        experts = self._experts("deepseek_v4", "DeepseekV4Experts")
+        self._check(experts, limit=experts.limit, path="NVFP4 grouped")
+
+    def test_sigmoid_glu_rejected_on_nvfp4_path(self):
+        """`minimax_m3_vl` is a fixture, not a supported model: it is the only upstream
+        sigmoid-GLU arch with `is_transposed=False`, so the only one reaching this path."""
+        experts = self._experts("minimax_m3_vl", "MiniMaxM3VLExperts")
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(experts, limit=experts.limit, path="NVFP4 grouped")
+
+    def test_verdict_is_per_instance(self):
+        """`_apply_gate` closes over instance state, so a class-keyed cache would leak
+        one module's verdict to another."""
+        ok = self._experts("qwen3_moe", "Qwen3MoeExperts")
+        self._check(ok, limit=None, path="dense")
+
+        bad = self._experts("qwen3_moe", "Qwen3MoeExperts")
+        bad._apply_gate = lambda gate_up: gate_up.chunk(2, dim=-1)[0]
+        with pytest.raises(ValueError, match="wrong expert math"):
+            self._check(bad, limit=None, path="dense")

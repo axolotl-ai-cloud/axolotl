@@ -18,6 +18,7 @@ Unit tests for SwanLab Integration Plugin.
 Tests conflict detection, configuration validation, and multi-logger warnings.
 """
 
+import importlib.util
 import logging
 import os
 import time
@@ -25,12 +26,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
-from transformers.utils.import_utils import _is_package_available
 
 from axolotl.integrations.swanlab.args import SwanLabConfig
 from axolotl.integrations.swanlab.plugins import SwanLabPlugin
 
-SWANLAB_INSTALLED = _is_package_available("swanlab")
+SWANLAB_INSTALLED = importlib.util.find_spec("swanlab") is not None
 
 
 @pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
@@ -1176,7 +1176,7 @@ class TestSwanLabProfiling:
 
         # Mock trainer with SwanLab enabled
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
         with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
@@ -1199,7 +1199,7 @@ class TestSwanLabProfiling:
         from axolotl.integrations.swanlab.profiling import swanlab_profiling_context
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=False)  # Disabled
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=False)  # Disabled
 
         with patch("swanlab.log") as mock_log:
             with swanlab_profiling_context(mock_trainer, "test_function"):
@@ -1213,7 +1213,7 @@ class TestSwanLabProfiling:
         from axolotl.integrations.swanlab.profiling import swanlab_profiling_context
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
 
         with (
             patch("swanlab.get_run", return_value=None),
@@ -1294,7 +1294,7 @@ class TestSwanLabProfiling:
         )
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
         # Config that filters out very fast operations
@@ -1320,7 +1320,7 @@ class TestSwanLabProfiling:
         from axolotl.integrations.swanlab.profiling import swanlab_profiling_context
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
         with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:

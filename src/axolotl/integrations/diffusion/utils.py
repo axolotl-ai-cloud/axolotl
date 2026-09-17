@@ -129,13 +129,17 @@ def create_bidirectional_attention_mask(
 ) -> torch.Tensor:
     """
     Create bidirectional attention mask to override default causal masking.
-    Handles sample-packed sequences where different samples are identified
-    by different attention mask values.
+
+    When an ``attention_mask`` is provided it is always honored, whether it is a
+    binary padding mask (non-packed batches) or per-sample segment ids (packed
+    batches): a query may attend to a key only if they share the same non-zero
+    value. Passing the 4D mask to the model replaces its own padding handling,
+    so padding must be excluded here or real tokens would attend to padding.
 
     Args:
         input_ids: Input token ids [batch_size, seq_len]
         attention_mask: Attention mask [batch_size, seq_len]
-        sample_packing: Whether sample packing is enabled
+        sample_packing: Unused; segment-vs-padding masks are handled uniformly.
 
     Returns:
         bidirectional_mask: 4D attention mask [batch_size, 1, seq_len, seq_len]
@@ -143,16 +147,18 @@ def create_bidirectional_attention_mask(
     batch_size, seq_len = input_ids.shape
     device = input_ids.device
 
-    if attention_mask is None or not sample_packing:
+    # Without an attention mask every position is valid -> full all-to-all.
+    if attention_mask is None:
         return torch.ones(
             batch_size, 1, seq_len, seq_len, dtype=torch.bool, device=device
         )
 
-    # Handle sample packing: tokens can only attend within their sample
     mask_i = attention_mask.unsqueeze(2)  # [batch_size, seq_len, 1]
     mask_j = attention_mask.unsqueeze(1)  # [batch_size, 1, seq_len]
 
-    # Tokens can attend to each other if they have the same non-zero sample ID
+    # Tokens attend to each other only if they share the same non-zero id. For
+    # a binary padding mask this keeps valid<->valid and drops padding; for
+    # packed segment ids it additionally blocks cross-sample attention.
     bidirectional_mask = (mask_i == mask_j) & (mask_i > 0)
 
     # Add head dimension: [batch_size, 1, seq_len, seq_len]

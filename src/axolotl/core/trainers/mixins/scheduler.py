@@ -25,7 +25,7 @@ class SchedulerMixin(Trainer):
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
 
     def create_scheduler(
-        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+        self, num_training_steps: int, optimizer: None | torch.optim.Optimizer = None
     ) -> LRScheduler:
         """
         Set up the scheduler. The optimizer of the trainer must have been set up either before this method is called or
@@ -44,6 +44,13 @@ class SchedulerMixin(Trainer):
             self.args.lr_scheduler_type == "cosine"
             and self.args.cosine_min_lr_ratio is not None
         )
+
+        if optimizer is None:
+            if self.optimizer is None:
+                raise ValueError(
+                    "Optimizer must be set before calling create_scheduler or passed as an argument."
+                )
+            optimizer = self.optimizer
 
         # fmt: off
         if self.lr_scheduler is None:  # type: ignore

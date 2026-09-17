@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG CUDA_VERSION="12.6.3"
 ARG CUDNN_VERSION=""
 ARG UBUNTU_VERSION="22.04"
@@ -6,17 +7,22 @@ ARG TARGETARCH
 
 FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION AS base-builder
 
+ARG TARGETARCH
 ARG PYTHON_VERSION="3.11"
 ARG PYTORCH_VERSION="2.6.0"
 ARG CUDA="126"
+ARG TORCH_BACKEND="cu126"
+ARG TORCH_INDEX_URL=""
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST
-ENV UV_TORCH_BACKEND="cu${CUDA}"
 
 RUN apt-get update \
-    && apt-get install -y wget git build-essential ninja-build git-lfs libaio-dev pkg-config curl && rm -rf /var/lib/apt/lists/* \
+    && apt-get install -y wget git build-essential ninja-build git-lfs libaio-dev pkg-config curl \
+    && apt-get install -y --allow-change-held-packages vim curl nano zstd libnccl2 libnccl-dev ibverbs-providers ibverbs-utils infiniband-diags librdmacm-dev librdmacm1 rdmacm-utils slurm-wlm rsync s3fs \
+    && rm -rf /var/cache/apt/archives \
+    && rm -rf /var/lib/apt/lists/* \
     && git lfs install --skip-repo \
     && curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -30,37 +36,16 @@ RUN uv venv --no-project --relocatable axolotl-venv
 
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
-RUN uv pip install packaging setuptools wheel psutil \
-    && uv pip install torch==${PYTORCH_VERSION} torchvision \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install packaging setuptools wheel psutil \
+    && if [ -n "$TORCH_INDEX_URL" ]; then \
+        uv pip install --index-url "$TORCH_INDEX_URL" torch==${PYTORCH_VERSION} torchvision; \
+    else \
+        UV_TORCH_BACKEND=$TORCH_BACKEND uv pip install torch==${PYTORCH_VERSION} torchvision; \
+    fi \
     && uv pip install awscli pydantic
 
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        uv pip install --no-build-isolation "causal_conv1d @ git+https://github.com/Dao-AILab/causal-conv1d.git@main"; \
-        uv pip install "mamba_ssm @ git+https://github.com/state-spaces/mamba.git@main"; \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        MAMBA_SKIP_CUDA_BUILD=TRUE CAUSAL_CONV1D_SKIP_CUDA_BUILD=TRUE uv pip install --no-build-isolation mamba_ssm causal_conv1d; \
     fi
-
-RUN case "$PYTORCH_VERSION" in \
-        2.9.[0-9]*) \
-            if [ "$TARGETARCH" = "amd64" ]; then \
-                if [ "$CUDA" = "128" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_x86_64.whl; \
-                elif [ "$CUDA" = "130" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.5.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
-                    rm flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_x86_64.whl; \
-                fi \
-            elif [ "$TARGETARCH" = "arm64" ]; then \
-                if [ "$CUDA" = "128" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.4/flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    rm flash_attn-2.8.3+cu128torch2.9-cp311-cp311-linux_aarch64.whl; \
-                elif [ "$CUDA" = "130" ]; then \
-                    wget -nv https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.4/flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    uv pip install --no-cache-dir flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
-                    rm flash_attn-2.8.3+cu130torch2.9-cp311-cp311-linux_aarch64.whl; \
-                fi \
-            fi \
-            ;; \
-    esac

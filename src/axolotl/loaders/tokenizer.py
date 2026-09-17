@@ -28,7 +28,10 @@ PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def modify_tokenizer_files(
-    tokenizer_path: str, token_mappings: dict[int, str], output_dir: str
+    tokenizer_path: str,
+    token_mappings: dict[int, str],
+    output_dir: str,
+    revision: str = "main",
 ) -> str:
     """
     Modify tokenizer files to replace added_tokens strings, save to output directory,
@@ -41,6 +44,7 @@ def modify_tokenizer_files(
         tokenizer_path: Path or name of the original tokenizer
         token_mappings: Dict mapping {token_id (int): new_token_string}
         output_dir: Directory to save the modified tokenizer
+        revision: Model revision/branch/tag/commit to load from (HF Hub)
 
     Returns:
         Path to the modified tokenizer directory
@@ -53,7 +57,9 @@ def modify_tokenizer_files(
 
     if is_local_main_process():
         # Load the tokenizer
-        temp_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
+        temp_tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_path, use_fast=True, revision=revision
+        )
 
         # Save the tokenizer to the output directory
         temp_tokenizer.save_pretrained(tokenizer_dir)
@@ -134,7 +140,10 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         from axolotl.utils.mistral import HFMistralTokenizer
 
         # Load the HF-compatible wrapper around MistralTokenizer
-        tokenizer = HFMistralTokenizer.from_pretrained(cfg.tokenizer_config)
+        kwargs = {}
+        if cfg.revision_of_model:
+            kwargs["revision"] = cfg.revision_of_model
+        tokenizer = HFMistralTokenizer.from_pretrained(cfg.tokenizer_config, **kwargs)
 
         return tokenizer
 
@@ -150,6 +159,8 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     if cfg.tokenizer_legacy is not None:
         # True is the default w/ https://github.com/huggingface/transformers/pull/25224
         tokenizer_kwargs["legacy"] = cfg.tokenizer_legacy
+    if cfg.revision_of_model:
+        tokenizer_kwargs["revision"] = cfg.revision_of_model
 
     tokenizer_cls = AutoTokenizer
     if cfg.tokenizer_type:
@@ -161,8 +172,11 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     # Apply token string overrides if specified
     if cfg.added_tokens_overrides:
         # Modify tokenizer files and get path to modified tokenizer
+        modify_kwargs = {"output_dir": cfg.output_dir}
+        if cfg.revision_of_model:
+            modify_kwargs["revision"] = cfg.revision_of_model
         tokenizer_path = modify_tokenizer_files(
-            tokenizer_path, cfg.added_tokens_overrides, output_dir=cfg.output_dir
+            tokenizer_path, cfg.added_tokens_overrides, **modify_kwargs
         )
 
     tokenizer = tokenizer_cls.from_pretrained(
@@ -187,11 +201,15 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
-        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})  # nosec B105
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     # Mistral's official FA implementation requires left padding
-    if cfg.is_mistral_derived_model and cfg.flash_attention and not cfg.sample_packing:
+    if (
+        cfg.is_mistral_derived_model
+        and cfg.attn_implementation == "flash_attention_2"
+        and not cfg.sample_packing
+    ):
         tokenizer.padding_side = "left"
 
     # Qwen base only has single token, so we need to set the special tokens
@@ -279,6 +297,14 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     if additional_special_tokens is not None:
         tokenizer.add_special_tokens(
             {"additional_special_tokens": additional_special_tokens}
+        )
+
+    # Generic fallback: if tokenizer still has no pad_token, use eos_token
+    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+        LOG.warning(
+            "Tokenizer does not have a pad_token, falling back to eos_token: %s",
+            tokenizer.eos_token,
         )
 
     if is_main_process():

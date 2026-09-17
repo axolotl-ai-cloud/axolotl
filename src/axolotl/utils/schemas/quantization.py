@@ -20,6 +20,11 @@ def validate_ao_dtype(v: Any) -> TorchAOQuantDType | None:
         return TorchAOQuantDType.float8_e4m3fn
     if v == "nvfp4":
         return TorchAOQuantDType.nvfp4
+    if v == "mxfp4":
+        return TorchAOQuantDType.mxfp4
+    if v == "ternary":
+        return TorchAOQuantDType.ternary
+
     raise ValueError(
         f"Invalid dtype: '{v}'. Must be one of: {[e.name for e in TorchAOQuantDType] + ['fp8', 'float8']}"
     )

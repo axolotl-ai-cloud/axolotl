@@ -8,6 +8,10 @@ from axolotl.train import setup_model_and_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
+from ..utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
+
 
 class TestLlamaPeftEmbeddings:
     """
@@ -46,7 +50,6 @@ class TestLlamaPeftEmbeddings:
                 "flash_attention": True,
                 "sample_packing": False,
                 "bf16": "auto",
-                "save_safetensors": True,
                 "embeddings_skip_upcast": True,
                 "save_first_step": False,
             }

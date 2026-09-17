@@ -1,12 +1,9 @@
 """Module for TRL RL trainers"""
 
-from trl import (
-    CPOTrainer,
-    KTOTrainer,
-    ORPOTrainer,
-    PRMTrainer,
-    RewardTrainer,
-)
+from trl import KTOTrainer, RewardTrainer
+from trl.experimental.cpo import CPOTrainer
+from trl.experimental.orpo import ORPOTrainer
+from trl.experimental.prm import PRMTrainer
 
 from axolotl.core.trainers.mixins import DistributedParallelMixin, RngLoaderMixin
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin

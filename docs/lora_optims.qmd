@@ -89,6 +89,10 @@ lora_o_kernel: true
 Currently, LoRA kernels are not supported for RLHF training, only SFT.
 :::
 
+::: {.callout-warning}
+LoRA kernels do not support remote modeling code.
+:::
+
 ## Requirements
 
 - One or more NVIDIA or AMD GPUs (in order to use the Triton kernels)

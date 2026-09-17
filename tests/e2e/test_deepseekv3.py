@@ -14,6 +14,9 @@ from axolotl.utils.dict import DictDefault
 from tests.hf_offline_utils import enable_hf_offline
 
 
+@pytest.mark.skip(
+    reason="DeepSeek-V3-11M remote model code needs _supports_flash_attn=True for newer transformers"
+)
 class TestDeepseekV3:
     """
     Test case for DeepseekV3 models
@@ -64,7 +67,6 @@ class TestDeepseekV3:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
                 "save_first_step": False,
             }
@@ -113,7 +115,6 @@ class TestDeepseekV3:
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "save_safetensors": True,
                 "bf16": True,
                 "save_first_step": False,
             }

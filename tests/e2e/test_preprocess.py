@@ -7,6 +7,10 @@ from accelerate.test_utils import execute_subprocess_async
 
 from axolotl.utils.dict import DictDefault
 
+from .utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
+
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent
 
 
@@ -18,7 +22,7 @@ class TestPreprocess:
 
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [

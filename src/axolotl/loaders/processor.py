@@ -19,6 +19,13 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     if cfg.processor_type:
         processor_cls = getattr(transformers, cfg.processor_type)
 
+    # Build common kwargs for processor loading
+    processor_kwargs = {}
+    if cfg.revision_of_model:
+        processor_kwargs["revision"] = cfg.revision_of_model
+    if cfg.processor_kwargs:
+        processor_kwargs.update(cfg.processor_kwargs)
+
     if cfg.tokenizer_use_mistral_common:
 
         def _patch_mistralcommontokenizer():
@@ -31,7 +38,7 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
 
             from axolotl.utils.mistral import HFMistralTokenizer
 
-            tokenization_mistral_common.MistralCommonTokenizer = HFMistralTokenizer
+            tokenization_mistral_common.MistralCommonBackend = HFMistralTokenizer
 
         _patch_mistralcommontokenizer()
 
@@ -40,6 +47,7 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         if processor_cls == VoxtralProcessor:
             return VoxtralProcessor.from_pretrained(
                 cfg.processor_config,
+                **processor_kwargs,
             )
 
         from axolotl.utils.mistral import Mistral3Processor
@@ -48,11 +56,13 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
             tokenizer=tokenizer,
         )
 
+    processor_kwargs["trust_remote_code"] = cfg.trust_remote_code or False
+
     processor = processor_cls.from_pretrained(
         cfg.processor_config,
-        trust_remote_code=cfg.trust_remote_code or False,
-        tokenizer=tokenizer,
+        **processor_kwargs,
     )
+    processor.tokenizer = tokenizer
 
     # Attempt to load image size from processor if available
     if (

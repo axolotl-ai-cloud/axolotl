@@ -16,7 +16,6 @@
 
 import abc
 import importlib
-import logging
 import sys
 from abc import abstractmethod
 from contextlib import suppress
@@ -41,12 +40,14 @@ from axolotl.utils.callbacks import (
     GCCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveModelOnFirstStepCallback,
+    SkipEvalOnResumeCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 with suppress(ImportError):
     import torch._dynamo
@@ -118,8 +119,12 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
-        if self.cfg.gc_steps:
-            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
+        if self.cfg.resume_from_checkpoint:
+            callbacks.append(SkipEvalOnResumeCallback())
+
+        gc_collect_steps = self.cfg.gc_collect_steps or self.cfg.gc_steps
+        if gc_collect_steps:
+            callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -177,6 +182,20 @@ class TrainerBuilderBase(abc.ABC):
         if telemetry_manager.enabled:
             callbacks.append(TelemetryCallback())
 
+            # Report the fused RMSNorm+RoPE autotune selection + GPU identity so
+            # per-hardware tuning can be aggregated (mirrors scattermoe-lora).
+            if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
+            ):
+                from axolotl.kernels.autotune_telemetry import (
+                    FusedRopeAutotuneReportCallback,
+                )
+
+                callbacks.append(FusedRopeAutotuneReportCallback())
+
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -216,7 +235,7 @@ class TrainerBuilderBase(abc.ABC):
     def _configure_warmup_and_logging(
         self, total_num_steps: int, training_args_kwargs: dict
     ):
-        warmup_steps = 0
+        warmup_steps: int | float = 0
         warmup_ratio = 0.0
         if self.cfg.warmup_steps is not None:
             warmup_steps = self.cfg.warmup_steps
@@ -230,6 +249,10 @@ class TrainerBuilderBase(abc.ABC):
         else:
             warmup_ratio = 0.03
 
+        # transformers v5
+        if warmup_ratio > 0.0 and warmup_steps == 0:
+            warmup_steps = warmup_ratio
+
         if warmup_steps == 1:
             warmup_steps = 2
 
@@ -242,12 +265,11 @@ class TrainerBuilderBase(abc.ABC):
                 else max(min(int(0.005 * total_num_steps), 10), 1)
             )
 
-        training_args_kwargs["warmup_ratio"] = warmup_ratio
         training_args_kwargs["warmup_steps"] = warmup_steps
 
     def _configure_precision_settings(self, training_args_kwargs: dict):
         training_args_kwargs["fp16"] = (self.cfg.fp16 and not self.cfg.bf16) or False
-        training_args_kwargs["tf32"] = self.cfg.tf32
+        training_args_kwargs["tf32"] = True if self.cfg.tf32 is True else False
         if self.cfg.bf16 == "full":
             training_args_kwargs["bf16_full_eval"] = True
         else:
@@ -319,6 +341,25 @@ class TrainerBuilderBase(abc.ABC):
                 _, device_mesh = build_parallelism_config(self.cfg)
                 if device_mesh is not None:
                     optimizer_kwargs["device_mesh"] = device_mesh
+            elif self.cfg.optimizer == "sinkgd":
+                _, device_mesh = build_parallelism_config(self.cfg)
+
+                if device_mesh is not None:
+                    from axolotl.utils.optimizers.sinkgd import (
+                        DistSinkGDOptimizerFactory,
+                    )
+
+                    optimizer_cls = DistSinkGDOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                else:
+                    from axolotl.utils.optimizers.sinkgd import SinkGDOptimizerFactory
+
+                    optimizer_cls = SinkGDOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "polora":
+                from axolotl.utils.optimizers.polora import PoloraOptimizerFactory
+
+                optimizer_cls = PoloraOptimizerFactory
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
@@ -326,7 +367,7 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = AdamW
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "ao_adamw_fp8":
-                from torchao.prototype.low_bit_optim import AdamWFp8
+                from torchao.optim.adam import AdamWFp8
 
                 optimizer_cls = AdamWFp8
                 optimizer_kwargs.update(adam_kwargs)
@@ -335,6 +376,11 @@ class TrainerBuilderBase(abc.ABC):
 
                 optimizer_cls = ADOPT
                 adam_kwargs["decouple"] = True
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "adamc":
+                from axolotl.utils.optimizers.adamc import AdamC
+
+                optimizer_cls = AdamC
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "came_pytorch":
                 from came_pytorch import CAME
@@ -350,6 +396,56 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = (eps1, eps2)
 
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "q_galore_adamw8bit":
+                from axolotl.utils.optimizers.qgalore import (
+                    build_qgalore_param_groups,
+                    patch_q_galore_for_modern_bnb,
+                )
+
+                patch_q_galore_for_modern_bnb()
+                from q_galore_torch import QGaLoreAdamW8bit
+
+                optimizer_cls = QGaLoreAdamW8bit
+                optimizer_kwargs["params"] = build_qgalore_param_groups(
+                    self.model,
+                    self.cfg.optim_target_modules,
+                    rank=self.cfg.qgalore_rank,
+                    update_proj_gap=self.cfg.qgalore_update_proj_gap,
+                    scale=self.cfg.qgalore_scale,
+                    proj_type=self.cfg.qgalore_proj_type,
+                    proj_quant=self.cfg.qgalore_proj_quant,
+                    proj_bits=self.cfg.qgalore_proj_bits,
+                    proj_group_size=self.cfg.qgalore_proj_group_size,
+                    cos_threshold=self.cfg.qgalore_cos_threshold,
+                    gamma_proj=self.cfg.qgalore_gamma_proj,
+                    queue_size=self.cfg.qgalore_queue_size,
+                )
+
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adamw":
+                from flashoptim import FlashAdamW
+
+                optimizer_cls = FlashAdamW
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adam":
+                from flashoptim import FlashAdam
+
+                optimizer_cls = FlashAdam
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_sgd":
+                from flashoptim import FlashSGD
+
+                optimizer_cls = FlashSGD
+            elif self.cfg.optimizer == "flash_sgdw":
+                from flashoptim import FlashSGDW
+
+                optimizer_cls = FlashSGDW
+            elif self.cfg.optimizer == "flash_lion":
+                from flashoptim import FlashLion
+
+                optimizer_cls = FlashLion
+                if "betas" in adam_kwargs:
+                    optimizer_kwargs["betas"] = adam_kwargs["betas"]
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
@@ -405,6 +501,9 @@ class TrainerBuilderBase(abc.ABC):
 
             if self.cfg.hub_strategy:
                 training_args_kwargs["hub_strategy"] = self.cfg.hub_strategy
+
+            if self.cfg.hub_revision:
+                training_args_kwargs["hub_revision"] = self.cfg.hub_revision
 
     def _configure_save_and_eval_strategy(self, training_args_kwargs: dict):
         # save_strategy and save_steps
@@ -468,6 +567,17 @@ class TrainerBuilderBase(abc.ABC):
                 )
             if self.cfg.torch_compile_mode:
                 training_args_kwargs["torch_compile_mode"] = self.cfg.torch_compile_mode
+            if self.cfg.torch_compile_options:
+                self._apply_torch_compile_options(self.cfg.torch_compile_options)
+
+    @staticmethod
+    def _apply_torch_compile_options(options: dict[str, Any]) -> None:
+        """Apply allowlisted torch._inductor.config flags before torch.compile runs."""
+        # HF Trainer doesn't forward inductor options; mutate global config directly.
+        import torch._inductor.config as inductor_cfg
+
+        for key, value in options.items():
+            setattr(inductor_cfg, key, value)
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
         if self.cfg.accelerator_config:
@@ -478,10 +588,23 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["accelerator_config"] = AcceleratorConfig()
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
-        if self.cfg.activation_offloading is True:
-            # don't use the HF gradient checkpointing, manually wrap
+        if self.cfg.layer_offloading:
+            training_args_kwargs["layer_offloading"] = True
+        if self.cfg.activation_offloading == "hidden_states":
+            training_args_kwargs["gradient_checkpointing"] = True
+            gc_kwargs = dict(self.cfg.gradient_checkpointing_kwargs or {})
+            training_args_kwargs["gradient_checkpointing_kwargs"] = gc_kwargs
+            if gc_kwargs["use_reentrant"] is False:
+                training_args_kwargs["activation_offloading"] = (
+                    self.cfg.activation_offloading
+                )
+        elif self.cfg.activation_offloading:
+            # TRL offloader replaces HF recompute (re-added for full finetune in the
+            # model loader), so disable HF checkpointing and pass the mode through.
             training_args_kwargs["gradient_checkpointing"] = False
-            training_args_kwargs["activation_offloading"] = True
+            training_args_kwargs["activation_offloading"] = (
+                self.cfg.activation_offloading
+            )
         elif self.cfg.gradient_checkpointing is not None:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing
@@ -530,21 +653,22 @@ class TrainerBuilderBase(abc.ABC):
             "loraplus_lr_ratio",
             "loraplus_lr_embedding",
             "output_dir",
-            "save_safetensors",
             "save_only_model",
-            "include_tokens_per_second",
             "weight_decay",
             "seed",
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",
             "dataset_num_proc",
+            # memory management
+            "torch_empty_cache_steps",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
 
         arg_map = {
             "dion_learning_rate": "dion_lr",
+            "include_num_input_tokens_seen": "include_tokens_per_second",
         }
         for kwarg, cfg_arg in arg_map.items():
             if hasattr(self.cfg, cfg_arg) and getattr(self.cfg, cfg_arg) is not None:

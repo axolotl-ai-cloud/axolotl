@@ -2,7 +2,7 @@
 
 import math
 from functools import partial
-from typing import Sequence
+from typing import Any, Sequence
 
 from torch import Tensor
 from torch.optim import Optimizer
@@ -340,3 +340,19 @@ class JaggedLRRestartScheduler(LRScheduler):
             return [lr * scale for lr in original]
 
         return original * scale
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return serializable state, saving inner_schedule as its own state_dict."""
+        state = {
+            key: value
+            for key, value in self.__dict__.items()
+            if key not in ("optimizer", "inner_schedule")
+        }
+        state["inner_schedule_state"] = self.inner_schedule.state_dict()
+        return state
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Restore state, including inner_schedule."""
+        inner_state = state_dict.pop("inner_schedule_state")
+        self.__dict__.update(state_dict)
+        self.inner_schedule.load_state_dict(inner_state)

@@ -16,12 +16,14 @@ from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.data.sft import (
     _load_tokenized_prepared_datasets,
 )
+from axolotl.utils.data.shared import load_preprocessed_dataset
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import (
     ALPACA_MESSAGES_CONFIG_OG,
     ALPACA_MESSAGES_CONFIG_REVISION,
     SPECIAL_TOKENS,
+    alpaca_messages_dpo_rows,
 )
 from tests.hf_offline_utils import enable_hf_offline
 
@@ -47,6 +49,27 @@ class TestDatasetPreparation:
                 }
             ]
         )
+
+    def test_load_preprocessed_dataset_uses_default_prepared_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_hash = "prepared-hash"
+            prepared_path = Path(tmp_dir) / dataset_hash
+            Dataset.from_dict({"value": [1]}).save_to_disk(str(prepared_path))
+            cfg = DictDefault(
+                {
+                    "dataset_prepared_path": None,
+                    "skip_prepare_dataset": False,
+                    "is_preprocess": False,
+                }
+            )
+
+            with patch(
+                "axolotl.utils.data.shared.DEFAULT_DATASET_PREPARED_PATH", tmp_dir
+            ):
+                dataset = load_preprocessed_dataset(cfg, dataset_hash)
+
+            assert dataset is not None
+            assert dataset["value"] == [1]
 
     @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
@@ -143,7 +166,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -182,7 +205,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -221,7 +244,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -254,7 +277,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -287,7 +310,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -319,7 +342,7 @@ class TestDatasetPreparation:
         tokenizer = load_tokenizer(cfg)
         train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-        assert len(train_dataset) == 1800
+        assert len(train_dataset) == 64
         assert "conversation" not in train_dataset.features
         assert "chosen" in train_dataset.features
         assert "rejected" in train_dataset.features
@@ -360,10 +383,9 @@ class TestDatasetPreparation:
             assert "labels" in dataset.features
 
     @enable_hf_offline
-    def test_load_hub_with_revision_with_dpo(
-        self, dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
-    ):
+    def test_load_hub_with_revision_with_dpo(self):
         """Verify that processing dpo data from the hub works with a specific revision"""
+        dataset = Dataset.from_list(alpaca_messages_dpo_rows())
 
         cfg = DictDefault(
             {
@@ -372,7 +394,7 @@ class TestDatasetPreparation:
                 "rl": "dpo",
                 "chat_template": "llama3",
                 "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
-                "dataset_num_proc": 4,
+                "dataset_num_proc": None,
             }
         )
 
@@ -380,14 +402,12 @@ class TestDatasetPreparation:
             "axolotl.utils.data.rl.load_dataset_with_config"
         ) as mock_load_dataset:
             # Set up the mock to return different values on successive calls
-            mock_load_dataset.return_value = (
-                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
-            )
+            mock_load_dataset.return_value = dataset
 
             tokenizer = load_tokenizer(cfg)
             train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-            assert len(train_dataset) == 1800
+            assert len(train_dataset) == len(dataset)
             assert "conversation" not in train_dataset.features
             assert "chosen" in train_dataset.features
             assert "rejected" in train_dataset.features
@@ -473,7 +493,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -487,3 +507,70 @@ class TestDatasetPreparation:
             assert "attention_mask" in dataset.features
             assert "labels" in dataset.features
             shutil.rmtree(tmp_ds_path)
+
+    @enable_hf_offline
+    def test_load_dataset_with_str_json_data(self, tokenizer):
+        """
+        Test loading datasets where data is stored as str JSON instead of list of dicts.
+        see: https://github.com/axolotl-ai-cloud/axolotl/pull/3607 for more details.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            import json
+
+            str_json_ds = Dataset.from_list(
+                [
+                    {
+                        "messages": json.dumps(
+                            [
+                                {"role": "user", "content": "Hello how are you?"},
+                                {
+                                    "role": "assistant",
+                                    "content": "I am doing good thanks",
+                                },
+                            ]
+                        )
+                    },
+                    {
+                        "messages": json.dumps(
+                            [
+                                {"role": "user", "content": "What is 2+2?"},
+                                {"role": "assistant", "content": "2+2 equals 4."},
+                            ]
+                        )
+                    },
+                ]
+            )
+
+            tmp_ds_path = Path(tmp_dir) / "str_json_dataset.parquet"
+            str_json_ds.to_parquet(tmp_ds_path)
+
+            prepared_path = Path(tmp_dir) / "prepared"
+            cfg = DictDefault(
+                {
+                    "tokenizer_config": "huggyllama/llama-7b",
+                    "sequence_len": 512,
+                    "datasets": [
+                        {
+                            "path": str(tmp_ds_path),
+                            "name": "test_str_json",
+                            "type": "chat_template",
+                            "field_messages": "messages",
+                            "message_field_role": "role",
+                            "message_field_content": "content",
+                        },
+                    ],
+                    "dataset_num_proc": 1,
+                }
+            )
+
+            with patch(
+                "axolotl.common.const.DEFAULT_DATASET_PREPARED_PATH", str(prepared_path)
+            ):
+                dataset, _ = _load_tokenized_prepared_datasets(tokenizer, cfg)
+
+            assert len(dataset) == 2
+            assert "input_ids" in dataset.features
+            assert "attention_mask" in dataset.features
+            assert "labels" in dataset.features
+
+            assert len(dataset[0]["input_ids"]) > 0

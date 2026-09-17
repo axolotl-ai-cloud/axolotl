@@ -1,0 +1,79 @@
+# GLM-5.2 (glm_moe_dsa) MoE LoRA on an NVFP4 (modelopt) checkpoint via ScatterMoE. ~500B, FSDP2 multi-GPU (2xB200 / 8xH100).
+base_model: Mapika/GLM-5.2-NVFP4
+
+plugins:
+  # Expert parallelism (requires the deep_ep package). Drop this plugin + the expert_parallel_* keys below for plain FSDP2.
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+use_kernels: true
+use_scattermoe: true
+experts_implementation: scattermoe
+dsv4_fp4_grouped_mode: nvfp4
+use_glm_dsa_kernels: true
+strict: false
+
+attn_implementation: sdpa
+
+# Pure EP: set expert_parallel_size to the total GPU count (256 must divide it evenly), dp_shard_size 1.
+expert_parallel_size: 8                      # = total GPU count (8 for 8xH100; 2 for 2xB200)
+dp_shard_size: 1
+expert_parallel_num_nvl_bytes: 4294967296    # 4 GiB DeepEP intranode (NVLink) dispatch/combine buffer
+# Caps tokens per expert to guard the DeepEP NVLink combine (it hangs if an expert exceeds the buffer).
+# The 1M default is effectively off at normal lengths; lower it toward the hang threshold for long context (>=64k).
+expert_parallel_token_capacity: 1000000
+
+# Long context: shard the sequence with context parallelism (set ep * cp == world_size).
+# context_parallel_size: 2
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:5%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+val_set_size: 0.02
+output_dir: ./outputs/glm-5.2-nvfp4-lora
+
+sequence_len: 4096
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# MLA attention + shared/dense MLP (not the no-grad indexer).
+lora_target_modules: 'model.layers.[\d]+.(self_attn.(q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)|mlp.(shared_experts.)?(gate_proj|up_proj|down_proj))'
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+# Keep off under EP (headroom); set true for plain FSDP2 / tight memory.
+activation_offloading: false
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: true   # required: rank0-only NVFP4 load
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: GlmMoeDsaDecoderLayer
+  reshard_after_forward: true

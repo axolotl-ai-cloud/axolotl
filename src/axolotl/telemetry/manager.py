@@ -2,10 +2,9 @@
 
 import atexit
 import importlib
-import logging
+import math
 import os
 import platform
-import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -15,25 +14,12 @@ import psutil
 import torch
 import yaml
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"
-
-OPT_OUT_WARNING_SLEEP_SECONDS = 10
-OPT_OUT_WARNING = (
-    "\nTelemetry is now enabled by default to help improve Axolotl. "
-    "If you'd like to disable it, set AXOLOTL_DO_NOT_TRACK=1 in your environment.\n\n"
-    "Telemetry data helps us understand:\n"
-    "- Which features are most used\n"
-    "- What hardware configurations to prioritize\n"
-    "- Where users encounter errors\n\n"
-    "Personally identifiable information (PII) is not collected.\n\n"
-    "To remove this warning, explicitly set AXOLOTL_DO_NOT_TRACK=0 (enable telemetry) "
-    "or AXOLOTL_DO_NOT_TRACK=1 (disable telemetry).\n\n"
-    "For details, see: https://docs.axolotl.ai/docs/telemetry.html\n\n"
-    f"Sleeping for {OPT_OUT_WARNING_SLEEP_SECONDS}s..."
-)
 
 WHITELIST_PATH = str(Path(__file__).parent / "whitelist.yaml")
 
@@ -46,8 +32,8 @@ FIELDS_TO_REDACT = {
     "resume_from_checkpoint",
     "hub_model_id",
 }
-PREFIXES_TO_REDACT = {"wandb_", "comet_", "mlflow_", "gradio_"}
-PATH_INDICATORS = {"path", "dir"}
+PREFIXES_TO_REDACT = {"wandb_", "comet_", "mlflow_", "gradio_", "trackio_", "swanlab_"}
+PATH_INDICATORS = {"path", "dir", "data_files"}
 
 # pylint: disable=duplicate-code
 RELEVANT_PACKAGES = {
@@ -172,50 +158,36 @@ class TelemetryManager:
         Returns:
             Boolean denoting whether telemetry is enabled or not.
         """
-        # Parse relevant env vars
-        axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
-        do_not_track = os.getenv("DO_NOT_TRACK")
-
-        # Default to enabled (opt-out model)
-        if axolotl_do_not_track is None or axolotl_do_not_track.lower() not in (
-            "0",
-            "1",
-            "false",
-            "true",
-        ):
-            # Print opt-out info message for main process only
-            if is_main_process():
-                LOG.warning(OPT_OUT_WARNING)
-            time.sleep(OPT_OUT_WARNING_SLEEP_SECONDS)
-
-            return True
-
         # Only rank 0 will send telemetry
         if not is_main_process():
             return False
 
-        if do_not_track is None:
-            do_not_track = "0"
+        def is_truthy_env(var_name: str) -> bool:
+            value = os.getenv(var_name)
+            if value is None:
+                return False
+            return value.strip().lower() in ("1", "true")
 
-        # Respect AXOLOTL_DO_NOT_TRACK, DO_NOT_TRACK if enabled
-        enabled = axolotl_do_not_track.lower() not in (
-            "1",
-            "true",
-        ) and do_not_track.lower() not in ("1", "true")
-
-        return enabled
+        # Telemetry is enabled by default unless either opt-out var is set
+        return not (
+            is_truthy_env("AXOLOTL_DO_NOT_TRACK") or is_truthy_env("DO_NOT_TRACK")
+        )
 
     def _load_whitelist(self) -> dict:
         """Load HuggingFace Hub organization whitelist"""
-        with open(WHITELIST_PATH, encoding="utf-8") as f:
-            whitelist = yaml.safe_load(f)
+        try:
+            with open(WHITELIST_PATH, encoding="utf-8") as f:
+                whitelist = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as e:
+            # A missing/unreadable whitelist must never break `import axolotl`.
+            # Empty whitelist => nothing is whitelisted => all orgs get redacted.
+            LOG.warning(f"Could not load telemetry whitelist ({e}); redacting all orgs")
+            return {"organizations": set()}
 
-            # Send org strings to lowercase since model names are case insensitive
-            whitelist["organizations"] = {
-                org.lower() for org in whitelist["organizations"]
-            }
+        # Send org strings to lowercase since model names are case insensitive
+        whitelist["organizations"] = {org.lower() for org in whitelist["organizations"]}
 
-            return whitelist
+        return whitelist
 
     def _is_whitelisted(self, value: str) -> bool:
         """
@@ -272,11 +244,16 @@ class TelemetryManager:
                     if not self._is_whitelisted(value):
                         return "[REDACTED]"
 
+            if isinstance(value, float) and not math.isfinite(value):
+                if math.isnan(value):
+                    return "NaN"
+                return "Infinity" if value > 0 else "-Infinity"
+
             # Handle nested values
             if isinstance(value, dict):
                 return {k: redact_value(v, k) for k, v in value.items()}
             if isinstance(value, list):
-                return [redact_value(item) for item in value]
+                return [redact_value(item, key) for item in value]
 
             return value
 

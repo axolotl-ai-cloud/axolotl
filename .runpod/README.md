@@ -123,7 +123,7 @@ datasets:
 | --------------------------------- | -------------------------- | ----------------------------------- |
 | `dataset_prepared_path`           | `"data/last_run_prepared"` | Path for prepared dataset           |
 | `push_dataset_to_hub`             | `""`                       | Push dataset to HF hub              |
-| `dataset_processes`               | `4`                        | Number of preprocessing processes   |
+| `dataset_num_proc`                | `4`                        | Number of preprocessing processes   |
 | `dataset_keep_in_memory`          | `false`                    | Keep dataset in memory              |
 | `shuffle_merged_datasets`         | `true`                     | Shuffle merged datasets             |
 | `shuffle_before_merging_datasets` | `false`                    | Shuffle each dataset before merging |

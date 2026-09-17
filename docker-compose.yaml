@@ -3,7 +3,7 @@ services:
   axolotl:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ./docker/Dockerfile-uv
     volumes:
       - .:/workspace/axolotl
       - ~/.cache/huggingface/:/root/.cache/huggingface/
