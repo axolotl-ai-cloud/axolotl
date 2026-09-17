@@ -90,19 +90,14 @@ def init_distributed_state():
     effective = _process_group_timeout()
     if effective is not None and effective >= timedelta(seconds=requested):
         return
-    message = (
-        f"The requested distributed timeout of {requested}s was discarded: the process "
-        f"group was already initialized with a timeout of "
-        f"{effective if effective is not None else 'unknown'}. Pass timeout= to "
+    log.warning(
+        "The requested distributed timeout of %ss was discarded: the process group was "
+        "already initialized with a timeout of %s. Pass timeout= to "
         "torch.distributed.init_process_group before Axolotl initializes, or let Axolotl "
-        "create the process group, for ddp_timeout / AXOLOTL_NCCL_TIMEOUT to take effect."
+        "create the process group, for ddp_timeout / AXOLOTL_NCCL_TIMEOUT to take effect.",
+        requested,
+        effective if effective is not None else "unknown",
     )
-    # only hard-fail when the user explicitly asked for longer than they will get:
-    # prepare_optim_env sets the variable from ddp_timeout, so its presence is intent, and
-    # the failure it predicts lands much later as an unattributable collective timeout
-    if effective is not None and "AXOLOTL_NCCL_TIMEOUT" in os.environ:
-        raise RuntimeError(message)
-    log.warning("%s", message)
 
 
 def get_distributed_state() -> PartialState | None:

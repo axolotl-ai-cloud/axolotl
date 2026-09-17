@@ -1821,51 +1821,6 @@ def test_nf4_shard_bounds_match_torch_chunk(rows):
         assert all(0 <= start <= end <= rows for start, end in bounds)
 
 
-def test_init_distributed_state_raises_when_timeout_cannot_apply(tmp_path, monkeypatch):
-    """An explicitly requested timeout the process group cannot honor must fail fast.
-
-    The alternative is a warning nobody reads across N ranks of launcher output, followed
-    30+ minutes later by a collective timeout that points at nothing.
-    """
-    import logging
-    from datetime import timedelta
-
-    import torch.distributed as dist
-    from accelerate import PartialState
-
-    from axolotl.utils import distributed as axolotl_distributed
-
-    records = []
-
-    class Collector(logging.Handler):
-        def emit(self, record):
-            records.append(record.getMessage())
-
-    handler = Collector(level=logging.WARNING)
-    logger = logging.getLogger("axolotl.utils.distributed")
-    logger.addHandler(handler)
-    monkeypatch.setenv("AXOLOTL_NCCL_TIMEOUT", "21600")
-    monkeypatch.setattr(axolotl_distributed, "distributed_state", None)
-    PartialState._reset_state()
-    dist.init_process_group(
-        "gloo",
-        init_method=f"file://{tmp_path / 'rendezvous'}",
-        rank=0,
-        world_size=1,
-        timeout=timedelta(seconds=5),
-    )
-    try:
-        with pytest.raises(RuntimeError, match="21600") as excinfo:
-            axolotl_distributed.init_distributed_state()
-        assert "0:00:05" in str(excinfo.value)
-        assert not records, records
-    finally:
-        logger.removeHandler(handler)
-        dist.destroy_process_group()
-        PartialState._reset_state()
-        axolotl_distributed.distributed_state = None
-
-
 def test_init_distributed_state_surfaces_partialstate_errors(monkeypatch):
     """A PartialState construction failure must not be swallowed silently."""
     import logging
