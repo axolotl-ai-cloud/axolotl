@@ -99,33 +99,16 @@ def _load_nf4_model(
     structures = []
     if main:
         try:
-            from axolotl.loaders.nf4_cache import (
-                load_nf4_cache,
-                nf4_cache_path,
-                save_nf4_cache,
-            )
-            from axolotl.utils.logging import get_logger
-
             device = quantization_device or nf4_loading_device()
-            cache = nf4_cache_path(
-                cfg, model_config, model_kwargs, quantization, device
-            )
-            if cache is not None and cache.is_file():
-                get_logger(__name__).info("Loading packed NF4 cache: %s", cache)
-                model = load_nf4_cache(cache, empty_model)
-            else:
-                with (
-                    nf4_phase("NF4 checkpoint loading and quantization"),
-                    staged_nf4_loading(
-                        cfg, device=device, quantization_config=quantization
-                    ),
-                ):
-                    model = loader.from_pretrained(
-                        cfg.base_model, config=model_config, **model_kwargs
-                    )
-                if cache is not None:
-                    save_nf4_cache(cache, model)
-                    get_logger(__name__).info("Saved packed NF4 cache: %s", cache)
+            with (
+                nf4_phase("NF4 checkpoint loading and quantization"),
+                staged_nf4_loading(
+                    cfg, device=device, quantization_config=quantization
+                ),
+            ):
+                model = loader.from_pretrained(
+                    cfg.base_model, config=model_config, **model_kwargs
+                )
             # before the status exchange, so peers never block on a broadcast a
             # failed rank zero cannot reach
             if distributed:

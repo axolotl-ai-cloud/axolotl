@@ -1295,8 +1295,6 @@ class OptimizationValidationMixin:
             str(self.fsdp_version) == "2" and self.qlora_sharded_model_loading
         )
         if not staged:
-            if self.nf4_cache_dir:
-                raise ValueError("nf4_cache_dir requires CPU-staged NF4 loading")
             return self
         if not self.load_in_4bit or self.adapter != "qlora" or self.load_in_8bit:
             raise ValueError(

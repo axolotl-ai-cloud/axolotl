@@ -214,7 +214,6 @@ def _distributed_nf4_worker(
             quantize_moe_experts=expert_model,
             base_model=checkpoint,
             nf4_backend=backend,
-            nf4_cache_dir=sharding_case.get("cache_dir"),
             load_in_4bit=True,
             adapter="qlora",
             fsdp_version=2,
@@ -226,7 +225,7 @@ def _distributed_nf4_worker(
         loader.auto_model_loader = model_class
         loader.model_kwargs = {"dtype": cfg.torch_dtype}
         loader._set_quantization_config()
-        if rank or sharding_case.get("cache_hit"):
+        if rank:
             with patch.object(
                 model_class,
                 "from_pretrained",
@@ -292,6 +291,7 @@ def _distributed_nf4_worker(
         if prepare_optimizer:
             from accelerate import Accelerator
 
+            from axolotl.loaders.utils import materialize_trainable_meta_params
             from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
 
             patch_accelerate_fsdp2()
@@ -305,6 +305,9 @@ def _distributed_nf4_worker(
             real_accelerator.state.parallelism_config = SimpleNamespace(
                 fsdp_dim_names=("dp_shard",)
             )
+            # ModelLoader.load() does this before prepare; this harness builds the
+            # model by hand, so it has to do it too or the data_ptr remap collapses
+            materialize_trainable_meta_params(model)
             optimizer = torch.optim.AdamW(
                 [p for p in model.parameters() if p.requires_grad], lr=0.001
             )
@@ -1013,22 +1016,21 @@ def test_real_moe_fsdp_resume(backend, tmp_path):
             for expert, weight in enumerate(tensor):
                 state[f"{prefix}.{expert}.down_proj.weight"] = weight.contiguous()
     save_file(state, base / "model.safetensors", metadata={"format": "pt"})
-    for cache_hit in (False, True):
-        torch.multiprocessing.spawn(
-            _distributed_nf4_worker,
-            args=(
-                backend,
-                str(base),
-                str(tmp_path / f"moe-{cache_hit}"),
-                None,
-                "cpu",
-                torch.float32,
-                False,
-                False,
-                {"cache_dir": str(tmp_path / "cache"), "cache_hit": cache_hit},
-            ),
-            nprocs=2,
-        )
+    torch.multiprocessing.spawn(
+        _distributed_nf4_worker,
+        args=(
+            backend,
+            str(base),
+            str(tmp_path / "moe"),
+            None,
+            "cpu",
+            torch.float32,
+            False,
+            False,
+            None,
+        ),
+        nprocs=2,
+    )
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
@@ -1295,80 +1297,6 @@ def test_cuda_nf4_fsdp2_shape_matrix(
     _run_nf4_shape_case(architecture, backend, reshard, wrap_policy, tmp_path, "cuda")
 
 
-@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-@pytest.mark.parametrize("architecture", ["dense", "moe"])
-@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_nf4_disk_cache(backend, architecture, dtype, tmp_path, monkeypatch):
-    from transformers import (
-        LlamaConfig,
-        LlamaForCausalLM,
-        Qwen3MoeConfig,
-        Qwen3MoeForCausalLM,
-    )
-
-    from axolotl.loaders.nf4 import load_nf4_model
-    from axolotl.utils.dict import DictDefault
-
-    options = dict(
-        hidden_size=128,
-        intermediate_size=128,
-        num_hidden_layers=1,
-        num_attention_heads=2,
-        num_key_value_heads=2,
-        vocab_size=128,
-    )
-    if architecture == "moe":
-        cls = Qwen3MoeForCausalLM
-        config = Qwen3MoeConfig(
-            **options, moe_intermediate_size=128, num_experts=2, num_experts_per_tok=1
-        )
-    else:
-        cls = LlamaForCausalLM
-        config = LlamaConfig(**options, tie_word_embeddings=True)
-    base = tmp_path / "base"
-    cls(config).save_pretrained(base)
-    cfg = DictDefault(
-        base_model=str(base),
-        nf4_backend=backend,
-        quantize_moe_experts=True,
-        torch_dtype=dtype,
-        nf4_cache_dir=str(tmp_path / "cache"),
-    )
-
-    def load():
-        return load_nf4_model(
-            cls,
-            copy.deepcopy(config),
-            {"dtype": dtype, "device_map": {"": "cpu"}, "attn_implementation": "eager"},
-            cfg,
-            "cpu",
-        )
-
-    first = load()
-    files = list((tmp_path / "cache").glob("*.pt"))
-    assert len(files) == 1
-    tokens = torch.randint(0, 128, (1, 4))
-    expected = first(tokens).logits.detach()
-    with monkeypatch.context() as scoped:
-
-        def reject_source(*args, **kwargs):
-            pytest.fail("Cache hits must not load the source checkpoint")
-
-        scoped.setattr(cls, "from_pretrained", reject_source)
-        second = load()
-    for name, value in first.state_dict().items():
-        torch.testing.assert_close(second.state_dict()[name], value, rtol=0, atol=0)
-    torch.testing.assert_close(second(tokens).logits, expected, rtol=0, atol=0)
-    assert second.config._attn_implementation == "eager"
-    assert not any(tensor.is_meta for tensor in second.buffers())
-    if architecture == "dense":
-        assert second.lm_head.weight is second.model.embed_tokens.weight
-    cfg.bnb_config_kwargs = {"llm_int8_skip_modules": ["q_proj"]}
-    third = load()
-    assert len(list((tmp_path / "cache").glob("*.pt"))) == 2
-    assert not parametrize.is_parametrized(third.model.layers[0].self_attn.q_proj)
-
-
 def test_nf4_prefetch_bound_and_overlap():
     import gc
     import threading
@@ -1494,127 +1422,6 @@ def test_nf4_prefetch_failure_restores_loader():
     assert not any(
         thread.name.startswith("nf4-prefetch") for thread in threading.enumerate()
     )
-
-
-def test_nf4_cache_atomic_write(tmp_path, monkeypatch):
-    from axolotl.loaders.nf4_cache import save_nf4_cache
-
-    path = tmp_path / "packed.pt"
-    model = nn.Linear(4, 4)
-    save_nf4_cache(path, model)
-    original = path.read_bytes()
-
-    def fail_save(payload, destination):
-        from pathlib import Path
-
-        Path(destination).write_bytes(b"incomplete")
-        raise OSError("disk full")
-
-    monkeypatch.setattr(torch, "save", fail_save)
-    with pytest.raises(OSError, match="disk full"):
-        save_nf4_cache(path, model)
-    assert path.read_bytes() == original
-    assert list(tmp_path.iterdir()) == [path]
-
-
-def test_nf4_cache_source_and_dtype_invalidation(tmp_path):
-    from transformers import LlamaConfig
-
-    from axolotl.loaders.nf4_cache import nf4_cache_path
-    from axolotl.utils.dict import DictDefault
-
-    source = tmp_path / "model.safetensors"
-    source.write_bytes(b"first")
-    cfg = DictDefault(
-        base_model=str(tmp_path),
-        nf4_cache_dir=str(tmp_path / "cache"),
-        torch_dtype=torch.float32,
-    )
-    config = LlamaConfig()
-    first = nf4_cache_path(cfg, config, {}, None, "cpu")
-    assert nf4_cache_path(cfg, config, {}, None, "cpu") == first
-    source.write_bytes(b"changed checkpoint")
-    second = nf4_cache_path(cfg, config, {}, None, "cpu")
-    assert second != first
-    cfg.torch_dtype = torch.bfloat16
-    assert nf4_cache_path(cfg, config, {}, None, "cpu") != second
-
-
-def test_nf4_cache_pins_weight_revision(tmp_path, monkeypatch):
-    from transformers import LlamaConfig
-    from transformers.utils import hub
-
-    from axolotl.loaders.nf4_cache import nf4_cache_path
-    from axolotl.utils.dict import DictDefault
-
-    revision = "a" * 40
-    calls = []
-
-    def resolve(repo, filename, **kwargs):
-        calls.append((repo, filename, kwargs["revision"]))
-        return f"/cache/models--org--weights/snapshots/{revision}/config.json"
-
-    monkeypatch.setattr(hub, "cached_file", resolve)
-    cfg = DictDefault(base_model="org/weights", nf4_cache_dir=str(tmp_path))
-    config = LlamaConfig()
-    config._commit_hash = "b" * 40
-    kwargs = {"revision": "main"}
-    first = nf4_cache_path(cfg, config, kwargs, None, "cpu")
-    assert kwargs["revision"] == kwargs["_commit_hash"] == revision
-    assert calls == [("org/weights", "config.json", "main")]
-    revision = "c" * 40
-    assert nf4_cache_path(cfg, config, {"revision": "main"}, None, "cpu") != first
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="Requires two CUDA GPUs")
-@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-@pytest.mark.parametrize("architecture", ["dense", "moe"])
-def test_cuda_nf4_cache_resume(backend, architecture, tmp_path):
-    from transformers import (
-        LlamaConfig,
-        LlamaForCausalLM,
-        Qwen3MoeConfig,
-        Qwen3MoeForCausalLM,
-    )
-
-    options = dict(
-        hidden_size=128,
-        intermediate_size=128,
-        num_hidden_layers=1,
-        num_attention_heads=2,
-        num_key_value_heads=2,
-        vocab_size=128,
-    )
-    if architecture == "moe":
-        model = Qwen3MoeForCausalLM(
-            Qwen3MoeConfig(
-                **options,
-                moe_intermediate_size=128,
-                num_experts=2,
-                num_experts_per_tok=1,
-            )
-        )
-    else:
-        model = LlamaForCausalLM(LlamaConfig(**options))
-    base = tmp_path / "base"
-    model.save_pretrained(base)
-    for cache_hit in (False, True):
-        torch.multiprocessing.spawn(
-            _distributed_nf4_worker,
-            args=(
-                backend,
-                str(base),
-                str(tmp_path / f"cuda-cache-{cache_hit}"),
-                None,
-                "cuda",
-                torch.bfloat16,
-                False,
-                False,
-                {"cache_dir": str(tmp_path / "cache"), "cache_hit": cache_hit},
-            ),
-            nprocs=2,
-        )
 
 
 def _nf4_delayed_loading_worker(
@@ -1881,38 +1688,6 @@ def test_nf4_prefetch_transformers_checkpoint(
         torch.testing.assert_close(
             actual(tokens).logits, reference(tokens).logits, rtol=0, atol=0
         )
-
-
-def test_nf4_meta_optimizer_parameters_keep_identity(monkeypatch):
-    from accelerate import Accelerator
-
-    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_optimizer_mapping
-
-    model = nn.Linear(4, 4, device="meta")
-    model.register_parameter(
-        "frozen", nn.Parameter(torch.empty(4, device="meta"), requires_grad=False)
-    )
-    parameters = [model.weight, model.bias]
-    optimizer = torch.optim.AdamW(parameters)
-    unrelated = nn.Linear(4, 4, device="meta")
-    model._axolotl_staged_nf4 = True
-
-    def prepare(self, *args):
-        assert model.weight is parameters[0] and model.bias is parameters[1]
-        assert optimizer.param_groups[0]["params"][0] is model.weight
-        assert optimizer.param_groups[0]["params"][1] is model.bias
-        assert all(p.device.type == "cpu" for p in parameters)
-        assert len({p.data_ptr() for p in parameters}) == 2
-        assert model.frozen.is_meta
-        assert all(p.is_meta for p in unrelated.parameters())
-        return args
-
-    monkeypatch.setattr(Accelerator, "_prepare_fsdp2", prepare)
-    patch_nf4_optimizer_mapping()
-    patched = Accelerator._prepare_fsdp2
-    patch_nf4_optimizer_mapping()
-    assert Accelerator._prepare_fsdp2 is patched
-    assert patched(None, model, optimizer, unrelated) == (model, optimizer, unrelated)
 
 
 def _divergent_plan_worker(rank, rendezvous):
@@ -2350,62 +2125,6 @@ def test_selective_expert_weights_accepts_tuple_quant_state_shape(monkeypatch):
     assert calls == [(d1, d2)]
 
 
-def test_nf4_cache_key_tracks_resolved_exclusions(tmp_path, monkeypatch):
-    """Changing the architecture exclusion rules must invalidate existing caches."""
-    from transformers import LlamaConfig
-
-    from axolotl.loaders import nf4_cache
-    from axolotl.utils.dict import DictDefault
-
-    source = tmp_path / "model.safetensors"
-    source.write_bytes(b"first")
-    cfg = DictDefault(
-        base_model=str(tmp_path),
-        nf4_cache_dir=str(tmp_path / "cache"),
-        torch_dtype=torch.float32,
-    )
-    config = LlamaConfig()
-    baseline = nf4_cache.nf4_cache_path(cfg, config, {}, None, "cpu")
-
-    monkeypatch.setattr(
-        nf4_cache,
-        "nf4_skip_modules",
-        lambda *args, **kwargs: {"lm_head", "embed_out", "extra_rule"},
-        raising=False,
-    )
-
-    assert nf4_cache.nf4_cache_path(cfg, config, {}, None, "cpu") != baseline
-
-
-def test_nf4_cache_key_separates_distinct_exclusion_inputs(tmp_path):
-    """Both inputs that feed nf4_skip_modules must key the cache independently."""
-    from transformers import LlamaConfig
-
-    from axolotl.loaders.nf4_cache import nf4_cache_path
-    from axolotl.utils.dict import DictDefault
-
-    source = tmp_path / "model.safetensors"
-    source.write_bytes(b"first")
-
-    def build(**overrides):
-        cfg = DictDefault(
-            base_model=str(tmp_path),
-            nf4_cache_dir=str(tmp_path / "cache"),
-            torch_dtype=torch.float32,
-        )
-        for key, value in overrides.items():
-            cfg[key] = value
-        return cfg
-
-    config = LlamaConfig()
-    baseline = nf4_cache_path(build(), config, {}, None, "cpu")
-    user_skips = build(bnb_config_kwargs={"llm_int8_skip_modules": ["out_proj"]})
-    architecture = build(model_config_type="falcon_h1")
-
-    assert nf4_cache_path(user_skips, config, {}, None, "cpu") != baseline
-    assert nf4_cache_path(architecture, config, {}, None, "cpu") != baseline
-
-
 _UNSET = object()
 
 _STAGED_NF4_BASE = dict(
@@ -2433,7 +2152,6 @@ def _staged_nf4_config(**overrides):
     "overrides, expected",
     [
         ({}, None),
-        ({"nf4_cache_dir": "/tmp/nf4-cache"}, None),
         ({"load_in_4bit": False}, "adapter: qlora and load_in_4bit: true"),
         ({"adapter": "lora"}, "adapter: qlora and load_in_4bit: true"),
         ({"load_in_8bit": True}, "adapter: qlora and load_in_4bit: true"),
@@ -2456,7 +2174,6 @@ def _staged_nf4_config(**overrides):
     ],
     ids=[
         "staged-ok",
-        "nf4_cache_dir-allowed-when-staged",
         "load_in_4bit-false",
         "adapter-not-qlora",
         "load_in_8bit",
@@ -2496,7 +2213,6 @@ def test_staged_nf4_validation_via_config(backend, overrides, expected):
             {"bnb_config_kwargs": {"bnb_4bit_use_double_quant": False}},
             "torchao NF4 requires blocksize 64",
         ),
-        ({"nf4_cache_dir": "/tmp/nf4-cache"}, None),
     ],
     ids=[
         "adapter-not-qlora",
@@ -2504,7 +2220,6 @@ def test_staged_nf4_validation_via_config(backend, overrides, expected):
         "load_in_8bit",
         "torchao-blocksize",
         "torchao-double-quant",
-        "nf4_cache_dir-allowed",
     ],
 )
 def test_staged_nf4_validation_torchao_without_fsdp(overrides, expected):
@@ -2523,32 +2238,6 @@ def test_staged_nf4_validation_torchao_without_fsdp(overrides, expected):
     else:
         with pytest.raises(ValueError, match=expected):
             AxolotlInputConfig(**config)
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"fsdp_version": 1},
-        {"fsdp_version": _UNSET, "fsdp_config": _UNSET},
-        {
-            "adapter": "lora",
-            "load_in_4bit": False,
-            "fsdp_config": {"cpu_ram_efficient_loading": False},
-        },
-    ],
-    ids=["fsdp1", "no-fsdp", "not-4bit"],
-)
-def test_staged_nf4_validation_rejects_cache_dir_when_not_staged(overrides):
-    from axolotl.utils.schemas.config import AxolotlInputConfig
-
-    config = _staged_nf4_config(
-        nf4_backend="bitsandbytes",
-        nf4_cache_dir="/tmp/nf4-cache",
-        qlora_sharded_model_loading=_UNSET,
-        **overrides,
-    )
-    with pytest.raises(ValueError, match="nf4_cache_dir requires CPU-staged"):
-        AxolotlInputConfig(**config)
 
 
 @pytest.mark.parametrize(
@@ -2586,7 +2275,6 @@ def test_staged_nf4_validation_defaults_before_staged_checks(backend):
     config = _staged_nf4_config(
         nf4_backend=backend,
         qlora_sharded_model_loading=_UNSET,
-        nf4_cache_dir="/tmp/nf4-cache",
     )
     validated = AxolotlInputConfig(**config)
     assert validated.qlora_sharded_model_loading is True

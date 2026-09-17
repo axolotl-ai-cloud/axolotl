@@ -887,7 +887,4 @@ def patch_move_missing_keys_meta_for_fsdp():
 def patch_accelerate_fsdp2():
     import accelerate
 
-    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_optimizer_mapping
-
-    patch_nf4_optimizer_mapping()
     accelerate.accelerator.fsdp2_prepare_model = fsdp2_prepare_model
