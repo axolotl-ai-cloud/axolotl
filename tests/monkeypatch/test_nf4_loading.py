@@ -178,7 +178,12 @@ def _distributed_nf4_worker(
     import torch.distributed as dist
     from peft import LoraConfig, get_peft_model
     from torch.distributed.device_mesh import init_device_mesh
-    from transformers import AutoConfig, LlamaForCausalLM, Qwen3MoeForCausalLM
+    from transformers import (
+        AutoConfig,
+        LlamaForCausalLM,
+        PreTrainedModel,
+        Qwen3MoeForCausalLM,
+    )
 
     from axolotl.loaders.model import ModelLoader
     from axolotl.monkeypatch.accelerate.fsdp2 import fsdp2_prepare_model
@@ -225,6 +230,15 @@ def _distributed_nf4_worker(
         loader.auto_model_loader = model_class
         loader.model_kwargs = {"dtype": cfg.torch_dtype}
         loader._set_quantization_config()
+        reinitialized = []
+        original_init_weights = PreTrainedModel._init_weights
+
+        def record_init(self, module, *init_args, **init_kwargs):
+            if getattr(module, "parametrizations", None):
+                reinitialized.append(type(module).__name__)
+            return original_init_weights(self, module, *init_args, **init_kwargs)
+
+        PreTrainedModel._init_weights = record_init
         if rank:
             with patch.object(
                 model_class,
@@ -238,6 +252,12 @@ def _distributed_nf4_worker(
         else:
             loader._build_model()
             model = loader.model
+        PreTrainedModel._init_weights = original_init_weights
+        # rank zero is the one that stages, so it is the rank Transformers would
+        # re-initialize, and the FSDP2 guard only covers ranks that are not local
+        # rank zero. Checking _is_hf_initialized would pass either way: the flag is
+        # also set *after* a module is initialized.
+        assert not reinitialized, reinitialized
         model = get_peft_model(
             model,
             LoraConfig(
