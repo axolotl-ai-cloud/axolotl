@@ -8,6 +8,7 @@ datasets.
 
 from datasets import Dataset, IterableDataset
 
+from axolotl.datasets_work_queue import tokenize_with_work_queue
 from axolotl.utils.logging import get_logger
 
 from .prompt_tokenizers import PromptTokenizingStrategy
@@ -57,6 +58,15 @@ class TokenizedPromptDataset(Dataset):
                 self.prompt_tokenizer.filter_rows,
                 num_proc=self.process_count,
                 desc="Strategy Filtering Rows",
+            )
+
+        num_proc = min(self.process_count or 1, len(dataset))
+        if num_proc > 1:
+            return tokenize_with_work_queue(
+                self.prompt_tokenizer,
+                dataset,
+                num_proc=num_proc,
+                keep_in_memory=self.keep_in_memory,
             )
 
         return dataset.map(

@@ -1,409 +1,164 @@
 """
-Module containing work queue processing for datasets.
-Completely bypasses datasets.map() for proper load balancing.
+Load-balanced multiprocess tokenization.
+
+``Dataset.map(num_proc=N)`` hands each worker one contiguous shard, so a shard
+that happens to hold the long examples leaves the rest of the pool idle. Here
+workers pull small chunks of row indices from a shared pool instead, and the
+results are streamed into an Arrow cache file the same way ``map`` does.
 """
 
-import multiprocessing as mp
-import queue
-import sys
-import time
-from typing import List, Tuple
+import os
+import tempfile
+from typing import Any
 
+import pyarrow as pa
 from datasets import Dataset
-from tqdm import tqdm
+from datasets.arrow_writer import ArrowWriter
+from datasets.fingerprint import update_fingerprint
+from datasets.utils import tqdm as hf_tqdm
+from multiprocess import Pool, TimeoutError
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+MAX_CHUNK_SIZE = 1000
+CHUNKS_PER_WORKER = 32
+WORKER_POLL_SECONDS = 1.0
 
-class WorkQueueTokenizedPromptDataset(Dataset):
-    """Dataset that uses a work queue system, completely bypassing datasets.map().
+# Set once per worker by the pool initializer so tasks only ship row indices.
+_strategy: PromptTokenizingStrategy | None = None
+_dataset: Dataset | None = None
 
-    This implementation:
-    1. Creates a shared work queue with individual examples
-    2. Worker processes pull examples as they finish their current work
-    3. No pre-allocation of work
-    4. Processes results in order they complete
-    """
 
-    def __init__(
-        self,
-        prompt_tokenizer: PromptTokenizingStrategy,
-        dataset: Dataset,
-        process_count: int | None = None,
-        keep_in_memory: bool | None = False,
-        **kwargs,
-    ):
-        self.prompt_tokenizer = prompt_tokenizer
-        self.process_count = process_count or mp.cpu_count()
-        self.keep_in_memory = keep_in_memory
+def _init_worker(strategy: PromptTokenizingStrategy, dataset: Dataset) -> None:
+    global _strategy, _dataset  # noqa: PLW0603
+    _strategy = strategy
+    _dataset = dataset
 
-        # Process the dataset with work queue
-        processed_data = self._process_with_work_queue(dataset)
 
-        super().__init__(
-            processed_data.data,
-            **kwargs,
-        )
+def _tokenize_chunk(bounds: tuple[int, int]) -> dict[str, list]:
+    assert _strategy is not None and _dataset is not None
+    start, end = bounds
+    batch = _dataset[start:end]
+    if _strategy.supports_batched:
+        return _strategy.tokenize_prompt(batch) or {}
 
-    def _process_with_work_queue(self, dataset: Dataset) -> Dataset:
-        """Process dataset using a work queue system."""
-        total_examples = len(dataset)
-        LOG.info(f"Processing {total_examples} examples with work queue system")
-        LOG.info(f"Using {self.process_count} worker processes")
+    columns = list(batch)
+    rows = [
+        _strategy.tokenize_prompt(dict(zip(columns, values, strict=True)))
+        for values in zip(*batch.values(), strict=True)
+    ]
+    if not rows:
+        return {}
+    return {key: [row[key] for row in rows] for key in rows[0]}
 
-        # Convert dataset to list for easy indexing
-        examples = list(dataset)
 
-        # Create shared queues
-        work_queue: mp.Queue = mp.Queue()
-        result_queue: mp.Queue = mp.Queue()
+def _chunk_bounds(num_rows: int, num_proc: int) -> list[tuple[int, int]]:
+    chunk_size = max(1, min(MAX_CHUNK_SIZE, num_rows // (num_proc * CHUNKS_PER_WORKER)))
+    return [
+        (start, min(start + chunk_size, num_rows))
+        for start in range(0, num_rows, chunk_size)
+    ]
 
-        # Add all examples to work queue
-        for idx, example in enumerate(examples):
-            work_queue.put((idx, example))
 
-        # Worker function
-        def worker(worker_id):
-            """Worker process that continuously pulls from work queue."""
+def _iter_results(pool: Pool, chunks: list[tuple[int, int]]):
+    """Yield results in order, failing fast instead of hanging if a worker is killed."""
+    initial_pids = {proc.pid for proc in pool._pool}
+    results = pool.imap(_tokenize_chunk, chunks)
+    for _ in chunks:
+        while True:
             try:
-                while True:
-                    try:
-                        # Get work with timeout
-                        idx, example = work_queue.get(timeout=1)
-
-                        # Tokenize the example
-                        try:
-                            tokenized = self.prompt_tokenizer.tokenize_prompt(example)
-                            result_queue.put((idx, tokenized, None))
-                        except Exception as e:
-                            LOG.error(
-                                f"Worker {worker_id}: Error tokenizing example {idx}: {e}"
-                            )
-                            result_queue.put((idx, None, str(e)))
-
-                    except queue.Empty:
-                        break
-
-            except Exception as e:
-                LOG.error(f"Worker {worker_id} crashed: {e}")
-
-        # Start worker processes
-        processes = []
-        for i in range(self.process_count):
-            p = mp.Process(target=worker, args=(i,))
-            p.daemon = True
-            p.start()
-            processes.append(p)
-
-        # Collect results with progress tracking
-        results: list[dict[str, list] | None] = [None] * total_examples
-        completed = 0
-        errors = []
-
-        # Progress bar
-        pbar = tqdm(
-            total=total_examples,
-            desc="Tokenizing Prompts",
-            unit="examples",
-            file=sys.stdout,
-            ncols=100,
-        )
-
-        start_time = time.time()
-        last_update = start_time
-
-        while completed < total_examples:
-            try:
-                # Get result with timeout
-                idx, tokenized, error = result_queue.get(timeout=10)
-
-                if error:
-                    errors.append(f"Example {idx}: {error}")
-                    # Create empty result for failed example
-                    results[idx] = {"input_ids": [], "attention_mask": [], "labels": []}
-                else:
-                    results[idx] = tokenized
-
-                completed += 1
-                pbar.update(1)
-
-                # Update rate every second
-                current_time = time.time()
-                if current_time - last_update > 1:
-                    elapsed = current_time - start_time
-                    rate = completed / elapsed if elapsed > 0 else 0
-                    pbar.set_postfix({"examples/s": f"{rate:.1f}"})
-                    last_update = current_time
-
-            except queue.Empty:
-                if all(not p.is_alive() for p in processes):
-                    LOG.error("All workers died before completing all examples")
-                    break
-                LOG.warning("Timeout waiting for results, retrying...")
-
-        pbar.close()
-
-        # Wait for all processes to finish
-        for p in processes:
-            p.join(timeout=5)
-            if p.is_alive():
-                p.terminate()
-
-        # Report errors
-        if errors:
-            LOG.warning(f"Completed with {len(errors)} errors:")
-            for error in errors[:5]:  # Show first 5 errors
-                LOG.warning(f"  {error}")
-            if len(errors) > 5:
-                LOG.warning(f"  ... and {len(errors) - 5} more errors")
-
-        # Combine results in order
-        combined_results: dict[str, list] = {
-            "input_ids": [],
-            "attention_mask": [],
-            "labels": [],
-        }
-
-        for result in results:
-            if result is not None:
-                combined_results["input_ids"].append(result["input_ids"])
-                combined_results["attention_mask"].append(result["attention_mask"])
-                combined_results["labels"].append(result["labels"])
-            else:
-                # Empty result for failed examples
-                combined_results["input_ids"].append([])
-                combined_results["attention_mask"].append([])
-                combined_results["labels"].append([])
-
-        return Dataset.from_dict(combined_results)
+                yield results.next(timeout=WORKER_POLL_SECONDS)
+                break
+            except TimeoutError:
+                if {proc.pid for proc in pool._pool} != initial_pids:
+                    raise RuntimeError(
+                        "A tokenization worker died unexpectedly (possibly OOM-killed). "
+                        "Set dataset_num_proc: 1 to debug."
+                    ) from None
 
 
-def wrap_dataset_for_work_queue_tokenized_prompt(
+def tokenize_with_work_queue(
     prompt_tokenizer: PromptTokenizingStrategy,
     dataset: Dataset,
-    process_count: int | None = None,
-    **kwargs,
+    num_proc: int,
+    keep_in_memory: bool | None = False,
 ) -> Dataset:
-    """Wrap dataset with work queue processing."""
-    return WorkQueueTokenizedPromptDataset(
-        prompt_tokenizer=prompt_tokenizer,
-        dataset=dataset,
-        process_count=process_count,
-        **kwargs,
-    )
+    """Tokenize ``dataset`` with ``prompt_tokenizer`` across ``num_proc`` workers.
 
-
-def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
-    datasets_with_strategies: List[Tuple[PromptTokenizingStrategy, Dataset]],
-    process_count: int | None = None,
-    **kwargs,
-) -> List[Dataset]:
-    """Process multiple datasets efficiently with a single work queue.
-
-    This function:
-    1. Combines all datasets into a single work queue
-    2. Tracks which dataset each example came from
-    3. Processes all examples in parallel
-    4. Splits results back into separate datasets
-
-    Args:
-        datasets_with_strategies: List of (prompt_tokenizer, dataset) tuples
-        process_count: Number of worker processes
-
-    Returns:
-        List of processed datasets in the same order as input
+    Equivalent to ``dataset.map(prompt_tokenizer.tokenize_prompt, num_proc=...,
+    remove_columns=<all>)`` but with dynamic scheduling: workers take the next
+    chunk as soon as they finish the current one.
     """
-    if not datasets_with_strategies:
-        return []
+    fingerprint = update_fingerprint(
+        dataset._fingerprint,
+        "tokenize_with_work_queue",
+        {
+            "function": prompt_tokenizer.tokenize_prompt,
+            "batched": prompt_tokenizer.supports_batched,
+        },
+    )
+    cache_file = None if keep_in_memory else dataset._get_cache_file_path(fingerprint)
+    if cache_file and os.path.exists(cache_file):
+        LOG.info(f"Loading cached tokenized dataset at {cache_file}")
+        return Dataset.from_file(cache_file, split=dataset.split)
 
-    if len(datasets_with_strategies) == 1:
-        # Single dataset - use standard function
-        strategy, dataset = datasets_with_strategies[0]
-        return [
-            wrap_dataset_for_work_queue_tokenized_prompt(
-                strategy, dataset, process_count, **kwargs
-            )
-        ]
+    writer_kwargs: dict[str, Any] = {"fingerprint": fingerprint}
+    buf_writer = None
+    tmp_path = None
+    if cache_file:
+        LOG.info(f"Caching tokenized dataset at {cache_file}")
+        cache_dir = os.path.dirname(cache_file)
+        os.makedirs(cache_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile("wb", dir=cache_dir, delete=False) as tmp:
+            tmp_path = tmp.name
+        writer_kwargs["path"] = tmp_path
+    else:
+        buf_writer = pa.BufferOutputStream()
+        writer_kwargs["stream"] = buf_writer
 
-    process_count = process_count or mp.cpu_count()
-
-    # Calculate total examples and prepare combined work queue
-    total_examples = sum(len(dataset) for _, dataset in datasets_with_strategies)
+    chunks = _chunk_bounds(len(dataset), num_proc)
     LOG.info(
-        f"Processing {total_examples} examples from {len(datasets_with_strategies)} datasets with work queue system"
-    )
-    LOG.info(f"Using {process_count} worker processes")
-
-    # Create shared queues
-    work_queue: mp.Queue = mp.Queue()
-    result_queue: mp.Queue = mp.Queue()
-
-    # Track dataset boundaries for splitting results later
-    dataset_boundaries = []
-    current_idx = 0
-
-    # Add all examples to work queue with dataset info (but NOT the strategy)
-    for dataset_idx, (_strategy, dataset) in enumerate(datasets_with_strategies):
-        dataset_start = current_idx
-        examples = list(dataset)
-
-        for example_idx, example in enumerate(examples):
-            # Store global index, dataset index, local index, and example only
-            # Strategy will be looked up by dataset_idx in the worker
-            work_queue.put((current_idx, dataset_idx, example_idx, example))
-            current_idx += 1
-
-        dataset_end = current_idx - 1
-        dataset_boundaries.append((dataset_start, dataset_end, len(examples)))
-
-    # Worker function that handles different strategies
-    def worker(worker_id):
-        """Worker process that continuously pulls from work queue."""
-        try:
-            while True:
-                try:
-                    # Get work with timeout
-                    global_idx, dataset_idx, example_idx, example = work_queue.get(
-                        timeout=1
-                    )
-
-                    # Get the strategy for this dataset
-                    strategy = datasets_with_strategies[dataset_idx][0]
-
-                    # Tokenize the example with its specific strategy
-                    try:
-                        tokenized = strategy.tokenize_prompt(example)
-                        result_queue.put(
-                            (global_idx, dataset_idx, example_idx, tokenized, None)
-                        )
-                    except Exception as e:
-                        LOG.error(
-                            f"Worker {worker_id}: Error tokenizing example {global_idx} from dataset {dataset_idx}: {e}"
-                        )
-                        result_queue.put(
-                            (global_idx, dataset_idx, example_idx, None, str(e))
-                        )
-
-                except queue.Empty:
-                    break
-
-        except Exception as e:
-            LOG.error(f"Worker {worker_id} crashed: {e}")
-
-    # Start worker processes
-    processes = []
-    for i in range(process_count):
-        p = mp.Process(target=worker, args=(i,))
-        p.daemon = True
-        p.start()
-        processes.append(p)
-
-    # Collect results with progress tracking
-    results_by_dataset: list[list] = [
-        [] for _ in datasets_with_strategies
-    ]  # Results organized by dataset
-    completed = 0
-    errors = []
-
-    # Progress bar
-    pbar = tqdm(
-        total=total_examples,
-        desc="Tokenizing Prompts",
-        unit="examples",
-        file=sys.stdout,
-        ncols=100,
+        f"Tokenizing {len(dataset)} examples with {num_proc} workers "
+        f"({len(chunks)} chunks)"
     )
 
-    start_time = time.time()
-    last_update = start_time
+    # Forking after the Rust tokenizer's thread pool has started can deadlock.
+    prev_tokenizers_parallelism = os.environ.get("TOKENIZERS_PARALLELISM")
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    try:
+        writer = ArrowWriter(**writer_kwargs)
+        with (
+            Pool(
+                num_proc,
+                initializer=_init_worker,
+                initargs=(prompt_tokenizer, dataset),
+            ) as pool,
+            hf_tqdm(
+                total=len(dataset), desc="Tokenizing Prompts", unit=" examples"
+            ) as pbar,
+        ):
+            for (start, end), batch in zip(
+                chunks, _iter_results(pool, chunks), strict=True
+            ):
+                if batch:
+                    writer.write_batch(batch)
+                pbar.update(end - start)
+        writer.finalize()
+    except BaseException:
+        if tmp_path:
+            os.remove(tmp_path)
+        raise
+    finally:
+        if prev_tokenizers_parallelism is None:
+            os.environ.pop("TOKENIZERS_PARALLELISM", None)
+        else:
+            os.environ["TOKENIZERS_PARALLELISM"] = prev_tokenizers_parallelism
 
-    while completed < total_examples:
-        try:
-            # Get result with timeout
-            global_idx, dataset_idx, example_idx, tokenized, error = result_queue.get(
-                timeout=10
-            )
-
-            if error:
-                errors.append(f"Dataset {dataset_idx}, Example {example_idx}: {error}")
-                # Create empty result for failed example
-                empty_result: dict[str, list] = {
-                    "input_ids": [],
-                    "attention_mask": [],
-                    "labels": [],
-                }
-                results_by_dataset[dataset_idx].append((example_idx, empty_result))
-            else:
-                results_by_dataset[dataset_idx].append((example_idx, tokenized))
-
-            completed += 1
-            pbar.update(1)
-
-            # Update rate every second
-            current_time = time.time()
-            if current_time - last_update > 1:
-                elapsed = current_time - start_time
-                rate = completed / elapsed if elapsed > 0 else 0
-                pbar.set_postfix({"examples/s": f"{rate:.1f}"})
-                last_update = current_time
-
-        except queue.Empty:
-            if all(not p.is_alive() for p in processes):
-                LOG.error("All workers died before completing all examples")
-                break
-            LOG.warning("Timeout waiting for results, retrying...")
-
-    pbar.close()
-
-    # Wait for all processes to finish
-    for p in processes:
-        p.join(timeout=5)
-        if p.is_alive():
-            p.terminate()
-
-    # Report errors
-    if errors:
-        LOG.warning(f"Completed with {len(errors)} errors:")
-        for error in errors[:5]:
-            LOG.warning(f"  {error}")
-        if len(errors) > 5:
-            LOG.warning(f"  ... and {len(errors) - 5} more errors")
-
-    # Convert results back to datasets
-    processed_datasets = []
-
-    for dataset_idx, (_strategy, _original_dataset) in enumerate(
-        datasets_with_strategies
-    ):
-        # Sort results by local index to maintain original order
-        dataset_results = sorted(results_by_dataset[dataset_idx], key=lambda x: x[0])
-
-        # Extract just the tokenized results
-        tokenized_results = [result for _, result in dataset_results]
-
-        # Combine results in order
-        combined_results: dict[str, list] = {
-            "input_ids": [],
-            "attention_mask": [],
-            "labels": [],
-        }
-
-        for result in tokenized_results:
-            if result is not None:
-                combined_results["input_ids"].append(result["input_ids"])
-                combined_results["attention_mask"].append(result["attention_mask"])
-                combined_results["labels"].append(result["labels"])
-            else:
-                # Empty result for failed examples
-                combined_results["input_ids"].append([])
-                combined_results["attention_mask"].append([])
-                combined_results["labels"].append([])
-
-        # Create dataset
-        processed_dataset = Dataset.from_dict(combined_results)
-        processed_datasets.append(processed_dataset)
-
-    return processed_datasets
+    if cache_file and tmp_path:
+        os.replace(tmp_path, cache_file)
+        return Dataset.from_file(cache_file, split=dataset.split)
+    assert buf_writer is not None
+    return Dataset.from_buffer(buf_writer.getvalue(), split=dataset.split)
