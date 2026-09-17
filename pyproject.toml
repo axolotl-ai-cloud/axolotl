@@ -15,7 +15,7 @@ dependencies = [
     "torch>=2.11.0,<=2.14.0",
     "packaging==26.0",
     "huggingface_hub==1.18.0",
-    "peft==0.20.0",
+    "peft==0.21.0",
     "tokenizers==0.23.1",
     "transformers==5.17.0",
     "accelerate==1.15.0",
