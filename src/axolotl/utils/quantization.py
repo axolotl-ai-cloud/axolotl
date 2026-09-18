@@ -172,15 +172,13 @@ def _attach_torchao_quantizer(
 
 
 def patch_transformers_skip_quantized_init():
-    """Stop ``from_pretrained`` from re-initializing torchao-quantized weights.
+    """Stop ``from_pretrained`` from re-initializing already-loaded quantized weights.
 
-    transformers re-runs ``_init_weights`` on every module during loading; the
-    generic implementation does ``init.normal_(module.weight.float(), ...)``.
-    ``.float()`` on a torchao tensor subclass (e.g. ``MXTensor``) returns a new
-    tensor that both drops the ``_is_hf_initialized`` skip flag and does not
-    implement ``normal_``, so loading an MX checkpoint raises NotImplementedError.
-    Re-initializing an already-loaded quantized weight is never correct, so we
-    skip those modules entirely.
+    transformers re-runs ``_init_weights`` on every module, skipping only tensors
+    flagged ``_is_hf_initialized``. Quantized weights lose the flag because reading
+    them returns a fresh tensor: ``.float()`` on a torchao subclass (which then
+    raises on ``normal_``), or the dequant behind a parametrization (NF4, load-time
+    MoE quant), which silently redraws every expert stack.
     """
     from torchao.utils import TorchAOBaseTensor
     from transformers import PreTrainedModel
@@ -192,7 +190,7 @@ def patch_transformers_skip_quantized_init():
 
     @functools.wraps(original)
     def _initialize_weights(self, module, *args, **kwargs):
-        if any(
+        if getattr(module, "parametrizations", None) or any(
             isinstance(param, TorchAOBaseTensor)
             for param in module.parameters(recurse=False)
         ):
