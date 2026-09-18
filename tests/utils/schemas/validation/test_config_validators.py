@@ -317,3 +317,15 @@ class TestContextParallelAttnImplValidator:
         )
         with pytest.raises(ValueError, match="only supports the flash attention 2"):
             validate_config(cfg)
+
+
+class TestStagedNF4ConstraintTable:
+    """check_staged_nf4 raises from a table, so an empty or messageless table would pass silently."""
+
+    def test_every_constraint_carries_a_message(self):
+        from axolotl.utils.schemas.validation import STAGED_NF4_CONSTRAINTS
+
+        assert STAGED_NF4_CONSTRAINTS
+        for predicate, message in STAGED_NF4_CONSTRAINTS:
+            assert callable(predicate)
+            assert isinstance(message, str) and message

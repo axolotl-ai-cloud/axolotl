@@ -1,5 +1,7 @@
 """Adapter creation on a CPU-staged NF4 model must not dequantize the base weights."""
 
+import json
+
 import pytest
 import torch
 
@@ -293,6 +295,24 @@ def test_saved_value_dependent_adapter_is_rejected(tmp_path):
         loader._load_adapters()
 
 
+def test_value_dependent_saved_init_does_not_force_real_base_weights(tmp_path):
+    """The predicate answers whether the stand-ins suffice; only the check rejects a saved init."""
+    model_class = _save_llama(tmp_path)
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_config.json").write_text(
+        json.dumps({"peft_type": "LORA", "r": 8, "init_lora_weights": "olora"})
+    )
+
+    loader = _staged_loader(
+        tmp_path, model_class, "bitsandbytes", lora_model_dir=str(adapter_dir)
+    )
+
+    assert loader._staged_nf4_needs_real_base_weights() is False
+    with pytest.raises(ValueError, match="residual write-back"):
+        loader._reject_value_dependent_saved_adapter_init()
+
+
 def test_unreadable_saved_adapter_config_falls_back_to_real_weights(
     tmp_path, monkeypatch
 ):
@@ -302,4 +322,4 @@ def test_unreadable_saved_adapter_config_falls_back_to_real_weights(
         tmp_path, model_class, "bitsandbytes", lora_model_dir="some-org/some-adapter"
     )
 
-    assert loader._staged_nf4_lora_init_reads_base_weights() is True
+    assert loader._staged_nf4_needs_real_base_weights() is True

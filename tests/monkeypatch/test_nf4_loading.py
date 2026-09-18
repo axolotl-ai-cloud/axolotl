@@ -1,6 +1,7 @@
 """NF4 conversion parity, serialization, and Transformers/PEFT integration."""
 
 import copy
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
@@ -160,20 +161,24 @@ def test_transformers_load_and_peft(backend, tmp_path, monkeypatch):
     )
 
 
-def _distributed_nf4_worker(
-    rank,
-    backend,
-    checkpoint,
-    rendezvous,
-    phase=None,
-    device_type="cpu",
-    dtype=torch.float32,
-    activation_checkpointing=False,
-    offload=False,
-    sharding_case=None,
-    prepare_optimizer=False,
-    mixed_precision=False,
-):
+@dataclass(frozen=True)
+class WorkerCase:
+    """The single spawn argument for `_distributed_nf4_worker`."""
+
+    backend: str
+    checkpoint: str
+    rendezvous: str
+    phase: str | None = None
+    device_type: str = "cpu"
+    dtype: torch.dtype = torch.float32
+    activation_checkpointing: bool = False
+    offload: bool = False
+    sharding_case: dict | None = None
+    prepare_optimizer: bool = False
+    mixed_precision: bool = False
+
+
+def _distributed_nf4_worker(rank, case):
     from unittest.mock import patch
 
     import torch.distributed as dist
@@ -190,9 +195,9 @@ def _distributed_nf4_worker(
     from axolotl.monkeypatch.accelerate.fsdp2 import fsdp2_prepare_model
     from axolotl.utils.dict import DictDefault
 
-    sharding_case = sharding_case or {}
+    sharding_case = case.sharding_case or {}
     world_size = sharding_case.get("world_size", 2)
-    if device_type == "cuda":
+    if case.device_type == "cuda":
         import os
 
         os.environ.update(
@@ -200,33 +205,35 @@ def _distributed_nf4_worker(
         )
         torch.cuda.set_device(rank)
     device = (
-        torch.device(device_type, rank)
-        if device_type == "cuda"
+        torch.device(case.device_type, rank)
+        if case.device_type == "cuda"
         else torch.device("cpu")
     )
     dist.init_process_group(
-        "nccl" if device_type == "cuda" else "gloo",
-        init_method=f"file://{rendezvous}",
+        "nccl" if case.device_type == "cuda" else "gloo",
+        init_method=f"file://{case.rendezvous}",
         rank=rank,
         world_size=world_size,
     )
     from accelerate import FullyShardedDataParallelPlugin, PartialState
     from torch.distributed.fsdp import MixedPrecisionPolicy
 
-    PartialState(cpu=device_type == "cpu")
+    PartialState(cpu=case.device_type == "cpu")
     try:
-        expert_model = AutoConfig.from_pretrained(checkpoint).model_type == "qwen3_moe"
+        expert_model = (
+            AutoConfig.from_pretrained(case.checkpoint).model_type == "qwen3_moe"
+        )
         model_class = Qwen3MoeForCausalLM if expert_model else LlamaForCausalLM
         cfg = DictDefault(
             quantize_moe_experts=expert_model,
-            base_model=checkpoint,
-            nf4_backend=backend,
+            base_model=case.checkpoint,
+            nf4_backend=case.backend,
             load_in_4bit=True,
             adapter="qlora",
             fsdp_version=2,
             qlora_sharded_model_loading=True,
             fsdp_config={"cpu_ram_efficient_loading": True},
-            torch_dtype=dtype,
+            torch_dtype=case.dtype,
         )
         loader = ModelLoader(cfg, tokenizer=None)
         loader.auto_model_loader = model_class
@@ -277,14 +284,14 @@ def _distributed_nf4_worker(
         )
         model.eval()
         tokens = torch.arange(8, device=device).reshape(1, 8)
-        expected = torch.empty(1, 8, 128, dtype=dtype, device=device)
+        expected = torch.empty(1, 8, 128, dtype=case.dtype, device=device)
         if rank == 0:
             reference_model = copy.deepcopy(model).to(device)
             expected.copy_(reference_model(input_ids=tokens).logits.detach())
             del reference_model
         dist.broadcast(expected, src=0)
         mesh = init_device_mesh(
-            device_type, (world_size,), mesh_dim_names=("dp_shard",)
+            case.device_type, (world_size,), mesh_dim_names=("dp_shard",)
         )
         plugin = FullyShardedDataParallelPlugin(
             fsdp_version=2,
@@ -297,14 +304,14 @@ def _distributed_nf4_worker(
                 "Qwen3MoeDecoderLayer" if expert_model else "LlamaDecoderLayer"
             ],
             reshard_after_forward=sharding_case.get("reshard_after_forward", True),
-            activation_checkpointing=activation_checkpointing,
-            cpu_offload=offload,
+            activation_checkpointing=case.activation_checkpointing,
+            cpu_offload=case.offload,
             # what accelerate builds for `bf16: true`: FSDP2 casts every sharded
             # parameter to param_dtype, packed NF4 bytes included
             mixed_precision_policy=MixedPrecisionPolicy(
-                param_dtype=dtype, reduce_dtype=dtype, output_dtype=dtype
+                param_dtype=case.dtype, reduce_dtype=case.dtype, output_dtype=case.dtype
             )
-            if mixed_precision
+            if case.mixed_precision
             else None,
         )
         accelerator = SimpleNamespace(
@@ -339,7 +346,7 @@ def _distributed_nf4_worker(
         torch_fsdp.fully_shard = counting_fully_shard
 
         optimizer = None
-        if prepare_optimizer:
+        if case.prepare_optimizer:
             from accelerate import Accelerator
 
             from axolotl.loaders.utils import materialize_trainable_meta_params
@@ -350,7 +357,7 @@ def _distributed_nf4_worker(
             partial_state.process_index = rank
             partial_state.local_process_index = rank
             partial_state.num_processes = world_size
-            real_accelerator = Accelerator(cpu=device_type == "cpu")
+            real_accelerator = Accelerator(cpu=case.device_type == "cpu")
             real_accelerator.state.fsdp_plugin = plugin
             real_accelerator.state.device_mesh = mesh
             real_accelerator.state.parallelism_config = SimpleNamespace(
@@ -377,7 +384,7 @@ def _distributed_nf4_worker(
             rank,
             state_dicts_before_sharding,
         )
-        if offload:
+        if case.offload:
             assert all(p.device.type == "cpu" for p in model.parameters())
         if shape_snapshot:
             _assert_sharded_shapes(model, shape_snapshot, rank, world_size)
@@ -398,10 +405,12 @@ def _distributed_nf4_worker(
         assert not missing_gradients, missing_gradients
         if shape_snapshot:
             _assert_sharded_shapes(model, shape_snapshot, rank, world_size)
-        if phase is None:
-            _check_fsdp_resume(model, rank, tokens, checkpoint, optimizer)
+        if case.phase is None:
+            _check_fsdp_resume(model, rank, tokens, case.checkpoint, optimizer)
         else:
-            _check_fresh_trainer_resume(model, rank, tokens, checkpoint, phase)
+            _check_fresh_trainer_resume(
+                model, rank, tokens, case.checkpoint, case.phase
+            )
         if shape_snapshot:
             _assert_sharded_shapes(model, shape_snapshot, rank, world_size)
     finally:
@@ -520,17 +529,14 @@ def _mixed_precision_case(backend, tmp_path, device_type):
     torch.multiprocessing.spawn(
         _distributed_nf4_worker,
         args=(
-            backend,
-            str(checkpoint),
-            str(tmp_path / "rendezvous"),
-            None,
-            device_type,
-            torch.bfloat16,
-            False,
-            False,
-            None,
-            False,
-            True,
+            WorkerCase(
+                backend,
+                str(checkpoint),
+                str(tmp_path / "rendezvous"),
+                device_type=device_type,
+                dtype=torch.bfloat16,
+                mixed_precision=True,
+            ),
         ),
         nprocs=2,
     )
@@ -569,16 +575,13 @@ def test_rank_zero_load_shard_and_backward(backend, dtype, tmp_path):
     torch.multiprocessing.spawn(
         _distributed_nf4_worker,
         args=(
-            backend,
-            str(checkpoint),
-            str(tmp_path / "rendezvous"),
-            None,
-            "cpu",
-            dtype,
-            False,
-            False,
-            None,
-            True,
+            WorkerCase(
+                backend,
+                str(checkpoint),
+                str(tmp_path / "rendezvous"),
+                dtype=dtype,
+                prepare_optimizer=True,
+            ),
         ),
         nprocs=2,
     )
@@ -956,7 +959,7 @@ def test_fresh_process_trainer_resume(backend, tmp_path):
     for phase in ("save", "resume"):
         torch.multiprocessing.spawn(
             _distributed_nf4_worker,
-            args=(backend, str(base), str(tmp_path / phase), phase),
+            args=(WorkerCase(backend, str(base), str(tmp_path / phase), phase=phase),),
             nprocs=2,
         )
 
@@ -980,7 +983,15 @@ def test_cuda_nccl_bf16_loading_and_resume(backend, tmp_path):
     ).save_pretrained(base)
     torch.multiprocessing.spawn(
         _distributed_nf4_worker,
-        args=(backend, str(base), str(tmp_path / "nccl"), None, "cuda", torch.bfloat16),
+        args=(
+            WorkerCase(
+                backend,
+                str(base),
+                str(tmp_path / "nccl"),
+                device_type="cuda",
+                dtype=torch.bfloat16,
+            ),
+        ),
         nprocs=2,
     )
 
@@ -1173,17 +1184,7 @@ def test_real_moe_fsdp_resume(backend, tmp_path):
     save_file(state, base / "model.safetensors", metadata={"format": "pt"})
     torch.multiprocessing.spawn(
         _distributed_nf4_worker,
-        args=(
-            backend,
-            str(base),
-            str(tmp_path / "moe"),
-            None,
-            "cpu",
-            torch.float32,
-            False,
-            False,
-            None,
-        ),
+        args=(WorkerCase(backend, str(base), str(tmp_path / "moe")),),
         nprocs=2,
     )
 
@@ -1219,13 +1220,13 @@ def test_outer_activation_checkpointing(backend, tmp_path):
     torch.multiprocessing.spawn(
         _distributed_nf4_worker,
         args=(
-            backend,
-            str(base),
-            str(tmp_path / "activation"),
-            None,
-            "cpu",
-            torch.bfloat16,
-            True,
+            WorkerCase(
+                backend,
+                str(base),
+                str(tmp_path / "activation"),
+                dtype=torch.bfloat16,
+                activation_checkpointing=True,
+            ),
         ),
         nprocs=2,
     )
@@ -1251,14 +1252,15 @@ def test_cuda_cpu_offload(backend, tmp_path):
     torch.multiprocessing.spawn(
         _distributed_nf4_worker,
         args=(
-            backend,
-            str(base),
-            str(tmp_path / "offload"),
-            None,
-            "cuda",
-            torch.bfloat16,
-            True,
-            True,
+            WorkerCase(
+                backend,
+                str(base),
+                str(tmp_path / "offload"),
+                device_type="cuda",
+                dtype=torch.bfloat16,
+                activation_checkpointing=True,
+                offload=True,
+            ),
         ),
         nprocs=2,
     )
@@ -1389,15 +1391,14 @@ def _run_nf4_shape_case(
     torch.multiprocessing.spawn(
         _distributed_nf4_worker,
         args=(
-            backend,
-            str(checkpoint),
-            str(tmp_path / "shapes"),
-            None,
-            device_type,
-            torch.bfloat16,
-            False,
-            False,
-            case,
+            WorkerCase(
+                backend,
+                str(checkpoint),
+                str(tmp_path / "shapes"),
+                device_type=device_type,
+                dtype=torch.bfloat16,
+                sharding_case=case,
+            ),
         ),
         nprocs=3,
     )

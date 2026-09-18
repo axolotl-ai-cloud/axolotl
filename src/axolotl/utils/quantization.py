@@ -3,6 +3,7 @@ Utilities for quantization including QAT and PTQ using torchao.
 """
 
 import functools
+import importlib
 
 import torch
 from packaging import version
@@ -171,6 +172,17 @@ def _attach_torchao_quantizer(
     model.hf_quantizer = quantizer
 
 
+def _optional_types(*specs: tuple[str, str]) -> tuple[type, ...]:
+    """The named types that import here; torchao and bitsandbytes are absent on macOS/aarch64."""
+    found: tuple[type, ...] = ()
+    for module_name, attribute in specs:
+        try:
+            found += (getattr(importlib.import_module(module_name), attribute),)
+        except (ImportError, AttributeError):
+            pass
+    return found
+
+
 def patch_transformers_skip_quantized_init():
     """Stop ``from_pretrained`` from re-initializing already-quantized weights.
 
@@ -196,26 +208,14 @@ def patch_transformers_skip_quantized_init():
 
     from axolotl.utils.nf4 import BnbNF4Parametrization, TorchaoNF4Parametrization
 
-    try:
-        from torchao.utils import TorchAOBaseTensor
-    except ImportError:  # torchao is absent on macOS/aarch64
-        TorchAOBaseTensor = ()
+    torchao_tensors = _optional_types(("torchao.utils", "TorchAOBaseTensor"))
     quantized_parametrizations: tuple[type, ...] = (
         BnbNF4Parametrization,
         TorchaoNF4Parametrization,
+    ) + _optional_types(
+        ("bitsandbytes.nn.parametrize", "Bnb4bitParametrization"),
+        ("axolotl.monkeypatch.moe_quant", "Bnb8bitParametrization"),
     )
-    try:
-        from bitsandbytes.nn.parametrize import Bnb4bitParametrization
-
-        quantized_parametrizations += (Bnb4bitParametrization,)
-    except ImportError:  # bitsandbytes is absent on macOS
-        pass
-    try:
-        from axolotl.monkeypatch.moe_quant import Bnb8bitParametrization
-
-        quantized_parametrizations += (Bnb8bitParametrization,)
-    except ImportError:  # imports bitsandbytes at module scope
-        pass
 
     if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
         return
@@ -224,7 +224,7 @@ def patch_transformers_skip_quantized_init():
 
     def holds_quantized_weight(module):
         if any(
-            isinstance(param, TorchAOBaseTensor)
+            isinstance(param, torchao_tensors)
             for param in module.parameters(recurse=False)
         ):
             return True

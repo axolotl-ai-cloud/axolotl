@@ -908,6 +908,71 @@ class RLValidationMixin:
         return data
 
 
+STAGED_NF4_CONSTRAINTS = [
+    (
+        lambda self: (
+            not self.load_in_4bit or self.adapter != "qlora" or self.load_in_8bit
+        ),
+        "CPU-staged NF4 requires adapter: qlora and load_in_4bit: true",
+    ),
+    (
+        lambda self: (
+            bool(self.fsdp_config)
+            and (
+                str(self.fsdp_version) != "2"
+                or not self.fsdp_config.cpu_ram_efficient_loading
+                or not self.qlora_sharded_model_loading
+            )
+        ),
+        "CPU-staged NF4 requires FSDP2, cpu_ram_efficient_loading and qlora_sharded_model_loading",
+    ),
+    (
+        lambda self: (
+            bool(self.deepspeed)
+            or (self.tensor_parallel_size or 1) > 1
+            or (self.context_parallel_size or 1) > 1
+            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
+        ),
+        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+    ),
+    (
+        lambda self: (self.dp_replicate_size or 1) > 1,
+        "CPU-staged NF4 requires a one-dimensional sharding mesh; dp_replicate_size must be 1",
+    ),
+    (
+        lambda self: (
+            (self.bnb_config_kwargs or {}).get("bnb_4bit_quant_type", "nf4") != "nf4"
+        ),
+        "CPU-staged NF4 requires bnb_4bit_quant_type: nf4",
+    ),
+    (
+        lambda self: (
+            self.nf4_backend == "torchao"
+            and (
+                (self.bnb_config_kwargs or {}).get("blocksize", 64) != 64
+                or not (self.bnb_config_kwargs or {}).get(
+                    "bnb_4bit_use_double_quant", True
+                )
+            )
+        ),
+        "torchao NF4 requires blocksize 64 and double quantization",
+    ),
+    (
+        lambda self: bool(self.peft_use_dora or self.lora_modules_to_save),
+        "CPU-staged NF4 currently requires LoRA without DoRA or modules_to_save",
+    ),
+    (
+        lambda self: (
+            self.peft_init_lora_weights not in VALUE_INDEPENDENT_LORA_INIT
+            or bool(self.peft and self.peft.loftq_config)
+        ),
+        "CPU-staged NF4 does not support a value-dependent LoRA init "
+        "(pissa, olora, loftq, corda, eva): those inits residualize the base "
+        "weight, and a packed base cannot take the residual write-back.",
+    ),
+]
+
+
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
 
@@ -1315,53 +1380,9 @@ class OptimizationValidationMixin:
             )
             self.qlora_sharded_model_loading = False
             return self
-        if not self.load_in_4bit or self.adapter != "qlora" or self.load_in_8bit:
-            raise ValueError(
-                "CPU-staged NF4 requires adapter: qlora and load_in_4bit: true"
-            )
-        if self.fsdp_config and (
-            str(self.fsdp_version) != "2"
-            or not self.fsdp_config.cpu_ram_efficient_loading
-            or not self.qlora_sharded_model_loading
-        ):
-            raise ValueError(
-                "CPU-staged NF4 requires FSDP2, cpu_ram_efficient_loading and qlora_sharded_model_loading"
-            )
-        if (
-            self.deepspeed
-            or (self.tensor_parallel_size or 1) > 1
-            or (self.context_parallel_size or 1) > 1
-            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
-        ):
-            raise ValueError(
-                "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism"
-            )
-        if (self.dp_replicate_size or 1) > 1:
-            raise ValueError(
-                "CPU-staged NF4 requires a one-dimensional sharding mesh; dp_replicate_size must be 1"
-            )
-        quantization = self.bnb_config_kwargs or {}
-        if quantization.get("bnb_4bit_quant_type", "nf4") != "nf4":
-            raise ValueError("CPU-staged NF4 requires bnb_4bit_quant_type: nf4")
-        if self.nf4_backend == "torchao" and (
-            quantization.get("blocksize", 64) != 64
-            or not quantization.get("bnb_4bit_use_double_quant", True)
-        ):
-            raise ValueError(
-                "torchao NF4 requires blocksize 64 and double quantization"
-            )
-        if self.peft_use_dora or self.lora_modules_to_save:
-            raise ValueError(
-                "CPU-staged NF4 currently requires LoRA without DoRA or modules_to_save"
-            )
-        if self.peft_init_lora_weights not in VALUE_INDEPENDENT_LORA_INIT or (
-            self.peft and self.peft.loftq_config
-        ):
-            raise ValueError(
-                "CPU-staged NF4 does not support a value-dependent LoRA init "
-                "(pissa, olora, loftq, corda, eva): those inits residualize the base "
-                "weight, and a packed base cannot take the residual write-back."
-            )
+        for violates, message in STAGED_NF4_CONSTRAINTS:
+            if violates(self):
+                raise ValueError(message)
         return self
 
     @model_validator(mode="before")

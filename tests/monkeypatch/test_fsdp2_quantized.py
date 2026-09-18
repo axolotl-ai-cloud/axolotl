@@ -123,3 +123,13 @@ def test_quantized_param_detection_float_logical_subclass():
     finally:  # restore the global registry so tests stay order-independent
         fq._QUANT_TENSOR_CLASS_NAMES.clear()
         fq._QUANT_TENSOR_CLASS_NAMES.update(saved)
+
+
+def test_builds_original_state_dict_skips_staged_nf4_peers():
+    from axolotl.monkeypatch.accelerate.fsdp2 import _builds_original_state_dict
+
+    assert [
+        _builds_original_state_dict(staged, main)
+        for staged in (False, True)
+        for main in (True, False)
+    ] == [True, True, True, False]

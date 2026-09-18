@@ -426,6 +426,11 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     return log_bias_dtype_mismatch
 
 
+def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool:
+    """Staged NF4 holds the real weights on rank zero only; a peer's state dict would materialize meta."""
+    return not staged_nf4 or is_main_process
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -458,7 +463,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
     original_sd = (
-        model.state_dict() if not staged_nf4 or accelerator.is_main_process else {}
+        model.state_dict()
+        if _builds_original_state_dict(staged_nf4, accelerator.is_main_process)
+        else {}
     )
 
     from torch.distributed.fsdp.wrap import (

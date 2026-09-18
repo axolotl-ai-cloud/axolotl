@@ -297,13 +297,18 @@ def _patch_peft_param_wrapper_dropout():
     ParamWrapper._axolotl_dropout_patched = True
 
 
+def read_saved_adapter_config(lora_model_dir: str | Path) -> dict | None:
+    """The adapter config saved under `lora_model_dir`, or None when it is not readable locally (e.g. a hub id)."""
+    try:
+        return json.loads((Path(lora_model_dir) / "adapter_config.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+
 def _warn_if_patterns_differ_from_saved_adapter(cfg: DictDefault) -> None:
     """Warn when cfg rank/alpha patterns differ from the saved adapter's, which governs under lora_model_dir."""
-    try:
-        saved = json.loads(
-            (Path(cfg.lora_model_dir) / "adapter_config.json").read_text()
-        )
-    except (OSError, ValueError):
+    saved = read_saved_adapter_config(cfg.lora_model_dir)
+    if saved is None:
         # Adapter config not readable locally (e.g. hub id): can't compare, so warn generically.
         LOG.warning(
             "lora_rank_pattern/lora_alpha_pattern are ignored when loading an "

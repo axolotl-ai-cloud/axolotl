@@ -5,14 +5,12 @@ Model loader class implementation for loading, configuring, and patching various
 from __future__ import annotations
 
 import gc
-import json
 import math
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from functools import cached_property
 from importlib.util import find_spec
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import peft
@@ -46,7 +44,7 @@ from transformers.integrations.deepspeed import (
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders.adapter import load_adapter
+from axolotl.loaders.adapter import load_adapter, read_saved_adapter_config
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.patch_manager import PatchManager
 from axolotl.loaders.utils import (
@@ -541,26 +539,14 @@ class ModelLoader:
                 self.cfg.qat.quantize_embedding,
             )
 
-    def _staged_nf4_lora_init_reads_base_weights(self) -> bool:
-        """Whether PEFT reads real base weights while building the adapter.
-
-        `check_staged_nf4` rejects value-dependent inits from the config, but PEFT re-runs
-        the saved adapter's own init on load, so `lora_model_dir` can still request one.
-        """
+    def _reject_value_dependent_saved_adapter_init(self) -> None:
+        """`check_staged_nf4` rejects value-dependent inits from the config, but PEFT re-runs
+        the saved adapter's own init on load, so `lora_model_dir` can still request one."""
         if not self.cfg.lora_model_dir:
-            return False
-        try:
-            saved = json.loads(
-                (Path(self.cfg.lora_model_dir) / "adapter_config.json").read_text()
-            )
-        except (OSError, ValueError):
-            # Adapter config not readable locally (e.g. hub id): assume the worst and dequantize.
-            LOG.warning(
-                "Could not read %s/adapter_config.json to check its LoRA init; "
-                "loading the adapter against dequantized base weights.",
-                self.cfg.lora_model_dir,
-            )
-            return True
+            return
+        saved = read_saved_adapter_config(self.cfg.lora_model_dir)
+        if saved is None:
+            return
         if bool(saved.get("loftq_config")) or (
             saved.get("init_lora_weights", True) not in VALUE_INDEPENDENT_LORA_INIT
         ):
@@ -572,14 +558,27 @@ class ModelLoader:
                 "take the residual write-back. Convert the adapter with PEFT's "
                 "`path_initial_model_for_weight_conversion` before resuming."
             )
-        return False
+
+    def _staged_nf4_needs_real_base_weights(self) -> bool:
+        """Whether PEFT must read real base weights instead of the shape stand-ins."""
+        if not self.cfg.lora_model_dir:
+            return False
+        if read_saved_adapter_config(self.cfg.lora_model_dir) is not None:
+            return False
+        # Adapter config not readable locally (e.g. hub id): assume the worst and dequantize.
+        LOG.warning(
+            "Could not read %s/adapter_config.json to check its LoRA init; "
+            "loading the adapter against dequantized base weights.",
+            self.cfg.lora_model_dir,
+        )
+        return True
 
     def _load_adapters(self) -> PeftConfig | None:
         """Load LoRA or other adapters."""
-        keep_packed = (
-            getattr(self.model, "_axolotl_staged_nf4", False)
-            and not self._staged_nf4_lora_init_reads_base_weights()
-        )
+        keep_packed = False
+        if getattr(self.model, "_axolotl_staged_nf4", False):
+            self._reject_value_dependent_saved_adapter_init()
+            keep_packed = not self._staged_nf4_needs_real_base_weights()
         with _nf4_shape_stand_ins() if keep_packed else nullcontext():
             return self._build_adapters()
 
