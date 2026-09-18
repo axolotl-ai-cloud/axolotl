@@ -1,6 +1,6 @@
 # Finetune Ministral with Axolotl
 
-Ministral is a family of openweight models from MistralAI found on [HuggingFace](mistralai/Ministral-8B-Instruct-2410). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
+Ministral is a family of openweight models from MistralAI found on [HuggingFace](https://huggingface.co/mistralai/Ministral-8B-Instruct-2410). This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.
 
 ## Getting started
 
