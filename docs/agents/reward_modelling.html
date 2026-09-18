@@ -942,6 +942,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="process-reward-models-prm" class="level3">
 <h3 class="anchored" data-anchor-id="process-reward-models-prm">Process Reward Models (PRM)</h3>
 <p>Train a token classifier to score each reasoning step. Uses <code>AutoModelForTokenClassification</code>.</p>
+<p>Requires <code>trl&lt;=1.13.0</code> (<code>pip install trl==1.13.0</code>): TRL removed <code>trl.experimental.prm</code> in later versions. ORM is unaffected.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-3B</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">model_type</span><span class="kw">:</span><span class="at"> AutoModelForTokenClassification</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">num_labels</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>

@@ -948,7 +948,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.utils.quantization.patch_transformers_skip_quantized_init">patch_transformers_skip_quantized_init</a></td>
-<td>Stop <code>from_pretrained</code> from re-initializing torchao-quantized weights.</td>
+<td>Stop <code>from_pretrained</code> from re-initializing already-loaded quantized weights.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.quantization.prepare_model_for_qat">prepare_model_for_qat</a></td>
@@ -1063,14 +1063,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.utils.quantization.patch_transformers_skip_quantized_init" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.quantization.patch_transformers_skip_quantized_init">patch_transformers_skip_quantized_init</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.patch_transformers_skip_quantized_init()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Stop <code>from_pretrained</code> from re-initializing torchao-quantized weights.</p>
-<p>transformers re-runs <code>_init_weights</code> on every module during loading; the
-generic implementation does <code>init.normal_(module.weight.float(), ...)</code>.
-<code>.float()</code> on a torchao tensor subclass (e.g.&nbsp;<code>MXTensor</code>) returns a new
-tensor that both drops the <code>_is_hf_initialized</code> skip flag and does not
-implement <code>normal_</code>, so loading an MX checkpoint raises NotImplementedError.
-Re-initializing an already-loaded quantized weight is never correct, so we
-skip those modules entirely.</p>
+<p>Stop <code>from_pretrained</code> from re-initializing already-loaded quantized weights.</p>
+<p>transformers re-runs <code>_init_weights</code> on every module, skipping only tensors
+flagged <code>_is_hf_initialized</code>. Quantized weights lose the flag because reading
+them returns a fresh tensor: <code>.float()</code> on a torchao subclass (which then
+raises on <code>normal_</code>), or the dequant behind a parametrization (NF4, load-time
+MoE quant), which silently redraws every expert stack.</p>
 </section>
 <section id="axolotl.utils.quantization.prepare_model_for_qat" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.quantization.prepare_model_for_qat">prepare_model_for_qat</h3>

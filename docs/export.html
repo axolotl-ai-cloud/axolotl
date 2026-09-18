@@ -997,7 +997,7 @@ Warning
 <ul>
 <li><strong>Pre-quantized checkpoints</strong> (torchao fp8/nvfp4, bitsandbytes) cannot be converted — re-export in bf16 with <code>axolotl merge-lora --dequant</code>.</li>
 <li><strong>Vocab mismatch</strong> between <code>tokenizer.json</code> and <code>config.json</code> (a common outcome of adding tokens without resizing embeddings).</li>
-<li><strong>Multi-token-prediction layers</strong> (<code>num_nextn_predict_layers</code>), which llama.cpp cannot load. See <a href="../docs/models/glm45.html">GLM-4.5</a>.</li>
+<li><strong>Multi-token-prediction layers</strong> (<code>num_nextn_predict_layers</code>), which llama.cpp cannot load. See the <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45">GLM-4.5 example</a>.</li>
 <li><strong>Missing chat template</strong>, which is only a warning but usually means the runtime will fall back to a default template and undo your fine-tune.</li>
 </ul>
 </section>
