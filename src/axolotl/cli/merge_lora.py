@@ -118,6 +118,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
         dequant=bool(getattr(cfg, "merge_dequant", False)),
         override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
+        revision=cfg.revision_of_model,
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")
@@ -153,19 +154,19 @@ def do_cli(
     original_adapter = getattr(raw_cfg, "adapter", None)
     original_quantize_moe_experts = getattr(raw_cfg, "quantize_moe_experts", False)
 
-    parsed_cfg = load_cfg(
-        config,
-        merge_lora=True,
-        load_in_8bit=False,
-        load_in_4bit=False,
-        quantize_moe_experts=False,
-        attn_implementation=None,
-        context_parallel_size=None,
-        deepspeed=None,
-        fsdp=None,
-        fsdp_config=None,
-        **kwargs,
-    )
+    merge_overrides = {
+        "merge_lora": True,
+        "load_in_8bit": False,
+        "load_in_4bit": False,
+        "quantize_moe_experts": False,
+        "ple_cpu_offload": False,
+        "attn_implementation": None,
+        "context_parallel_size": None,
+        "deepspeed": None,
+        "fsdp": None,
+        "fsdp_config": None,
+    }
+    parsed_cfg = load_cfg(config, **{**kwargs, **merge_overrides})
 
     # Stash original quantization settings for NF4 simulation in efficient merge
     parsed_cfg._original_load_in_4bit = original_load_in_4bit

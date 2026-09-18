@@ -4,8 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import torch
 import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
+from transformers.trainer import OPTIMIZER_NAME, SCHEDULER_NAME
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
@@ -93,8 +95,8 @@ class TestHFCausalTrainerBuilder:
 
         assert training_arguments.learning_rate == 0.00005
         assert training_arguments.weight_decay == 0.01
-        assert training_arguments.adam_beta1 == 0.998
-        assert training_arguments.adam_beta2 == 0.9
+        assert training_arguments.adam_beta1 == 0.91
+        assert training_arguments.adam_beta2 == 0.99
         assert training_arguments.adam_epsilon == 0.00001
         assert training_arguments.max_grad_norm == 1.0
 
@@ -139,12 +141,52 @@ class TestHFCausalTrainerBuilder:
         assert optimizer_cls is MuonOptimizerFactory
         assert optimizer_kwargs["lr"] == 0.00005
         assert optimizer_kwargs["weight_decay"] == 0.01
-        assert optimizer_kwargs["betas"] == (0.998, 0.9)
+        assert optimizer_kwargs["betas"] == (0.91, 0.99)
         assert optimizer_kwargs["eps"] == 0.00001
 
         # Ensure optimizer is created with correct class
         optim = trainer.create_optimizer()
         assert isinstance(optim, Muon)
+
+    def test_polora_optimizer(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "polora"
+        cfg["optim_args"] = {"beta1": 0.95, "ns_steps": 4}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        from axolotl.utils.optimizers.polora import PoloraOptimizerFactory
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is PoloraOptimizerFactory
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["beta1"] == 0.95
+        assert optimizer_kwargs["ns_steps"] == 4
+        # polora takes no Adam betas/eps; the builder branch must not merge them in
+        assert "betas" not in optimizer_kwargs
+        assert "eps" not in optimizer_kwargs
+
+    @pytest.mark.parametrize("weight_decay", [0.0, 0.05])
+    def test_loraplus_optimizer_weight_decay(
+        self, sft_cfg, model, tokenizer, weight_decay
+    ):
+        cfg = sft_cfg.copy()
+        cfg["loraplus_lr_ratio"] = 16
+        cfg["weight_decay"] = weight_decay
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+        assert trainer.args.weight_decay == weight_decay
+
+        optim = trainer.create_optimizer()
+
+        # loraplus zeroes its no-decay group regardless; every other group tracks the config
+        decays = {
+            group["weight_decay"] for group in optim.param_groups if group["params"]
+        }
+        assert decays <= {weight_decay, 0.0}
+        assert weight_decay in decays
 
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()

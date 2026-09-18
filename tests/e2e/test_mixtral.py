@@ -15,6 +15,7 @@ from axolotl.utils.dict import DictDefault
 from .utils import (
     check_model_output_exists,
     check_tensorboard_loss_decreased,
+    requires_flash_attn,
     with_temp_dir,
 )
 
@@ -24,6 +25,7 @@ class TestMixtral(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
+    @requires_flash_attn
     @with_temp_dir
     def test_qlora_w_fa2(self, temp_dir):
         cfg = DictDefault(
@@ -150,6 +152,7 @@ class TestMixtral(unittest.TestCase):
             max_final=4.7,
         )
 
+    @requires_flash_attn
     @with_temp_dir
     def test_16bit_lora_w_fa2(self, temp_dir):
         cfg = DictDefault(
@@ -282,6 +285,7 @@ class TestMixtral(unittest.TestCase):
             max_final=4.7,
         )
 
+    @requires_flash_attn
     @with_temp_dir
     def test_ft(self, temp_dir):
         cfg = DictDefault(

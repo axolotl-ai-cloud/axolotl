@@ -10,7 +10,7 @@
 #     and place it at ~/Gym/resources_servers/instruction_following/data/instruction_following.jsonl
 #
 # Usage:
-#   axolotl train examples/nemo_gym_multi_env.yaml
+#   axolotl train src/axolotl/integrations/nemo_gym/examples/nemo_gym_multi_env.yaml
 
 base_model: Qwen/Qwen2.5-1.5B-Instruct
 model_type: AutoModelForCausalLM

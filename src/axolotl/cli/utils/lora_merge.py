@@ -1944,6 +1944,7 @@ def merge_lora_sharded_efficient(
     trust_remote_code: bool = False,
     dequant: bool = False,
     override_quantizer: bool = False,
+    revision: Optional[str] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -1988,7 +1989,9 @@ def merge_lora_sharded_efficient(
     nvfp4_scale_mode = _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer)
 
     if "/" in str(base_model_path) and not base_model_path.exists():
-        base_model_path = Path(snapshot_download(str(base_model_path)))
+        base_model_path = Path(
+            snapshot_download(str(base_model_path), revision=revision)
+        )
 
     meta_model = _build_meta_model(base_model_path, trust_remote_code=trust_remote_code)
 
@@ -2157,6 +2160,9 @@ def merge_lora_sharded_efficient(
     resized_vocab = None
     # Track weight_map for index regeneration: {tensor_key: shard_filename}
     weight_map: Dict[str, str] = {}
+    # Accumulate real byte size and parameter count for the index metadata.
+    total_size_bytes = 0
+    total_parameters = 0
 
     for shard_path in tqdm(model_shards, desc="Merging shards"):
         merged_tensors = {}
@@ -2300,8 +2306,10 @@ def merge_lora_sharded_efficient(
             else:
                 torch.save(merged_tensors, output_shard_path)
 
-        for tensor_key in merged_tensors:
+        for tensor_key, tensor in merged_tensors.items():
             weight_map[tensor_key] = output_shard_path.name
+            total_parameters += tensor.numel()
+            total_size_bytes += tensor.numel() * tensor.element_size()
 
         del merged_tensors, shard_tensors
         if device != "cpu" and torch.cuda.is_available():
@@ -2327,7 +2335,10 @@ def merge_lora_sharded_efficient(
             else "pytorch_model.bin.index.json"
         )
         index = {
-            "metadata": {"total_size": total_tensors},
+            "metadata": {
+                "total_parameters": total_parameters,
+                "total_size": total_size_bytes,
+            },
             "weight_map": weight_map,
         }
         with open(output_path / index_name, "w") as f:

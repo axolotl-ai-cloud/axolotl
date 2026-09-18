@@ -31,7 +31,7 @@
 ## 🎉 Latest Updates
 
 - 2026/08:
-  - New model support has been added in Axolotl for [Muse Glimmer](https://docs.axolotl.ai/docs/models/muse-glimmer.html), [North Micro Vision Instruct](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html) and [Shieldstral](https://docs.axolotl.ai/docs/models/shieldstral.html).
+  - New model support has been added in Axolotl for [Ling 3.0](https://docs.axolotl.ai/docs/models/ling3.html), [Muse Glimmer](https://docs.axolotl.ai/docs/models/muse-glimmer.html), [North Micro Vision Instruct](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html) and [Shieldstral](https://docs.axolotl.ai/docs/models/shieldstral.html).
 - 2026/07:
   - [NVFP4 (4-bit) MoE LoRA training](https://docs.axolotl.ai/docs/nvfp4_lora.html) is now supported via ScatterMoE (W4A16) and SonicMoE (W4A4), including adapter merge back into a plain NVFP4 checkpoint.
 - 2026/06:
@@ -98,7 +98,7 @@ Features:
 
 - NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
 - Python >=3.11 (3.12 recommended)
-- PyTorch ≥2.11.0
+- PyTorch ≥2.11.0 (2.12.1 recommended)
 
 ### Google Colab
 
@@ -117,7 +117,7 @@ export UV_TORCH_BACKEND=cu130
 uv venv --python 3.12
 source .venv/bin/activate
 
-uv pip install torch==2.12.0 torchvision
+uv pip install torch==2.12.1 torchvision
 uv pip install --no-build-isolation axolotl[deepspeed]
 
 # Download example axolotl configs, deepspeed configs

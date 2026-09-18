@@ -42,9 +42,17 @@ def _enable_parametrization_cache(module, inputs):
 
 
 def _disable_parametrization_cache(module, inputs, output):
-    P._cache_enabled -= 1
+    # always_call can fire without a matching pre-hook; a negative counter is truthy.
+    P._cache_enabled = max(0, P._cache_enabled - 1)
     if not P._cache_enabled:
         P._cache = {}
+
+
+def _register_parametrization_cache_hooks(module):
+    """Gate torch's parametrization cache to this module's forward."""
+    module.register_forward_pre_hook(_enable_parametrization_cache)
+    # Without always_call, an aborted checkpoint recompute skips this and pins experts.
+    module.register_forward_hook(_disable_parametrization_cache, always_call=True)
 
 
 def replace_parameter_8bit(module, param_name):
@@ -63,8 +71,7 @@ def replace_parameter_8bit(module, param_name):
 
     # Cache dequantized values during forward to avoid redundant dequantization.
     if not getattr(module, "_axolotl_8bit_hooks_registered", False):
-        module.register_forward_pre_hook(_enable_parametrization_cache)
-        module.register_forward_hook(_disable_parametrization_cache)
+        _register_parametrization_cache_hooks(module)
         module._axolotl_8bit_hooks_registered = True
 
 
@@ -156,12 +163,15 @@ def patch_peft_target_parameters_matching():
        adapters are compatible with standard PEFT, vLLM, etc.
     3. Skips ParametrizationList synthetic paths to prevent PEFT from mistakenly
        targeting quantized expert params via name-suffix matching.
+    4. Evicts the stale ``parametrize`` cache entry when a nested ParamWrapper
+       activates, so its delta is not masked by an already-cached value.
     """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
 
-    from contextlib import nullcontext
+    from contextlib import contextmanager, nullcontext
 
+    from peft.tuners.lora.layer import ParamWrapper
     from peft.tuners.tuners_utils import BaseTuner, BaseTunerLayer
     from peft.utils.integrations import init_empty_weights
     from peft.utils.other import _get_submodules
@@ -181,6 +191,7 @@ def patch_peft_target_parameters_matching():
     ):
         original_targets = list(peft_config.target_parameters)
         expanded = set(original_targets)
+        targeted_parameter_names: list[str] = []
 
         # Expand short suffixes to full paths for parametrized modules.
         for module_name, module in model.named_modules():
@@ -283,7 +294,7 @@ def patch_peft_target_parameters_matching():
                         key.endswith(f".{t}") for t in target_names_set
                     ):
                         create_and_replace_param(module_name, key, param_name)
-                        self.targeted_parameter_names.append(key)
+                        targeted_parameter_names.append(key)
             else:
                 unwrapped_module_name = strip_base_layer_from_name(module_name)
                 for param_name, _ in module.named_parameters(recurse=False):
@@ -292,7 +303,11 @@ def patch_peft_target_parameters_matching():
                         key.endswith(f".{t}") for t in target_names_set
                     ):
                         create_and_replace_param(module_name, key, param_name)
-                        self.targeted_parameter_names.append(key)
+                        targeted_parameter_names.append(key)
+
+        # PEFT <=0.20 reads the attribute, newer PEFT uses the return value.
+        self.targeted_parameter_names.extend(targeted_parameter_names)
+        return targeted_parameter_names
 
     BaseTuner._inject_parameters = _patched_inject_parameters
 
@@ -312,6 +327,26 @@ def patch_peft_target_parameters_matching():
         return _original_check(config, key)
 
     BaseTuner._check_target_module_exists = _patched_check_target_module_exists
+
+    # Targeting two parameters of one module nests the ParamWrappers, and the outer one
+    # opens `parametrize.cached()` before the inner registers its LoRA proxy. On an
+    # already-parametrized (quantized) parameter that registration caches the pre-proxy
+    # value, so every later read returns it and the inner LoRA gets no gradient at all.
+    if not getattr(ParamWrapper._activate_lora, "_axolotl_patched", False):
+        _original_activate = ParamWrapper._activate_lora
+
+        @contextmanager
+        def _patched_activate_lora(self, active_adapters):
+            with _original_activate(self, active_adapters):
+                key = (id(self.get_base_layer()), self.parameter_name)
+                P._cache.pop(key, None)
+                try:
+                    yield
+                finally:
+                    P._cache.pop(key, None)
+
+        _patched_activate_lora._axolotl_patched = True
+        ParamWrapper._activate_lora = _patched_activate_lora
 
     patch_peft_target_parameters_matching._axolotl_patched = True
     LOG.info("Patched PEFT _inject_parameters for consistent ParamWrapper ordering")

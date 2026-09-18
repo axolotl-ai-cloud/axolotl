@@ -16,7 +16,9 @@ from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RingAttnFunc,
     RLType,
+    attn_impl_base,
 )
+from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 
 LOG = get_logger(__name__)
 
@@ -425,6 +427,21 @@ class TrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fp8_config(cls, data):
+        fp8_config = data.get("fp8_config")
+        fp8_recipe = resolve_fp8_recipe(fp8_config)
+        if fp8_config is not None and not data.get("fp8"):
+            raise ValueError(
+                "`fp8_config` requires `fp8: true`; "
+                "set `fp8: true` or remove `fp8_config`."
+            )
+        if (
+            data.get("fp8_enable_fsdp_float8_all_gather")
+            and fp8_recipe != DEFAULT_FP8_RECIPE
+        ):
+            raise ValueError(
+                "`fp8_enable_fsdp_float8_all_gather` only supports the tensorwise "
+                "`fp8_config.recipe`; disable it when using rowwise scaling."
+            )
         if data.get("fp8") and not data.get("torch_compile"):
             LOG.warning(
                 "torch_compile is strongly recommended for FP8 training in order to "
@@ -785,6 +802,28 @@ class RLValidationMixin:
 
         return data
 
+    @model_validator(mode="after")
+    def check_dpo_use_liger_kernel(self):
+        if not self.dpo_use_liger_kernel:
+            return self
+        loss_types = self.dpo_loss_type
+        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
+        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
+        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
+            raise ValueError(
+                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
+                "(liger-kernel's fused DPO loss cannot length-normalize the "
+                "squared margin). Disable the liger kernel or use another loss."
+            )
+        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
+        if loss_types and len(loss_types) > 1:
+            LOG.warning(
+                "`dpo_use_liger_kernel` uses only the first entry of "
+                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
+                "are ignored on the liger loss path."
+            )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
@@ -901,6 +940,75 @@ class OptimizationValidationMixin:
                     raise ValueError(
                         "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
                     )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_polora(cls, data):
+        if data.get("optimizer") != "polora":
+            return data
+        if data.get("adapter") not in ("lora", "qlora"):
+            raise ValueError(
+                "polora only updates LoRA (A, B) factors and requires "
+                "adapter: lora or qlora."
+            )
+        if data.get("deepspeed") or (data.get("tensor_parallel_size") or 1) > 1:
+            # ZeRO partitions the optimizer step itself, and TP shards the rank dim;
+            # polora needs whole factors to build its r x r curvature matrices.
+            raise ValueError(
+                "polora is not compatible with DeepSpeed or tensor parallelism. "
+                "Use single-GPU, DDP, or FSDP2."
+            )
+        if data.get("fsdp") or data.get("fsdp_config"):
+            if str(cls._resolve_fsdp_version(data)) != "2":
+                raise ValueError(
+                    "polora requires FSDP2. Set fsdp_version: 2 to use polora with FSDP."
+                )
+
+        untrained = [
+            key
+            for key in (
+                "lora_modules_to_save",
+                "unfrozen_parameters",
+                "peft_use_dora",
+                "peft_trainable_token_indices",
+                "lisa_step_interval",
+                "reward_model",
+                "process_reward_model",
+            )
+            if data.get(key)
+        ]
+        if untrained:
+            raise ValueError(
+                f"polora has no fallback optimizer, so the parameters added by {untrained} "
+                "would never be trained. Remove them or pick a different optimizer."
+            )
+
+        # The factory builds the optimizer straight from the model, bypassing axolotl's
+        # parameter grouping, so per-group learning rates never take effect.
+        ignored_lrs = [
+            key
+            for key in (
+                "loraplus_lr_ratio",
+                "lr_groups",
+                "embedding_lr",
+                "embedding_lr_scale",
+            )
+            if data.get(key)
+        ]
+        if ignored_lrs:
+            raise ValueError(
+                f"polora sets its own per-factor step size, so {ignored_lrs} would be "
+                "silently ignored. Remove them or pick a different optimizer."
+            )
+
+        if data.get("relora_steps"):
+            raise ValueError(
+                "relora resets optimizer state through Optimizer.state, which polora "
+                "does not use, so its momentum would survive every merge."
+            )
+        if data.get("weight_decay"):
+            LOG.warning("polora has no weight decay term; weight_decay is ignored.")
         return data
 
     @model_validator(mode="before")
@@ -1154,6 +1262,23 @@ class OptimizationValidationMixin:
 
         return self
 
+    @model_validator(mode="after")
+    def check_fsdp2_cpu_ram_efficient_loading_w_4bit(self):
+        # nf4 quantizes on rank 0 only: its params keep the packed `(N, 1)` shape there while the
+        # other ranks stay on meta unpacked, so the FSDP2 load scatters mismatched sizes.
+        if (
+            self.fsdp_config
+            and str(self.fsdp_version) == "2"
+            and self.fsdp_config.cpu_ram_efficient_loading
+            and self.load_in_4bit
+        ):
+            raise ValueError(
+                "FSDP2 does not support `cpu_ram_efficient_loading` with load_in_4bit; the "
+                "rank-0-only bitsandbytes quantization deadlocks the state dict scatter. "
+                "Please set `fsdp_config.cpu_ram_efficient_loading` to false."
+            )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def check_tensor_parallel_size_update_ds_json(cls, data):
@@ -1286,6 +1411,38 @@ class SystemValidationMixin:
 
         return data
 
+    @model_validator(mode="after")
+    def check_flash_attn_available(self):
+        if self.attn_implementation not in ("flash_attention_2", "flash_attention_3"):
+            return self
+
+        import torch
+
+        # CPU-only boxes may just be preprocessing for a GPU box; don't block them.
+        if not torch.cuda.is_available():
+            return self
+
+        from transformers.utils import (
+            is_flash_attn_2_available,
+            is_flash_attn_3_available,
+        )
+
+        # kernels_fallback_ok mirrors runtime resolution: the flash-attn package OR a
+        # kernels-hub binary matching this torch build.
+        if self.attn_implementation == "flash_attention_3":
+            available = is_flash_attn_3_available(kernels_fallback_ok=True)
+        else:
+            available = is_flash_attn_2_available(kernels_fallback_ok=True)
+        if not available:
+            raise ValueError(
+                f"attn_implementation: {self.attn_implementation} is set, but no "
+                "flash-attn build is available in this environment: the flash-attn "
+                "package is not installed and the kernels hub has no prebuilt binary "
+                f"for torch {torch.__version__}. Install a flash-attn build matching "
+                "your torch version, or set `attn_implementation: sdpa`."
+            )
+        return self
+
 
 class ChatTemplateValidationMixin:
     """Validation methods related to chat template configuration."""
@@ -1392,6 +1549,24 @@ class PretrainingValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_dataset_weight(cls, data):
+        if data.get("streaming") and data.get("datasets"):
+            for ds_cfg in data["datasets"]:
+                weight = (
+                    ds_cfg.get("weight")
+                    if isinstance(ds_cfg, dict)
+                    else getattr(ds_cfg, "weight", None)
+                )
+                if weight is not None and weight < 1.0:
+                    LOG.warning(
+                        "Dataset weight is not supported with streaming datasets and will be ignored. "
+                        "Use non-streaming mode for weighted dataset mixing."
+                    )
+                    break
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
@@ -1408,21 +1583,6 @@ class ModelCompatibilityValidationMixin:
             self.base_model and "mpt" in self.base_model.lower()
         ) and self.gradient_checkpointing:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
-        return self
-
-    @model_validator(mode="after")
-    def check_nemotron_h_gradient_checkpointing(self):
-        if (
-            self.base_model
-            and "nemotron-h" in self.base_model.lower()
-            and self.gradient_checkpointing
-            and not self.sample_packing
-        ):
-            raise ValueError(
-                "gradient_checkpointing for nemotron_h requires sample_packing: true. "
-                "The upstream model marks supports_gradient_checkpointing=False; "
-                "axolotl only enables it after applying the sample-packing patch."
-            )
         return self
 
     @model_validator(mode="after")
@@ -1653,10 +1813,11 @@ class ComplexValidationMixin:
                 "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
             )
         elif self.context_parallel_size > 1:
-            if not self.attn_uses_flash_lib:
+            if attn_impl_base(self.attn_implementation) != "flash_attention_2":
                 raise ValueError(
-                    "context_parallel_size > 1 requires flash attention "
-                    "(attn_implementation: flash_attention_2 or flash_attention_3)."
+                    "context_parallel_size > 1 requires attn_implementation: "
+                    "flash_attention_2. Ring attention only supports the flash "
+                    "attention 2 backend."
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:

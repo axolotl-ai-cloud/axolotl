@@ -27,6 +27,7 @@ _BNB_TYPED_CAPI = getattr(cdequantize_blockwise_fp32, "argtypes", None) is not N
 
 _ptr: Callable[..., object]
 _int: Callable[..., object]
+_stream: Callable[..., object]
 if _BNB_TYPED_CAPI:
 
     def _ptr(tensor):
@@ -35,12 +36,17 @@ if _BNB_TYPED_CAPI:
     def _int(value):
         return value
 
+    # bnb calls this itself under the hood; prefer it over the bnb-internal
+    # _get_tensor_stream, which upstream may remove.
+    def _stream(index):
+        return torch._C._cuda_getCurrentRawStream(index)
+
 else:
     _ptr = get_ptr
     _int = ctypes.c_int
 
-# Cached per-device: per-call current_stream() measurably slows this hot path.
-CUDA_STREAM: dict[torch.device, torch.cuda.Stream] = {}
+    def _stream(index):
+        return ctypes.c_void_p(torch._C._cuda_getCurrentRawStream(index))
 
 
 def _ctypes_nf4_dequant(
@@ -62,11 +68,8 @@ def _ctypes_nf4_dequant(
         n_elements_absmax, dtype=torch.float32, device=target_device
     )
 
-    stream = CUDA_STREAM.get(target_device)
-    if stream is None:
-        stream = CUDA_STREAM.setdefault(
-            target_device, torch.cuda.current_stream(target_device)
-        )
+    # resolved per call: the current stream belongs to the caller's context, not the device
+    stream = _stream(W.device.index)
 
     cdequantize_blockwise_fp32(
         _ptr(code2),

@@ -57,7 +57,7 @@ description: Frequently asked questions
 
 **Q: vLLM is not working with Axolotl**
 
-> A: We currently recommend torch 2.12 for use with `vllm`. Please ensure you use the right version. For Docker, please use a `-vllm` tagged image such as `main-py3.12-cu130-2.12.0-vllm`.
+> A: We currently recommend torch 2.12 for use with `vllm`. Please ensure you use the right version. For Docker, please use a `-vllm` tagged image such as `main-py3.12-cu130-2.12.1-vllm`.
 
 **Q: FA2 2.8.0 `undefined symbol` runtime error on CUDA 12.4**
 
@@ -103,7 +103,7 @@ description: Frequently asked questions
 
 **Q: "`chat_template` choice is `tokenizer_default` but tokenizer's `chat_template` is null. Please add a `chat_template` in tokenizer config"**
 
-> A: This is because the tokenizer does not have a chat template. Please add a chat template in the tokenizer config. See [chat_template](dataset-formats/conversation.qmd#chat-template) for more details.
+> A: This is because the tokenizer does not have a chat template. Please add a chat template in the tokenizer config. See [chat_template](dataset-formats/conversation.qmd#chat_template) for more details.
 
 **Q: The EOT token(s) are incorrectly being masked or not being masked / `EOT token __ not found in chat template`.**
 

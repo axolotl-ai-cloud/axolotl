@@ -38,7 +38,7 @@ class DeprecatedParameters(BaseModel):
     def validate_rope_scaling(cls, rope_scaling):
         if rope_scaling:
             raise DeprecationWarning(
-                "`rope_scaling` is no longer supported, it should now be be a key under `model_config`"
+                "`rope_scaling` is no longer supported, it should now be a key under `model_config`"
             )
         return rope_scaling
 

@@ -1,0 +1,77 @@
+# Stage 1: continued pretraining of Qwen3-8B under a ternary constraint, in the
+# style of Fermion's Neutrino-1. Projections train while already restricted to
+# {-1, 0, 1} with a per-row scale, the vocab table is int8 per-row, norms and the
+# LM head stay in high precision.
+base_model: Qwen/Qwen3-8B
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_fused_linear_cross_entropy: true
+
+qat:
+  weight_dtype: ternary
+  activation_dtype: int8
+  quantize_embedding: true
+  fake_quant_after_n_steps: 20 # short high precision warmup before the switch
+
+pretraining_dataset:
+  - path: HuggingFaceFW/fineweb-edu
+    name: sample-100BT
+    type: pretrain
+    text_column: text
+    split: train
+
+
+pretrain_multipack_attn: true
+
+output_dir: ./outputs/qwen3-8b-ternary-cpt
+
+sequence_len:  512
+sample_packing: true
+attn_implementation: flash_attention_2
+
+micro_batch_size: 1
+gradient_accumulation_steps: 2
+# 2 GPUs x 1 x 2 x 512 ~= 2K tokens/step. These values are a smoke test.
+# For a real run on 2 GPUs: sequence_len 4096, micro_batch_size 1,
+# gradient_accumulation_steps 32 (~256K tokens/step) and max_steps in the tens of
+# thousands. Budget tens of billions of tokens: this is a pretraining run.
+max_steps: 40
+
+# Master weights and optimizer state stay high precision; do not use an 8-bit optimizer here.
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1e-4
+warmup_steps: 10
+weight_decay: 0.1
+adam_beta2: 0.95
+max_grad_norm: 1.0
+
+bf16: true
+tf32: true
+
+logging_steps: 1
+save_steps: 10
+save_total_limit: 3
+
+fsdp_version: 2
+fsdp_config:
+  # Full finetune of 8B sharded over 2 GPUs is ~48GB each before activations.
+  # Set this to true if you have less than 80GB per GPU.
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  activation_checkpointing: true
+
+special_tokens:

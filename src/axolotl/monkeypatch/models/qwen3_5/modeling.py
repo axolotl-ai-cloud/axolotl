@@ -35,7 +35,7 @@ def get_cu_seqlens(position_ids):
     Compute cumulative sequence lengths from position_ids for FLA varlen kernels.
 
     Adapted from transformers.modeling_flash_attention_utils.prepare_fa_kwargs_from_position_ids.
-    https://github.com/huggingface/transformers/blob/0f1b128d3359a26bd18be99c26d7f04fb3cba914/src/transformers/modeling_flash_attention_utils.py#L316
+    https://github.com/huggingface/transformers/blame/c676202114bb929ba4377f90fc92c5a8fec72da6/src/transformers/modeling_flash_attention_utils.py#L458-L495
 
     Qwen3.5 uses MRoPE: position_ids arrive as [axes, B, T]. All axes carry the
     same temporal positions, so axis 0 is used to recover the [B, T] layout.
@@ -45,8 +45,8 @@ def get_cu_seqlens(position_ids):
         position_ids = position_ids[0]
 
     tensor_kwargs = {"dtype": torch.int32, "device": position_ids.device}
-    position_ids = position_ids.view(-1)
-    indices_q = (position_ids == 0).nonzero().view(-1)
+    position_ids = position_ids.reshape(-1)
+    indices_q = (position_ids == position_ids.min()).nonzero().view(-1)
     return torch.cat(
         (
             indices_q.to(**tensor_kwargs),
@@ -62,7 +62,6 @@ def _patched_decoder_forward(
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
     past_key_values=None,
-    cache_position: Optional[torch.LongTensor] = None,
     **kwargs,
 ) -> torch.FloatTensor:
     """Decoder layer forward that passes position_ids through to linear attention."""
@@ -73,9 +72,9 @@ def _patched_decoder_forward(
         hidden_states = self.linear_attn(
             hidden_states=hidden_states,
             cache_params=past_key_values,
-            cache_position=cache_position,
             attention_mask=attention_mask,
             position_ids=position_ids,
+            **kwargs,
         )
     elif self.block_type == "full_attention":
         hidden_states, _ = self.self_attn(
@@ -83,7 +82,6 @@ def _patched_decoder_forward(
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
-            cache_position=cache_position,
             position_embeddings=position_embeddings,
             **kwargs,
         )
@@ -123,7 +121,6 @@ def _make_qwen3_5_gated_delta_forward(module):
         self,
         hidden_states: torch.Tensor,
         cache_params=None,
-        cache_position: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
@@ -246,7 +243,7 @@ def _make_qwen3_5_gated_delta_forward(module):
                 query,
                 key,
                 value,
-                g=g.to(dtype=query.dtype),
+                g=g,
                 beta=beta,
                 initial_state=recurrent_state,
                 output_final_state=cache_params is not None,
