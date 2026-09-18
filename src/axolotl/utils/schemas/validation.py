@@ -19,6 +19,7 @@ from axolotl.utils.schemas.enums import (
     attn_impl_base,
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
+from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 LOG = get_logger(__name__)
 
@@ -1352,6 +1353,14 @@ class OptimizationValidationMixin:
         if self.peft_use_dora or self.lora_modules_to_save:
             raise ValueError(
                 "CPU-staged NF4 currently requires LoRA without DoRA or modules_to_save"
+            )
+        if self.peft_init_lora_weights not in VALUE_INDEPENDENT_LORA_INIT or (
+            self.peft and self.peft.loftq_config
+        ):
+            raise ValueError(
+                "CPU-staged NF4 does not support a value-dependent LoRA init "
+                "(pissa, olora, loftq, corda, eva): those inits residualize the base "
+                "weight, and a packed base cannot take the residual write-back."
             )
         return self
 

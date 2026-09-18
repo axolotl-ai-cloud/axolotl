@@ -1,5 +1,7 @@
 """The guard that stops Transformers re-initializing already-quantized weights."""
 
+import sys
+
 import pytest
 import torch
 from torch import nn
@@ -76,6 +78,7 @@ def test_nf4_parametrized_module_is_skipped(initialize, backend):
 def test_quantized_expert_parametrization_is_skipped(initialize, bits):
     """quantize_moe_experts packs 3-D experts behind bitsandbytes' own parametrizations."""
     bnb = pytest.importorskip("bitsandbytes")
+    import bitsandbytes.nn.parametrize  # noqa: F401
 
     from axolotl.monkeypatch.moe_quant import Bnb8bitParametrization
     from axolotl.utils.nf4 import quantize_bnb_4bit
@@ -109,3 +112,45 @@ def test_torchao_tensor_module_is_skipped(initialize):
     )
     assert initialize(module) is False
     assert module._is_hf_initialized is True
+
+
+def test_axolotl_parametrizations_survive_a_bitsandbytes_rename(
+    initialize, monkeypatch
+):
+    """A bitsandbytes rename must not take axolotl's own expert parametrization with it."""
+    bnb = pytest.importorskip("bitsandbytes")
+
+    import axolotl.utils.quantization as quantization
+    from axolotl.monkeypatch.moe_quant import Bnb8bitParametrization
+    from axolotl.utils.nf4 import quantize_bnb_4bit
+
+    unpatched = getattr(
+        PreTrainedModel._initialize_weights,
+        "__wrapped__",
+        PreTrainedModel._initialize_weights,
+    )
+    monkeypatch.setattr(PreTrainedModel, "_initialize_weights", unpatched)
+    monkeypatch.setitem(sys.modules, "bitsandbytes.nn.parametrize", None)
+    quantization.patch_transformers_skip_quantized_init()
+
+    weight = torch.randn(4, 32, 64)
+    data, row_stats, _ = bnb.functional.int8_vectorwise_quant(
+        weight.reshape(-1, 64).to(torch.float16)
+    )
+    module = nn.Module()
+    module.gate_up_proj = nn.Parameter(data, requires_grad=False)
+    parametrize.register_parametrization(
+        module, "gate_up_proj", Bnb8bitParametrization(row_stats), unsafe=True
+    )
+    assert initialize(module) is False
+
+    packed, state = quantize_bnb_4bit(weight)
+    unreachable = nn.Module()
+    unreachable.gate_up_proj = nn.Parameter(packed, requires_grad=False)
+    parametrize.register_parametrization(
+        unreachable,
+        "gate_up_proj",
+        sys.modules["bitsandbytes"].nn.parametrize.Bnb4bitParametrization(state),
+        unsafe=True,
+    )
+    assert initialize(unreachable) is True

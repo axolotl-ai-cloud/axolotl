@@ -207,10 +207,14 @@ def patch_transformers_skip_quantized_init():
     try:
         from bitsandbytes.nn.parametrize import Bnb4bitParametrization
 
+        quantized_parametrizations += (Bnb4bitParametrization,)
+    except ImportError:  # bitsandbytes is absent on macOS
+        pass
+    try:
         from axolotl.monkeypatch.moe_quant import Bnb8bitParametrization
 
-        quantized_parametrizations += (Bnb4bitParametrization, Bnb8bitParametrization)
-    except ImportError:  # bitsandbytes is absent on macOS
+        quantized_parametrizations += (Bnb8bitParametrization,)
+    except ImportError:  # imports bitsandbytes at module scope
         pass
 
     if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):

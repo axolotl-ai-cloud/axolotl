@@ -101,7 +101,8 @@ above.
 
 `offload_params` controls FSDP parameter offloading after loading. This path requires
 an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
-DeepSpeed, tensor/context/expert parallelism, DoRA and `modules_to_save` are unsupported.
+DeepSpeed, tensor/context/expert parallelism, DoRA, `modules_to_save` and
+value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
 
 ### Long staging runs and progress
 

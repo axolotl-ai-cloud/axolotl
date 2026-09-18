@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
+VALUE_INDEPENDENT_LORA_INIT = (None, True, False, "gaussian")
+
 
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""

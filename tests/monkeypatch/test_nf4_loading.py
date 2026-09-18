@@ -316,6 +316,28 @@ def _distributed_nf4_worker(
                 parallelism_config=SimpleNamespace(fsdp_dim_names=("dp_shard",)),
             ),
         )
+        state_dict_calls = []
+        state_dicts_before_sharding = []
+        unprepared = model
+        unsharded_state_dict = model.state_dict
+
+        def counting_state_dict(*sd_args, **sd_kwargs):
+            state_dict_calls.append(1)
+            return unsharded_state_dict(*sd_args, **sd_kwargs)
+
+        model.state_dict = counting_state_dict
+
+        import torch.distributed.fsdp as torch_fsdp
+
+        real_fully_shard = torch_fsdp.fully_shard
+
+        def counting_fully_shard(*fs_args, **fs_kwargs):
+            if not state_dicts_before_sharding:
+                state_dicts_before_sharding.append(len(state_dict_calls))
+            return real_fully_shard(*fs_args, **fs_kwargs)
+
+        torch_fsdp.fully_shard = counting_fully_shard
+
         optimizer = None
         if prepare_optimizer:
             from accelerate import Accelerator
@@ -346,6 +368,15 @@ def _distributed_nf4_worker(
             } == {id(p) for p in model.parameters() if p.requires_grad}
         else:
             model = fsdp2_prepare_model(accelerator, model)
+        torch_fsdp.fully_shard = real_fully_shard
+        del unprepared.state_dict
+        # only rank zero holds the staged weights, so only it builds the state dict
+        # that gets broadcast; a peer building its own is the materialization this
+        # whole path exists to avoid
+        assert state_dicts_before_sharding == [1 if rank == 0 else 0], (
+            rank,
+            state_dicts_before_sharding,
+        )
         if offload:
             assert all(p.device.type == "cpu" for p in model.parameters())
         if shape_snapshot:
@@ -1930,6 +1961,16 @@ def _staged_nf4_config(**overrides):
             {"bnb_config_kwargs": {"bnb_4bit_quant_type": "fp4"}},
             "requires bnb_4bit_quant_type: nf4",
         ),
+        ({"peft_init_lora_weights": "pissa"}, "value-dependent LoRA init"),
+        ({"peft_init_lora_weights": "olora"}, "value-dependent LoRA init"),
+        ({"peft_init_lora_weights": "loftq"}, "value-dependent LoRA init"),
+        ({"peft_init_lora_weights": "corda"}, "value-dependent LoRA init"),
+        ({"peft_init_lora_weights": "eva"}, "value-dependent LoRA init"),
+        ({"peft_init_lora_weights": "gaussian"}, None),
+        (
+            {"peft": {"loftq_config": {"loftq_bits": 4}}},
+            "value-dependent LoRA init",
+        ),
         ({"tensor_parallel_size": 2}, "tensor, expert or context parallelism"),
         (
             {"deepspeed": "deepspeed_configs/zero3.json"},
@@ -1944,6 +1985,13 @@ def _staged_nf4_config(**overrides):
         "lora_modules_to_save",
         "dp_replicate_size",
         "bnb_4bit_quant_type",
+        "init-pissa",
+        "init-olora",
+        "init-loftq",
+        "init-corda",
+        "init-eva",
+        "init-gaussian",
+        "loftq_config",
         "tensor_parallel_size",
         "deepspeed",
     ],
@@ -2187,7 +2235,7 @@ def test_cuda_merge_roundtrip_matches_training(double_quant, dtype):
 @pytest.mark.slow
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 @pytest.mark.parametrize("double_quant", [False, True])
-def test_nf4_dequant_is_device_independent(double_quant):
+def test_cuda_nf4_dequant_is_device_independent(double_quant):
     """One quantization dequantized on either device must agree bit-for-bit.
 
     Quantization itself is not device-independent: bnb rounds the blockwise double-quant of

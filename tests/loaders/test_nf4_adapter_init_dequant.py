@@ -193,18 +193,6 @@ def test_adapter_init_matches_dequantized_path(tmp_path):
         torch.testing.assert_close(param, adapters[1][name], rtol=0, atol=0)
 
 
-def test_value_dependent_lora_init_keeps_real_weights(tmp_path, monkeypatch):
-    model_class = _save_llama(tmp_path)
-    loader = _staged_loader(
-        tmp_path, model_class, "bitsandbytes", peft_init_lora_weights="olora"
-    )
-
-    counter = _DequantCounter(monkeypatch)
-    loader._load_adapters()
-
-    assert counter.count > 0
-
-
 def test_staged_layer_replication_keeps_real_weights(tmp_path, monkeypatch):
     model_class = _save_llama(tmp_path)
     loader = _staged_loader(
@@ -228,11 +216,10 @@ def test_staged_layer_replication_keeps_real_weights(tmp_path, monkeypatch):
         assert weight.abs().sum().item() > 0
 
 
-def test_fallback_path_bounds_peak_dense_tensors(tmp_path, monkeypatch):
+def test_dequantizing_adapter_init_bounds_peak_dense_tensors(tmp_path, monkeypatch):
     model_class = _save_llama(tmp_path)
-    loader = _staged_loader(
-        tmp_path, model_class, "bitsandbytes", peft_init_lora_weights="olora"
-    )
+    loader = _staged_loader(tmp_path, model_class, "bitsandbytes")
+    del loader.model._axolotl_staged_nf4
 
     counter = _DequantCounter(monkeypatch)
     loader._load_adapters()
@@ -283,7 +270,7 @@ def test_plain_model_adapter_init_is_untouched(tmp_path, monkeypatch):
         torch.testing.assert_close(weight, expected[name], rtol=0, atol=0)
 
 
-def test_saved_value_dependent_adapter_reloads_with_real_weights(tmp_path, monkeypatch):
+def test_saved_value_dependent_adapter_is_rejected(tmp_path):
     """A resumed OLoRA adapter re-runs its init from adapter_config.json, not from cfg."""
     from peft import LoraConfig, get_peft_model
 
@@ -302,11 +289,17 @@ def test_saved_value_dependent_adapter_reloads_with_real_weights(tmp_path, monke
     loader = _staged_loader(
         tmp_path, model_class, "bitsandbytes", lora_model_dir=str(adapter_dir)
     )
-    counter = _DequantCounter(monkeypatch)
-    loader._load_adapters()
+    with pytest.raises(ValueError, match="residual write-back"):
+        loader._load_adapters()
 
-    assert counter.count > 0
-    weight = loader.model.base_model.model.model.layers[
-        0
-    ].self_attn.q_proj.base_layer.weight
-    assert weight.abs().sum() > 0
+
+def test_unreadable_saved_adapter_config_falls_back_to_real_weights(
+    tmp_path, monkeypatch
+):
+    """A hub id is a valid lora_model_dir for PEFT but has no local adapter_config.json."""
+    model_class = _save_llama(tmp_path)
+    loader = _staged_loader(
+        tmp_path, model_class, "bitsandbytes", lora_model_dir="some-org/some-adapter"
+    )
+
+    assert loader._staged_nf4_lora_init_reads_base_weights() is True

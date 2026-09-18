@@ -74,14 +74,13 @@ from axolotl.utils.fp32_norms import (
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
+from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 if TYPE_CHECKING:
     from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
-
-_VALUE_INDEPENDENT_LORA_INIT = (None, True, False, "gaussian")
 
 
 def _nf4_shape_stand_in(original):
@@ -543,21 +542,37 @@ class ModelLoader:
             )
 
     def _staged_nf4_lora_init_reads_base_weights(self) -> bool:
-        if self.cfg.lora_model_dir:
-            # PEFT re-runs the saved adapter's own init on load, not the cfg's
+        """Whether PEFT reads real base weights while building the adapter.
+
+        `check_staged_nf4` rejects value-dependent inits from the config, but PEFT re-runs
+        the saved adapter's own init on load, so `lora_model_dir` can still request one.
+        """
+        if not self.cfg.lora_model_dir:
+            return False
+        try:
             saved = json.loads(
                 (Path(self.cfg.lora_model_dir) / "adapter_config.json").read_text()
             )
-            return bool(saved.get("loftq_config")) or (
-                saved.get("init_lora_weights", True) not in _VALUE_INDEPENDENT_LORA_INIT
+        except (OSError, ValueError):
+            # Adapter config not readable locally (e.g. hub id): assume the worst and dequantize.
+            LOG.warning(
+                "Could not read %s/adapter_config.json to check its LoRA init; "
+                "loading the adapter against dequantized base weights.",
+                self.cfg.lora_model_dir,
             )
-        if (
-            self.cfg.peft
-            and self.cfg.peft.loftq_config
-            and self.cfg.peft.loftq_config.loftq_bits
-        ):
             return True
-        return self.cfg.peft_init_lora_weights not in _VALUE_INDEPENDENT_LORA_INIT
+        if bool(saved.get("loftq_config")) or (
+            saved.get("init_lora_weights", True) not in VALUE_INDEPENDENT_LORA_INIT
+        ):
+            raise ValueError(
+                f"The adapter in {self.cfg.lora_model_dir} was saved with a "
+                "value-dependent LoRA init "
+                f"({saved.get('init_lora_weights')!r}), which CPU-staged NF4 cannot "
+                "resume: PEFT re-runs that init on load and a packed base weight cannot "
+                "take the residual write-back. Convert the adapter with PEFT's "
+                "`path_initial_model_for_weight_conversion` before resuming."
+            )
+        return False
 
     def _load_adapters(self) -> PeftConfig | None:
         """Load LoRA or other adapters."""
