@@ -149,6 +149,7 @@ class OptimizerMixin(Trainer):
                     optimizer_cls,
                     loraplus_lr_ratio=loraplus_lr_ratio,
                     loraplus_lr_embedding=loraplus_lr_embedding,
+                    loraplus_weight_decay=self.args.weight_decay,
                     **optimizer_kwargs,
                 )
             else:

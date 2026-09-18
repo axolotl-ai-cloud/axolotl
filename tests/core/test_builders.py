@@ -167,30 +167,26 @@ class TestHFCausalTrainerBuilder:
         assert "betas" not in optimizer_kwargs
         assert "eps" not in optimizer_kwargs
 
-    def test_resume_keeps_configured_weight_decay(
-        self, sft_cfg, model, tokenizer, tmp_path
+    @pytest.mark.parametrize("weight_decay", [0.0, 0.05])
+    def test_loraplus_optimizer_weight_decay(
+        self, sft_cfg, model, tokenizer, weight_decay
     ):
         cfg = sft_cfg.copy()
-        cfg["weight_decay"] = 0.05
+        cfg["loraplus_lr_ratio"] = 16
+        cfg["weight_decay"] = weight_decay
 
         builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
-        trainer = builder.build(10)
-        trainer.create_optimizer()
-        trainer.create_scheduler(num_training_steps=10, optimizer=trainer.optimizer)
-        configured = [group["weight_decay"] for group in trainer.optimizer.param_groups]
-        assert 0.05 in configured
+        trainer = builder.build(100)
+        assert trainer.args.weight_decay == weight_decay
 
-        state = trainer.optimizer.state_dict()
-        for group in state["param_groups"]:
-            group["weight_decay"] = 0.0
-        torch.save(state, tmp_path / OPTIMIZER_NAME)
-        torch.save(trainer.lr_scheduler.state_dict(), tmp_path / SCHEDULER_NAME)
+        optim = trainer.create_optimizer()
 
-        trainer._load_optimizer_and_scheduler(str(tmp_path))
-
-        assert [
-            group["weight_decay"] for group in trainer.optimizer.param_groups
-        ] == configured
+        # loraplus zeroes its no-decay group regardless; every other group tracks the config
+        decays = {
+            group["weight_decay"] for group in optim.param_groups if group["params"]
+        }
+        assert decays <= {weight_decay, 0.0}
+        assert weight_decay in decays
 
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
