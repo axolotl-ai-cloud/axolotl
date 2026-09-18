@@ -257,6 +257,22 @@ class LoraConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_lora_target_parameters_init(self):
+        # PEFT raises from inside the init after the model has loaded, which on a
+        # large MoE is after the whole staging run
+        if self.lora_target_parameters and (
+            self.peft_init_lora_weights not in VALUE_INDEPENDENT_LORA_INIT
+            or (self.peft and self.peft.loftq_config)
+        ):
+            raise ValueError(
+                "peft_init_lora_weights must be the default or gaussian when "
+                "lora_target_parameters is set: value-dependent inits (pissa, olora, "
+                "loftq, corda, eva) read base_layer.weight, which fused expert "
+                "parameters do not have, so PEFT fails when building the adapter."
+            )
+        return self
+
 
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""

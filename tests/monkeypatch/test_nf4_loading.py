@@ -239,6 +239,12 @@ def _distributed_nf4_worker(rank, case):
         loader.auto_model_loader = model_class
         loader.model_kwargs = {"dtype": cfg.torch_dtype}
         loader._set_quantization_config()
+        if case.activation_checkpointing:
+            from axolotl.monkeypatch.peft.state_dict import (
+                patch_peft_checkpoint_wrapper_prefixes,
+            )
+
+            patch_peft_checkpoint_wrapper_prefixes()
         reinitialized = []
         original_init_weights = PreTrainedModel._init_weights
 
@@ -636,6 +642,10 @@ def test_fused_expert_merge(backend):
     merged = model.merge_and_unload()
     torch.testing.assert_close(merged(x), expected, atol=2e-5, rtol=1e-5)
     assert merged.experts.gate_up_proj.shape == (2, 128, 128)
+    # PEFT may stack its own parametrization on ours during the merge; the merged
+    # model must still come out dense
+    assert not parametrize.is_parametrized(merged.experts, "gate_up_proj")
+    assert merged.experts.gate_up_proj.dtype == value.dtype
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
@@ -1962,8 +1972,8 @@ def _staged_nf4_config(**overrides):
             {"bnb_config_kwargs": {"bnb_4bit_quant_type": "fp4"}},
             "requires bnb_4bit_quant_type: nf4",
         ),
-        ({"peft_init_lora_weights": "pissa"}, "value-dependent LoRA init"),
-        ({"peft_init_lora_weights": "olora"}, "value-dependent LoRA init"),
+        ({"peft_init_lora_weights": "pissa"}, "pissa needs an unquantized base"),
+        ({"peft_init_lora_weights": "olora"}, "olora and loftq work on the non-staged"),
         ({"peft_init_lora_weights": "loftq"}, "value-dependent LoRA init"),
         ({"peft_init_lora_weights": "corda"}, "value-dependent LoRA init"),
         ({"peft_init_lora_weights": "eva"}, "value-dependent LoRA init"),

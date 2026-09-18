@@ -103,6 +103,24 @@ above.
 an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
 DeepSpeed, tensor/context/expert parallelism, DoRA, `modules_to_save` and
 value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
+olora and loftq remain available on the non-staged loader with
+`cpu_ram_efficient_loading: false`; pissa requires an unquantized base.
+
+### LoRA init compatibility
+
+| Init | Linear targets, non-staged 4-bit | Linear targets, CPU-staged | `lora_target_parameters` (fused experts) |
+|---|---|---|---|
+| default, `gaussian` | yes | yes | yes |
+| `olora`, `loftq` | yes | rejected | rejected |
+| `pissa` | rejected by PEFT (needs an unquantized base) | rejected | rejected |
+| `corda`, `eva` | not wired | rejected | rejected |
+
+Value-dependent inits read and rewrite the base weight while the adapter is built.
+Fused expert parameters have no `weight` attribute, so PEFT fails inside the init;
+Axolotl rejects that combination at validation, before any weights load. Resuming an
+adapter that was saved with a value-dependent init under CPU-staged loading is also
+rejected: PEFT re-runs that init on load and the packed base cannot take its residual.
+Convert such an adapter with PEFT's `path_initial_model_for_weight_conversion` first.
 
 ### Long staging runs and progress
 

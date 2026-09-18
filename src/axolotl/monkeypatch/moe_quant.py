@@ -381,5 +381,38 @@ def patch_peft_target_parameters_matching():
         _patched_activate_lora._axolotl_patched = True
         ParamWrapper._activate_lora = _patched_activate_lora
 
+    # PEFT 0.21 registers a _LoraFactorsProxy for single-adapter expert stacks, but its
+    # cleanup only removes _LoraParameterProxy when another parametrization (ours) is
+    # present, so the proxy leaks and the delta compounds on every forward.
+    from peft.tuners.lora import layer as lora_layer
+
+    proxies = tuple(
+        cls
+        for cls in (
+            getattr(lora_layer, "_LoraParameterProxy", None),
+            getattr(lora_layer, "_LoraFactorsProxy", None),
+        )
+        if cls is not None
+    )
+    if len(proxies) > 1 and not getattr(
+        ParamWrapper._remove_parametrizations, "_axolotl_patched", False
+    ):
+
+        def _patched_remove_parametrizations(self):
+            base_layer = self.get_base_layer()
+            param_list = base_layer.parametrizations[self.parameter_name]
+            if len(param_list) == 1:
+                P.remove_parametrizations(
+                    base_layer, self.parameter_name, leave_parametrized=False
+                )
+                return
+            for index in reversed(range(len(param_list))):
+                if isinstance(param_list[index], proxies):
+                    del param_list[index]
+                    return
+
+        _patched_remove_parametrizations._axolotl_patched = True
+        ParamWrapper._remove_parametrizations = _patched_remove_parametrizations
+
     patch_peft_target_parameters_matching._axolotl_patched = True
     LOG.info("Patched PEFT _inject_parameters for consistent ParamWrapper ordering")

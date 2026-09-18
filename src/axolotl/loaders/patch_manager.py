@@ -445,8 +445,13 @@ class PatchManager:
                 patch_accelerate_fsdp2,
                 patch_tied_keys_for_meta_device,
             )
+            from axolotl.monkeypatch.peft.state_dict import (
+                patch_peft_checkpoint_wrapper_prefixes,
+            )
 
             patch_accelerate_fsdp2()
+            if self.cfg.adapter and self.cfg.fsdp_config.activation_checkpointing:
+                patch_peft_checkpoint_wrapper_prefixes()
             # FSDP2 sharding for any torchao Float8Tensor weights (no-op without torchao)
             patch_float8_fsdp()
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
