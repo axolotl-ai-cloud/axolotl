@@ -22,6 +22,10 @@ from peft import (
 from transformers import PreTrainedModel
 
 from axolotl.integrations.base import PluginManager
+from axolotl.integrations.mixlora.constants import (
+    MIXLORA_FFN_MODULE_NAMES,
+    MIXLORA_WEIGHTS_NAME,
+)
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
@@ -431,6 +435,39 @@ def load_adapter(
             model, cfg, inference=inference, config_only=config_only
         )
         return peft_model, lora_config
+    if adapter == "mixlora":
+        _validate_mixlora_lora_target_modules(cfg)
+        # First, load standard LoRA for attention layers (q, k, v, o projections)
+        peft_model, lora_config = load_lora(
+            model, cfg, inference=inference, config_only=config_only
+        )
+        if config_only:
+            return peft_model, lora_config
+        # Then, apply MixLoRA patching to FFN layers (router + LoRA experts)
+        import safetensors.torch
+
+        from axolotl.integrations.mixlora.model import load_mixlora_state_dict
+        from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
+
+        patch_model_with_mixlora(peft_model, cfg)
+
+        if cfg.lora_model_dir:
+            mixlora_weights_path = os.path.join(
+                cfg.lora_model_dir, MIXLORA_WEIGHTS_NAME
+            )
+            if os.path.exists(mixlora_weights_path):
+                load_mixlora_state_dict(
+                    peft_model,
+                    safetensors.torch.load_file(mixlora_weights_path),
+                    strict=True,
+                )
+                LOG.info("Loaded MixLoRA router/expert weights from checkpoint")
+            else:
+                LOG.warning(
+                    "MixLoRA checkpoint is missing mixlora_model.safetensors; "
+                    "router/expert weights were initialized from scratch."
+                )
+        return peft_model, lora_config
     if adapter == "llama-adapter":
         if config_only:
             _, lora_config = load_llama_adapter(model, cfg, config_only=True)
@@ -487,3 +524,24 @@ def load_llama_adapter(
     peft_model.print_trainable_parameters()
 
     return peft_model, peft_config
+
+
+def _validate_mixlora_lora_target_modules(cfg: DictDefault) -> None:
+    """Prevent overlapping LoRA targets with MixLoRA-patched FFN modules."""
+    if cfg.lora_target_linear:
+        raise ValueError(
+            "MixLoRA is incompatible with lora_target_linear=true because FFN "
+            "gate_proj/up_proj/down_proj are patched by MixLoRA. "
+            "Set explicit attention-only lora_target_modules instead."
+        )
+
+    target_modules = cfg.lora_target_modules or []
+    if isinstance(target_modules, str):
+        target_modules = [target_modules]
+
+    overlap = sorted(set(MIXLORA_FFN_MODULE_NAMES).intersection(target_modules))
+    if overlap:
+        raise ValueError(
+            "MixLoRA cannot be combined with LoRA targets on FFN modules. "
+            f"Remove overlapping lora_target_modules entries: {overlap}"
+        )
