@@ -11,9 +11,25 @@ from transformers import TrainingArguments
 from trl import KTOConfig, RewardConfig
 from trl.experimental.cpo import CPOConfig
 from trl.experimental.orpo import ORPOConfig
-from trl.experimental.prm import PRMConfig
 
 from axolotl.integrations.config import merge_training_args
+
+PRM_TRL_ERROR = (
+    "PRM training requires `trl<=1.13.0` (`pip install trl==1.13.0`); "
+    "`trl.experimental.prm` was removed in later versions."
+)
+
+try:
+    from trl.experimental.prm import PRMConfig
+except ImportError:
+
+    @dataclass
+    class PRMConfig(TrainingArguments):  # type: ignore[no-redef]
+        """Placeholder so this module stays importable without trl's PRM."""
+
+        def __post_init__(self):
+            raise ImportError(PRM_TRL_ERROR)
+
 
 AxolotlTrainingMixins: Type = merge_training_args()
 
