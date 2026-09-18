@@ -59,6 +59,37 @@ class TestExportConfig:
     def test_q8_0_outtype_alone_is_allowed(self):
         assert ExportConfig(outtype="q8_0").outtype == "q8_0"
 
+    def test_lora_defaults_to_autodetect(self):
+        assert ExportConfig().lora is None
+
+    def test_lora_rejects_quantize(self):
+        with pytest.raises(ValidationError, match="only takes full models"):
+            ExportConfig(lora=True, quantize=["Q4_K_M"])
+
+    @pytest.mark.parametrize("outtype", ["tq1_0", "tq2_0"])
+    def test_lora_rejects_model_only_outtypes(self, outtype):
+        with pytest.raises(ValidationError, match=f"cannot write {outtype}"):
+            ExportConfig(lora=True, outtype=outtype)
+
+    @pytest.mark.parametrize("outtype", ["f32", "f16", "bf16", "q8_0", "auto"])
+    def test_lora_outtypes(self, outtype):
+        assert ExportConfig(lora=True, outtype=outtype).outtype == outtype
+
+    def test_lora_false_skips_the_lora_checks(self):
+        assert ExportConfig(lora=False, quantize=["Q4_K_M"]).quantize == ["Q4_K_M"]
+
+    @pytest.mark.parametrize(
+        "config, lora, expected",
+        [
+            ({}, False, "f16"),
+            ({}, True, "f32"),
+            ({"outtype": "f16"}, True, "f16"),
+            ({"outtype": "bf16"}, False, "bf16"),
+        ],
+    )
+    def test_resolved_outtype(self, config, lora, expected):
+        assert ExportConfig(**config).resolved_outtype(lora) == expected
+
 
 class TestExportConfigInAxolotlConfig:
     """The `export` block round-trips through full config validation."""
