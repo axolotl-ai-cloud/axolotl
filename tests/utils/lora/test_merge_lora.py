@@ -382,6 +382,68 @@ class TestEfficientMerge:
         # zero LoRA, so any difference from base is the NF4 roundtrip
         assert not torch.equal(merged, base)
 
+    def test_non_staged_merge_keeps_roundtrip_heuristic(self):
+        """Without a skip set the pre-existing ndim heuristic decides, exclusions included."""
+        hidden, r = 64, 8
+        key = "model.embed_tokens.weight"
+        base = torch.randn(100, hidden)
+        lora_state = {
+            "base_model.model.model.embed_tokens.lora_A.weight": torch.zeros(r, hidden),
+            "base_model.model.model.embed_tokens.lora_B.weight": torch.zeros(100, r),
+        }
+        kwargs = dict(
+            lora_state=lora_state,
+            scale=2.0,
+            lora_config_dict={"r": r, "lora_alpha": 16},
+            device="cpu",
+            simulate_nf4=True,
+            layer_type_map={"model.embed_tokens": "Embedding"},
+        )
+        heuristic, _ = _merge_tensor_with_lora(base, key, nf4_skips=None, **kwargs)
+        staged, _ = _merge_tensor_with_lora(
+            base, key, nf4_skips={"lm_head", "embed_out"}, **kwargs
+        )
+        assert not torch.equal(heuristic, base)
+        assert torch.equal(staged, base)
+
+    @pytest.mark.parametrize(
+        "staged, backend, expect_skips",
+        [
+            (False, "bitsandbytes", False),
+            (True, "bitsandbytes", True),
+            (False, "torchao", True),
+        ],
+    )
+    def test_efficient_merge_scopes_exclusions_to_staged_training(
+        self, staged, backend, expect_skips
+    ):
+        from axolotl.cli.merge_lora import _do_merge_lora_efficient
+
+        cfg = DictDefault(
+            base_model="base",
+            lora_model_dir="adapter",
+            output_dir="out",
+            model_config_type="llama",
+            torch_dtype=torch.bfloat16,
+            nf4_backend="bitsandbytes",
+            _original_load_in_4bit=True,
+            _original_adapter="qlora",
+            _original_staged_nf4=staged,
+            _original_nf4_backend=backend,
+        )
+        with patch("axolotl.cli.merge_lora.merge_lora_sharded_efficient") as merge:
+            _do_merge_lora_efficient(cfg=cfg)
+        kwargs = merge.call_args.kwargs
+        assert kwargs["simulate_nf4"] is True
+        assert kwargs["staged_nf4"] is staged
+        assert kwargs["nf4_backend"] == backend
+        if expect_skips:
+            assert kwargs["nf4_skips"] == {"lm_head", "embed_out"}
+            assert kwargs["nf4_dtype"] == torch.bfloat16
+        else:
+            assert kwargs["nf4_skips"] is None
+            assert kwargs["nf4_dtype"] is None
+
     def test_bitsandbytes_merge_without_introspection(self, tmp_path):
         """An empty layer_type_map must not raise a torchao-specific error on bnb."""
         hidden, r, alpha = 32, 8, 16

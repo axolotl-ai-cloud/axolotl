@@ -2030,7 +2030,10 @@ def merge_lora_sharded_efficient(
 
     Args:
         nf4_backend: NF4 implementation used for the training base.
-        nf4_skips: Resolved module exclusions; when provided, use the staged loading policy.
+        nf4_skips: Resolved module exclusions from ``nf4_skip_modules``. When provided,
+            weights are selected the way the staged loader selected them (Linear
+            weights and fused experts outside the exclusions); when None, the
+            pre-existing ``_should_nf4_roundtrip`` heuristic is kept unchanged.
         nf4_dtype: Training weight dtype used before quantization.
         staged_nf4: Training used CPU-staged NF4, which has no legacy merge fallback.
         simulate_nf4: Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)

@@ -130,8 +130,10 @@ parametrization containers and expert adapter internals inside their owning modu
 A root-only wrapper gathers the whole model for computation, so use decoder-layer
 wrapping when the model does not fit on a single GPU.
 
-Packed parameters are sharded along their first storage dimension, which need not
-align with expert or quantization block boundaries. FSDP gathers that storage before
+Packed parameters stay uint8 under FSDP2 mixed precision: Axolotl stops FSDP2 casting
+non-floating parameters to the policy's `param_dtype`, since converting packed bytes to
+bf16 values corrupts the quantized base. They are sharded along their first storage
+dimension, which need not align with expert or quantization block boundaries. FSDP gathers that storage before
 NF4 reconstruction; logical weights retain the original dense or fused expert shape.
 Uneven splits and empty adapter shards are supported. Quantization metadata remains
 replicated. Full and sharded checkpoint formats preserve the global shapes.
@@ -174,6 +176,24 @@ floating-point weights. The memory-efficient merge path reproduces the selected
 backend's quantization before adding the delta. Keep the training dtype and
 `bnb_config_kwargs.llm_int8_skip_modules` unchanged for merging; both are part of
 the quantized base definition.
+
+Under staged loading, `llm_int8_skip_modules` entries match in one of three ways:
+
+- A plain name or dotted path matches by name: `lm_head` excludes that module
+  wherever it appears, `model.layers.0.mlp` excludes that subtree, and `proj`
+  excludes only a module named exactly `proj`, not `q_proj`.
+- A leading or trailing dot requests a plain substring match against the full
+  parameter path: `_proj.` excludes every `*_proj` weight.
+- Regex metacharacters request a regular-expression search over the full
+  parameter path: `layers\.[0-3]\.` excludes the first four layers.
+
+`lm_head` and `embed_out` are always excluded.
+
+Because these rules differ from Transformers' `modules_to_not_convert`, a key that
+worked under plain QLoRA can match nothing here. At the end of staging the loader
+logs, for every exclusion entry, its matching tier and how many quantization
+candidates it excluded, and warns for each `llm_int8_skip_modules` entry that
+excluded none; check that warning before assuming a module stayed unquantized.
 
 ## Implementation details
 

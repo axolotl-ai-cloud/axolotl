@@ -114,6 +114,18 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
 
     from axolotl.utils.nf4 import nf4_skip_modules
 
+    staged_nf4 = bool(getattr(cfg, "_original_staged_nf4", False))
+    nf4_backend = (
+        getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend or "bitsandbytes"
+    )
+    # only staged training quantized by this exclusion policy; a plain bitsandbytes
+    # QLoRA merge keeps the roundtrip it always had
+    nf4_skips = (
+        nf4_skip_modules(cfg.model_config_type, bnb_config_kwargs)
+        if staged_nf4 or nf4_backend == "torchao"
+        else None
+    )
+
     merge_lora_sharded_efficient(
         base_model_path=cfg.base_model,
         lora_adapter_path=cfg.lora_model_dir,
@@ -123,13 +135,11 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         simulate_nf4=simulate_nf4,
         simulate_nf4_experts=simulate_nf4_experts,
         nf4_blocksize=nf4_blocksize,
-        nf4_skips=nf4_skip_modules(cfg.model_config_type, bnb_config_kwargs),
-        nf4_dtype=cfg.torch_dtype,
+        nf4_skips=nf4_skips,
+        nf4_dtype=cfg.torch_dtype if nf4_skips is not None else None,
         nf4_double_quant=nf4_double_quant,
-        staged_nf4=bool(getattr(cfg, "_original_staged_nf4", False)),
-        nf4_backend=getattr(cfg, "_original_nf4_backend", None)
-        or cfg.nf4_backend
-        or "bitsandbytes",
+        staged_nf4=staged_nf4,
+        nf4_backend=nf4_backend,
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
         dequant=bool(getattr(cfg, "merge_dequant", False)),
         override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),

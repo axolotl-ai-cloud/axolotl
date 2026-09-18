@@ -41,10 +41,57 @@ def test_plain_module_is_still_initialized(initialize):
     assert initialize(nn.Linear(8, 8)) is True
 
 
-def test_parametrized_module_is_skipped(initialize):
-    """An NF4 packed weight hides behind a parametrization and reads as a missing key."""
+def test_unrelated_parametrization_is_still_initialized(initialize):
+    """Weight norm and friends are not quantized; the guard must not claim them."""
     module = nn.Linear(8, 8, bias=False)
     parametrize.register_parametrization(module, "weight", _Identity(), unsafe=True)
+    assert initialize(module) is True
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+def test_nf4_parametrized_module_is_skipped(initialize, backend):
+    """An NF4 packed weight hides behind a parametrization and reads as a missing key."""
+    from axolotl.utils.nf4 import (
+        BnbNF4Parametrization,
+        quantize_bnb_4bit,
+        quantize_torchao_nf4,
+    )
+
+    weight = torch.randn(64, 64)
+    if backend == "torchao":
+        pytest.importorskip("torchao")
+        data, transform = quantize_torchao_nf4(weight, chunk_size=16384)
+    else:
+        pytest.importorskip("bitsandbytes")
+        data, state = quantize_bnb_4bit(weight)
+        transform = BnbNF4Parametrization(state)
+    module = nn.Linear(64, 64, bias=False)
+    module.weight = nn.Parameter(data, requires_grad=False)
+    parametrize.register_parametrization(module, "weight", transform, unsafe=True)
+    assert initialize(module) is False
+    assert module._is_hf_initialized is True
+
+
+@pytest.mark.parametrize("bits", [4, 8])
+def test_quantized_expert_parametrization_is_skipped(initialize, bits):
+    """quantize_moe_experts packs 3-D experts behind bitsandbytes' own parametrizations."""
+    bnb = pytest.importorskip("bitsandbytes")
+
+    from axolotl.monkeypatch.moe_quant import Bnb8bitParametrization
+    from axolotl.utils.nf4 import quantize_bnb_4bit
+
+    weight = torch.randn(4, 32, 64)
+    if bits == 4:
+        data, state = quantize_bnb_4bit(weight)
+        transform = bnb.nn.parametrize.Bnb4bitParametrization(state)
+    else:
+        data, row_stats, _ = bnb.functional.int8_vectorwise_quant(
+            weight.reshape(-1, 64).to(torch.float16)
+        )
+        transform = Bnb8bitParametrization(row_stats)
+    module = nn.Module()
+    module.gate_up_proj = nn.Parameter(data, requires_grad=False)
+    parametrize.register_parametrization(module, "gate_up_proj", transform, unsafe=True)
     assert initialize(module) is False
     assert module._is_hf_initialized is True
 

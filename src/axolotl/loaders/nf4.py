@@ -12,6 +12,7 @@ from torch import nn
 from torch.nn.utils import parametrize
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
 from axolotl.utils.nf4_loading import (
     nf4_loading_device,
     nf4_loading_group,
@@ -29,6 +30,8 @@ from axolotl.utils.nf4 import (
     quantize_bnb_4bit,
     quantize_torchao_nf4,
 )
+
+LOG = get_logger(__name__)
 
 
 def load_nf4_model(
@@ -73,10 +76,13 @@ def _load_nf4_model(
     patch_nf4_merge()
     patch_transformers_skip_quantized_init()
     patch_peft_target_parameters_matching()
-    from axolotl.monkeypatch.moe_quant import _moe_load_state
+    from axolotl.monkeypatch.moe_quant import (
+        export_moe_load_state,
+        import_moe_load_state,
+        reset_moe_load_state,
+    )
 
-    _moe_load_state["count"] = 0
-    _moe_load_state["expert_param_order"] = {}
+    reset_moe_load_state()
 
     quantization = model_kwargs.pop("quantization_config", None)
     distributed = bool(cfg.fsdp_config)
@@ -129,18 +135,15 @@ def _load_nf4_model(
         _raise_on_any_rank_failure(error, control_group)
         # the broadcast shapes are packed NF4 storage, so peers cannot re-derive which
         # parameters were experts; take rank zero's classification instead
-        payload = [
-            structures,
-            _moe_load_state["expert_param_order"] if main else None,
-            _moe_load_state["count"] if main else None,
-        ]
+        payload = [structures, export_moe_load_state() if main else None]
         with nf4_phase("NF4 metadata broadcast"):
             dist.broadcast_object_list(
                 payload, src=0, group=control_group, device=torch.device("cpu")
             )
         if not main:
             try:
-                _apply_nf4_structures(model, payload, _moe_load_state)
+                import_moe_load_state(payload[1])
+                _apply_nf4_structures(model, payload[0])
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
         del payload, structures
@@ -161,10 +164,8 @@ def _raise_on_any_rank_failure(error, control_group):
         raise RuntimeError("NF4 loading failed on " + "; ".join(failures))
 
 
-def _apply_nf4_structures(model, payload, moe_load_state):
-    moe_load_state["expert_param_order"] = payload[1]
-    moe_load_state["count"] = payload[2]
-    for path, name, transform, shape, dtype in payload[0]:
+def _apply_nf4_structures(model, structures):
+    for path, name, transform, shape, dtype in structures:
         module = model.get_submodule(path)
         setattr(
             module,
@@ -217,13 +218,17 @@ def staged_nf4_loading(
     import transformers.core_model_loading as loading
     import transformers.modeling_utils as modeling
 
-    from axolotl.monkeypatch.moe_quant import _moe_load_state
+    from axolotl.monkeypatch.moe_quant import record_quantized_expert
 
     original = loading.set_param_for_module
     device = device or nf4_loading_device()
     storage = "cpu"
     backend = cfg.get("nf4_backend") or "bitsandbytes"
-    from axolotl.utils.nf4 import nf4_should_quantize, nf4_skip_modules
+    from axolotl.utils.nf4 import (
+        nf4_should_quantize,
+        nf4_skip_matches,
+        nf4_skip_modules,
+    )
 
     quantization = (
         quantization_config.to_dict()
@@ -231,6 +236,8 @@ def staged_nf4_loading(
         else dict(cfg.bnb_config_kwargs or {})
     )
     skips = nf4_skip_modules(cfg.model_config_type, quantization)
+    user_skips = set(quantization.get("llm_int8_skip_modules") or [])
+    excluded = dict.fromkeys(sorted(skips), 0)
 
     def set_param(model, target_name, param_value, *args, **kwargs):
         value = param_value
@@ -243,12 +250,16 @@ def staged_nf4_loading(
         )
         linear = isinstance(module, nn.Linear) and name == "weight"
         original(model, target_name, value, *args, **kwargs)
+        if (linear or expert) and not value.is_meta:
+            for key in excluded:
+                if nf4_skip_matches(target_name, key):
+                    excluded[key] += 1
         if value.is_meta or not nf4_should_quantize(
             target_name, linear=linear, expert=expert, skips=skips
         ):
             return
-        if expert and path not in _moe_load_state["expert_param_order"]:
-            _moe_load_state["expert_param_order"][path] = list(module._parameters)
+        if expert:
+            record_quantized_expert(path, module)
         if backend == "torchao":
             data, transform = quantize_torchao_nf4(
                 value, device=device, storage_device=storage
@@ -268,20 +279,45 @@ def staged_nf4_loading(
             checkpoint_nf4_linear(module)
         parametrize.register_parametrization(module, name, transform, unsafe=True)
         record_progress(value.numel() * value.element_size())
-        if expert:
-            _moe_load_state["count"] += 1
 
     # Transformers must materialize rank zero even when its FSDP meta-loading gate is enabled.
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "FSDP_CPU_RAM_EFFICIENT_LOADING": "false",
-                "HF_ENABLE_PARALLEL_LOADING": "false",
-                "HF_DEACTIVATE_ASYNC_LOAD": "true",
-            },
-        ),
-        patch.object(loading, "set_param_for_module", set_param),
-        patch.object(modeling, "caching_allocator_warmup", lambda *a, **k: None),
-    ):
-        yield
+    complete = False
+    try:
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "FSDP_CPU_RAM_EFFICIENT_LOADING": "false",
+                    "HF_ENABLE_PARALLEL_LOADING": "false",
+                    "HF_DEACTIVATE_ASYNC_LOAD": "true",
+                },
+            ),
+            patch.object(loading, "set_param_for_module", set_param),
+            patch.object(modeling, "caching_allocator_warmup", lambda *a, **k: None),
+        ):
+            yield
+        complete = True
+    finally:
+        _report_nf4_skips(excluded, user_skips, complete)
+
+
+def _report_nf4_skips(
+    excluded: dict[str, int], user_skips: set[str], complete: bool
+) -> None:
+    """Log what each exclusion entry matched, warning on user keys that matched nothing."""
+    from axolotl.utils.nf4 import nf4_skip_tier
+
+    for key, count in excluded.items():
+        tier = nf4_skip_tier(key)
+        LOG.info(
+            f"NF4 skip key {key!r} ({tier} match) excluded {count} "
+            f"quantization candidates{'' if complete else ' (staging failed; partial)'}"
+        )
+        # an aborted stage cannot say a key matched nothing
+        if complete and not count and key in user_skips:
+            LOG.warning(
+                f"NF4 skip key {key!r} from llm_int8_skip_modules ({tier} match) "
+                "matched no quantization candidates; entries match by module name or "
+                "dotted path, as a substring with a leading or trailing dot, or as a "
+                "regex when metacharacters are present"
+            )

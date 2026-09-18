@@ -34,6 +34,31 @@ _moe_load_state: _MoeLoadState = {
 }
 
 
+def reset_moe_load_state(mode: str = "4bit") -> None:
+    _moe_load_state["mode"] = mode
+    _moe_load_state["count"] = 0
+    _moe_load_state["expert_param_order"] = {}
+
+
+def record_quantized_expert(path: str, module: torch.nn.Module) -> None:
+    """Capture definition order before a parametrization reorders it, then count it."""
+    if path not in _moe_load_state["expert_param_order"]:
+        _moe_load_state["expert_param_order"][path] = list(module._parameters)
+    _moe_load_state["count"] += 1
+
+
+def export_moe_load_state() -> dict:
+    return {
+        "expert_param_order": dict(_moe_load_state["expert_param_order"]),
+        "count": _moe_load_state["count"],
+    }
+
+
+def import_moe_load_state(state: dict) -> None:
+    _moe_load_state["expert_param_order"] = state["expert_param_order"]
+    _moe_load_state["count"] = state["count"]
+
+
 class Bnb8bitParametrization(torch.nn.Module):
     """Dequantizes int8 row-wise quantized data on access."""
 
@@ -92,9 +117,7 @@ def replace_parameter_8bit(module, param_name):
 def patch_moe_quantization_on_load(cfg):
     """Patch transformers' weight loading to quantize MoE expert params on-the-fly."""
     mode = "8bit" if getattr(cfg, "load_in_8bit", False) else "4bit"
-    _moe_load_state["mode"] = mode
-    _moe_load_state["count"] = 0
-    _moe_load_state["expert_param_order"] = {}
+    reset_moe_load_state(mode)
 
     if _moe_load_state["patched"]:
         LOG.debug("MoE loading-time quantization patch already active")
@@ -140,10 +163,7 @@ def patch_moe_quantization_on_load(cfg):
 
                 # Record definition order before parametrizations override it
                 # with alphabetical order.
-                if mod_path not in _moe_load_state["expert_param_order"]:
-                    _moe_load_state["expert_param_order"][mod_path] = list(
-                        mod._parameters.keys()
-                    )
+                record_quantized_expert(mod_path, mod)
 
                 if _moe_load_state["mode"] == "4bit":
                     replace_parameter_4bit(
@@ -154,7 +174,6 @@ def patch_moe_quantization_on_load(cfg):
                     )
                 else:
                     replace_parameter_8bit(mod, pname)
-                _moe_load_state["count"] += 1
 
                 # Release the bf16 tensor so CUDA memory is freed immediately.
                 param_value.data = torch.empty(0, device="cpu")

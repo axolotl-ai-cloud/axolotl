@@ -172,6 +172,7 @@ def _distributed_nf4_worker(
     offload=False,
     sharding_case=None,
     prepare_optimizer=False,
+    mixed_precision=False,
 ):
     from unittest.mock import patch
 
@@ -210,6 +211,7 @@ def _distributed_nf4_worker(
         world_size=world_size,
     )
     from accelerate import FullyShardedDataParallelPlugin, PartialState
+    from torch.distributed.fsdp import MixedPrecisionPolicy
 
     PartialState(cpu=device_type == "cpu")
     try:
@@ -297,6 +299,13 @@ def _distributed_nf4_worker(
             reshard_after_forward=sharding_case.get("reshard_after_forward", True),
             activation_checkpointing=activation_checkpointing,
             cpu_offload=offload,
+            # what accelerate builds for `bf16: true`: FSDP2 casts every sharded
+            # parameter to param_dtype, packed NF4 bytes included
+            mixed_precision_policy=MixedPrecisionPolicy(
+                param_dtype=dtype, reduce_dtype=dtype, output_dtype=dtype
+            )
+            if mixed_precision
+            else None,
         )
         accelerator = SimpleNamespace(
             device=device,
@@ -462,6 +471,52 @@ def _check_fsdp_resume(model, rank, tokens, checkpoint, optimizer=None):
                 torch.testing.assert_close(
                     p.to_local(), expected_weights[name], rtol=0, atol=0
                 )
+
+
+def _mixed_precision_case(backend, tmp_path, device_type):
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    config = LlamaConfig(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    checkpoint = tmp_path / "base"
+    LlamaForCausalLM(config).save_pretrained(checkpoint)
+    torch.multiprocessing.spawn(
+        _distributed_nf4_worker,
+        args=(
+            backend,
+            str(checkpoint),
+            str(tmp_path / "rendezvous"),
+            None,
+            device_type,
+            torch.bfloat16,
+            False,
+            False,
+            None,
+            False,
+            True,
+        ),
+        nprocs=2,
+    )
+
+
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+@pytest.mark.nf4_distributed
+def test_nf4_mixed_precision_matches_unsharded(backend, tmp_path):
+    """A bf16 param_dtype policy must not reinterpret the packed NF4 storage."""
+    _mixed_precision_case(backend, tmp_path, "cpu")
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA GPUs")
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+def test_cuda_nf4_mixed_precision_matches_unsharded(backend, tmp_path):
+    _mixed_precision_case(backend, tmp_path, "cuda")
 
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
@@ -723,6 +778,50 @@ def test_checkpoint_merge_matches_loaded_model(backend, dtype, tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "name, key, expected",
+    [
+        ("lm_head.weight", "lm_head", False),
+        ("model.lm_head.weight", "lm_head", False),
+        ("model.layers.0.self_attn.q_proj.weight", "q_proj", False),
+        ("model.layers.0.self_attn.q_proj.weight", "proj", True),
+        ("model.layers.0.mlp.down_proj.weight", "model.layers.0.mlp", False),
+        ("model.layers.10.mlp.down_proj.weight", "model.layers.1", True),
+        ("model.layers.0.self_attn.q_proj.weight", "_proj.", False),
+        ("model.layers.0.mlp.experts.gate_up_proj", ".experts", False),
+        ("model.layers.0.self_attn.q_proj.weight", ".*_proj$", True),
+        ("model.layers.0.self_attn.q_proj.weight", r"q_proj\.weight$", False),
+        ("model.layers.3.mlp.down_proj.weight", r"layers\.[0-3]\.", False),
+        ("model.layers.4.mlp.down_proj.weight", r"layers\.[0-3]\.", True),
+    ],
+    ids=[
+        "name-root",
+        "name-nested",
+        "name-component",
+        "name-not-substring",
+        "dotted-prefix",
+        "dotted-prefix-not-textual",
+        "substring-trailing-dot",
+        "substring-leading-dot",
+        "regex-unanchored-suffix",
+        "regex-anchored",
+        "regex-range-hit",
+        "regex-range-miss",
+    ],
+)
+def test_nf4_skip_matching_rules(name, key, expected):
+    from axolotl.utils.nf4 import nf4_should_quantize
+
+    assert nf4_should_quantize(name, linear=True, expert=False, skips={key}) is expected
+
+
+def test_nf4_skip_rejects_invalid_regex():
+    from axolotl.utils.nf4 import nf4_skip_modules
+
+    with pytest.raises(ValueError, match="Invalid regex"):
+        nf4_skip_modules(None, {"llm_int8_skip_modules": ["layers[.weight"]})
+
+
 def test_resolved_architecture_exclusions_reach_staged_loader(tmp_path):
     import transformers.core_model_loading as loading
     from transformers import BitsAndBytesConfig
@@ -939,6 +1038,11 @@ def _cuda_trainer_worker(rank, backend, base, rendezvous, output, phase):
         model = get_peft_model(
             loader.model, LoraConfig(r=4, target_modules=["q_proj", "v_proj"])
         )
+        # ModelLoader.load() does this before prepare; this harness builds the
+        # adapter by hand, so it has to as well or the data_ptr remap collapses
+        # the optimizer on the meta ranks and the sharded optimizer save fails
+        loader.model = model
+        loader._materialize_trainable_meta_params()
         tokens = torch.arange(8)
         trainer = Trainer(
             model=model,
@@ -1817,7 +1921,6 @@ def _staged_nf4_config(**overrides):
     "overrides, expected",
     [
         ({}, None),
-        ({"load_in_4bit": False}, "adapter: qlora and load_in_4bit: true"),
         ({"adapter": "lora"}, "adapter: qlora and load_in_4bit: true"),
         ({"load_in_8bit": True}, "adapter: qlora and load_in_4bit: true"),
         ({"peft_use_dora": True}, "without DoRA or modules_to_save"),
@@ -1832,14 +1935,9 @@ def _staged_nf4_config(**overrides):
             {"deepspeed": "deepspeed_configs/zero3.json"},
             "tensor, expert or context parallelism",
         ),
-        (
-            {"fsdp_config": {"cpu_ram_efficient_loading": False}},
-            "requires FSDP2, cpu_ram_efficient_loading",
-        ),
     ],
     ids=[
         "staged-ok",
-        "load_in_4bit-false",
         "adapter-not-qlora",
         "load_in_8bit",
         "peft_use_dora",
@@ -1848,7 +1946,6 @@ def _staged_nf4_config(**overrides):
         "bnb_4bit_quant_type",
         "tensor_parallel_size",
         "deepspeed",
-        "cpu_ram_efficient_loading-false",
     ],
 )
 def test_staged_nf4_validation_via_config(backend, overrides, expected):
@@ -1862,6 +1959,118 @@ def test_staged_nf4_validation_via_config(backend, overrides, expected):
     else:
         with pytest.raises(ValueError, match=expected):
             AxolotlInputConfig(**config)
+
+
+@pytest.mark.parametrize(
+    "backend, expected", [("bitsandbytes", None), ("torchao", "load_in_4bit")]
+)
+def test_stale_sharded_flag_without_4bit(backend, expected):
+    """The flag only stages with load_in_4bit, as uses_staged_nf4 reads it; torchao has no other path."""
+    from axolotl.loaders.nf4 import uses_staged_nf4
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(nf4_backend=backend, adapter="lora", load_in_4bit=False)
+    if expected:
+        with pytest.raises(ValueError, match=expected):
+            AxolotlInputConfig(**config)
+        return
+    validated = AxolotlInputConfig(**config)
+    assert not uses_staged_nf4(validated)
+
+
+def _timeout_warnings(monkeypatch, tmp_path, requested, group_timeout):
+    import logging
+    from datetime import timedelta
+
+    import torch.distributed as dist
+    from accelerate import PartialState
+
+    from axolotl.utils import distributed as axolotl_distributed
+
+    records = []
+
+    class Collector(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = Collector(level=logging.WARNING)
+    logger = logging.getLogger("axolotl.utils.distributed")
+    logger.addHandler(handler)
+    if requested is None:
+        monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
+    else:
+        monkeypatch.setenv("AXOLOTL_NCCL_TIMEOUT", str(requested))
+    axolotl_distributed.distributed_state = None
+    PartialState._reset_state()
+    if group_timeout is not None:
+        dist.init_process_group(
+            "gloo",
+            init_method=f"file://{tmp_path / 'rendezvous'}",
+            rank=0,
+            world_size=1,
+            timeout=timedelta(seconds=group_timeout),
+        )
+    try:
+        axolotl_distributed.init_distributed_state()
+        return records
+    finally:
+        logger.removeHandler(handler)
+        if dist.is_initialized():
+            dist.destroy_process_group()
+        PartialState._reset_state()
+        axolotl_distributed.distributed_state = None
+
+
+def test_init_distributed_state_is_silent_when_the_group_timeout_suffices(
+    tmp_path, monkeypatch
+):
+    assert _timeout_warnings(monkeypatch, tmp_path, requested=5, group_timeout=60) == []
+
+
+def test_init_distributed_state_is_silent_without_a_preexisting_group(
+    tmp_path, monkeypatch
+):
+    assert (
+        _timeout_warnings(monkeypatch, tmp_path, requested=5, group_timeout=None) == []
+    )
+
+
+def test_inert_sharded_flag_does_not_reject_lora():
+    """adapter: lora with the inert flag combination validated on main and must still."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(
+        nf4_backend="bitsandbytes",
+        adapter="lora",
+        fsdp_config={"cpu_ram_efficient_loading": False},
+    )
+    assert AxolotlInputConfig(**config).qlora_sharded_model_loading is False
+
+
+def test_sharded_loading_without_cpu_ram_efficient_loading_warns(caplog):
+    """The flag used to be silently inert here; it must stay inert but say so."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(
+        nf4_backend="bitsandbytes",
+        fsdp_config={"cpu_ram_efficient_loading": False},
+    )
+    with caplog.at_level("WARNING", logger="axolotl.utils.schemas.validation"):
+        validated = AxolotlInputConfig(**config)
+    assert validated.qlora_sharded_model_loading is False
+    assert any("has no effect" in record.getMessage() for record in caplog.records)
+
+
+def test_torchao_without_cpu_ram_efficient_loading_is_rejected():
+    """torchao has no non-staged loader to fall back to."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(
+        nf4_backend="torchao",
+        fsdp_config={"cpu_ram_efficient_loading": False},
+    )
+    with pytest.raises(ValueError, match="requires FSDP2, cpu_ram_efficient_loading"):
+        AxolotlInputConfig(**config)
 
 
 @pytest.mark.parametrize(
@@ -2025,7 +2234,9 @@ def test_init_distributed_state_warns_without_explicit_timeout(tmp_path, monkeyp
     logger = logging.getLogger("axolotl.utils.distributed")
     logger.addHandler(handler)
     monkeypatch.delenv("AXOLOTL_NCCL_TIMEOUT", raising=False)
-    monkeypatch.setattr(axolotl_distributed, "distributed_state", None)
+    # assigned directly, not via monkeypatch: teardown would restore a PartialState
+    # object that _reset_state() has already emptied, breaking later tests
+    axolotl_distributed.distributed_state = None
     PartialState._reset_state()
     dist.init_process_group(
         "gloo",

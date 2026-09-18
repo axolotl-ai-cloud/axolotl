@@ -5,14 +5,19 @@ Model loader class implementation for loading, configuring, and patching various
 from __future__ import annotations
 
 import gc
+import json
 import math
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from functools import cached_property
 from importlib.util import find_spec
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import peft
 import torch
+import torch.distributed as dist
 import transformers
 import transformers.modeling_utils
 from accelerate import init_empty_weights
@@ -75,6 +80,44 @@ if TYPE_CHECKING:
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
+
+_VALUE_INDEPENDENT_LORA_INIT = (None, True, False, "gaussian")
+
+
+def _nf4_shape_stand_in(original):
+    def forward(self, data, *args, **kwargs):
+        if args or kwargs:
+            return original(self, data, *args, **kwargs)
+        return torch.zeros((), dtype=self.dtype, device=data.device).expand(self.shape)
+
+    return forward
+
+
+@contextmanager
+def _nf4_shape_stand_ins() -> Iterator[None]:
+    """Answer shape, dtype and device queries on packed weights without dequantizing.
+
+    PEFT reads ``base_layer.weight`` around twenty times per targeted module while it
+    builds the LoRA layers, and on a staged NF4 model every read dequantizes the whole
+    tensor on rank zero. Nothing in that path needs the values, so hand back a
+    zero-storage view of the right shape instead.
+
+    The stand-in is installed on the parametrization classes, not their instances:
+    adapter creation may deepcopy modules (``peft_layer_replication``), and a copy
+    would carry an instance-level override past the end of this scope.
+    """
+    from axolotl.utils.nf4 import BnbNF4Parametrization, TorchaoNF4Parametrization
+
+    originals = [
+        (cls, cls.forward) for cls in (BnbNF4Parametrization, TorchaoNF4Parametrization)
+    ]
+    try:
+        for cls, original in originals:
+            cls.forward = _nf4_shape_stand_in(original)  # type: ignore[method-assign]
+        yield
+    finally:
+        for cls, original in originals:
+            cls.forward = original  # type: ignore[method-assign]
 
 
 class ModelLoader:
@@ -499,9 +542,34 @@ class ModelLoader:
                 self.cfg.qat.quantize_embedding,
             )
 
+    def _staged_nf4_lora_init_reads_base_weights(self) -> bool:
+        if self.cfg.lora_model_dir:
+            # PEFT re-runs the saved adapter's own init on load, not the cfg's
+            saved = json.loads(
+                (Path(self.cfg.lora_model_dir) / "adapter_config.json").read_text()
+            )
+            return bool(saved.get("loftq_config")) or (
+                saved.get("init_lora_weights", True) not in _VALUE_INDEPENDENT_LORA_INIT
+            )
+        if (
+            self.cfg.peft
+            and self.cfg.peft.loftq_config
+            and self.cfg.peft.loftq_config.loftq_bits
+        ):
+            return True
+        return self.cfg.peft_init_lora_weights not in _VALUE_INDEPENDENT_LORA_INIT
+
     def _load_adapters(self) -> PeftConfig | None:
         """Load LoRA or other adapters."""
-        # Load LoRA or adapter
+        keep_packed = (
+            getattr(self.model, "_axolotl_staged_nf4", False)
+            and not self._staged_nf4_lora_init_reads_base_weights()
+        )
+        with _nf4_shape_stand_ins() if keep_packed else nullcontext():
+            return self._build_adapters()
+
+    def _build_adapters(self) -> PeftConfig | None:
+        """Build the adapter, or only its config for a reference model."""
         lora_config = None
         if not self.reference_model or self.cfg.lora_model_dir:
             # If we're not loading the reference model, then we're loading the model
@@ -529,11 +597,20 @@ class ModelLoader:
     def _materialize_trainable_meta_params(self):
         """Non-rank-0 loads onto meta and PEFT follows the base layer's device; the optimizer is
         built before `accelerator.prepare`, which remaps its params by `data_ptr()` (0 on meta)."""
-        if (
-            self.cfg.fsdp_config
-            and self.cfg.fsdp_config.cpu_ram_efficient_loading
-            and int(os.getenv("LOCAL_RANK", "0")) != 0
+        if not (
+            self.cfg.fsdp_config and self.cfg.fsdp_config.cpu_ram_efficient_loading
         ):
+            return
+        # staged NF4 loads on global rank 0 only, so on other nodes local rank 0 is meta too
+        if getattr(self.model, "_axolotl_staged_nf4", False):
+            rank = (
+                dist.get_rank()
+                if dist.is_initialized()
+                else int(os.getenv("RANK", "0"))
+            )
+        else:
+            rank = int(os.getenv("LOCAL_RANK", "0"))
+        if rank != 0:
             materialize_trainable_meta_params(self.model)
 
     def _keep_no_placement_params_on_cpu(self):

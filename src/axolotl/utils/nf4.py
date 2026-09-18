@@ -1,6 +1,8 @@
 """Bounded 4-bit conversion and serializable frozen-weight parametrizations."""
 
+import functools
 import math
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -337,19 +339,67 @@ def checkpoint_nf4_linear(module: nn.Linear) -> None:
 
 
 def nf4_skip_modules(model_type: str | None, quantization: dict) -> set[str]:
-    """Resolve user and architecture exclusions shared by loading and merging."""
+    """Resolve user and architecture exclusions shared by loading and merging.
+
+    Entries are matched by ``nf4_skip_matches``: plain module names or dotted
+    paths by name, entries with a leading or trailing ``.`` as substrings, and
+    entries containing regex metacharacters as regular expressions.
+    """
     skips = {"lm_head", "embed_out"}
     skips.update(quantization.get("llm_int8_skip_modules") or [])
     if model_type == "falcon_h1":
         skips.add("out_proj")
+    for key in skips:
+        _skip_matcher(key)
     return skips
+
+
+_REGEX_METACHARACTERS = frozenset("*+?[](){}^$|\\")
+
+
+def nf4_skip_tier(key: str) -> str:
+    """Name the rule ``nf4_skip_matches`` applies to one exclusion entry."""
+    # regex first: an escaped dot at either end would otherwise read as substring
+    if _REGEX_METACHARACTERS & set(key):
+        return "regex"
+    if key.startswith(".") or key.endswith("."):
+        return "substring"
+    return "name"
+
+
+@functools.lru_cache(maxsize=None)
+def _skip_matcher(key: str):
+    tier = nf4_skip_tier(key)
+    if tier == "regex":
+        try:
+            pattern = re.compile(key)
+        except re.error as exc:
+            raise ValueError(
+                f"Invalid regex in llm_int8_skip_modules: {key!r}"
+            ) from exc
+        return lambda name: pattern.search(name) is not None
+    if tier == "substring":
+        return lambda name: key in name
+    prefix = key + "."
+    return lambda name: name == key or name.startswith(prefix) or key in name.split(".")
+
+
+def nf4_skip_matches(name: str, key: str) -> bool:
+    """Match one exclusion entry against a full parameter path.
+
+    - ``lm_head`` or ``model.layers.0.mlp``: the full path, a dotted prefix of it
+      (the whole subtree), or any single path component (that module name at
+      every depth). ``proj`` does not match ``q_proj``.
+    - ``_proj.`` or ``.experts``: a leading or trailing dot requests a plain
+      substring match against the full parameter path.
+    - ``.*_proj$`` or ``layers\\.[0-3]\\.``: regex metacharacters request
+      ``re.search`` over the full path.
+    """
+    return _skip_matcher(key)(name)
 
 
 def nf4_should_quantize(
     name: str, *, linear: bool, expert: bool, skips: set[str]
 ) -> bool:
-    """Match complete module paths or path components against quantization exclusions."""
-    return (linear or expert) and not any(
-        name == key or name.startswith(key + ".") or key in name.split(".")
-        for key in skips
-    )
+    """Decide whether a Linear weight or fused expert tensor is quantized."""
+    return (linear or expert) and not any(nf4_skip_matches(name, key) for key in skips)

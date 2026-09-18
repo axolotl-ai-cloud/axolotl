@@ -183,29 +183,56 @@ def patch_transformers_skip_quantized_init():
     - a torchao tensor subclass (e.g. ``MXTensor``) as the parameter itself, where
       ``.float()`` returns a new tensor that drops the ``_is_hf_initialized`` flag and
       does not implement ``normal_``, so an MX checkpoint raises NotImplementedError;
-    - an NF4 parametrization, where the packed weight hides behind
-      ``module.parametrizations`` and reads as a missing key, so the module is
-      re-initialized silently: one dequantization plus a full ``normal_`` draw each,
-      on CPU, before the first step.
+    - a quantized-weight parametrization (staged NF4, or the bitsandbytes expert
+      parametrizations from ``quantize_moe_experts``), where the packed weight hides
+      behind ``module.parametrizations`` and reads as a missing key, so the module is
+      re-initialized silently: one full dequantization plus a ``normal_`` draw each,
+      before the first step.
+
+    Other parametrizations (weight norm in the audio models, for instance) are left
+    to Transformers, since their weights are not quantized.
     """
     from transformers import PreTrainedModel
+
+    from axolotl.utils.nf4 import BnbNF4Parametrization, TorchaoNF4Parametrization
 
     try:
         from torchao.utils import TorchAOBaseTensor
     except ImportError:  # torchao is absent on macOS/aarch64
         TorchAOBaseTensor = ()
+    quantized_parametrizations: tuple[type, ...] = (
+        BnbNF4Parametrization,
+        TorchaoNF4Parametrization,
+    )
+    try:
+        from bitsandbytes.nn.parametrize import Bnb4bitParametrization
+
+        from axolotl.monkeypatch.moe_quant import Bnb8bitParametrization
+
+        quantized_parametrizations += (Bnb4bitParametrization, Bnb8bitParametrization)
+    except ImportError:  # bitsandbytes is absent on macOS
+        pass
 
     if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
         return
 
     original = PreTrainedModel._initialize_weights
 
-    @functools.wraps(original)
-    def _initialize_weights(self, module, *args, **kwargs):
-        if getattr(module, "parametrizations", None) or any(
+    def holds_quantized_weight(module):
+        if any(
             isinstance(param, TorchAOBaseTensor)
             for param in module.parameters(recurse=False)
         ):
+            return True
+        return any(
+            isinstance(transform, quantized_parametrizations)
+            for chain in (getattr(module, "parametrizations", None) or {}).values()
+            for transform in chain
+        )
+
+    @functools.wraps(original)
+    def _initialize_weights(self, module, *args, **kwargs):
+        if holds_quantized_weight(module):
             module._is_hf_initialized = True
             return None
         return original(self, module, *args, **kwargs)

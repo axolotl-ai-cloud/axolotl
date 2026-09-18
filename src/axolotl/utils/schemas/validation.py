@@ -1292,9 +1292,27 @@ class OptimizationValidationMixin:
     @model_validator(mode="after")
     def check_staged_nf4(self):
         staged = self.nf4_backend == "torchao" or (
-            str(self.fsdp_version) == "2" and self.qlora_sharded_model_loading
+            str(self.fsdp_version) == "2"
+            and self.qlora_sharded_model_loading
+            and self.load_in_4bit
         )
         if not staged:
+            return self
+        if (
+            self.nf4_backend != "torchao"
+            and self.fsdp_config
+            and str(self.fsdp_version) == "2"
+            and not self.fsdp_config.cpu_ram_efficient_loading
+        ):
+            # this combination never reached a sharded loader, so keep it inert
+            # rather than failing configs that used to train
+            LOG.warning(
+                "`qlora_sharded_model_loading: true` has no effect without "
+                "`fsdp_config.cpu_ram_efficient_loading: true`; every rank will load "
+                "and quantize the full model. Enable cpu_ram_efficient_loading for "
+                "CPU-staged NF4 loading."
+            )
+            self.qlora_sharded_model_loading = False
             return self
         if not self.load_in_4bit or self.adapter != "qlora" or self.load_in_8bit:
             raise ValueError(
