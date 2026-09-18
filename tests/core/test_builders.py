@@ -95,8 +95,8 @@ class TestHFCausalTrainerBuilder:
 
         assert training_arguments.learning_rate == 0.00005
         assert training_arguments.weight_decay == 0.01
-        assert training_arguments.adam_beta1 == 0.998
-        assert training_arguments.adam_beta2 == 0.9
+        assert training_arguments.adam_beta1 == 0.91
+        assert training_arguments.adam_beta2 == 0.99
         assert training_arguments.adam_epsilon == 0.00001
         assert training_arguments.max_grad_norm == 1.0
 
@@ -141,7 +141,7 @@ class TestHFCausalTrainerBuilder:
         assert optimizer_cls is MuonOptimizerFactory
         assert optimizer_kwargs["lr"] == 0.00005
         assert optimizer_kwargs["weight_decay"] == 0.01
-        assert optimizer_kwargs["betas"] == (0.998, 0.9)
+        assert optimizer_kwargs["betas"] == (0.91, 0.99)
         assert optimizer_kwargs["eps"] == 0.00001
 
         # Ensure optimizer is created with correct class
