@@ -2,7 +2,7 @@
 Export Config Schema
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -18,6 +18,25 @@ GGUF_QUANT_TYPES = frozenset(
         "TQ1_0", "TQ2_0", "MXFP4_MOE",
     }
 )  # fmt: skip
+
+# `convert_lora_to_gguf.py` takes fewer weight types than `convert_hf_to_gguf.py`.
+GGUF_LORA_OUTTYPES = frozenset({"f32", "f16", "bf16", "q8_0", "auto"})
+GGUF_LORA_DEFAULT_OUTTYPE = "f32"
+
+
+def validate_lora_export(outtype: str, quantize: Sequence[str]) -> None:
+    """Reject settings the LoRA converter cannot honour."""
+    if quantize:
+        raise ValueError(
+            "`llama-quantize` only takes full models, so `export.quantize` cannot be "
+            "combined with a LoRA export. Run `axolotl merge-lora` and export the "
+            "merged model instead."
+        )
+    if outtype not in GGUF_LORA_OUTTYPES:
+        raise ValueError(
+            f"`convert_lora_to_gguf.py` cannot write {outtype}. `export.outtype` must "
+            f"be one of: {sorted(GGUF_LORA_OUTTYPES)}."
+        )
 
 
 class ExportConfig(BaseModel):
@@ -40,6 +59,10 @@ class ExportConfig(BaseModel):
     llama_cpp_dir: str | None = Field(
         default=None,
         description="Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
+    )
+    lora: bool | None = Field(
+        default=None,
+        description="Export the adapter as a standalone GGUF LoRA instead of a full model. Default: auto-detected from the exported directory.",
     )
 
     @field_validator("quantize", mode="before")
@@ -73,3 +96,15 @@ class ExportConfig(BaseModel):
                 "is set, e.g. `model-{ftype}.gguf`."
             )
         return self
+
+    @model_validator(mode="after")
+    def validate_lora(self):
+        if self.lora:
+            validate_lora_export(self.outtype, self.quantize)
+        return self
+
+    def resolved_outtype(self, lora: bool) -> str:
+        """llama.cpp's two converters ship different defaults, f16 and f32."""
+        if lora and "outtype" not in self.model_fields_set:
+            return GGUF_LORA_DEFAULT_OUTTYPE
+        return self.outtype
