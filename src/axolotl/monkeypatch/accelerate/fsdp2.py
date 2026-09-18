@@ -12,6 +12,7 @@ import torch.distributed as dist
 from torch import nn
 
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.fp32_master_weights import upcast_master_weights
 from axolotl.utils.fp32_norms import get_fp32_norm_patterns, shard_norms_fp32
 from axolotl.utils.logging import get_logger
 
@@ -187,6 +188,9 @@ def fsdp2_load_full_state_dict(
         ):
             own = full_sd[param_name]
             own = own.to(torch.device("cuda"))
+            # Bypasses fully_shard, so nothing else reconciles it with an fp32 master upcast.
+            if own.dtype != sharded_meta_param.dtype and type(own) is torch.Tensor:
+                own = own.to(sharded_meta_param.dtype)
             if offload_to_cpu:
                 own = own.cpu()
             sharded_sd[param_name] = nn.Parameter(
@@ -542,6 +546,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # We assume `transformers` models have a `tie_weights` method if they support it
         if hasattr(model, "tie_weights"):
             model.tie_weights()
+
+    # Must precede every fully_shard below: a DTensor's dtype is fixed for its shard group.
+    if (
+        getattr(model, "_axolotl_fp32_master_weights", False)
+        and accelerator.mixed_precision != "no"
+    ):
+        upcast_master_weights(model)
 
     is_peft_model = isinstance(model, PeftModel)
 
