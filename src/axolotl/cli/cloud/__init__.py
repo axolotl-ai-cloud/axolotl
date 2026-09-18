@@ -3,7 +3,6 @@ launch axolotl in supported cloud platforms
 """
 
 from pathlib import Path
-from typing import Literal
 
 import yaml
 
@@ -11,6 +10,7 @@ from axolotl.cli.cloud.base import Cloud
 from axolotl.cli.cloud.baseten import BasetenCloud
 from axolotl.cli.cloud.modal_ import ModalCloud
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.runtime import LauncherChoice
 
 
 def load_cloud_cfg(cloud_config: Path | str) -> DictDefault:
@@ -35,9 +35,10 @@ def do_cli_preprocess(
 def do_cli_train(
     cloud_config: Path | str,
     config: Path | str,
-    launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
+    launcher: LauncherChoice = "accelerate",
     launcher_args: list[str] | None = None,
     cwd=None,
+    runtime_yaml: str | None = None,
     **kwargs,
 ) -> None:
     cloud_cfg: DictDefault = load_cloud_cfg(cloud_config)
@@ -59,6 +60,7 @@ def do_cli_train(
         launcher=launcher,
         launcher_args=launcher_args,
         local_dirs=local_dirs,
+        runtime_yaml=runtime_yaml,
         **kwargs,
     )
 

@@ -90,6 +90,13 @@ def _coerce_value(value: Any, existing: Optional[Any] = None) -> Any:
 
 API_KEY_FIELDS = {"comet_api_key"}
 
+RAY_RUNTIME_KEYS = {
+    "use_ray",
+    "ray_num_workers",
+    "resources_per_worker",
+    "ray_run_name",
+}
+
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
 
 
@@ -281,8 +288,10 @@ def load_cfg(
 
     # Apply flat kwargs
     for key, value in flat_kwargs.items():
-        # If not strict, allow writing to cfg even if it's not in the yml already
-        if key in cfg_keys or not cfg.strict:
+        # If not strict, allow writing to cfg even if it's not in the yml already.
+        # Ray launch settings are injected by the CLI driver, so they must pass
+        # the strict gate for `--launcher ray` to work with `strict: true` configs.
+        if key in cfg_keys or not cfg.strict or key in RAY_RUNTIME_KEYS:
             cfg[key] = _coerce_value(value, cfg.get(key))
 
     # Apply nested kwargs (e.g., trl__beta -> cfg.trl.beta)

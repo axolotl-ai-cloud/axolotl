@@ -227,3 +227,13 @@ def test_add_default_rdzv_args_with_all_existing():
     # Should not add any additional args
     assert len(result) == len(launcher_args)
     assert result == launcher_args
+
+
+def test_add_default_rdzv_args_recognizes_hyphenated_flags():
+    from axolotl.cli.utils.train import _add_default_rdzv_args
+
+    args = ["--rdzv-endpoint=host:29400", "--rdzv-backend", "etcd"]
+    result = _add_default_rdzv_args(args)
+
+    assert "--rdzv_backend" not in result
+    assert "--rdzv_id" in result

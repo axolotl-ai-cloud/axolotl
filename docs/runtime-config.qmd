@@ -1,0 +1,142 @@
+---
+title: Runtime Config
+description: Describe your cluster once, reuse it across training recipes
+---
+
+A runtime config is a small YAML file describing *where and how* training is
+launched — launcher choice, cluster resources, rendezvous details — separate
+from the training recipe, which describes *what* is trained. Pass it with
+`--runtime`:
+
+```bash
+axolotl train recipe.yaml --runtime cluster.yaml
+```
+
+The same runtime file is reusable across recipes and, by design, contains no
+per-node state (no machine ranks, no node counts): the identical file works on
+every node of a cluster. Example files live in
+[`examples/runtime/`](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/runtime).
+
+## Schema
+
+```bash
+axolotl config-schema --runtime   # full JSON schema
+```
+
+```yaml
+launcher: ray        # accelerate | torchrun | ray | python
+                     # optional when exactly one launcher block is present
+
+env:                 # env vars applied to the launch (any launcher)
+  NCCL_DEBUG: WARN
+
+ray:
+  address: null            # omit: use an `axolotl ray up`/`ray start` cluster if running,
+                           #   else an isolated local instance (concurrent runs stay independent)
+                           # auto/ray://…: attach to a running cluster
+                           # http(s)://host:8265: submit via the Ray Jobs API
+  num_workers: auto        # or an int; auto = derived from total cluster resources
+  resources_per_worker:
+    GPU: 1
+    # accelerator_type:H100: 0.001   # pin a GPU type
+  run_name: my-run
+  detach: false            # Jobs API: return after submitting
+  runtime_env:             # Ray runtime_env (Jobs uploads, worker env)
+    working_dir: .
+    excludes: ["outputs/"]
+    pip: ["some-extra-dep"]
+    env_vars:
+      HF_HOME: /mnt/shared/hf
+  cluster:                 # consumed by `axolotl ray up/down/status`
+    hostfile: ./hostfile
+    ssh_user: ubuntu
+    head_port: 6379
+    dashboard_port: 8265
+
+torchrun:
+  nnodes: 2                # int or elastic range "1:4"
+  nproc_per_node: 8        # int, or auto/gpu/cpu
+  rdzv_backend: c10d
+  rdzv_endpoint: 10.0.0.4:29400
+  rdzv_id: my-run
+  master_addr: 10.0.0.4
+  master_port: 29500
+
+accelerate:
+  num_processes: 16
+  num_machines: 2
+  main_process_ip: 10.0.0.4
+  main_process_port: 29500
+  config_file: ./accelerate.yaml
+  mixed_precision: bf16
+```
+
+`machine_rank`/`node_rank` are deliberately not part of the schema — they
+differ per node. Use rendezvous-based launching (torchrun c10d, or Ray, which
+needs no ranks at all), or pass them per node after `--`:
+
+```bash
+axolotl train recipe.yaml --runtime cluster.yaml -- --machine_rank 1
+```
+
+## Precedence
+
+From strongest to weakest:
+
+1. Explicit CLI flags (`--launcher`, `--ray-num-workers`, …)
+2. The `--runtime` file
+3. Legacy keys in the training YAML (`use_ray: true`)
+4. Default: `accelerate`
+
+Arguments after `--` are passed to the launcher verbatim and override any
+matching flag derived from the runtime file.
+
+## The three Ray flows
+
+**In-cluster driver** — run on a machine that is (or can start) a Ray cluster:
+
+```bash
+axolotl train recipe.yaml --runtime examples/runtime/ray-single-node.yaml
+```
+
+With no `address`, axolotl uses the cluster brought up by `axolotl ray up` (or
+any `ray start` cluster) when one is running, and an isolated local Ray
+instance otherwise — concurrent trainings on one machine never interfere.
+`num_workers: auto` uses every GPU that satisfies `resources_per_worker`. No
+ranks, no host lists — adding nodes to the Ray cluster is all it takes to
+scale.
+
+**Ray Jobs submission** — run from anywhere, no SSH to the head node:
+
+```bash
+axolotl train recipe.yaml --runtime examples/runtime/ray-jobs-remote.yaml
+```
+
+When `address` is `http(s)://…:8265`, axolotl stages the recipe (plus
+`runtime_env.working_dir` if set), submits via the Ray Jobs API, and streams
+logs until completion. Ctrl-C stops the job unless `detach: true`.
+
+**Cluster bring-up** — for bare-metal nodes without an existing Ray setup:
+
+```bash
+axolotl ray up --hostfile hostfile   # on the head node
+axolotl ray status
+axolotl ray down
+```
+
+`up` starts a head locally and joins each hostfile worker over passwordless
+ssh; the cluster is recorded under `~/.cache/axolotl/` so `down` and `status`
+need no arguments. See [Ray integration](ray-integration.qmd) for details.
+
+## torchrun and accelerate
+
+The `torchrun:` and `accelerate:` blocks replace hand-assembled `--`
+passthrough for multi-node runs. A two-node torchrun setup becomes a file you
+copy to both nodes and launch identically:
+
+```bash
+axolotl train recipe.yaml --runtime examples/runtime/torchrun-2node.yaml
+```
+
+If only `rdzv_endpoint` is set, axolotl fills in `rdzv_backend: c10d` and a
+generated `rdzv_id`, matching the existing `--` passthrough behavior.
