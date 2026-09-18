@@ -46,6 +46,14 @@ Bradley-Terry chat templates expect single-turn conversations in the following f
 Check out our [PRM blog](https://axolotlai.substack.com/p/process-reward-models).
 :::
 
+::: {.callout-important}
+PRM requires `trl<=1.13.0`. TRL [removed](https://github.com/huggingface/trl/pull/7133) `trl.experimental.prm` in later versions.
+
+```bash
+uv pip install trl==1.13.0
+```
+:::
+
 Process reward models are trained using data which contains preference annotations for each step in a series of interactions. Typically, PRMs are trained to provide reward signals over each step of a reasoning trace and are used for downstream reinforcement learning.
 ```yaml
 base_model: Qwen/Qwen2.5-3B
