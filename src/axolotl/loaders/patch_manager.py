@@ -439,19 +439,24 @@ class PatchManager:
             )
 
             patch_parallelism_config()
+        if (
+            self.cfg.fsdp_config
+            and self.cfg.adapter
+            and self.cfg.fsdp_config.activation_checkpointing
+        ):
+            from axolotl.monkeypatch.peft.state_dict import (
+                patch_peft_checkpoint_wrapper_prefixes,
+            )
+
+            patch_peft_checkpoint_wrapper_prefixes()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
             from axolotl.monkeypatch.accelerate.float8_fsdp import patch_float8_fsdp
             from axolotl.monkeypatch.accelerate.fsdp2 import (
                 patch_accelerate_fsdp2,
                 patch_tied_keys_for_meta_device,
             )
-            from axolotl.monkeypatch.peft.state_dict import (
-                patch_peft_checkpoint_wrapper_prefixes,
-            )
 
             patch_accelerate_fsdp2()
-            if self.cfg.adapter and self.cfg.fsdp_config.activation_checkpointing:
-                patch_peft_checkpoint_wrapper_prefixes()
             # FSDP2 sharding for any torchao Float8Tensor weights (no-op without torchao)
             patch_float8_fsdp()
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:

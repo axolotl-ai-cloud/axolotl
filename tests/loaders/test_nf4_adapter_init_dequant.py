@@ -295,8 +295,7 @@ def test_saved_value_dependent_adapter_is_rejected(tmp_path):
         loader._load_adapters()
 
 
-def test_value_dependent_saved_init_does_not_force_real_base_weights(tmp_path):
-    """The predicate answers whether the stand-ins suffice; only the check rejects a saved init."""
+def test_saved_value_dependent_init_is_rejected_before_the_adapter_is_built(tmp_path):
     model_class = _save_llama(tmp_path)
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir()
@@ -308,18 +307,45 @@ def test_value_dependent_saved_init_does_not_force_real_base_weights(tmp_path):
         tmp_path, model_class, "bitsandbytes", lora_model_dir=str(adapter_dir)
     )
 
-    assert loader._staged_nf4_needs_real_base_weights() is False
     with pytest.raises(ValueError, match="residual write-back"):
         loader._reject_value_dependent_saved_adapter_init()
 
 
-def test_unreadable_saved_adapter_config_falls_back_to_real_weights(
-    tmp_path, monkeypatch
-):
+def test_hub_adapter_config_is_resolved_before_deciding(tmp_path, monkeypatch):
     """A hub id is a valid lora_model_dir for PEFT but has no local adapter_config.json."""
+    import huggingface_hub
+
+    model_class = _save_llama(tmp_path)
+    loader = _staged_loader(
+        tmp_path, model_class, "bitsandbytes", lora_model_dir="some-org/some-adapter"
+    )
+    fetched = tmp_path / "fetched_adapter_config.json"
+    saved = {"peft_type": "LORA", "init_lora_weights": True}
+
+    def fake_download(repo_id, filename, **kwargs):
+        assert (repo_id, filename) == ("some-org/some-adapter", "adapter_config.json")
+        fetched.write_text(json.dumps(saved))
+        return str(fetched)
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_download)
+    loader._reject_value_dependent_saved_adapter_init()
+
+    saved["init_lora_weights"] = "pissa"
+    with pytest.raises(ValueError, match="residual write-back"):
+        loader._reject_value_dependent_saved_adapter_init()
+
+
+def test_unverifiable_saved_adapter_config_is_rejected(tmp_path, monkeypatch):
+    import huggingface_hub
+
     model_class = _save_llama(tmp_path)
     loader = _staged_loader(
         tmp_path, model_class, "bitsandbytes", lora_model_dir="some-org/some-adapter"
     )
 
-    assert loader._staged_nf4_needs_real_base_weights() is True
+    def failing_download(repo_id, filename, **kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_download)
+    with pytest.raises(ValueError, match="cannot be checked"):
+        loader._reject_value_dependent_saved_adapter_init()

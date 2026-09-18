@@ -1,5 +1,6 @@
 """Loading-time quantization for MoE expert weights stored as 3D nn.Parameter tensors."""
 
+import warnings
 from typing import TypedDict
 
 import bitsandbytes as bnb
@@ -394,22 +395,29 @@ def patch_peft_target_parameters_matching():
         )
         if cls is not None
     )
-    if len(proxies) > 1 and not getattr(
+    if getattr(lora_layer, "_LoraFactorsProxy", None) is not None and not getattr(
         ParamWrapper._remove_parametrizations, "_axolotl_patched", False
     ):
 
         def _patched_remove_parametrizations(self):
             base_layer = self.get_base_layer()
-            param_list = base_layer.parametrizations[self.parameter_name]
-            if len(param_list) == 1:
-                P.remove_parametrizations(
-                    base_layer, self.parameter_name, leave_parametrized=False
+            name = self.parameter_name
+            if name not in base_layer.parametrizations:
+                raise ValueError(
+                    "Something went wrong, please report this issue on PEFT: "
+                    "https://github.com/huggingface/peft/issues"
                 )
+            param_list = base_layer.parametrizations[name]
+            if len(param_list) == 1:
+                P.remove_parametrizations(base_layer, name, leave_parametrized=False)
                 return
             for index in reversed(range(len(param_list))):
                 if isinstance(param_list[index], proxies):
                     del param_list[index]
                     return
+            warnings.warn(
+                f"Could not find any LoRA parametrization on {name}", stacklevel=2
+            )
 
         _patched_remove_parametrizations._axolotl_patched = True
         ParamWrapper._remove_parametrizations = _patched_remove_parametrizations

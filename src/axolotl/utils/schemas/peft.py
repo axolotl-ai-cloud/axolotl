@@ -267,9 +267,10 @@ class LoraConfig(BaseModel):
         ):
             raise ValueError(
                 "peft_init_lora_weights must be the default or gaussian when "
-                "lora_target_parameters is set: value-dependent inits (pissa, olora, "
-                "loftq, corda, eva) read base_layer.weight, which fused expert "
-                "parameters do not have, so PEFT fails when building the adapter."
+                "lora_target_parameters is set: pissa, olora, loftq, corda, orthogonal "
+                "and lora_ga read base_layer.weight, which fused expert parameters do "
+                "not have, so PEFT fails when building the adapter; eva is not wired "
+                "for target parameters."
             )
         return self
 

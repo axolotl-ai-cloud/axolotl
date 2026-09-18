@@ -297,10 +297,24 @@ def _patch_peft_param_wrapper_dropout():
     ParamWrapper._axolotl_dropout_patched = True
 
 
-def read_saved_adapter_config(lora_model_dir: str | Path) -> dict | None:
-    """The adapter config saved under `lora_model_dir`, or None when it is not readable locally (e.g. a hub id)."""
+def read_saved_adapter_config(
+    lora_model_dir: str | Path, from_hub: bool = False
+) -> dict | None:
+    """The adapter config saved under `lora_model_dir`, or None when it is not readable.
+
+    A hub id has no local file; with `from_hub` the config is fetched the way PEFT will.
+    """
+    path = Path(lora_model_dir) / "adapter_config.json"
     try:
-        return json.loads((Path(lora_model_dir) / "adapter_config.json").read_text())
+        if not path.exists() and from_hub:
+            from huggingface_hub import hf_hub_download
+
+            path = Path(
+                hf_hub_download(
+                    repo_id=str(lora_model_dir), filename="adapter_config.json"
+                )
+            )
+        return json.loads(path.read_text())
     except (OSError, ValueError):
         return None
 

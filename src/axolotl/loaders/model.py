@@ -544,9 +544,13 @@ class ModelLoader:
         the saved adapter's own init on load, so `lora_model_dir` can still request one."""
         if not self.cfg.lora_model_dir:
             return
-        saved = read_saved_adapter_config(self.cfg.lora_model_dir)
+        saved = read_saved_adapter_config(self.cfg.lora_model_dir, from_hub=True)
         if saved is None:
-            return
+            raise ValueError(
+                f"Could not read adapter_config.json for {self.cfg.lora_model_dir}, so "
+                "its LoRA init cannot be checked; CPU-staged NF4 cannot resume an adapter "
+                "saved with a value-dependent init."
+            )
         if bool(saved.get("loftq_config")) or (
             saved.get("init_lora_weights", True) not in VALUE_INDEPENDENT_LORA_INIT
         ):
@@ -559,27 +563,12 @@ class ModelLoader:
                 "`path_initial_model_for_weight_conversion` before resuming."
             )
 
-    def _staged_nf4_needs_real_base_weights(self) -> bool:
-        """Whether PEFT must read real base weights instead of the shape stand-ins."""
-        if not self.cfg.lora_model_dir:
-            return False
-        if read_saved_adapter_config(self.cfg.lora_model_dir) is not None:
-            return False
-        # Adapter config not readable locally (e.g. hub id): assume the worst and dequantize.
-        LOG.warning(
-            "Could not read %s/adapter_config.json to check its LoRA init; "
-            "loading the adapter against dequantized base weights.",
-            self.cfg.lora_model_dir,
-        )
-        return True
-
     def _load_adapters(self) -> PeftConfig | None:
         """Load LoRA or other adapters."""
-        keep_packed = False
-        if getattr(self.model, "_axolotl_staged_nf4", False):
+        staged = getattr(self.model, "_axolotl_staged_nf4", False)
+        if staged:
             self._reject_value_dependent_saved_adapter_init()
-            keep_packed = not self._staged_nf4_needs_real_base_weights()
-        with _nf4_shape_stand_ins() if keep_packed else nullcontext():
+        with _nf4_shape_stand_ins() if staged else nullcontext():
             return self._build_adapters()
 
     def _build_adapters(self) -> PeftConfig | None:

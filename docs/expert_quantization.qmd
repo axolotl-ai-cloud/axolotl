@@ -103,8 +103,9 @@ above.
 an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
 DeepSpeed, tensor/context/expert parallelism, DoRA, `modules_to_save` and
 value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
-olora and loftq remain available on the non-staged loader with
-`cpu_ram_efficient_loading: false`; pissa requires an unquantized base.
+olora and loftq remain available on the non-staged bitsandbytes loader with
+`cpu_ram_efficient_loading: false` (the torchao backend is always staged); pissa
+requires an unquantized base.
 
 ### LoRA init compatibility
 

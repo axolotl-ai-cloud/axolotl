@@ -11,7 +11,9 @@ def patch_peft_checkpoint_wrapper_prefixes() -> None:
     Torch's checkpoint wrapper removes ``_checkpoint_wrapped_module.`` from state-dict
     keys but not from module names, and PEFT 0.21 derives adapter key prefixes from
     module names, so an activation-checkpointed FSDP model saves and loads an empty
-    adapter. Releases without the structural prefix builder are unaffected.
+    adapter. Both forms are kept: the state-dict filters need the stripped prefix and
+    ``_mark_only_adapters_as_trainable`` filters ``named_parameters``, which keeps
+    the segment. Releases without the structural prefix builder are unaffected.
     """
     from peft.tuners import tuners_utils
 
@@ -21,9 +23,10 @@ def patch_peft_checkpoint_wrapper_prefixes() -> None:
 
     @wraps(original)
     def prefixes(model, adapter_name=None):
-        return {
+        found = original(model, adapter_name)
+        return found | {
             prefix.replace(f".{_WRAPPER}", "").replace(f"{_WRAPPER}.", "")
-            for prefix in original(model, adapter_name)
+            for prefix in found
         }
 
     prefixes._axolotl_patched = True
