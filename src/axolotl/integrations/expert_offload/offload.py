@@ -21,7 +21,6 @@ forward and backward alike. Single-GPU or plain DDP; see this integration's READ
 
 from __future__ import annotations
 
-import os
 from typing import NamedTuple
 
 import torch
@@ -226,49 +225,6 @@ class _BlockOffload:
             cls._resident = None
 
 
-_BNB_CACHE_HOOK_NAMES = (
-    "_enable_parametrization_cache",  # forward_pre_hook: parametrize._cache_enabled += 1
-    "_disable_parametrization_cache",  # forward_hook: -= 1, clear cache at 0
-)
-
-
-def _strip_bnb_parametrize_cache_hooks(module: nn.Module) -> int:
-    """Remove bitsandbytes' parametrization-cache hook pair from ``module``.
-
-    The pair bumps the global ``parametrize._cache_enabled`` counter and clears the cache when it
-    returns to 0 — but the ``use_reentrant=False`` checkpoint recompute early-stops mid-forward,
-    skipping the forward_hook: the counter leaks and every dequantized expert stays cached (pool
-    x4 bytes). Experts are read once per forward, so the cache buys them nothing anyway. bnb's
-    state-dict post-hook is left in place.
-    """
-    removed = 0
-    for hooks in (
-        module._forward_pre_hooks,
-        module._forward_hooks,
-    ):
-        stale = [
-            k
-            for k, fn in hooks.items()
-            if getattr(fn, "__name__", "") in _BNB_CACHE_HOOK_NAMES
-        ]
-        for k in stale:
-            del hooks[k]
-            for extra in ("_forward_hooks_with_kwargs", "_forward_hooks_always_called"):
-                d = getattr(module, extra, None)
-                if d is not None and k in d:
-                    del d[k]
-            removed += 1
-    return removed
-
-
-def _reset_parametrize_cache_state() -> None:
-    """Defensively zero torch's global parametrization cache (idempotent)."""
-    import torch.nn.utils.parametrize as P
-
-    P._cache_enabled = 0
-    P._cache = {}
-
-
 def install_expert_offload(
     model: nn.Module, device=None, pin: bool = True
 ) -> list[_BlockOffload]:
@@ -303,25 +259,10 @@ def install_expert_offload(
     device = torch.device(device)
 
     handles: list[_BlockOffload] = []
-    stripped = 0
-    keep_cache_hooks = os.environ.get("AXOLOTL_EXPERT_OFFLOAD_KEEP_BNB_CACHE_HOOKS", "")
     for name, block, slots in slot_blocks:
         handle = _BlockOffload(name, slots, device, pin=pin)
         block.register_forward_pre_hook(lambda module, args, h=handle: h.stage())
         handles.append(handle)
-        if not keep_cache_hooks:
-            for owner in {id(s.owner): s.owner for s in slots}.values():
-                stripped += _strip_bnb_parametrize_cache_hooks(owner)
-    if not keep_cache_hooks:
-        _reset_parametrize_cache_state()
-        if stripped:
-            LOG.info(
-                "expert_offload: removed %d bnb parametrize-cache hooks from offloaded "
-                "expert modules (checkpoint early-stop leaks the global cache counter; "
-                "dequants would be retained at pool x4 bytes). Set "
-                "AXOLOTL_EXPERT_OFFLOAD_KEEP_BNB_CACHE_HOOKS=1 to keep them.",
-                stripped,
-            )
 
     model._expert_offload_handles = handles
     _register_ddp_ignore(model, handles)
