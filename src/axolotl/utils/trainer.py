@@ -22,6 +22,7 @@ from axolotl.utils.distributed import init_distributed_state, reduce_and_broadca
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.samplers.balanced import default_sample_packing_strategy
 
 LOG = get_logger(__name__)
 
@@ -108,7 +109,8 @@ def add_position_ids(sample):
         # Position IDs for a single example
         # As a list
         sample["position_ids"] = list(range(seq_len))
-        sample["length"] = seq_len
+        if "length" not in sample:
+            sample["length"] = seq_len
 
     else:
         # ---- BATCHED EXAMPLES ----
@@ -122,7 +124,8 @@ def add_position_ids(sample):
 
         # Now store them back
         sample["position_ids"] = position_ids_batch
-        sample["length"] = lengths_batch
+        if "length" not in sample:
+            sample["length"] = lengths_batch
 
     return sample
 
@@ -213,6 +216,7 @@ def filter_sequences_by_length(
     min_sequence_len = min_sequence_len or 2
 
     input_ids = sample["input_ids"]
+    explicit_lengths = sample.get("length")
 
     # Edge case: if input_ids is empty
     if not input_ids:
@@ -222,7 +226,9 @@ def filter_sequences_by_length(
     # Check if single example or batched by looking at the first element
     if isinstance(input_ids[0], int):
         # Single example (input_ids is a list of int)
-        length = len(input_ids)
+        length = (
+            int(explicit_lengths) if explicit_lengths is not None else len(input_ids)
+        )
         if raise_on_drop and length > sequence_len:
             raise ValueError(
                 f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
@@ -231,8 +237,10 @@ def filter_sequences_by_length(
 
     # Batched (input_ids is a list of lists)
     results = []
-    for seq in input_ids:
-        length = len(seq)
+    for idx, seq in enumerate(input_ids):
+        length = (
+            int(explicit_lengths[idx]) if explicit_lengths is not None else len(seq)
+        )
         if raise_on_drop and length > sequence_len:
             raise ValueError(
                 f"Sequence encountered with {length} tokens, which exceeds the maximum {sequence_len}."
@@ -491,6 +499,12 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 drop_last=True,
                 num_processes=cfg.dataset_num_proc,
                 mp_start_method=cfg.sample_packing_mp_start_method or "fork",
+                packing_strategy=default_sample_packing_strategy(
+                    bool(
+                        getattr(cfg, "is_multimodal", False)
+                        or getattr(cfg, "processor_type", None)
+                    )
+                ),
             )
 
             data_loader = DataLoader(

@@ -8,6 +8,7 @@ from .batching import (
 )
 from .dpo import AxolotlDPODataCollatorWithPadding
 from .mamba import MambaDataCollator
+from .mm_packing import MultiModalBatchSamplerDataCollatorForSeq2Seq
 
 __all__ = [
     "DataCollatorForSeq2Seq",
@@ -16,4 +17,5 @@ __all__ = [
     "PretrainingBatchSamplerDataCollatorForSeq2Seq",
     "AxolotlDPODataCollatorWithPadding",
     "MambaDataCollator",
+    "MultiModalBatchSamplerDataCollatorForSeq2Seq",
 ]
