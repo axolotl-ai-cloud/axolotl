@@ -405,6 +405,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
             trainer_kwargs["compute_loss_func"] = configured_eaft_loss
 
+        if self.cfg.use_dft:
+            from axolotl.monkeypatch.loss.dft import dft_loss
+
+            trainer_kwargs["compute_loss_func"] = dft_loss
+
         trainer_cls = self._get_trainer_cls()
 
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(

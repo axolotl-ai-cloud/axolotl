@@ -112,9 +112,11 @@ The differentiators. All are opt-in; most need a specific GPU generation.
 | Liger | plugin `liger` + `liger_rope`, `liger_rms_norm(_gated)`, `liger_swiglu`/`liger_glu_activation`, `liger_cross_entropy`, `liger_fused_linear_cross_entropy`; opt-in backend via `liger_kernel_impl: cutile\|cutedsl` (fused-linear-CE stays Triton) | RoPE, RMSNorm, SwiGLU, CE, fused-linear-CE |
 | Cut Cross Entropy (CCE) | plugin `cut_cross_entropy` + `cut_cross_entropy: true` | memory-lean logit-free CE (Apple fork) |
 | Chunked CE | `chunked_cross_entropy: true` | chunked loss for long sequences |
+| EAFT | `use_eaft: true` (+ `eaft_alpha`, `eaft_k`) | SFT loss weighted by top-k entropy |
+| DFT | `use_dft: true` | SFT loss weighted by detached token probability ([paper](https://arxiv.org/abs/2508.05629)) |
 | DenseMixer | plugin `densemixer` | fused MoE forward (OLMoE, Qwen2/3-MoE) |
 
-Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE / chunked).
+Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE / chunked). EAFT and DFT are mutually exclusive and, since they need full logits, bypass the fused CE kernels.
 
 ### MoE expert kernels
 
