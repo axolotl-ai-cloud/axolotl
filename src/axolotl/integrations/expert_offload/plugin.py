@@ -16,8 +16,10 @@ from axolotl.integrations.base import BasePlugin
 class ExpertOffloadPlugin(BasePlugin):
     """Stream frozen 4-bit MoE experts from pinned CPU RAM one block at a time.
 
-    Moves only the experts (the bulk of a MoE's parameters), unlike whole-layer
-    ``layer_offloading``, so per-step PCIe traffic stays small. See the integration README.
+    Moves only the experts (the bulk of a MoE's parameters). Whole-layer
+    ``layer_offloading`` lowers the loaded footprint but restages a layer per forward, so
+    on OLMoE-1B-7B it leaves peak at resident (-0.8%) where this brings peak down 29.6%
+    for less per-step traffic. Numbers and regime caveats in the integration README.
     """
 
     def get_input_args(self):

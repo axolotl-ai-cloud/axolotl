@@ -15,10 +15,25 @@ MoE's parameters and the reason it doesn't fit.
 | `layer_offloading` | frozen params of **whole decoder layers** | per layer (attention + experts + norms) |
 | **`expert_offload`** | frozen **4-bit experts only** | per MoE block |
 
-For a MoE, the experts dominate memory, so offloading *only* them recovers nearly all the VRAM of
-whole-layer offload while streaming far fewer bytes per step (attention/router/norms never leave the
-GPU). It is tuned for the bitsandbytes `Linear4bit` + gradient-checkpoint-recompute path. It
-composes with `activation_offloading`; it is orthogonal to `expert_parallel` (which shards experts
+For a MoE the experts dominate memory, and offloading *only* them is what moves **peak**.
+Measured head to head on OLMoE-1B-7B (single RTX 4090, 150 steps, seq 2048, sample_packing,
+seed 42, one session):
+
+| config | loaded | peak | vs resident | median s/step |
+|---|--:|--:|--:|--:|
+| experts resident | 5.18 GB | 5.84 GB | — | 1.62 |
+| `expert_offload` | 2.80 GB | **4.11 GB** | **−29.6%** | 3.36 |
+| `layer_offloading`, no plugin | 3.36 GB | 5.79 GB | −0.8% | 4.73 |
+
+`layer_offloading` lowers the *loaded* footprint but streams a layer back on every forward, so
+its peak sits at resident; the single-resident-slot policy over experts is what brings peak down,
+and it costs less per step than whole-layer offload. The saving is regime-dependent: at seq 256
+on a 12 GB A2000 the same comparison against resident is −57% peak at ~+11% s/step, because
+short sequences are weight-dominated and long ones transfer-dominated. Quote the regime with
+the number.
+
+It is tuned for the bitsandbytes `Linear4bit` + gradient-checkpoint-recompute path. It composes
+with `activation_offloading`; it is orthogonal to `expert_parallel` (which shards experts
 *across* GPUs — the opposite regime).
 
 ## Requirements
