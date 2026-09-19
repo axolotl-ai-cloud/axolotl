@@ -1707,6 +1707,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
     ),
     (
+        ("--export.lora/--no-export.lora",),
+        "export__lora",
+        None,
+        "Export the adapter as a standalone GGUF LoRA instead of a full model. Default: auto-detected from the exported directory.",
+    ),
+    (
         ("--reward-model/--no-reward-model",),
         None,
         None,
