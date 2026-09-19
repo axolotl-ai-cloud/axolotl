@@ -61,7 +61,7 @@ def do_vllm_serve(
     host = cli_args.get("host") or cfg.vllm.host
     port = cli_args.get("port") or cfg.vllm.port
     gpu_memory_utilization = (
-        cli_args.get("gpu_memory_utilization") or cfg.vllm.gpu_memory_utilization
+        cli_args.get("gpu_memory_utilization") or cfg.vllm.gpu_memory_utilization or 0.9
     )
     dtype = cli_args.get("dtype") or cfg.vllm.dtype
     max_model_len = cli_args.get("max_model_len") or cfg.vllm.max_model_len

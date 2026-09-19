@@ -2078,6 +2078,32 @@ class GRPOVllmValidationMixin:
             self.trl.vllm_mode = "server"
         return self
 
+    @model_validator(mode="after")
+    def check_vllm_colocate_compat(self):
+        trl = self.trl
+        if not (trl and trl.use_vllm and trl.vllm_mode == "colocate"):
+            return self
+        if (getattr(self, "context_parallel_size", None) or 1) > 1:
+            raise ValueError(
+                "`vllm_mode: colocate` is not supported with `context_parallel_size > 1`. "
+                "Use `vllm_mode: server` with a dedicated vLLM GPU."
+            )
+        if trl.vllm_lora_sync:
+            raise ValueError(
+                "`vllm_lora_sync: true` requires `vllm_mode: server` (adapters are pushed "
+                "over HTTP to the vLLM server). In colocate mode, remove `vllm_lora_sync`; "
+                "weights are merged and loaded into the colocated engine directly."
+            )
+        if (trl.async_prefetch or trl.use_data_producer) and getattr(
+            self, "adapter", None
+        ):
+            raise ValueError(
+                "`vllm_mode: colocate` with an adapter is not supported by the async GRPO "
+                "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "
+                "targets a vLLM server. Remove those options or use `vllm_mode: server`."
+            )
+        return self
+
 
 class ValidationMixin(
     DatasetValidationMixin,

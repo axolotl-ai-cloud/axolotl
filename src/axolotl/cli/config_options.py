@@ -1452,7 +1452,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.gpu-memory-utilization",),
         "vllm__gpu_memory_utilization",
         "float",
-        "GPU memory utilization for VLLM",
+        "GPU memory utilization for VLLM. Defaults to 0.9 for `vllm-serve` and to TRL's 0.3 in colocate mode, leaving the rest of the GPU for training.",
     ),
     (
         ("--vllm.dtype",),

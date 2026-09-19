@@ -130,22 +130,25 @@ class EBFTStrategy:
                     kwargs["use_vllm"] = trl.use_vllm
                     if trl.vllm_mode:
                         kwargs["vllm_mode"] = trl.vllm_mode
+                    vllm_cfg = cfg.vllm
                     if trl.vllm_mode == "colocate":
-                        kwargs["vllm_enable_sleep_mode"] = trl.vllm_enable_sleep_mode
-                        vllm_cfg = cfg.vllm
-                        if vllm_cfg:
-                            kwargs["vllm_gpu_memory_utilization"] = (
-                                vllm_cfg.gpu_memory_utilization
+                        if trl.vllm_enable_sleep_mode is not None:
+                            kwargs["vllm_enable_sleep_mode"] = (
+                                trl.vllm_enable_sleep_mode
                             )
-                            kwargs["vllm_tensor_parallel_size"] = (
-                                vllm_cfg.tensor_parallel_size
-                            )
-                    kwargs["vllm_server_host"] = trl.vllm_server_host or (
-                        trl.vllm.host if trl.vllm else None
+                        from axolotl.core.trainers.grpo import GRPOStrategy
+
+                        kwargs.update(GRPOStrategy.get_colocate_vllm_kwargs(vllm_cfg))
+                    server_host = trl.vllm_server_host or (
+                        vllm_cfg.host if vllm_cfg else None
                     )
-                    kwargs["vllm_server_port"] = trl.vllm_server_port or (
-                        trl.vllm.port if trl.vllm else None
+                    if server_host:
+                        kwargs["vllm_server_host"] = server_host
+                    server_port = trl.vllm_server_port or (
+                        vllm_cfg.port if vllm_cfg else None
                     )
+                    if server_port:
+                        kwargs["vllm_server_port"] = server_port
                     if trl.vllm_server_timeout:
                         kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
 
