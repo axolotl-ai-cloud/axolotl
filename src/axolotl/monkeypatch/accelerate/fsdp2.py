@@ -456,7 +456,10 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     fsdp2_plugin = accelerator.state.fsdp_plugin
 
-    original_sd = model.state_dict()
+    staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
+    original_sd = (
+        model.state_dict() if not staged_nf4 or accelerator.is_main_process else {}
+    )
 
     from torch.distributed.fsdp.wrap import (
         size_based_auto_wrap_policy,
@@ -602,6 +605,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 "param(s) from the FSDP wrap (kept as plain per-rank slices)."
             )
 
+    nf4_unwrapped_children = set()
+    if staged_nf4 and is_peft_model:
+        for module in model.modules():
+            if isinstance(module, ParamWrapper):
+                # ParamWrapper reads adapter weights directly, without invoking their forward hooks.
+                nf4_unwrapped_children.update(list(module.modules())[1:])
+
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -638,7 +648,10 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         if _needs_nonfloat_guard
         else contextlib.nullcontext()
     )
-    with _guard:
+    from axolotl.utils.nf4_loading import nf4_phase
+
+    phase = nf4_phase("NF4 FSDP2 wrapping") if staged_nf4 else contextlib.nullcontext()
+    with _guard, phase:
         if _quantized:
             # keep-fp32 modules (registered by model adapters, e.g. DSV4 mHC) get their own
             # fp32 shard group; remaining plain fp32 (PEFT LoRA) is cast to the compute dtype.
@@ -647,6 +660,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
         if auto_wrap_policy is not None:
             for module in get_module_children_bottom_up(model)[:-1]:
+                if module in nf4_unwrapped_children:
+                    continue
+                if staged_nf4 and isinstance(
+                    module,
+                    (nn.ModuleList, nn.ModuleDict, nn.ParameterList, nn.ParameterDict),
+                ):
+                    continue
                 if is_peft_model and isinstance(module, LoraLayer):
                     module_log_bias_mismatch = _process_lora_module_for_fsdp(
                         module, fsdp2_kwargs
@@ -663,9 +683,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        fsdp2_load_full_state_dict(
-            accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
-        )
+        load_state = fsdp2_load_full_state_dict
+        if staged_nf4:
+            from axolotl.monkeypatch.accelerate.fsdp2_nf4 import load_staged_nf4_state
+
+            load_state = load_staged_nf4_state
+        load_state(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
@@ -864,4 +887,7 @@ def patch_move_missing_keys_meta_for_fsdp():
 def patch_accelerate_fsdp2():
     import accelerate
 
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_optimizer_mapping
+
+    patch_nf4_optimizer_mapping()
     accelerate.accelerator.fsdp2_prepare_model = fsdp2_prepare_model

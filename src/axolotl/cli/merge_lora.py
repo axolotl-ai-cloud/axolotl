@@ -26,6 +26,12 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     """
     merge_method = str(getattr(cfg, "merge_method", "memory_efficient"))
     if merge_method == "legacy":
+        if (
+            getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend
+        ) == "torchao" or getattr(cfg, "_original_staged_nf4", False):
+            raise ValueError(
+                "Staged NF4 adapters require merge_method: memory_efficient to reconstruct the quantized base"
+            )
         LOG.debug("Using legacy LoRA merging method...")
         _do_merge_lora_legacy(cfg=cfg)
     else:
@@ -74,7 +80,8 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     Does not load the full model into memory.
 
     Supports standard LoRA, RSLoRA, and DoRA. Unsupported methods (AdaLoRA, VeRA)
-    will raise NotImplementedError — use legacy method for those.
+    will raise NotImplementedError — use legacy method for those, unless training
+    used staged NF4, which the legacy path cannot reconstruct.
     """
     LOG.debug("Using memory-efficient LoRA merging method...")
 
@@ -105,6 +112,8 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         or getattr(cfg, "_original_quantize_moe_experts", False)
     )
 
+    from axolotl.utils.nf4 import nf4_skip_modules
+
     merge_lora_sharded_efficient(
         base_model_path=cfg.base_model,
         lora_adapter_path=cfg.lora_model_dir,
@@ -114,7 +123,13 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         simulate_nf4=simulate_nf4,
         simulate_nf4_experts=simulate_nf4_experts,
         nf4_blocksize=nf4_blocksize,
+        nf4_skips=nf4_skip_modules(cfg.model_config_type, bnb_config_kwargs),
+        nf4_dtype=cfg.torch_dtype,
         nf4_double_quant=nf4_double_quant,
+        staged_nf4=bool(getattr(cfg, "_original_staged_nf4", False)),
+        nf4_backend=getattr(cfg, "_original_nf4_backend", None)
+        or cfg.nf4_backend
+        or "bitsandbytes",
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
         dequant=bool(getattr(cfg, "merge_dequant", False)),
         override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
@@ -153,12 +168,18 @@ def do_cli(
     original_load_in_4bit = getattr(raw_cfg, "load_in_4bit", False)
     original_adapter = getattr(raw_cfg, "adapter", None)
     original_quantize_moe_experts = getattr(raw_cfg, "quantize_moe_experts", False)
+    original_nf4_backend = raw_cfg.nf4_backend or "bitsandbytes"
+    from axolotl.loaders.nf4 import uses_staged_nf4
+
+    original_staged_nf4 = uses_staged_nf4(raw_cfg)
 
     merge_overrides = {
         "merge_lora": True,
         "load_in_8bit": False,
         "load_in_4bit": False,
         "quantize_moe_experts": False,
+        "nf4_backend": "bitsandbytes",
+        "qlora_sharded_model_loading": False,
         "ple_cpu_offload": False,
         "attn_implementation": None,
         "context_parallel_size": None,
@@ -172,6 +193,8 @@ def do_cli(
     parsed_cfg._original_load_in_4bit = original_load_in_4bit
     parsed_cfg._original_adapter = original_adapter
     parsed_cfg._original_quantize_moe_experts = original_quantize_moe_experts
+    parsed_cfg._original_nf4_backend = original_nf4_backend
+    parsed_cfg._original_staged_nf4 = original_staged_nf4
     parsed_cfg.merge_dequant = bool(dequant)
     parsed_cfg.merge_override_quantizer = bool(override_quantizer)
 

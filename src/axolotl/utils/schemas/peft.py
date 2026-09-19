@@ -38,6 +38,21 @@ class LoraConfig(BaseModel):
         default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
     )
 
+    nf4_backend: Literal["bitsandbytes", "torchao"] = Field(
+        default="bitsandbytes",
+        description="NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
+    )
+
+    nf4_prefetch_memory_mb: int = Field(
+        default=1024,
+        ge=0,
+        description="Maximum MiB of CPU inputs prefetched for one upcoming staged NF4 conversion group. Set to 0 for sequential loading.",
+    )
+    nf4_cache_dir: str | None = Field(
+        default=None,
+        description="Optional directory for a reusable, versioned CPU-staged NF4 loading cache.",
+    )
+
     adapter: str | None = Field(
         default=None,
         json_schema_extra={
@@ -129,9 +144,9 @@ class LoraConfig(BaseModel):
     )
 
     qlora_sharded_model_loading: bool | None = Field(
-        default=False,
+        default=None,
         json_schema_extra={
-            "description": "load qlora model in sharded format for FSDP using answer.ai technique."
+            "description": "Load QLoRA weights in sharded format for FSDP. Defaults to true for FSDP2 QLoRA with load_in_4bit and cpu_ram_efficient_loading, and false otherwise."
         },
     )
     lora_on_cpu: bool | None = Field(

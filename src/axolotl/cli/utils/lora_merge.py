@@ -164,6 +164,8 @@ def _simulate_nf4_roundtrip(
     blocksize: Optional[int] = None,
     compress_statistics: bool = True,
     device: Optional[Union[str, torch.device]] = None,
+    backend: str = "bitsandbytes",
+    quantization_dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     """
     Simulate NF4 quantization roundtrip to match QLoRA training dynamics.
@@ -178,13 +180,19 @@ def _simulate_nf4_roundtrip(
         tensor: Base model weight tensor (fp16/bf16/fp32)
         blocksize: NF4 quantization block size (default: bitsandbytes default)
         compress_statistics: Whether to use double quantization
-        device: Device for quantization computation.  bitsandbytes requires a
-            CUDA device; defaults to "cuda" when available.
+        device: Device for quantization computation; defaults to CUDA.
+            Pass "cpu" to use the CPU implementations.
+        backend: NF4 implementation, "bitsandbytes" or "torchao".
+        quantization_dtype: Dtype used when loading the training base, before quantization.
 
     Returns:
         Tensor after NF4 quantize → dequantize roundtrip, in original dtype
     """
-    import bitsandbytes.functional as bnb_F
+    from axolotl.utils.nf4 import (
+        dequantize_bnb_4bit,
+        quantize_bnb_4bit,
+        quantize_torchao_nf4,
+    )
 
     quant_device: torch.device
     if device is None:
@@ -202,21 +210,25 @@ def _simulate_nf4_roundtrip(
 
     original_dtype = tensor.dtype
     original_shape = tensor.shape
+    tensor = tensor.to(quantization_dtype or original_dtype)
 
-    # bitsandbytes requires float32 input for quantization and contiguous+CUDA tensor
-    flat = tensor.reshape(-1).to(torch.float32).contiguous().to(quant_device)
-
-    quant_kwargs = {
-        "quant_type": "nf4",
-        "compress_statistics": compress_statistics,
-    }
-    if blocksize is not None:
-        quant_kwargs["blocksize"] = blocksize
-
-    quantized, quant_state = bnb_F.quantize_4bit(flat, **quant_kwargs)
-    dequantized = bnb_F.dequantize_4bit(quantized, quant_state, quant_type="nf4")
-
-    return dequantized.reshape(original_shape).to(original_dtype).cpu()
+    if backend == "torchao":
+        data, transform = quantize_torchao_nf4(tensor, device=quant_device)
+        return transform(data).reshape(original_shape).to(original_dtype).cpu()
+    if backend != "bitsandbytes":
+        raise ValueError(f"Unknown NF4 backend: {backend}")
+    data, state = quantize_bnb_4bit(
+        tensor,
+        device=quant_device,
+        blocksize=blocksize or 64,
+        compress_statistics=compress_statistics,
+    )
+    return (
+        dequantize_bnb_4bit(data, state)
+        .reshape(original_shape)
+        .to(original_dtype)
+        .cpu()
+    )
 
 
 def find_lora_weights(
@@ -1399,6 +1411,9 @@ def _merge_tensor_with_lora(
     simulate_nf4_experts: bool = False,
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
+    nf4_backend: str = "bitsandbytes",
+    nf4_skips: Optional[set[str]] = None,
+    nf4_dtype: Optional[torch.dtype] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -1426,6 +1441,22 @@ def _merge_tensor_with_lora(
     lora_a, lora_b = find_lora_weights(lora_state, key, weight_renamings)
 
     do_nf4 = _should_nf4_roundtrip(key, tensor, simulate_nf4, simulate_nf4_experts)
+    if nf4_backend == "torchao" or nf4_skips is not None:
+        from axolotl.utils.nf4 import nf4_should_quantize
+
+        module_name = key.removesuffix(".weight")
+        do_nf4 = nf4_should_quantize(
+            key,
+            linear=bool(
+                simulate_nf4
+                and tensor.ndim == 2
+                and (layer_type_map or {}).get(module_name) == "Linear"
+            ),
+            expert=bool(
+                simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
+            ),
+            skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
+        )
 
     if lora_a is not None and lora_b is not None:
         LOG.debug(f"Merging LoRA for {key}: {lora_a.shape}, {lora_b.shape}")
@@ -1439,6 +1470,8 @@ def _merge_tensor_with_lora(
                 tensor,
                 blocksize=nf4_blocksize,
                 compress_statistics=nf4_double_quant,
+                backend=nf4_backend,
+                quantization_dtype=nf4_dtype,
                 device=device,
             )
 
@@ -1500,6 +1533,8 @@ def _merge_tensor_with_lora(
                         tensor,
                         blocksize=nf4_blocksize,
                         compress_statistics=nf4_double_quant,
+                        backend=nf4_backend,
+                        quantization_dtype=nf4_dtype,
                         device=device,
                     )
                 original_dtype = tensor.dtype
@@ -1526,6 +1561,8 @@ def _merge_tensor_with_lora(
                 tensor,
                 blocksize=nf4_blocksize,
                 compress_statistics=nf4_double_quant,
+                backend=nf4_backend,
+                quantization_dtype=nf4_dtype,
                 device=device,
             )
         return tensor.detach().cpu(), False
@@ -1678,6 +1715,9 @@ def _fuse_and_unfuse_with_merge(
     simulate_nf4_experts: bool = False,
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
+    nf4_backend: str = "bitsandbytes",
+    nf4_skips: Optional[set[str]] = None,
+    nf4_dtype: Optional[torch.dtype] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -1854,11 +1894,24 @@ def _fuse_and_unfuse_with_merge(
             do_nf4 = _should_nf4_roundtrip(
                 fused_key, fused_tensor, simulate_nf4, simulate_nf4_experts
             )
+            if nf4_backend == "torchao" or nf4_skips is not None:
+                from axolotl.utils.nf4 import nf4_should_quantize
+
+                do_nf4 = nf4_should_quantize(
+                    fused_key,
+                    linear=False,
+                    expert=bool(simulate_nf4_experts and "expert" in fused_key.lower()),
+                    skips=nf4_skips
+                    if nf4_skips is not None
+                    else {"lm_head", "embed_out"},
+                )
             if do_nf4:
                 fused_tensor = _simulate_nf4_roundtrip(
                     fused_tensor,
                     blocksize=nf4_blocksize,
                     compress_statistics=nf4_double_quant,
+                    backend=nf4_backend,
+                    quantization_dtype=nf4_dtype,
                     device=device,
                 )
 
@@ -1941,6 +1994,10 @@ def merge_lora_sharded_efficient(
     simulate_nf4_experts: bool = False,
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
+    nf4_backend: str = "bitsandbytes",
+    nf4_skips: Optional[set[str]] = None,
+    nf4_dtype: Optional[torch.dtype] = None,
+    staged_nf4: bool = False,
     trust_remote_code: bool = False,
     dequant: bool = False,
     override_quantizer: bool = False,
@@ -1958,7 +2015,11 @@ def merge_lora_sharded_efficient(
         adapter (encoder version drift); see ``_resolve_nvfp4_scale_mode``.
 
     Args:
-        simulate_nf4: Apply NF4 roundtrip to ALL weight tensors (for QLoRA)
+        nf4_backend: NF4 implementation used for the training base.
+        nf4_skips: Resolved module exclusions; when provided, use the staged loading policy.
+        nf4_dtype: Training weight dtype used before quantization.
+        staged_nf4: Training used CPU-staged NF4, which has no legacy merge fallback.
+        simulate_nf4: Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)
         simulate_nf4_experts: Apply NF4 roundtrip only to MoE expert tensors
             (for quantize_moe_experts). Expert tensors are identified by having
             "expert" in the key name and ndim >= 3.
@@ -2024,6 +2085,14 @@ def merge_lora_sharded_efficient(
         base_model_path, trust_remote_code=trust_remote_code, meta_model=meta_model
     )
     del meta_model
+    if (
+        (nf4_backend == "torchao" or nf4_skips is not None)
+        and simulate_nf4
+        and not layer_type_map
+    ):
+        raise ValueError(
+            "torchao NF4 merge requires model introspection to identify quantized Linear weights"
+        )
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)
@@ -2064,10 +2133,14 @@ def merge_lora_sharded_efficient(
 
     if unsupported_methods:
         methods_str = ", ".join(unsupported_methods)
+        recovery = (
+            "Staged NF4 training has no legacy merge path, so this adapter cannot be merged."
+            if staged_nf4
+            else "Please use the legacy merge method for advanced LoRA variants."
+        )
         raise NotImplementedError(
             f"Memory-efficient LoRA merge only supports standard LoRA. "
-            f"Detected unsupported methods: {methods_str}. "
-            f"Please use the legacy merge method for advanced LoRA variants."
+            f"Detected unsupported methods: {methods_str}. {recovery}"
         )
 
     use_rslora = bool(lora_config_dict.get("use_rslora", False))
@@ -2220,6 +2293,9 @@ def merge_lora_sharded_efficient(
                 simulate_nf4_experts=simulate_nf4_experts,
                 nf4_blocksize=nf4_blocksize,
                 nf4_double_quant=nf4_double_quant,
+                nf4_backend=nf4_backend,
+                nf4_skips=nf4_skips,
+                nf4_dtype=nf4_dtype,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
@@ -2258,6 +2334,9 @@ def merge_lora_sharded_efficient(
                 simulate_nf4_experts=simulate_nf4_experts,
                 nf4_blocksize=nf4_blocksize,
                 nf4_double_quant=nf4_double_quant,
+                nf4_backend=nf4_backend,
+                nf4_skips=nf4_skips,
+                nf4_dtype=nf4_dtype,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,

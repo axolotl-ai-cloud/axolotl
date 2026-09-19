@@ -52,12 +52,156 @@ lora_target_parameters:
 ## Limitations
 
 - `lora_target_linear` is not compatible with `quantize_moe_experts`. See [Expert LoRA targeting](#expert-lora-targeting) instead.
-- `cpu_ram_efficient_loading` hangs / takes long time with FSDP2 + QLoRA.
+- With CPU-efficient loading disabled, the FSDP2 QLoRA loader needs the entire quantized model to fit on each GPU before sharding. Use the CPU-staged loader below to avoid this initial replica.
 - Total model parameter count may display incorrectly (trainable param count is correct).
 - FSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps, which then drops. QLoRA does not exhibit this.
 - FSDP2 may use more VRAM per GPU than single GPU training due to not all layers being properly sharded across ranks.
 - Model loading takes longer due to on-demand quantization, even on consecutive runs.
 - DeepSpeed has not been tested.
+
+## CPU-staged FSDP2 QLoRA loading
+
+For models whose quantized weights do not fit on one GPU, enable:
+
+```yaml
+adapter: qlora
+load_in_4bit: true
+quantize_moe_experts: true
+nf4_backend: bitsandbytes
+fsdp_version: 2
+fsdp_config:
+  cpu_ram_efficient_loading: true
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: YourDecoderLayer
+  reshard_after_forward: true
+```
+
+`qlora_sharded_model_loading` defaults to true for FSDP2 with `adapter: qlora`,
+`load_in_4bit: true` and `cpu_ram_efficient_loading: true` when omitted or null.
+An explicit false is preserved and requires disabling `cpu_ram_efficient_loading`.
+For other configurations, the default remains false.
+
+Replace `YourDecoderLayer` with the decoder class for your model. Rank zero reads
+and quantizes the original floating-point checkpoint in bounded GPU chunks,
+storing packed weights in CPU memory. Other ranks construct the model on the
+meta device. Trainable adapters receive CPU storage before optimizer preparation so
+Accelerate can map each adapter to its sharded parameter; frozen base weights remain
+on meta on peer ranks. After FSDP wrapping, rank zero transfers individual parameter shards;
+no rank needs a complete GPU replica during loading. Rank zero still needs CPU RAM
+for the complete packed model and checkpoint conversion temporaries. A CPU worker
+prefetches at most one upcoming conversion group's inputs while the current group
+is converted and quantized. The default lookahead budget is 1024 MiB; larger groups
+load synchronously. A fused MoE conversion can still require a complete floating-point
+expert tensor and its source tensors on CPU. Quantization metadata
+is replicated across ranks. Frozen base linear operations are checkpointed internally
+so backward recomputes dense weights instead of retaining them for every layer. Training still needs enough GPU memory to gather and
+execute an individual wrapped layer, including its dequantized weights.
+
+`offload_params` controls FSDP parameter offloading after loading. This path requires
+an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
+DeepSpeed, tensor/context/expert parallelism, DoRA and `modules_to_save` are unsupported.
+
+### Long staging runs and progress
+
+```yaml
+ddp_timeout: 21600  # Seconds; six hours for rank-zero loading and metadata exchange.
+```
+
+NF4 staging creates a dedicated Gloo control group on every rank before loading.
+Its timeout uses `AXOLOTL_NCCL_TIMEOUT` when set, otherwise `ddp_timeout`, otherwise
+1800 seconds. This applies even if the default process group was initialized earlier.
+Status and metadata broadcasts use CPU tensors on this group, so peers do not enter
+NCCL bootstrap while rank zero is quantizing. This does not change an existing
+training process group's timeout or the launcher's rendezvous timeout.
+
+Logs identify checkpoint conversion, cache writes/reads, metadata preparation and
+broadcast, adapter initialization, FSDP wrapping, and shard distribution. Long phases
+emit elapsed-time messages every minute; shard distribution also reports tensor counts.
+An elapsed-time message indicates the phase has not finished, not proof that it is
+making progress. Peer metadata is built on meta without copying CPU tensor data.
+
+### Prefetch and reusable quantized caches
+
+```yaml
+nf4_prefetch_memory_mb: 1024  # Set to 0 to disable CPU lookahead.
+nf4_cache_dir: /data/axolotl-nf4-cache  # Optional; disabled by default.
+```
+
+The prefetch budget covers estimated source and destination allocations for one
+upcoming group, in addition to the current conversion and the packed model. It is
+not a limit on total CPU RAM. GPU quantization remains serialized and chunked.
+Prefetching overlaps CPU reads with conversion and quantization; it does not
+quantize individual expert slices before Transformers assembles their target tensor.
+
+On the first load, rank zero atomically saves a tensor-only cache containing packed
+weights, quantization metadata, and unquantized exclusions. Later loads reconstruct
+the CPU model from that cache without reading the original weight tensors or running
+quantization. Other ranks still construct meta models and receive their FSDP shards.
+
+Cache entries are keyed by checkpoint identity, model and quantization settings,
+dtype, quantization device type, and library versions. Local checkpoint identity
+uses file paths, sizes, and modification times; Hub checkpoints require a resolved
+commit. Local source files must remain available for metadata-based identity checks,
+although their weight contents are not read on a cache hit. Hub cache hits still
+resolve the source configuration and revision. Interrupted writes are not reused.
+Caches are Axolotl loading artifacts, not Hugging Face model exports or training
+checkpoints. Adapter and optimizer resume still use the training checkpoint. Cache
+files are not automatically evicted; delete unwanted entries to reclaim disk space.
+
+### Sharding and tensor shapes
+
+The staged loader supports the one-dimensional FSDP2 data-parallel mesh with both
+`reshard_after_forward: true` and `false`. Transformer-based and size-based wrapping
+are supported, as is wrapping only the root module. Size-based wrapping keeps NF4
+parametrization containers and expert adapter internals inside their owning module.
+A root-only wrapper gathers the whole model for computation, so use decoder-layer
+wrapping when the model does not fit on a single GPU.
+
+Packed parameters are sharded along their first storage dimension, which need not
+align with expert or quantization block boundaries. FSDP gathers that storage before
+NF4 reconstruction; logical weights retain the original dense or fused expert shape.
+Uneven splits and empty adapter shards are supported. Quantization metadata remains
+replicated. Full and sharded checkpoint formats preserve the global shapes.
+
+Hybrid replicated/sharded meshes (`dp_replicate_size > 1`) are currently unsupported
+and rejected. This restriction is separate from the `reshard_after_forward` setting.
+
+### torchao NF4 alternative
+
+Set `nf4_backend: torchao` to use torchao's `NF4Tensor` quantization for the frozen
+base weights. It can also be used without FSDP on a single GPU. Linear weights and,
+when enabled, fused expert weights are converted into bounded NF4Tensor chunks.
+Packed storage is exposed through parametrizations so FSDP2 can shard it.
+
+Torchao 0.17 and 0.18 are supported; the NF4 implementation moved modules in 0.18.
+Torchao uses NF4 codes with double-quantized scales, but its scale quantization is
+different from bitsandbytes. Switching backends changes the quantized base weights.
+The torchao path uses fixed 64-element weight blocks and 256-scale blocks, with
+independent double quantization per chunk. It does not call bitsandbytes' int32
+quantization kernels; bounded chunks also limit torchao's conversion temporaries.
+
+The bitsandbytes path splits quantization and dequantization into block-aligned
+chunks to avoid the native kernel's `2**31 - 1` element limit. It compresses the
+complete scale vector once, preserving bitsandbytes' double-quantization semantics.
+The final packed tensor and requested dequantized output still need to fit in memory.
+
+### Resume and merge
+
+Use `resume_from_checkpoint` with the same base checkpoint, NF4 backend, quantization
+settings and adapter configuration. The base is reconstructed and sharded before
+restoring the adapter and optimizer state. Both `SHARDED_STATE_DICT` and
+`FULL_STATE_DICT` adapter checkpoints are supported. Optimizer restoration uses
+Axolotl's pinned Accelerate loader.
+
+Keep `nf4_backend` in the configuration passed to `axolotl merge-lora` and use
+`merge_method: memory_efficient` (the default). The legacy CLI merge path is
+rejected for staged NF4 adapters because it loads the original dense base. Merging
+materializes the quantized base and applies the adapter delta, producing ordinary
+floating-point weights. The memory-efficient merge path reproduces the selected
+backend's quantization before adding the delta. Keep the training dtype and
+`bnb_config_kwargs.llm_int8_skip_modules` unchanged for merging; both are part of
+the quantized base definition.
 
 ## Implementation details
 
