@@ -4,10 +4,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-import torch
 import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
-from transformers.trainer import OPTIMIZER_NAME, SCHEDULER_NAME
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
