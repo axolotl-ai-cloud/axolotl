@@ -2,9 +2,8 @@
 
 import sys
 import types
-from unittest.mock import patch
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch._inductor.config as _inductor_cfg
@@ -183,6 +182,7 @@ class TestHFCausalTrainerBuilder:
         assert optimizer_kwargs["eps"] == 0.00001
         assert optimizer_kwargs["precond_freq"] == 10
         assert optimizer_kwargs["k_max"] == 64
+
     def test_polora_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
         cfg["optimizer"] = "polora"
