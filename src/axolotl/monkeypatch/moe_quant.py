@@ -416,7 +416,10 @@ def patch_peft_target_parameters_matching():
                     del param_list[index]
                     return
             warnings.warn(
-                f"Could not find any LoRA parametrization on {name}", stacklevel=2
+                f"Could not find any LoRA parametrization on {self}, please open an "
+                "issue on https://github.com/huggingface/peft/issues and report this "
+                "warning.",
+                stacklevel=2,
             )
 
         _patched_remove_parametrizations._axolotl_patched = True

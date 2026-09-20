@@ -969,8 +969,9 @@ STAGED_NF4_CONSTRAINTS = [
         "CPU-staged NF4 does not support a value-dependent LoRA init: pissa, olora "
         "and loftq residualize the base weight, and a packed base cannot take the "
         "residual write-back; corda and eva are not wired for staged loading. olora "
-        "and loftq work on the non-staged bitsandbytes loader "
-        "(fsdp_config.cpu_ram_efficient_loading: false); pissa needs an unquantized base.",
+        "works on the non-staged bitsandbytes loader "
+        "(fsdp_config.cpu_ram_efficient_loading: false); pissa and loftq need an "
+        "unquantized base.",
     ),
 ]
 

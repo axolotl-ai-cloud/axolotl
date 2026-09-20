@@ -441,6 +441,7 @@ class PatchManager:
             patch_parallelism_config()
         if (
             self.cfg.fsdp_config
+            and str(self.cfg.fsdp_version) == "2"
             and self.cfg.adapter
             and self.cfg.fsdp_config.activation_checkpointing
         ):

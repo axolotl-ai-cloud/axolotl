@@ -269,8 +269,8 @@ class LoraConfig(BaseModel):
                 "peft_init_lora_weights must be the default or gaussian when "
                 "lora_target_parameters is set: pissa, olora, loftq, corda, orthogonal "
                 "and lora_ga read base_layer.weight, which fused expert parameters do "
-                "not have, so PEFT fails when building the adapter; eva is not wired "
-                "for target parameters."
+                "not have, so PEFT fails when building the adapter; eva and mica are "
+                "not supported for target parameters."
             )
         return self
 

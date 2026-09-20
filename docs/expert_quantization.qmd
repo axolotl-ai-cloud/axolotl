@@ -103,17 +103,17 @@ above.
 an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
 DeepSpeed, tensor/context/expert parallelism, DoRA, `modules_to_save` and
 value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
-olora and loftq remain available on the non-staged bitsandbytes loader with
-`cpu_ram_efficient_loading: false` (the torchao backend is always staged); pissa
-requires an unquantized base.
+olora remains available on the non-staged bitsandbytes loader with
+`cpu_ram_efficient_loading: false` (the torchao backend is always staged); pissa and
+loftq require an unquantized base.
 
 ### LoRA init compatibility
 
 | Init | Linear targets, non-staged 4-bit | Linear targets, CPU-staged | `lora_target_parameters` (fused experts) |
 |---|---|---|---|
 | default, `gaussian` | yes | yes | yes |
-| `olora`, `loftq` | yes | rejected | rejected |
-| `pissa` | rejected by PEFT (needs an unquantized base) | rejected | rejected |
+| `olora` | yes | rejected | rejected |
+| `pissa`, `loftq` | rejected by PEFT (need an unquantized base) | rejected | rejected |
 | `corda`, `eva` | not wired | rejected | rejected |
 
 Value-dependent inits read and rewrite the base weight while the adapter is built.

@@ -305,15 +305,18 @@ def read_saved_adapter_config(
     A hub id has no local file; with `from_hub` the config is fetched the way PEFT will.
     """
     path = Path(lora_model_dir) / "adapter_config.json"
-    try:
-        if not path.exists() and from_hub:
-            from huggingface_hub import hf_hub_download
+    if not path.exists() and from_hub and not Path(lora_model_dir).exists():
+        from huggingface_hub import hf_hub_download
 
+        try:
             path = Path(
                 hf_hub_download(
                     repo_id=str(lora_model_dir), filename="adapter_config.json"
                 )
             )
+        except Exception:  # noqa: BLE001  # proxy errors escape the hub's OSError family
+            return None
+    try:
         return json.loads(path.read_text())
     except (OSError, ValueError):
         return None

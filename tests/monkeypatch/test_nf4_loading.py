@@ -1972,8 +1972,11 @@ def _staged_nf4_config(**overrides):
             {"bnb_config_kwargs": {"bnb_4bit_quant_type": "fp4"}},
             "requires bnb_4bit_quant_type: nf4",
         ),
-        ({"peft_init_lora_weights": "pissa"}, "pissa needs an unquantized base"),
-        ({"peft_init_lora_weights": "olora"}, "olora and loftq work on the non-staged"),
+        (
+            {"peft_init_lora_weights": "pissa"},
+            "pissa and loftq need an unquantized base",
+        ),
+        ({"peft_init_lora_weights": "olora"}, "olora works on the non-staged"),
         ({"peft_init_lora_weights": "loftq"}, "value-dependent LoRA init"),
         ({"peft_init_lora_weights": "corda"}, "value-dependent LoRA init"),
         ({"peft_init_lora_weights": "eva"}, "value-dependent LoRA init"),
