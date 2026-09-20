@@ -1249,8 +1249,8 @@ class TestEfficientMerge:
                 f"Expert {e} mismatch"
             )
 
-    def test_param_wrapper_nesting_dim_filter(self):
-        """_find_param_wrapper_lora skips wrong-dimension LoRA at outer level."""
+    def test_param_wrapper_nesting_rejects_ambiguous_shapes(self):
+        """Transposed shapes cannot identify which nested adapter owns a parameter."""
         num_experts = 4
         r = 2
 
@@ -1271,19 +1271,11 @@ class TestEfficientMerge:
             ),
         }
 
-        # gate_up_proj shape [4, 8, 16] — should match outer LoRA
-        a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.gate_up_proj", tensor_shape=(4, 8, 16)
-        )
-        assert a is not None and name == "gate_up_proj"
-        assert a.shape == (r * num_experts, 8)  # outer
-
-        # down_proj shape [4, 16, 8] — outer dims don't match, should find inner
-        a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.down_proj", tensor_shape=(4, 16, 8)
-        )
-        assert a is not None and name == "down_proj"
-        assert a.shape == (r * num_experts, 16)  # inner (base_layer)
+        for name, shape in (("gate_up_proj", (4, 8, 16)), ("down_proj", (4, 16, 8))):
+            with pytest.raises(ValueError, match="Ambiguous ParamWrapper"):
+                _find_param_wrapper_lora(
+                    lora_state, f"mod.experts.{name}", tensor_shape=shape
+                )
 
         # shape that matches neither — should return None
         a, b, name = _find_param_wrapper_lora(

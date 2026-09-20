@@ -14,6 +14,10 @@ from peft import LoraConfig
 from peft.utils.other import get_pattern_key
 from tqdm import tqdm
 
+from axolotl.cli.utils.param_wrapper_merge import (
+    ParamWrapperTarget,
+    build_param_wrapper_map,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -271,10 +275,28 @@ def find_lora_weights(
     return None, None
 
 
+def _param_wrapper_target(key, param_wrapper_map, weight_renamings=None):
+    if param_wrapper_map is None:
+        return None
+    candidates = []
+    for name in (key, key.removesuffix(".weight")):
+        candidates.extend([name, *_renamed_key_candidates(name, weight_renamings)])
+    matches = {
+        name: param_wrapper_map[name]
+        for name in candidates
+        if name in param_wrapper_map
+    }
+    if len(matches) > 1:
+        raise ValueError(f"Ambiguous ParamWrapper identity for {key}: {list(matches)}")
+    return next(iter(matches.values()), None)
+
+
 def _find_param_wrapper_lora(
     lora_state: Dict[str, torch.Tensor],
     key: str,
     tensor_shape: Optional[tuple] = None,
+    param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
+    weight_renamings: Optional[Dict[str, str]] = None,
 ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[str]]:
     """
     Find LoRA weights from a ParamWrapper (lora_target_parameters) that targets
@@ -284,12 +306,25 @@ def _find_param_wrapper_lora(
     LoRA at 'base_model.model.model.layers.0.mlp.experts.lora_A.weight' (targeting
     the 'experts' module with 'down_proj' as the parameter_name).
 
-    When tensor_shape is provided, validates that the LoRA dimensions match the
-    target tensor (important when multiple ParamWrappers are nested and each
-    nesting level has different LoRA dimensions).
+    A reconstructed identity map selects the exact adapter; shapes validate it.
+    Legacy callers without a map must have exactly one dimension-compatible candidate.
 
     Returns (lora_A, lora_B, parameter_name) or (None, None, None).
     """
+    if param_wrapper_map is not None:
+        target = _param_wrapper_target(key, param_wrapper_map, weight_renamings)
+        if target is None:
+            return None, None, None
+        if tensor_shape is not None and tuple(tensor_shape) != target.shape:
+            raise ValueError(
+                f"Base parameter shape mismatch for {key}: {tensor_shape} != {target.shape}"
+            )
+        return (
+            lora_state[target.a_key],
+            lora_state[target.b_key],
+            key.rsplit(".", 1)[-1],
+        )
+
     clean_key = key[:-7] if key.endswith(".weight") else key
     # Strip trailing parameter name to get the parent module path
     # e.g., "model.layers.0.mlp.experts.down_proj" → parent="model.layers.0.mlp.experts", param="down_proj"
@@ -299,53 +334,36 @@ def _find_param_wrapper_lora(
 
     parent_key, param_name = parts
 
-    # PEFT's ParamWrapper nesting: when multiple parameters are targeted on
-    # the same module, it nests wrappers. The outer wrapper's LoRA is at
-    # parent.lora_A/B and inner wrappers use parent.base_layer.lora_A/B,
-    # parent.base_layer.base_layer.lora_A/B, etc.
-    prefixes_to_try = [
-        f"base_model.model.{parent_key}",
-    ]
-    # Walk up .base_layer nesting levels (typically 1-2 deep)
-    for depth in range(1, 4):
-        bl = ".base_layer" * depth
-        prefixes_to_try.append(f"base_model.model.{parent_key}{bl}")
-
-    # Both 3D orientations exist: gpt-oss-style [E, in, out] pairs with
-    # (A_in, B_out) = (shape[1], shape[2]); Qwen3-style [E, out, in] with
-    # (A_in, B_out) = (shape[2], shape[1]). Exhaust every nesting level in the
-    # exact orientation before falling back to the transposed one, so a
-    # transposed outer LoRA cannot shadow an exact inner match.
-    orientations: tuple = (None,)
-    if tensor_shape is not None and len(tensor_shape) >= 3:
-        orientations = (
-            (tensor_shape[1], tensor_shape[2]),
-            (tensor_shape[2], tensor_shape[1]),
-        )
-
-    for orientation in orientations:
-        for prefix in prefixes_to_try:
-            a_key = f"{prefix}.lora_A.weight"
-            b_key = f"{prefix}.lora_B.weight"
-            lora_a = lora_state.get(a_key)
-            lora_b = lora_state.get(b_key)
-            if lora_a is None or lora_b is None:
+    prefix = f"base_model.model.{parent_key}"
+    pattern = re.compile(re.escape(prefix) + r"(?:\.base_layer)*\.lora_A\.weight$")
+    candidates = []
+    for a_key in lora_state:
+        if not pattern.fullmatch(a_key):
+            continue
+        b_key = a_key.removesuffix(".lora_A.weight") + ".lora_B.weight"
+        if b_key not in lora_state:
+            raise ValueError(f"Missing ParamWrapper adapter tensor {b_key}")
+        lora_a, lora_b = lora_state[a_key], lora_state[b_key]
+        if tensor_shape is not None and len(tensor_shape) >= 3:
+            experts = tensor_shape[0]
+            if not (
+                experts > 0
+                and lora_a.shape[0] == lora_b.shape[1]
+                and lora_a.shape[0] % experts == 0
+                and (lora_a.shape[1], lora_b.shape[0])
+                in (
+                    (tensor_shape[1], tensor_shape[2]),
+                    (tensor_shape[2], tensor_shape[1]),
+                )
+            ):
                 continue
-
-            # When tensor_shape is given, verify dimensions match before returning.
-            # This prevents returning a mismatched LoRA from a different nesting level.
-            if orientation is not None and tensor_shape is not None:
-                num_experts = tensor_shape[0]
-                if not (
-                    lora_a.shape[0] == lora_b.shape[1]
-                    and lora_a.shape[0] % num_experts == 0
-                    and (lora_a.shape[1], lora_b.shape[0]) == orientation
-                ):
-                    continue  # Dimensions don't match, try next nesting level
-
-            return lora_a, lora_b, param_name
-
-    return None, None, None
+        candidates.append((lora_a, lora_b, param_name))
+    if len(candidates) > 1:
+        raise ValueError(
+            f"Ambiguous ParamWrapper adapters for {key}; reconstruct parameter identities "
+            "from the base architecture and the saved target_parameters configuration"
+        )
+    return candidates[0] if candidates else (None, None, None)
 
 
 def _build_peft_layer_and_get_delta(
@@ -357,7 +375,8 @@ def _build_peft_layer_and_get_delta(
     is_param_wrapper: bool = False,
     magnitude: Optional[torch.Tensor] = None,
     layer_type: Optional[str] = None,
-    lora_alpha_override: Optional[int] = None,
+    lora_alpha_override: Optional[float] = None,
+    is_transposed: Optional[bool] = None,
 ) -> torch.Tensor:
     """
     Use PEFT's own layer classes to compute the LoRA delta weight.
@@ -387,13 +406,15 @@ def _build_peft_layer_and_get_delta(
     if is_param_wrapper:
         from peft.tuners.lora.layer import ParamWrapper
 
-        num_experts = base_tensor.shape[0]
+        num_experts = base_tensor.shape[0] if base_tensor.ndim == 3 else 1
         r = r_total // num_experts
 
         class _FakeModule(nn.Module):
             pass
 
         fake = _FakeModule()
+        if is_transposed is not None:
+            fake.is_transposed = is_transposed
         fake.register_parameter(
             "weight", nn.Parameter(base_tensor.clone(), requires_grad=False)
         )
@@ -907,12 +928,16 @@ def _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer: bool = False
     return scale_mode
 
 
-def _key_has_lora(key, shape, lora_state, weight_renamings):
+def _key_has_lora(key, shape, lora_state, weight_renamings, param_wrapper_map=None):
+    if _param_wrapper_target(key, param_wrapper_map, weight_renamings) is not None:
+        return True
     a, b = find_lora_weights(lora_state, key, weight_renamings)
     if a is not None and b is not None:
         return True
     if len(shape) >= 3:
-        pa, pb, _ = _find_param_wrapper_lora(lora_state, key, tuple(shape))
+        pa, pb, _ = _find_param_wrapper_lora(
+            lora_state, key, tuple(shape), param_wrapper_map, weight_renamings
+        )
         return pa is not None and pb is not None
     return False
 
@@ -923,6 +948,7 @@ def _dequantize_quantized_shard(
     lora_state: Optional[Dict[str, torch.Tensor]] = None,
     weight_renamings: Optional[Dict[str, str]] = None,
     dequant_all: bool = True,
+    param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
 ) -> tuple[Dict[str, torch.Tensor], bool, bool, Dict]:
     """Dequantize quantized weights to bf16 so the LoRA delta folds into the true value.
 
@@ -962,7 +988,7 @@ def _dequantize_quantized_shard(
             continue
         # format-preserving: only touch quantized weights a LoRA actually targets
         if not dequant_all and not _key_has_lora(
-            key, w.shape, lora_state, weight_renamings
+            key, w.shape, lora_state, weight_renamings, param_wrapper_map
         ):
             continue
         try:
@@ -981,7 +1007,7 @@ def _dequantize_quantized_shard(
     return out, did, left, plan
 
 
-_FUSED_EXPERT_LORA_RE = re.compile(r"\.experts\.(?:base_layer\.)?lora_[AB]\.weight$")
+_FUSED_EXPERT_LORA_RE = re.compile(r"\.experts\.(?:base_layer\.)*lora_[AB]\.weight$")
 _PER_EXPERT_WEIGHT_RE = re.compile(
     r"\.experts\.\d+\.(?:gate_proj|up_proj|down_proj|w1|w2|w3|gate_up_proj)\.weight$"
 )
@@ -1077,8 +1103,12 @@ class _Nvfp4ExpertMergeWriter:
         device: str,
         dequant: bool = False,
         scale_mode: str = "reuse",
+        param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
+        weight_renamings: Optional[Dict[str, str]] = None,
     ):
         self.lora_state = lora_state
+        self.param_wrapper_map = param_wrapper_map
+        self.weight_renamings = weight_renamings
         self.lora_config_dict = lora_config_dict
         self.num_experts = expected_num_experts
         self.dequant = dequant
@@ -1094,11 +1124,22 @@ class _Nvfp4ExpertMergeWriter:
     def _prefix_has_fused_lora(self, prefix: str) -> bool:
         has = self._prefix_lora.get(prefix)
         if has is None:
-            has = any(
-                f"base_model.model.{prefix}{'.base_layer' * d}.lora_A.weight"
-                in self.lora_state
-                for d in range(4)
-            )
+            if self.param_wrapper_map is not None:
+                has = any(
+                    _param_wrapper_target(
+                        f"{prefix}.{name}",
+                        self.param_wrapper_map,
+                        self.weight_renamings,
+                    )
+                    is not None
+                    for name, _ in _EXPERT_FUSED_GROUPS
+                )
+            else:
+                pattern = re.compile(
+                    re.escape(f"base_model.model.{prefix}")
+                    + r"(?:\.base_layer)*\.lora_A\.weight$"
+                )
+                has = any(pattern.fullmatch(key) for key in self.lora_state)
             self._prefix_lora[prefix] = has
         return has
 
@@ -1161,7 +1202,11 @@ class _Nvfp4ExpertMergeWriter:
         k_dim = projs[members[0]][0]["weight"].shape[1] * 2
         fused_key = f"{prefix}.{fused_name}"
         lora_a, lora_b, _ = _find_param_wrapper_lora(
-            self.lora_state, fused_key, tensor_shape=(E, sum(row_counts), k_dim)
+            self.lora_state,
+            fused_key,
+            tensor_shape=(E, sum(row_counts), k_dim),
+            param_wrapper_map=self.param_wrapper_map,
+            weight_renamings=self.weight_renamings,
         )
         emitted: Dict[str, torch.Tensor] = {}
         if lora_a is None or lora_b is None:
@@ -1225,12 +1270,17 @@ class _Nvfp4ExpertMergeWriter:
             ]
         fused = per_proj[0] if len(per_proj) == 1 else torch.cat(per_proj, dim=1)
         del per_proj
+        target = _param_wrapper_target(
+            fused_key, self.param_wrapper_map, self.weight_renamings
+        )
         delta = _build_peft_layer_and_get_delta(
             lora_a.to(dev),
             lora_b.to(dev),
             self.lora_config_dict,
             fused,
             is_param_wrapper=True,
+            is_transposed=target.is_transposed if target else None,
+            lora_alpha_override=target.alpha if target else None,
         )
         merged_t = (fused.to(torch.float32) + delta.to(torch.float32)).to(
             torch.bfloat16
@@ -1466,6 +1516,7 @@ def _merge_tensor_with_lora(
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
+    param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
 ) -> tuple[torch.Tensor, bool]:
     """
     Helper function to merge a single tensor with its corresponding LoRA weights.
@@ -1487,7 +1538,12 @@ def _merge_tensor_with_lora(
     Returns:
         Tuple of (merged tensor, whether LoRA was applied)
     """
-    lora_a, lora_b = find_lora_weights(lora_state, key, weight_renamings)
+    target = _param_wrapper_target(key, param_wrapper_map, weight_renamings)
+    lora_a, lora_b = (
+        (None, None)
+        if target is not None
+        else find_lora_weights(lora_state, key, weight_renamings)
+    )
 
     do_nf4 = _should_nf4_roundtrip(key, tensor, simulate_nf4, simulate_nf4_experts)
     if nf4_backend == "torchao" or nf4_skips is not None:
@@ -1559,9 +1615,13 @@ def _merge_tensor_with_lora(
     else:
         # Try ParamWrapper LoRA (lora_target_parameters) — the LoRA targets a
         # parent module and this weight is a sub-parameter of that module.
-        if tensor.ndim >= 3:
+        if target is not None or tensor.ndim >= 3:
             pw_a, pw_b, param_name = _find_param_wrapper_lora(
-                lora_state, key, tensor_shape=tuple(tensor.shape)
+                lora_state,
+                key,
+                tensor_shape=tuple(tensor.shape),
+                param_wrapper_map=param_wrapper_map,
+                weight_renamings=weight_renamings,
             )
             if pw_a is not None and pw_b is not None:
                 LOG.debug(
@@ -1585,7 +1645,10 @@ def _merge_tensor_with_lora(
                     lora_config_dict,
                     tensor.to(device),
                     is_param_wrapper=True,
-                    lora_alpha_override=_resolve_lora_alpha_for_key(
+                    is_transposed=target.is_transposed if target else None,
+                    lora_alpha_override=target.alpha
+                    if target
+                    else _resolve_lora_alpha_for_key(
                         key, lora_config_dict, weight_renamings
                     ),
                 )
@@ -1797,6 +1860,7 @@ def _fuse_and_unfuse_with_merge(
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
     expected_num_experts: Optional[int] = None,
+    param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
     carry: Optional[_FusedExpertCarry] = None,
 ) -> tuple[Dict[str, torch.Tensor], int, set]:
     """
@@ -1999,6 +2063,7 @@ def _fuse_and_unfuse_with_merge(
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
+                param_wrapper_map=param_wrapper_map,
             )
             merged_count += int(was_merged)
 
@@ -2108,8 +2173,6 @@ def merge_lora_sharded_efficient(
         expected_num_experts = _get_expected_num_experts(base_model_path)
     fused_expert_carry = _FusedExpertCarry() if weight_converters else None
 
-    os.makedirs(output_path, exist_ok=True)
-
     if nvfp4_scale_mode == "fresh":
         LOG.info(
             "merge-aware adapter detected: expert weights re-quantize with fresh "
@@ -2122,7 +2185,6 @@ def merge_lora_sharded_efficient(
     layer_type_map = _build_layer_type_map(
         base_model_path, trust_remote_code=trust_remote_code, meta_model=meta_model
     )
-    del meta_model
     if nf4_backend == "torchao" and simulate_nf4 and not layer_type_map:
         raise ValueError(
             "torchao NF4 merge requires model introspection to identify quantized Linear weights"
@@ -2208,12 +2270,17 @@ def merge_lora_sharded_efficient(
     else:
         lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)  # nosec B614
     LOG.debug("Keeping LoRA weights on CPU; will move per-tensor during merge")
+    param_wrapper_map = build_param_wrapper_map(
+        meta_model, lora_config_dict, lora_state
+    )
+    del meta_model
 
     model_shards = get_model_shards(base_model_path)
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
 
     LOG.debug(f"Found {len(model_shards)} model shards in {base_model_path}")
+    os.makedirs(output_path, exist_ok=True)
     copy_non_model_files(base_model_path, output_path, model_shards)
 
     expert_writer = None
@@ -2254,6 +2321,8 @@ def merge_lora_sharded_efficient(
                 device,
                 dequant=dequant,
                 scale_mode=nvfp4_scale_mode,
+                param_wrapper_map=param_wrapper_map,
+                weight_renamings=weight_renamings,
             )
             LOG.info(
                 "Adapter has a FUSED expert LoRA over a PER-EXPERT unfused NVFP4 base: using "
@@ -2308,6 +2377,7 @@ def merge_lora_sharded_efficient(
                 lora_state=lora_state,
                 weight_renamings=weight_renamings,
                 dequant_all=dequant,
+                param_wrapper_map=param_wrapper_map,
             )
         )
         block_fp8_dequantized = block_fp8_dequantized or _shard_deq
@@ -2333,6 +2403,7 @@ def merge_lora_sharded_efficient(
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
+                param_wrapper_map=param_wrapper_map,
                 expected_num_experts=expected_num_experts,
                 carry=fused_expert_carry,
             )
@@ -2375,6 +2446,7 @@ def merge_lora_sharded_efficient(
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
+                param_wrapper_map=param_wrapper_map,
             )
             merged_tensors[key] = merged_tensor
             if was_merged:
