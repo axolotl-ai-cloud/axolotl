@@ -122,9 +122,10 @@ def test_staged_adapter_init_does_not_dequantize(backend, tmp_path, monkeypatch)
     assert counter.peak_alive == 0
     trainable = [name for name, p in loader.model.named_parameters() if p.requires_grad]
     assert trainable and all("lora_" in name for name in trainable)
+    device = next(loader.model.parameters()).device
     for name, param in loader.model.named_parameters():
         if "lora_" in name:
-            assert param.device.type == "cpu"
+            assert not param.is_meta and param.device == device
             assert param.dtype == torch.float32
 
 
@@ -157,7 +158,7 @@ def test_staged_model_still_dequantizes_after_adapter_init(tmp_path, monkeypatch
     loader._load_adapters()
 
     counter = _DequantCounter(monkeypatch)
-    tokens = torch.randint(0, 128, (1, 4))
+    tokens = torch.randint(0, 128, (1, 4), device=expected.device)
     loader.model(input_ids=tokens)
     assert counter.count > 0
     torch.testing.assert_close(q_proj.weight, expected, rtol=0, atol=0)
