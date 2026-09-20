@@ -444,6 +444,36 @@ class TestEfficientMerge:
             assert kwargs["nf4_skips"] is None
             assert kwargs["nf4_dtype"] is None
 
+    def test_nf4_gate_classifies_renamed_checkpoint_keys(self, tmp_path):
+        """LLaVA-style checkpoints reach the type map only through weight_renamings."""
+        hidden, r = 64, 8
+        base = torch.randn(hidden, hidden)
+        lora_state = {
+            "base_model.model.model.language_model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                r, hidden
+            ),
+            "base_model.model.model.language_model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                hidden, r
+            ),
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base,
+            "language_model.model.layers.0.self_attn.q_proj.weight",
+            lora_state,
+            2.0,
+            {"r": r, "lora_alpha": 16},
+            "cpu",
+            simulate_nf4=True,
+            nf4_skips=set(),
+            weight_renamings={r"^language_model\.model\.": "model.language_model."},
+            layer_type_map={"model.language_model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert was_merged
+        # zero LoRA, so any difference from base is the NF4 roundtrip
+        assert not torch.equal(merged, base)
+
     def test_bitsandbytes_merge_without_introspection(self, tmp_path):
         """An empty layer_type_map must not raise a torchao-specific error on bnb."""
         hidden, r, alpha = 32, 8, 16

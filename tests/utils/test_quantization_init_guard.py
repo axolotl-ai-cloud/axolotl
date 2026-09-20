@@ -8,7 +8,7 @@ from torch import nn
 from torch.nn.utils import parametrize
 from transformers import PreTrainedModel
 
-from axolotl.utils.quantization import patch_transformers_skip_quantized_init
+from axolotl.monkeypatch.quantized_init import patch_transformers_skip_quantized_init
 
 
 class _Identity(nn.Module):
@@ -120,7 +120,7 @@ def test_axolotl_parametrizations_survive_a_bitsandbytes_rename(
     """A bitsandbytes rename must not take axolotl's own expert parametrization with it."""
     bnb = pytest.importorskip("bitsandbytes")
 
-    import axolotl.utils.quantization as quantization
+    import axolotl.monkeypatch.quantized_init as quantized_init
     from axolotl.monkeypatch.moe_quant import Bnb8bitParametrization
     from axolotl.utils.nf4 import quantize_bnb_4bit
 
@@ -131,7 +131,7 @@ def test_axolotl_parametrizations_survive_a_bitsandbytes_rename(
     )
     monkeypatch.setattr(PreTrainedModel, "_initialize_weights", unpatched)
     monkeypatch.setitem(sys.modules, "bitsandbytes.nn.parametrize", None)
-    quantization.patch_transformers_skip_quantized_init()
+    quantized_init.patch_transformers_skip_quantized_init()
 
     weight = torch.randn(4, 32, 64)
     data, row_stats, _ = bnb.functional.int8_vectorwise_quant(

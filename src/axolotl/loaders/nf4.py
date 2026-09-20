@@ -67,7 +67,9 @@ def _load_nf4_model(
 
     from axolotl.monkeypatch.moe_quant import patch_peft_target_parameters_matching
     from axolotl.monkeypatch.peft.nf4 import patch_nf4_merge
-    from axolotl.utils.quantization import patch_transformers_skip_quantized_init
+    from axolotl.monkeypatch.quantized_init import (
+        patch_transformers_skip_quantized_init,
+    )
 
     if cfg.fsdp_config:
         from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_adapter_state

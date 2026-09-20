@@ -1408,6 +1408,19 @@ def _lookup_layer_type(
     return layer_type
 
 
+def _runtime_key(
+    key: str,
+    weight_renamings: Optional[Dict[str, str]],
+    layer_type_map: Optional[Dict[str, str]],
+) -> str:
+    """The checkpoint key's runtime spelling: the first renaming the type map knows."""
+    for candidate in (key, *_renamed_key_candidates(key, weight_renamings)):
+        if _lookup_layer_type(layer_type_map, candidate) is not None:
+            return candidate
+    candidates = _renamed_key_candidates(key, weight_renamings)
+    return candidates[-1] if candidates else key
+
+
 def _should_nf4_roundtrip(
     key: str,
     tensor: torch.Tensor,
@@ -1468,13 +1481,15 @@ def _merge_tensor_with_lora(
     if nf4_backend == "torchao" or nf4_skips is not None:
         from axolotl.utils.nf4 import nf4_should_quantize
 
+        # the type map and the exclusions are spelled in runtime names
+        runtime_key = _runtime_key(key, weight_renamings, layer_type_map)
         do_nf4 = nf4_should_quantize(
-            key,
+            runtime_key,
             linear=bool(
                 simulate_nf4
                 and tensor.ndim == 2
                 and (
-                    _lookup_layer_type(layer_type_map, key) == "Linear"
+                    _lookup_layer_type(layer_type_map, runtime_key) == "Linear"
                     if layer_type_map
                     else nf4_backend != "torchao"
                 )
@@ -1912,7 +1927,7 @@ def _fuse_and_unfuse_with_merge(
                 from axolotl.utils.nf4 import nf4_should_quantize
 
                 do_nf4 = nf4_should_quantize(
-                    fused_key,
+                    _runtime_key(fused_key, weight_renamings, layer_type_map),
                     linear=False,
                     expert=bool(simulate_nf4_experts and "expert" in fused_key.lower()),
                     skips=nf4_skips
