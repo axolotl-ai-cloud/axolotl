@@ -954,6 +954,161 @@ class TestEfficientMerge:
         assert "model.layers.2.mlp.experts.gate_up_proj" not in result
         assert set(result.keys()) == set(quant_tensors.keys())
 
+    def _build_split_expert_case(
+        self, tmp_path, name, expert_shards, num_experts=4, hidden=16, inter=32, r=4
+    ):
+        """qwen3_moe-style per-expert base whose expert list is spread over ``expert_shards``,
+        plus a fused-parameter LoRA over gate_up_proj/down_proj."""
+        alpha = 8
+        base_dir, adapter_dir = tmp_path / f"base-{name}", tmp_path / f"ad-{name}"
+        base_dir.mkdir()
+        adapter_dir.mkdir()
+
+        gen = torch.Generator().manual_seed(1234)
+        per_expert = {}
+        for e in range(num_experts):
+            root = f"model.layers.0.mlp.experts.{e}"
+            for proj, shape in (
+                ("gate_proj", (inter, hidden)),
+                ("up_proj", (inter, hidden)),
+                ("down_proj", (hidden, inter)),
+            ):
+                per_expert[f"{root}.{proj}.weight"] = torch.randn(
+                    *shape, generator=gen, dtype=torch.float32
+                )
+
+        weight_map = {}
+        n = len(expert_shards)
+        for idx, experts in enumerate(expert_shards):
+            shard_name = f"model-{idx + 1:05d}-of-{n:05d}.safetensors"
+            shard = {
+                k: v
+                for k, v in per_expert.items()
+                if int(k.split(".experts.")[1].split(".")[0]) in experts
+            }
+            safetensors.torch.save_file(shard, base_dir / shard_name)
+            weight_map.update({k: shard_name for k in shard})
+        (base_dir / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": 0}, "weight_map": weight_map})
+        )
+        (base_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "model_type": "qwen3_moe",
+                    "num_experts": num_experts,
+                    "num_hidden_layers": 1,
+                    "hidden_size": hidden,
+                    "intermediate_size": inter,
+                    "moe_intermediate_size": inter,
+                    "num_attention_heads": 2,
+                    "num_key_value_heads": 2,
+                    "vocab_size": 32,
+                }
+            )
+        )
+
+        agen = torch.Generator().manual_seed(99)
+        p = "base_model.model.model.layers.0.mlp.experts"
+        adapter = {
+            f"{p}.gate_up_proj.lora_A.weight": torch.randn(
+                r, hidden, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.gate_up_proj.lora_B.weight": torch.randn(
+                inter * 2, r, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.down_proj.lora_A.weight": torch.randn(
+                r, inter, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.down_proj.lora_B.weight": torch.randn(
+                hidden, r, generator=agen, dtype=torch.float32
+            ),
+        }
+        safetensors.torch.save_file(adapter, adapter_dir / "adapter_model.safetensors")
+        (adapter_dir / "adapter_config.json").write_text(
+            json.dumps({"r": r, "lora_alpha": alpha, "peft_type": "LORA"})
+        )
+        return base_dir, adapter_dir, per_expert, adapter
+
+    @pytest.mark.parametrize("simulate_nf4", [False, True])
+    def test_expert_group_split_across_shards_is_merged(self, tmp_path, simulate_nf4):
+        """An expert list split across shards must still be fused, merged and written."""
+        num_experts, hidden, inter, r = 4, 16, 32, 4
+        scale = 8 / r
+
+        def run(name, expert_shards):
+            base_dir, adapter_dir, per_expert, adapter = self._build_split_expert_case(
+                tmp_path, name, expert_shards, num_experts, hidden, inter, r
+            )
+            out = tmp_path / f"merged-{name}"
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, out, device="cpu", simulate_nf4=simulate_nf4
+            )
+            merged = {}
+            for f in sorted(out.glob("*.safetensors")):
+                merged.update(safetensors.torch.load_file(f))
+            index_path = out / "model.safetensors.index.json"
+            index = (
+                json.loads(index_path.read_text())["weight_map"]
+                if index_path.exists()
+                else {}
+            )
+            return merged, index, per_expert, adapter
+
+        split, split_index, per_expert, adapter = run("split", [[0, 1], [2, 3]])
+        whole, _, _, _ = run("whole", [[0, 1, 2, 3]])
+
+        fused_key = "model.layers.0.mlp.experts.gate_up_proj"
+        assert fused_key in split
+        # emitted in the shard that completed the group, and indexed there
+        assert split_index[fused_key] == "model-00002-of-00002.safetensors"
+        assert not (
+            tmp_path / "merged-split" / "model-00001-of-00002.safetensors"
+        ).exists()
+        assert "model.layers.0.mlp.experts.down_proj" in split
+        assert not any(".experts.0." in k for k in split)
+
+        gate = torch.stack(
+            [
+                per_expert[f"model.layers.0.mlp.experts.{e}.gate_proj.weight"]
+                for e in range(num_experts)
+            ]
+        )
+        up = torch.stack(
+            [
+                per_expert[f"model.layers.0.mlp.experts.{e}.up_proj.weight"]
+                for e in range(num_experts)
+            ]
+        )
+        base_fused = torch.cat([gate, up], dim=1)
+        p = "base_model.model.model.layers.0.mlp.experts"
+        delta = scale * (
+            adapter[f"{p}.gate_up_proj.lora_B.weight"]
+            @ adapter[f"{p}.gate_up_proj.lora_A.weight"]
+        )
+        for e in range(num_experts):
+            assert not torch.allclose(split[fused_key][e], base_fused[e], atol=1e-6)
+        if not simulate_nf4:
+            assert torch.allclose(split[fused_key], base_fused + delta, atol=1e-5)
+        else:
+            # the base went through the NF4 roundtrip before the fold
+            assert not torch.allclose(split[fused_key], base_fused + delta, atol=1e-5)
+        # splitting the expert list must not change the result
+        assert torch.equal(split[fused_key], whole[fused_key])
+        assert torch.equal(
+            split["model.layers.0.mlp.experts.down_proj"],
+            whole["model.layers.0.mlp.experts.down_proj"],
+        )
+
+    def test_expert_group_never_completing_raises(self, tmp_path):
+        """A base missing experts entirely must fail loudly, not write an unmerged group."""
+        base_dir, adapter_dir, _, _ = self._build_split_expert_case(
+            tmp_path, "broken", [[0, 1], [2]], num_experts=4
+        )
+        with pytest.raises(RuntimeError, match="mlp.experts.gate_up_proj"):
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, tmp_path / "merged-broken", device="cpu"
+            )
+
     def test_param_wrapper_merge_math(self):
         """ParamWrapper merge via PEFT's get_delta_weight matches manual einsum."""
         num_experts = 4
