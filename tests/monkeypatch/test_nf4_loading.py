@@ -1650,32 +1650,47 @@ def test_nf4_loading_group_timeout_and_cleanup(
 
 
 def _divergent_plan_worker(rank, rendezvous):
+    from datetime import timedelta
+
     import torch.distributed as dist
 
-    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import _agree_distribution_plan
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import _distribute_nf4_state
 
+    # a hang here must surface as a timeout, not stall the suite
     dist.init_process_group(
-        "gloo", init_method=f"file://{rendezvous}", rank=rank, world_size=2
+        "gloo",
+        init_method=f"file://{rendezvous}",
+        rank=rank,
+        world_size=2,
+        timeout=timedelta(seconds=30),
     )
     try:
         accelerator = SimpleNamespace(
             device=torch.device("cpu"), is_main_process=rank == 0
         )
-        shape = (4, 2) if rank == 0 else (8, 2)
-        targets = {"weight": torch.zeros(shape)}
-        if rank == 0:
-            plan = _agree_distribution_plan(accelerator, targets, accelerator.device)
-            assert [entry[0] for entry in plan] == ["weight"]
-        else:
-            with pytest.raises(ValueError, match="disagrees on weight"):
-                _agree_distribution_plan(accelerator, targets, accelerator.device)
+        full_state = {"weight": torch.zeros(4, 2)}
 
+        # a peer disagreeing on shape: every rank raises, naming the peer
+        shape = (4, 2) if rank == 0 else (8, 2)
+        with pytest.raises(ValueError, match="rank 1: .*disagrees on weight"):
+            _distribute_nf4_state(
+                accelerator, {"weight": torch.zeros(shape)}, dict(full_state)
+            )
+
+        # a peer missing a key
         targets = {} if rank else {"weight": torch.zeros(4, 2)}
-        if rank == 0:
-            _agree_distribution_plan(accelerator, targets, accelerator.device)
-        else:
-            with pytest.raises(ValueError, match="missing weight"):
-                _agree_distribution_plan(accelerator, targets, accelerator.device)
+        with pytest.raises(ValueError, match="rank 1: .*missing weight"):
+            _distribute_nf4_state(accelerator, targets, dict(full_state))
+
+        # rank zero missing the source: peers raise too instead of waiting in scatter
+        with pytest.raises(ValueError, match="rank 0: .*no source for weight"):
+            _distribute_nf4_state(accelerator, {"weight": torch.zeros(4, 2)}, {})
+
+        # agreement still distributes
+        state = _distribute_nf4_state(
+            accelerator, {"weight": torch.zeros(4, 2)}, dict(full_state)
+        )
+        assert tuple(state["weight"].shape) == (4, 2)
     finally:
         dist.destroy_process_group()
 

@@ -288,8 +288,17 @@ class ModelLoader:
         self._set_attention_config()
         self._check_model_requirements()
 
-        from axolotl.utils.quantization import patch_transformers_skip_quantized_init
+        self._patch_quantized_init()
 
+    @staticmethod
+    def _patch_quantized_init():
+        # torchao is absent on macOS/aarch64, where quantized checkpoints cannot exist
+        try:
+            from axolotl.utils.quantization import (
+                patch_transformers_skip_quantized_init,
+            )
+        except ImportError:
+            return
         patch_transformers_skip_quantized_init()
 
     def _apply_post_model_load_setup(self):

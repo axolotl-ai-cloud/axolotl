@@ -21,12 +21,13 @@ def load_staged_nf4_state(
     model.load_state_dict(state, assign=True, strict=True)
 
 
-def _agree_distribution_plan(accelerator, targets, device):
+def _agree_distribution_plan(accelerator, targets, device, full_state):
     """Settle the transfer order and per-parameter layout on rank zero for every rank.
 
     Each rank deriving its own plan from its own ``state_dict`` is what makes a
     mismatch hang: the ranks issue different collectives and wait on each other
-    forever. Distributing rank zero's plan turns any disagreement into a raise.
+    forever. Distributing rank zero's plan, and exchanging every rank's verdict on
+    it before the first transfer, turns any disagreement into a raise on all ranks.
     """
     from torch.distributed.tensor import DTensor
 
@@ -45,18 +46,36 @@ def _agree_distribution_plan(accelerator, targets, device):
     dist.broadcast_object_list(payload, src=0, device=device)
     plan = payload[0]
 
+    error = None
     local = {name: describe(target) for name, target in targets.items()}
     for name, sharded, shape, dtype in plan:
         if name not in local:
-            raise ValueError(f"CPU-staged NF4 distribution: rank is missing {name}")
-        if local[name] != (sharded, shape, dtype):
-            raise ValueError(
+            error = f"CPU-staged NF4 distribution: rank is missing {name}"
+        elif local[name] != (sharded, shape, dtype):
+            error = (
                 f"CPU-staged NF4 distribution disagrees on {name}: "
                 f"rank zero has {(sharded, shape, dtype)}, this rank has {local[name]}"
             )
-    if len(local) != len(plan):
+        elif accelerator.is_main_process:
+            source = full_state.get(name)
+            if source is None:
+                error = f"CPU-staged NF4 distribution: no source for {name}"
+            elif tuple(source.shape) != shape:
+                error = (
+                    f"CPU-staged NF4 distribution: {name} is {tuple(source.shape)} on "
+                    f"rank zero but {shape} in the wrapped model"
+                )
+        if error:
+            break
+    if error is None and len(local) != len(plan):
         extra = sorted(set(local) - {name for name, *_ in plan})
-        raise ValueError(f"CPU-staged NF4 distribution: rank has extra keys {extra}")
+        error = f"CPU-staged NF4 distribution: rank has extra keys {extra}"
+
+    statuses: list = [None] * dist.get_world_size()
+    dist.all_gather_object(statuses, error)
+    failures = [f"rank {rank}: {msg}" for rank, msg in enumerate(statuses) if msg]
+    if failures:
+        raise ValueError("; ".join(failures))
     return plan
 
 
@@ -75,7 +94,7 @@ def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None)
     device = accelerator.device
     world = dist.get_world_size()
     rank = dist.get_rank()
-    plan = _agree_distribution_plan(accelerator, targets, device)
+    plan = _agree_distribution_plan(accelerator, targets, device, full_state)
     for name, sharded, _, _ in tqdm(
         plan,
         desc="Distributing NF4 tensors",
@@ -83,16 +102,9 @@ def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None)
         mininterval=5,
     ):
         target = targets[name]
-        source = full_state.get(name) if accelerator.is_main_process else None
+        source = None
         if accelerator.is_main_process:
-            if source is None:
-                raise ValueError(f"CPU-staged NF4 distribution: no source for {name}")
-            if tuple(source.shape) != tuple(target.shape):
-                raise ValueError(
-                    f"CPU-staged NF4 distribution: {name} is {tuple(source.shape)} on "
-                    f"rank zero but {tuple(target.shape)} in the wrapped model"
-                )
-            source = source.to(target.dtype)
+            source = full_state[name].to(target.dtype)
         if sharded:
             mesh = target.device_mesh
             if mesh.ndim != 1 or target.placements != (Shard(0),):
