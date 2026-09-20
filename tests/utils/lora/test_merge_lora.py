@@ -895,6 +895,86 @@ class TestEfficientMerge:
         expected_fused = base_fused + scale * (lora_b @ lora_a)
         assert torch.allclose(gate_up, expected_fused, atol=1e-5)
 
+    @pytest.mark.parametrize("use_rslora", [False, True])
+    @pytest.mark.parametrize("reverse_targets", [False, True])
+    def test_fused_paramwrapper_merge_matches_peft(self, use_rslora, reverse_targets):
+        from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
+        from transformers.core_model_loading import (
+            Concatenate,
+            MergeModulelist,
+            WeightConverter,
+        )
+
+        from axolotl.cli.utils.lora_merge import _fuse_and_unfuse_with_merge
+
+        class ExpertModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.experts = torch.nn.Module()
+                self.experts.gate_up_proj = torch.nn.Parameter(torch.randn(4, 48, 16))
+                self.experts.down_proj = torch.nn.Parameter(torch.randn(4, 16, 24))
+
+        torch.manual_seed(42)
+        model = ExpertModel()
+        base = {
+            name: tensor.detach().clone() for name, tensor in model.named_parameters()
+        }
+        targets = ["experts.gate_up_proj", "experts.down_proj"]
+        if reverse_targets:
+            targets.reverse()
+        config = LoraConfig(
+            r=2,
+            lora_alpha=4,
+            target_parameters=targets,
+            use_rslora=use_rslora,
+        )
+        model = get_peft_model(model, config)
+        with torch.no_grad():
+            for parameter in model.parameters():
+                if parameter.requires_grad:
+                    parameter.normal_(std=0.1)
+        adapter = get_peft_model_state_dict(model)
+        assert any(".base_layer.lora_A.weight" in name for name in adapter)
+        expected = model.merge_and_unload()
+        shards = {}
+        for index in range(4):
+            gate, up = base["experts.gate_up_proj"][index].chunk(2, dim=0)
+            shards[f"experts.{index}.gate_proj.weight"] = gate
+            shards[f"experts.{index}.up_proj.weight"] = up
+            shards[f"experts.{index}.down_proj.weight"] = base["experts.down_proj"][
+                index
+            ]
+        converters = [
+            WeightConverter(
+                source_patterns=[
+                    "experts.*.gate_proj.weight",
+                    "experts.*.up_proj.weight",
+                ],
+                target_patterns="experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            ),
+            WeightConverter(
+                source_patterns="experts.*.down_proj.weight",
+                target_patterns="experts.down_proj",
+                operations=[MergeModulelist(dim=0)],
+            ),
+        ]
+        result, merged_count, processed = _fuse_and_unfuse_with_merge(
+            shards,
+            converters,
+            adapter,
+            2.0,
+            config.to_dict(),
+            "cpu",
+            expected_num_experts=4,
+        )
+        assert merged_count == 2
+        assert set(result) == set(base)
+        assert set(result) <= processed
+        for name, tensor in expected.named_parameters():
+            torch.testing.assert_close(result[name], tensor, rtol=0, atol=1e-6)
+            assert not torch.equal(result[name], base[name])
+
     def test_fuse_skipped_for_incomplete_expert_shard(self):
         """Expert lists split across shard boundaries must not be fused from a partial shard."""
         from transformers.core_model_loading import (

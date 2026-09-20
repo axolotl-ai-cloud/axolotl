@@ -1982,67 +1982,25 @@ def _fuse_and_unfuse_with_merge(
             # Step 2: Build the fused key name and merge LoRA
             fused_key = prefix + tgt_patterns[0]
 
-            # Apply NF4 roundtrip on the fused tensor (matching training dynamics)
-            do_nf4 = _should_nf4_roundtrip(
-                fused_key, fused_tensor, simulate_nf4, simulate_nf4_experts
+            fused_tensor, was_merged = _merge_tensor_with_lora(
+                fused_tensor,
+                fused_key,
+                lora_state,
+                scale,
+                lora_config_dict,
+                device,
+                simulate_nf4=simulate_nf4,
+                simulate_nf4_experts=simulate_nf4_experts,
+                nf4_blocksize=nf4_blocksize,
+                nf4_double_quant=nf4_double_quant,
+                nf4_backend=nf4_backend,
+                nf4_skips=nf4_skips,
+                nf4_dtype=nf4_dtype,
+                use_dora=use_dora,
+                weight_renamings=weight_renamings,
+                layer_type_map=layer_type_map,
             )
-            if nf4_backend == "torchao" or nf4_skips is not None:
-                from axolotl.utils.nf4 import nf4_should_quantize
-
-                do_nf4 = nf4_should_quantize(
-                    _runtime_key(fused_key, weight_renamings, layer_type_map),
-                    linear=False,
-                    expert=bool(simulate_nf4_experts and "expert" in fused_key.lower()),
-                    skips=nf4_skips
-                    if nf4_skips is not None
-                    else {"lm_head", "embed_out"},
-                )
-            if do_nf4:
-                fused_tensor = _simulate_nf4_roundtrip(
-                    fused_tensor,
-                    blocksize=nf4_blocksize,
-                    compress_statistics=nf4_double_quant,
-                    backend=nf4_backend,
-                    quantization_dtype=nf4_dtype,
-                    device=device,
-                )
-
-            # Try to find and merge LoRA weights for the fused key
-            lora_a, lora_b = find_lora_weights(lora_state, fused_key, weight_renamings)
-            if lora_a is not None and lora_b is not None:
-                LOG.debug(
-                    f"Merging LoRA for fused key {fused_key}: {lora_a.shape}, {lora_b.shape}"
-                )
-                original_dtype = fused_tensor.dtype
-                magnitude = (
-                    _find_dora_magnitude(lora_state, fused_key, weight_renamings)
-                    if use_dora
-                    else None
-                )
-                # Look up layer type for the fused key
-                _layer_type = _lookup_layer_type(layer_type_map, fused_key)
-
-                delta = _build_peft_layer_and_get_delta(
-                    lora_a.to(device),
-                    lora_b.to(device),
-                    lora_config_dict,
-                    fused_tensor.to(device),
-                    magnitude=magnitude.to(device) if magnitude is not None else None,
-                    layer_type=_layer_type,
-                    lora_alpha_override=_resolve_lora_alpha_for_key(
-                        fused_key, lora_config_dict, weight_renamings
-                    ),
-                )
-                fused_tensor = (
-                    (
-                        fused_tensor.to(device).to(torch.float32)
-                        + delta.to(torch.float32)
-                    )
-                    .to(original_dtype)
-                    .detach()
-                    .cpu()
-                )
-                merged_count += 1
+            merged_count += int(was_merged)
 
             # Step 3: Save in fused format (runtime format) so that the merged
             # model can be loaded directly without needing WeightConverter
