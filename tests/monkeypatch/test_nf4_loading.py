@@ -2097,6 +2097,21 @@ def test_init_distributed_state_is_silent_without_a_preexisting_group(
     )
 
 
+@pytest.mark.parametrize(
+    "backend, expected", [("bitsandbytes", "requires FSDP2"), ("torchao", None)]
+)
+def test_sharded_flag_without_fsdp_config(backend, expected):
+    """The bitsandbytes flag means FSDP; only torchao stages without an FSDP config."""
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = _staged_nf4_config(nf4_backend=backend, fsdp_config=_UNSET)
+    if expected:
+        with pytest.raises(ValueError, match=expected):
+            AxolotlInputConfig(**config)
+    else:
+        AxolotlInputConfig(**config)
+
+
 def test_inert_sharded_flag_does_not_reject_lora():
     """adapter: lora with the inert flag combination validated on main and must still."""
     from axolotl.utils.schemas.config import AxolotlInputConfig

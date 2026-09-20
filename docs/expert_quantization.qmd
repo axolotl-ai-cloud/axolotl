@@ -168,7 +168,7 @@ base weights. It can also be used without FSDP on a single GPU. Linear weights a
 when enabled, fused expert weights are converted into bounded NF4Tensor chunks.
 Packed storage is exposed through parametrizations so FSDP2 can shard it.
 
-Torchao 0.17 and 0.18 are supported; the NF4 implementation moved modules in 0.18.
+Torchao 0.18 is the pinned version; the loader also resolves 0.17's module path, where the NF4 implementation lived before the move.
 Torchao uses NF4 codes with double-quantized scales, but its scale quantization is
 different from bitsandbytes. Switching backends changes the quantized base weights.
 The torchao path uses fixed 64-element weight blocks and 256-scale blocks, with
