@@ -4,7 +4,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Tuple, Union
 
 import safetensors
 import safetensors.torch
@@ -1388,24 +1388,35 @@ def _warn_if_quant_undequantized(key: str, tensor: torch.Tensor, do_nf4: bool) -
     )
 
 
+_RUNTIME_PREFIXES = (
+    "model.",
+    "model.language_model.",
+    "model.language_model.model.",
+)
+
+
+def _lookup_layer_entry(
+    layer_type_map: Optional[Dict[str, str]], key: str
+) -> Tuple[Optional[str], str]:
+    """Resolve a checkpoint key to its runtime module type and the key that matched."""
+    if not layer_type_map:
+        return None, key
+    mod_path = key.removesuffix(".weight")
+    layer_type = layer_type_map.get(mod_path)
+    if layer_type is not None:
+        return layer_type, key
+    for prefix in _RUNTIME_PREFIXES:
+        layer_type = layer_type_map.get(prefix + mod_path)
+        if layer_type:
+            return layer_type, prefix + key
+    return None, key
+
+
 def _lookup_layer_type(
     layer_type_map: Optional[Dict[str, str]], key: str
 ) -> Optional[str]:
     """Resolve a checkpoint key to its runtime module type across prefix variations."""
-    if not layer_type_map:
-        return None
-    mod_path = key.removesuffix(".weight")
-    layer_type = layer_type_map.get(mod_path)
-    if layer_type is None:
-        for prefix in (
-            "model.",
-            "model.language_model.",
-            "model.language_model.model.",
-        ):
-            layer_type = layer_type_map.get(prefix + mod_path)
-            if layer_type:
-                break
-    return layer_type
+    return _lookup_layer_entry(layer_type_map, key)[0]
 
 
 def _runtime_key(
@@ -1415,8 +1426,9 @@ def _runtime_key(
 ) -> str:
     """The checkpoint key's runtime spelling: the first renaming the type map knows."""
     for candidate in (key, *_renamed_key_candidates(key, weight_renamings)):
-        if _lookup_layer_type(layer_type_map, candidate) is not None:
-            return candidate
+        layer_type, runtime_key = _lookup_layer_entry(layer_type_map, candidate)
+        if layer_type is not None:
+            return runtime_key
     candidates = _renamed_key_candidates(key, weight_renamings)
     return candidates[-1] if candidates else key
 
@@ -2008,23 +2020,7 @@ def _fuse_and_unfuse_with_merge(
                     else None
                 )
                 # Look up layer type for the fused key
-                _layer_type = None
-                if layer_type_map:
-                    mod_path = (
-                        fused_key.rsplit(".weight", 1)[0]
-                        if fused_key.endswith(".weight")
-                        else fused_key
-                    )
-                    _layer_type = layer_type_map.get(mod_path)
-                    if _layer_type is None:
-                        for prefix in [
-                            "model.",
-                            "model.language_model.",
-                            "model.language_model.model.",
-                        ]:
-                            _layer_type = layer_type_map.get(prefix + mod_path)
-                            if _layer_type:
-                                break
+                _layer_type = _lookup_layer_type(layer_type_map, fused_key)
 
                 delta = _build_peft_layer_and_get_delta(
                     lora_a.to(device),

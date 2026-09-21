@@ -12,6 +12,7 @@ from axolotl.cli.utils.lora_merge import (
     _find_param_wrapper_lora,
     _merge_tensor_with_lora,
     _resolve_lora_alpha_for_key,
+    _runtime_key,
     _scope_renaming,
     copy_non_model_files,
     find_lora_weights,
@@ -473,6 +474,35 @@ class TestEfficientMerge:
         assert was_merged
         # zero LoRA, so any difference from base is the NF4 roundtrip
         assert not torch.equal(merged, base)
+
+    def test_runtime_key_returns_the_prefixed_path_that_matched(self):
+        """Exclusions are spelled in runtime names, so the gate must see the prefix."""
+        from axolotl.utils.nf4 import nf4_should_quantize
+
+        runtime_key = _runtime_key(
+            "layers.0.self_attn.q_proj.weight",
+            None,
+            {"model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert runtime_key == "model.layers.0.self_attn.q_proj.weight"
+        assert not nf4_should_quantize(
+            runtime_key,
+            linear=True,
+            expert=False,
+            skips={"model.layers.0.self_attn.q_proj"},
+        )
+
+    def test_runtime_key_leaves_runtime_spelling_untouched(self):
+        """A key already in runtime spelling gains no prefix."""
+        assert (
+            _runtime_key(
+                "model.layers.0.self_attn.q_proj.weight",
+                None,
+                {"model.layers.0.self_attn.q_proj": "Linear"},
+            )
+            == "model.layers.0.self_attn.q_proj.weight"
+        )
 
     def test_bitsandbytes_merge_without_introspection(self, tmp_path):
         """An empty layer_type_map must not raise a torchao-specific error on bnb."""
