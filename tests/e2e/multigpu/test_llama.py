@@ -540,6 +540,76 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
+    def test_fsdp2_qlora_prequant_packed(self, temp_dir):
+        cfg = DictDefault(
+            {
+                "base_model": "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
+                "adapter": "qlora",
+                "mean_resizing_embeddings": True,
+                "load_in_4bit": True,
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+                "lora_target_linear": True,
+                "sample_packing": True,
+                "eval_sample_packing": False,
+                "pad_to_sequence_len": True,
+                "sequence_len": 1024,
+                "val_set_size": 0.01,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "tatsu-lab/alpaca",
+                        "type": "alpaca",
+                        "split": "train[:10%]",
+                    },
+                ],
+                "num_epochs": 1,
+                "max_steps": 2,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                "output_dir": temp_dir,
+                "dataset_prepared_path": temp_dir + "/last_run_prepared",
+                "learning_rate": 0.00001,
+                "optimizer": "adamw_torch_fused",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "fsdp_version": 2,
+                "fsdp_config": {
+                    "offload_params": False,
+                    "cpu_ram_efficient_loading": True,
+                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                    "state_dict_type": "FULL_STATE_DICT",
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                },
+                "use_tensorboard": True,
+                "save_first_step": False,
+            }
+        )
+
+        # write cfg to yaml file
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:
+            fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+
+        execute_subprocess_async(
+            [
+                "axolotl",
+                "train",
+                str(Path(temp_dir) / "config.yaml"),
+                "--num-processes",
+                "2",
+                "--main-process-port",
+                f"{get_torch_dist_unique_port()}",
+            ]
+        )
+
+        check_tensorboard(
+            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+        )
+
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],

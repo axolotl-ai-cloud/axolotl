@@ -99,13 +99,22 @@ distributed, rank zero also briefly holds one full packed tensor on its accelera
 by the largest quantized tensor; this peak is smaller than the wrapped-layer requirement
 above.
 
-`offload_params` controls FSDP parameter offloading after loading. This path requires
-an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
-DeepSpeed, tensor/context/expert parallelism, DoRA, `modules_to_save` and
-value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
+`offload_params` controls FSDP parameter offloading after loading. This path supports
+a single FSDP2 data-parallel mesh; DeepSpeed, tensor/context/expert parallelism,
+DoRA, `modules_to_save` and value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
 olora remains available on the non-staged bitsandbytes loader with
 `cpu_ram_efficient_loading: false` (the torchao backend is always staged); pissa and
 loftq require an unquantized base.
+
+A base model that is already quantized with bitsandbytes 4-bit (its `config.json`
+carries a `quantization_config` with `quant_method: bitsandbytes` and `load_in_4bit`)
+is adopted as-is: the checkpoint's packed weights and quantization state are staged
+without requantizing, so `bnb_config_kwargs` that disagree with the checkpoint are
+ignored (with a warning). The compute dtype must match the checkpoint's
+`bnb_4bit_quant_storage` when that storage is a floating-point dtype. The torchao
+backend and `quantize_moe_experts` still need an unquantized base checkpoint, and
+`axolotl merge-lora` cannot merge an adapter back into a prequantized base: it streams
+the base checkpoint and has no path that unpacks bitsandbytes components.
 
 ### LoRA init compatibility
 

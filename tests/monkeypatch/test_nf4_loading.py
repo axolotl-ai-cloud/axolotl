@@ -2412,3 +2412,304 @@ def test_staged_loading_does_not_reinitialize_quantized_weights(backend, tmp_pat
         f"staged loading drew {staged} elements against a plain load's {baseline}; "
         "quantized modules are being re-initialized"
     )
+
+
+def _save_prequantized_checkpoint(model, path, quant_storage=torch.bfloat16):
+    """Write a bitsandbytes 4-bit checkpoint in the component layout bnb serializes."""
+    from safetensors.torch import save_file
+    from transformers import BitsAndBytesConfig
+
+    quantized = {
+        name
+        for name, module in model.named_modules()
+        if isinstance(module, nn.Linear) and name != "lm_head"
+    }
+    state = {}
+    for key, value in model.state_dict().items():
+        module, _, leaf = key.rpartition(".")
+        if leaf != "weight" or module not in quantized:
+            state[key] = value.clone()
+            continue
+        data, quant_state = quantize_bnb_4bit(value, quant_storage=quant_storage)
+        state[key] = data
+        for name, item in quant_state.as_dict(packed=True).items():
+            state[f"{key}.{name}"] = item
+    path.mkdir(parents=True, exist_ok=True)
+    save_file(state, str(path / "model.safetensors"), metadata={"format": "pt"})
+    model.config.quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_storage=quant_storage,
+    ).to_dict()
+    model.config.save_pretrained(path)
+    return path
+
+
+@pytest.mark.parametrize("quant_storage", [torch.uint8, torch.bfloat16])
+def test_prequantized_components_match_fresh_quantization(quant_storage):
+    import bitsandbytes as bnb
+
+    from axolotl.utils.nf4 import prequantized_bnb_4bit
+
+    weight = torch.randn(128, 128)
+    serialized, state = quantize_bnb_4bit(weight, quant_storage=quant_storage)
+    restored = bnb.nn.Params4bit.from_prequantized(
+        data=serialized,
+        quantized_stats=dict(state.as_dict(packed=True)),
+        device="cpu",
+    )
+    data, transform = prequantized_bnb_4bit(restored)
+    expected_data, expected_state = quantize_bnb_4bit(weight)
+    assert torch.equal(data, expected_data)
+    torch.testing.assert_close(
+        transform(data),
+        BnbNF4Parametrization(expected_state)(expected_data),
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        transform(data),
+        bnb.functional.dequantize_4bit(restored, restored.quant_state),
+        rtol=0,
+        atol=0,
+    )
+
+
+def test_staged_loading_adopts_prequantized_checkpoint(tmp_path):
+    import bitsandbytes as bnb
+    from transformers import BitsAndBytesConfig, LlamaConfig, LlamaForCausalLM
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    config = LlamaConfig(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    torch.manual_seed(0)
+    checkpoint = _save_prequantized_checkpoint(
+        LlamaForCausalLM(config).to(torch.bfloat16), tmp_path / "base"
+    )
+    model_config = type(config).from_pretrained(checkpoint)
+    model = load_nf4_model(
+        LlamaForCausalLM,
+        model_config,
+        {
+            "dtype": torch.bfloat16,
+            "device_map": {"": "cpu"},
+            "quantization_config": BitsAndBytesConfig(
+                **model_config.quantization_config
+            ),
+        },
+        DictDefault(
+            base_model=str(checkpoint),
+            nf4_backend="bitsandbytes",
+            torch_dtype=torch.bfloat16,
+        ),
+        "cpu",
+    )
+    q_proj = model.model.layers[0].self_attn.q_proj
+    assert parametrize.is_parametrized(q_proj, "weight")
+    assert isinstance(q_proj, nn.Linear) and not isinstance(q_proj, bnb.nn.Linear4bit)
+    assert not parametrize.is_parametrized(model.lm_head, "weight")
+
+    from safetensors.torch import load_file
+
+    saved = load_file(str(checkpoint / "model.safetensors"))
+    key = "model.layers.0.self_attn.q_proj.weight"
+    reference = bnb.nn.Params4bit.from_prequantized(
+        data=saved[key],
+        quantized_stats={
+            name.removeprefix(f"{key}."): value
+            for name, value in saved.items()
+            if name.startswith(f"{key}.")
+        },
+        device="cpu",
+    )
+    torch.testing.assert_close(
+        q_proj.weight,
+        bnb.functional.dequantize_4bit(reference, reference.quant_state),
+        rtol=0,
+        atol=0,
+    )
+
+
+@pytest.mark.nf4_distributed
+def test_prequantized_rank_zero_load_shard_and_backward(tmp_path):
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    config = LlamaConfig(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    checkpoint = _save_prequantized_checkpoint(
+        LlamaForCausalLM(config), tmp_path / "base", quant_storage=torch.uint8
+    )
+    torch.multiprocessing.spawn(
+        _distributed_nf4_worker,
+        args=(
+            WorkerCase(
+                "bitsandbytes",
+                str(checkpoint),
+                str(tmp_path / "rendezvous"),
+                prepare_optimizer=True,
+            ),
+        ),
+        nprocs=2,
+    )
+
+
+def test_staged_loading_rejects_unsupported_quantized_checkpoint():
+    from axolotl.loaders.nf4 import checkpoint_bnb_quantization
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault(nf4_backend="bitsandbytes")
+    with pytest.raises(ValueError, match="bitsandbytes 4-bit"):
+        checkpoint_bnb_quantization(
+            SimpleNamespace(quantization_config={"quant_method": "gptq"}), cfg
+        )
+    with pytest.raises(ValueError, match="bitsandbytes 4-bit"):
+        checkpoint_bnb_quantization(
+            SimpleNamespace(
+                quantization_config={
+                    "quant_method": "bitsandbytes",
+                    "load_in_8bit": True,
+                }
+            ),
+            cfg,
+        )
+    assert checkpoint_bnb_quantization(SimpleNamespace(), cfg) is None
+
+
+def test_staged_loading_rejects_dtype_that_reinterprets_packed_storage(tmp_path):
+    from transformers import BitsAndBytesConfig, LlamaConfig, LlamaForCausalLM
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    config = LlamaConfig(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    checkpoint = _save_prequantized_checkpoint(
+        LlamaForCausalLM(config).to(torch.bfloat16), tmp_path / "base"
+    )
+    model_config = type(config).from_pretrained(checkpoint)
+    with pytest.raises(ValueError, match="bnb_4bit_quant_storage"):
+        load_nf4_model(
+            LlamaForCausalLM,
+            model_config,
+            {
+                "dtype": torch.float16,
+                "device_map": {"": "cpu"},
+                "quantization_config": BitsAndBytesConfig(
+                    **model_config.quantization_config
+                ),
+            },
+            DictDefault(
+                base_model=str(checkpoint),
+                nf4_backend="bitsandbytes",
+                torch_dtype=torch.float16,
+            ),
+            "cpu",
+        )
+
+
+def test_staged_loading_rejects_skipping_a_prequantized_module(tmp_path):
+    from transformers import BitsAndBytesConfig, LlamaConfig, LlamaForCausalLM
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    config = LlamaConfig(
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        vocab_size=128,
+    )
+    checkpoint = _save_prequantized_checkpoint(
+        LlamaForCausalLM(config).to(torch.bfloat16), tmp_path / "base"
+    )
+    model_config = type(config).from_pretrained(checkpoint)
+    quantization = dict(model_config.quantization_config)
+    quantization["llm_int8_skip_modules"] = ["lm_head", "q_proj"]
+    with pytest.raises(ValueError, match="q_proj"):
+        load_nf4_model(
+            LlamaForCausalLM,
+            model_config,
+            {
+                "dtype": torch.bfloat16,
+                "device_map": {"": "cpu"},
+                "quantization_config": BitsAndBytesConfig(**quantization),
+            },
+            DictDefault(
+                base_model=str(checkpoint),
+                nf4_backend="bitsandbytes",
+                torch_dtype=torch.bfloat16,
+            ),
+            "cpu",
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
+def test_cuda_staged_loading_adopts_published_prequantized_checkpoint():
+    import bitsandbytes as bnb
+    from huggingface_hub import hf_hub_download
+    from safetensors.torch import load_file
+    from transformers import AutoConfig, AutoModelForCausalLM, BitsAndBytesConfig
+
+    from axolotl.loaders.nf4 import load_nf4_model
+    from axolotl.utils.dict import DictDefault
+
+    base_model = "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16"
+    model_config = AutoConfig.from_pretrained(base_model)
+    model = load_nf4_model(
+        AutoModelForCausalLM,
+        model_config,
+        {
+            "dtype": torch.bfloat16,
+            "device_map": {"": "cpu"},
+            "quantization_config": BitsAndBytesConfig(
+                **model_config.quantization_config
+            ),
+        },
+        DictDefault(
+            base_model=base_model,
+            nf4_backend="bitsandbytes",
+            torch_dtype=torch.bfloat16,
+        ),
+        "cuda",
+    )
+    saved = load_file(hf_hub_download(base_model, "model.safetensors"))
+    key = "model.layers.0.self_attn.q_proj.weight"
+    reference = bnb.nn.Params4bit.from_prequantized(
+        data=saved[key],
+        quantized_stats={
+            name.removeprefix(f"{key}."): value
+            for name, value in saved.items()
+            if name.startswith(f"{key}.")
+        },
+        device="cuda",
+    )
+    torch.testing.assert_close(
+        model.model.layers[0].self_attn.q_proj.weight.cuda(),
+        bnb.functional.dequantize_4bit(reference, reference.quant_state),
+        rtol=0,
+        atol=0,
+    )
