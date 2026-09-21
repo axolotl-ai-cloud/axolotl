@@ -56,6 +56,8 @@ def _base_fp32_norms_config(
         "flash_attention": True,
         "bf16": True,
         "fp32_norms": True,
+        # Off so non-norm params stay bf16 — the norm policy must be independent.
+        "fp32_master_weights": False,
         "fsdp_version": 2,
         "fsdp_config": {
             "offload_params": False,

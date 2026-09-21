@@ -131,6 +131,8 @@ fsdp_config:
 
 When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the minimum parameter count a module must have to be wrapped (e.g. `100000000`).
 
+Full fine-tunes keep fp32 master weights by default, matching FSDP1 — see [Master weights under FSDP2](mixed_precision.qmd#sec-fp32-master-weights).
+
 ### FSDP1 (deprecated) {#sec-fsdp-config}
 
 ::: {.callout-note}
