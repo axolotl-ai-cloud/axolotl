@@ -49,19 +49,24 @@ def patch_transformers_skip_quantized_init():
         ("axolotl.monkeypatch.moe_quant", "Bnb8bitParametrization"),
     )
 
-    if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
+    # The optional types are re-resolved on every call so a guard installed while
+    # torchao or bitsandbytes was unimportable picks them up once they are.
+    quantized_types = (torchao_tensors, quantized_parametrizations)
+    installed = PreTrainedModel._initialize_weights
+    if getattr(installed, "_axolotl_torchao_patched", False):
+        installed._axolotl_quantized_types = quantized_types
         return
 
-    original = PreTrainedModel._initialize_weights
+    original = installed
 
     def holds_quantized_weight(module):
+        tensors, parametrizations = _initialize_weights._axolotl_quantized_types
         if any(
-            isinstance(param, torchao_tensors)
-            for param in module.parameters(recurse=False)
+            isinstance(param, tensors) for param in module.parameters(recurse=False)
         ):
             return True
         return any(
-            isinstance(transform, quantized_parametrizations)
+            isinstance(transform, parametrizations)
             for chain in (getattr(module, "parametrizations", None) or {}).values()
             for transform in chain
         )
@@ -74,4 +79,5 @@ def patch_transformers_skip_quantized_init():
         return original(self, module, *args, **kwargs)
 
     _initialize_weights._axolotl_torchao_patched = True
+    _initialize_weights._axolotl_quantized_types = quantized_types
     PreTrainedModel._initialize_weights = _initialize_weights
