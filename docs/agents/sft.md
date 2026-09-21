@@ -88,7 +88,7 @@ Watch for: loss never decreasing (check `train_on_inputs`, dataset, LR), loss go
 | Label masking wrong | Run `axolotl preprocess config.yaml --debug` and inspect labels |
 | Loss NaN | Use `bf16: auto`, lower LR, check data for empty samples |
 | Tokenizer pad token / infinite loss | Set `special_tokens: pad_token: "<\|end_of_text\|>"` |
-| FSDP save hangs | Use `fsdp_config.state_dict_type: FULL_STATE_DICT` |
+| FSDP save hangs | Set `state_dict_type: FULL_STATE_DICT` in `fsdp_config` |
 | DeepSpeed CheckpointError | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
 
 ## Profiling
