@@ -13,7 +13,7 @@ class TestExportConfig:
 
     def test_defaults(self):
         config = ExportConfig()
-        assert (config.format, config.outtype, config.quantize) == ("gguf", "f16", [])
+        assert (config.format, config.outtype, config.quantize) == ("gguf", None, [])
 
     @pytest.mark.parametrize(
         "quantize, expected",
@@ -59,8 +59,8 @@ class TestExportConfig:
     def test_q8_0_outtype_alone_is_allowed(self):
         assert ExportConfig(outtype="q8_0").outtype == "q8_0"
 
-    def test_lora_defaults_to_autodetect(self):
-        assert ExportConfig().lora is None
+    def test_lora_defaults_to_false(self):
+        assert ExportConfig().lora is False
 
     def test_lora_rejects_quantize(self):
         with pytest.raises(ValidationError, match="only takes full models"):
@@ -100,3 +100,9 @@ class TestExportConfigInAxolotlConfig:
     def test_normalized_in_place(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(export={"quantize": ["q4_k_m"]})
         assert validate_config(cfg).export["quantize"] == ["Q4_K_M"]
+
+    def test_lora_outtype_default_survives_validation(self, min_base_cfg):
+        """Validation writes defaults back, so an unset outtype must stay unset."""
+        cfg = min_base_cfg | DictDefault(export={"lora": True})
+        export = ExportConfig(**validate_config(cfg).export)
+        assert export.resolved_outtype(True) == "f32"

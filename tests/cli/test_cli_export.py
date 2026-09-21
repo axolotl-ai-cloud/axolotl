@@ -65,7 +65,7 @@ def test_export_cli_args(cli_runner, export_config_path, tmp_path):
 
 @pytest.mark.parametrize("flag, expected", [("--lora", True), ("--no-lora", False)])
 def test_export_lora_flag(cli_runner, export_config_path, flag, expected):
-    """Test the tri-state --lora/--no-lora override"""
+    """Test the --lora/--no-lora override"""
     with patch("axolotl.cli.export.do_export") as mock_do_export:
         result = cli_runner.invoke(cli, ["export", str(export_config_path), flag])
         assert result.exit_code == 0
@@ -102,9 +102,10 @@ class TestResolveModelDir:
         with pytest.raises(ValueError, match="axolotl merge-lora"):
             resolve_model_dir(cfg)
 
-    def test_adapter_dir_autodetected(self, adapter_output_dir):
+    def test_adapter_dir_is_not_exported_without_the_flag(self, adapter_output_dir):
         cfg = DictDefault({"output_dir": str(adapter_output_dir), "adapter": "lora"})
-        assert resolve_model_dir(cfg) == adapter_output_dir
+        with pytest.raises(ValueError, match="pass --lora"):
+            resolve_model_dir(cfg)
 
     def test_merged_wins_over_adapter(self, adapter_output_dir):
         (adapter_output_dir / "merged").mkdir()
@@ -197,7 +198,7 @@ class TestDoExportLora:
     def run_lora_export(self, tmp_path):
         """Runs `do_export` against an adapter dir, returning the LoRA exporter's call."""
 
-        def _run(export: dict | None = None, base_model: str = "org/base", **cli_args):
+        def _run(export: dict | None = None, **cli_args):
             run_dir = tmp_path / "run"
             run_dir.mkdir(exist_ok=True)
             (run_dir / "adapter_config.json").write_text("{}")
@@ -205,8 +206,8 @@ class TestDoExportLora:
                 {
                     "output_dir": str(run_dir),
                     "adapter": "lora",
-                    "base_model": base_model,
-                    "export": export,
+                    "base_model": "org/base",
+                    "export": {**(export or {}), "lora": True},
                 }
             )
             with patch("axolotl.cli.export.load_cfg", return_value=cfg):
@@ -219,7 +220,7 @@ class TestDoExportLora:
 
         return _run
 
-    def test_autodetected_adapter(self, run_lora_export, tmp_path):
+    def test_lora_export(self, run_lora_export, tmp_path):
         args, kwargs = run_lora_export()
 
         # The `-lora` marker keeps an adapter export off a full model's filename.
@@ -229,7 +230,6 @@ class TestDoExportLora:
         )
         assert kwargs == {
             "outtype": "f32",
-            "base_model": "org/base",
             "llama_cpp_dir": None,
         }
 
@@ -239,7 +239,7 @@ class TestDoExportLora:
     def test_cli_outtype_wins_over_the_lora_default(self, run_lora_export):
         assert run_lora_export(outtype="f16").kwargs["outtype"] == "f16"
 
-    def test_quantize_rejected_once_the_adapter_is_detected(self, run_lora_export):
+    def test_quantize_rejected_for_a_lora_export(self, run_lora_export):
         with pytest.raises(ValueError, match="only takes full models"):
             run_lora_export({"quantize": ["Q4_K_M"]})
 

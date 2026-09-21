@@ -40,21 +40,19 @@ axolotl export config.yml --quantize Q4_K_M,Q8_0
 
 ## LoRA adapters
 
-An unmerged LoRA/QLoRA run exports as a *standalone GGUF LoRA* instead, through llama.cpp's [`convert_lora_to_gguf.py`](https://github.com/ggml-org/llama.cpp/blob/master/convert_lora_to_gguf.py). The adapter is not a model on its own. It is loaded at runtime on top of a GGUF of the same base model, so both files have to be present:
+Set `export.lora` and an unmerged LoRA/QLoRA run exports as a *standalone GGUF LoRA* instead, through llama.cpp's [`convert_lora_to_gguf.py`](https://github.com/ggml-org/llama.cpp/blob/master/convert_lora_to_gguf.py). The adapter is not a model on its own. It is loaded at runtime on top of a GGUF of the same base model, so both files have to be present:
 
 ```bash
-axolotl export config.yml
+axolotl export config.yml --lora
 llama-cli -m base-f16.gguf --lora outputs/my-run/gguf/my-run-lora-f32.gguf
 ```
-
-The adapter is detected automatically from `output_dir`. A `merged/` directory still wins when one exists, so a run that has both can pick the adapter explicitly:
 
 ```yaml
 export:
   lora: true
 ```
 
-`lora: false` restores the old behaviour of refusing an adapter-only directory and pointing you at `axolotl merge-lora`.
+Without it, an adapter-only `output_dir` is refused and points you at `axolotl merge-lora`. Training pre-saves the base model's `config.json` beside the adapter, so the converter reads the base config locally instead of fetching it from the Hub.
 
 Two options work differently here. `quantize` is rejected, because `llama-quantize` only takes full models, and `outtype` is limited to `f32`, `f16`, `bf16`, `q8_0`, `auto`. It defaults to `f32` rather than `f16`, matching `convert_lora_to_gguf.py`'s own default. The default filename gains a `-lora` marker (`{output_dir}/gguf/{run}-lora-{ftype}.gguf`) so an adapter export cannot overwrite a full-model one.
 
@@ -65,11 +63,11 @@ Options are named after their `convert_hf_to_gguf.py` counterparts:
 ```yaml
 export:
   format: gguf         # Optional[str] = "gguf". Deployment format.
-  outtype: f16         # Optional[str] = "f16". Weight type of the conversion: f32, f16, bf16, q8_0, tq1_0, tq2_0, auto.
+  outtype: f16         # Optional[str]. Weight type of the conversion: f32, f16, bf16, q8_0, tq1_0, tq2_0, auto. Defaults to f16, or f32 for a LoRA export.
   quantize: [Q4_K_M]   # Optional[list[str]] = []. Additional llama.cpp quant types to emit.
   outfile:             # Optional[str]. Defaults to {output_dir}/gguf/{run}-{ftype}.gguf.
   llama_cpp_dir:       # Optional[str]. Defaults to $LLAMA_CPP_DIR.
-  lora:                # Optional[bool]. Export the adapter as a standalone GGUF LoRA. Default: auto-detected.
+  lora: false          # Optional[bool] = false. Export the adapter as a standalone GGUF LoRA instead of a full model.
 ```
 
 Every key can be overridden from the CLI (`--outtype`, `--quantize`, `--outfile`, `--llama-cpp-dir`, `--lora/--no-lora`), and `--model-dir` exports an arbitrary checkpoint instead of the one in `output_dir`.

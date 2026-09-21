@@ -224,7 +224,6 @@ def export_lora_gguf(
     outfile: str,
     *,
     outtype: str = "f32",
-    base_model: str | Path | None = None,
     llama_cpp_dir: str | Path | None = None,
 ) -> list[Path]:
     """
@@ -254,8 +253,8 @@ def export_lora_gguf(
         outtype,
     ]
     # Without `--base` the converter fetches the base config from the Hub.
-    if base_model and Path(base_model).is_dir():
-        cmd += ["--base", str(base_model)]
+    if (adapter_dir / "config.json").is_file():
+        cmd += ["--base", str(adapter_dir)]
 
     LOG.info("Converting %s to a GGUF LoRA (%s)...", adapter_dir, outtype)
     _run(cmd, converted)

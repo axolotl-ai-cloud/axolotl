@@ -298,27 +298,27 @@ class TestExportLoraGGUF:
             "f32",
         ]
 
-    def test_local_base_model_is_passed(self, adapter_dir, llama_cpp_dir, tmp_path):
-        base = tmp_path / "base"
-        base.mkdir()
+    def test_base_config_beside_the_adapter_is_passed(
+        self, adapter_dir, llama_cpp_dir, tmp_path
+    ):
+        # Training pre-saves the base model's config into the adapter dir.
+        (adapter_dir / "config.json").write_text("{}")
         with patch("axolotl.utils.gguf._run") as mock_run:
             export_lora_gguf(
                 adapter_dir,
                 str(tmp_path / "out.gguf"),
-                base_model=base,
                 llama_cpp_dir=llama_cpp_dir,
             )
 
-        assert mock_run.call_args.args[0][-2:] == ["--base", str(base)]
+        assert mock_run.call_args.args[0][-2:] == ["--base", str(adapter_dir)]
 
-    def test_hub_base_model_is_left_to_the_converter(
+    def test_adapter_without_a_base_config_is_left_to_the_converter(
         self, adapter_dir, llama_cpp_dir, tmp_path
     ):
         with patch("axolotl.utils.gguf._run") as mock_run:
             export_lora_gguf(
                 adapter_dir,
                 str(tmp_path / "out.gguf"),
-                base_model="org/base",
                 llama_cpp_dir=llama_cpp_dir,
             )
 

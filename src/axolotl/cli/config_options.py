@@ -1716,7 +1716,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--export.lora/--no-export.lora",),
         "export__lora",
         None,
-        "Export the adapter as a standalone GGUF LoRA instead of a full model. Default: auto-detected from the exported directory.",
+        "Export the adapter as a standalone GGUF LoRA instead of a full model.",
     ),
     (
         ("--reward-model/--no-reward-model",),

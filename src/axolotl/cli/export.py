@@ -18,7 +18,7 @@ def is_adapter_dir(model_dir: Path) -> bool:
 
 
 def resolve_model_dir(
-    cfg: DictDefault, model_dir: str | None = None, lora: bool | None = None
+    cfg: DictDefault, model_dir: str | None = None, lora: bool = False
 ) -> Path:
     """Pick the checkpoint to export: an explicit dir, else the merged/trained output."""
     if model_dir:
@@ -35,12 +35,11 @@ def resolve_model_dir(
     merged = output_dir / "merged"
     if merged.is_dir():
         return merged
-    if lora is None and is_adapter_dir(output_dir):
-        return output_dir
     if cfg.adapter:
         raise ValueError(
             f"{cfg.output_dir} holds a {cfg.adapter} adapter, not a full model. Run "
-            f"`axolotl merge-lora` first, or pass --model-dir."
+            f"`axolotl merge-lora` first, pass --lora to export the adapter itself, "
+            f"or pass --model-dir."
         )
 
     return output_dir
@@ -59,17 +58,16 @@ def do_export(config: Union[Path, str], cli_args: dict[str, Any]) -> list[Path]:
     """
     cfg = load_cfg(str(config))
 
+    # A flag the user did not pass arrives as None and must not clobber the config.
     overrides = {
         key: value
         for key, value in cli_args.items()
-        if key in ExportConfig.model_fields
+        if key in ExportConfig.model_fields and value is not None
     }
     export_cfg = ExportConfig(**{**(cfg.export or {}), **overrides})
 
     model_dir = resolve_model_dir(cfg, cli_args.get("model_dir"), export_cfg.lora)
-    is_lora = (
-        export_cfg.lora if export_cfg.lora is not None else is_adapter_dir(model_dir)
-    )
+    is_lora = export_cfg.lora
     outtype = export_cfg.resolved_outtype(is_lora)
 
     run_dir = Path(cfg.output_dir)
@@ -84,7 +82,6 @@ def do_export(config: Union[Path, str], cli_args: dict[str, Any]) -> list[Path]:
             model_dir,
             outfile,
             outtype=outtype,
-            base_model=cfg.base_model,
             llama_cpp_dir=export_cfg.llama_cpp_dir,
         )
     else:
