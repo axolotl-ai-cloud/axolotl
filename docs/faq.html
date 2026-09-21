@@ -970,7 +970,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <blockquote class="blockquote">
 <p>A: Since Axolotl is just Python, please see <code>src/axolotl/cli/main.py</code> on how each command is called.</p>
 </blockquote>
-<p><strong>Q: How to know the value to use for <code>fsdp_transformer_layer_cls_to_wrap</code>?</strong></p>
+<p><strong>Q: How to know the value to use for <code>fsdp_config.transformer_layer_cls_to_wrap</code>?</strong></p>
 <blockquote class="blockquote">
 <p>A: This is the class name of the transformer layer to wrap with FSDP. For example, for <code>LlamaForCausalLM</code>, the value is <code>LlamaDecoderLayer</code>. To find this for a specific model, check the model’s <code>PreTrainedModel</code> definition and look for <code>_no_split_modules</code> variable in the <code>modeling_&lt;model_name&gt;.py</code> file within <code>transformers</code> library.</p>
 </blockquote>

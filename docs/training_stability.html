@@ -1413,31 +1413,26 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Set <code>micro_batch_size &gt;= num_generations</code> and make it divisible</td>
 </tr>
 <tr class="odd">
-<td><code>'weight' must be 2-D</code></td>
-<td>FSDP1 flattened parameters</td>
-<td>Use <code>fsdp_version: 2</code> or skip <code>unwrap_model</code> when FSDP is enabled</td>
-</tr>
-<tr class="even">
 <td><code>CheckpointError</code> (tensor count mismatch)</td>
 <td>Non-reentrant checkpointing + ZeRO-3 or flex_attention</td>
 <td>Set <code>use_reentrant: true</code> in <code>gradient_checkpointing_kwargs</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>BFloat16</code> TypeError during weight sync</td>
 <td>NumPy does not support bf16</td>
 <td>Fixed in axolotl’s <code>weight_serde.py</code> (auto bf16 to fp16 conversion)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>Content end boundary is before start boundary</code></td>
 <td>Chat template parsing issue</td>
 <td>Check <code>eos_token</code> matches template; file a GitHub issue if persistent</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>CAS service error</code> during data processing</td>
 <td>HuggingFace XET issue</td>
 <td>Set <code>export HF_HUB_DISABLE_XET=1</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Training hangs (multi-GPU)</td>
 <td>FSDP + async prefetch deadlock</td>
 <td>Set <code>async_prefetch: false</code> with FSDP</td>

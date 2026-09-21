@@ -992,7 +992,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>  export NCCL_BUFFSIZE=2097152</span>
 <span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>  HEAD_IP=$(echo "$SKYPILOT_NODE_IPS" | head -n1)</span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>  axolotl train /workspace/axolotl/examples/llama-3/fft-8b-liger-fsdp.yaml --launcher torchrun -- \</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>  axolotl train /workspace/axolotl/examples/gpt-oss/gpt-oss-20b-fft-fsdp2.yaml --launcher torchrun -- \</span>
 <span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>    --nnodes $SKYPILOT_NUM_NODES \</span>
 <span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    --nproc_per_node $SKYPILOT_NUM_GPUS_PER_NODE \</span>
 <span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    --rdzv_id $SKYPILOT_TASK_ID \</span>

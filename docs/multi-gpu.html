@@ -912,9 +912,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </ul></li>
   <li><a href="#sec-fsdp" id="toc-sec-fsdp" class="nav-link" data-scroll-target="#sec-fsdp">Fully Sharded Data Parallel (FSDP)</a>
   <ul class="collapse">
+  <li><a href="#sec-fsdp-config" id="toc-sec-fsdp-config" class="nav-link" data-scroll-target="#sec-fsdp-config">Configuration</a></li>
   <li><a href="#sec-fsdp-qlora" id="toc-sec-fsdp-qlora" class="nav-link" data-scroll-target="#sec-fsdp-qlora">FSDP + QLoRA</a></li>
   <li><a href="#sec-migrate-fsdp1-fsdp2" id="toc-sec-migrate-fsdp1-fsdp2" class="nav-link" data-scroll-target="#sec-migrate-fsdp1-fsdp2">Migrating from FSDP1 to FSDP2</a></li>
-  <li><a href="#sec-fsdp-config" id="toc-sec-fsdp-config" class="nav-link" data-scroll-target="#sec-fsdp-config">FSDP1 (deprecated)</a></li>
   </ul></li>
   <li><a href="#sec-sequence-parallelism" id="toc-sec-sequence-parallelism" class="nav-link" data-scroll-target="#sec-sequence-parallelism">Sequence parallelism</a></li>
   <li><a href="#sec-performance" id="toc-sec-performance" class="nav-link" data-scroll-target="#sec-performance">Performance Optimization</a>
@@ -1026,20 +1026,36 @@ Note
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl.</p>
+<p>Only FSDP2 is supported. FSDP1 has been removed, and setting <code>fsdp_version: 1</code> raises an error.</p>
 </div>
 </div>
+<section id="sec-fsdp-config" class="level3">
+<h3 class="anchored" data-anchor-id="sec-fsdp-config">Configuration</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>When using <code>auto_wrap_policy: SIZE_BASED_WRAP</code>, set <code>min_num_params</code> to the minimum parameter count a module must have to be wrapped (e.g.&nbsp;<code>100000000</code>).</p>
+</section>
 <section id="sec-fsdp-qlora" class="level3">
 <h3 class="anchored" data-anchor-id="sec-fsdp-qlora">FSDP + QLoRA</h3>
 <p>For combining FSDP with QLoRA, see our <a href="../docs/fsdp_qlora.html">dedicated guide</a>.</p>
 </section>
 <section id="sec-migrate-fsdp1-fsdp2" class="level3">
 <h3 class="anchored" data-anchor-id="sec-migrate-fsdp1-fsdp2">Migrating from FSDP1 to FSDP2</h3>
-<p>To migrate your config from FSDP1 to FSDP2, you must use the <code>fsdp_version</code> top-level config field to specify the FSDP version, and
-also follow the config field mapping below to update field names.</p>
+<p>FSDP1 has been removed. <code>fsdp_version: 1</code> and the bare top-level <code>fsdp:</code> list are rejected, and <code>fsdp_version</code> defaults to <code>2</code>.
+To migrate an FSDP1 config, replace the <code>fsdp:</code> list with <code>fsdp_config:</code> and follow the config field mapping below to update field names.</p>
 <section id="config-mapping" class="level4">
 <h4 class="anchored" data-anchor-id="config-mapping">Config mapping</h4>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>FSDP1</th>
@@ -1053,33 +1069,37 @@ also follow the config field mapping below to update field names.</p>
 </tr>
 <tr class="even">
 <td>fsdp_backward_prefetch_policy</td>
-<td><strong>REMOVED</strong></td>
+<td><strong>REMOVED</strong> (dropped with a warning)</td>
 </tr>
 <tr class="odd">
 <td>fsdp_backward_prefetch</td>
-<td><strong>REMOVED</strong></td>
+<td><strong>REMOVED</strong> (dropped with a warning)</td>
 </tr>
 <tr class="even">
 <td>fsdp_forward_prefetch</td>
-<td><strong>REMOVED</strong></td>
+<td><strong>REMOVED</strong> (rejected with an error)</td>
 </tr>
 <tr class="odd">
 <td>fsdp_sync_module_states</td>
-<td><strong>REMOVED</strong></td>
+<td><strong>REMOVED</strong> (dropped with a warning)</td>
 </tr>
 <tr class="even">
+<td>fsdp_limit_all_gathers</td>
+<td><strong>REMOVED</strong> (dropped with a warning)</td>
+</tr>
+<tr class="odd">
 <td>fsdp_cpu_ram_efficient_loading</td>
 <td>cpu_ram_efficient_loading</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>fsdp_state_dict_type</td>
 <td>state_dict_type</td>
 </tr>
-<tr class="even">
-<td>fsdp_use_orig_params</td>
-<td><strong>REMOVED</strong></td>
-</tr>
 <tr class="odd">
+<td>fsdp_use_orig_params</td>
+<td><strong>REMOVED</strong> (dropped with a warning; FSDP2 always trains original parameters)</td>
+</tr>
+<tr class="even">
 <td>fsdp_activation_checkpointing</td>
 <td>activation_checkpointing</td>
 </tr>
@@ -1087,48 +1107,24 @@ also follow the config field mapping below to update field names.</p>
 </table>
 <p>For more details, please see the migration guide in the <a href="https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md">torchtitan repo</a>. In Axolotl,
 if you were using the following FSDP1 config:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_sharding_strategy</span><span class="kw">:</span><span class="at"> FULL_SHARD</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>You can migrate to the following FSDP2 config:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>When using <code>auto_wrap_policy: SIZE_BASED_WRAP</code>, set <code>min_num_params</code> to the minimum parameter count a module must have to be wrapped (e.g.&nbsp;<code>100000000</code>).</p>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_sharding_strategy</span><span class="kw">:</span><span class="at"> FULL_SHARD</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>You can migrate to the following FSDP2 config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-</section>
-<section id="sec-fsdp-config" class="level3">
-<h3 class="anchored" data-anchor-id="sec-fsdp-config">FSDP1 (deprecated)</h3>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Note
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Using <code>fsdp</code> to configure FSDP is deprecated and will be removed in an upcoming release of Axolotl. Please use <code>fsdp_config</code> as above instead.</p>
-</div>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> full_shard</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> auto_wrap</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> LlamaDecoderLayer</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="sec-sequence-parallelism" class="level2">
@@ -1711,122 +1707,117 @@ single sequence causes OOM errors during model training.</p>
 <span id="cb6-75"><a href="#cb6-75" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-76"><a href="#cb6-76" aria-hidden="true" tabindex="-1"></a>::: {.callout-note}</span>
 <span id="cb6-77"><a href="#cb6-77" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-78"><a href="#cb6-78" aria-hidden="true" tabindex="-1"></a>FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl.</span>
+<span id="cb6-78"><a href="#cb6-78" aria-hidden="true" tabindex="-1"></a>Only FSDP2 is supported. FSDP1 has been removed, and setting <span class="in">`fsdp_version: 1`</span> raises an error.</span>
 <span id="cb6-79"><a href="#cb6-79" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-80"><a href="#cb6-80" aria-hidden="true" tabindex="-1"></a>:::</span>
 <span id="cb6-81"><a href="#cb6-81" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-82"><a href="#cb6-82" aria-hidden="true" tabindex="-1"></a><span class="fu">### FSDP + QLoRA {#sec-fsdp-qlora}</span></span>
+<span id="cb6-82"><a href="#cb6-82" aria-hidden="true" tabindex="-1"></a><span class="fu">### Configuration {#sec-fsdp-config}</span></span>
 <span id="cb6-83"><a href="#cb6-83" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-84"><a href="#cb6-84" aria-hidden="true" tabindex="-1"></a>For combining FSDP with QLoRA, see our <span class="co">[</span><span class="ot">dedicated guide</span><span class="co">](fsdp_qlora.qmd)</span>.</span>
-<span id="cb6-85"><a href="#cb6-85" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-86"><a href="#cb6-86" aria-hidden="true" tabindex="-1"></a><span class="fu">### Migrating from FSDP1 to FSDP2 {#sec-migrate-fsdp1-fsdp2}</span></span>
-<span id="cb6-87"><a href="#cb6-87" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-88"><a href="#cb6-88" aria-hidden="true" tabindex="-1"></a>To migrate your config from FSDP1 to FSDP2, you must use the <span class="in">`fsdp_version`</span> top-level config field to specify the FSDP version, and</span>
-<span id="cb6-89"><a href="#cb6-89" aria-hidden="true" tabindex="-1"></a>also follow the config field mapping below to update field names.</span>
-<span id="cb6-90"><a href="#cb6-90" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-91"><a href="#cb6-91" aria-hidden="true" tabindex="-1"></a><span class="fu">#### Config mapping</span></span>
-<span id="cb6-92"><a href="#cb6-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-93"><a href="#cb6-93" aria-hidden="true" tabindex="-1"></a>FSDP1 | FSDP2</span>
-<span id="cb6-94"><a href="#cb6-94" aria-hidden="true" tabindex="-1"></a>-------- | --------</span>
-<span id="cb6-95"><a href="#cb6-95" aria-hidden="true" tabindex="-1"></a>fsdp_sharding_strategy | reshard_after_forward</span>
-<span id="cb6-96"><a href="#cb6-96" aria-hidden="true" tabindex="-1"></a>fsdp_backward_prefetch_policy | **REMOVED**</span>
-<span id="cb6-97"><a href="#cb6-97" aria-hidden="true" tabindex="-1"></a>fsdp_backward_prefetch | **REMOVED**</span>
-<span id="cb6-98"><a href="#cb6-98" aria-hidden="true" tabindex="-1"></a>fsdp_forward_prefetch | **REMOVED**</span>
-<span id="cb6-99"><a href="#cb6-99" aria-hidden="true" tabindex="-1"></a>fsdp_sync_module_states | **REMOVED**</span>
-<span id="cb6-100"><a href="#cb6-100" aria-hidden="true" tabindex="-1"></a>fsdp_cpu_ram_efficient_loading | cpu_ram_efficient_loading</span>
-<span id="cb6-101"><a href="#cb6-101" aria-hidden="true" tabindex="-1"></a>fsdp_state_dict_type | state_dict_type</span>
-<span id="cb6-102"><a href="#cb6-102" aria-hidden="true" tabindex="-1"></a>fsdp_use_orig_params | **REMOVED**</span>
-<span id="cb6-103"><a href="#cb6-103" aria-hidden="true" tabindex="-1"></a>fsdp_activation_checkpointing | activation_checkpointing</span>
-<span id="cb6-104"><a href="#cb6-104" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-105"><a href="#cb6-105" aria-hidden="true" tabindex="-1"></a>For more details, please see the migration guide in the <span class="co">[</span><span class="ot">torchtitan repo</span><span class="co">](https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md)</span>. In Axolotl,</span>
-<span id="cb6-106"><a href="#cb6-106" aria-hidden="true" tabindex="-1"></a>if you were using the following FSDP1 config:</span>
+<span id="cb6-84"><a href="#cb6-84" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
+<span id="cb6-85"><a href="#cb6-85" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb6-86"><a href="#cb6-86" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb6-87"><a href="#cb6-87" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb6-88"><a href="#cb6-88" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-89"><a href="#cb6-89" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb6-90"><a href="#cb6-90" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
+<span id="cb6-91"><a href="#cb6-91" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb6-92"><a href="#cb6-92" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-93"><a href="#cb6-93" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb6-94"><a href="#cb6-94" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-95"><a href="#cb6-95" aria-hidden="true" tabindex="-1"></a>When using <span class="in">`auto_wrap_policy: SIZE_BASED_WRAP`</span>, set <span class="in">`min_num_params`</span> to the minimum parameter count a module must have to be wrapped (e.g. <span class="in">`100000000`</span>).</span>
+<span id="cb6-96"><a href="#cb6-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-97"><a href="#cb6-97" aria-hidden="true" tabindex="-1"></a><span class="fu">### FSDP + QLoRA {#sec-fsdp-qlora}</span></span>
+<span id="cb6-98"><a href="#cb6-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-99"><a href="#cb6-99" aria-hidden="true" tabindex="-1"></a>For combining FSDP with QLoRA, see our <span class="co">[</span><span class="ot">dedicated guide</span><span class="co">](fsdp_qlora.qmd)</span>.</span>
+<span id="cb6-100"><a href="#cb6-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-101"><a href="#cb6-101" aria-hidden="true" tabindex="-1"></a><span class="fu">### Migrating from FSDP1 to FSDP2 {#sec-migrate-fsdp1-fsdp2}</span></span>
+<span id="cb6-102"><a href="#cb6-102" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-103"><a href="#cb6-103" aria-hidden="true" tabindex="-1"></a>FSDP1 has been removed. <span class="in">`fsdp_version: 1`</span> and the bare top-level <span class="in">`fsdp:`</span> list are rejected, and <span class="in">`fsdp_version`</span> defaults to <span class="in">`2`</span>.</span>
+<span id="cb6-104"><a href="#cb6-104" aria-hidden="true" tabindex="-1"></a>To migrate an FSDP1 config, replace the <span class="in">`fsdp:`</span> list with <span class="in">`fsdp_config:`</span> and follow the config field mapping below to update field names.</span>
+<span id="cb6-105"><a href="#cb6-105" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-106"><a href="#cb6-106" aria-hidden="true" tabindex="-1"></a><span class="fu">#### Config mapping</span></span>
 <span id="cb6-107"><a href="#cb6-107" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-108"><a href="#cb6-108" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
-<span id="cb6-109"><a href="#cb6-109" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb6-110"><a href="#cb6-110" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb6-111"><a href="#cb6-111" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb6-112"><a href="#cb6-112" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-113"><a href="#cb6-113" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
-<span id="cb6-114"><a href="#cb6-114" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
-<span id="cb6-115"><a href="#cb6-115" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb6-116"><a href="#cb6-116" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_sharding_strategy</span><span class="kw">:</span><span class="at"> FULL_SHARD</span></span>
-<span id="cb6-117"><a href="#cb6-117" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb6-118"><a href="#cb6-118" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-119"><a href="#cb6-119" aria-hidden="true" tabindex="-1"></a>You can migrate to the following FSDP2 config:</span>
+<span id="cb6-108"><a href="#cb6-108" aria-hidden="true" tabindex="-1"></a>FSDP1 | FSDP2</span>
+<span id="cb6-109"><a href="#cb6-109" aria-hidden="true" tabindex="-1"></a>-------- | --------</span>
+<span id="cb6-110"><a href="#cb6-110" aria-hidden="true" tabindex="-1"></a>fsdp_sharding_strategy | reshard_after_forward</span>
+<span id="cb6-111"><a href="#cb6-111" aria-hidden="true" tabindex="-1"></a>fsdp_backward_prefetch_policy | **REMOVED** (dropped with a warning)</span>
+<span id="cb6-112"><a href="#cb6-112" aria-hidden="true" tabindex="-1"></a>fsdp_backward_prefetch | **REMOVED** (dropped with a warning)</span>
+<span id="cb6-113"><a href="#cb6-113" aria-hidden="true" tabindex="-1"></a>fsdp_forward_prefetch | **REMOVED** (rejected with an error)</span>
+<span id="cb6-114"><a href="#cb6-114" aria-hidden="true" tabindex="-1"></a>fsdp_sync_module_states | **REMOVED** (dropped with a warning)</span>
+<span id="cb6-115"><a href="#cb6-115" aria-hidden="true" tabindex="-1"></a>fsdp_limit_all_gathers | **REMOVED** (dropped with a warning)</span>
+<span id="cb6-116"><a href="#cb6-116" aria-hidden="true" tabindex="-1"></a>fsdp_cpu_ram_efficient_loading | cpu_ram_efficient_loading</span>
+<span id="cb6-117"><a href="#cb6-117" aria-hidden="true" tabindex="-1"></a>fsdp_state_dict_type | state_dict_type</span>
+<span id="cb6-118"><a href="#cb6-118" aria-hidden="true" tabindex="-1"></a>fsdp_use_orig_params | **REMOVED** (dropped with a warning; FSDP2 always trains original parameters)</span>
+<span id="cb6-119"><a href="#cb6-119" aria-hidden="true" tabindex="-1"></a>fsdp_activation_checkpointing | activation_checkpointing</span>
 <span id="cb6-120"><a href="#cb6-120" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-121"><a href="#cb6-121" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
-<span id="cb6-122"><a href="#cb6-122" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb6-123"><a href="#cb6-123" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb6-124"><a href="#cb6-124" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb6-125"><a href="#cb6-125" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-126"><a href="#cb6-126" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
-<span id="cb6-127"><a href="#cb6-127" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
-<span id="cb6-128"><a href="#cb6-128" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb6-129"><a href="#cb6-129" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-130"><a href="#cb6-130" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb6-131"><a href="#cb6-131" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-132"><a href="#cb6-132" aria-hidden="true" tabindex="-1"></a>When using <span class="in">`auto_wrap_policy: SIZE_BASED_WRAP`</span>, set <span class="in">`min_num_params`</span> to the minimum parameter count a module must have to be wrapped (e.g. <span class="in">`100000000`</span>).</span>
-<span id="cb6-133"><a href="#cb6-133" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-134"><a href="#cb6-134" aria-hidden="true" tabindex="-1"></a><span class="fu">### FSDP1 (deprecated) {#sec-fsdp-config}</span></span>
-<span id="cb6-135"><a href="#cb6-135" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-136"><a href="#cb6-136" aria-hidden="true" tabindex="-1"></a>::: {.callout-note}</span>
-<span id="cb6-137"><a href="#cb6-137" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-138"><a href="#cb6-138" aria-hidden="true" tabindex="-1"></a>Using <span class="in">`fsdp`</span> to configure FSDP is deprecated and will be removed in an upcoming release of Axolotl. Please use <span class="in">`fsdp_config`</span> as above instead.</span>
-<span id="cb6-139"><a href="#cb6-139" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-140"><a href="#cb6-140" aria-hidden="true" tabindex="-1"></a>:::</span>
-<span id="cb6-141"><a href="#cb6-141" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-142"><a href="#cb6-142" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
-<span id="cb6-143"><a href="#cb6-143" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
-<span id="cb6-144"><a href="#cb6-144" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span>full_shard</span>
-<span id="cb6-145"><a href="#cb6-145" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span>auto_wrap</span>
-<span id="cb6-146"><a href="#cb6-146" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb6-147"><a href="#cb6-147" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-148"><a href="#cb6-148" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb6-149"><a href="#cb6-149" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> LlamaDecoderLayer</span></span>
-<span id="cb6-150"><a href="#cb6-150" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb6-151"><a href="#cb6-151" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-152"><a href="#cb6-152" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-153"><a href="#cb6-153" aria-hidden="true" tabindex="-1"></a><span class="fu">## Sequence parallelism {#sec-sequence-parallelism}</span></span>
+<span id="cb6-121"><a href="#cb6-121" aria-hidden="true" tabindex="-1"></a>For more details, please see the migration guide in the <span class="co">[</span><span class="ot">torchtitan repo</span><span class="co">](https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md)</span>. In Axolotl,</span>
+<span id="cb6-122"><a href="#cb6-122" aria-hidden="true" tabindex="-1"></a>if you were using the following FSDP1 config:</span>
+<span id="cb6-123"><a href="#cb6-123" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-124"><a href="#cb6-124" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
+<span id="cb6-125"><a href="#cb6-125" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb6-126"><a href="#cb6-126" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb6-127"><a href="#cb6-127" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb6-128"><a href="#cb6-128" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-129"><a href="#cb6-129" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb6-130"><a href="#cb6-130" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
+<span id="cb6-131"><a href="#cb6-131" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb6-132"><a href="#cb6-132" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_sharding_strategy</span><span class="kw">:</span><span class="at"> FULL_SHARD</span></span>
+<span id="cb6-133"><a href="#cb6-133" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb6-134"><a href="#cb6-134" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-135"><a href="#cb6-135" aria-hidden="true" tabindex="-1"></a>You can migrate to the following FSDP2 config:</span>
+<span id="cb6-136"><a href="#cb6-136" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-137"><a href="#cb6-137" aria-hidden="true" tabindex="-1"></a><span class="in">```{.yaml}</span></span>
+<span id="cb6-138"><a href="#cb6-138" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb6-139"><a href="#cb6-139" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb6-140"><a href="#cb6-140" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload_params</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb6-141"><a href="#cb6-141" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-142"><a href="#cb6-142" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb6-143"><a href="#cb6-143" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3DecoderLayer</span></span>
+<span id="cb6-144"><a href="#cb6-144" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
+<span id="cb6-145"><a href="#cb6-145" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb6-146"><a href="#cb6-146" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb6-147"><a href="#cb6-147" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-148"><a href="#cb6-148" aria-hidden="true" tabindex="-1"></a><span class="fu">## Sequence parallelism {#sec-sequence-parallelism}</span></span>
+<span id="cb6-149"><a href="#cb6-149" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-150"><a href="#cb6-150" aria-hidden="true" tabindex="-1"></a>We support sequence parallelism (SP) via the</span>
+<span id="cb6-151"><a href="#cb6-151" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">ring-flash-attention</span><span class="co">](https://github.com/zhuzilin/ring-flash-attention)</span> project. This</span>
+<span id="cb6-152"><a href="#cb6-152" aria-hidden="true" tabindex="-1"></a>allows one to split up sequences across GPUs, which is useful in the event that a</span>
+<span id="cb6-153"><a href="#cb6-153" aria-hidden="true" tabindex="-1"></a>single sequence causes OOM errors during model training.</span>
 <span id="cb6-154"><a href="#cb6-154" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-155"><a href="#cb6-155" aria-hidden="true" tabindex="-1"></a>We support sequence parallelism (SP) via the</span>
-<span id="cb6-156"><a href="#cb6-156" aria-hidden="true" tabindex="-1"></a><span class="co">[</span><span class="ot">ring-flash-attention</span><span class="co">](https://github.com/zhuzilin/ring-flash-attention)</span> project. This</span>
-<span id="cb6-157"><a href="#cb6-157" aria-hidden="true" tabindex="-1"></a>allows one to split up sequences across GPUs, which is useful in the event that a</span>
-<span id="cb6-158"><a href="#cb6-158" aria-hidden="true" tabindex="-1"></a>single sequence causes OOM errors during model training.</span>
-<span id="cb6-159"><a href="#cb6-159" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-160"><a href="#cb6-160" aria-hidden="true" tabindex="-1"></a>See our <span class="co">[</span><span class="ot">dedicated guide</span><span class="co">](sequence_parallelism.qmd)</span> for more information.</span>
-<span id="cb6-161"><a href="#cb6-161" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-162"><a href="#cb6-162" aria-hidden="true" tabindex="-1"></a><span class="fu">## Performance Optimization {#sec-performance}</span></span>
-<span id="cb6-163"><a href="#cb6-163" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-164"><a href="#cb6-164" aria-hidden="true" tabindex="-1"></a><span class="fu">### Liger Kernel Integration {#sec-liger}</span></span>
-<span id="cb6-165"><a href="#cb6-165" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-166"><a href="#cb6-166" aria-hidden="true" tabindex="-1"></a>Please see <span class="co">[</span><span class="ot">docs</span><span class="co">](custom_integrations.qmd#liger)</span> for more info.</span>
-<span id="cb6-167"><a href="#cb6-167" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-168"><a href="#cb6-168" aria-hidden="true" tabindex="-1"></a><span class="fu">## Troubleshooting {#sec-troubleshooting}</span></span>
-<span id="cb6-169"><a href="#cb6-169" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-170"><a href="#cb6-170" aria-hidden="true" tabindex="-1"></a><span class="fu">### NCCL Issues {#sec-nccl}</span></span>
-<span id="cb6-171"><a href="#cb6-171" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-172"><a href="#cb6-172" aria-hidden="true" tabindex="-1"></a>For NCCL-related problems, see our <span class="co">[</span><span class="ot">NCCL troubleshooting guide</span><span class="co">](nccl.qmd)</span>.</span>
-<span id="cb6-173"><a href="#cb6-173" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-174"><a href="#cb6-174" aria-hidden="true" tabindex="-1"></a><span class="fu">### Common Problems {#sec-common-problems}</span></span>
-<span id="cb6-175"><a href="#cb6-175" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-176"><a href="#cb6-176" aria-hidden="true" tabindex="-1"></a>::: {.panel-tabset}</span>
-<span id="cb6-177"><a href="#cb6-177" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-178"><a href="#cb6-178" aria-hidden="true" tabindex="-1"></a><span class="fu">## Memory Issues</span></span>
+<span id="cb6-155"><a href="#cb6-155" aria-hidden="true" tabindex="-1"></a>See our <span class="co">[</span><span class="ot">dedicated guide</span><span class="co">](sequence_parallelism.qmd)</span> for more information.</span>
+<span id="cb6-156"><a href="#cb6-156" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-157"><a href="#cb6-157" aria-hidden="true" tabindex="-1"></a><span class="fu">## Performance Optimization {#sec-performance}</span></span>
+<span id="cb6-158"><a href="#cb6-158" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-159"><a href="#cb6-159" aria-hidden="true" tabindex="-1"></a><span class="fu">### Liger Kernel Integration {#sec-liger}</span></span>
+<span id="cb6-160"><a href="#cb6-160" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-161"><a href="#cb6-161" aria-hidden="true" tabindex="-1"></a>Please see <span class="co">[</span><span class="ot">docs</span><span class="co">](custom_integrations.qmd#liger)</span> for more info.</span>
+<span id="cb6-162"><a href="#cb6-162" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-163"><a href="#cb6-163" aria-hidden="true" tabindex="-1"></a><span class="fu">## Troubleshooting {#sec-troubleshooting}</span></span>
+<span id="cb6-164"><a href="#cb6-164" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-165"><a href="#cb6-165" aria-hidden="true" tabindex="-1"></a><span class="fu">### NCCL Issues {#sec-nccl}</span></span>
+<span id="cb6-166"><a href="#cb6-166" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-167"><a href="#cb6-167" aria-hidden="true" tabindex="-1"></a>For NCCL-related problems, see our <span class="co">[</span><span class="ot">NCCL troubleshooting guide</span><span class="co">](nccl.qmd)</span>.</span>
+<span id="cb6-168"><a href="#cb6-168" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-169"><a href="#cb6-169" aria-hidden="true" tabindex="-1"></a><span class="fu">### Common Problems {#sec-common-problems}</span></span>
+<span id="cb6-170"><a href="#cb6-170" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-171"><a href="#cb6-171" aria-hidden="true" tabindex="-1"></a>::: {.panel-tabset}</span>
+<span id="cb6-172"><a href="#cb6-172" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-173"><a href="#cb6-173" aria-hidden="true" tabindex="-1"></a><span class="fu">## Memory Issues</span></span>
+<span id="cb6-174"><a href="#cb6-174" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-175"><a href="#cb6-175" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Reduce <span class="in">`micro_batch_size`</span></span>
+<span id="cb6-176"><a href="#cb6-176" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Reduce <span class="in">`eval_batch_size`</span></span>
+<span id="cb6-177"><a href="#cb6-177" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Adjust <span class="in">`gradient_accumulation_steps`</span></span>
+<span id="cb6-178"><a href="#cb6-178" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Consider using a higher ZeRO stage</span>
 <span id="cb6-179"><a href="#cb6-179" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-180"><a href="#cb6-180" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Reduce <span class="in">`micro_batch_size`</span></span>
-<span id="cb6-181"><a href="#cb6-181" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Reduce <span class="in">`eval_batch_size`</span></span>
-<span id="cb6-182"><a href="#cb6-182" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Adjust <span class="in">`gradient_accumulation_steps`</span></span>
-<span id="cb6-183"><a href="#cb6-183" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Consider using a higher ZeRO stage</span>
-<span id="cb6-184"><a href="#cb6-184" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-185"><a href="#cb6-185" aria-hidden="true" tabindex="-1"></a><span class="fu">## Training Instability</span></span>
-<span id="cb6-186"><a href="#cb6-186" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-187"><a href="#cb6-187" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Start with DeepSpeed ZeRO-2</span>
-<span id="cb6-188"><a href="#cb6-188" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Monitor loss values</span>
-<span id="cb6-189"><a href="#cb6-189" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Check learning rates</span>
-<span id="cb6-190"><a href="#cb6-190" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-191"><a href="#cb6-191" aria-hidden="true" tabindex="-1"></a>:::</span>
-<span id="cb6-192"><a href="#cb6-192" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-193"><a href="#cb6-193" aria-hidden="true" tabindex="-1"></a>For more detailed troubleshooting, see our <span class="co">[</span><span class="ot">debugging guide</span><span class="co">](debugging.qmd)</span>.</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+<span id="cb6-180"><a href="#cb6-180" aria-hidden="true" tabindex="-1"></a><span class="fu">## Training Instability</span></span>
+<span id="cb6-181"><a href="#cb6-181" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-182"><a href="#cb6-182" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Start with DeepSpeed ZeRO-2</span>
+<span id="cb6-183"><a href="#cb6-183" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Monitor loss values</span>
+<span id="cb6-184"><a href="#cb6-184" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Check learning rates</span>
+<span id="cb6-185"><a href="#cb6-185" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-186"><a href="#cb6-186" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb6-187"><a href="#cb6-187" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-188"><a href="#cb6-188" aria-hidden="true" tabindex="-1"></a>For more detailed troubleshooting, see our <span class="co">[</span><span class="ot">debugging guide</span><span class="co">](debugging.qmd)</span>.</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 

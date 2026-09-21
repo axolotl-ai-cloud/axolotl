@@ -909,6 +909,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.loaders.model.ModelLoader" id="toc-axolotl.loaders.model.ModelLoader" class="nav-link" data-scroll-target="#axolotl.loaders.model.ModelLoader">ModelLoader</a></li>
   </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.loaders.model.should_convert_embedding_dtypes" id="toc-axolotl.loaders.model.should_convert_embedding_dtypes" class="nav-link" data-scroll-target="#axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</a></li>
+  <li><a href="#axolotl.loaders.model.should_skip_peft_embedding_upcast" id="toc-axolotl.loaders.model.should_skip_peft_embedding_upcast" class="nav-link" data-scroll-target="#axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -1059,11 +1064,44 @@ adapter integration, and various optimizations.</p>
 </tr>
 </tbody>
 </table>
+</section>
+</section>
+</section>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</a></td>
+<td>Whether the post-quantization pass converts modules back to <code>torch_dtype</code>.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</a></td>
+<td>Whether PEFT’s kbit preparation should leave the embeddings alone.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.loaders.model.should_convert_embedding_dtypes" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_convert_embedding_dtypes(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether the post-quantization pass converts modules back to <code>torch_dtype</code>.</p>
+</section>
+<section id="axolotl.loaders.model.should_skip_peft_embedding_upcast" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_skip_peft_embedding_upcast(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether PEFT’s kbit preparation should leave the embeddings alone.</p>
+<p>Upcasting them there is pure peak memory whenever the later conversion back to
+<code>torch_dtype</code> reverts it, so skip it then unless the user asked otherwise.</p>
 
 
-</section>
-</section>
-</section>
 </section>
 </section>
 </section>

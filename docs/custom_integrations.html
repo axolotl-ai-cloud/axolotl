@@ -1547,12 +1547,12 @@ The quick brown fox jumps over the loud dog</code></pre>
 <p>For composition with FSDP at 4+ GPUs, set both <code>expert_parallel_size</code> and <code>dp_shard_size</code>. The product must equal <code>world_size</code>:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">expert_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="fu">dp_shard_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
 <span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
 <span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3MoeDecoderLayer</span></span>
 <span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sharding_strategy</span><span class="kw">:</span><span class="at"> FULL_SHARD</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See full example configs at <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/expert_parallel"><code>examples/expert_parallel/</code></a>.</p>
 <section id="implementation-notes" class="level4">
 <h4 class="anchored" data-anchor-id="implementation-notes">Implementation notes</h4>

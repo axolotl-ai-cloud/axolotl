@@ -1030,16 +1030,11 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 <td><code>find_unused_parameters</code> is skipped (conflicts with checkpoint wrappers)</td>
 </tr>
 <tr class="odd">
-<td>FSDP1</td>
-<td>No</td>
-<td>OOM during dequantization/sharding with QLoRA</td>
-</tr>
-<tr class="even">
 <td>FSDP2</td>
 <td>Yes</td>
 <td>Use <code>Gemma4TextDecoderLayer</code> (not <code>Gemma4DecoderLayer</code>) as wrap class</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>FSDP2 + activation_offloading</td>
 <td>Yes</td>
 <td>Lowest VRAM (~26 GiB/GPU for 26B-A4B)</td>
@@ -1047,13 +1042,10 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 </tbody>
 </table>
 <p>FSDP2 config:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> full_shard</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> auto_wrap</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Gemma4TextDecoderLayer</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Gemma4TextDecoderLayer</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="moe-26b-a4b" class="level3">
 <h3 class="anchored" data-anchor-id="moe-26b-a4b">MoE (26B-A4B)</h3>
@@ -1129,7 +1121,7 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 <tr class="even">
 <td>FSDP2 <code>Could not find Gemma4AudioLayer</code></td>
 <td>Auto-wrap detects <code>_no_split_modules</code> including audio layers that don’t exist</td>
-<td>Explicitly set <code>fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer</code></td>
+<td>Explicitly set <code>fsdp_config.transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer</code></td>
 </tr>
 <tr class="odd">
 <td><code>Gemma4ClippableLinear not supported</code> by PEFT</td>

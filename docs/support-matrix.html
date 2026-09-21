@@ -1253,36 +1253,31 @@ Note
 <td>TP</td>
 </tr>
 <tr class="odd">
-<td>FSDP1 🔴</td>
-<td><code>fsdp_version: 1</code></td>
-<td><em>(deprecated, use FSDP2)</em></td>
-</tr>
-<tr class="even">
 <td>FSDP2</td>
-<td><code>fsdp_version: 2</code> + <code>fsdp_config:</code></td>
+<td><code>fsdp_version: 2</code> (default) + <code>fsdp_config:</code></td>
 <td>TP, CP, EP</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>FSDP + QLoRA</td>
 <td><code>adapter: qlora</code> + FSDP2</td>
 <td>70B on consumer GPUs</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Tensor Parallel (TP) 🟡</td>
 <td><code>tensor_parallel_size:</code></td>
 <td>FSDP2</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Context/Sequence Parallel (CP)</td>
 <td><code>context_parallel_size:</code></td>
 <td>FSDP2, ring-flash-attn</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Expert Parallel (EP) 🟡</td>
 <td>plugin <code>expert_parallel</code> + <code>expert_parallel_size:</code></td>
 <td>FSDP2 (DeepEP backend)</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡</td>
 <td>combine <code>dp_replicate</code>/<code>dp_shard</code>/<code>tp</code>/<code>cp</code>/<code>ep</code></td>
 <td>see <a href="../docs/nd_parallelism.html">nd_parallelism</a></td>
@@ -1488,7 +1483,7 @@ Warning
 <tr class="even">
 <td>Fused LoRA-MLP/QKV/O kernels</td>
 <td><code>lora_mlp_kernel</code> / <code>lora_qkv_kernel</code> / <code>lora_o_kernel</code></td>
-<td>SFT + FSDP2 only; ⚪ not RLHF, not FSDP1, not <code>trust_remote_code</code></td>
+<td>SFT + FSDP2 only; ⚪ not RLHF, not <code>trust_remote_code</code></td>
 </tr>
 <tr class="odd">
 <td>Tiled MLP</td>
@@ -1851,11 +1846,11 @@ Warning
 <tr class="even">
 <td>FSDP2</td>
 <td>4/8-bit + DPO/KTO/ORPO/IPO</td>
-<td>use DeepSpeed or FSDP1</td>
+<td>use DeepSpeed</td>
 </tr>
 <tr class="odd">
 <td>LoRA kernels</td>
-<td>FSDP1 / <code>trust_remote_code</code> / RLHF</td>
+<td><code>trust_remote_code</code> / RLHF</td>
 <td>SFT + FSDP2 only</td>
 </tr>
 <tr class="even">
@@ -1896,11 +1891,10 @@ Warning
 <section id="deprecated-still-works" class="level3">
 <h3 class="anchored" data-anchor-id="deprecated-still-works">🔴 Deprecated (still works)</h3>
 <ul>
-<li><code>fsdp_version: 1</code> and bare <code>fsdp:</code>: use <code>fsdp_config</code></li>
 <li>Legacy attention booleans: use <code>attn_implementation</code></li>
 <li><code>rl: ipo</code> direct: use <code>dpo_loss_type: [ipo]</code></li>
 <li><code>noisy_embedding_alpha</code>, <code>dpo_beta</code>, <code>evaluation_strategy</code></li>
-<li>Removed entirely: <code>s2_attention</code>, <code>flash_attn_rms_norm</code></li>
+<li>Removed entirely: FSDP1 (<code>fsdp_version: 1</code> and the bare <code>fsdp:</code> list are now rejected; use <code>fsdp_config:</code>), <code>s2_attention</code>, <code>flash_attn_rms_norm</code></li>
 </ul>
 </section>
 <section id="not-supported-yet-planned" class="level3">

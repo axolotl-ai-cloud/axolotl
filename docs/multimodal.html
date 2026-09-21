@@ -1171,7 +1171,7 @@ Tip
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>For DDP training, axolotl auto-detects Gemma4 and sets <code>use_reentrant=False</code> and <code>ddp_find_unused_parameters=True</code>. However, when <code>activation_offloading: true</code>, <code>ddp_find_unused_parameters</code> is skipped (checkpoint wrappers conflict with it); use <code>freeze_mm_modules: true</code> instead to handle unused vision/audio params. For FSDP2, use <code>fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer</code>.</p>
+<p>For DDP training, axolotl auto-detects Gemma4 and sets <code>use_reentrant=False</code> and <code>ddp_find_unused_parameters=True</code>. However, when <code>activation_offloading: true</code>, <code>ddp_find_unused_parameters</code> is skipped (checkpoint wrappers conflict with it); use <code>freeze_mm_modules: true</code> instead to handle unused vision/audio params. For FSDP2, use <code>fsdp_config.transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer</code>.</p>
 </div>
 </div>
 </section>

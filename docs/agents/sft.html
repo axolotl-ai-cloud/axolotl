@@ -1154,7 +1154,7 @@ Multi-GPU: FSDP or DeepSpeed shards model across GPUs automatically.</code></pre
 </tr>
 <tr class="odd">
 <td>FSDP save hangs</td>
-<td>Use <code>fsdp_state_dict_type: FULL_STATE_DICT</code></td>
+<td>Set <code>state_dict_type: FULL_STATE_DICT</code> in <code>fsdp_config</code></td>
 </tr>
 <tr class="even">
 <td>DeepSpeed CheckpointError</td>
