@@ -105,6 +105,67 @@ LoRA kernels do not support remote modeling code.
 Models with pre-existing LoRA adapters that use Dropout or have bias terms may need to
 be re-finetuned without these features in order to be useful.
 
+## B200-optimized LoRA MLP kernel (experimental)
+
+On NVIDIA B200 (sm_100, compute capability `(10, 0)`), an opt-in factored LoRA
+MLP kernel is available that replaces the standard SwiGLU MLP path with a
+B200-tuned cuBLAS + Triton implementation:
+
+```yaml
+adapter: lora
+lora_dropout: 0
+lora_mlp_kernel: true
+lora_mlp_kernel_b200: true
+```
+
+Certified (B200, bf16, Llama-3-8B MLP shape `4096x14336`, 4096
+tokens/micro-batch, ranks 8-64): 1.01-1.17x speed vs the reference factored
+implementation across grad-accumulation regimes, ~1.00-1.01x peak memory,
+29 kernel launches per fwd+bwd step (vs 38).
+
+The kernel is **hard-gated at runtime to compute capability `(10, 0)`**: on
+any other device (H100, sm_120 workstation Blackwell, etc.) the flag logs a
+warning and the standard `lora_mlp_kernel` path runs unmodified. The
+per-architecture tunings do not transfer, so no attempt is made to run it
+elsewhere.
+
+Requirements and limitations:
+
+- `adapter: lora` with bf16 base weights only. QLoRA / quantized bases are
+  unsupported and rejected at config validation.
+- SwiGLU MLPs only (`silu` activation); no LoRA dropout, no bias, no DoRA.
+- Not traceable by `torch.compile`: the kernel writes into non-contiguous
+  buffer slices, which Dynamo cannot trace. It is wrapped in
+  `torch.compiler.disable`, so a compiled model graph-breaks around the MLP
+  blocks rather than failing.
+- Untested with FSDP/DeepSpeed sharding (rejected at config validation) and
+  with sequence lengths / model shapes far outside the certified grid --
+  correctness is shape-independent, but the speed/memory wins were only
+  measured on the shapes above.
+- Numerical parity is certified at the single-block level (fp32-reference
+  Frobenius relative error < 2%). Treat full-run loss curves as your own
+  validation gate before relying on it for a production run.
+
+For the certified memory figures, set the cuBLAS workspace cap **in the
+process launch environment** (it is read once, at cuBLAS handle creation):
+
+```bash
+CUBLAS_WORKSPACE_CONFIG=":4096:2" axolotl train config.yaml
+```
+
+Axolotl also applies this value best-effort at config-validation time when
+unset, and never overrides an explicit different value. `":16:8"` is the
+bitwise-deterministic alternative (one of cuBLAS's two documented
+deterministic settings) with slightly lower memory and a narrower certified
+speed margin.
+
+Regression goldens (kernel launch counts and required/forbidden kernel names,
+keyed by compute capability) live in
+`tests/e2e/kernels/blackwell_launch_budgets.json`; the update procedure is
+documented in that file's `_meta.how_to_update` key. If a deliberate kernel
+change moves a number, re-certify and update the golden in place -- never
+widen an assertion to accept a range.
+
 ## Implementation details
 
 ### Custom autograd functions
