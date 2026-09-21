@@ -164,6 +164,8 @@ def _simulate_nf4_roundtrip(
     blocksize: Optional[int] = None,
     compress_statistics: bool = True,
     device: Optional[Union[str, torch.device]] = None,
+    backend: str = "bitsandbytes",
+    quantization_dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     """
     Simulate NF4 quantization roundtrip to match QLoRA training dynamics.
@@ -178,13 +180,19 @@ def _simulate_nf4_roundtrip(
         tensor: Base model weight tensor (fp16/bf16/fp32)
         blocksize: NF4 quantization block size (default: bitsandbytes default)
         compress_statistics: Whether to use double quantization
-        device: Device for quantization computation.  bitsandbytes requires a
-            CUDA device; defaults to "cuda" when available.
+        device: Device for quantization computation; defaults to CUDA.
+            Pass "cpu" to use the CPU implementations.
+        backend: NF4 implementation, "bitsandbytes" or "torchao".
+        quantization_dtype: Dtype used when loading the training base, before quantization.
 
     Returns:
         Tensor after NF4 quantize → dequantize roundtrip, in original dtype
     """
-    import bitsandbytes.functional as bnb_F
+    from axolotl.utils.nf4 import (
+        dequantize_bnb_4bit,
+        quantize_bnb_4bit,
+        quantize_torchao_nf4,
+    )
 
     quant_device: torch.device
     if device is None:
@@ -202,21 +210,29 @@ def _simulate_nf4_roundtrip(
 
     original_dtype = tensor.dtype
     original_shape = tensor.shape
+    tensor = tensor.to(quantization_dtype or original_dtype)
 
-    # bitsandbytes requires float32 input for quantization and contiguous+CUDA tensor
-    flat = tensor.reshape(-1).to(torch.float32).contiguous().to(quant_device)
-
-    quant_kwargs = {
-        "quant_type": "nf4",
-        "compress_statistics": compress_statistics,
-    }
-    if blocksize is not None:
-        quant_kwargs["blocksize"] = blocksize
-
-    quantized, quant_state = bnb_F.quantize_4bit(flat, **quant_kwargs)
-    dequantized = bnb_F.dequantize_4bit(quantized, quant_state, quant_type="nf4")
-
-    return dequantized.reshape(original_shape).to(original_dtype).cpu()
+    if backend == "torchao":
+        data, transform = quantize_torchao_nf4(tensor, device=quant_device)
+        return transform(data).reshape(original_shape).to(original_dtype).cpu()
+    if backend != "bitsandbytes":
+        raise ValueError(f"Unknown NF4 backend: {backend}")
+    # dequantize on quant_device rather than falling back to the CPU kernel, streaming the
+    # result into a CPU output so a large fused expert tensor never lands on the accelerator
+    # in full. Values are unchanged either way: dequantization is device-independent.
+    data, state = quantize_bnb_4bit(
+        tensor,
+        device=quant_device,
+        storage_device=quant_device,
+        blocksize=blocksize or 64,
+        compress_statistics=compress_statistics,
+    )
+    out = torch.empty(state.shape, dtype=state.dtype, device="cpu")
+    return (
+        dequantize_bnb_4bit(data, state, out=out)
+        .reshape(original_shape)
+        .to(original_dtype)
+    )
 
 
 def find_lora_weights(
@@ -1372,6 +1388,39 @@ def _warn_if_quant_undequantized(key: str, tensor: torch.Tensor, do_nf4: bool) -
     )
 
 
+def _lookup_layer_type(
+    layer_type_map: Optional[Dict[str, str]], key: str
+) -> Optional[str]:
+    """Resolve a checkpoint key to its runtime module type across prefix variations."""
+    if not layer_type_map:
+        return None
+    mod_path = key.removesuffix(".weight")
+    layer_type = layer_type_map.get(mod_path)
+    if layer_type is None:
+        for prefix in (
+            "model.",
+            "model.language_model.",
+            "model.language_model.model.",
+        ):
+            layer_type = layer_type_map.get(prefix + mod_path)
+            if layer_type:
+                break
+    return layer_type
+
+
+def _runtime_key(
+    key: str,
+    weight_renamings: Optional[Dict[str, str]],
+    layer_type_map: Optional[Dict[str, str]],
+) -> str:
+    """The checkpoint key's runtime spelling: the first renaming the type map knows."""
+    for candidate in (key, *_renamed_key_candidates(key, weight_renamings)):
+        if _lookup_layer_type(layer_type_map, candidate) is not None:
+            return candidate
+    candidates = _renamed_key_candidates(key, weight_renamings)
+    return candidates[-1] if candidates else key
+
+
 def _should_nf4_roundtrip(
     key: str,
     tensor: torch.Tensor,
@@ -1399,6 +1448,9 @@ def _merge_tensor_with_lora(
     simulate_nf4_experts: bool = False,
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
+    nf4_backend: str = "bitsandbytes",
+    nf4_skips: Optional[set[str]] = None,
+    nf4_dtype: Optional[torch.dtype] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -1426,6 +1478,27 @@ def _merge_tensor_with_lora(
     lora_a, lora_b = find_lora_weights(lora_state, key, weight_renamings)
 
     do_nf4 = _should_nf4_roundtrip(key, tensor, simulate_nf4, simulate_nf4_experts)
+    if nf4_backend == "torchao" or nf4_skips is not None:
+        from axolotl.utils.nf4 import nf4_should_quantize
+
+        # the type map and the exclusions are spelled in runtime names
+        runtime_key = _runtime_key(key, weight_renamings, layer_type_map)
+        do_nf4 = nf4_should_quantize(
+            runtime_key,
+            linear=bool(
+                simulate_nf4
+                and tensor.ndim == 2
+                and (
+                    _lookup_layer_type(layer_type_map, runtime_key) == "Linear"
+                    if layer_type_map
+                    else nf4_backend != "torchao"
+                )
+            ),
+            expert=bool(
+                simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
+            ),
+            skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
+        )
 
     if lora_a is not None and lora_b is not None:
         LOG.debug(f"Merging LoRA for {key}: {lora_a.shape}, {lora_b.shape}")
@@ -1439,6 +1512,8 @@ def _merge_tensor_with_lora(
                 tensor,
                 blocksize=nf4_blocksize,
                 compress_statistics=nf4_double_quant,
+                backend=nf4_backend,
+                quantization_dtype=nf4_dtype,
                 device=device,
             )
 
@@ -1449,20 +1524,7 @@ def _merge_tensor_with_lora(
         )
 
         # Look up layer type from meta-device model introspection
-        _layer_type = None
-        if layer_type_map:
-            mod_path = key.rsplit(".weight", 1)[0] if key.endswith(".weight") else key
-            _layer_type = layer_type_map.get(mod_path)
-            # Try common prefix variations (e.g. with/without "model." prefix)
-            if _layer_type is None:
-                for prefix in [
-                    "model.",
-                    "model.language_model.",
-                    "model.language_model.model.",
-                ]:
-                    _layer_type = layer_type_map.get(prefix + mod_path)
-                    if _layer_type:
-                        break
+        _layer_type = _lookup_layer_type(layer_type_map, key)
 
         delta = _build_peft_layer_and_get_delta(
             lora_a.to(device),
@@ -1500,6 +1562,8 @@ def _merge_tensor_with_lora(
                         tensor,
                         blocksize=nf4_blocksize,
                         compress_statistics=nf4_double_quant,
+                        backend=nf4_backend,
+                        quantization_dtype=nf4_dtype,
                         device=device,
                     )
                 original_dtype = tensor.dtype
@@ -1526,6 +1590,8 @@ def _merge_tensor_with_lora(
                 tensor,
                 blocksize=nf4_blocksize,
                 compress_statistics=nf4_double_quant,
+                backend=nf4_backend,
+                quantization_dtype=nf4_dtype,
                 device=device,
             )
         return tensor.detach().cpu(), False
@@ -1667,6 +1733,40 @@ def _get_expected_num_experts(base_model_path: Path) -> Optional[int]:
     return None
 
 
+class _FusedExpertCarry:
+    """Holds the per-expert tensors of expert groups whose expert list is split across shards
+    until the shard that completes the group, so the fuse/merge/unfuse pass always sees the
+    whole list instead of leaving a partial group unmerged in every shard."""
+
+    def __init__(self):
+        # (converter index, fused key) -> {checkpoint key: tensor}
+        self.pending: Dict[tuple[int, str], Dict[str, torch.Tensor]] = {}
+
+    def take(self, converter_idx: int) -> Dict[str, torch.Tensor]:
+        released: Dict[str, torch.Tensor] = {}
+        for ident in [i for i in self.pending if i[0] == converter_idx]:
+            released.update(self.pending.pop(ident))
+        return released
+
+    def hold(
+        self, converter_idx: int, fused_key: str, tensors: Dict[str, torch.Tensor]
+    ) -> None:
+        self.pending[(converter_idx, fused_key)] = tensors
+
+    def assert_drained(self) -> None:
+        if not self.pending:
+            return
+        detail = {
+            fused_key: len(tensors) for (_, fused_key), tensors in self.pending.items()
+        }
+        raise RuntimeError(
+            "fuse/unfuse merge: expert groups never completed across all shards, so their "
+            "LoRA was never merged (per-expert tensors still held, by fused key: "
+            f"{detail}). The base checkpoint is missing per-expert tensors for the "
+            "expert count declared in config.json."
+        )
+
+
 def _fuse_and_unfuse_with_merge(
     shard_tensors: Dict[str, torch.Tensor],
     weight_converters: list,
@@ -1678,10 +1778,14 @@ def _fuse_and_unfuse_with_merge(
     simulate_nf4_experts: bool = False,
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
+    nf4_backend: str = "bitsandbytes",
+    nf4_skips: Optional[set[str]] = None,
+    nf4_dtype: Optional[torch.dtype] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
     expected_num_experts: Optional[int] = None,
+    carry: Optional[_FusedExpertCarry] = None,
 ) -> tuple[Dict[str, torch.Tensor], int, set]:
     """
     For tensors matching WeightConverter patterns (MoE expert weights):
@@ -1703,7 +1807,9 @@ def _fuse_and_unfuse_with_merge(
     merged_count = 0
     processed_keys: set = set()  # Keys that were fuse/unfuse processed
 
-    for converter in weight_converters:
+    for converter_idx, converter in enumerate(weight_converters):
+        if carry is not None:
+            result.update(carry.take(converter_idx))
         src_patterns = (
             converter.source_patterns
             if isinstance(converter.source_patterns, list)
@@ -1792,6 +1898,20 @@ def _fuse_and_unfuse_with_merge(
             ):
                 skip_reason = "tensors are still quantized (raw qdata cannot be fused)"
             if skip_reason:
+                if carry is not None and not complete:
+                    held = {k: t for g in pat_groups.values() for (k, t) in g.values()}
+                    for k in held:
+                        result.pop(k, None)
+                    carry.hold(converter_idx, prefix + tgt_patterns[0], held)
+                    LOG.info(
+                        "Deferring fuse for '%s%s': %s; carrying %d per-expert "
+                        "tensors to the shard that completes the group",
+                        prefix,
+                        tgt_patterns[0],
+                        skip_reason,
+                        len(held),
+                    )
+                    continue
                 LOG.info(
                     "Skipping fuse for '%s%s': %s; leaving per-expert tensors "
                     "unchanged",
@@ -1854,11 +1974,24 @@ def _fuse_and_unfuse_with_merge(
             do_nf4 = _should_nf4_roundtrip(
                 fused_key, fused_tensor, simulate_nf4, simulate_nf4_experts
             )
+            if nf4_backend == "torchao" or nf4_skips is not None:
+                from axolotl.utils.nf4 import nf4_should_quantize
+
+                do_nf4 = nf4_should_quantize(
+                    _runtime_key(fused_key, weight_renamings, layer_type_map),
+                    linear=False,
+                    expert=bool(simulate_nf4_experts and "expert" in fused_key.lower()),
+                    skips=nf4_skips
+                    if nf4_skips is not None
+                    else {"lm_head", "embed_out"},
+                )
             if do_nf4:
                 fused_tensor = _simulate_nf4_roundtrip(
                     fused_tensor,
                     blocksize=nf4_blocksize,
                     compress_statistics=nf4_double_quant,
+                    backend=nf4_backend,
+                    quantization_dtype=nf4_dtype,
                     device=device,
                 )
 
@@ -1941,6 +2074,10 @@ def merge_lora_sharded_efficient(
     simulate_nf4_experts: bool = False,
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
+    nf4_backend: str = "bitsandbytes",
+    nf4_skips: Optional[set[str]] = None,
+    nf4_dtype: Optional[torch.dtype] = None,
+    staged_nf4: bool = False,
     trust_remote_code: bool = False,
     dequant: bool = False,
     override_quantizer: bool = False,
@@ -1958,7 +2095,14 @@ def merge_lora_sharded_efficient(
         adapter (encoder version drift); see ``_resolve_nvfp4_scale_mode``.
 
     Args:
-        simulate_nf4: Apply NF4 roundtrip to ALL weight tensors (for QLoRA)
+        nf4_backend: NF4 implementation used for the training base.
+        nf4_skips: Resolved module exclusions from ``nf4_skip_modules``. When provided,
+            weights are selected the way the staged loader selected them (Linear
+            weights and fused experts outside the exclusions); when None, the
+            pre-existing ``_should_nf4_roundtrip`` heuristic is kept unchanged.
+        nf4_dtype: Training weight dtype used before quantization.
+        staged_nf4: Training used CPU-staged NF4, which has no legacy merge fallback.
+        simulate_nf4: Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)
         simulate_nf4_experts: Apply NF4 roundtrip only to MoE expert tensors
             (for quantize_moe_experts). Expert tensors are identified by having
             "expert" in the key name and ndim >= 3.
@@ -2008,6 +2152,7 @@ def merge_lora_sharded_efficient(
             f"Will fuse→merge→unfuse within each shard."
         )
         expected_num_experts = _get_expected_num_experts(base_model_path)
+    fused_expert_carry = _FusedExpertCarry() if weight_converters else None
 
     os.makedirs(output_path, exist_ok=True)
 
@@ -2024,6 +2169,10 @@ def merge_lora_sharded_efficient(
         base_model_path, trust_remote_code=trust_remote_code, meta_model=meta_model
     )
     del meta_model
+    if nf4_backend == "torchao" and simulate_nf4 and not layer_type_map:
+        raise ValueError(
+            "torchao NF4 merge requires model introspection to identify quantized Linear weights"
+        )
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)
@@ -2064,10 +2213,14 @@ def merge_lora_sharded_efficient(
 
     if unsupported_methods:
         methods_str = ", ".join(unsupported_methods)
+        recovery = (
+            "Staged NF4 training has no legacy merge path, so this adapter cannot be merged."
+            if staged_nf4
+            else "Please use the legacy merge method for advanced LoRA variants."
+        )
         raise NotImplementedError(
             f"Memory-efficient LoRA merge only supports standard LoRA. "
-            f"Detected unsupported methods: {methods_str}. "
-            f"Please use the legacy merge method for advanced LoRA variants."
+            f"Detected unsupported methods: {methods_str}. {recovery}"
         )
 
     use_rslora = bool(lora_config_dict.get("use_rslora", False))
@@ -2220,10 +2373,14 @@ def merge_lora_sharded_efficient(
                 simulate_nf4_experts=simulate_nf4_experts,
                 nf4_blocksize=nf4_blocksize,
                 nf4_double_quant=nf4_double_quant,
+                nf4_backend=nf4_backend,
+                nf4_skips=nf4_skips,
+                nf4_dtype=nf4_dtype,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
                 expected_num_experts=expected_num_experts,
+                carry=fused_expert_carry,
             )
             merged_count += fused_merged
 
@@ -2258,6 +2415,9 @@ def merge_lora_sharded_efficient(
                 simulate_nf4_experts=simulate_nf4_experts,
                 nf4_blocksize=nf4_blocksize,
                 nf4_double_quant=nf4_double_quant,
+                nf4_backend=nf4_backend,
+                nf4_skips=nf4_skips,
+                nf4_dtype=nf4_dtype,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
@@ -2292,6 +2452,16 @@ def merge_lora_sharded_efficient(
         output_shard_path = output_path / shard_path.name
         merged_tensors = {k: v.detach().cpu() for k, v in merged_tensors.items()}
 
+        if not merged_tensors:
+            # safetensors writes an invalid header for an empty tensor dict
+            LOG.info(
+                "%s holds only expert tensors carried to a later shard; writing no file",
+                shard_path.name,
+            )
+            del merged_tensors, shard_tensors
+            gc.collect()
+            continue
+
         if safe_tensors:
             if not str(output_shard_path).endswith(".safetensors"):
                 output_shard_path = output_path / (shard_path.stem + ".safetensors")
@@ -2315,6 +2485,9 @@ def merge_lora_sharded_efficient(
         if device != "cpu" and torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
+
+    if fused_expert_carry is not None:
+        fused_expert_carry.assert_drained()
 
     if expert_writer is not None:
         expert_writer.assert_drained()

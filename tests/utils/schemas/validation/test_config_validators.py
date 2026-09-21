@@ -317,3 +317,48 @@ class TestContextParallelAttnImplValidator:
         )
         with pytest.raises(ValueError, match="only supports the flash attention 2"):
             validate_config(cfg)
+
+
+class TestStagedNF4ConstraintTable:
+    """check_staged_nf4 raises from a table, so an empty or messageless table would pass silently."""
+
+    def test_every_constraint_carries_a_message(self):
+        from axolotl.utils.schemas.validation import STAGED_NF4_CONSTRAINTS
+
+        assert STAGED_NF4_CONSTRAINTS
+        for predicate, message in STAGED_NF4_CONSTRAINTS:
+            assert callable(predicate)
+            assert isinstance(message, str) and message
+
+
+class TestValueDependentInitOnExpertTargets:
+    """PEFT's value-dependent inits read base_layer.weight, which fused experts lack;
+    the failure must surface at validation, not after the model has loaded."""
+
+    @pytest.mark.parametrize("init", ["pissa", "olora", "loftq", "corda", "eva"])
+    def test_value_dependent_init_with_target_parameters_is_rejected(
+        self, min_base_cfg, init
+    ):
+        cfg = min_base_cfg | DictDefault(
+            adapter="lora",
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_parameters=["mlp.experts.gate_up_proj"],
+            peft_init_lora_weights=init,
+        )
+        with pytest.raises(ValueError, match="lora_target_parameters"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("init", [None, True, "gaussian"])
+    def test_default_init_with_target_parameters_passes(self, min_base_cfg, init):
+        cfg = min_base_cfg | DictDefault(
+            adapter="lora",
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_parameters=["mlp.experts.gate_up_proj"],
+        )
+        if init is not None:
+            cfg["peft_init_lora_weights"] = init
+        validate_config(cfg)

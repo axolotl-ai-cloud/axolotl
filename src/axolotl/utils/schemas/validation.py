@@ -19,6 +19,7 @@ from axolotl.utils.schemas.enums import (
     attn_impl_base,
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
+from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 LOG = get_logger(__name__)
 
@@ -907,6 +908,78 @@ class RLValidationMixin:
         return data
 
 
+STAGED_NF4_CONSTRAINTS = [
+    (
+        lambda self: (
+            not self.load_in_4bit or self.adapter != "qlora" or self.load_in_8bit
+        ),
+        "CPU-staged NF4 requires adapter: qlora and load_in_4bit: true",
+    ),
+    (
+        # torchao stages on a single device too; the bitsandbytes flag means FSDP
+        lambda self: (
+            (self.nf4_backend != "torchao" and not self.fsdp_config)
+            or (
+                bool(self.fsdp_config)
+                and (
+                    str(self.fsdp_version) != "2"
+                    or not self.fsdp_config.cpu_ram_efficient_loading
+                    or not self.qlora_sharded_model_loading
+                )
+            )
+        ),
+        "CPU-staged NF4 requires FSDP2, cpu_ram_efficient_loading and qlora_sharded_model_loading",
+    ),
+    (
+        lambda self: (
+            bool(self.deepspeed)
+            or (self.tensor_parallel_size or 1) > 1
+            or (self.context_parallel_size or 1) > 1
+            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
+        ),
+        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+    ),
+    (
+        lambda self: (self.dp_replicate_size or 1) > 1,
+        "CPU-staged NF4 requires a one-dimensional sharding mesh; dp_replicate_size must be 1",
+    ),
+    (
+        lambda self: (
+            (self.bnb_config_kwargs or {}).get("bnb_4bit_quant_type", "nf4") != "nf4"
+        ),
+        "CPU-staged NF4 requires bnb_4bit_quant_type: nf4",
+    ),
+    (
+        lambda self: (
+            self.nf4_backend == "torchao"
+            and (
+                (self.bnb_config_kwargs or {}).get("blocksize", 64) != 64
+                or not (self.bnb_config_kwargs or {}).get(
+                    "bnb_4bit_use_double_quant", True
+                )
+            )
+        ),
+        "torchao NF4 requires blocksize 64 and double quantization",
+    ),
+    (
+        lambda self: bool(self.peft_use_dora or self.lora_modules_to_save),
+        "CPU-staged NF4 currently requires LoRA without DoRA or modules_to_save",
+    ),
+    (
+        lambda self: (
+            self.peft_init_lora_weights not in VALUE_INDEPENDENT_LORA_INIT
+            or bool(self.peft and self.peft.loftq_config)
+        ),
+        "CPU-staged NF4 does not support a value-dependent LoRA init: pissa, olora "
+        "and loftq residualize the base weight, and a packed base cannot take the "
+        "residual write-back; corda and eva are not wired for staged loading. olora "
+        "works on the non-staged bitsandbytes loader "
+        "(fsdp_config.cpu_ram_efficient_loading: false); pissa and loftq need an "
+        "unquantized base.",
+    ),
+]
+
+
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
 
@@ -1264,6 +1337,14 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="after")
     def check_fsdp2_cpu_ram_efficient_loading_w_4bit(self):
+        if self.qlora_sharded_model_loading is None:
+            self.qlora_sharded_model_loading = bool(
+                self.fsdp_config
+                and str(self.fsdp_version) == "2"
+                and self.adapter == "qlora"
+                and self.load_in_4bit
+                and self.fsdp_config.cpu_ram_efficient_loading
+            )
         # nf4 quantizes on rank 0 only: its params keep the packed `(N, 1)` shape there while the
         # other ranks stay on meta unpacked, so the FSDP2 load scatters mismatched sizes.
         if (
@@ -1271,12 +1352,44 @@ class OptimizationValidationMixin:
             and str(self.fsdp_version) == "2"
             and self.fsdp_config.cpu_ram_efficient_loading
             and self.load_in_4bit
+            and not self.qlora_sharded_model_loading
         ):
             raise ValueError(
                 "FSDP2 does not support `cpu_ram_efficient_loading` with load_in_4bit; the "
                 "rank-0-only bitsandbytes quantization deadlocks the state dict scatter. "
-                "Please set `fsdp_config.cpu_ram_efficient_loading` to false."
+                "Set `qlora_sharded_model_loading: true` for CPU-staged loading, "
+                "or set `fsdp_config.cpu_ram_efficient_loading` to false."
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_staged_nf4(self):
+        staged = self.nf4_backend == "torchao" or (
+            str(self.fsdp_version) == "2"
+            and self.qlora_sharded_model_loading
+            and self.load_in_4bit
+        )
+        if not staged:
+            return self
+        if (
+            self.nf4_backend != "torchao"
+            and self.fsdp_config
+            and str(self.fsdp_version) == "2"
+            and not self.fsdp_config.cpu_ram_efficient_loading
+        ):
+            # this combination never reached a sharded loader, so keep it inert
+            # rather than failing configs that used to train
+            LOG.warning(
+                "`qlora_sharded_model_loading: true` has no effect without "
+                "`fsdp_config.cpu_ram_efficient_loading: true`; every rank will load "
+                "and quantize the full model. Enable cpu_ram_efficient_loading for "
+                "CPU-staged NF4 loading."
+            )
+            self.qlora_sharded_model_loading = False
+            return self
+        for violates, message in STAGED_NF4_CONSTRAINTS:
+            if violates(self):
+                raise ValueError(message)
         return self
 
     @model_validator(mode="before")

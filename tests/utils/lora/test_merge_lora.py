@@ -353,6 +353,159 @@ class TestEfficientMerge:
             base_weights["model.embed_tokens.weight"],
         )
 
+    def test_nf4_gate_follows_prefixed_layer_type_map(self, tmp_path):
+        """The exclusion gate must use the same prefix fallback as the layer lookup."""
+        hidden, r = 64, 8
+        base = torch.randn(hidden, hidden)
+        lora_state = {
+            "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                r, hidden
+            ),
+            "base_model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                hidden, r
+            ),
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base,
+            "layers.0.self_attn.q_proj.weight",
+            lora_state,
+            2.0,
+            {"r": r, "lora_alpha": 16},
+            "cpu",
+            simulate_nf4=True,
+            nf4_skips=set(),
+            layer_type_map={"model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert was_merged
+        # zero LoRA, so any difference from base is the NF4 roundtrip
+        assert not torch.equal(merged, base)
+
+    def test_non_staged_merge_keeps_roundtrip_heuristic(self):
+        """Without a skip set the pre-existing ndim heuristic decides, exclusions included."""
+        hidden, r = 64, 8
+        key = "model.embed_tokens.weight"
+        base = torch.randn(100, hidden)
+        lora_state = {
+            "base_model.model.model.embed_tokens.lora_A.weight": torch.zeros(r, hidden),
+            "base_model.model.model.embed_tokens.lora_B.weight": torch.zeros(100, r),
+        }
+        kwargs = dict(
+            lora_state=lora_state,
+            scale=2.0,
+            lora_config_dict={"r": r, "lora_alpha": 16},
+            device="cpu",
+            simulate_nf4=True,
+            layer_type_map={"model.embed_tokens": "Embedding"},
+        )
+        heuristic, _ = _merge_tensor_with_lora(base, key, nf4_skips=None, **kwargs)
+        staged, _ = _merge_tensor_with_lora(
+            base, key, nf4_skips={"lm_head", "embed_out"}, **kwargs
+        )
+        assert not torch.equal(heuristic, base)
+        assert torch.equal(staged, base)
+
+    @pytest.mark.parametrize(
+        "staged, backend, expect_skips",
+        [
+            (False, "bitsandbytes", False),
+            (True, "bitsandbytes", True),
+            (False, "torchao", True),
+        ],
+    )
+    def test_efficient_merge_scopes_exclusions_to_staged_training(
+        self, staged, backend, expect_skips
+    ):
+        from axolotl.cli.merge_lora import _do_merge_lora_efficient
+
+        cfg = DictDefault(
+            base_model="base",
+            lora_model_dir="adapter",
+            output_dir="out",
+            model_config_type="llama",
+            torch_dtype=torch.bfloat16,
+            nf4_backend="bitsandbytes",
+            _original_load_in_4bit=True,
+            _original_adapter="qlora",
+            _original_staged_nf4=staged,
+            _original_nf4_backend=backend,
+        )
+        with patch("axolotl.cli.merge_lora.merge_lora_sharded_efficient") as merge:
+            _do_merge_lora_efficient(cfg=cfg)
+        kwargs = merge.call_args.kwargs
+        assert kwargs["simulate_nf4"] is True
+        assert kwargs["staged_nf4"] is staged
+        assert kwargs["nf4_backend"] == backend
+        if expect_skips:
+            assert kwargs["nf4_skips"] == {"lm_head", "embed_out"}
+            assert kwargs["nf4_dtype"] == torch.bfloat16
+        else:
+            assert kwargs["nf4_skips"] is None
+            assert kwargs["nf4_dtype"] is None
+
+    def test_nf4_gate_classifies_renamed_checkpoint_keys(self, tmp_path):
+        """LLaVA-style checkpoints reach the type map only through weight_renamings."""
+        hidden, r = 64, 8
+        base = torch.randn(hidden, hidden)
+        lora_state = {
+            "base_model.model.model.language_model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                r, hidden
+            ),
+            "base_model.model.model.language_model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                hidden, r
+            ),
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base,
+            "language_model.model.layers.0.self_attn.q_proj.weight",
+            lora_state,
+            2.0,
+            {"r": r, "lora_alpha": 16},
+            "cpu",
+            simulate_nf4=True,
+            nf4_skips=set(),
+            weight_renamings={r"^language_model\.model\.": "model.language_model."},
+            layer_type_map={"model.language_model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert was_merged
+        # zero LoRA, so any difference from base is the NF4 roundtrip
+        assert not torch.equal(merged, base)
+
+    def test_bitsandbytes_merge_without_introspection(self, tmp_path):
+        """An empty layer_type_map must not raise a torchao-specific error on bnb."""
+        hidden, r, alpha = 32, 8, 16
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=alpha)
+        safetensors.torch.save_file(
+            {
+                "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                    r, hidden
+                ),
+                "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                    hidden, r
+                ),
+            },
+            adapter_dir / "adapter_model.safetensors",
+        )
+        output_dir = tmp_path / "output"
+
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+            simulate_nf4=True,
+            nf4_backend="bitsandbytes",
+            nf4_skips={"lm_head", "embed_out"},
+        )
+
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        assert not torch.equal(merged[q_key], base_weights[q_key])
+
     def test_resolve_alpha_for_key_returns_none_without_pattern(self):
         assert (
             _resolve_lora_alpha_for_key("model.layers.0.self_attn.q_proj.weight", {})
@@ -800,6 +953,161 @@ class TestEfficientMerge:
         assert not processed_keys
         assert "model.layers.2.mlp.experts.gate_up_proj" not in result
         assert set(result.keys()) == set(quant_tensors.keys())
+
+    def _build_split_expert_case(
+        self, tmp_path, name, expert_shards, num_experts=4, hidden=16, inter=32, r=4
+    ):
+        """qwen3_moe-style per-expert base whose expert list is spread over ``expert_shards``,
+        plus a fused-parameter LoRA over gate_up_proj/down_proj."""
+        alpha = 8
+        base_dir, adapter_dir = tmp_path / f"base-{name}", tmp_path / f"ad-{name}"
+        base_dir.mkdir()
+        adapter_dir.mkdir()
+
+        gen = torch.Generator().manual_seed(1234)
+        per_expert = {}
+        for e in range(num_experts):
+            root = f"model.layers.0.mlp.experts.{e}"
+            for proj, shape in (
+                ("gate_proj", (inter, hidden)),
+                ("up_proj", (inter, hidden)),
+                ("down_proj", (hidden, inter)),
+            ):
+                per_expert[f"{root}.{proj}.weight"] = torch.randn(
+                    *shape, generator=gen, dtype=torch.float32
+                )
+
+        weight_map = {}
+        n = len(expert_shards)
+        for idx, experts in enumerate(expert_shards):
+            shard_name = f"model-{idx + 1:05d}-of-{n:05d}.safetensors"
+            shard = {
+                k: v
+                for k, v in per_expert.items()
+                if int(k.split(".experts.")[1].split(".")[0]) in experts
+            }
+            safetensors.torch.save_file(shard, base_dir / shard_name)
+            weight_map.update({k: shard_name for k in shard})
+        (base_dir / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": 0}, "weight_map": weight_map})
+        )
+        (base_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "model_type": "qwen3_moe",
+                    "num_experts": num_experts,
+                    "num_hidden_layers": 1,
+                    "hidden_size": hidden,
+                    "intermediate_size": inter,
+                    "moe_intermediate_size": inter,
+                    "num_attention_heads": 2,
+                    "num_key_value_heads": 2,
+                    "vocab_size": 32,
+                }
+            )
+        )
+
+        agen = torch.Generator().manual_seed(99)
+        p = "base_model.model.model.layers.0.mlp.experts"
+        adapter = {
+            f"{p}.gate_up_proj.lora_A.weight": torch.randn(
+                r, hidden, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.gate_up_proj.lora_B.weight": torch.randn(
+                inter * 2, r, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.down_proj.lora_A.weight": torch.randn(
+                r, inter, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.down_proj.lora_B.weight": torch.randn(
+                hidden, r, generator=agen, dtype=torch.float32
+            ),
+        }
+        safetensors.torch.save_file(adapter, adapter_dir / "adapter_model.safetensors")
+        (adapter_dir / "adapter_config.json").write_text(
+            json.dumps({"r": r, "lora_alpha": alpha, "peft_type": "LORA"})
+        )
+        return base_dir, adapter_dir, per_expert, adapter
+
+    @pytest.mark.parametrize("simulate_nf4", [False, True])
+    def test_expert_group_split_across_shards_is_merged(self, tmp_path, simulate_nf4):
+        """An expert list split across shards must still be fused, merged and written."""
+        num_experts, hidden, inter, r = 4, 16, 32, 4
+        scale = 8 / r
+
+        def run(name, expert_shards):
+            base_dir, adapter_dir, per_expert, adapter = self._build_split_expert_case(
+                tmp_path, name, expert_shards, num_experts, hidden, inter, r
+            )
+            out = tmp_path / f"merged-{name}"
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, out, device="cpu", simulate_nf4=simulate_nf4
+            )
+            merged = {}
+            for f in sorted(out.glob("*.safetensors")):
+                merged.update(safetensors.torch.load_file(f))
+            index_path = out / "model.safetensors.index.json"
+            index = (
+                json.loads(index_path.read_text())["weight_map"]
+                if index_path.exists()
+                else {}
+            )
+            return merged, index, per_expert, adapter
+
+        split, split_index, per_expert, adapter = run("split", [[0, 1], [2, 3]])
+        whole, _, _, _ = run("whole", [[0, 1, 2, 3]])
+
+        fused_key = "model.layers.0.mlp.experts.gate_up_proj"
+        assert fused_key in split
+        # emitted in the shard that completed the group, and indexed there
+        assert split_index[fused_key] == "model-00002-of-00002.safetensors"
+        assert not (
+            tmp_path / "merged-split" / "model-00001-of-00002.safetensors"
+        ).exists()
+        assert "model.layers.0.mlp.experts.down_proj" in split
+        assert not any(".experts.0." in k for k in split)
+
+        gate = torch.stack(
+            [
+                per_expert[f"model.layers.0.mlp.experts.{e}.gate_proj.weight"]
+                for e in range(num_experts)
+            ]
+        )
+        up = torch.stack(
+            [
+                per_expert[f"model.layers.0.mlp.experts.{e}.up_proj.weight"]
+                for e in range(num_experts)
+            ]
+        )
+        base_fused = torch.cat([gate, up], dim=1)
+        p = "base_model.model.model.layers.0.mlp.experts"
+        delta = scale * (
+            adapter[f"{p}.gate_up_proj.lora_B.weight"]
+            @ adapter[f"{p}.gate_up_proj.lora_A.weight"]
+        )
+        for e in range(num_experts):
+            assert not torch.allclose(split[fused_key][e], base_fused[e], atol=1e-6)
+        if not simulate_nf4:
+            assert torch.allclose(split[fused_key], base_fused + delta, atol=1e-5)
+        else:
+            # the base went through the NF4 roundtrip before the fold
+            assert not torch.allclose(split[fused_key], base_fused + delta, atol=1e-5)
+        # splitting the expert list must not change the result
+        assert torch.equal(split[fused_key], whole[fused_key])
+        assert torch.equal(
+            split["model.layers.0.mlp.experts.down_proj"],
+            whole["model.layers.0.mlp.experts.down_proj"],
+        )
+
+    def test_expert_group_never_completing_raises(self, tmp_path):
+        """A base missing experts entirely must fail loudly, not write an unmerged group."""
+        base_dir, adapter_dir, _, _ = self._build_split_expert_case(
+            tmp_path, "broken", [[0, 1], [2]], num_experts=4
+        )
+        with pytest.raises(RuntimeError, match="mlp.experts.gate_up_proj"):
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, tmp_path / "merged-broken", device="cpu"
+            )
 
     def test_param_wrapper_merge_math(self):
         """ParamWrapper merge via PEFT's get_delta_weight matches manual einsum."""

@@ -439,6 +439,17 @@ class PatchManager:
             )
 
             patch_parallelism_config()
+        if (
+            self.cfg.fsdp_config
+            and str(self.cfg.fsdp_version) == "2"
+            and self.cfg.adapter
+            and self.cfg.fsdp_config.activation_checkpointing
+        ):
+            from axolotl.monkeypatch.peft.state_dict import (
+                patch_peft_checkpoint_wrapper_prefixes,
+            )
+
+            patch_peft_checkpoint_wrapper_prefixes()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
             from axolotl.monkeypatch.accelerate.float8_fsdp import patch_float8_fsdp
             from axolotl.monkeypatch.accelerate.fsdp2 import (
@@ -976,11 +987,12 @@ class PatchManager:
         if not self.cfg.quantize_moe_experts and not has_target_params:
             return
 
+        from axolotl.loaders.nf4 import uses_staged_nf4
         from axolotl.monkeypatch.moe_quant import (
             patch_peft_target_parameters_matching,
         )
 
-        if self.cfg.quantize_moe_experts:
+        if self.cfg.quantize_moe_experts and not uses_staged_nf4(self.cfg):
             from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
 
             patch_moe_quantization_on_load(self.cfg)
