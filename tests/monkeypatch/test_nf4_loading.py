@@ -2111,19 +2111,19 @@ def test_init_distributed_state_is_silent_without_a_preexisting_group(
     )
 
 
-@pytest.mark.parametrize(
-    "backend, expected", [("bitsandbytes", "requires FSDP2"), ("torchao", None)]
-)
-def test_sharded_flag_without_fsdp_config(backend, expected):
-    """The bitsandbytes flag means FSDP; only torchao stages without an FSDP config."""
+@pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
+def test_sharded_flag_without_fsdp_config(backend, caplog):
+    """Without an FSDP config the bitsandbytes flag is inert; torchao still stages."""
     from axolotl.utils.schemas.config import AxolotlInputConfig
 
     config = _staged_nf4_config(nf4_backend=backend, fsdp_config=_UNSET)
-    if expected:
-        with pytest.raises(ValueError, match=expected):
-            AxolotlInputConfig(**config)
+    with caplog.at_level("WARNING", logger="axolotl.utils.schemas.validation"):
+        validated = AxolotlInputConfig(**config)
+    if backend == "bitsandbytes":
+        assert validated.qlora_sharded_model_loading is False
+        assert any("has no effect" in record.getMessage() for record in caplog.records)
     else:
-        AxolotlInputConfig(**config)
+        assert validated.qlora_sharded_model_loading is True
 
 
 def test_inert_sharded_flag_does_not_reject_lora():
