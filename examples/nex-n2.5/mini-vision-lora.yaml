@@ -1,8 +1,3 @@
-# Nex-N2.5-mini Vision LoRA
-#
-# Vision fine-tuning of the Qwen3.5-35B-A3B-based hybrid DeltaNet + Attention MoE model.
-# 256 experts, 8 active per token, with early-fusion vision support.
-
 base_model: nex-agi/Nex-N2.5-mini
 processor_type: AutoProcessor
 

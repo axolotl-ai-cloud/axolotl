@@ -77,11 +77,11 @@ Use `lora_target_parameters` (see [Routed Experts](#routed-experts-moe) above) t
 
 ### Qwen3.6 and Edge0
 
-[Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) keeps the `qwen3_5_moe` architecture and loads with the same code paths; its checkpoint ships extra `mtp.*` (multi-token-prediction head) tensors that transformers drops on load via `_keys_to_ignore_on_load_unexpected`, so no unexpected-key warning is expected.
+[Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) keeps the `qwen3_5_moe` architecture and trains with `qwen3.6-35b-a3b-moe-qlora.yaml`. Its extra `mtp.*` (multi-token prediction) tensors are dropped on load.
 
-The [Edge0](https://huggingface.co/Edge0) `Edge0-35B-A3B-preview` checkpoint is an MLX int4 (affine, group size 64) export of Qwen3.6-35B-A3B with a separate LoRA file; it is not loadable by transformers and Axolotl has no support for it. To fine-tune an Edge0-style model, target the base model (`Qwen/Qwen3.6-35B-A3B`, as in `qwen3.6-35b-a3b-moe-qlora.yaml`) and quantize the result afterwards. `Edge0-8B-A1B-preview` is likewise an MLX export, of `inclusionAI/Ling-3.0-tiny-base`, not of Qwen.
+[Edge0](https://huggingface.co/Edge0) checkpoints are MLX int4 exports (`Edge0-35B-A3B-preview` of Qwen3.6-35B-A3B, `Edge0-8B-A1B-preview` of Ling-3.0-tiny) and cannot be loaded by transformers. Fine-tune the base model instead and quantize afterwards.
 
-The same architecture also ships under other names, e.g. [Nex-N2.5-mini](../nex-n2.5/) — see that folder for a derivative with its own chat template.
+[Nex-N2.5-mini](../nex-n2.5/README.md) shares this architecture with its own chat template.
 
 ### TIPS
 
