@@ -697,7 +697,6 @@ def test_sharded_nf4_loading_default(backend, setting):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"fsdp_version": 1},
         {"fsdp_config": None, "fsdp_version": None},
         {"fsdp_config": {"cpu_ram_efficient_loading": False}},
         {"adapter": "lora", "load_in_4bit": False},
@@ -2003,7 +2002,7 @@ def _staged_nf4_config(**overrides):
         ({"tensor_parallel_size": 2}, "tensor, expert or context parallelism"),
         (
             {"deepspeed": "deepspeed_configs/zero3.json"},
-            "tensor, expert or context parallelism",
+            "deepspeed and fsdp cannot be used together",
         ),
     ],
     ids=[

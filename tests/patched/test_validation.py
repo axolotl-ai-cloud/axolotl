@@ -491,7 +491,7 @@ class TestValidation(BaseValidation):
             DictDefault(
                 {
                     "base_model": "tiiuae/falcon-7b",
-                    "fsdp": ["full_shard", "auto_wrap"],
+                    "fsdp_config": {"reshard_after_forward": True},
                 }
             )
             | minimal_cfg
@@ -505,7 +505,7 @@ class TestValidation(BaseValidation):
             DictDefault(
                 {
                     "base_model": "Falcon-7b",
-                    "fsdp": ["full_shard", "auto_wrap"],
+                    "fsdp_config": {"reshard_after_forward": True},
                 }
             )
             | minimal_cfg

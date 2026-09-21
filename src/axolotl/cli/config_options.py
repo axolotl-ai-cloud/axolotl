@@ -2549,12 +2549,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to use deepcompile for faster training with deepspeed",
     ),
     (
-        ("--fsdp",),
-        None,
-        None,
-        "FSDP configuration",
-    ),
-    (
         ("--fsdp-config.fsdp-version",),
         "fsdp_config__fsdp_version",
         "int",
@@ -2575,12 +2569,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Offload parameters to CPU to reduce GPU memory usage",
     ),
     (
-        ("--fsdp-config.sync-module-states/--no-fsdp-config.sync-module-states",),
-        "fsdp_config__sync_module_states",
-        None,
-        "Synchronize module states across all processes",
-    ),
-    (
         (
             "--fsdp-config.cpu-ram-efficient-loading/--no-fsdp-config.cpu-ram-efficient-loading",
         ),
@@ -2595,12 +2583,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "fsdp_config__cpu_offload_pin_memory",
         None,
         "Disabling this enables swap memory usage for resource-constrained setups when offload_params is enabled.",
-    ),
-    (
-        ("--fsdp-config.use-orig-params/--no-fsdp-config.use-orig-params",),
-        "fsdp_config__use_orig_params",
-        None,
-        "Use original parameters instead of flattened parameters",
     ),
     (
         ("--fsdp-config.state-dict-type",),
@@ -2654,7 +2636,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fp32-norms/--no-fp32-norms",),
         None,
         None,
-        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_version: 2.",
+        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_config.",
     ),
     (
         ("--fp32-norm-classes",),

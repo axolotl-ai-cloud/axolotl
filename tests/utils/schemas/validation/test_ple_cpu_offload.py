@@ -79,8 +79,7 @@ class TestPleCpuOffloadValidation:
         "fsdp_cfg",
         [
             {"fsdp_config": {"fsdp_version": 2}},
-            # deprecated but still what `ModelLoader.is_fsdp_enabled` keys on
-            {"fsdp": ["full_shard", "auto_wrap"]},
+            {"fsdp_config": {"reshard_after_forward": True}},
         ],
     )
     def test_rejects_fsdp(self, min_base_cfg, gpu_caps, env_caps, fsdp_cfg):
