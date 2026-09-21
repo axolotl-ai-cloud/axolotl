@@ -6,7 +6,7 @@ import inspect
 
 import peft
 
-import axolotl
+import axolotl.loaders.model
 from axolotl.monkeypatch.utils import detab_code
 from axolotl.utils.logging import get_logger
 
@@ -42,7 +42,7 @@ def check_peft_prep_code_is_patchable() -> bool:
 
 def patch_peft_prep_code():
     """
-    monkeypatch create_accelerator_and_postprocess so it checks for additional kwargs
+    monkeypatch prepare_model_for_kbit_training so it leaves the embeddings alone
     """
 
     try:

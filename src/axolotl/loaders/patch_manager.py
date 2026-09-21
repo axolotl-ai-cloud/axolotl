@@ -466,7 +466,9 @@ class PatchManager:
 
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
-        if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
+        from axolotl.loaders.model import should_skip_peft_embedding_upcast
+
+        if should_skip_peft_embedding_upcast(self.cfg):
             from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
 
             patch_peft_prep_code()
