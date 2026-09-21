@@ -91,8 +91,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 |---|---|---|
 | DDP | *(default multi-GPU)* | n/a |
 | DeepSpeed ZeRO 1/2/3 (+CPU offload) | `deepspeed: deepspeed_configs/zeroN*.json` | TP |
-| FSDP1 🔴 | `fsdp_version: 1` | *(deprecated, use FSDP2)* |
-| FSDP2 | `fsdp_version: 2` + `fsdp_config:` | TP, CP, EP |
+| FSDP2 | `fsdp_version: 2` (default) + `fsdp_config:` | TP, CP, EP |
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 |
 | Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, ring-flash-attn |
@@ -156,7 +155,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Feature | Config | Notes |
 |---|---|---|
 | Sample packing (multipack) | `sample_packing: true` | block-diagonal attention + position reset; needs a varlen backend; ⚪ not with RLHF or multimodal |
-| Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not FSDP1, not `trust_remote_code` |
+| Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not `trust_remote_code` |
 | Tiled MLP | `tiled_mlp: true` | shards MLP to cut memory |
 | Ring attention | via `context_parallel_size` | long-context CP |
 | Activation offloading | `activation_offloading:` | requires gradient checkpointing; ⚪ CUDA only (no CPU-only training) |
@@ -262,8 +261,8 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | Sample packing | any `rl:`, multimodal | RLHF & MM packing not supported |
 | Cut Cross Entropy | Liger CE / chunked CE | one CE optimization only |
 | `use_dsv4_kernels` | attention-level LoRA | experts-only (fused indexer is gradientless) |
-| FSDP2 | 4/8-bit + DPO/KTO/ORPO/IPO | use DeepSpeed or FSDP1 |
-| LoRA kernels | FSDP1 / `trust_remote_code` / RLHF | SFT + FSDP2 only |
+| FSDP2 | 4/8-bit + DPO/KTO/ORPO/IPO | use DeepSpeed |
+| LoRA kernels | `trust_remote_code` / RLHF | SFT + FSDP2 only |
 | `batch_flattening` | `sample_packing` | choose one |
 | FP8 + DDP | `torch.compile` | ⚪ known-broken; drop compile or use FSDP2 |
 
@@ -287,11 +286,10 @@ Not in a tagged release yet:
 
 ### 🔴 Deprecated (still works)
 
-- `fsdp_version: 1` and bare `fsdp:`: use `fsdp_config`
 - Legacy attention booleans: use `attn_implementation`
 - `rl: ipo` direct: use `dpo_loss_type: [ipo]`
 - `noisy_embedding_alpha`, `dpo_beta`, `evaluation_strategy`
-- Removed entirely: `s2_attention`, `flash_attn_rms_norm`
+- Removed entirely: FSDP1 (`fsdp_version: 1` and the bare `fsdp:` list are now rejected; use `fsdp_config:`), `s2_attention`, `flash_attn_rms_norm`
 
 ### 🔵 Not supported yet / planned
 

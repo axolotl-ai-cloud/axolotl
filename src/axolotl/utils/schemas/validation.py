@@ -46,6 +46,23 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
+FSDP1_MIGRATION_DOCS = "docs/multi-gpu.qmd#sec-migrate-fsdp1-fsdp2"
+
+# fsdp_config keys accelerate rejects under FSDP2; the value names the FSDP2 replacement
+FSDP1_ONLY_REJECTED_KEYS = {
+    "sharding_strategy": "reshard_after_forward",
+    "forward_prefetch": None,
+}
+
+# fsdp_config keys accelerate silently discards under FSDP2
+FSDP1_ONLY_IGNORED_KEYS = (
+    "sync_module_states",
+    "backward_prefetch",
+    "backward_prefetch_policy",
+    "limit_all_gathers",
+    "use_orig_params",
+)
+
 
 class DatasetValidationMixin:
     """Validation methods related to dataset configuration."""
@@ -480,13 +497,11 @@ class TrainingValidationMixin:
                 "training. Please considering setting `activation_checkpointing: false` "
                 "in your FSDP config."
             )
-        if (
-            data.get("fp8_enable_fsdp_float8_all_gather")
-            and not data.get("fsdp_version", None) == 2
+        if data.get("fp8_enable_fsdp_float8_all_gather") and not data.get(
+            "fsdp_config"
         ):
             raise ValueError(
-                "fp8_enable_fsdp_float8_all_gather requires FSDP2 (fsdp_version: 2) "
-                "to be used."
+                "fp8_enable_fsdp_float8_all_gather requires FSDP2 (fsdp_config) to be used."
             )
 
         return data
@@ -943,8 +958,7 @@ STAGED_NF4_CONSTRAINTS = [
             or (
                 bool(self.fsdp_config)
                 and (
-                    str(self.fsdp_version) != "2"
-                    or not self.fsdp_config.cpu_ram_efficient_loading
+                    not self.fsdp_config.cpu_ram_efficient_loading
                     or not self.qlora_sharded_model_loading
                 )
             )
@@ -1012,14 +1026,6 @@ class OptimizationValidationMixin:
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
 
-    @staticmethod
-    def _resolve_fsdp_version(data):
-        """Resolve FSDP version from top-level fsdp_version or fsdp_config.fsdp_version."""
-        fsdp_version = data.get("fsdp_version")
-        if fsdp_version is None:
-            fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
-        return fsdp_version
-
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
@@ -1028,12 +1034,6 @@ class OptimizationValidationMixin:
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
                 )
-            if data.get("fsdp") or data.get("fsdp_config"):
-                fsdp_version = cls._resolve_fsdp_version(data)
-                if str(fsdp_version) != "2":
-                    raise ValueError(
-                        "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
-                    )
         return data
 
     @model_validator(mode="before")
@@ -1053,11 +1053,6 @@ class OptimizationValidationMixin:
                 "polora is not compatible with DeepSpeed or tensor parallelism. "
                 "Use single-GPU, DDP, or FSDP2."
             )
-        if data.get("fsdp") or data.get("fsdp_config"):
-            if str(cls._resolve_fsdp_version(data)) != "2":
-                raise ValueError(
-                    "polora requires FSDP2. Set fsdp_version: 2 to use polora with FSDP."
-                )
 
         untrained = [
             key
@@ -1120,20 +1115,8 @@ class OptimizationValidationMixin:
         if data.get("deepspeed"):
             raise ValueError(
                 "q_galore_adamw8bit is not yet validated with DeepSpeed. "
-                "Use DDP or FSDP2 with use_orig_params=True."
+                "Use DDP or FSDP2."
             )
-        if data.get("fsdp") or data.get("fsdp_config"):
-            fsdp_version = cls._resolve_fsdp_version(data)
-            if str(fsdp_version) != "2":
-                raise ValueError(
-                    "q_galore_adamw8bit requires FSDP2. Set fsdp_version: 2."
-                )
-            fsdp_config = data.get("fsdp_config") or {}
-            if fsdp_config.get("use_orig_params") is not True:
-                raise ValueError(
-                    "q_galore_adamw8bit requires fsdp_config.use_orig_params=True so "
-                    "that per-parameter projection state survives FSDP sharding."
-                )
         if not (data.get("bf16") or data.get("bfloat16") or data.get("fp16")):
             LOG.warning(
                 "q_galore_adamw8bit benefits from mixed-precision (bf16/fp16). "
@@ -1157,13 +1140,6 @@ class OptimizationValidationMixin:
                     f"{optimizer} optimizer is incompatible with DeepSpeed. "
                     "Flash optimizers only support DDP and FSDP2."
                 )
-            if data.get("fsdp") or data.get("fsdp_config"):
-                fsdp_version = cls._resolve_fsdp_version(data)
-                if str(fsdp_version) != "2":
-                    raise ValueError(
-                        f"{optimizer} optimizer is only compatible with FSDP2. "
-                        "Set fsdp_version: 2 to use flash optimizers with FSDP."
-                    )
         return data
 
     @model_validator(mode="after")
@@ -1239,15 +1215,46 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_version(cls, data):
-        fsdp_config = data.get("fsdp_config", {})
-        if fsdp_config and str(data.get("fsdp_version")) != "2":
-            LOG.warning(
-                "FSDP1 is deprecated and will be removed in an upcoming release of "
-                "Axolotl (transformers plans to in v5.20). We recommend migrating "
-                "to fsdp_version: 2 for better performance and compatibility. "
-                "See https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp for "
-                "details on migrating your config."
+        if data.get("fsdp"):
+            raise ValueError(
+                "The top-level `fsdp` list is no longer supported, it configured "
+                "FSDP1 sharding strategies. Use `fsdp_config` instead, see "
+                f"{FSDP1_MIGRATION_DOCS} for the migration guide."
             )
+        fsdp_config = data.get("fsdp_config") or {}
+        for version in (
+            data.get("fsdp_version"),
+            fsdp_config.get("fsdp_version"),
+            fsdp_config.get("version"),
+        ):
+            if version is not None and str(version) != "2":
+                raise ValueError(
+                    f"fsdp_version: {version} is no longer supported, FSDP1 has been "
+                    f"removed from Axolotl. Use fsdp_version: 2 and see "
+                    f"{FSDP1_MIGRATION_DOCS} for the migration guide."
+                )
+
+        for key in list(fsdp_config.keys()):
+            # the `fsdp_` prefix is stripped by another validator, which may not have run yet
+            name = key[5:] if key.startswith("fsdp_") and key != "fsdp_version" else key
+            if name in FSDP1_ONLY_REJECTED_KEYS:
+                replacement = FSDP1_ONLY_REJECTED_KEYS[name]
+                replacement_hint = (
+                    f"Use `{replacement}` instead"
+                    if replacement
+                    else "It has no FSDP2 equivalent, please remove it"
+                )
+                raise ValueError(
+                    f"fsdp_config.{name} is an FSDP1-only option and FSDP1 has been "
+                    f"removed from Axolotl. {replacement_hint}. See "
+                    f"{FSDP1_MIGRATION_DOCS} for the migration guide."
+                )
+            if name in FSDP1_ONLY_IGNORED_KEYS:
+                LOG.warning(
+                    f"fsdp_config.{name} is an FSDP1-only option and is ignored under "
+                    f"FSDP2. Dropping it, see {FSDP1_MIGRATION_DOCS}."
+                )
+                fsdp_config.pop(key)
         return data
 
     @model_validator(mode="before")
@@ -1257,10 +1264,6 @@ class OptimizationValidationMixin:
             return data
 
         if fsdp_config.get("cpu_offload_pin_memory") is False:
-            if str(data.get("fsdp_version")) != "2":
-                raise ValueError(
-                    "FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2"
-                )
             if not fsdp_config.get("offload_params"):
                 raise ValueError(
                     "disabling cpu_offload_pin_memory requires enabling offload_params"
@@ -1270,7 +1273,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp2_base_model_quant_rl(cls, data):
-        if data.get("fsdp_version") == 2 and data.get("rl") in [
+        if data.get("fsdp_config") and data.get("rl") in [
             RLType.DPO,
             RLType.KTO,
             RLType.ORPO,
@@ -1278,7 +1281,7 @@ class OptimizationValidationMixin:
         ]:
             if data.get("load_in_8bit") or data.get("load_in_4bit"):
                 raise ValueError(
-                    f"FSDP2 does not support load_in_8bit or load_in_4bit with {data.get('rl')}. Please use DeepSpeed or set `fsdp_version` to 1."
+                    f"FSDP2 does not support load_in_8bit or load_in_4bit with {data.get('rl')}. Please use DeepSpeed instead."
                 )
 
         return data
@@ -1319,25 +1322,9 @@ class OptimizationValidationMixin:
         if fsdp_version and fsdp_config and not fsdp_config.get("fsdp_version"):
             data["fsdp_config"]["fsdp_version"] = fsdp_version
         if fsdp_config and not data.get("fsdp_version"):
-            # transformers >= 5.10 defaults a missing version to FSDP2; pin
-            # axolotl's FSDP1 default explicitly so unversioned configs keep
-            # their behavior
-            data["fsdp_version"] = 1
-            data["fsdp_config"]["fsdp_version"] = 1
+            data["fsdp_version"] = 2
+            data["fsdp_config"]["fsdp_version"] = 2
         return data
-
-    @model_validator(mode="after")
-    def check_fsdp_offload_w_8bit_optimizer(self):
-        if (
-            hasattr(self, "fsdp_config")
-            and self.fsdp_config
-            and self.optimizer
-            and "8bit" in str(self.optimizer)
-            and self.fsdp_config.offload_params
-            and str(self.fsdp_version) != "2"
-        ):
-            raise ValueError(f"FSDP Offload not compatible with {str(self.optimizer)}")
-        return self
 
     @model_validator(mode="after")
     def check_fsdp2_w_8bit_optimizer(self):
@@ -1346,7 +1333,6 @@ class OptimizationValidationMixin:
             and self.fsdp_config
             and self.optimizer
             and "8bit" in str(self.optimizer)
-            and str(self.fsdp_version) == "2"
         ):
             if self.optimizer in ["adamw_8bit", "adamw_bnb_8bit"]:
                 # CUDA ops errors with bnb 8bit optimizer + FSDP2
@@ -1361,7 +1347,6 @@ class OptimizationValidationMixin:
         if self.qlora_sharded_model_loading is None:
             self.qlora_sharded_model_loading = bool(
                 self.fsdp_config
-                and str(self.fsdp_version) == "2"
                 and self.adapter == "qlora"
                 and self.load_in_4bit
                 and self.fsdp_config.cpu_ram_efficient_loading
@@ -1370,7 +1355,6 @@ class OptimizationValidationMixin:
         # other ranks stay on meta unpacked, so the FSDP2 load scatters mismatched sizes.
         if (
             self.fsdp_config
-            and str(self.fsdp_version) == "2"
             and self.fsdp_config.cpu_ram_efficient_loading
             and self.load_in_4bit
             and not self.qlora_sharded_model_loading
@@ -1399,16 +1383,13 @@ class OptimizationValidationMixin:
     @model_validator(mode="after")
     def check_staged_nf4(self):
         staged = self.nf4_backend == "torchao" or (
-            str(self.fsdp_version) == "2"
-            and self.qlora_sharded_model_loading
-            and self.load_in_4bit
+            self.qlora_sharded_model_loading and self.load_in_4bit
         )
         if not staged:
             return self
         if (
             self.nf4_backend != "torchao"
             and self.fsdp_config
-            and str(self.fsdp_version) == "2"
             and not self.fsdp_config.cpu_ram_efficient_loading
         ):
             # this combination never reached a sharded loader, so keep it inert
@@ -1497,7 +1478,7 @@ class SystemValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_deepspeed(cls, data):
-        if data.get("deepspeed") and data.get("fsdp"):
+        if data.get("deepspeed") and data.get("fsdp_config"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
         return data
 
@@ -1722,7 +1703,9 @@ class ModelCompatibilityValidationMixin:
 
     @model_validator(mode="after")
     def check_falcon_fsdp(self):
-        if (self.base_model and "falcon" in self.base_model.lower()) and self.fsdp:
+        if (
+            self.base_model and "falcon" in self.base_model.lower()
+        ) and self.fsdp_config:
             raise ValueError("FSDP is not supported for falcon models")
         return self
 
@@ -1908,7 +1891,7 @@ class ComplexValidationMixin:
                     "cfg.adapter must support ReLoRA to use ReLoRA restart semantics"
                 )
 
-            if self.fsdp or self.fsdp_config:
+            if self.fsdp_config:
                 raise ValueError("fsdp not supported with ReLoRA")
 
             if self.deepspeed:
@@ -2073,7 +2056,7 @@ class ComplexValidationMixin:
             and self.capabilities.get("n_gpu", 1) > 1
             and self.adapter in ("lora", "qlora")
             and self.rl == RLType.DPO
-            and not self.fsdp
+            and not self.fsdp_config
             and not self.deepspeed
         ):
             LOG.warning(

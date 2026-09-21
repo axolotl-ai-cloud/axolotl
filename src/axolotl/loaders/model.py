@@ -117,6 +117,36 @@ def _nf4_shape_stand_ins() -> Iterator[None]:
             cls.forward = original  # type: ignore[method-assign]
 
 
+def should_convert_embedding_dtypes(cfg: DictDefault) -> bool:
+    """Whether the post-quantization pass converts modules back to `torch_dtype`."""
+    fsdp_enabled = cfg.fsdp_config is not None or cfg.fsdp is not None
+    qlora_and_fsdp_enabled = fsdp_enabled and cfg.adapter == "qlora"
+    needs_fa2_dtype = bool(cfg.adapter or fsdp_enabled)
+
+    return bool(
+        # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
+        # we need to convert them back to fp16/bf16 for flash-attn compatibility.
+        ((needs_fa2_dtype or cfg.attn_needs_dtype_cast) and not qlora_and_fsdp_enabled)
+        or (
+            # CCE requires embedding layers to be in fp16/bf16 for backward pass
+            cfg.cut_cross_entropy
+        )
+    )
+
+
+def should_skip_peft_embedding_upcast(cfg: DictDefault) -> bool:
+    """Whether PEFT's kbit preparation should leave the embeddings alone.
+
+    Upcasting them there is pure peak memory whenever the later conversion back to
+    `torch_dtype` reverts it, so skip it then unless the user asked otherwise.
+    """
+    if not cfg.adapter:
+        return False
+    if cfg.embeddings_skip_upcast is not None:
+        return bool(cfg.embeddings_skip_upcast)
+    return should_convert_embedding_dtypes(cfg)
+
+
 class ModelLoader:
     """Manages model configuration, initialization and application of patches during
     model loading.
@@ -271,8 +301,6 @@ class ModelLoader:
                     and self.cfg.context_parallel_size > 1
                 )
             )
-            if self.cfg.fsdp_config and self.cfg.fsdp_version != 2:
-                self.use_parallel_config = False
 
         if self.use_parallel_config:
             self._set_parallel_config()
@@ -475,19 +503,25 @@ class ModelLoader:
         ):
             self.model.config.eos_token_id = self.tokenizer.eos_token_id
 
+    def _should_convert_embedding_dtypes(self) -> bool:
+        """Whether the post-quantization pass converts modules back to `torch_dtype`."""
+        return should_convert_embedding_dtypes(self.cfg)
+
     def _configure_embedding_dtypes(self):
         """Configure embedding module dtypes."""
         # Get embedding modules
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
 
-        # Initial dtype conversion
-        if not self.is_fsdp_enabled:
-            # We don't run this during FSDP because this will leave mixed and bfloat16
-            # dtypes in the model which FSDP doesn't like
-            if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
-                embedding_modules = []
+        should_convert = self._should_convert_embedding_dtypes()
+
+        # An upcast the conversion below would immediately revert is pure peak memory:
+        # the `.to()` holds an fp32 and a `torch_dtype` copy of the embeddings at once.
+        upcast_embeddings = not should_convert and not (
+            self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast
+        )
+        if upcast_embeddings or not self.is_fsdp_enabled:
             self._convert_embedding_modules_dtype(
-                embedding_modules,
+                embedding_modules if upcast_embeddings else [],
                 dist_dtype=torch.float32,
                 before_kbit_train_or_finetune=True,
             )
@@ -500,29 +534,12 @@ class ModelLoader:
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed
-        needs_fa2_dtype = self.cfg.adapter or self.is_fsdp_enabled
-        if self.cfg.adapter in ["lora", "qlora"]:
-            needs_fa2_dtype = True
-            if self.cfg.gradient_checkpointing:
-                self.model.gradient_checkpointing_enable(
-                    gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
-                )
+        if self.cfg.adapter in ["lora", "qlora"] and self.cfg.gradient_checkpointing:
+            self.model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
+            )
 
         self._prepare_model_for_quantization()
-
-        # Convert dtypes if needed
-        should_convert = (
-            # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
-            # we need to convert them back to fp16/bf16 for flash-attn compatibility.
-            (
-                (needs_fa2_dtype or self.cfg.attn_needs_dtype_cast)
-                and not self.is_qlora_and_fsdp_enabled
-            )
-            or (
-                # CCE requires embedding layers to be in fp16/bf16 for backward pass
-                self.cfg.cut_cross_entropy
-            )
-        )
 
         if should_convert:
             LOG.info("Converting modules to %s", self.cfg.torch_dtype)
@@ -1103,7 +1120,6 @@ class ModelLoader:
             if (
                 self.cfg.tensor_parallel_size <= 1
                 and self.cfg.fsdp_config.cpu_ram_efficient_loading
-                and self.cfg.fsdp_version == 2
             ):
                 # setting device_map for TP is not supported
                 local_rank = int(os.getenv("LOCAL_RANK", "0"))

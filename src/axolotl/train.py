@@ -317,11 +317,7 @@ def save_trained_model(
 
     # FSDP2 (no EP) LoRA: the DCP sharded save fails ("Failed to validate global plan") on the
     # frozen NVFP4 base DTensors, so gather just the adapter and write it directly.
-    if (
-        cfg.adapter
-        and (trainer.is_fsdp_enabled or cfg.fsdp_config)
-        and str(cfg.fsdp_version) == "2"
-    ):
+    if cfg.adapter and (trainer.is_fsdp_enabled or cfg.fsdp_config):
         from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
 
         if save_fsdp2_lora_adapter(model, cfg.output_dir):

@@ -597,19 +597,13 @@ def setup_deepspeed_env(cfg, stage=None):
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
 
-    # TODO @SalmanMohammadi remove FSDP1 args in 0.12
-    if str(cfg.fsdp_version) == "2":
-        os.environ["FSDP_VERSION"] = "2"
+    os.environ["FSDP_VERSION"] = "2"
     if cfg.fsdp_config.activation_checkpointing:
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
     if cfg.fsdp_config.offload_params:
         os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
-    if cfg.fsdp_config.sync_module_states:
-        os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
     if cfg.fsdp_config.cpu_ram_efficient_loading:
         os.environ["FSDP_CPU_RAM_EFFICIENT_LOADING"] = "true"
-    if cfg.fsdp_config.use_orig_params:
-        os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
     if cfg.fsdp_config.state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.state_dict_type
     if cfg.fsdp_config.cpu_offload_pin_memory is not None:

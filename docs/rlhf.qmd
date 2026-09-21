@@ -907,11 +907,11 @@ Async GRPO supports FSDP and DeepSpeed ZeRO-3 for multi-GPU training. vLLM runs 
 **FSDP:**
 
 ```yaml
-fsdp:
-  - full_shard
-  - auto_wrap
+fsdp_version: 2
 fsdp_config:
-  fsdp_transformer_layer_cls_to_wrap: Qwen2DecoderLayer
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen2DecoderLayer
+  reshard_after_forward: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 ```

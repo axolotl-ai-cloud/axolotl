@@ -203,10 +203,7 @@ def _collect_nf4_structures(model, structures):
 def uses_staged_nf4(cfg: DictDefault) -> bool:
     return bool(
         cfg.load_in_4bit
-        and (
-            cfg.get("nf4_backend") == "torchao"
-            or (str(cfg.fsdp_version) == "2" and cfg.qlora_sharded_model_loading)
-        )
+        and (cfg.get("nf4_backend") == "torchao" or cfg.qlora_sharded_model_loading)
     )
 
 

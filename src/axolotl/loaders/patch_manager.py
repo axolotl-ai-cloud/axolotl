@@ -431,9 +431,7 @@ class PatchManager:
 
                 patch_move_missing_keys_meta_for_fsdp()
 
-        if self.cfg.context_parallel_size > 1 or (
-            self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
-        ):
+        if self.cfg.context_parallel_size > 1 or self.cfg.fsdp_config:
             from axolotl.monkeypatch.accelerate.parallelism_config import (
                 patch_parallelism_config,
             )
@@ -441,7 +439,6 @@ class PatchManager:
             patch_parallelism_config()
         if (
             self.cfg.fsdp_config
-            and str(self.cfg.fsdp_version) == "2"
             and self.cfg.adapter
             and self.cfg.fsdp_config.activation_checkpointing
         ):
@@ -450,7 +447,7 @@ class PatchManager:
             )
 
             patch_peft_checkpoint_wrapper_prefixes()
-        if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
+        if self.cfg.fsdp_config:
             from axolotl.monkeypatch.accelerate.float8_fsdp import patch_float8_fsdp
             from axolotl.monkeypatch.accelerate.fsdp2 import (
                 patch_accelerate_fsdp2,
@@ -469,7 +466,9 @@ class PatchManager:
 
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
-        if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
+        from axolotl.loaders.model import should_skip_peft_embedding_upcast
+
+        if should_skip_peft_embedding_upcast(self.cfg):
             from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
 
             patch_peft_prep_code()
@@ -957,11 +956,7 @@ class PatchManager:
 
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
-        if (
-            self.cfg.fsdp_config
-            and str(self.cfg.fsdp_version) == "2"
-            and (self.cfg.load_in_4bit or self.cfg.load_in_8bit)
-        ):
+        if self.cfg.fsdp_config and (self.cfg.load_in_4bit or self.cfg.load_in_8bit):
             from axolotl.monkeypatch.fsdp2_qlora import (
                 apply_init_dtype_attrs_patch,
                 apply_init_sharded_param_patch,

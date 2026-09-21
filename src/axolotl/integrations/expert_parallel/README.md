@@ -156,12 +156,12 @@ For composition with FSDP at 4+ GPUs, set both `expert_parallel_size` and `dp_sh
 # 4-GPU example: ep × dp_shard = 2 × 2 = 4
 expert_parallel_size: 2
 dp_shard_size: 2
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
   state_dict_type: FULL_STATE_DICT
-  sharding_strategy: FULL_SHARD
+  reshard_after_forward: true
 ```
 
 See full example configs at [`examples/expert_parallel/`](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/expert_parallel).

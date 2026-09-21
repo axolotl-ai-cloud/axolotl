@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
-import pytest
 import torch
 import torch.nn as nn
 from torch.distributed.fsdp import MixedPrecisionPolicy
@@ -95,13 +94,6 @@ class _Cfg:
 def test_disabled_is_noop():
     model = nn.Sequential(LlamaRMSNorm(), MLP())
     assert shard_norms_fp32(model, _Cfg(fp32_norms=False)) == 0
-
-
-def test_enabled_requires_fsdp2():
-    model = nn.Sequential(LlamaRMSNorm())
-    cfg = _Cfg(fp32_norms=True, fsdp_version=1)
-    with pytest.raises(ValueError, match="fsdp_version: 2"):
-        shard_norms_fp32(model, cfg)
 
 
 def test_meta_device_is_supported(monkeypatch):
