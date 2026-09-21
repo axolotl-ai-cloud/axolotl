@@ -909,6 +909,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.core.trainers.base.AxolotlTrainer" id="toc-axolotl.core.trainers.base.AxolotlTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.base.AxolotlTrainer">AxolotlTrainer</a></li>
   </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch" id="toc-axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch" class="nav-link" data-scroll-target="#axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch">model_loss_accepts_num_items_in_batch</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -1057,11 +1061,39 @@ model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code>
 </tr>
 </tbody>
 </table>
+</section>
+</section>
+</section>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch">model_loss_accepts_num_items_in_batch</a></td>
+<td>Whether <code>model</code>’s loss function consumes <code>num_items_in_batch</code>.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch">model_loss_accepts_num_items_in_batch</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.model_loss_accepts_num_items_in_batch(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether <code>model</code>’s loss function consumes <code>num_items_in_batch</code>.</p>
+<p>The kwarg is a parameter of <code>loss_function</code>, not of <code>forward()</code>, which only
+receives it through <code>**kwargs</code>, so inspecting <code>forward()</code> never finds it.
+PEFT wrappers are unwrapped via <code>get_base_model()</code> rather than by walking
+<code>.base_model</code>, which is a property on every <code>PreTrainedModel</code> and would
+descend from e.g.&nbsp;<code>LlamaForCausalLM</code> into the <code>LlamaModel</code> that computes no
+loss at all.</p>
 
 
-</section>
-</section>
-</section>
 </section>
 </section>
 </section>

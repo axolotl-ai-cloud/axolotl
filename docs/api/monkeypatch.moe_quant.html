@@ -914,6 +914,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.monkeypatch.moe_quant.get_moe_quantized_count" id="toc-axolotl.monkeypatch.moe_quant.get_moe_quantized_count" class="nav-link" data-scroll-target="#axolotl.monkeypatch.moe_quant.get_moe_quantized_count">get_moe_quantized_count</a></li>
   <li><a href="#axolotl.monkeypatch.moe_quant.patch_moe_quantization_on_load" id="toc-axolotl.monkeypatch.moe_quant.patch_moe_quantization_on_load" class="nav-link" data-scroll-target="#axolotl.monkeypatch.moe_quant.patch_moe_quantization_on_load">patch_moe_quantization_on_load</a></li>
   <li><a href="#axolotl.monkeypatch.moe_quant.patch_peft_target_parameters_matching" id="toc-axolotl.monkeypatch.moe_quant.patch_peft_target_parameters_matching" class="nav-link" data-scroll-target="#axolotl.monkeypatch.moe_quant.patch_peft_target_parameters_matching">patch_peft_target_parameters_matching</a></li>
+  <li><a href="#axolotl.monkeypatch.moe_quant.record_quantized_expert" id="toc-axolotl.monkeypatch.moe_quant.record_quantized_expert" class="nav-link" data-scroll-target="#axolotl.monkeypatch.moe_quant.record_quantized_expert">record_quantized_expert</a></li>
   <li><a href="#axolotl.monkeypatch.moe_quant.replace_parameter_8bit" id="toc-axolotl.monkeypatch.moe_quant.replace_parameter_8bit" class="nav-link" data-scroll-target="#axolotl.monkeypatch.moe_quant.replace_parameter_8bit">replace_parameter_8bit</a></li>
   </ul></li>
   </ul></li>
@@ -997,6 +998,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Fix PEFT’s _inject_parameters for target_parameters on quantized MoE experts.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.monkeypatch.moe_quant.record_quantized_expert">record_quantized_expert</a></td>
+<td>Capture definition order before a parametrization reorders it, then count it.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.moe_quant.replace_parameter_8bit">replace_parameter_8bit</a></td>
 <td>Replace a module parameter with an 8-bit quantized version using parametrization.</td>
 </tr>
@@ -1026,9 +1031,14 @@ targeting quantized expert params via name-suffix matching.</li>
 activates, so its delta is not masked by an already-cached value.</li>
 </ol>
 </section>
+<section id="axolotl.monkeypatch.moe_quant.record_quantized_expert" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.moe_quant.record_quantized_expert">record_quantized_expert</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.moe_quant.record_quantized_expert(path, module)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Capture definition order before a parametrization reorders it, then count it.</p>
+</section>
 <section id="axolotl.monkeypatch.moe_quant.replace_parameter_8bit" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.moe_quant.replace_parameter_8bit">replace_parameter_8bit</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.moe_quant.replace_parameter_8bit(module, param_name)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.moe_quant.replace_parameter_8bit(module, param_name)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Replace a module parameter with an 8-bit quantized version using parametrization.</p>
 
 

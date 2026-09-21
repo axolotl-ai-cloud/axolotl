@@ -907,6 +907,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.loaders.adapter.read_saved_adapter_config" id="toc-axolotl.loaders.adapter.read_saved_adapter_config" class="nav-link" data-scroll-target="#axolotl.loaders.adapter.read_saved_adapter_config">read_saved_adapter_config</a></li>
   <li><a href="#axolotl.loaders.adapter.setup_quantized_meta_for_peft" id="toc-axolotl.loaders.adapter.setup_quantized_meta_for_peft" class="nav-link" data-scroll-target="#axolotl.loaders.adapter.setup_quantized_meta_for_peft">setup_quantized_meta_for_peft</a></li>
   <li><a href="#axolotl.loaders.adapter.setup_quantized_peft_meta_for_training" id="toc-axolotl.loaders.adapter.setup_quantized_peft_meta_for_training" class="nav-link" data-scroll-target="#axolotl.loaders.adapter.setup_quantized_peft_meta_for_training">setup_quantized_peft_meta_for_training</a></li>
   </ul></li>
@@ -935,23 +936,33 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.loaders.adapter.read_saved_adapter_config">read_saved_adapter_config</a></td>
+<td>The adapter config saved under <code>lora_model_dir</code>, or None when it is not readable.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.loaders.adapter.setup_quantized_meta_for_peft">setup_quantized_meta_for_peft</a></td>
 <td>Replaces <code>quant_state.to</code> with a dummy function to prevent PEFT from moving <code>quant_state</code> to meta device</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.loaders.adapter.setup_quantized_peft_meta_for_training">setup_quantized_peft_meta_for_training</a></td>
 <td>Replaces dummy <code>quant_state.to</code> method with the original function to allow training to continue</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.loaders.adapter.read_saved_adapter_config" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.adapter.read_saved_adapter_config">read_saved_adapter_config</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>loaders.adapter.read_saved_adapter_config(lora_model_dir, from_hub<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The adapter config saved under <code>lora_model_dir</code>, or None when it is not readable.</p>
+<p>A hub id has no local file; with <code>from_hub</code> the config is fetched the way PEFT will.</p>
+</section>
 <section id="axolotl.loaders.adapter.setup_quantized_meta_for_peft" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.adapter.setup_quantized_meta_for_peft">setup_quantized_meta_for_peft</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>loaders.adapter.setup_quantized_meta_for_peft(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.adapter.setup_quantized_meta_for_peft(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Replaces <code>quant_state.to</code> with a dummy function to prevent PEFT from moving <code>quant_state</code> to meta device</p>
 </section>
 <section id="axolotl.loaders.adapter.setup_quantized_peft_meta_for_training" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.adapter.setup_quantized_peft_meta_for_training">setup_quantized_peft_meta_for_training</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.adapter.setup_quantized_peft_meta_for_training(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>loaders.adapter.setup_quantized_peft_meta_for_training(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Replaces dummy <code>quant_state.to</code> method with the original function to allow training to continue</p>
 
 

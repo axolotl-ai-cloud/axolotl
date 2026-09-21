@@ -910,6 +910,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </ul></li>
   <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
   <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a></li>
+  <li><a href="#cpu-staged-fsdp2-qlora-loading" id="toc-cpu-staged-fsdp2-qlora-loading" class="nav-link" data-scroll-target="#cpu-staged-fsdp2-qlora-loading">CPU-staged FSDP2 QLoRA loading</a>
+  <ul class="collapse">
+  <li><a href="#lora-init-compatibility" id="toc-lora-init-compatibility" class="nav-link" data-scroll-target="#lora-init-compatibility">LoRA init compatibility</a></li>
+  <li><a href="#long-staging-runs-and-progress" id="toc-long-staging-runs-and-progress" class="nav-link" data-scroll-target="#long-staging-runs-and-progress">Long staging runs and progress</a></li>
+  <li><a href="#sharding-and-tensor-shapes" id="toc-sharding-and-tensor-shapes" class="nav-link" data-scroll-target="#sharding-and-tensor-shapes">Sharding and tensor shapes</a></li>
+  <li><a href="#torchao-nf4-alternative" id="toc-torchao-nf4-alternative" class="nav-link" data-scroll-target="#torchao-nf4-alternative">torchao NF4 alternative</a></li>
+  <li><a href="#resume-and-merge" id="toc-resume-and-merge" class="nav-link" data-scroll-target="#resume-and-merge">Resume and merge</a></li>
+  </ul></li>
   <li><a href="#implementation-details" id="toc-implementation-details" class="nav-link" data-scroll-target="#implementation-details">Implementation details</a></li>
   </ul>
 </nav>
@@ -1000,13 +1008,187 @@ Note
 <h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
 <ul>
 <li><code>lora_target_linear</code> is not compatible with <code>quantize_moe_experts</code>. See <a href="#expert-lora-targeting">Expert LoRA targeting</a> instead.</li>
-<li><code>cpu_ram_efficient_loading</code> hangs / takes long time with FSDP2 + QLoRA.</li>
+<li>With CPU-efficient loading disabled, the FSDP2 QLoRA loader needs the entire quantized model to fit on each GPU before sharding. Use the CPU-staged loader below to avoid this initial replica.</li>
 <li>Total model parameter count may display incorrectly (trainable param count is correct).</li>
 <li>FSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps, which then drops. QLoRA does not exhibit this.</li>
 <li>FSDP2 may use more VRAM per GPU than single GPU training due to not all layers being properly sharded across ranks.</li>
 <li>Model loading takes longer due to on-demand quantization, even on consecutive runs.</li>
 <li>DeepSpeed has not been tested.</li>
 </ul>
+</section>
+<section id="cpu-staged-fsdp2-qlora-loading" class="level2">
+<h2 class="anchored" data-anchor-id="cpu-staged-fsdp2-qlora-loading">CPU-staged FSDP2 QLoRA loading</h2>
+<p>For models whose quantized weights do not fit on one GPU, enable:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> qlora</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">quantize_moe_experts</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">nf4_backend</span><span class="kw">:</span><span class="at"> bitsandbytes</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> SHARDED_STATE_DICT</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> YourDecoderLayer</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>qlora_sharded_model_loading</code> defaults to true for FSDP2 with <code>adapter: qlora</code>,
+<code>load_in_4bit: true</code> and <code>cpu_ram_efficient_loading: true</code> when omitted or null.
+An explicit false is preserved and requires disabling <code>cpu_ram_efficient_loading</code>.
+For other configurations, the default remains false.</p>
+<p>Replace <code>YourDecoderLayer</code> with the decoder class for your model. Rank zero reads
+and quantizes the original floating-point checkpoint in bounded GPU chunks,
+storing packed weights in CPU memory. Other ranks construct the model on the
+meta device. Trainable adapters receive CPU storage before optimizer preparation so
+Accelerate can map each adapter to its sharded parameter; frozen base weights remain
+on meta on peer ranks. After FSDP wrapping, rank zero transfers individual parameter shards;
+no rank needs a complete GPU replica during loading. Rank zero still needs CPU RAM
+for the complete packed model and checkpoint conversion temporaries. A fused MoE
+conversion can still require a complete floating-point expert tensor and its source
+tensors on CPU. Quantization metadata
+is replicated across ranks. Frozen base linear operations are checkpointed internally
+so backward recomputes dense weights instead of retaining them for every layer. Training still needs enough GPU memory to gather and
+execute an individual wrapped layer, including its dequantized weights. While shards are
+distributed, rank zero also briefly holds one full packed tensor on its accelerator, bounded
+by the largest quantized tensor; this peak is smaller than the wrapped-layer requirement
+above.</p>
+<p><code>offload_params</code> controls FSDP parameter offloading after loading. This path requires
+an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
+DeepSpeed, tensor/context/expert parallelism, DoRA, <code>modules_to_save</code> and
+value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
+olora remains available on the non-staged bitsandbytes loader with
+<code>cpu_ram_efficient_loading: false</code> (the torchao backend is always staged); pissa and
+loftq require an unquantized base.</p>
+<section id="lora-init-compatibility" class="level3">
+<h3 class="anchored" data-anchor-id="lora-init-compatibility">LoRA init compatibility</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Init</th>
+<th>Linear targets, non-staged 4-bit</th>
+<th>Linear targets, CPU-staged</th>
+<th><code>lora_target_parameters</code> (fused experts)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>default, <code>gaussian</code></td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+<tr class="even">
+<td><code>olora</code></td>
+<td>yes</td>
+<td>rejected</td>
+<td>rejected</td>
+</tr>
+<tr class="odd">
+<td><code>pissa</code>, <code>loftq</code></td>
+<td>rejected by PEFT (need an unquantized base)</td>
+<td>rejected</td>
+<td>rejected</td>
+</tr>
+<tr class="even">
+<td><code>corda</code>, <code>eva</code></td>
+<td>not wired</td>
+<td>rejected</td>
+<td>rejected</td>
+</tr>
+</tbody>
+</table>
+<p>Value-dependent inits read and rewrite the base weight while the adapter is built.
+Fused expert parameters have no <code>weight</code> attribute, so PEFT fails inside the init;
+Axolotl rejects that combination at validation, before any weights load. Resuming an
+adapter that was saved with a value-dependent init under CPU-staged loading is also
+rejected: PEFT re-runs that init on load and the packed base cannot take its residual.
+Convert such an adapter with PEFT’s <code>path_initial_model_for_weight_conversion</code> first.</p>
+</section>
+<section id="long-staging-runs-and-progress" class="level3">
+<h3 class="anchored" data-anchor-id="long-staging-runs-and-progress">Long staging runs and progress</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ddp_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">21600</span><span class="co">  # Seconds; six hours for rank-zero loading and metadata exchange.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>NF4 staging creates a dedicated Gloo control group on every rank before loading.
+Its timeout uses <code>AXOLOTL_NCCL_TIMEOUT</code> when set, otherwise <code>ddp_timeout</code>, otherwise
+1800 seconds. This applies even if the default process group was initialized earlier.
+Status and metadata broadcasts use CPU tensors on this group, so peers do not enter
+NCCL bootstrap while rank zero is quantizing. This does not change an existing
+training process group’s timeout or the launcher’s rendezvous timeout.</p>
+<p>Logs identify checkpoint conversion, metadata preparation and broadcast, adapter initialization, FSDP wrapping, and shard distribution. Long phases
+emit elapsed-time messages every minute; shard distribution also reports tensor counts.
+An elapsed-time message indicates the phase has not finished, not proof that it is
+making progress. Peer metadata is built on meta without copying CPU tensor data.</p>
+</section>
+<section id="sharding-and-tensor-shapes" class="level3">
+<h3 class="anchored" data-anchor-id="sharding-and-tensor-shapes">Sharding and tensor shapes</h3>
+<p>The staged loader supports the one-dimensional FSDP2 data-parallel mesh with both
+<code>reshard_after_forward: true</code> and <code>false</code>. Transformer-based and size-based wrapping
+are supported, as is wrapping only the root module. Size-based wrapping keeps NF4
+parametrization containers and expert adapter internals inside their owning module.
+A root-only wrapper gathers the whole model for computation, so use decoder-layer
+wrapping when the model does not fit on a single GPU.</p>
+<p>Packed parameters stay uint8 under FSDP2 mixed precision: Axolotl stops FSDP2 casting
+non-floating parameters to the policy’s <code>param_dtype</code>, since converting packed bytes to
+bf16 values corrupts the quantized base. They are sharded along their first storage
+dimension, which need not align with expert or quantization block boundaries. FSDP gathers that storage before
+NF4 reconstruction; logical weights retain the original dense or fused expert shape.
+Uneven splits and empty adapter shards are supported. Quantization metadata remains
+replicated. Full and sharded checkpoint formats preserve the global shapes.</p>
+<p>Hybrid replicated/sharded meshes (<code>dp_replicate_size &gt; 1</code>) are currently unsupported
+and rejected. This restriction is separate from the <code>reshard_after_forward</code> setting.</p>
+</section>
+<section id="torchao-nf4-alternative" class="level3">
+<h3 class="anchored" data-anchor-id="torchao-nf4-alternative">torchao NF4 alternative</h3>
+<p>Set <code>nf4_backend: torchao</code> to use torchao’s <code>NF4Tensor</code> quantization for the frozen
+base weights. It can also be used without FSDP on a single GPU. Linear weights and,
+when enabled, fused expert weights are converted into bounded NF4Tensor chunks.
+Packed storage is exposed through parametrizations so FSDP2 can shard it.</p>
+<p>Torchao 0.18 is the pinned version; the loader also resolves 0.17’s module path, where the NF4 implementation lived before the move.
+Torchao uses NF4 codes with double-quantized scales, but its scale quantization is
+different from bitsandbytes. Switching backends changes the quantized base weights.
+The torchao path uses fixed 64-element weight blocks and 256-scale blocks, with
+independent double quantization per chunk. It does not call bitsandbytes’ int32
+quantization kernels; bounded chunks also limit torchao’s conversion temporaries.</p>
+<p>The bitsandbytes path splits quantization and dequantization into block-aligned
+chunks to avoid the native kernel’s <code>2**31 - 1</code> element limit. It compresses the
+complete scale vector once, preserving bitsandbytes’ double-quantization semantics.
+The final packed tensor and requested dequantized output still need to fit in memory.</p>
+</section>
+<section id="resume-and-merge" class="level3">
+<h3 class="anchored" data-anchor-id="resume-and-merge">Resume and merge</h3>
+<p>Use <code>resume_from_checkpoint</code> with the same base checkpoint, NF4 backend, quantization
+settings and adapter configuration. The base is reconstructed and sharded before
+restoring the adapter and optimizer state. Both <code>SHARDED_STATE_DICT</code> and
+<code>FULL_STATE_DICT</code> adapter checkpoints are supported. Optimizer restoration uses
+Axolotl’s pinned Accelerate loader.</p>
+<p>Keep <code>nf4_backend</code> in the configuration passed to <code>axolotl merge-lora</code> and use
+<code>merge_method: memory_efficient</code> (the default). The legacy CLI merge path is
+rejected for staged NF4 adapters because it loads the original dense base. Merging
+materializes the quantized base and applies the adapter delta, producing ordinary
+floating-point weights. The memory-efficient merge path reproduces the selected
+backend’s quantization before adding the delta. Keep the training dtype and
+<code>bnb_config_kwargs.llm_int8_skip_modules</code> unchanged for merging; both are part of
+the quantized base definition.</p>
+<p>Under staged loading, <code>llm_int8_skip_modules</code> entries match in one of three ways:</p>
+<ul>
+<li>A plain name or dotted path matches by name: <code>lm_head</code> excludes that module
+wherever it appears, <code>model.layers.0.mlp</code> excludes that subtree, and <code>proj</code>
+excludes only a module named exactly <code>proj</code>, not <code>q_proj</code>.</li>
+<li>A leading or trailing dot requests a plain substring match against the full
+parameter path: <code>_proj.</code> excludes every <code>*_proj</code> weight.</li>
+<li>Regex metacharacters request a regular-expression search over the full
+parameter path: <code>layers\.[0-3]\.</code> excludes the first four layers.</li>
+</ul>
+<p><code>lm_head</code> and <code>embed_out</code> are always excluded.</p>
+<p>Because these rules differ from Transformers’ <code>modules_to_not_convert</code>, a key that
+worked under plain QLoRA can match nothing here. At the end of staging the loader
+logs, for every exclusion entry, its matching tier and how many quantization
+candidates it excluded, and warns for each <code>llm_int8_skip_modules</code> entry that
+excluded none; check that warning before assuming a module stayed unquantized.</p>
+</section>
 </section>
 <section id="implementation-details" class="level2">
 <h2 class="anchored" data-anchor-id="implementation-details">Implementation details</h2>
