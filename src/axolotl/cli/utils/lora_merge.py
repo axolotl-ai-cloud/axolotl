@@ -288,7 +288,10 @@ def _param_wrapper_target(key, param_wrapper_map, weight_renamings=None):
         if name in param_wrapper_map
     }
     if len(matches) > 1:
-        raise ValueError(f"Ambiguous ParamWrapper identity for {key}: {list(matches)}")
+        raise ValueError(
+            f"Ambiguous ParamWrapper identity for {key}: {list(matches)}; use a base "
+            "checkpoint whose expert layout matches the adapter"
+        )
     return next(iter(matches.values()), None)
 
 
