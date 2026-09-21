@@ -75,9 +75,24 @@ FSDP allows you to shard model parameters, gradients, and optimizer states acros
 
 ::: {.callout-note}
 
-FSDP2 is recommended for new users. FSDP1 is deprecated and will be removed in an upcoming release of Axolotl.
+Only FSDP2 is supported. FSDP1 has been removed, and setting `fsdp_version: 1` raises an error.
 
 :::
+
+### Configuration {#sec-fsdp-config}
+
+```{.yaml}
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+```
+
+When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the minimum parameter count a module must have to be wrapped (e.g. `100000000`).
 
 ### FSDP + QLoRA {#sec-fsdp-qlora}
 
@@ -85,21 +100,22 @@ For combining FSDP with QLoRA, see our [dedicated guide](fsdp_qlora.qmd).
 
 ### Migrating from FSDP1 to FSDP2 {#sec-migrate-fsdp1-fsdp2}
 
-To migrate your config from FSDP1 to FSDP2, you must use the `fsdp_version` top-level config field to specify the FSDP version, and
-also follow the config field mapping below to update field names.
+FSDP1 has been removed. `fsdp_version: 1` and the bare top-level `fsdp:` list are rejected, and `fsdp_version` defaults to `2`.
+To migrate an FSDP1 config, replace the `fsdp:` list with `fsdp_config:` and follow the config field mapping below to update field names.
 
 #### Config mapping
 
 FSDP1 | FSDP2
 -------- | --------
 fsdp_sharding_strategy | reshard_after_forward
-fsdp_backward_prefetch_policy | **REMOVED**
-fsdp_backward_prefetch | **REMOVED**
-fsdp_forward_prefetch | **REMOVED**
-fsdp_sync_module_states | **REMOVED**
+fsdp_backward_prefetch_policy | **REMOVED** (dropped with a warning)
+fsdp_backward_prefetch | **REMOVED** (dropped with a warning)
+fsdp_forward_prefetch | **REMOVED** (rejected with an error)
+fsdp_sync_module_states | **REMOVED** (dropped with a warning)
+fsdp_limit_all_gathers | **REMOVED** (dropped with a warning)
 fsdp_cpu_ram_efficient_loading | cpu_ram_efficient_loading
 fsdp_state_dict_type | state_dict_type
-fsdp_use_orig_params | **REMOVED**
+fsdp_use_orig_params | **REMOVED** (dropped with a warning; FSDP2 always trains original parameters)
 fsdp_activation_checkpointing | activation_checkpointing
 
 For more details, please see the migration guide in the [torchtitan repo](https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md). In Axolotl,
@@ -128,27 +144,6 @@ fsdp_config:
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
 ```
-
-When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the minimum parameter count a module must have to be wrapped (e.g. `100000000`).
-
-### FSDP1 (deprecated) {#sec-fsdp-config}
-
-::: {.callout-note}
-
-Using `fsdp` to configure FSDP is deprecated and will be removed in an upcoming release of Axolotl. Please use `fsdp_config` as above instead.
-
-:::
-
-```{.yaml}
-fsdp:
-  - full_shard
-  - auto_wrap
-fsdp_config:
-  fsdp_offload_params: true
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
-```
-
 
 ## Sequence parallelism {#sec-sequence-parallelism}
 
