@@ -23,6 +23,27 @@ from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 LOG = get_logger(__name__)
 
+
+def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
+    """The error transformers swallows when its kernels-hub fallback fails."""
+    try:
+        from kernels import get_kernel
+        from transformers.integrations.hub_kernels import get_attn_kernel_version
+        from transformers.modeling_flash_attention_utils import (
+            FLASH_ATTN_KERNEL_FALLBACK,
+        )
+    except ImportError as err:
+        return f"{type(err).__name__}: {err}"
+    repo_id = FLASH_ATTN_KERNEL_FALLBACK.get(attn_implementation)
+    if repo_id is None:
+        return None
+    try:
+        get_kernel(repo_id, version=get_attn_kernel_version(repo_id))
+    except Exception as err:  # noqa: BLE001
+        return f"{type(err).__name__}: {err}"
+    return None
+
+
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 
@@ -1363,6 +1384,19 @@ class OptimizationValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_bnb_blocksize(self):
+        if (
+            self.load_in_4bit
+            and self.nf4_backend != "torchao"
+            and (self.bnb_config_kwargs or {}).get("blocksize", 64) != 64
+        ):
+            raise ValueError(
+                "bitsandbytes 4-bit loading always quantizes with blocksize 64; "
+                "remove `bnb_config_kwargs.blocksize` or set it to 64."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_staged_nf4(self):
         staged = self.nf4_backend == "torchao" or (
             str(self.fsdp_version) == "2"
@@ -1547,12 +1581,14 @@ class SystemValidationMixin:
         else:
             available = is_flash_attn_2_available(kernels_fallback_ok=True)
         if not available:
+            reason = _flash_attn_kernel_failure(self.attn_implementation)
             raise ValueError(
                 f"attn_implementation: {self.attn_implementation} is set, but no "
                 "flash-attn build is available in this environment: the flash-attn "
                 "package is not installed and the kernels hub has no prebuilt binary "
                 f"for torch {torch.__version__}. Install a flash-attn build matching "
                 "your torch version, or set `attn_implementation: sdpa`."
+                + (f" The kernels hub lookup failed with: {reason}" if reason else "")
             )
         return self
 

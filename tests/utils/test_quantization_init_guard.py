@@ -154,3 +154,40 @@ def test_axolotl_parametrizations_survive_a_bitsandbytes_rename(
         unsafe=True,
     )
     assert initialize(unreachable) is True
+
+
+def test_guard_installed_without_torchao_recognizes_it_later(monkeypatch):
+    """A guard installed while torchao was unimportable must not stay blind to it."""
+    mx_tensor = pytest.importorskip("torchao.prototype.mx_formats.mx_tensor")
+    from transformers import PreTrainedModel
+
+    masked = {
+        name: sys.modules[name]
+        for name in list(sys.modules)
+        if name == "torchao" or name.startswith("torchao.")
+    }
+    for name in masked:
+        monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "torchao", None)
+    patch_transformers_skip_quantized_init()
+    for name, module in masked.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    patch_transformers_skip_quantized_init()
+
+    initialized = []
+
+    class _Model(PreTrainedModel):
+        config_class = None
+
+        def _init_weights(self, module):
+            initialized.append(module)
+
+    module = nn.Linear(32, 32, bias=False)
+    module.weight = nn.Parameter(
+        mx_tensor.MXTensor.to_mx(
+            torch.zeros(32, 32, dtype=torch.bfloat16), torch.float8_e4m3fn, 32
+        ),
+        requires_grad=False,
+    )
+    PreTrainedModel._initialize_weights(_Model.__new__(_Model), module)
+    assert not initialized

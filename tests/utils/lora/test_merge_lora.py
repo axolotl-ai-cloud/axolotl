@@ -12,6 +12,7 @@ from axolotl.cli.utils.lora_merge import (
     _find_param_wrapper_lora,
     _merge_tensor_with_lora,
     _resolve_lora_alpha_for_key,
+    _runtime_key,
     _scope_renaming,
     copy_non_model_files,
     find_lora_weights,
@@ -474,6 +475,35 @@ class TestEfficientMerge:
         # zero LoRA, so any difference from base is the NF4 roundtrip
         assert not torch.equal(merged, base)
 
+    def test_runtime_key_returns_the_prefixed_path_that_matched(self):
+        """Exclusions are spelled in runtime names, so the gate must see the prefix."""
+        from axolotl.utils.nf4 import nf4_should_quantize
+
+        runtime_key = _runtime_key(
+            "layers.0.self_attn.q_proj.weight",
+            None,
+            {"model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert runtime_key == "model.layers.0.self_attn.q_proj.weight"
+        assert not nf4_should_quantize(
+            runtime_key,
+            linear=True,
+            expert=False,
+            skips={"model.layers.0.self_attn.q_proj"},
+        )
+
+    def test_runtime_key_leaves_runtime_spelling_untouched(self):
+        """A key already in runtime spelling gains no prefix."""
+        assert (
+            _runtime_key(
+                "model.layers.0.self_attn.q_proj.weight",
+                None,
+                {"model.layers.0.self_attn.q_proj": "Linear"},
+            )
+            == "model.layers.0.self_attn.q_proj.weight"
+        )
+
     def test_bitsandbytes_merge_without_introspection(self, tmp_path):
         """An empty layer_type_map must not raise a torchao-specific error on bnb."""
         hidden, r, alpha = 32, 8, 16
@@ -865,6 +895,86 @@ class TestEfficientMerge:
         expected_fused = base_fused + scale * (lora_b @ lora_a)
         assert torch.allclose(gate_up, expected_fused, atol=1e-5)
 
+    @pytest.mark.parametrize("use_rslora", [False, True])
+    @pytest.mark.parametrize("reverse_targets", [False, True])
+    def test_fused_paramwrapper_merge_matches_peft(self, use_rslora, reverse_targets):
+        from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
+        from transformers.core_model_loading import (
+            Concatenate,
+            MergeModulelist,
+            WeightConverter,
+        )
+
+        from axolotl.cli.utils.lora_merge import _fuse_and_unfuse_with_merge
+
+        class ExpertModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.experts = torch.nn.Module()
+                self.experts.gate_up_proj = torch.nn.Parameter(torch.randn(4, 48, 16))
+                self.experts.down_proj = torch.nn.Parameter(torch.randn(4, 16, 24))
+
+        torch.manual_seed(42)
+        model = ExpertModel()
+        base = {
+            name: tensor.detach().clone() for name, tensor in model.named_parameters()
+        }
+        targets = ["experts.gate_up_proj", "experts.down_proj"]
+        if reverse_targets:
+            targets.reverse()
+        config = LoraConfig(
+            r=2,
+            lora_alpha=4,
+            target_parameters=targets,
+            use_rslora=use_rslora,
+        )
+        model = get_peft_model(model, config)
+        with torch.no_grad():
+            for parameter in model.parameters():
+                if parameter.requires_grad:
+                    parameter.normal_(std=0.1)
+        adapter = get_peft_model_state_dict(model)
+        assert any(".base_layer.lora_A.weight" in name for name in adapter)
+        expected = model.merge_and_unload()
+        shards = {}
+        for index in range(4):
+            gate, up = base["experts.gate_up_proj"][index].chunk(2, dim=0)
+            shards[f"experts.{index}.gate_proj.weight"] = gate
+            shards[f"experts.{index}.up_proj.weight"] = up
+            shards[f"experts.{index}.down_proj.weight"] = base["experts.down_proj"][
+                index
+            ]
+        converters = [
+            WeightConverter(
+                source_patterns=[
+                    "experts.*.gate_proj.weight",
+                    "experts.*.up_proj.weight",
+                ],
+                target_patterns="experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            ),
+            WeightConverter(
+                source_patterns="experts.*.down_proj.weight",
+                target_patterns="experts.down_proj",
+                operations=[MergeModulelist(dim=0)],
+            ),
+        ]
+        result, merged_count, processed = _fuse_and_unfuse_with_merge(
+            shards,
+            converters,
+            adapter,
+            2.0,
+            config.to_dict(),
+            "cpu",
+            expected_num_experts=4,
+        )
+        assert merged_count == 2
+        assert set(result) == set(base)
+        assert set(result) <= processed
+        for name, tensor in expected.named_parameters():
+            torch.testing.assert_close(result[name], tensor, rtol=0, atol=1e-6)
+            assert not torch.equal(result[name], base[name])
+
     def test_fuse_skipped_for_incomplete_expert_shard(self):
         """Expert lists split across shard boundaries must not be fused from a partial shard."""
         from transformers.core_model_loading import (
@@ -1139,8 +1249,8 @@ class TestEfficientMerge:
                 f"Expert {e} mismatch"
             )
 
-    def test_param_wrapper_nesting_dim_filter(self):
-        """_find_param_wrapper_lora skips wrong-dimension LoRA at outer level."""
+    def test_param_wrapper_nesting_rejects_ambiguous_shapes(self):
+        """Transposed shapes cannot identify which nested adapter owns a parameter."""
         num_experts = 4
         r = 2
 
@@ -1161,19 +1271,11 @@ class TestEfficientMerge:
             ),
         }
 
-        # gate_up_proj shape [4, 8, 16] — should match outer LoRA
-        a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.gate_up_proj", tensor_shape=(4, 8, 16)
-        )
-        assert a is not None and name == "gate_up_proj"
-        assert a.shape == (r * num_experts, 8)  # outer
-
-        # down_proj shape [4, 16, 8] — outer dims don't match, should find inner
-        a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.down_proj", tensor_shape=(4, 16, 8)
-        )
-        assert a is not None and name == "down_proj"
-        assert a.shape == (r * num_experts, 16)  # inner (base_layer)
+        for name, shape in (("gate_up_proj", (4, 8, 16)), ("down_proj", (4, 16, 8))):
+            with pytest.raises(ValueError, match="Ambiguous ParamWrapper"):
+                _find_param_wrapper_lora(
+                    lora_state, f"mod.experts.{name}", tensor_shape=shape
+                )
 
         # shape that matches neither — should return None
         a, b, name = _find_param_wrapper_lora(
@@ -3060,3 +3162,72 @@ class TestQuantizedBaseMerge:
         assert out["a.weight"].dtype == torch.bfloat16  # dequantized
         assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is
         assert "b.weight_scale" in out  # its scale not dropped
+
+
+@pytest.mark.parametrize("nf4_backend", ["bitsandbytes", "torchao"])
+@pytest.mark.parametrize(
+    "nf4_skips", [None, set(), {"model.model.layers.0.mlp.experts.gate_up_proj"}]
+)
+@pytest.mark.parametrize("flags", [(True, False), (False, True), (False, False)])
+def test_fused_expert_nf4_decision(nf4_backend, nf4_skips, flags, monkeypatch):
+    """The fused tensor is quantized exactly when the runtime key is an unskipped expert."""
+    from transformers.core_model_loading import (
+        Concatenate,
+        MergeModulelist,
+        WeightConverter,
+    )
+
+    from axolotl.cli.utils import lora_merge
+    from axolotl.utils.nf4 import nf4_should_quantize
+
+    simulate_nf4, simulate_nf4_experts = flags
+    fused_key = "model.layers.0.mlp.experts.gate_up_proj"
+    layer_type_map = {"model." + fused_key: "Linear"}
+    shard = {}
+    for expert in range(4):
+        for proj in ("gate_proj", "up_proj"):
+            shard[f"model.layers.0.mlp.experts.{expert}.{proj}.weight"] = torch.randn(
+                12, 8
+            )
+
+    roundtrips = []
+    monkeypatch.setattr(
+        lora_merge,
+        "_simulate_nf4_roundtrip",
+        lambda tensor, **kwargs: roundtrips.append(tuple(tensor.shape)) or tensor,
+    )
+
+    expected = simulate_nf4 or simulate_nf4_experts
+    if nf4_backend == "torchao" or nf4_skips is not None:
+        expected = nf4_should_quantize(
+            "model." + fused_key,
+            linear=False,
+            expert=simulate_nf4_experts,
+            skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
+        )
+
+    result, _, _ = lora_merge._fuse_and_unfuse_with_merge(
+        shard,
+        [
+            WeightConverter(
+                source_patterns=[
+                    "mlp.experts.*.gate_proj.weight",
+                    "mlp.experts.*.up_proj.weight",
+                ],
+                target_patterns="mlp.experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            )
+        ],
+        {},
+        1.0,
+        {"r": 2, "lora_alpha": 4},
+        "cpu",
+        simulate_nf4=simulate_nf4,
+        simulate_nf4_experts=simulate_nf4_experts,
+        nf4_backend=nf4_backend,
+        nf4_skips=nf4_skips,
+        layer_type_map=layer_type_map,
+        expected_num_experts=4,
+    )
+    assert result[fused_key].shape == (4, 24, 8)
+    assert roundtrips == ([(4, 24, 8)] if expected else [])
