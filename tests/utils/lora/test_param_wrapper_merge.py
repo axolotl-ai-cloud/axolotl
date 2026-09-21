@@ -8,15 +8,18 @@ from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
 from peft.tuners.lora.layer import ParamWrapper
 from transformers.core_model_loading import MergeModulelist, WeightConverter
 
+from axolotl.cli.utils import lora_merge as lora_merge_module
 from axolotl.cli.utils.lora_merge import (
     _find_param_wrapper_lora,
     _fuse_and_unfuse_with_merge,
     _key_has_lora,
+    _MemoizedParamWrapperMap,
     _merge_tensor_with_lora,
     _param_wrapper_target,
     merge_lora_sharded_efficient,
 )
 from axolotl.cli.utils.param_wrapper_merge import (
+    ParamWrapperTarget,
     build_param_wrapper_map,
     strip_base_layers,
 )
@@ -422,3 +425,27 @@ def test_linear_only_adapter_needs_no_meta_model():
 )
 def test_strip_base_layers(name, expected):
     assert strip_base_layers(name) == expected
+
+
+def test_memoized_map_resolves_each_key_once(monkeypatch):
+    target = ParamWrapperTarget(
+        a_key="a", b_key="b", shape=(2, 2), is_transposed=False, alpha=1.0
+    )
+    mapping = _MemoizedParamWrapperMap({"model.layers.0.mlp.experts.down_proj": target})
+    calls = []
+    original = lora_merge_module._renamed_key_candidates
+
+    def counting(clean_key, weight_renamings):
+        calls.append(clean_key)
+        return original(clean_key, weight_renamings)
+
+    monkeypatch.setattr(lora_merge_module, "_renamed_key_candidates", counting)
+    renamings = {r"^model\.": "model.model."}
+    key = "model.layers.0.mlp.experts.down_proj.weight"
+    assert _param_wrapper_target(key, mapping, renamings) is target
+    assert calls
+    calls.clear()
+    assert _param_wrapper_target(key, mapping, renamings) is target
+    assert not calls
+    assert _param_wrapper_target("model.other.weight", mapping, renamings) is None
+    assert calls

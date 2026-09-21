@@ -276,9 +276,20 @@ def find_lora_weights(
     return None, None
 
 
+class _MemoizedParamWrapperMap(dict):
+    """Identity map that remembers each key it has already resolved for one merge."""
+
+    def __init__(self, mapping):
+        super().__init__(mapping)
+        self.resolved: Dict[str, Optional[ParamWrapperTarget]] = {}
+
+
 def _param_wrapper_target(key, param_wrapper_map, weight_renamings=None):
     if param_wrapper_map is None:
         return None
+    memo = getattr(param_wrapper_map, "resolved", None)
+    if memo is not None and key in memo:
+        return memo[key]
     candidates = []
     for name in (key, key.removesuffix(".weight")):
         candidates.extend([name, *_renamed_key_candidates(name, weight_renamings)])
@@ -292,7 +303,10 @@ def _param_wrapper_target(key, param_wrapper_map, weight_renamings=None):
             f"Ambiguous ParamWrapper identity for {key}: {list(matches)}; use a base "
             "checkpoint whose expert layout matches the adapter"
         )
-    return next(iter(matches.values()), None)
+    target = next(iter(matches.values()), None)
+    if memo is not None:
+        memo[key] = target
+    return target
 
 
 def _find_param_wrapper_lora(
@@ -339,9 +353,7 @@ def _find_param_wrapper_lora(
     parent_key, param_name = parts
 
     prefix = f"base_model.model.{parent_key}"
-    pattern = re.compile(
-        re.escape(prefix) + BASE_LAYER_NESTING + r"\.lora_A\.weight$"
-    )
+    pattern = re.compile(re.escape(prefix) + BASE_LAYER_NESTING + r"\.lora_A\.weight$")
     candidates = []
     for a_key in lora_state:
         if not pattern.fullmatch(a_key):
@@ -2282,6 +2294,8 @@ def merge_lora_sharded_efficient(
     param_wrapper_map = build_param_wrapper_map(
         meta_model, lora_config_dict, lora_state
     )
+    if param_wrapper_map is not None:
+        param_wrapper_map = _MemoizedParamWrapperMap(param_wrapper_map)
     del meta_model
 
     model_shards = get_model_shards(base_model_path)
