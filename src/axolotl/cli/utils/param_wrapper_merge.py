@@ -13,6 +13,15 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+# PEFT nests a wrapped module under one ``.base_layer`` hop per injection round.
+BASE_LAYER_NESTING = r"(?:\.base_layer)*"
+_TRAILING_BASE_LAYERS_RE = re.compile(BASE_LAYER_NESTING + r"$")
+
+
+def strip_base_layers(name: str) -> str:
+    """Drop PEFT's nested ``.base_layer`` suffixes from a wrapper path."""
+    return _TRAILING_BASE_LAYERS_RE.sub("", name)
+
 
 @dataclass(frozen=True)
 class ParamWrapperTarget:
@@ -35,7 +44,7 @@ def _reject_ambiguous_adapters(state: dict[str, torch.Tensor]) -> None:
         b = state.get(prefix + ".lora_B.weight")
         if b is None or a.ndim != 2 or b.ndim != 2:
             continue
-        parent = re.sub(r"(?:\.base_layer)+$", "", prefix)
+        parent = strip_base_layers(prefix)
         signature = (parent, tuple(sorted((a.shape[1], b.shape[0]))))
         if signature in seen:
             raise ValueError(

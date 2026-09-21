@@ -16,7 +16,10 @@ from axolotl.cli.utils.lora_merge import (
     _param_wrapper_target,
     merge_lora_sharded_efficient,
 )
-from axolotl.cli.utils.param_wrapper_merge import build_param_wrapper_map
+from axolotl.cli.utils.param_wrapper_merge import (
+    build_param_wrapper_map,
+    strip_base_layers,
+)
 
 
 class ExpertModel(torch.nn.Module):
@@ -403,3 +406,19 @@ def test_linear_only_adapter_needs_no_meta_model():
     config = LoraConfig(r=2, lora_alpha=7, target_modules=["q_proj", "k_proj"])
     state = get_peft_model_state_dict(get_peft_model(make_moe_model(), config))
     assert build_param_wrapper_map(None, config.to_dict(), state) is None
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("model.layers.0.mlp.experts", "model.layers.0.mlp.experts"),
+        ("model.layers.0.mlp.experts.base_layer", "model.layers.0.mlp.experts"),
+        (
+            "model.layers.0.mlp.experts.base_layer.base_layer",
+            "model.layers.0.mlp.experts",
+        ),
+        ("model.base_layer.mlp.experts", "model.base_layer.mlp.experts"),
+    ],
+)
+def test_strip_base_layers(name, expected):
+    assert strip_base_layers(name) == expected

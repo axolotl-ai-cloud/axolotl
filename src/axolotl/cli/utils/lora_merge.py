@@ -15,6 +15,7 @@ from peft.utils.other import get_pattern_key
 from tqdm import tqdm
 
 from axolotl.cli.utils.param_wrapper_merge import (
+    BASE_LAYER_NESTING,
     ParamWrapperTarget,
     build_param_wrapper_map,
 )
@@ -335,7 +336,9 @@ def _find_param_wrapper_lora(
     parent_key, param_name = parts
 
     prefix = f"base_model.model.{parent_key}"
-    pattern = re.compile(re.escape(prefix) + r"(?:\.base_layer)*\.lora_A\.weight$")
+    pattern = re.compile(
+        re.escape(prefix) + BASE_LAYER_NESTING + r"\.lora_A\.weight$"
+    )
     candidates = []
     for a_key in lora_state:
         if not pattern.fullmatch(a_key):
@@ -1007,7 +1010,9 @@ def _dequantize_quantized_shard(
     return out, did, left, plan
 
 
-_FUSED_EXPERT_LORA_RE = re.compile(r"\.experts\.(?:base_layer\.)*lora_[AB]\.weight$")
+_FUSED_EXPERT_LORA_RE = re.compile(
+    r"\.experts" + BASE_LAYER_NESTING + r"\.lora_[AB]\.weight$"
+)
 _PER_EXPERT_WEIGHT_RE = re.compile(
     r"\.experts\.\d+\.(?:gate_proj|up_proj|down_proj|w1|w2|w3|gate_up_proj)\.weight$"
 )
@@ -1137,7 +1142,8 @@ class _Nvfp4ExpertMergeWriter:
             else:
                 pattern = re.compile(
                     re.escape(f"base_model.model.{prefix}")
-                    + r"(?:\.base_layer)*\.lora_A\.weight$"
+                    + BASE_LAYER_NESTING
+                    + r"\.lora_A\.weight$"
                 )
                 has = any(pattern.fullmatch(key) for key in self.lora_state)
             self._prefix_lora[prefix] = has
