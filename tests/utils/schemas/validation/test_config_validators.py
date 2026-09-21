@@ -394,3 +394,40 @@ class TestBnbBlocksizeValidator:
     def test_blocksize_without_4bit_ignored(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(bnb_config_kwargs={"blocksize": 128})
         validate_config(cfg)
+
+
+class TestFlashAttnAvailabilityMessage:
+    """The error names the hub failure transformers swallows."""
+
+    def test_hub_failure_reason_is_reported(self, min_base_cfg, monkeypatch):
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+        )
+
+        def failing_get_kernel(*_, **__):
+            raise RuntimeError("HTTP 429 Too Many Requests")
+
+        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
+            validate_config(cfg)
+
+    def test_no_reason_when_lookup_succeeds(self, min_base_cfg, monkeypatch):
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+        )
+        monkeypatch.setattr(kernels, "get_kernel", lambda *_, **__: object())
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        with pytest.raises(ValueError) as excinfo:
+            validate_config(cfg)
+        assert "lookup failed" not in str(excinfo.value)
