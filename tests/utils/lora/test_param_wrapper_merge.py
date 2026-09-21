@@ -147,9 +147,7 @@ def test_identity_resolution_uses_renamings_and_packed_weight_metadata():
         _param_wrapper_target("experts.p0", mapping, {"p0": "p1"})
 
 
-@pytest.mark.parametrize(
-    "corruption", ["missing", "shape", "extra", "version", "legacy"]
-)
+@pytest.mark.parametrize("corruption", ["missing", "shape", "extra", "legacy"])
 def test_invalid_adapter_fails_before_output_creation(
     tmp_path, monkeypatch, corruption
 ):
@@ -163,8 +161,6 @@ def test_invalid_adapter_fails_before_output_creation(
         state[key] = state[key][:-1]
     elif corruption == "extra":
         state["base_model.model.unknown.lora_A.weight"] = torch.randn(2, 8)
-    elif corruption == "version":
-        config["peft_version"] = "0.1.0"
     else:
         config["target_parameters"] = None
     adapter = tmp_path / "adapter"
@@ -185,12 +181,29 @@ def test_invalid_adapter_fails_before_output_creation(
     assert not output.exists()
 
 
+def test_adapter_from_another_peft_release_still_reconstructs():
+    _, meta, config, state, _ = make_adapter([(4, 8, 8)] * 3)
+    reference = build_param_wrapper_map(meta, config, state)
+    config["peft_version"] = "0.20.0"
+    assert build_param_wrapper_map(meta, config, state) == reference
+
+
 def test_missing_architecture_does_not_fall_back_to_shapes():
     _, _, config, state, _ = make_adapter([(4, 8, 8)] * 2)
-    with pytest.raises(ValueError, match="requires a meta model"):
+    with pytest.raises(ValueError, match="Ambiguous ParamWrapper"):
         build_param_wrapper_map(None, config, state)
     with pytest.raises(ValueError, match="Ambiguous ParamWrapper"):
         _find_param_wrapper_lora(state, "experts.p0", (4, 8, 8))
+
+
+def test_missing_architecture_still_merges_an_unambiguous_adapter():
+    base, _, config, state, expected = make_adapter([(4, 8, 8)])
+    assert build_param_wrapper_map(None, config, state) is None
+    merged, did_merge = _merge_tensor_with_lora(
+        base["experts.p0"], "experts.p0", state, 3.5, config, "cpu"
+    )
+    assert did_merge
+    torch.testing.assert_close(merged, expected["experts.p0"], rtol=0, atol=1e-6)
 
 
 @pytest.mark.parametrize("fuse", [False, True])
@@ -238,11 +251,10 @@ def test_identity_map_is_used_by_checkpoint_merger(tmp_path, monkeypatch, fuse):
             torch.testing.assert_close(actual[name], expected[name], rtol=0, atol=1e-6)
 
 
-def test_real_moe_checkpoint_merge_matches_peft(tmp_path):
+def make_moe_model():
     from transformers import Qwen3MoeConfig, Qwen3MoeForCausalLM
 
-    torch.manual_seed(16)
-    base = Qwen3MoeForCausalLM(
+    return Qwen3MoeForCausalLM(
         Qwen3MoeConfig(
             hidden_size=16,
             intermediate_size=32,
@@ -255,6 +267,13 @@ def test_real_moe_checkpoint_merge_matches_peft(tmp_path):
             vocab_size=32,
         )
     )
+
+
+def test_real_moe_checkpoint_merge_matches_peft(tmp_path):
+    from transformers import Qwen3MoeForCausalLM
+
+    torch.manual_seed(16)
+    base = make_moe_model()
     base.save_pretrained(tmp_path / "base")
     model = get_peft_model(
         base,
@@ -358,3 +377,29 @@ def test_quantized_training_order_matches_meta_reconstruction(monkeypatch):
                 target = mapping[f"experts.{module.parameter_name}"]
                 assert target.a_key == f"{path}.lora_A.weight"
                 assert target.b_key == f"{path}.lora_B.weight"
+
+
+def test_saved_full_weight_modules_do_not_block_reconstruction():
+    torch.manual_seed(16)
+    config = LoraConfig(
+        r=2,
+        lora_alpha=7,
+        target_modules=["q_proj"],
+        modules_to_save=["lm_head"],
+        trainable_token_indices=[0, 1],
+        target_parameters=["mlp.experts.gate_up_proj", "mlp.experts.down_proj"],
+    )
+    state = get_peft_model_state_dict(get_peft_model(make_moe_model(), config))
+    with torch.device("meta"):
+        meta = make_moe_model()
+    mapping = build_param_wrapper_map(meta, config.to_dict(), state)
+    assert set(mapping) == {
+        "model.layers.0.mlp.experts.gate_up_proj",
+        "model.layers.0.mlp.experts.down_proj",
+    }
+
+
+def test_linear_only_adapter_needs_no_meta_model():
+    config = LoraConfig(r=2, lora_alpha=7, target_modules=["q_proj", "k_proj"])
+    state = get_peft_model_state_dict(get_peft_model(make_moe_model(), config))
+    assert build_param_wrapper_map(None, config.to_dict(), state) is None

@@ -3162,3 +3162,72 @@ class TestQuantizedBaseMerge:
         assert out["a.weight"].dtype == torch.bfloat16  # dequantized
         assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is
         assert "b.weight_scale" in out  # its scale not dropped
+
+
+@pytest.mark.parametrize("nf4_backend", ["bitsandbytes", "torchao"])
+@pytest.mark.parametrize(
+    "nf4_skips", [None, set(), {"model.model.layers.0.mlp.experts.gate_up_proj"}]
+)
+@pytest.mark.parametrize("flags", [(True, False), (False, True), (False, False)])
+def test_fused_expert_nf4_decision(nf4_backend, nf4_skips, flags, monkeypatch):
+    """The fused tensor is quantized exactly when the runtime key is an unskipped expert."""
+    from transformers.core_model_loading import (
+        Concatenate,
+        MergeModulelist,
+        WeightConverter,
+    )
+
+    from axolotl.cli.utils import lora_merge
+    from axolotl.utils.nf4 import nf4_should_quantize
+
+    simulate_nf4, simulate_nf4_experts = flags
+    fused_key = "model.layers.0.mlp.experts.gate_up_proj"
+    layer_type_map = {"model." + fused_key: "Linear"}
+    shard = {}
+    for expert in range(4):
+        for proj in ("gate_proj", "up_proj"):
+            shard[f"model.layers.0.mlp.experts.{expert}.{proj}.weight"] = torch.randn(
+                12, 8
+            )
+
+    roundtrips = []
+    monkeypatch.setattr(
+        lora_merge,
+        "_simulate_nf4_roundtrip",
+        lambda tensor, **kwargs: roundtrips.append(tuple(tensor.shape)) or tensor,
+    )
+
+    expected = simulate_nf4 or simulate_nf4_experts
+    if nf4_backend == "torchao" or nf4_skips is not None:
+        expected = nf4_should_quantize(
+            "model." + fused_key,
+            linear=False,
+            expert=simulate_nf4_experts,
+            skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
+        )
+
+    result, _, _ = lora_merge._fuse_and_unfuse_with_merge(
+        shard,
+        [
+            WeightConverter(
+                source_patterns=[
+                    "mlp.experts.*.gate_proj.weight",
+                    "mlp.experts.*.up_proj.weight",
+                ],
+                target_patterns="mlp.experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            )
+        ],
+        {},
+        1.0,
+        {"r": 2, "lora_alpha": 4},
+        "cpu",
+        simulate_nf4=simulate_nf4,
+        simulate_nf4_experts=simulate_nf4_experts,
+        nf4_backend=nf4_backend,
+        nf4_skips=nf4_skips,
+        layer_type_map=layer_type_map,
+        expected_num_experts=4,
+    )
+    assert result[fused_key].shape == (4, 24, 8)
+    assert roundtrips == ([(4, 24, 8)] if expected else [])

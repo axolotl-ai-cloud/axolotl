@@ -9,6 +9,10 @@ from packaging.version import Version
 from peft import LoraConfig, __version__ as peft_version, get_peft_model
 from peft.tuners.lora.layer import ParamWrapper
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 
 @dataclass(frozen=True)
 class ParamWrapperTarget:
@@ -21,6 +25,26 @@ class ParamWrapperTarget:
     alpha: float
 
 
+def _reject_ambiguous_adapters(state: dict[str, torch.Tensor]) -> None:
+    """Refuse a checkpoint in which shape matching alone could pick the wrong adapter."""
+    seen = set()
+    for key, a in state.items():
+        if not key.endswith(".lora_A.weight"):
+            continue
+        prefix = key.removesuffix(".lora_A.weight")
+        b = state.get(prefix + ".lora_B.weight")
+        if b is None or a.ndim != 2 or b.ndim != 2:
+            continue
+        parent = re.sub(r"(?:\.base_layer)+$", "", prefix)
+        signature = (parent, tuple(sorted((a.shape[1], b.shape[0]))))
+        if signature in seen:
+            raise ValueError(
+                f"Ambiguous ParamWrapper adapters under {parent}; identity "
+                "reconstruction from the base architecture is required to resolve them"
+            )
+        seen.add(signature)
+
+
 def build_param_wrapper_map(
     model: torch.nn.Module | None,
     config_dict: dict,
@@ -28,27 +52,15 @@ def build_param_wrapper_map(
 ) -> dict[str, ParamWrapperTarget] | None:
     """Reconstruct adapter identities without allocating base weights or mutating the input."""
     if not config_dict.get("target_parameters"):
-        seen = set()
-        for key, a in state.items():
-            if not key.endswith(".lora_A.weight"):
-                continue
-            prefix = key.removesuffix(".lora_A.weight")
-            b = state.get(prefix + ".lora_B.weight")
-            if b is None or a.ndim != 2 or b.ndim != 2:
-                continue
-            parent = re.sub(r"(?:\.base_layer)+$", "", prefix)
-            signature = (parent, tuple(sorted((a.shape[1], b.shape[0]))))
-            if signature in seen:
-                raise ValueError(
-                    f"Ambiguous ParamWrapper adapters under {parent}; saved "
-                    "target_parameters are required to reconstruct their identities"
-                )
-            seen.add(signature)
+        _reject_ambiguous_adapters(state)
         return None
     if model is None:
-        raise ValueError(
-            "ParamWrapper merge requires a meta model to resolve parameter identities"
+        _reject_ambiguous_adapters(state)
+        LOG.warning(
+            "No base architecture is available to resolve ParamWrapper adapter identities; "
+            "falling back to shape matching, which each adapter must resolve uniquely"
         )
+        return None
     if any(not parameter.is_meta for parameter in model.parameters()):
         raise ValueError(
             "ParamWrapper identity reconstruction requires meta parameters"
@@ -58,9 +70,11 @@ def build_param_wrapper_map(
         recorded_version
         and Version(recorded_version).base_version != Version(peft_version).base_version
     ):
-        raise ValueError(
-            f"Cannot reconstruct ParamWrapper identities saved by PEFT {recorded_version} "
-            f"using PEFT {peft_version}; use the saved adapter's PEFT version"
+        LOG.warning(
+            "Adapter was saved by PEFT %s and is being reconstructed with PEFT %s; "
+            "a wrapper layout change between them fails the identity checks below",
+            recorded_version,
+            peft_version,
         )
 
     model = copy.deepcopy(model)
