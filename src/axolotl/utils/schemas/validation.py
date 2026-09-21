@@ -1366,6 +1366,7 @@ class OptimizationValidationMixin:
     def check_bnb_blocksize(self):
         if (
             self.load_in_4bit
+            and self.nf4_backend != "torchao"
             and (self.bnb_config_kwargs or {}).get("blocksize", 64) != 64
         ):
             raise ValueError(
