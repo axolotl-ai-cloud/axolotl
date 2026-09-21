@@ -1363,6 +1363,18 @@ class OptimizationValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_bnb_blocksize(self):
+        if (
+            self.load_in_4bit
+            and (self.bnb_config_kwargs or {}).get("blocksize", 64) != 64
+        ):
+            raise ValueError(
+                "bitsandbytes 4-bit loading always quantizes with blocksize 64; "
+                "remove `bnb_config_kwargs.blocksize` or set it to 64."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_staged_nf4(self):
         staged = self.nf4_backend == "torchao" or (
             str(self.fsdp_version) == "2"

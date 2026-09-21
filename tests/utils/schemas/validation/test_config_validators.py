@@ -362,3 +362,35 @@ class TestValueDependentInitOnExpertTargets:
         if init is not None:
             cfg["peft_init_lora_weights"] = init
         validate_config(cfg)
+
+
+class TestBnbBlocksizeValidator:
+    """bitsandbytes 4-bit loading always quantizes at blocksize 64, so a different
+    request must fail rather than silently train at 64 and merge at the requested size."""
+
+    def _cfg(self, min_base_cfg, **kwargs):
+        return min_base_cfg | DictDefault(
+            adapter="qlora",
+            load_in_4bit=True,
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_linear=True,
+            **kwargs,
+        )
+
+    def test_non_default_blocksize_rejected(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, bnb_config_kwargs={"blocksize": 128})
+        with pytest.raises(ValueError, match="blocksize"):
+            validate_config(cfg)
+
+    def test_default_blocksize_passes(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, bnb_config_kwargs={"blocksize": 64})
+        validate_config(cfg)
+
+    def test_unset_blocksize_passes(self, min_base_cfg):
+        validate_config(self._cfg(min_base_cfg))
+
+    def test_blocksize_without_4bit_ignored(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(bnb_config_kwargs={"blocksize": 128})
+        validate_config(cfg)
