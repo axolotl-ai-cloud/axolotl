@@ -329,6 +329,19 @@ class TrainerBuilderBase(abc.ABC):
                     optimizer_cls = MuonOptimizerFactory
 
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "normuon":
+                _, device_mesh = build_parallelism_config(self.cfg)
+                if device_mesh is not None:
+                    raise NotImplementedError(
+                        "normuon does not yet have a distributed implementation; "
+                        "it currently supports single-device training only."
+                    )
+                from axolotl.utils.optimizers.normuon import (
+                    NorMuonOptimizerFactory,
+                )
+
+                optimizer_cls = NorMuonOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "dion":
                 from axolotl.contribs.mit.dion import (
                     DionOptimizerFactory,
