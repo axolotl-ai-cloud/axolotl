@@ -111,6 +111,24 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.eval_sample_packing is False
 
     @pytest.mark.parametrize(
+        "cfg_string, dataset, expected",
+        [
+            ("sft_cfg", Dataset.from_dict({"input_ids": [[1] * 70, [1] * 3]}), 128),
+            ("rm_cfg", _reward_dataset(), 64),
+        ],
+    )
+    def test_pad_to_sequence_len_auto(
+        self, request, cfg_string, dataset, expected, model, tokenizer
+    ):
+        cfg = request.getfixturevalue(cfg_string).copy()
+        cfg["pad_to_sequence_len"] = "auto"
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        builder.train_dataset = dataset
+        trainer = builder.build(100)
+
+        assert trainer.data_collator.pad_to_multiple_of == expected
+
+    @pytest.mark.parametrize(
         "cfg_string",
         [
             "sft_cfg",

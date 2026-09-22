@@ -237,11 +237,18 @@ class TrainingValidationMixin:
                 LOG.warning(
                     "`pad_to_sequence_len: true` is recommended when using sample_packing"
                 )
-            elif pad_to_sequence_len is None:
+            elif pad_to_sequence_len in (None, "auto"):
                 LOG.info(
                     "Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing"
                 )
                 data["pad_to_sequence_len"] = True
+        elif data.get("pad_to_sequence_len") == "auto" and (
+            data.get("streaming") or data.get("pretraining_dataset")
+        ):
+            raise ValueError(
+                "`pad_to_sequence_len: auto` needs a map-style dataset to measure; "
+                "use `true` with `streaming` or `pretraining_dataset`"
+            )
         return data
 
     @model_validator(mode="before")

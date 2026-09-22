@@ -732,10 +732,10 @@ class AxolotlInputConfig(
             "description": "Set to 'false' if getting errors during eval with sample_packing on"
         },
     )
-    pad_to_sequence_len: bool | None = Field(
+    pad_to_sequence_len: bool | Literal["auto"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently. Defaults to True if `sample_packing` enabled"
+            "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently. `auto` pads to the longest sample in the dataset instead of `sequence_len` (treated as `true` when `sample_packing` is enabled). Defaults to True if `sample_packing` enabled"
         },
     )
     pad_to_multiple_of: int | None = Field(

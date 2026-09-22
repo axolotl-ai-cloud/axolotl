@@ -46,6 +46,7 @@ from axolotl.utils.collators import (
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
+from axolotl.utils.samplers import get_dataset_lengths
 
 LOG = get_logger(__name__)
 
@@ -385,8 +386,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         }
         multiple = getattr(self.cfg, "pad_to_multiple_of", None) or 64
         if self.cfg.pad_to_sequence_len:
+            pad_len = self.cfg.sequence_len
+            if self.cfg.pad_to_sequence_len == "auto":
+                pad_len = self._longest_sample_len()
+                LOG.info(f"pad_to_sequence_len: auto resolved to {pad_len} tokens")
             data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
-                self.cfg.sequence_len / multiple
+                pad_len / multiple
             )
         elif self.cfg.pad_to_sequence_len is None:
             # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
@@ -463,6 +468,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.micro_batch_size
 
         return trainer
+
+    def _longest_sample_len(self) -> int:
+        datasets = [d for d in (self.train_dataset, self.eval_dataset) if d]
+        if self.cfg.reward_model:
+            cols = ("chosen_ids", "rejected_ids")
+            return max(len(x) for d in datasets for c in cols for x in d[c])
+        return int(max(get_dataset_lengths(d).max() for d in datasets))
 
     def build_collator(
         self,
