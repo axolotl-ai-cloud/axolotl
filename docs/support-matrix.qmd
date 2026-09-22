@@ -168,7 +168,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | Family | Special support |
 |---|---|
 | Llama 2/3/4 | flash-attn hijack, SwiGLU, CCE, Liger; Llama-4 linearized experts |
-| MiniCPM5 | stock `LlamaForCausalLM`; inherits the Llama paths above; needs `eot_tokens: [<\|im_end\|>]` since `eos_token` is `</s>` |
+| MiniCPM5 | same as Llama |
 | Mistral / Mixtral / Ministral / Magistral | flash-attn hijack, CCE; Mixtral ZeRO-3 MoE patch |
 | Qwen 2/2.5/3/3.5/3.6 (+MoE, +VL; Nex-N2.5) | fused attention kernels, multipack, gated RMSNorm, VL flash |
 | Gemma 2/3/4 (+unified VL) | hybrid sliding/global attention mask, fused attn, expert quant |

@@ -1,6 +1,6 @@
 # Finetune Nex-N2.5 with Axolotl
 
-[Nex-N2.5-mini](https://huggingface.co/nex-agi/Nex-N2.5-mini) is an open source model from Nex AGI built on the Qwen3.5-35B-A3B architecture (hybrid Gated DeltaNet + attention MoE with vision). Everything in [examples/qwen3.5](../qwen3.5/README.md) applies here; only the chat template differs.
+[Nex-N2.5-mini](https://huggingface.co/nex-agi/Nex-N2.5-mini) is an open source model from Nex AGI built on the Qwen3.5-35B-A3B architecture (hybrid Gated DeltaNet + attention MoE with vision). Everything in [examples/qwen3.5](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/qwen3.5) applies here; only the chat template differs.
 
 ## Getting started
 
@@ -29,7 +29,7 @@ Use `chat_template: tokenizer_default`, not `qwen3_5`. Nex's template renders a 
 
 ### TIPS
 
-- For LoRA targets on the DeltaNet layers and routed/shared experts, see the [Qwen3.5 README](../qwen3.5/README.md#gated-deltanet-linear-attention).
+- For LoRA targets on the DeltaNet layers and routed/shared experts, see the [Qwen3.5 README](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3.5/README.md#gated-deltanet-linear-attention).
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 - For **multimodal** finetuning, set `processor_type: AutoProcessor`, `skip_prepare_dataset: true`, and `remove_unused_columns: false` as shown in `mini-vision-lora.yaml`.

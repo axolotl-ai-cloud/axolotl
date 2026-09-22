@@ -79,9 +79,9 @@ Use `lora_target_parameters` (see [Routed Experts](#routed-experts-moe) above) t
 
 [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) keeps the `qwen3_5_moe` architecture and trains with `qwen3.6-35b-a3b-moe-qlora.yaml`. Its extra `mtp.*` (multi-token prediction) tensors are dropped on load.
 
-[Edge0](https://huggingface.co/Edge0) checkpoints are MLX int4 exports (`Edge0-35B-A3B-preview` of Qwen3.6-35B-A3B, `Edge0-8B-A1B-preview` of Ling-3.0-tiny) and cannot be loaded by transformers. Fine-tune the base model instead and quantize afterwards.
+Edge0 checkpoints are MLX int4 exports ([Edge0-35B-A3B-preview](https://huggingface.co/Edge0/Edge0-35B-A3B-preview) of Qwen3.6-35B-A3B, [Edge0-8B-A1B-preview](https://huggingface.co/Edge0/Edge0-8B-A1B-preview) of Ling-3.0-tiny) and cannot be loaded by transformers. Fine-tune the base model instead and quantize afterwards.
 
-[Nex-N2.5-mini](../nex-n2.5/README.md) shares this architecture with its own chat template.
+[Nex-N2.5-mini](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/nex-n2.5) shares this architecture with its own chat template.
 
 ### TIPS
 
