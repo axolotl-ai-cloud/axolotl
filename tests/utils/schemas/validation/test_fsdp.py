@@ -39,19 +39,6 @@ class TestFSDPValidation:
         assert cfg.fsdp_version == 2
         assert cfg.fsdp_config.fsdp_version == 2
 
-    def test_fsdp_offload_w_8bit_optim(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(
-            fsdp_config={
-                "offload_params": True,
-            },
-            optimizer="adamw_8bit",
-            fsdp_version=1,
-        )
-        with pytest.raises(
-            ValueError, match="FSDP Offload not compatible with adamw_8bit"
-        ):
-            validate_config(cfg)
-
     def test_fsdp2_w_8bit_optim(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             fsdp_config={
@@ -93,20 +80,6 @@ class TestFSDPValidation:
         ):
             validate_config(cfg)
 
-    def test_fsdp1_cpu_offload_pin_memory_not_supported(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(
-            fsdp_config={
-                "cpu_offload_pin_memory": False,
-                "offload_params": True,
-            },
-            fsdp_version=1,
-        )
-        with pytest.raises(
-            ValueError,
-            match="FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2",
-        ):
-            validate_config(cfg)
-
     def test_fsdp2_cpu_offload_pin_memory_w_offload_params(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             fsdp_config={
@@ -145,15 +118,6 @@ class TestFSDPValidation:
             fsdp_version=2,
         )
         with pytest.raises(ValueError, match="fp32_norms requires FSDP to be enabled"):
-            validate_config(cfg)
-
-    def test_fp32_norms_requires_fsdp2(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(
-            fp32_norms=True,
-            fsdp_version=1,
-            fsdp_config={"reshard_after_forward": True},
-        )
-        with pytest.raises(ValueError, match="fp32_norms requires fsdp_version: 2"):
             validate_config(cfg)
 
     def test_fp32_norms_cpu_ram_efficient_loading_ok(self, min_base_cfg):
@@ -215,10 +179,98 @@ class TestFSDPValidation:
             fsdp_version=1,
             fsdp_config={"reshard_after_forward": True},
         )
+        with pytest.raises(ValueError, match="fsdp_version: 1 is no longer supported"):
+            validate_config(cfg)
+
+    def test_fsdp_version_defaults_to_2(self, min_base_cfg):
+        cfg = validate_config(
+            min_base_cfg | DictDefault(fsdp_config={"reshard_after_forward": True})
+        )
+        assert cfg.fsdp_version == 2
+        assert cfg.fsdp_config.fsdp_version == 2
+
+    def test_fsdp_version_defaults_to_2_without_fsdp_config(self, min_base_cfg):
+        assert validate_config(min_base_cfg).fsdp_version == 2
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"fsdp_version": 1},
+            {"fsdp_config": {"fsdp_version": 1}},
+            {"fsdp_config": {"version": 1}},
+            {"fsdp_config": {"fsdp_version": 1, "fsdp_offload_params": True}},
+        ],
+    )
+    def test_fsdp1_rejected(self, min_base_cfg, overrides):
+        cfg = min_base_cfg | DictDefault(overrides)
+        with pytest.raises(ValueError, match="fsdp_version: 1 is no longer supported"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("key", ["sharding_strategy", "fsdp_sharding_strategy"])
+    def test_fsdp1_only_key_rejected_with_fsdp2_equivalent(self, min_base_cfg, key):
+        cfg = min_base_cfg | DictDefault(fsdp_config={key: "FULL_SHARD"})
         with pytest.raises(
-            ValueError, match="Muon optimizer is only compatible with FSDP2"
+            ValueError,
+            match="fsdp_config.sharding_strategy .*Use `reshard_after_forward` instead",
         ):
             validate_config(cfg)
+
+    def test_fsdp1_only_key_without_equivalent_rejected(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(fsdp_config={"forward_prefetch": True})
+        with pytest.raises(
+            ValueError, match="fsdp_config.forward_prefetch .*no FSDP2 equivalent"
+        ):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "sync_module_states",
+            "fsdp_sync_module_states",
+            "backward_prefetch",
+            "backward_prefetch_policy",
+            "limit_all_gathers",
+            "use_orig_params",
+            "fsdp_use_orig_params",
+        ],
+    )
+    def test_fsdp1_only_ignored_key_warns_and_is_dropped(
+        self, min_base_cfg, caplog, key
+    ):
+        cfg = min_base_cfg | DictDefault(
+            fsdp_config={key: True, "reshard_after_forward": True}
+        )
+        ax_logger = logging.getLogger("axolotl")
+        old_propagate = ax_logger.propagate
+        ax_logger.propagate = True
+        try:
+            with caplog.at_level("WARNING", logger="axolotl"):
+                validated_cfg = validate_config(cfg)
+        finally:
+            ax_logger.propagate = old_propagate
+        name = key.removeprefix("fsdp_")
+        assert (
+            f"fsdp_config.{name} is an FSDP1-only option and is ignored under FSDP2"
+            in caplog.text
+        )
+        assert key not in validated_cfg.fsdp_config
+        assert name not in validated_cfg.fsdp_config
+        assert validated_cfg.fsdp_config.reshard_after_forward is True
+
+    def test_bare_fsdp_list_rejected(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(fsdp=["full_shard", "auto_wrap"])
+        with pytest.raises(
+            ValueError, match="`fsdp` list is no longer supported.*multi-gpu"
+        ):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("value", [None, []])
+    def test_blank_fsdp_key_accepted(self, min_base_cfg, value):
+        cfg = min_base_cfg | DictDefault(
+            fsdp=value, fsdp_config={"reshard_after_forward": True}
+        )
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.fsdp_version == 2
 
     @pytest.mark.parametrize(
         "rl",

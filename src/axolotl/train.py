@@ -31,6 +31,7 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
@@ -108,6 +109,8 @@ def setup_model_and_tokenizer(
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
+        # unfreezing can promote base params the loader left on meta (non-rank-0) to trainable
+        materialize_trainable_meta_params(model)
         if any(
             any(embed in param for embed in ["lm_head", "embed_tokens"])
             for param in cfg.unfrozen_parameters
@@ -341,11 +344,7 @@ def save_trained_model(
 
     # FSDP2 (no EP) LoRA: the DCP sharded save fails ("Failed to validate global plan") on the
     # frozen NVFP4 base DTensors, so gather just the adapter and write it directly.
-    if (
-        cfg.adapter
-        and (trainer.is_fsdp_enabled or cfg.fsdp_config)
-        and str(cfg.fsdp_version) == "2"
-    ):
+    if cfg.adapter and (trainer.is_fsdp_enabled or cfg.fsdp_config):
         from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
 
         if save_fsdp2_lora_adapter(model, cfg.output_dir):

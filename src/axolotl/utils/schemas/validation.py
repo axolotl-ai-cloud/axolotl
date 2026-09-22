@@ -16,11 +16,52 @@ from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RingAttnFunc,
     RLType,
+    attn_impl_base,
 )
+from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
+from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 LOG = get_logger(__name__)
 
+
+def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
+    """The error transformers swallows when its kernels-hub fallback fails."""
+    try:
+        from kernels import get_kernel
+        from transformers.integrations.hub_kernels import get_attn_kernel_version
+        from transformers.modeling_flash_attention_utils import (
+            FLASH_ATTN_KERNEL_FALLBACK,
+        )
+    except ImportError as err:
+        return f"{type(err).__name__}: {err}"
+    repo_id = FLASH_ATTN_KERNEL_FALLBACK.get(attn_implementation)
+    if repo_id is None:
+        return None
+    try:
+        get_kernel(repo_id, version=get_attn_kernel_version(repo_id))
+    except Exception as err:  # noqa: BLE001
+        return f"{type(err).__name__}: {err}"
+    return None
+
+
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
+
+FSDP1_MIGRATION_DOCS = "docs/multi-gpu.qmd#sec-migrate-fsdp1-fsdp2"
+
+# fsdp_config keys accelerate rejects under FSDP2; the value names the FSDP2 replacement
+FSDP1_ONLY_REJECTED_KEYS = {
+    "sharding_strategy": "reshard_after_forward",
+    "forward_prefetch": None,
+}
+
+# fsdp_config keys accelerate silently discards under FSDP2
+FSDP1_ONLY_IGNORED_KEYS = (
+    "sync_module_states",
+    "backward_prefetch",
+    "backward_prefetch_policy",
+    "limit_all_gathers",
+    "use_orig_params",
+)
 
 
 class DatasetValidationMixin:
@@ -425,6 +466,21 @@ class TrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fp8_config(cls, data):
+        fp8_config = data.get("fp8_config")
+        fp8_recipe = resolve_fp8_recipe(fp8_config)
+        if fp8_config is not None and not data.get("fp8"):
+            raise ValueError(
+                "`fp8_config` requires `fp8: true`; "
+                "set `fp8: true` or remove `fp8_config`."
+            )
+        if (
+            data.get("fp8_enable_fsdp_float8_all_gather")
+            and fp8_recipe != DEFAULT_FP8_RECIPE
+        ):
+            raise ValueError(
+                "`fp8_enable_fsdp_float8_all_gather` only supports the tensorwise "
+                "`fp8_config.recipe`; disable it when using rowwise scaling."
+            )
         if data.get("fp8") and not data.get("torch_compile"):
             LOG.warning(
                 "torch_compile is strongly recommended for FP8 training in order to "
@@ -441,13 +497,11 @@ class TrainingValidationMixin:
                 "training. Please considering setting `activation_checkpointing: false` "
                 "in your FSDP config."
             )
-        if (
-            data.get("fp8_enable_fsdp_float8_all_gather")
-            and not data.get("fsdp_version", None) == 2
+        if data.get("fp8_enable_fsdp_float8_all_gather") and not data.get(
+            "fsdp_config"
         ):
             raise ValueError(
-                "fp8_enable_fsdp_float8_all_gather requires FSDP2 (fsdp_version: 2) "
-                "to be used."
+                "fp8_enable_fsdp_float8_all_gather requires FSDP2 (fsdp_config) to be used."
             )
 
         return data
@@ -792,6 +846,28 @@ class RLValidationMixin:
 
         return data
 
+    @model_validator(mode="after")
+    def check_dpo_use_liger_kernel(self):
+        if not self.dpo_use_liger_kernel:
+            return self
+        loss_types = self.dpo_loss_type
+        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
+        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
+        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
+            raise ValueError(
+                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
+                "(liger-kernel's fused DPO loss cannot length-normalize the "
+                "squared margin). Disable the liger kernel or use another loss."
+            )
+        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
+        if loss_types and len(loss_types) > 1:
+            LOG.warning(
+                "`dpo_use_liger_kernel` uses only the first entry of "
+                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
+                "are ignored on the liger loss path."
+            )
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
@@ -875,6 +951,77 @@ class RLValidationMixin:
         return data
 
 
+STAGED_NF4_CONSTRAINTS = [
+    (
+        lambda self: (
+            not self.load_in_4bit or self.adapter != "qlora" or self.load_in_8bit
+        ),
+        "CPU-staged NF4 requires adapter: qlora and load_in_4bit: true",
+    ),
+    (
+        # torchao stages on a single device too; the bitsandbytes flag means FSDP
+        lambda self: (
+            (self.nf4_backend != "torchao" and not self.fsdp_config)
+            or (
+                bool(self.fsdp_config)
+                and (
+                    not self.fsdp_config.cpu_ram_efficient_loading
+                    or not self.qlora_sharded_model_loading
+                )
+            )
+        ),
+        "CPU-staged NF4 requires FSDP2, cpu_ram_efficient_loading and qlora_sharded_model_loading",
+    ),
+    (
+        lambda self: (
+            bool(self.deepspeed)
+            or (self.tensor_parallel_size or 1) > 1
+            or (self.context_parallel_size or 1) > 1
+            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
+        ),
+        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+    ),
+    (
+        lambda self: (self.dp_replicate_size or 1) > 1,
+        "CPU-staged NF4 requires a one-dimensional sharding mesh; dp_replicate_size must be 1",
+    ),
+    (
+        lambda self: (
+            (self.bnb_config_kwargs or {}).get("bnb_4bit_quant_type", "nf4") != "nf4"
+        ),
+        "CPU-staged NF4 requires bnb_4bit_quant_type: nf4",
+    ),
+    (
+        lambda self: (
+            self.nf4_backend == "torchao"
+            and (
+                (self.bnb_config_kwargs or {}).get("blocksize", 64) != 64
+                or not (self.bnb_config_kwargs or {}).get(
+                    "bnb_4bit_use_double_quant", True
+                )
+            )
+        ),
+        "torchao NF4 requires blocksize 64 and double quantization",
+    ),
+    (
+        lambda self: bool(self.peft_use_dora or self.lora_modules_to_save),
+        "CPU-staged NF4 currently requires LoRA without DoRA or modules_to_save",
+    ),
+    (
+        lambda self: (
+            self.peft_init_lora_weights not in VALUE_INDEPENDENT_LORA_INIT
+            or bool(self.peft and self.peft.loftq_config)
+        ),
+        "CPU-staged NF4 does not support a value-dependent LoRA init: pissa, olora "
+        "and loftq residualize the base weight, and a packed base cannot take the "
+        "residual write-back; corda and eva are not wired for staged loading. olora "
+        "works on the non-staged bitsandbytes loader "
+        "(fsdp_config.cpu_ram_efficient_loading: false); pissa and loftq need an "
+        "unquantized base.",
+    ),
+]
+
+
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
 
@@ -886,14 +1033,6 @@ class OptimizationValidationMixin:
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
 
-    @staticmethod
-    def _resolve_fsdp_version(data):
-        """Resolve FSDP version from top-level fsdp_version or fsdp_config.fsdp_version."""
-        fsdp_version = data.get("fsdp_version")
-        if fsdp_version is None:
-            fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
-        return fsdp_version
-
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
@@ -902,12 +1041,6 @@ class OptimizationValidationMixin:
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
                 )
-            if data.get("fsdp") or data.get("fsdp_config"):
-                fsdp_version = cls._resolve_fsdp_version(data)
-                if str(fsdp_version) != "2":
-                    raise ValueError(
-                        "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
-                    )
         return data
 
     @model_validator(mode="before")
@@ -927,11 +1060,6 @@ class OptimizationValidationMixin:
                 "polora is not compatible with DeepSpeed or tensor parallelism. "
                 "Use single-GPU, DDP, or FSDP2."
             )
-        if data.get("fsdp") or data.get("fsdp_config"):
-            if str(cls._resolve_fsdp_version(data)) != "2":
-                raise ValueError(
-                    "polora requires FSDP2. Set fsdp_version: 2 to use polora with FSDP."
-                )
 
         untrained = [
             key
@@ -994,20 +1122,8 @@ class OptimizationValidationMixin:
         if data.get("deepspeed"):
             raise ValueError(
                 "q_galore_adamw8bit is not yet validated with DeepSpeed. "
-                "Use DDP or FSDP2 with use_orig_params=True."
+                "Use DDP or FSDP2."
             )
-        if data.get("fsdp") or data.get("fsdp_config"):
-            fsdp_version = cls._resolve_fsdp_version(data)
-            if str(fsdp_version) != "2":
-                raise ValueError(
-                    "q_galore_adamw8bit requires FSDP2. Set fsdp_version: 2."
-                )
-            fsdp_config = data.get("fsdp_config") or {}
-            if fsdp_config.get("use_orig_params") is not True:
-                raise ValueError(
-                    "q_galore_adamw8bit requires fsdp_config.use_orig_params=True so "
-                    "that per-parameter projection state survives FSDP sharding."
-                )
         if not (data.get("bf16") or data.get("bfloat16") or data.get("fp16")):
             LOG.warning(
                 "q_galore_adamw8bit benefits from mixed-precision (bf16/fp16). "
@@ -1031,13 +1147,6 @@ class OptimizationValidationMixin:
                     f"{optimizer} optimizer is incompatible with DeepSpeed. "
                     "Flash optimizers only support DDP and FSDP2."
                 )
-            if data.get("fsdp") or data.get("fsdp_config"):
-                fsdp_version = cls._resolve_fsdp_version(data)
-                if str(fsdp_version) != "2":
-                    raise ValueError(
-                        f"{optimizer} optimizer is only compatible with FSDP2. "
-                        "Set fsdp_version: 2 to use flash optimizers with FSDP."
-                    )
         return data
 
     @model_validator(mode="after")
@@ -1113,15 +1222,46 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_version(cls, data):
-        fsdp_config = data.get("fsdp_config", {})
-        if fsdp_config and str(data.get("fsdp_version")) != "2":
-            LOG.warning(
-                "FSDP1 is deprecated and will be removed in an upcoming release of "
-                "Axolotl (transformers plans to in v5.20). We recommend migrating "
-                "to fsdp_version: 2 for better performance and compatibility. "
-                "See https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp for "
-                "details on migrating your config."
+        if data.get("fsdp"):
+            raise ValueError(
+                "The top-level `fsdp` list is no longer supported, it configured "
+                "FSDP1 sharding strategies. Use `fsdp_config` instead, see "
+                f"{FSDP1_MIGRATION_DOCS} for the migration guide."
             )
+        fsdp_config = data.get("fsdp_config") or {}
+        for version in (
+            data.get("fsdp_version"),
+            fsdp_config.get("fsdp_version"),
+            fsdp_config.get("version"),
+        ):
+            if version is not None and str(version) != "2":
+                raise ValueError(
+                    f"fsdp_version: {version} is no longer supported, FSDP1 has been "
+                    f"removed from Axolotl. Use fsdp_version: 2 and see "
+                    f"{FSDP1_MIGRATION_DOCS} for the migration guide."
+                )
+
+        for key in list(fsdp_config.keys()):
+            # the `fsdp_` prefix is stripped by another validator, which may not have run yet
+            name = key[5:] if key.startswith("fsdp_") and key != "fsdp_version" else key
+            if name in FSDP1_ONLY_REJECTED_KEYS:
+                replacement = FSDP1_ONLY_REJECTED_KEYS[name]
+                replacement_hint = (
+                    f"Use `{replacement}` instead"
+                    if replacement
+                    else "It has no FSDP2 equivalent, please remove it"
+                )
+                raise ValueError(
+                    f"fsdp_config.{name} is an FSDP1-only option and FSDP1 has been "
+                    f"removed from Axolotl. {replacement_hint}. See "
+                    f"{FSDP1_MIGRATION_DOCS} for the migration guide."
+                )
+            if name in FSDP1_ONLY_IGNORED_KEYS:
+                LOG.warning(
+                    f"fsdp_config.{name} is an FSDP1-only option and is ignored under "
+                    f"FSDP2. Dropping it, see {FSDP1_MIGRATION_DOCS}."
+                )
+                fsdp_config.pop(key)
         return data
 
     @model_validator(mode="before")
@@ -1131,10 +1271,6 @@ class OptimizationValidationMixin:
             return data
 
         if fsdp_config.get("cpu_offload_pin_memory") is False:
-            if str(data.get("fsdp_version")) != "2":
-                raise ValueError(
-                    "FSDP1 does not support disabling cpu_offload_pin_memory, please set `fsdp_version` to 2"
-                )
             if not fsdp_config.get("offload_params"):
                 raise ValueError(
                     "disabling cpu_offload_pin_memory requires enabling offload_params"
@@ -1144,7 +1280,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp2_base_model_quant_rl(cls, data):
-        if data.get("fsdp_version") == 2 and data.get("rl") in [
+        if data.get("fsdp_config") and data.get("rl") in [
             RLType.DPO,
             RLType.KTO,
             RLType.ORPO,
@@ -1152,7 +1288,7 @@ class OptimizationValidationMixin:
         ]:
             if data.get("load_in_8bit") or data.get("load_in_4bit"):
                 raise ValueError(
-                    f"FSDP2 does not support load_in_8bit or load_in_4bit with {data.get('rl')}. Please use DeepSpeed or set `fsdp_version` to 1."
+                    f"FSDP2 does not support load_in_8bit or load_in_4bit with {data.get('rl')}. Please use DeepSpeed instead."
                 )
 
         return data
@@ -1193,25 +1329,9 @@ class OptimizationValidationMixin:
         if fsdp_version and fsdp_config and not fsdp_config.get("fsdp_version"):
             data["fsdp_config"]["fsdp_version"] = fsdp_version
         if fsdp_config and not data.get("fsdp_version"):
-            # transformers >= 5.10 defaults a missing version to FSDP2; pin
-            # axolotl's FSDP1 default explicitly so unversioned configs keep
-            # their behavior
-            data["fsdp_version"] = 1
-            data["fsdp_config"]["fsdp_version"] = 1
+            data["fsdp_version"] = 2
+            data["fsdp_config"]["fsdp_version"] = 2
         return data
-
-    @model_validator(mode="after")
-    def check_fsdp_offload_w_8bit_optimizer(self):
-        if (
-            hasattr(self, "fsdp_config")
-            and self.fsdp_config
-            and self.optimizer
-            and "8bit" in str(self.optimizer)
-            and self.fsdp_config.offload_params
-            and str(self.fsdp_version) != "2"
-        ):
-            raise ValueError(f"FSDP Offload not compatible with {str(self.optimizer)}")
-        return self
 
     @model_validator(mode="after")
     def check_fsdp2_w_8bit_optimizer(self):
@@ -1220,7 +1340,6 @@ class OptimizationValidationMixin:
             and self.fsdp_config
             and self.optimizer
             and "8bit" in str(self.optimizer)
-            and str(self.fsdp_version) == "2"
         ):
             if self.optimizer in ["adamw_8bit", "adamw_bnb_8bit"]:
                 # CUDA ops errors with bnb 8bit optimizer + FSDP2
@@ -1232,19 +1351,67 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="after")
     def check_fsdp2_cpu_ram_efficient_loading_w_4bit(self):
+        if self.qlora_sharded_model_loading is None:
+            self.qlora_sharded_model_loading = bool(
+                self.fsdp_config
+                and self.adapter == "qlora"
+                and self.load_in_4bit
+                and self.fsdp_config.cpu_ram_efficient_loading
+            )
         # nf4 quantizes on rank 0 only: its params keep the packed `(N, 1)` shape there while the
         # other ranks stay on meta unpacked, so the FSDP2 load scatters mismatched sizes.
         if (
             self.fsdp_config
-            and str(self.fsdp_version) == "2"
             and self.fsdp_config.cpu_ram_efficient_loading
             and self.load_in_4bit
+            and not self.qlora_sharded_model_loading
         ):
             raise ValueError(
                 "FSDP2 does not support `cpu_ram_efficient_loading` with load_in_4bit; the "
                 "rank-0-only bitsandbytes quantization deadlocks the state dict scatter. "
-                "Please set `fsdp_config.cpu_ram_efficient_loading` to false."
+                "Set `qlora_sharded_model_loading: true` for CPU-staged loading, "
+                "or set `fsdp_config.cpu_ram_efficient_loading` to false."
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_bnb_blocksize(self):
+        if (
+            self.load_in_4bit
+            and self.nf4_backend != "torchao"
+            and (self.bnb_config_kwargs or {}).get("blocksize", 64) != 64
+        ):
+            raise ValueError(
+                "bitsandbytes 4-bit loading always quantizes with blocksize 64; "
+                "remove `bnb_config_kwargs.blocksize` or set it to 64."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_staged_nf4(self):
+        staged = self.nf4_backend == "torchao" or (
+            self.qlora_sharded_model_loading and self.load_in_4bit
+        )
+        if not staged:
+            return self
+        if (
+            self.nf4_backend != "torchao"
+            and self.fsdp_config
+            and not self.fsdp_config.cpu_ram_efficient_loading
+        ):
+            # this combination never reached a sharded loader, so keep it inert
+            # rather than failing configs that used to train
+            LOG.warning(
+                "`qlora_sharded_model_loading: true` has no effect without "
+                "`fsdp_config.cpu_ram_efficient_loading: true`; every rank will load "
+                "and quantize the full model. Enable cpu_ram_efficient_loading for "
+                "CPU-staged NF4 loading."
+            )
+            self.qlora_sharded_model_loading = False
+            return self
+        for violates, message in STAGED_NF4_CONSTRAINTS:
+            if violates(self):
+                raise ValueError(message)
         return self
 
     @model_validator(mode="before")
@@ -1318,7 +1485,7 @@ class SystemValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_fsdp_deepspeed(cls, data):
-        if data.get("deepspeed") and data.get("fsdp"):
+        if data.get("deepspeed") and data.get("fsdp_config"):
             raise ValueError("deepspeed and fsdp cannot be used together.")
         return data
 
@@ -1402,12 +1569,14 @@ class SystemValidationMixin:
         else:
             available = is_flash_attn_2_available(kernels_fallback_ok=True)
         if not available:
+            reason = _flash_attn_kernel_failure(self.attn_implementation)
             raise ValueError(
                 f"attn_implementation: {self.attn_implementation} is set, but no "
                 "flash-attn build is available in this environment: the flash-attn "
                 "package is not installed and the kernels hub has no prebuilt binary "
                 f"for torch {torch.__version__}. Install a flash-attn build matching "
                 "your torch version, or set `attn_implementation: sdpa`."
+                + (f" The kernels hub lookup failed with: {reason}" if reason else "")
             )
         return self
 
@@ -1517,13 +1686,33 @@ class PretrainingValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_streaming_w_dataset_weight(cls, data):
+        if data.get("streaming") and data.get("datasets"):
+            for ds_cfg in data["datasets"]:
+                weight = (
+                    ds_cfg.get("weight")
+                    if isinstance(ds_cfg, dict)
+                    else getattr(ds_cfg, "weight", None)
+                )
+                if weight is not None and weight < 1.0:
+                    LOG.warning(
+                        "Dataset weight is not supported with streaming datasets and will be ignored. "
+                        "Use non-streaming mode for weighted dataset mixing."
+                    )
+                    break
+        return data
+
 
 class ModelCompatibilityValidationMixin:
     """Validation methods for specific model compatibility."""
 
     @model_validator(mode="after")
     def check_falcon_fsdp(self):
-        if (self.base_model and "falcon" in self.base_model.lower()) and self.fsdp:
+        if (
+            self.base_model and "falcon" in self.base_model.lower()
+        ) and self.fsdp_config:
             raise ValueError("FSDP is not supported for falcon models")
         return self
 
@@ -1709,7 +1898,7 @@ class ComplexValidationMixin:
                     "cfg.adapter must support ReLoRA to use ReLoRA restart semantics"
                 )
 
-            if self.fsdp or self.fsdp_config:
+            if self.fsdp_config:
                 raise ValueError("fsdp not supported with ReLoRA")
 
             if self.deepspeed:
@@ -1763,10 +1952,11 @@ class ComplexValidationMixin:
                 "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
             )
         elif self.context_parallel_size > 1:
-            if not self.attn_uses_flash_lib:
+            if attn_impl_base(self.attn_implementation) != "flash_attention_2":
                 raise ValueError(
-                    "context_parallel_size > 1 requires flash attention "
-                    "(attn_implementation: flash_attention_2 or flash_attention_3)."
+                    "context_parallel_size > 1 requires attn_implementation: "
+                    "flash_attention_2. Ring attention only supports the flash "
+                    "attention 2 backend."
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
@@ -1873,7 +2063,7 @@ class ComplexValidationMixin:
             and self.capabilities.get("n_gpu", 1) > 1
             and self.adapter in ("lora", "qlora")
             and self.rl == RLType.DPO
-            and not self.fsdp
+            and not self.fsdp_config
             and not self.deepspeed
         ):
             LOG.warning(

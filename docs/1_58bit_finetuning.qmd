@@ -12,6 +12,10 @@ toc-depth: 4
 
 Axolotl supports 1.58-bit finetuning via the [`onebitllms`](https://github.com/tiiuae/onebitllms) library, which replaces standard linear layers with BitNet-compatible counterparts ready to use for training.
 
+[`qat: weight_dtype: ternary`](./qat.qmd#ternary-qat) trains the same scheme natively, with no extra dependency.
+Prefer it when taking a high precision model down to ternary; prefer `use_onebitllms` when the checkpoint is
+already ternary and you want its `quantize_to_1bit` export.
+
 ::: {.callout-note}
 LoRA is not supported for BitNet models
 :::

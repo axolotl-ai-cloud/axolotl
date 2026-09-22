@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from axolotl.integrations.kernels.libs.sonicmoe.nvfp4 import (
+    dequantize_expert_slice,
     dequantize_expert_weight,
     gated_activation,
     grouped_down_gemm,
@@ -203,3 +204,23 @@ def test_full_path_gradcheck_wrt_input():
         return grouped_down_gemm(a, w2, offsets, backend="torch")
 
     assert torch.autograd.gradcheck(fn, (x,))
+
+
+@pytest.mark.parametrize("scale_kind", ["none", "scalar", "shared", "per_expert"])
+def test_dequantize_expert_slice_matches_full_tensor(scale_kind):
+    nvfp4 = pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
+    torch.manual_seed(42)
+    scales = {
+        "none": None,
+        "scalar": torch.tensor(0.37),
+        "shared": torch.tensor([[[0.37]]]),
+        "per_expert": torch.tensor([0.2, 0.37, 0.6]).view(3, 1, 1),
+    }
+    weight = nvfp4.NVFP4Tensor.to_nvfp4(
+        torch.randn(3, 8, 32), per_tensor_scale=scales[scale_kind]
+    )
+    expected = weight.dequantize()
+    for expert in range(3):
+        actual = dequantize_expert_slice(weight, expert)
+        assert actual.shape == expected[expert].shape
+        assert torch.equal(actual, expected[expert])

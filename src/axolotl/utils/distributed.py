@@ -47,14 +47,57 @@ def get_current_device() -> int:
     return 0
 
 
+def _backend_timeout(group, device) -> timedelta | None:
+    try:
+        return group._get_backend(device).options._timeout
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return None
+
+
+def _process_group_timeout() -> timedelta | None:
+    """Best-effort read of the timeout the live process group was created with."""
+    group = dist.group.WORLD
+    for device in (get_device_type(), torch.device("cpu")):
+        timeout = _backend_timeout(group, device)
+        if timeout is not None:
+            return timeout
+    try:
+        return dist.distributed_c10d._get_process_group_store(group).timeout
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return None
+
+
 def init_distributed_state():
     global distributed_state
-    if distributed_state is None:
-        timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
-        try:
-            distributed_state = PartialState(timeout=timedelta(seconds=timeout))
-        except ValueError:
-            pass
+    if distributed_state is not None:
+        return
+    from axolotl.utils.logging import get_logger
+
+    log = get_logger(__name__)
+    requested = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
+    # accelerate drops PartialState kwargs once a process group or PartialState exists
+    preexisting = dist.is_initialized() or bool(PartialState._shared_state)
+    try:
+        distributed_state = PartialState(timeout=timedelta(seconds=requested))
+    except ValueError as exc:
+        log.warning("Could not initialize the distributed state: %s", exc)
+        return
+    if not preexisting:
+        log.debug("Distributed timeout set to %ss", requested)
+        return
+    if not dist.is_initialized():
+        return
+    effective = _process_group_timeout()
+    if effective is not None and effective >= timedelta(seconds=requested):
+        return
+    log.warning(
+        "The requested distributed timeout of %ss was discarded: the process group was "
+        "already initialized with a timeout of %s. Pass timeout= to "
+        "torch.distributed.init_process_group before Axolotl initializes, or let Axolotl "
+        "create the process group, for ddp_timeout / AXOLOTL_NCCL_TIMEOUT to take effect.",
+        requested,
+        effective if effective is not None else "unknown",
+    )
 
 
 def get_distributed_state() -> PartialState | None:

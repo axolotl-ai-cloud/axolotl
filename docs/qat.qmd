@@ -24,7 +24,7 @@ To enable QAT in axolotl, add the following to your configuration file:
 ```yaml
 qat:
   activation_dtype: # Optional[str] = "int8". Fake quantization layout to use for activation quantization. Valid options are "int4", "int8", "float8"
-  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4", "fp8", and "nvfp4".
+  weight_dtype: # Optional[str] = "int8". Fake quantization layout to use for weight quantization. Valid options are "int4", "fp8", "nvfp4", and "ternary".
   group_size: # Optional[int] = 32. The number of elements in each group for per-group fake quantization
   fake_quant_after_n_steps: # Optional[int] = None. The number of steps to apply fake quantization after
 ```
@@ -36,5 +36,35 @@ We support the following quantization schemas:
 - `Float8DynamicActivationFloat8Weight`
 - `Float8DynamicActivationInt4Weight`
 - `NVFP4`
+- `Ternary` (BitNet b1.58 style)
+
+## Ternary QAT {#ternary-qat}
+
+`weight_dtype: ternary` trains every linear outside the LM head with weights restricted to `{-1, 0, 1}`,
+scaled by a per-row (per output channel) absmean, as in [BitNet b1.58](https://arxiv.org/abs/2402.17764).
+Norms and the LM head stay in high precision, and `quantize_embedding` uses int8 per-row rather than
+ternary. `group_size` does not apply.
+
+Activation quantization is opt-in: set `activation_dtype: int8` to also fake quantize activations with a
+per-token absmax scale (`int8` is the only activation dtype ternary accepts). Leave `activation_dtype`
+unset — the default — for weight-only ternary.
+
+The [`use_onebitllms`](./1_58bit_finetuning.qmd) path trains the same scheme through an external library, for
+checkpoints that are already ternary.
+
+```yaml
+qat:
+  weight_dtype: ternary
+  activation_dtype: int8        # optional, omit for weight-only; int8 is the only value ternary accepts
+  quantize_embedding: true      # int8 per-row embeddings
+  fake_quant_after_n_steps: 100 # optional high precision warmup
+```
+
+Gradients reach the high precision master weights through a straight-through estimator, so the optimizer state
+stays unquantized. At the end of training the ternary values are baked into the saved weights, which means the
+checkpoint loads with plain `transformers` but is still stored at the model's training dtype — serving it at
+two bits per weight requires an inference stack with a ternary format (for example GGUF `TQ1_0`/`TQ2_0`).
+Recovering quality after switching an existing model to ternary takes a continued pretraining scale token budget,
+not a fine-tuning one.
 
 Once you have finished training, you must quantize your model by using the same quantization configuration which you used to train the model with. You can use the [`quantize`](./quantize.qmd) command to do this.

@@ -11,6 +11,7 @@ class TorchAOQuantDType(Enum):
     float8_e4m3fn = torch.float8_e4m3fn
     nvfp4 = "nvfp4"
     mxfp4 = "mxfp4"
+    ternary = "ternary"
 
     def from_string(str):
         if str == "int4":
@@ -23,6 +24,8 @@ class TorchAOQuantDType(Enum):
             return TorchAOQuantDType.nvfp4
         if str == "mxfp4":
             return TorchAOQuantDType.mxfp4
+        if str == "ternary":
+            return TorchAOQuantDType.ternary
 
 
 class RLType(str, Enum):

@@ -38,8 +38,9 @@ def _dg():
     if _DG is None:
         from kernels import get_kernel
 
-        # kernels>=0.15 requires an explicit version; main has no torch 2.12 build, v1 does.
-        _DG = get_kernel("kernels-community/deep-gemm", version=1)
+        # pin the branch, not the version: in the kernel repo both main and the v1 ref
+        # carry zero build variants, and only v2 publishes a torch 2.12 build
+        _DG = get_kernel("kernels-community/deep-gemm", revision="v2")
     return _DG
 
 

@@ -164,24 +164,33 @@ def fixture_muse_glimmer_tokenizer(
     return tokenizer
 
 
-@pytest.fixture(name="magistral_tokenizer")
-def fixture_magistral_tokenizer():
+@pytest.fixture(name="magistral_tokenizer", scope="session")
+@enable_hf_offline
+def fixture_magistral_tokenizer(
+    download_magistral_tokenizer_fixture,
+):
     from axolotl.utils.mistral import HFMistralTokenizer
 
     tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Magistral-Small-2506")
     return tokenizer
 
 
-@pytest.fixture(name="devstral_tokenizer")
-def fixture_devstral_tokenizer():
+@pytest.fixture(name="devstral_tokenizer", scope="session")
+@enable_hf_offline
+def fixture_devstral_tokenizer(
+    download_devstral_tokenizer_fixture,
+):
     from axolotl.utils.mistral import HFMistralTokenizer
 
     tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2505")
     return tokenizer
 
 
-@pytest.fixture(name="devstral_1_1_tokenizer")
-def fixture_devstral_1_1_tokenizer():
+@pytest.fixture(name="devstral_1_1_tokenizer", scope="session")
+@enable_hf_offline
+def fixture_devstral_1_1_tokenizer(
+    download_devstral_1_1_tokenizer_fixture,
+):
     from axolotl.utils.mistral import HFMistralTokenizer
 
     tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2507")

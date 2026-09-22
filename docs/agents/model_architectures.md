@@ -60,7 +60,9 @@ lora_target_parameters:
   - experts.down_proj
 ```
 
-Supported: Gemma4 (`gemma4_text`), Mixtral, Qwen MoE variants. The plugin auto-detects model type and routing function. Without ScatterMoE, expert LoRA still works but runs base expert matmul and LoRA as separate operations.
+Supported: Gemma4 (`gemma4_text`), Mixtral, Qwen MoE variants, Nemotron-3 (`nemotron_h`). The plugin auto-detects model type and routing function. Without ScatterMoE, expert LoRA still works but runs base expert matmul and LoRA as separate operations.
+
+Nemotron-3 latentmoe (`nemotron_h`) experts are non-gated (`up_proj`/`down_proj`, relu², no gate_proj) in `moe_latent_size` width: target `experts.up_proj`/`experts.down_proj` in `lora_target_parameters`, and add `fc1_latent_proj`/`fc2_latent_proj` to `lora_target_modules` for the shared latent projections. NVFP4 checkpoints (modelopt MIXED_PRECISION) use the same plugin with `dsv4_fp4_grouped_mode: nvfp4`; only the routed experts stay packed NVFP4, everything else dequantizes to bf16 at load.
 
 ## Gemma 4
 
@@ -92,19 +94,15 @@ Axolotl auto-detects Gemma4 and applies:
 |----------|--------|-------|
 | DDP | Yes | Auto-sets `ddp_find_unused_parameters=True` |
 | DDP + activation_offloading | Yes | `find_unused_parameters` is skipped (conflicts with checkpoint wrappers) |
-| FSDP1 | No | OOM during dequantization/sharding with QLoRA |
 | FSDP2 | Yes | Use `Gemma4TextDecoderLayer` (not `Gemma4DecoderLayer`) as wrap class |
 | FSDP2 + activation_offloading | Yes | Lowest VRAM (~26 GiB/GPU for 26B-A4B) |
 
 FSDP2 config:
 ```yaml
-fsdp:
-  - full_shard
-  - auto_wrap
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer
 ```
 
 ### MoE (26B-A4B)
@@ -163,7 +161,7 @@ lora_target_parameters:
 | `mm_token_type_ids is required` in DDP | `model.config` not accessible through DDP wrapper | Already fixed — `unwrap_model()` in `compute_loss` and `prediction_step` |
 | `marked a variable ready twice` in DDP | `ddp_find_unused_parameters=True` + activation_offloading checkpoint wrappers | Auto-handled — `find_unused_parameters` is skipped when `activation_offloading: true` |
 | Loss ~12 instead of ~0.5 | Using `lora_target_linear: true` (applies LoRA to vision/audio modules) | Use the regex `lora_target_modules` pattern instead |
-| FSDP2 `Could not find Gemma4AudioLayer` | Auto-wrap detects `_no_split_modules` including audio layers that don't exist | Explicitly set `fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer` |
+| FSDP2 `Could not find Gemma4AudioLayer` | Auto-wrap detects `_no_split_modules` including audio layers that don't exist | Explicitly set `fsdp_config.transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer` |
 | `Gemma4ClippableLinear not supported` by PEFT | Vision tower uses a non-standard linear wrapper | Axolotl patches this automatically via `_patch_peft_clippable_linear()` |
 
 ### E2B/E4B dense models

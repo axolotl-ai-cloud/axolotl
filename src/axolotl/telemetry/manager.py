@@ -2,6 +2,7 @@
 
 import atexit
 import importlib
+import math
 import os
 import platform
 import uuid
@@ -242,6 +243,11 @@ class TelemetryManager:
                     # Fields with whitelisted orgs don't need to be redacted
                     if not self._is_whitelisted(value):
                         return "[REDACTED]"
+
+            if isinstance(value, float) and not math.isfinite(value):
+                if math.isnan(value):
+                    return "NaN"
+                return "Infinity" if value > 0 else "-Infinity"
 
             # Handle nested values
             if isinstance(value, dict):

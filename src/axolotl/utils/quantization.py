@@ -2,8 +2,6 @@
 Utilities for quantization including QAT and PTQ using torchao.
 """
 
-import functools
-
 import torch
 from packaging import version
 from torchao.core.config import AOBaseConfig
@@ -20,6 +18,11 @@ from torchao.quantization.quant_api import (
     Int8DynamicActivationIntxWeightConfig,
 )
 
+from axolotl.utils.quantization_ternary import (
+    convert_ternary_model,
+    has_tied_output_embedding,
+    prepare_model_for_ternary_qat,
+)
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 quantization_config_to_str = {
@@ -166,39 +169,6 @@ def _attach_torchao_quantizer(
     model.hf_quantizer = quantizer
 
 
-def patch_transformers_skip_quantized_init():
-    """Stop ``from_pretrained`` from re-initializing torchao-quantized weights.
-
-    transformers re-runs ``_init_weights`` on every module during loading; the
-    generic implementation does ``init.normal_(module.weight.float(), ...)``.
-    ``.float()`` on a torchao tensor subclass (e.g. ``MXTensor``) returns a new
-    tensor that both drops the ``_is_hf_initialized`` skip flag and does not
-    implement ``normal_``, so loading an MX checkpoint raises NotImplementedError.
-    Re-initializing an already-loaded quantized weight is never correct, so we
-    skip those modules entirely.
-    """
-    from torchao.utils import TorchAOBaseTensor
-    from transformers import PreTrainedModel
-
-    if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
-        return
-
-    original = PreTrainedModel._initialize_weights
-
-    @functools.wraps(original)
-    def _initialize_weights(self, module, *args, **kwargs):
-        if any(
-            isinstance(param, TorchAOBaseTensor)
-            for param in module.parameters(recurse=False)
-        ):
-            module._is_hf_initialized = True
-            return None
-        return original(self, module, *args, **kwargs)
-
-    _initialize_weights._axolotl_torchao_patched = True
-    PreTrainedModel._initialize_weights = _initialize_weights
-
-
 def quantize_model(
     model,
     weight_dtype: TorchAOQuantDType,
@@ -251,6 +221,10 @@ def quantize_model(
         model._is_mx_quantized = True
         # MX checkpoints reload via plain from_pretrained (no HF quantizer), so guard
         # transformers' weight re-init against the MXTensor weights it will encounter.
+        from axolotl.monkeypatch.quantized_init import (
+            patch_transformers_skip_quantized_init,
+        )
+
         patch_transformers_skip_quantized_init()
     else:
         _attach_torchao_quantizer(
@@ -379,6 +353,14 @@ def prepare_model_for_qat(
     Raises:
         ValueError: If the activation/weight dtype combination is invalid.
     """
+    if weight_dtype == TorchAOQuantDType.ternary:
+        prepare_model_for_ternary_qat(
+            model,
+            quantize_activations=activation_dtype is not None,
+            quantize_embedding=quantize_embedding,
+        )
+        return
+
     base_config = get_quantization_config(
         weight_dtype=weight_dtype,
         activation_dtype=activation_dtype,
@@ -412,9 +394,12 @@ def convert_qat_model(
     """
     This function converts a QAT model which has fake quantized layers back to the original model.
     """
+    was_ternary = convert_ternary_model(model)
     config = QATConfig(step="convert")
-    quantize_(model, config)
-    if quantize_embedding:
+    if not was_ternary:
+        # ternary linears are already back to nn.Linear, torchao has nothing to convert
+        quantize_(model, config)
+    if quantize_embedding and not (was_ternary and has_tied_output_embedding(model)):
         quantize_(
             model,
             config,

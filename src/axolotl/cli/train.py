@@ -116,12 +116,17 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
 
     if parsed_cfg.use_ray:
         from ray.train import RunConfig, ScalingConfig
-        from ray.train.torch import TorchTrainer
+        from ray.train.torch import TorchConfig, TorchTrainer
 
         train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
         trainer = TorchTrainer(
             ray_train_func,
             train_loop_config=train_loop_config,
+            # Ray builds the process group before the worker reaches prepare_optim_env, so
+            # ddp_timeout only applies if it is handed over here
+            torch_config=TorchConfig(timeout_s=parsed_cfg.ddp_timeout)
+            if parsed_cfg.ddp_timeout
+            else None,
             scaling_config=ScalingConfig(
                 num_workers=parsed_cfg.ray_num_workers,
                 resources_per_worker=parsed_cfg.resources_per_worker.to_dict(),

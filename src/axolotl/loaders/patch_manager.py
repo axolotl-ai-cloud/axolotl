@@ -24,6 +24,7 @@ from axolotl.integrations.base import PluginManager
 from axolotl.model_support import (
     ModelHookContext,
     ModelHookPhase,
+    Unsupported,
     check_capability,
     get_model_support,
     get_model_support_for_cfg,
@@ -430,15 +431,23 @@ class PatchManager:
 
                 patch_move_missing_keys_meta_for_fsdp()
 
-        if self.cfg.context_parallel_size > 1 or (
-            self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
-        ):
+        if self.cfg.context_parallel_size > 1 or self.cfg.fsdp_config:
             from axolotl.monkeypatch.accelerate.parallelism_config import (
                 patch_parallelism_config,
             )
 
             patch_parallelism_config()
-        if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
+        if (
+            self.cfg.fsdp_config
+            and self.cfg.adapter
+            and self.cfg.fsdp_config.activation_checkpointing
+        ):
+            from axolotl.monkeypatch.peft.state_dict import (
+                patch_peft_checkpoint_wrapper_prefixes,
+            )
+
+            patch_peft_checkpoint_wrapper_prefixes()
+        if self.cfg.fsdp_config:
             from axolotl.monkeypatch.accelerate.float8_fsdp import patch_float8_fsdp
             from axolotl.monkeypatch.accelerate.fsdp2 import (
                 patch_accelerate_fsdp2,
@@ -457,7 +466,9 @@ class PatchManager:
 
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
-        if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
+        from axolotl.loaders.model import should_skip_peft_embedding_upcast
+
+        if should_skip_peft_embedding_upcast(self.cfg):
             from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
 
             patch_peft_prep_code()
@@ -726,9 +737,12 @@ class PatchManager:
             from axolotl.monkeypatch.trainer_accelerator_args import (
                 patch_create_accelerate_code_for_fp8,
             )
+            from axolotl.utils.schemas.fp8 import resolve_fp8_recipe
 
+            fp8_recipe = resolve_fp8_recipe(self.cfg.get("fp8_config"))
             patch_create_accelerate_code_for_fp8(
-                self.cfg.fp8_enable_fsdp_float8_all_gather
+                enable_fsdp_float8_all_gather=self.cfg.fp8_enable_fsdp_float8_all_gather,
+                fp8_recipe=fp8_recipe,
             )
             patch_fp8_exclude_moe_router()
 
@@ -832,6 +846,18 @@ class PatchManager:
         if not (explicit or auto):
             return
 
+        support = get_model_support(self.cfg.model_config_type)
+        resolved = resolve_model_support(support) if support is not None else None
+        capability = resolved.capabilities.get("sdpa_varlen") if resolved else None
+        if isinstance(capability, Unsupported):
+            if explicit:
+                LOG.warning(
+                    "sdpa_varlen is not supported for model_type=%s.%s Keeping stock SDPA.",
+                    self.cfg.model_config_type,
+                    f" {capability.reason}" if capability.reason else "",
+                )
+            return
+
         from axolotl.monkeypatch.attention.sdpa_varlen import (
             _VARLEN_MAX_HEAD_DIM,
             patch_sdpa_varlen,
@@ -930,11 +956,7 @@ class PatchManager:
 
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
-        if (
-            self.cfg.fsdp_config
-            and str(self.cfg.fsdp_version) == "2"
-            and (self.cfg.load_in_4bit or self.cfg.load_in_8bit)
-        ):
+        if self.cfg.fsdp_config and (self.cfg.load_in_4bit or self.cfg.load_in_8bit):
             from axolotl.monkeypatch.fsdp2_qlora import (
                 apply_init_dtype_attrs_patch,
                 apply_init_sharded_param_patch,
@@ -960,11 +982,12 @@ class PatchManager:
         if not self.cfg.quantize_moe_experts and not has_target_params:
             return
 
+        from axolotl.loaders.nf4 import uses_staged_nf4
         from axolotl.monkeypatch.moe_quant import (
             patch_peft_target_parameters_matching,
         )
 
-        if self.cfg.quantize_moe_experts:
+        if self.cfg.quantize_moe_experts and not uses_staged_nf4(self.cfg):
             from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
 
             patch_moe_quantization_on_load(self.cfg)

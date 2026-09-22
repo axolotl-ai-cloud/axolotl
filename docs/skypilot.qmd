@@ -78,7 +78,7 @@ run: |
   export NCCL_BUFFSIZE=2097152
 
   HEAD_IP=$(echo "$SKYPILOT_NODE_IPS" | head -n1)
-  axolotl train /workspace/axolotl/examples/llama-3/fft-8b-liger-fsdp.yaml --launcher torchrun -- \
+  axolotl train /workspace/axolotl/examples/gpt-oss/gpt-oss-20b-fft-fsdp2.yaml --launcher torchrun -- \
     --nnodes $SKYPILOT_NUM_NODES \
     --nproc_per_node $SKYPILOT_NUM_GPUS_PER_NODE \
     --rdzv_id $SKYPILOT_TASK_ID \

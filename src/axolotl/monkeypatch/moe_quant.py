@@ -1,5 +1,8 @@
 """Loading-time quantization for MoE expert weights stored as 3D nn.Parameter tensors."""
 
+import warnings
+from typing import TypedDict
+
 import bitsandbytes as bnb
 import torch
 import torch.nn.utils.parametrize as P
@@ -8,7 +11,19 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-_moe_load_state = {
+
+class _MoeLoadState(TypedDict):
+    """Shared loading state for quantization and expert adapter ordering."""
+
+    count: int
+    mode: str
+    quant_type: str
+    compress_statistics: bool
+    patched: bool
+    expert_param_order: dict[str, list[str]]
+
+
+_moe_load_state: _MoeLoadState = {
     "count": 0,
     "mode": "4bit",
     "quant_type": "nf4",
@@ -18,6 +33,31 @@ _moe_load_state = {
     # Without this, alphabetical loading order would mismatch merge order.
     "expert_param_order": {},
 }
+
+
+def reset_moe_load_state(mode: str = "4bit") -> None:
+    _moe_load_state["mode"] = mode
+    _moe_load_state["count"] = 0
+    _moe_load_state["expert_param_order"] = {}
+
+
+def record_quantized_expert(path: str, module: torch.nn.Module) -> None:
+    """Capture definition order before a parametrization reorders it, then count it."""
+    if path not in _moe_load_state["expert_param_order"]:
+        _moe_load_state["expert_param_order"][path] = list(module._parameters)
+    _moe_load_state["count"] += 1
+
+
+def export_moe_load_state() -> dict:
+    return {
+        "expert_param_order": dict(_moe_load_state["expert_param_order"]),
+        "count": _moe_load_state["count"],
+    }
+
+
+def import_moe_load_state(state: dict) -> None:
+    _moe_load_state["expert_param_order"] = state["expert_param_order"]
+    _moe_load_state["count"] = state["count"]
 
 
 class Bnb8bitParametrization(torch.nn.Module):
@@ -42,9 +82,17 @@ def _enable_parametrization_cache(module, inputs):
 
 
 def _disable_parametrization_cache(module, inputs, output):
-    P._cache_enabled -= 1
+    # always_call can fire without a matching pre-hook; a negative counter is truthy.
+    P._cache_enabled = max(0, P._cache_enabled - 1)
     if not P._cache_enabled:
         P._cache = {}
+
+
+def _register_parametrization_cache_hooks(module):
+    """Gate torch's parametrization cache to this module's forward."""
+    module.register_forward_pre_hook(_enable_parametrization_cache)
+    # Without always_call, an aborted checkpoint recompute skips this and pins experts.
+    module.register_forward_hook(_disable_parametrization_cache, always_call=True)
 
 
 def replace_parameter_8bit(module, param_name):
@@ -63,17 +111,14 @@ def replace_parameter_8bit(module, param_name):
 
     # Cache dequantized values during forward to avoid redundant dequantization.
     if not getattr(module, "_axolotl_8bit_hooks_registered", False):
-        module.register_forward_pre_hook(_enable_parametrization_cache)
-        module.register_forward_hook(_disable_parametrization_cache)
+        _register_parametrization_cache_hooks(module)
         module._axolotl_8bit_hooks_registered = True
 
 
 def patch_moe_quantization_on_load(cfg):
     """Patch transformers' weight loading to quantize MoE expert params on-the-fly."""
     mode = "8bit" if getattr(cfg, "load_in_8bit", False) else "4bit"
-    _moe_load_state["mode"] = mode
-    _moe_load_state["count"] = 0
-    _moe_load_state["expert_param_order"] = {}
+    reset_moe_load_state(mode)
 
     if _moe_load_state["patched"]:
         LOG.debug("MoE loading-time quantization patch already active")
@@ -119,10 +164,7 @@ def patch_moe_quantization_on_load(cfg):
 
                 # Record definition order before parametrizations override it
                 # with alphabetical order.
-                if mod_path not in _moe_load_state["expert_param_order"]:
-                    _moe_load_state["expert_param_order"][mod_path] = list(
-                        mod._parameters.keys()
-                    )
+                record_quantized_expert(mod_path, mod)
 
                 if _moe_load_state["mode"] == "4bit":
                     replace_parameter_4bit(
@@ -133,7 +175,6 @@ def patch_moe_quantization_on_load(cfg):
                     )
                 else:
                     replace_parameter_8bit(mod, pname)
-                _moe_load_state["count"] += 1
 
                 # Release the bf16 tensor so CUDA memory is freed immediately.
                 param_value.data = torch.empty(0, device="cpu")
@@ -156,12 +197,15 @@ def patch_peft_target_parameters_matching():
        adapters are compatible with standard PEFT, vLLM, etc.
     3. Skips ParametrizationList synthetic paths to prevent PEFT from mistakenly
        targeting quantized expert params via name-suffix matching.
+    4. Evicts the stale ``parametrize`` cache entry when a nested ParamWrapper
+       activates, so its delta is not masked by an already-cached value.
     """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
 
-    from contextlib import nullcontext
+    from contextlib import contextmanager, nullcontext
 
+    from peft.tuners.lora.layer import ParamWrapper
     from peft.tuners.tuners_utils import BaseTuner, BaseTunerLayer
     from peft.utils.integrations import init_empty_weights
     from peft.utils.other import _get_submodules
@@ -181,6 +225,7 @@ def patch_peft_target_parameters_matching():
     ):
         original_targets = list(peft_config.target_parameters)
         expanded = set(original_targets)
+        targeted_parameter_names: list[str] = []
 
         # Expand short suffixes to full paths for parametrized modules.
         for module_name, module in model.named_modules():
@@ -283,7 +328,7 @@ def patch_peft_target_parameters_matching():
                         key.endswith(f".{t}") for t in target_names_set
                     ):
                         create_and_replace_param(module_name, key, param_name)
-                        self.targeted_parameter_names.append(key)
+                        targeted_parameter_names.append(key)
             else:
                 unwrapped_module_name = strip_base_layer_from_name(module_name)
                 for param_name, _ in module.named_parameters(recurse=False):
@@ -292,7 +337,11 @@ def patch_peft_target_parameters_matching():
                         key.endswith(f".{t}") for t in target_names_set
                     ):
                         create_and_replace_param(module_name, key, param_name)
-                        self.targeted_parameter_names.append(key)
+                        targeted_parameter_names.append(key)
+
+        # PEFT <=0.20 reads the attribute, newer PEFT uses the return value.
+        self.targeted_parameter_names.extend(targeted_parameter_names)
+        return targeted_parameter_names
 
     BaseTuner._inject_parameters = _patched_inject_parameters
 
@@ -312,6 +361,69 @@ def patch_peft_target_parameters_matching():
         return _original_check(config, key)
 
     BaseTuner._check_target_module_exists = _patched_check_target_module_exists
+
+    # Targeting two parameters of one module nests the ParamWrappers, and the outer one
+    # opens `parametrize.cached()` before the inner registers its LoRA proxy. On an
+    # already-parametrized (quantized) parameter that registration caches the pre-proxy
+    # value, so every later read returns it and the inner LoRA gets no gradient at all.
+    if not getattr(ParamWrapper._activate_lora, "_axolotl_patched", False):
+        _original_activate = ParamWrapper._activate_lora
+
+        @contextmanager
+        def _patched_activate_lora(self, active_adapters):
+            with _original_activate(self, active_adapters):
+                key = (id(self.get_base_layer()), self.parameter_name)
+                P._cache.pop(key, None)
+                try:
+                    yield
+                finally:
+                    P._cache.pop(key, None)
+
+        _patched_activate_lora._axolotl_patched = True
+        ParamWrapper._activate_lora = _patched_activate_lora
+
+    # PEFT 0.21 registers a _LoraFactorsProxy for single-adapter expert stacks, but its
+    # cleanup only removes _LoraParameterProxy when another parametrization (ours) is
+    # present, so the proxy leaks and the delta compounds on every forward.
+    from peft.tuners.lora import layer as lora_layer
+
+    proxies = tuple(
+        cls
+        for cls in (
+            getattr(lora_layer, "_LoraParameterProxy", None),
+            getattr(lora_layer, "_LoraFactorsProxy", None),
+        )
+        if cls is not None
+    )
+    if getattr(lora_layer, "_LoraFactorsProxy", None) is not None and not getattr(
+        ParamWrapper._remove_parametrizations, "_axolotl_patched", False
+    ):
+
+        def _patched_remove_parametrizations(self):
+            base_layer = self.get_base_layer()
+            name = self.parameter_name
+            if name not in base_layer.parametrizations:
+                raise ValueError(
+                    "Something went wrong, please report this issue on PEFT: "
+                    "https://github.com/huggingface/peft/issues"
+                )
+            param_list = base_layer.parametrizations[name]
+            if len(param_list) == 1:
+                P.remove_parametrizations(base_layer, name, leave_parametrized=False)
+                return
+            for index in reversed(range(len(param_list))):
+                if isinstance(param_list[index], proxies):
+                    del param_list[index]
+                    return
+            warnings.warn(
+                f"Could not find any LoRA parametrization on {self}, please open an "
+                "issue on https://github.com/huggingface/peft/issues and report this "
+                "warning.",
+                stacklevel=2,
+            )
+
+        _patched_remove_parametrizations._axolotl_patched = True
+        ParamWrapper._remove_parametrizations = _patched_remove_parametrizations
 
     patch_peft_target_parameters_matching._axolotl_patched = True
     LOG.info("Patched PEFT _inject_parameters for consistent ParamWrapper ordering")

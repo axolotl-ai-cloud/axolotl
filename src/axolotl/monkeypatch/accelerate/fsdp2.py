@@ -426,6 +426,11 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     return log_bias_dtype_mismatch
 
 
+def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool:
+    """Staged NF4 holds the real weights on rank zero only; a peer's state dict would materialize meta."""
+    return not staged_nf4 or is_main_process
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -456,7 +461,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     fsdp2_plugin = accelerator.state.fsdp_plugin
 
-    original_sd = model.state_dict()
+    staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
+    original_sd = (
+        model.state_dict()
+        if _builds_original_state_dict(staged_nf4, accelerator.is_main_process)
+        else {}
+    )
 
     from torch.distributed.fsdp.wrap import (
         size_based_auto_wrap_policy,
@@ -602,6 +612,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 "param(s) from the FSDP wrap (kept as plain per-rank slices)."
             )
 
+    nf4_unwrapped_children = set()
+    if staged_nf4 and is_peft_model:
+        for module in model.modules():
+            if isinstance(module, ParamWrapper):
+                # ParamWrapper reads adapter weights directly, without invoking their forward hooks.
+                nf4_unwrapped_children.update(list(module.modules())[1:])
+
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -625,6 +642,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         nonfloat_param_guard,
         shard_fp32_modules,
     )
+    from axolotl.monkeypatch.fsdp2_qlora import apply_init_dtype_attrs_patch
 
     # Apply the quantized dtype/cast/sharding policy ONLY for float-logical torchao subclasses
     # (NVFP4Tensor/Float8Tensor/MXTensor) — the pre-quantized checkpoint case this path is for.
@@ -633,12 +651,19 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     # packed, which includes bnb Params4bit) and stays gated on that.
     _quantized = model_has_float_logical_quantized_params(model)
     _needs_nonfloat_guard = model_has_nonfloat_params(model)
+    if _needs_nonfloat_guard:
+        # PatchManager applies this for fsdp2 + 4/8-bit configs; direct callers of
+        # this function (tests, probes) would otherwise see FSDP2 cast packed bytes
+        apply_init_dtype_attrs_patch()
     _guard = (
         nonfloat_param_guard(model)
         if _needs_nonfloat_guard
         else contextlib.nullcontext()
     )
-    with _guard:
+    from axolotl.utils.nf4_loading import nf4_phase
+
+    phase = nf4_phase("NF4 FSDP2 wrapping") if staged_nf4 else contextlib.nullcontext()
+    with _guard, phase:
         if _quantized:
             # keep-fp32 modules (registered by model adapters, e.g. DSV4 mHC) get their own
             # fp32 shard group; remaining plain fp32 (PEFT LoRA) is cast to the compute dtype.
@@ -647,6 +672,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
         if auto_wrap_policy is not None:
             for module in get_module_children_bottom_up(model)[:-1]:
+                if module in nf4_unwrapped_children:
+                    continue
+                if staged_nf4 and isinstance(
+                    module,
+                    (nn.ModuleList, nn.ModuleDict, nn.ParameterList, nn.ParameterDict),
+                ):
+                    continue
                 if is_peft_model and isinstance(module, LoraLayer):
                     module_log_bias_mismatch = _process_lora_module_for_fsdp(
                         module, fsdp2_kwargs
@@ -663,9 +695,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        fsdp2_load_full_state_dict(
-            accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
-        )
+        load_state = fsdp2_load_full_state_dict
+        if staged_nf4:
+            from axolotl.monkeypatch.accelerate.fsdp2_nf4 import load_staged_nf4_state
+
+            load_state = load_staged_nf4_state
+        load_state(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
@@ -789,7 +824,11 @@ def patch_move_missing_keys_meta_for_fsdp():
     Caller MUST restrict this to frozen-base (adapter) runs: leaving base params on meta on
     non-rank-0 deadlocks the FSDP2 optimizer-state all-gather at checkpoint save for a FULL
     fine-tune (rank-0 real DTensors vs non-rank-0 meta). LoRA/qLoRA carry no base optimizer state,
-    so the gather never touches these params."""
+    so the gather never touches these params.
+
+    Trainable params created after the load (the adapters) must NOT stay on meta on non-rank-0 —
+    accelerate keys its FSDP2 optimizer param remap on ``data_ptr()``, which is 0 for every meta
+    tensor; see ``axolotl.loaders.utils.materialize_trainable_meta_params``."""
     from transformers import PreTrainedModel
     from transformers.integrations import (
         is_deepspeed_zero3_enabled,
