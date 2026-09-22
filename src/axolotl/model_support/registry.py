@@ -17,6 +17,7 @@ MODEL_SUPPORT_ENTRY_POINT_GROUP = "axolotl.model_support"
 # axolotl.model_support stays cycle-free and cheap.
 _BUILTIN_MODULES = (
     "axolotl.model_support.bailing_hybrid",
+    "axolotl.model_support.beam",
     "axolotl.model_support.cohere_compass",
     "axolotl.model_support.diffusion_gemma",
     "axolotl.model_support.dream",
