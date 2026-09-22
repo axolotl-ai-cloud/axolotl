@@ -1692,7 +1692,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--export.outtype",),
         "export__outtype",
         None,
-        "Weight type of the GGUF conversion.",
+        "Weight type of the GGUF conversion. Default: f16 for a full model, f32 for a LoRA adapter.",
     ),
     (
         ("--export.quantize",),
