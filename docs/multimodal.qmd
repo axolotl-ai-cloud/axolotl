@@ -62,6 +62,11 @@ lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_att
 # (optional) if you want to resize images to a set size
 image_size: 512
 image_resize_algorithm: bilinear
+
+# (optional) Qwen2/2.5/3-VL, Qwen3.5, Omni, GLM-4V and GLM-OCR run the vision
+# patch_embed Conv3d as an equivalent, faster GEMM by default; set false to
+# keep the stock Conv3d forward. See Optimizations docs.
+# vision_patch_embed_linear: false
 ```
 
 Please see [examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples) folder for full configs.
