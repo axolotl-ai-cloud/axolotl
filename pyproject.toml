@@ -177,6 +177,8 @@ include-package-data = true
 axolotl = [
     "**/*.yaml",
     "**/*.jinja",
+    "integrations/baseten/template/*.sh",
+    "integrations/baseten/template/*.py",
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
 ]
 

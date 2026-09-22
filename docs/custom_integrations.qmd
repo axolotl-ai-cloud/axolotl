@@ -170,3 +170,69 @@ other core command. Integrations bundled in this repo are registered in
 that they work from a source checkout without a reinstall.
 
 :::
+
+## Adding a cloud launcher
+
+Cloud launchers submit a complete Axolotl process before local dataset or model
+loading. They implement `axolotl.cli.cloud.base.Cloud` and are discovered through
+the `axolotl.cloud_providers` entry-point group. Modal and Baseten use this same
+contract as built-in providers.
+
+```python
+from axolotl.cli.cloud.base import Cloud
+
+class MyCloud(Cloud):
+    def train(
+        self,
+        config_yaml,
+        launcher="accelerate",
+        launcher_args=None,
+        local_dirs=None,
+        **kwargs,
+    ):
+        # Validate self.config and submit the remote Axolotl process here.
+        ...
+```
+
+Register the provider in your package's `pyproject.toml`:
+
+```toml
+[project.entry-points."axolotl.cloud_providers"]
+my-cloud = "my_package.cloud:MyCloud"
+```
+
+After installing the package, select it in a separate cloud YAML:
+
+```yaml
+provider: my-cloud
+# Provider-specific connection, image, and resource settings go here.
+```
+
+```bash
+axolotl train train.yaml --cloud cloud.yaml
+```
+
+The provider constructor receives a plain dictionary containing the cloud
+configuration, including `provider`, and owns validation of its settings. Only
+the selected provider is imported. The built-in names `modal` and `baseten` are
+reserved; duplicate third-party names raise an error. Omitting `provider` retains
+the Modal default.
+
+`train` receives the training YAML text, the remote process launcher
+(`accelerate`, `torchrun`, or `python`), its argument list, optional directory
+mounts (remote path to local path), and training configuration overrides in
+`kwargs`. The provider must apply supported overrides and either handle or
+explicitly report unsupported mounts and options. Provider failures must
+propagate to the caller. Keep provider dependencies out of unrelated launchers.
+
+Providers can also implement `preprocess(config_yaml, *args, **kwargs)` and
+`lm_eval(config_yaml)`. Both operations raise `NotImplementedError` by default;
+all three cloud commands select the provider from the cloud YAML.
+
+Training plugins remain independent of launcher plugins. A remote-training
+integration that replaces the trainer, such as Arctic Platform, uses the
+training YAML's `plugins:` list and `BasePlugin` hooks. Preserve those settings
+when submitting a job, and make their dependencies available in the remote
+image. A provider can also package its own remote training plugin for checkpoint
+or completion callbacks, as needed by launchers such as Nebius. Neither pattern
+requires the submitting process to initialize the training plugin manager.

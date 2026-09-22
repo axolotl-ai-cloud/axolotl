@@ -294,6 +294,11 @@ When overriding CLI parameters in the legacy CLI, use same notation as in yaml f
 Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a
 cloud YAML file alongside your regular Axolotl config.
 
+The cloud YAML's `provider` selects the launcher: `modal` (the default), `baseten`,
+or an installed [cloud launcher plugin](custom_integrations.qmd#adding-a-cloud-launcher).
+Training, preprocessing, and lm-eval all use this selection; providers report
+unsupported operations explicitly. Baseten currently supports training only.
+
 ### Cloud Configuration
 
 Create a cloud config YAML with your Modal settings:
