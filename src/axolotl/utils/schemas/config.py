@@ -1031,6 +1031,12 @@ class AxolotlInputConfig(
             "description": "Number of top logits for entropy approximation (default: 20)"
         },
     )
+    use_dft: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable Dynamic Fine-Tuning loss (DFT): per-token cross entropy weighted by its own detached probability"
+        },
+    )
 
     tiled_mlp: bool | None = Field(
         default=None,
