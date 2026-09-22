@@ -15,9 +15,14 @@ BLOCK_SIZE = 2048
 
 def _blocks(x: torch.Tensor) -> torch.Tensor:
     rows = x.reshape(x.shape[0], -1)
-    return F.pad(rows, (0, -rows.shape[1] % BLOCK_SIZE)).view(
-        rows.shape[0], -1, BLOCK_SIZE
-    )
+    if rows.shape[1] % BLOCK_SIZE:
+        rows = F.pad(rows, (0, -rows.shape[1] % BLOCK_SIZE))
+    return rows.view(rows.shape[0], -1, BLOCK_SIZE)
+
+
+def _unblocks(blocks: torch.Tensor, shape: torch.Size) -> torch.Tensor:
+    # contiguous() drops the padding so the state does not pin the padded buffer
+    return blocks.view(shape[0], -1)[:, : shape[1:].numel()].contiguous().reshape(shape)
 
 
 def quantize(m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -26,15 +31,14 @@ def quantize(m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     scale = (blocks.abs().amax(-1, keepdim=True) / 127).clamp_min(
         torch.finfo(m.dtype).tiny
     )
-    q = (blocks / scale).round_().to(torch.int8).view(m.shape[0], -1)[:, : m[0].numel()]
-    return q.reshape(m.shape), scale.squeeze(-1)
+    q = _unblocks((blocks / scale).round_().to(torch.int8), m.shape)
+    return q, scale.squeeze(-1)
 
 
 def dequantize(
     q: torch.Tensor, scale: torch.Tensor, dtype: torch.dtype
 ) -> torch.Tensor:
-    blocks = _blocks(q.to(dtype)) * scale.unsqueeze(-1)
-    return blocks.view(q.shape[0], -1)[:, : q[0].numel()].reshape(q.shape)
+    return _unblocks(_blocks(q.to(dtype)) * scale.unsqueeze(-1), q.shape)
 
 
 class Muon8bit(DistMuon):
