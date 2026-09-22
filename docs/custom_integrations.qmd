@@ -174,14 +174,15 @@ that they work from a source checkout without a reinstall.
 ## Adding a cloud launcher
 
 Cloud launchers submit a complete Axolotl process before local dataset or model
-loading. They implement `axolotl.cli.cloud.base.Cloud` and are discovered through
+loading. They implement `axolotl.cli.cloud.base.CloudLauncher` and are discovered through
 the `axolotl.cloud_providers` entry-point group. Modal and Baseten use this same
-contract as built-in providers.
+contract as built-in providers. `Cloud` remains an alias for `CloudLauncher`
+for existing integrations.
 
 ```python
-from axolotl.cli.cloud.base import Cloud
+from axolotl.cli.cloud.base import CloudLauncher
 
-class MyCloud(Cloud):
+class MyCloud(CloudLauncher):
     def train(
         self,
         config_yaml,
@@ -229,10 +230,27 @@ Providers can also implement `preprocess(config_yaml, *args, **kwargs)` and
 `lm_eval(config_yaml)`. Both operations raise `NotImplementedError` by default;
 all three cloud commands select the provider from the cloud YAML.
 
-Training plugins remain independent of launcher plugins. A remote-training
-integration that replaces the trainer, such as Arctic Platform, uses the
-training YAML's `plugins:` list and `BasePlugin` hooks. Preserve those settings
-when submitting a job, and make their dependencies available in the remote
-image. A provider can also package its own remote training plugin for checkpoint
-or completion callbacks, as needed by launchers such as Nebius. Neither pattern
-requires the submitting process to initialize the training plugin manager.
+### Cloud launchers and remote training backends
+
+These are separate execution models:
+
+| Extension | Submitting/client process owns | Remote system owns |
+| --- | --- | --- |
+| Whole-job launcher (Modal, Baseten, Nebius) | Packaging, submission, and job monitoring | The complete Axolotl training process |
+| Training backend (Arctic Platform) | Data preparation and training orchestration | Model execution and optimizer state |
+
+The `axolotl.cloud_providers` entry-point group is scoped to whole-job launchers.
+Arctic-style backends use the training YAML's `plugins:` list and `BasePlugin`
+hooks, including `get_trainer_cls`, for per-step communication with remote
+compute. They do not implement `CloudLauncher` merely because compute is remote.
+
+The two extensions can compose: a cloud launcher can submit an Axolotl process
+whose trainer connects to an Arctic-style backend. Preserve the training plugin
+configuration when submitting a job, and provide its dependencies, connectivity,
+and credentials in the remote environment. The launcher API preserves that
+configuration; it does not define the backend's per-step execution interface.
+
+A launcher can also package a training plugin for remote checkpoint or completion
+callbacks, as needed by providers such as Nebius. Such callbacks execute inside
+the remote training process without initializing the training plugin manager in
+the submitting process.

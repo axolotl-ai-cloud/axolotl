@@ -8,10 +8,10 @@ from typing import Literal
 
 import yaml
 
-from axolotl.cli.cloud.base import Cloud
+from axolotl.cli.cloud.base import CloudLauncher
 
 
-class BasetenCloud(Cloud):
+class BasetenCloud(CloudLauncher):
     """Baseten Cloud Axolotl CLI"""
 
     def __init__(self, config: dict):

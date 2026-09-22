@@ -11,10 +11,10 @@ import yaml
 
 from axolotl.cli import cloud
 from axolotl.cli.cloud import registry
-from axolotl.cli.cloud.base import Cloud
+from axolotl.cli.cloud.base import Cloud, CloudLauncher
 
 
-class RecordingCloud(Cloud):
+class RecordingCloud(CloudLauncher):
     """Minimal train-only provider."""
 
     def train(self, config_yaml, **kwargs):
@@ -77,7 +77,7 @@ def test_invalid_provider_name(name):
 
 def test_invalid_provider_type(monkeypatch):
     monkeypatch.setattr(registry, "BUILTIN_PROVIDERS", {"invalid": "builtins:dict"})
-    with pytest.raises(TypeError, match="must be a Cloud subclass"):
+    with pytest.raises(TypeError, match="must be a CloudLauncher subclass"):
         registry.load_cloud_provider({"provider": "invalid"})
 
 
@@ -123,7 +123,7 @@ def test_all_commands_dispatch_selected_provider(tmp_path, monkeypatch, operatio
     train_path = tmp_path / "train.yaml"
     original = "plugins:\n  - example.RemoteTrainerPlugin\nremote:\n  transport: http\n"
     train_path.write_text(original)
-    provider = MagicMock(spec=Cloud)
+    provider = MagicMock(spec=CloudLauncher)
 
     def load(config):
         assert type(config) is dict
@@ -236,8 +236,20 @@ def test_provider_failure_propagates(tmp_path, monkeypatch):
     cloud_path.write_text("provider: external\n")
     train_path = tmp_path / "train.yaml"
     train_path.write_text("base_model: example\n")
-    provider = MagicMock(spec=Cloud)
+    provider = MagicMock(spec=CloudLauncher)
     provider.train.side_effect = RuntimeError("submission failed")
     monkeypatch.setattr(cloud, "load_cloud_provider", lambda config: provider)
     with pytest.raises(RuntimeError, match="submission failed"):
         cloud.do_cli_train(cloud_path, train_path)
+
+
+def test_legacy_cloud_subclass_loads(monkeypatch):
+    class LegacyCloud(Cloud):
+        def train(self, config_yaml, **kwargs):
+            pass
+
+    assert Cloud is CloudLauncher
+    monkeypatch.setattr(EntryPoint, "load", lambda self: LegacyCloud)
+    provider = registry.load_cloud_provider({"provider": "modal"})
+    assert isinstance(provider, CloudLauncher)
+    assert provider.config == {"provider": "modal"}

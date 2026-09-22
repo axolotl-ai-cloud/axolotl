@@ -2,7 +2,7 @@
 
 from importlib.metadata import EntryPoint, entry_points
 
-from axolotl.cli.cloud.base import Cloud
+from axolotl.cli.cloud.base import CloudLauncher
 
 ENTRY_POINT_GROUP = "axolotl.cloud_providers"
 
@@ -12,10 +12,10 @@ BUILTIN_PROVIDERS = {
 }
 
 
-def load_cloud_provider(config: dict) -> Cloud:
-    """Instantiate the selected provider with its cloud configuration.
+def load_cloud_provider(config: dict) -> CloudLauncher:
+    """Instantiate the selected whole-job launcher with its cloud configuration.
 
-    Entry points must resolve to a Cloud subclass accepting a configuration dict.
+    Entry points must resolve to a CloudLauncher subclass accepting a configuration dict.
     Built-in names are reserved. Only the selected provider is imported.
     """
     name = config.get("provider")
@@ -43,6 +43,6 @@ def load_cloud_provider(config: dict) -> Cloud:
         entry_point = matches[0]
 
     provider = entry_point.load()
-    if not isinstance(provider, type) or not issubclass(provider, Cloud):
-        raise TypeError(f"Cloud provider {name!r} must be a Cloud subclass")
+    if not isinstance(provider, type) or not issubclass(provider, CloudLauncher):
+        raise TypeError(f"Cloud provider {name!r} must be a CloudLauncher subclass")
     return provider(dict(config))

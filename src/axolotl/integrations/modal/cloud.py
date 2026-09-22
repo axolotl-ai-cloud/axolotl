@@ -12,7 +12,7 @@ from typing import Literal
 
 import modal
 
-from axolotl.cli.cloud.base import Cloud
+from axolotl.cli.cloud.base import CloudLauncher
 from axolotl.utils.dict import DictDefault
 
 
@@ -50,7 +50,7 @@ def run_cmd(cmd: str, run_folder: str, volumes=None):
             vol.commit()
 
 
-class ModalCloud(Cloud):
+class ModalCloud(CloudLauncher):
     """
     Modal Cloud implementation.
     """

@@ -1,12 +1,10 @@
-"""
-base class for cloud platforms from cli
-"""
+"""Launcher contract for complete remote Axolotl jobs."""
 
 from abc import ABC, abstractmethod
 from typing import Literal
 
 
-class Cloud(ABC):
+class CloudLauncher(ABC):
     """
     Launcher plugin for a complete remote Axolotl process.
 
@@ -14,6 +12,7 @@ class Cloud(ABC):
     receives the original YAML, local directory mounts, launcher arguments, and
     config overrides. Provider-specific training hooks belong in BasePlugin.
     Only train is required; optional operations fail explicitly by default.
+    Per-step remote compute belongs in a training backend, not this interface.
     """
 
     def __init__(self, config: dict):
@@ -39,3 +38,6 @@ class Cloud(ABC):
         **kwargs,
     ):
         pass
+
+
+Cloud = CloudLauncher
