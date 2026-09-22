@@ -306,7 +306,7 @@ def materialize_trainable_meta_params(model: torch.nn.Module) -> list[str]:
 def get_linear_embedding_layers(model_type: str) -> list[str]:
     """Returns layer names of linear embeddings needed for LoRA based on model type."""
     if model_type == "gpt_neox":
-        return ["embed_in", "embed_out"]
+        return ["embed_in", "lm_head"]
     if model_type == "falcon":
         return ["word_embeddings", "lm_head"]
     if model_type == "nemotron_h":
