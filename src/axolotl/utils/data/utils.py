@@ -164,6 +164,19 @@ def keep_min_len(sample, min_sequence_len=2):
     return results
 
 
+# Media columns whose row layout tracks the expanded <image> tokens in input_ids;
+# truncating input_ids past these would desync token counts from cached media.
+_MEDIA_FIELDS = ("pixel_values", "image_grid_thw", "pixel_attention_mask")
+
+
+def _row_carries_media(sample, idx) -> bool:
+    for key, values in sample.items():
+        if key.startswith("pixel_values") or key in _MEDIA_FIELDS:
+            if values is not None and idx < len(values) and values[idx] is not None:
+                return True
+    return False
+
+
 def truncate_long_seq(sample, sequence_len=2048):
     """
     Truncate samples whose sequence length is too long (> sequence_len).
@@ -175,6 +188,15 @@ def truncate_long_seq(sample, sequence_len=2048):
     for i, seq in enumerate(input_ids):
         length = len(seq)
         if length > sequence_len:
+            if _row_carries_media(sample, i):
+                raise ValueError(
+                    f"Refusing to truncate a multimodal row with {length} tokens "
+                    f"(> sequence_len={sequence_len}): its input_ids carry expanded "
+                    "<image> placeholder tokens that map 1:1 to cached media (e.g. "
+                    "`pixel_values`), so slicing would desync the token count from "
+                    "the media. Increase `sequence_len` or use "
+                    "`excess_length_strategy: drop` to skip over-long multimodal rows."
+                )
             sample["input_ids"][i] = seq[:sequence_len]
             if "attention_mask" in sample:
                 sample["attention_mask"][i] = sample["attention_mask"][i][:sequence_len]
@@ -182,6 +204,8 @@ def truncate_long_seq(sample, sequence_len=2048):
                 sample["labels"][i] = sample["labels"][i][:sequence_len]
             if "position_ids" in sample:
                 sample["position_ids"][i] = sample["position_ids"][i][:sequence_len]
+            if "length" in sample:
+                sample["length"][i] = len(sample["input_ids"][i])
     return sample
 
 
