@@ -155,16 +155,15 @@ def test_dispatch_is_opt_in_and_patch_is_idempotent(monkeypatch):
         context_parallel_size=1,
         fused_attn_kernel=False,
     )
-    manager = object.__new__(PatchManager)
-    manager.cfg = cfg
-    manager._apply_model_specific_patches()
+    manager = PatchManager(cfg, None)
+    manager._apply_model_support_pre_load_hook()
     assert Glm4MoeLiteAttention.forward is original
     cfg.fused_attn_kernel = True
     try:
-        manager._apply_model_specific_patches()
+        manager._apply_model_support_pre_load_hook()
         patched = Glm4MoeLiteAttention.forward
         assert patched is not original
-        manager._apply_model_specific_patches()
+        manager._apply_model_support_pre_load_hook()
         assert Glm4MoeLiteAttention.forward is patched
     finally:
         del Glm4MoeLiteAttention._axolotl_fused_attn_patched

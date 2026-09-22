@@ -251,6 +251,8 @@ class PatchManager:
 
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
+        if self.cfg.fused_attn_kernel:
+            check_capability(support, "fused_attn_kernel", self.cfg.model_config_type)
         run_model_support_hooks(
             support,
             ModelHookPhase.BEFORE_MODEL_BUILD,
@@ -494,7 +496,6 @@ class PatchManager:
             patch_sageattn()
 
     _FUSED_ATTN_KERNEL_SUPPORTED = (
-        "glm4_moe_lite",
         "qwen3",
         "qwen3_moe",
         "qwen3_vl",
@@ -516,6 +517,11 @@ class PatchManager:
         if not getattr(cfg, "fused_attn_kernel", False):
             return
         mct = getattr(cfg, "model_config_type", None)
+        support = get_model_support(mct)
+        check_capability(support, "fused_attn_kernel", mct)
+        resolved = resolve_model_support(support)
+        if resolved is not None and "fused_attn_kernel" in resolved.capabilities:
+            return
         if mct and mct not in PatchManager._FUSED_ATTN_KERNEL_SUPPORTED:
             LOG.warning(
                 "`fused_attn_kernel: true` is set but model_config_type=%r is not "
@@ -627,16 +633,6 @@ class PatchManager:
                 patch_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
-
-            if (
-                self.cfg.fused_attn_kernel
-                and self.cfg.model_config_type == "glm4_moe_lite"
-            ):
-                from axolotl.monkeypatch.models.glm4_moe_lite.fused_attn import (
-                    patch_glm4_moe_lite_fused_attn,
-                )
-
-                patch_glm4_moe_lite_fused_attn()
 
             if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3":
                 from axolotl.monkeypatch.models.qwen3.fused_attn import (
