@@ -227,6 +227,7 @@ def execute_training(
                     heads_k_stride=cfg.heads_k_stride,
                     gather_outputs=cfg.rl in {RLType.GRPO, RLType.EBFT},
                     device_mesh=trainer.accelerator.torch_device_mesh,
+                    attn_implementation=cfg.attn_implementation,
                 )
             )
 

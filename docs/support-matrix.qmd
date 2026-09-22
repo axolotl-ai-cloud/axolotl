@@ -94,7 +94,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | FSDP2 | `fsdp_version: 2` (default) + `fsdp_config:` | TP, CP, EP |
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 |
-| Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, ring-flash-attn |
+| Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, flash attention 2/3/4 (package or kernels hub) |
 | Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2 (DeepEP backend) |
 | N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
@@ -157,7 +157,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Sample packing (multipack) | `sample_packing: true` | block-diagonal attention + position reset; needs a varlen backend; ⚪ not with RLHF or multimodal |
 | Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not `trust_remote_code` |
 | Tiled MLP | `tiled_mlp: true` | shards MLP to cut memory |
-| Ring attention | via `context_parallel_size` | long-context CP |
+| Ring attention | via `context_parallel_size` | long-context CP; FA2/FA3/FA4 and `kernels-community/*` flash backends |
 | Activation offloading | `activation_offloading:` | requires gradient checkpointing; ⚪ CUDA only (no CPU-only training) |
 
 ## Model architectures

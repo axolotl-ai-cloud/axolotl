@@ -49,13 +49,36 @@ When sequence parallelism is enabled:
 To use sequence parallelism, you need:
 
 - Multiple GPUs (at least 2)
-- The `ring-flash-attn` package. Install with:
-  - `pip install axolotl[ring-flash-attn]` (preferred)
-  - `pip install ring-flash-attn>=0.1.4`
+- A flash attention backend (see below). `pip install axolotl[flash-attn]` installs
+  Flash Attention 2; the `kernels-community/*` backends need only `pip install kernels`
+  and download a prebuilt binary matching your torch version.
+
+## Attention Backends
+
+Ring attention is implemented in Axolotl and runs on the split forward/backward kernels
+of whichever flash attention flavour the model uses, so any of these
+`attn_implementation` values work with `context_parallel_size > 1`:
+
+| `attn_implementation` | Kernels used |
+|---|---|
+| `flash_attention_2` | `flash-attn` package, or `kernels-community/flash-attn2` when it isn't installed |
+| `flash_attention_3` | `flash-attn-3` package, or `kernels-community/vllm-flash-attn3` when it isn't installed |
+| `flash_attention_4` | `flash-attn-4` (`flash_attn.cute`) package |
+| `kernels-community/flash-attn2` | prebuilt FA2 from the kernels hub |
+| `kernels-community/flash-attn3`, `kernels-community/vllm-flash-attn3` | prebuilt FA3 (Hopper) from the kernels hub |
+| `kernels-community/flash-attn4` | prebuilt FA4 (CuTe DSL) from the kernels hub |
+
+Ring attention follows the backend the model was loaded with, so the automatic
+`flash_attention_2` → `flash_attention_4` upgrade is skipped under context parallelism;
+set `attn_implementation: flash_attention_4` explicitly to opt in.
 
 ## Limitations
 
-- Flash attention must be enabled for this to work (`attn_implementation: flash_attention_2` in config YAML)
+- Attention dropout is not supported under ring attention (set the model's attention
+  dropout to 0); the backward pass cannot replay per-block dropout masks.
+- `varlen_llama3` (the default with sample packing) is causal-only.
+- FA3 and FA4 backends have been validated less extensively than FA2 under context
+  parallelism; compare loss curves against a single-GPU run when switching.
 - May have a small performance overhead due to communication between GPUs
 
 ### Mamba/SSM Hybrid Models

@@ -34,8 +34,8 @@ def get_seq_idx(position_ids: torch.Tensor) -> torch.Tensor:
 def is_cp_active() -> bool:
     """Return True if context parallelism (ring attention) is active on this rank.
 
-    Zero-cost when CP is not configured: the import guard ensures we only touch
-    the distributed group if ring_flash_attn is installed.
+    Zero-cost when CP is not configured: the ring group is only registered by the
+    sequence parallel context manager.
     """
     try:
         from axolotl.monkeypatch.ring_attn import get_ring_attn_group

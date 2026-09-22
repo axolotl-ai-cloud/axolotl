@@ -1,7 +1,6 @@
 """Module with validation methods for config pydantic model."""
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
+    ATTN_IMPLS_SUPPORTING_RING_ATTN,
     ChatTemplate,
     RingAttnFunc,
     RLType,
@@ -1939,63 +1939,29 @@ class ComplexValidationMixin:
         ):
             # The GLM DSA kernels provide their own context-parallel attention (the sequence is sharded
             # on the cp axis with a compressed-KV all-gather + per-rank q_offset), so the flash /
-            # ring_flash_attn stack the generic CP path below requires does not apply.
+            # ring attention stack the generic CP path below requires does not apply.
             LOG.warning(
                 "context_parallel_size > 1 with use_glm_dsa_kernels: the DSA kernels handle context "
                 "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
             )
         elif self.context_parallel_size > 1:
-            if attn_impl_base(self.attn_implementation) != "flash_attention_2":
+            if (
+                attn_impl_base(self.attn_implementation)
+                not in ATTN_IMPLS_SUPPORTING_RING_ATTN
+            ):
                 raise ValueError(
-                    "context_parallel_size > 1 requires attn_implementation: "
-                    "flash_attention_2. Ring attention only supports the flash "
-                    "attention 2 backend."
+                    "context_parallel_size > 1 requires a flash attention backend for "
+                    f"ring attention; got attn_implementation="
+                    f"{self.attn_implementation!r}. Supported: "
+                    f"{', '.join(sorted(ATTN_IMPLS_SUPPORTING_RING_ATTN))}."
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
                 raise ValueError(
                     "micro_batch_size must be set to 1 when sample_packing is enabled "
-                    "due to a `ring-flash-attn` requirement"
+                    "with context_parallel_size > 1 (varlen ring attention processes "
+                    "one packed row per step)"
                 )
-
-            try:
-                import transformers.modeling_flash_attention_utils
-                from transformers.utils import (
-                    is_flash_attn_greater_or_equal,
-                    is_flash_attn_greater_or_equal_2_10,
-                )
-
-                transformers.modeling_flash_attention_utils._flash_supports_window = (
-                    True
-                )
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window_size = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
-                if not hasattr(
-                    transformers.modeling_flash_attention_utils,
-                    "is_flash_attn_greater_or_equal_2_10",
-                ):
-                    transformers.modeling_flash_attention_utils.is_flash_attn_greater_or_equal_2_10 = is_flash_attn_greater_or_equal(
-                        "2.10"
-                    )
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ].is_flash_attn_greater_or_equal_2_10 = (
-                    is_flash_attn_greater_or_equal_2_10
-                )
-                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
-            except ImportError as exception:
-                raise ImportError(
-                    "context_parallel_size > 1 but ring_flash_attn is not installed. "
-                    "Please install it with `pip install axolotl[ring-flash-attn] "
-                    "or `pip install ring-flash-attn>=0.1.4`."
-                ) from exception
 
             LOG.warning(
                 "Sequence parallelism (SP) is enabled with "
@@ -2036,7 +2002,7 @@ class ComplexValidationMixin:
         elif getattr(self, "use_glm_dsa_kernels", False):
             # The GLM DSA kernels own attention (including the context-parallel compressed-KV gather),
             # so leave ring_attn_func None: the SP context manager still shards the sequence by chunking,
-            # but skips the ring_flash_attn substitution (which GLM doesn't use and isn't installed).
+            # but skips the ring attention substitution (which GLM doesn't use).
             pass
         else:
             # Default ring attention function selection
