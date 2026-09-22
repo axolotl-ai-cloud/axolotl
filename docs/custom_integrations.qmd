@@ -195,14 +195,19 @@ class MyCloud(CloudLauncher):
         ...
 ```
 
-Register the provider in your package's `pyproject.toml`:
+Register the provider in the **plugin package's** `pyproject.toml` (not in
+Axolotl's):
 
 ```toml
 [project.entry-points."axolotl.cloud_providers"]
 my-cloud = "my_package.cloud:MyCloud"
 ```
 
-After installing the package, select it in a separate cloud YAML:
+Building the plugin wheel stores this declaration in its installed
+`.dist-info/entry_points.txt` metadata. Axolotl reads that metadata at runtime;
+no editable checkout or `pyproject.toml` is required on the user's machine.
+Install the plugin alongside Axolotl in the same Python environment, then select
+it in a separate cloud YAML:
 
 ```yaml
 provider: my-cloud
@@ -216,8 +221,22 @@ axolotl train train.yaml --cloud cloud.yaml
 The provider constructor receives a plain dictionary containing the cloud
 configuration, including `provider`, and owns validation of its settings. Only
 the selected provider is imported. The built-in names `modal` and `baseten` are
-reserved; duplicate third-party names raise an error. Omitting `provider` retains
+reserved; duplicate third-party names raise an error. Modal and Baseten are
+registered in Axolotl's own wheel metadata. A built-in fallback supports source
+checkouts with missing or stale installed metadata. Omitting `provider` retains
 the Modal default.
+
+For a provider that has no entry-point declaration, specify its import target
+directly in the cloud YAML:
+
+```yaml
+provider: my_package.cloud:MyCloud
+```
+
+The class must be importable in the launching Python environment. This works
+with an existing installed package, or a local module made available through
+`PYTHONPATH`; neither requires editing or reinstalling Axolotl. The target must
+subclass `CloudLauncher`, just like a registered provider.
 
 `train` receives the training YAML text, the remote process launcher
 (`accelerate`, `torchrun`, or `python`), its argument list, optional directory

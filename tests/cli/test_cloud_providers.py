@@ -2,7 +2,7 @@
 
 import subprocess
 import sys
-from importlib.metadata import EntryPoint
+from importlib.metadata import Distribution, EntryPoint
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -47,7 +47,11 @@ def test_builtin_names_are_reserved(monkeypatch, external_provider):
     monkeypatch.setattr(
         registry,
         "entry_points",
-        lambda **kwargs: pytest.fail("Built-ins should not need plugin discovery"),
+        lambda **kwargs: [
+            EntryPoint(
+                name="external", value="builtins:dict", group=registry.ENTRY_POINT_GROUP
+            )
+        ],
     )
     assert isinstance(
         registry.load_cloud_provider({"provider": "external"}), RecordingCloud
@@ -253,3 +257,74 @@ def test_legacy_cloud_subclass_loads(monkeypatch):
     provider = registry.load_cloud_provider({"provider": "modal"})
     assert isinstance(provider, CloudLauncher)
     assert provider.config == {"provider": "modal"}
+
+
+def test_explicit_provider_target_without_metadata(monkeypatch):
+    monkeypatch.setattr(
+        registry, "entry_points", lambda **kwargs: pytest.fail("No discovery needed")
+    )
+    provider = registry.load_cloud_provider(
+        {"provider": "tests.cli.test_cloud_providers:RecordingCloud"}
+    )
+    assert isinstance(provider, RecordingCloud)
+
+
+def test_explicit_target_requires_launcher_subclass():
+    with pytest.raises(TypeError, match="must be a CloudLauncher subclass"):
+        registry.load_cloud_provider({"provider": "builtins:dict"})
+
+
+def test_discovery_from_installed_metadata_without_pyproject(tmp_path, monkeypatch):
+    module = tmp_path / "installed_cloud.py"
+    module.write_text(
+        "from axolotl.cli.cloud.base import CloudLauncher\n"
+        "class Launcher(CloudLauncher):\n"
+        "    def train(self, config_yaml, **kwargs):\n"
+        "        pass\n"
+    )
+    metadata = tmp_path / "installed_cloud-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: installed-cloud\nVersion: 1.0\n"
+    )
+    (metadata / "entry_points.txt").write_text(
+        "[axolotl.cloud_providers]\ninstalled-cloud = installed_cloud:Launcher\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        provider = registry.load_cloud_provider({"provider": "installed-cloud"})
+        assert isinstance(provider, CloudLauncher)
+        assert type(provider).__module__ == "installed_cloud"
+        assert not list(tmp_path.rglob("pyproject.toml"))
+    finally:
+        sys.modules.pop("installed_cloud", None)
+
+
+def test_builtin_uses_its_installed_entry_point(tmp_path, monkeypatch):
+    metadata = tmp_path / "axolotl-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: axolotl\nVersion: 1.0\n"
+    )
+    (metadata / "entry_points.txt").write_text(
+        "[axolotl.cloud_providers]\nbaseten = "
+        "axolotl.integrations.baseten.cloud:BasetenCloud\n"
+    )
+    point = next(iter(Distribution.at(metadata).entry_points))
+    monkeypatch.setattr(registry, "entry_points", lambda **kwargs: [point])
+    loaded = []
+
+    def load(selected):
+        loaded.append(selected)
+        return RecordingCloud
+
+    monkeypatch.setattr(EntryPoint, "load", load)
+    registry.load_cloud_provider({"provider": "baseten"})
+    assert loaded == [point]
+    assert loaded[0] is point
+
+
+def test_builtin_falls_back_without_metadata(monkeypatch):
+    monkeypatch.setattr(registry, "entry_points", lambda **kwargs: [])
+    provider = registry.load_cloud_provider({"provider": "baseten"})
+    assert type(provider).__name__ == "BasetenCloud"

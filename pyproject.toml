@@ -166,6 +166,10 @@ test = [
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
 
+[project.entry-points."axolotl.cloud_providers"]
+modal = "axolotl.integrations.modal.cloud:ModalCloud"
+baseten = "axolotl.integrations.baseten.cloud:BasetenCloud"
+
 [project.urls]
 Homepage = "https://axolotl.ai/"
 Documentation = "https://docs.axolotl.ai/"
