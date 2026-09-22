@@ -12,6 +12,7 @@ import numpy as np
 import requests
 from datasets import Dataset, IterableDataset
 
+from axolotl.utils.datasets import dataset_map_buffer_kwargs
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers.utils import get_dataset_lengths
@@ -219,6 +220,7 @@ def _build_filter_kwargs(dataset: Dataset, cfg: DictDefault) -> dict:
     if not isinstance(dataset, IterableDataset):
         kwargs["num_proc"] = cfg.dataset_num_proc
         kwargs["load_from_cache_file"] = not cfg.is_preprocess
+        kwargs.update(dataset_map_buffer_kwargs(cfg, batched=True))
     return kwargs
 
 

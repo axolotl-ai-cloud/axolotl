@@ -4,7 +4,6 @@ HF Chat Templates prompt strategy
 
 import json
 from bisect import bisect_left, bisect_right
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from pydantic import BaseModel
@@ -152,10 +151,12 @@ class ChatTemplatePrompter(Prompter):
             # workaround since processor works in batches instead of single examples
             out = {}
             for k, val in batch.items():
-                if hasattr(val, "tolist"):
-                    out[k] = (
-                        val.tolist() if k == "pixel_values" else val.squeeze(0).tolist()
-                    )
+                if k == "pixel_values" and hasattr(val, "numpy"):
+                    # .tolist() boxes every float (~8x RAM) and Arrow then infers
+                    # float64, doubling the cache; keep the processor's numpy dtype
+                    out[k] = val.numpy()
+                elif hasattr(val, "tolist"):
+                    out[k] = val.squeeze(0).tolist()
                 else:
                     out[k] = val
             return out
@@ -452,22 +453,29 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if not self.is_prompt_batched(prompt) or not self.supports_batched:
             return self._tokenize_single_prompt(prompt)
 
-        res = defaultdict(lambda: [])
         feature_names = list(prompt.keys())
 
         # Process each prompt individually
+        rows = []
         for row in zip(*prompt.values(), strict=False):
             tokenized_prompt = self._tokenize_single_prompt(
                 dict(zip(feature_names, row, strict=False))
             )
-            for key, val in tokenized_prompt.items():
-                res[key].append(val)
+            if tokenized_prompt:
+                rows.append(tokenized_prompt)
 
         # If there are no examples left, return an empty dictionary
-        if not res:
+        if not rows:
             return {}
 
-        return dict(res)
+        # Rows without images lack processor keys like pixel_values; pad with None
+        # so every output column has the batch length (Arrow rejects ragged columns)
+        keys: List[str] = []
+        for tokenized_prompt in rows:
+            for key in tokenized_prompt:
+                if key not in keys:
+                    keys.append(key)
+        return {key: [row.get(key) for row in rows] for key in keys}
 
     def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
         # Old simple legacy behavior that works reliably.
