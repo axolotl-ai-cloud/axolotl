@@ -494,6 +494,7 @@ class PatchManager:
             patch_sageattn()
 
     _FUSED_ATTN_KERNEL_SUPPORTED = (
+        "glm4_moe_lite",
         "qwen3",
         "qwen3_moe",
         "qwen3_vl",
@@ -626,6 +627,16 @@ class PatchManager:
                 patch_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
+
+            if (
+                self.cfg.fused_attn_kernel
+                and self.cfg.model_config_type == "glm4_moe_lite"
+            ):
+                from axolotl.monkeypatch.models.glm4_moe_lite.fused_attn import (
+                    patch_glm4_moe_lite_fused_attn,
+                )
+
+                patch_glm4_moe_lite_fused_attn()
 
             if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3":
                 from axolotl.monkeypatch.models.qwen3.fused_attn import (

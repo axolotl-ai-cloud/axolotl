@@ -227,6 +227,28 @@ class LigerPlugin(BasePlugin):
                 kwargs["swiglu"] = cfg.liger_glu_activation
             LOG.info(f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}")
             apply_liger_fn(**kwargs)
+        elif cfg.model_config_type == "glm4_moe_lite":
+            from .models.glm4_moe_lite import apply_liger_glm4_moe_lite
+
+            apply_liger_glm4_moe_lite(
+                rope=cfg.liger_rope,
+                rms_norm=cfg.liger_rms_norm,
+                glu_activation=cfg.liger_glu_activation,
+            )
+            if cfg.liger_cross_entropy:
+                from transformers.loss.loss_utils import nn as loss_nn
+
+                loss_nn.functional.cross_entropy = liger_cross_entropy
+            if cfg.liger_fused_linear_cross_entropy:
+                from .models.base import patch_lce_forward
+
+                patch_lce_forward(cfg.model_config_type)
+            LOG.info(
+                "Applied GLM-4 MoE Lite Liger kernels: rope=%s, rms_norm=%s, glu=%s",
+                cfg.liger_rope,
+                cfg.liger_rms_norm,
+                cfg.liger_glu_activation,
+            )
         elif cfg.model_config_type in ("mistral3", "ministral3"):
             # liger 0.8.0 has no mistral3/ministral3 entry, and its `ministral`
             # fn targets modeling_ministral, a module this arch does not use.

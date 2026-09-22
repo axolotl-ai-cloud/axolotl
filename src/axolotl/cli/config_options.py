@@ -2420,7 +2420,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fused-attn-kernel/--no-fused-attn-kernel",),
         None,
         None,
-        "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) with a single fused RMSNorm+RoPE Triton kernel launch. Currently implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE full-attention layers; Gemma 4 always uses the fused path. Disabled (None/False) falls back to the eager transformers implementation. Compile-safe via torch.library.triton_op \u2014 traces under torch.compile(fullgraph=True). Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. Combining with torch_compile=true is a clear win on sm_120 (+9% extra) but currently regresses on sm_86 due to Inductor autotune biases \u2014 flip them on independently and benchmark.",
+        "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) with a single fused RMSNorm+RoPE Triton kernel launch. Currently implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE full-attention layers; Gemma 4 always uses the fused path. GLM-4.7-Flash (glm4_moe_lite) fuses partial RoPE and MLA Q/K/V assembly instead; latent RMSNorms remain separate and cached decoding uses the original path. Disabled (None/False) falls back to the eager transformers implementation. Compile-safe via torch.library.triton_op \u2014 traces under torch.compile(fullgraph=True). Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. Combining with torch_compile=true is a clear win on sm_120 (+9% extra) but currently regresses on sm_86 due to Inductor autotune biases \u2014 flip them on independently and benchmark.",
     ),
     (
         ("--experts-implementation",),
