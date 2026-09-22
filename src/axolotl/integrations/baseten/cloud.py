@@ -4,23 +4,31 @@ import shutil
 import subprocess  # nosec B404
 import tempfile
 from os.path import dirname
+from pathlib import Path
 from typing import Literal
 
 import yaml
 
 from axolotl.cli.cloud.base import CloudLauncher
 from axolotl.cli.cloud.images import build_and_push_image
-from axolotl.utils.schemas.cloud import BasetenImageConfig
+
+from .args import BasetenImageConfig
 
 
 class BasetenCloud(CloudLauncher):
     """Baseten Cloud Axolotl CLI"""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, *, config_dir: Path | None = None):
         self.config = config
-        self.image_config = BasetenImageConfig.model_validate(config)
+        self.image_config = BasetenImageConfig.from_config(
+            config, config_dir=config_dir
+        )
         if self.image_config.image_build and not self.image_config.image_build.tag:
             raise ValueError("Baseten image_build requires a registry tag")
+
+    @classmethod
+    def from_config(cls, config: dict, *, config_dir: Path | None = None):
+        return cls(config, config_dir=config_dir)
 
     def preprocess(self, config_yaml: str, *args, **kwargs) -> None:
         raise NotImplementedError(

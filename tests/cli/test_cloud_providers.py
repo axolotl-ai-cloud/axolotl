@@ -129,7 +129,8 @@ def test_all_commands_dispatch_selected_provider(tmp_path, monkeypatch, operatio
     train_path.write_text(original)
     provider = MagicMock(spec=CloudLauncher)
 
-    def load(config):
+    def load(config, *, config_dir):
+        assert config_dir == tmp_path
         assert type(config) is dict
         assert type(config["backend"]) is dict
         assert config["provider"] == "external"
@@ -147,7 +148,8 @@ def test_train_forwards_launcher_overrides_and_mounts(tmp_path, monkeypatch):
     train_path = tmp_path / "train.yaml"
     train_path.write_text("base_model: example\n")
     provider = RecordingCloud({})
-    monkeypatch.setattr(cloud, "load_cloud_provider", lambda config: provider)
+    monkeypatch.setattr(provider, "get_local_dirs", lambda cwd: {"/custom": str(cwd)})
+    monkeypatch.setattr(cloud, "load_cloud_provider", lambda config, **kwargs: provider)
     cloud.do_cli_train(
         cloud_path,
         train_path,
@@ -161,13 +163,14 @@ def test_train_forwards_launcher_overrides_and_mounts(tmp_path, monkeypatch):
         {
             "launcher": "torchrun",
             "launcher_args": ["--nproc_per_node", "2"],
-            "local_dirs": {"/workspace/mounts": str(tmp_path)},
+            "local_dirs": {"/custom": str(tmp_path)},
             "max_steps": 5,
         },
     )
 
 
 def test_default_provider_and_legacy_imports(monkeypatch):
+    pytest.importorskip("modal")
     from axolotl.cli.cloud.baseten import BasetenCloud as LegacyBaseten
     from axolotl.cli.cloud.modal_ import ModalCloud as LegacyModal
     from axolotl.integrations.baseten.cloud import BasetenCloud
@@ -220,6 +223,7 @@ assert "axolotl.integrations.base" not in sys.modules
 
 @pytest.mark.parametrize("operation", ["train", "preprocess", "lm_eval"])
 def test_modal_dispatches_moved_remote_functions(monkeypatch, operation):
+    pytest.importorskip("modal")
     from axolotl.integrations.modal import cloud as modal_cloud
 
     app = MagicMock()
@@ -242,7 +246,7 @@ def test_provider_failure_propagates(tmp_path, monkeypatch):
     train_path.write_text("base_model: example\n")
     provider = MagicMock(spec=CloudLauncher)
     provider.train.side_effect = RuntimeError("submission failed")
-    monkeypatch.setattr(cloud, "load_cloud_provider", lambda config: provider)
+    monkeypatch.setattr(cloud, "load_cloud_provider", lambda config, **kwargs: provider)
     with pytest.raises(RuntimeError, match="submission failed"):
         cloud.do_cli_train(cloud_path, train_path)
 
@@ -328,3 +332,96 @@ def test_builtin_falls_back_without_metadata(monkeypatch):
     monkeypatch.setattr(registry, "entry_points", lambda **kwargs: [])
     provider = registry.load_cloud_provider({"provider": "baseten"})
     assert type(provider).__name__ == "BasetenCloud"
+
+
+def test_core_leaves_provider_configuration_untouched(tmp_path):
+    config = tmp_path / "cloud.yaml"
+    config.write_text("provider: external\nimage_build:\n  context: ./custom-source\n")
+    assert cloud.load_cloud_cfg(config).image_build.context == "./custom-source"
+
+
+def test_default_provider_has_no_implicit_mounts(tmp_path):
+    assert RecordingCloud({}).get_local_dirs(tmp_path) == {}
+
+
+def test_modal_owns_working_directory_mounts(tmp_path):
+    pytest.importorskip("modal")
+    from axolotl.integrations.modal.cloud import ModalCloud
+
+    provider = ModalCloud({}, app=MagicMock())
+    assert provider.get_local_dirs(tmp_path) == {"/workspace/mounts": str(tmp_path)}
+    (tmp_path / "src" / "axolotl").mkdir(parents=True)
+    assert provider.get_local_dirs(tmp_path) == {}
+    assert provider.get_local_dirs(None) == {}
+
+
+@pytest.mark.parametrize("name", ["modal", "baseten"])
+def test_provider_package_can_be_relocated(tmp_path, name):
+    import shutil
+
+    if name == "modal":
+        pytest.importorskip("modal")
+    package = f"standalone_{name}"
+    source = Path(__file__).resolve().parents[2] / "src/axolotl/integrations" / name
+    shutil.copytree(source, tmp_path / package)
+    metadata = tmp_path / f"{package}-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {package}\nVersion: 1.0\n"
+    )
+    target = f"{package}.cloud:{name.title()}Cloud"
+    (metadata / "entry_points.txt").write_text(
+        f"[axolotl.cloud_providers]\nstandalone-{name} = {target}\n"
+    )
+    script = """
+import importlib.abc
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+class BlockBundledProviders(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith(("axolotl.integrations.modal", "axolotl.integrations.baseten")):
+            raise ImportError("Bundled providers are unavailable")
+
+sys.meta_path.insert(0, BlockBundledProviders())
+sys.path.insert(0, sys.argv[1])
+from axolotl.cli.cloud.registry import load_cloud_provider
+name = sys.argv[2]
+provider = load_cloud_provider({"provider": f"standalone-{name}", "image": "example/image:fork"})
+assert type(provider).__module__ == f"standalone_{name}.cloud"
+assert type(provider.image_config).__module__ == f"standalone_{name}.args"
+if name == "baseten":
+    calls = []
+    def submit(command, cwd, check):
+        root = Path(cwd)
+        assert (root / "run.sh").is_file()
+        assert (root / "train_sft.py").is_file()
+        assert (root / "train.yaml").read_text() == "base_model: example"
+        calls.append(command)
+    with patch("subprocess.run", side_effect=submit):
+        provider.train("base_model: example")
+    assert len(calls) == 1
+else:
+    with patch("modal.Image.from_registry", return_value=MagicMock()) as load:
+        provider.get_image()
+        load.assert_called_once_with("example/image:fork")
+assert "torch" not in sys.modules
+"""
+    subprocess.run([sys.executable, "-c", script, str(tmp_path), name], check=True)
+
+
+def test_missing_modal_sdk_does_not_affect_other_providers():
+    script = """
+import sys
+sys.modules["modal"] = None
+from axolotl.cli.cloud.registry import load_cloud_provider
+assert type(load_cloud_provider({"provider": "baseten"})).__name__ == "BasetenCloud"
+try:
+    load_cloud_provider({"provider": "modal"})
+except ImportError as exc:
+    assert "axolotl[modal]" in str(exc)
+else:
+    raise AssertionError("Missing Modal SDK should produce an installation hint")
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)

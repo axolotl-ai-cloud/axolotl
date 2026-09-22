@@ -18,12 +18,6 @@ def load_cloud_cfg(cloud_config: Path | str) -> DictDefault:
         config = yaml.safe_load(file)
     if not isinstance(config, dict):
         raise ValueError("Cloud configuration must be a YAML mapping")
-    if isinstance(config.get("image_build"), dict):
-        context = config["image_build"].get("context")
-        if isinstance(context, str):
-            config["image_build"]["context"] = str(
-                (Path(cloud_config).resolve().parent / context).resolve()
-            )
     return DictDefault(config)
 
 
@@ -32,7 +26,9 @@ def do_cli_preprocess(
     config: Path | str,
 ) -> None:
     cloud_cfg = load_cloud_cfg(cloud_config)
-    cloud = load_cloud_provider(cloud_cfg.to_dict())
+    cloud = load_cloud_provider(
+        cloud_cfg.to_dict(), config_dir=Path(cloud_config).resolve().parent
+    )
     with open(config, "r", encoding="utf-8") as file:
         config_yaml = file.read()
     cloud.preprocess(config_yaml)
@@ -47,17 +43,16 @@ def do_cli_train(
     **kwargs,
 ) -> None:
     cloud_cfg: DictDefault = load_cloud_cfg(cloud_config)
-    cloud = load_cloud_provider(cloud_cfg.to_dict())
+    cloud = load_cloud_provider(
+        cloud_cfg.to_dict(), config_dir=Path(cloud_config).resolve().parent
+    )
     with open(config, "r", encoding="utf-8") as file:
         config_yaml = file.read()
-    local_dirs = {}
-    if cwd and not Path(cwd).joinpath("src", "axolotl").exists():
-        local_dirs = {"/workspace/mounts": cwd}
     cloud.train(
         config_yaml,
         launcher=launcher,
         launcher_args=launcher_args,
-        local_dirs=local_dirs,
+        local_dirs=cloud.get_local_dirs(cwd),
         **kwargs,
     )
 
@@ -67,7 +62,9 @@ def do_cli_lm_eval(
     config: Path | str,
 ) -> None:
     cloud_cfg = load_cloud_cfg(cloud_config)
-    cloud = load_cloud_provider(cloud_cfg.to_dict())
+    cloud = load_cloud_provider(
+        cloud_cfg.to_dict(), config_dir=Path(cloud_config).resolve().parent
+    )
     with open(config, "r", encoding="utf-8") as file:
         config_yaml = file.read()
     cloud.lm_eval(config_yaml)

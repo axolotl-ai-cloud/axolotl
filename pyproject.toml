@@ -29,7 +29,6 @@ dependencies = [
     "hf_transfer",
     "sentencepiece",
     "gradio==6.10.0",
-    "modal==1.3.0.post1",
     "pydantic==2.12.5",
     "addict",
     "fire",
@@ -90,6 +89,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+modal = ["modal==1.3.0.post1"]
 baseten = ["truss==0.18.30"]
 flash-attn = ["flash-attn==2.8.3"]
 ring-flash-attn = [
@@ -182,10 +182,10 @@ include-package-data = true
 axolotl = [
     "**/*.yaml",
     "**/*.jinja",
-    "integrations/baseten/template/*.sh",
-    "integrations/baseten/template/*.py",
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
 ]
+
+"axolotl.integrations.baseten" = ["template/*.sh", "template/*.py"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

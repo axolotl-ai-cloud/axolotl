@@ -1,6 +1,7 @@
 """Discover cloud launchers without importing provider or training dependencies."""
 
 from importlib.metadata import EntryPoint, entry_points
+from pathlib import Path
 
 from axolotl.cli.cloud.base import CloudLauncher
 
@@ -12,7 +13,9 @@ BUILTIN_PROVIDERS = {
 }
 
 
-def load_cloud_provider(config: dict) -> CloudLauncher:
+def load_cloud_provider(
+    config: dict, *, config_dir: Path | None = None
+) -> CloudLauncher:
     """Instantiate the selected whole-job launcher with its cloud configuration.
 
     Resolve installed entry points or an explicit ``module:class`` target.
@@ -57,4 +60,4 @@ def load_cloud_provider(config: dict) -> CloudLauncher:
     provider = entry_point.load()
     if not isinstance(provider, type) or not issubclass(provider, CloudLauncher):
         raise TypeError(f"Cloud provider {name!r} must be a CloudLauncher subclass")
-    return provider(dict(config))
+    return provider.from_config(dict(config), config_dir=config_dir)

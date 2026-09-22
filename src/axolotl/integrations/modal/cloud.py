@@ -10,12 +10,18 @@ from pathlib import Path
 from random import randint
 from typing import Literal
 
-import modal
-
 from axolotl.cli.cloud.base import CloudLauncher
 from axolotl.cli.cloud.images import build_and_push_image
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.schemas.cloud import ModalImageConfig
+
+from .args import ModalImageConfig
+
+try:
+    import modal
+except ImportError as exc:
+    raise ImportError(
+        "The Modal launcher requires the Modal SDK. Install it with pip install 'axolotl[modal]'."
+    ) from exc
 
 
 def run_cmd(cmd: str, run_folder: str, volumes=None):
@@ -57,9 +63,9 @@ class ModalCloud(CloudLauncher):
     Modal Cloud implementation.
     """
 
-    def __init__(self, config, app=None):
+    def __init__(self, config, app=None, *, config_dir: Path | None = None):
         self.config = DictDefault(config)
-        self.image_config = ModalImageConfig.model_validate(config)
+        self.image_config = ModalImageConfig.from_config(config, config_dir=config_dir)
         if self.image_config.image_build and any(
             self.config.get(key)
             for key in ("docker_tag", "branch", "dockerfile_commands")
@@ -79,6 +85,15 @@ class ModalCloud(CloudLauncher):
             for volume_config in self.config.volumes:
                 _, mount, vol = self.create_volume(volume_config)
                 self.volumes[mount] = (vol, volume_config)
+
+    @classmethod
+    def from_config(cls, config: dict, *, config_dir: Path | None = None):
+        return cls(config, config_dir=config_dir)
+
+    def get_local_dirs(self, cwd: Path | str | None) -> dict[str, str]:
+        if cwd and not Path(cwd).joinpath("src", "axolotl").exists():
+            return {"/workspace/mounts": str(cwd)}
+        return {}
 
     def get_env(self):
         res = {

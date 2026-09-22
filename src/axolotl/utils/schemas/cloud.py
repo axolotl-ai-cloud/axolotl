@@ -1,7 +1,7 @@
 """Image sources for whole-job cloud launchers."""
 
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -46,44 +46,19 @@ class CloudImageConfig(BaseModel):
     image: ImageReference | None = None
     image_build: CloudImageBuild | None = None
 
+    @classmethod
+    def from_config(cls, config: dict, *, config_dir: Path | None = None):
+        config = dict(config)
+        if isinstance(config.get("image_build"), dict):
+            build = dict(config["image_build"])
+            context = build.get("context")
+            if config_dir is not None and isinstance(context, (str, Path)):
+                build["context"] = config_dir / context
+            config["image_build"] = build
+        return cls.model_validate(config)
+
     @model_validator(mode="after")
     def exclusive_source(self):
         if self.image is not None and self.image_build is not None:
             raise ValueError("Choose either image or image_build")
         return self
-
-
-class ModalImageRegistry(BaseModel):
-    """Modal-managed credentials for pulling a private registry image."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    provider: Literal["registry", "aws_ecr", "gcp_artifact_registry"] = "registry"
-    secret: Annotated[str, StringConstraints(strict=True, min_length=1)]
-
-
-class ModalImageConfig(CloudImageConfig):
-    """Image source and provider-native pull authentication for Modal."""
-
-    image_registry: ModalImageRegistry | None = None
-
-    @model_validator(mode="after")
-    def registry_source(self):
-        if self.image_build and self.image_build.platform != "linux/amd64":
-            raise ValueError("Modal images must use linux/amd64")
-        if (
-            self.image_registry
-            and not self.image
-            and not (self.image_build and self.image_build.tag)
-        ):
-            raise ValueError(
-                "image_registry requires image or image_build.tag; "
-                "untagged builds use Modal's native builder"
-            )
-        return self
-
-
-class BasetenImageConfig(CloudImageConfig):
-    """Image source and native Truss DockerAuth configuration for Baseten."""
-
-    docker_auth: dict[str, Any] | None = None

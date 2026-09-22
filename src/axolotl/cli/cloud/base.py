@@ -1,6 +1,7 @@
 """Launcher contract for complete remote Axolotl jobs."""
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Literal
 
 
@@ -17,6 +18,15 @@ class CloudLauncher(ABC):
 
     def __init__(self, config: dict):
         self.config = config
+
+    @classmethod
+    def from_config(cls, config: dict, *, config_dir: Path | None = None):
+        """Construct a provider; config_dir anchors provider-owned relative paths."""
+        return cls(config)
+
+    def get_local_dirs(self, cwd: Path | str | None) -> dict[str, str]:
+        """Choose remote mounts for the caller's working directory."""
+        return {}
 
     def preprocess(self, config_yaml: str, *args, **kwargs) -> None:
         raise NotImplementedError(

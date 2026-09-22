@@ -292,7 +292,8 @@ When overriding CLI parameters in the legacy CLI, use same notation as in yaml f
 ## Remote Compute with Modal Cloud
 
 Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a
-cloud YAML file alongside your regular Axolotl config.
+cloud YAML file alongside your regular Axolotl config. Install its optional SDK
+with `pip install 'axolotl[modal]'`; Baseten uses `pip install 'axolotl[baseten]'`.
 
 The cloud YAML's `provider` selects the launcher: `modal` (the default), `baseten`,
 or an installed [cloud launcher plugin](custom_integrations.qmd#adding-a-cloud-launcher).

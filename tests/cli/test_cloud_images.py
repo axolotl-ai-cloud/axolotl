@@ -13,6 +13,11 @@ from axolotl.utils.schemas.cloud import CloudImageBuild, CloudImageConfig
 
 
 @pytest.fixture
+def modal_sdk():
+    return pytest.importorskip("modal")
+
+
+@pytest.fixture
 def build_context(tmp_path):
     context = tmp_path / "local fork"
     context.mkdir()
@@ -62,7 +67,9 @@ def test_build_context_is_relative_to_cloud_yaml(build_context, tmp_path, monkey
     config_path = tmp_path / "cloud.yaml"
     config_path.write_text("image_build:\n  context: local fork\n")
     monkeypatch.chdir(build_context)
-    config = CloudImageConfig.model_validate(load_cloud_cfg(config_path).to_dict())
+    config = CloudImageConfig.from_config(
+        load_cloud_cfg(config_path).to_dict(), config_dir=config_path.parent
+    )
     assert config.image_build.context == build_context
     assert config.image_build.dockerfile == build_context / "Dockerfile"
 
@@ -151,6 +158,7 @@ def test_baseten_uses_selected_image(build_context, monkeypatch, build_local):
     )
 
 
+@pytest.mark.usefixtures("modal_sdk")
 def test_modal_builds_context_without_local_docker(build_context, monkeypatch):
     from axolotl.integrations.modal import cloud as modal_cloud
 
@@ -174,6 +182,7 @@ def test_modal_builds_context_without_local_docker(build_context, monkeypatch):
     assert builder.return_value.env.called
 
 
+@pytest.mark.usefixtures("modal_sdk")
 def test_modal_prebuilt_image_without_local_docker(monkeypatch):
     from axolotl.integrations.modal import cloud as modal_cloud
 
@@ -191,6 +200,7 @@ def test_modal_prebuilt_image_without_local_docker(monkeypatch):
 
 
 @pytest.mark.parametrize("key", ["branch", "docker_tag", "dockerfile_commands"])
+@pytest.mark.usefixtures("modal_sdk")
 def test_modal_build_rejects_legacy_customization(build_context, key):
     from axolotl.integrations.modal.cloud import ModalCloud
 
@@ -229,6 +239,7 @@ def test_registry_build_preserves_full_reference(build_context, monkeypatch, ref
         ("gcp_artifact_registry", "from_gcp_artifact_registry"),
     ],
 )
+@pytest.mark.usefixtures("modal_sdk")
 def test_modal_registry_pull_uses_named_secret(monkeypatch, provider, method):
     from axolotl.integrations.modal import cloud as modal_cloud
 
@@ -247,6 +258,7 @@ def test_modal_registry_pull_uses_named_secret(monkeypatch, provider, method):
     loader.assert_called_once_with(image, secret=secret.return_value)
 
 
+@pytest.mark.usefixtures("modal_sdk")
 def test_modal_tagged_build_uses_registry_path(build_context, monkeypatch):
     from axolotl.integrations.modal import cloud as modal_cloud
 
@@ -267,8 +279,9 @@ def test_modal_tagged_build_uses_registry_path(build_context, monkeypatch):
     assert loader.call_args.args[0] == tag
 
 
+@pytest.mark.usefixtures("modal_sdk")
 def test_modal_native_build_rejects_unused_pull_credentials(build_context):
-    from axolotl.utils.schemas.cloud import ModalImageConfig
+    from axolotl.integrations.modal.args import ModalImageConfig
 
     with pytest.raises(ValidationError, match="image_registry requires"):
         ModalImageConfig.model_validate(
@@ -317,3 +330,21 @@ def test_baseten_passes_native_registry_auth_to_image(tmp_path, monkeypatch):
         base_image=image, docker_auth=definitions.DockerAuth.model_validate.return_value
     )
     monkeypatch.chdir(tmp_path)
+
+
+@pytest.mark.parametrize("provider_name", ["modal", "baseten"])
+def test_provider_resolves_its_own_image_paths(
+    build_context, tmp_path, monkeypatch, provider_name
+):
+    from axolotl.cli.cloud.registry import load_cloud_provider
+
+    if provider_name == "modal":
+        pytest.importorskip("modal")
+    config = {
+        "provider": provider_name,
+        "image_build": {"context": build_context.name, "tag": "example/image:fork"},
+    }
+    monkeypatch.chdir(build_context)
+    provider = load_cloud_provider(config, config_dir=tmp_path)
+    assert provider.image_config.image_build.context == build_context
+    assert config["image_build"]["context"] == build_context.name
