@@ -181,9 +181,12 @@ class SequenceParallelContextManager:
         gradient_accumulation_steps: Number of steps to accumulate gradients over.
         ring_attn_func: Which ring attention function to use. Currently unused.
         heads_k_stride: Sequence parallelism K head stride size. Passed through to
-            `varlen_llama3` `ring_flash_attn` implementation.
+            the `varlen_llama3` ring attention implementation.
         gather_outputs: Whether to gather outputs after model forward pass across the
             sequence parallel group.
+        device_mesh: Parallelism topology holding the `cp` dimension.
+        attn_implementation: Requested attention backend; the model config's resolved
+            value wins when present.
     """
 
     def __init__(
@@ -195,6 +198,7 @@ class SequenceParallelContextManager:
         heads_k_stride: int | None,
         gather_outputs: bool,
         device_mesh: DeviceMesh | None = None,
+        attn_implementation: str | None = None,
     ):
         self.models = models
         self.context_parallel_size = context_parallel_size
@@ -203,6 +207,7 @@ class SequenceParallelContextManager:
         self.heads_k_stride = heads_k_stride
         self.gather_outputs = gather_outputs
         self.device_mesh = device_mesh
+        self.attn_implementation = attn_implementation
 
         self._register_ring_attn()
 
@@ -244,12 +249,19 @@ class SequenceParallelContextManager:
         # TODO(djsaunde): Un-patch attention and accelerate functions (low priority)
 
     def _register_ring_attn(self):
-        # Initialize ring attn for sequence parallelism
+        # The loader may resolve the requested backend to another flash flavour (e.g.
+        # a kernels-hub fallback), so ring attention keys off the model's value.
+        model_config = getattr(self.models[0], "config", None)
+        attn_implementation = (
+            getattr(model_config, "_attn_implementation", None)
+            or self.attn_implementation
+        )
         register_ring_attn_from_device_mesh(
             device_mesh=self.device_mesh,
             context_parallel_dim=("cp",),
             heads_k_stride=self.heads_k_stride,
             ring_attn_func=self.ring_attn_func,
+            attn_implementation=attn_implementation,
         )
 
     def _register_model_hooks(self):

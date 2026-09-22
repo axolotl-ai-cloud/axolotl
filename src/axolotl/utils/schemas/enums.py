@@ -164,6 +164,19 @@ ATTN_IMPLS_USING_FLASH_LIB = frozenset(
     }
 )
 
+# Backends whose split forward/backward kernels ring attention (context parallelism) can drive.
+ATTN_IMPLS_SUPPORTING_RING_ATTN = frozenset(
+    {
+        "flash_attention_2",
+        "flash_attention_3",
+        "flash_attention_4",
+        "kernels-community/flash-attn2",
+        "kernels-community/flash-attn3",
+        "kernels-community/vllm-flash-attn3",
+        "kernels-community/flash-attn4",
+    }
+)
+
 # Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
 ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
 
@@ -193,7 +206,7 @@ INDUCTOR_COMPILE_OPTIONS_ALLOWLIST = frozenset(
 
 
 class RingAttnFunc(str, Enum):
-    """Enum class for supported `ring-flash-attn` implementations"""
+    """Supported ring attention implementations."""
 
     VARLEN_LLAMA3 = "varlen_llama3"
     BATCH_RING = "batch_ring"
