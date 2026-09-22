@@ -31,8 +31,9 @@ PATCHED_PREPARE_CODE = """
 
 
 def get_peft_prep_code() -> str:
-    prepare = inspect.getsource(peft.utils.other.prepare_model_for_kbit_training)
-    return prepare
+    prepare = peft.utils.other.prepare_model_for_kbit_training
+    source = getattr(prepare, "_axolotl_original_source", None)
+    return source if source is not None else inspect.getsource(prepare)
 
 
 def check_peft_prep_code_is_patchable() -> bool:
@@ -52,7 +53,7 @@ def patch_peft_prep_code(embedding_modules: list[str] | None = None):
         prep_code = get_peft_prep_code()
     except OSError:
         return
-    peft.utils.other._original_create_accelerator_and_postprocess = prep_code
+    original_source = prep_code
     prep_code, _ = detab_code(prep_code)
     if ORIGINAL_PREPARE_CODE not in prep_code:
         return
@@ -77,6 +78,7 @@ def patch_peft_prep_code(embedding_modules: list[str] | None = None):
         globals(),
     )
     exec(prep_code, globals())
+    fixed_prepare_model_for_kbit_training._axolotl_original_source = original_source
     LOG.info("patching prepare_model_for_kbit_training to allow for overrides")
     peft.utils.other.prepare_model_for_kbit_training = (
         fixed_prepare_model_for_kbit_training

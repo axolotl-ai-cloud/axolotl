@@ -812,6 +812,13 @@ def _load_split_bnb_4bit_components(model_shards) -> Dict[str, torch.Tensor]:
     shard_keys: list = []
     for shard in model_shards:
         if not str(shard).endswith(".safetensors"):
+            if len(model_shards) > 1:
+                raise ValueError(
+                    "Merging a sharded bitsandbytes 4-bit .bin checkpoint is "
+                    "unsupported because quantization state can be stored in a "
+                    "different shard from its packed weight. Convert the base to "
+                    "safetensors first."
+                )
             return {}
         with safetensors.safe_open(shard, framework="pt") as f:
             shard_keys.append((shard, set(f.keys())))

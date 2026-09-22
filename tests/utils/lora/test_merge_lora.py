@@ -3414,6 +3414,48 @@ class TestPrequantizedBnbBaseMerge:
         )
         assert sorted(merged) == sorted([key, other])
 
+    @pytest.mark.parametrize("sharded", [False, True])
+    def test_bin_checkpoint_validation(self, tmp_path, sharded):
+        base = tmp_path / "base"
+        key = "model.layers.0.self_attn.q_proj.weight"
+        dequantized = _save_bnb_4bit_base(
+            base,
+            {key: torch.randn(self.HIDDEN, self.HIDDEN, dtype=torch.bfloat16)},
+            split_components=sharded,
+        )
+        for shard in base.glob("*.safetensors"):
+            tensors = safetensors.torch.load_file(str(shard))
+            name = shard.name.replace("model", "pytorch_model").replace(
+                ".safetensors", ".bin"
+            )
+            torch.save(tensors, base / name)
+            shard.unlink()
+        (base / "model.safetensors.index.json").unlink(missing_ok=True)
+        lora_a = torch.randn(self.R, self.HIDDEN)
+        lora_b = torch.randn(self.HIDDEN, self.R)
+        adapter = tmp_path / "adapter"
+        output = tmp_path / "merged"
+        _write_lora_adapter(adapter, key, lora_a, lora_b, self.R, self.ALPHA)
+        kwargs = dict(
+            base_model_path=base,
+            lora_adapter_path=adapter,
+            output_path=output,
+            device="cpu",
+        )
+        if sharded:
+            with pytest.raises(ValueError, match="Convert the base to safetensors"):
+                merge_lora_sharded_efficient(**kwargs)
+            assert not output.exists()
+        else:
+            merge_lora_sharded_efficient(**kwargs)
+            merged = {}
+            for shard in output.glob("*.safetensors"):
+                merged.update(safetensors.torch.load_file(str(shard)))
+            expected = (
+                dequantized[key].float() + self.ALPHA / self.R * (lora_b @ lora_a)
+            ).to(torch.bfloat16)
+            torch.testing.assert_close(merged[key], expected, rtol=0, atol=0)
+
     def test_fp4_base_merges(self, tmp_path):
         key, _, deq, lora_a, lora_b, merged = self._build(
             tmp_path, torch.uint8, quant_type="fp4"

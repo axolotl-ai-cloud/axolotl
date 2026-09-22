@@ -156,6 +156,13 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_smollm2_135m_bnb_nf4_model():
+    snapshot_download_w_retry(
+        "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16", repo_type="model"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_instruct_model():
     # download the model
     snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M-Instruct", repo_type="model")

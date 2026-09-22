@@ -118,7 +118,7 @@ def _layer_norms(model):
 
 
 def test_patched_prepare_skips_per_model_embeddings(unpatched_peft):
-    patch_peft_prep_code(["embed_in", "embed_out"])
+    patch_peft_prep_code(["embed_in", "lm_head"])
 
     model = _tiny_gpt_neox()
     peft.utils.other.prepare_model_for_kbit_training(
@@ -126,6 +126,7 @@ def test_patched_prepare_skips_per_model_embeddings(unpatched_peft):
     )
 
     assert model.get_input_embeddings().weight.dtype == torch.bfloat16
+    assert model.get_output_embeddings().weight.dtype == torch.bfloat16
     norms = _layer_norms(model)
     assert norms
     assert all(module.weight.dtype == torch.float32 for module in norms)
@@ -160,3 +161,20 @@ def test_patch_manager_uses_model_config_type(unpatched_peft):
     )
 
     assert model.get_input_embeddings().weight.dtype == torch.bfloat16
+
+
+@pytest.mark.parametrize("embedding_modules", [["embed_in", "lm_head"], None])
+def test_repatch_replaces_embedding_exclusions(unpatched_peft, embedding_modules):
+    patch_peft_prep_code(["embed_in", "lm_head"] if embedding_modules is None else None)
+    patch_peft_prep_code(embedding_modules)
+
+    model = _tiny_gpt_neox()
+    axolotl.loaders.model.prepare_model_for_kbit_training(
+        model, use_gradient_checkpointing=False
+    )
+
+    expected = torch.float32 if embedding_modules is None else torch.bfloat16
+    assert model.get_input_embeddings().weight.dtype == expected
+    assert model.get_output_embeddings().weight.dtype == torch.bfloat16
+    assert all(module.weight.dtype == torch.float32 for module in _layer_norms(model))
+    assert check_peft_prep_code_is_patchable()
