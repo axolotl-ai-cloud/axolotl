@@ -13,7 +13,9 @@ from typing import Literal
 import modal
 
 from axolotl.cli.cloud.base import CloudLauncher
+from axolotl.cli.cloud.images import build_and_push_image
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.cloud import ModalImageConfig
 
 
 def run_cmd(cmd: str, run_folder: str, volumes=None):
@@ -57,6 +59,17 @@ class ModalCloud(CloudLauncher):
 
     def __init__(self, config, app=None):
         self.config = DictDefault(config)
+        self.image_config = ModalImageConfig.model_validate(config)
+        if self.image_config.image_build and any(
+            self.config.get(key)
+            for key in ("docker_tag", "branch", "dockerfile_commands")
+        ):
+            raise ValueError(
+                "image_build cannot be combined with docker_tag, branch, or dockerfile_commands; "
+                "put image customization in the Dockerfile"
+            )
+        if self.image_config.image and self.config.docker_tag:
+            raise ValueError("Choose either image or docker_tag")
         if not app:
             app = modal.App()
         self.app = app
@@ -83,6 +96,39 @@ class ModalCloud(CloudLauncher):
         return res
 
     def get_image(self):
+        if build := self.image_config.image_build:
+            if build.tag:
+                image = self._registry_image(build_and_push_image(build))
+            else:
+                image = modal.Image.from_dockerfile(
+                    build.dockerfile,
+                    context_dir=build.context,
+                    build_args=build.build_args,
+                )
+            if env := self.get_env():
+                image = image.env(env)
+            return image
+        if self.image_config.image:
+            image = self._registry_image(self.image_config.image)
+        else:
+            image = self._default_image()
+
+        return self._customize_image(image)
+
+    def _registry_image(self, reference):
+        registry = self.image_config.image_registry
+        if registry is None:
+            return modal.Image.from_registry(reference)
+        loaders = {
+            "registry": modal.Image.from_registry,
+            "aws_ecr": modal.Image.from_aws_ecr,
+            "gcp_artifact_registry": modal.Image.from_gcp_artifact_registry,
+        }
+        return loaders[registry.provider](
+            reference, secret=modal.Secret.from_name(registry.secret)
+        )
+
+    def _default_image(self):
         docker_tag = "main-py3.11-cu128-2.9.1"
         if self.config.docker_tag:
             docker_tag = self.config.docker_tag
@@ -104,6 +150,9 @@ class ModalCloud(CloudLauncher):
         else:
             image = modal.Image.from_registry(docker_image)
 
+        return image
+
+    def _customize_image(self, image):
         dockerfile_commands = []
         if self.config.dockerfile_commands:
             dockerfile_commands.extend(self.config.dockerfile_commands)

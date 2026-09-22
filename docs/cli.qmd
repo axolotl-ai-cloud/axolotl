@@ -296,6 +296,10 @@ cloud YAML file alongside your regular Axolotl config.
 
 The cloud YAML's `provider` selects the launcher: `modal` (the default), `baseten`,
 or an installed [cloud launcher plugin](custom_integrations.qmd#adding-a-cloud-launcher).
+Use `image: registry/image:tag` for a prebuilt runtime, or `image_build` with a
+Dockerfile and local context to deploy a fork and custom plugins. See
+[image configuration](custom_integrations.qmd#selecting-or-building-the-runtime-image).
+
 Training, preprocessing, and lm-eval all use this selection; providers report
 unsupported operations explicitly. Baseten currently supports training only.
 

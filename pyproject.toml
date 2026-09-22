@@ -90,6 +90,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+baseten = ["truss==0.18.30"]
 flash-attn = ["flash-attn==2.8.3"]
 ring-flash-attn = [
     "flash-attn==2.8.3",

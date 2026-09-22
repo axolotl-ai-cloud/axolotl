@@ -9,6 +9,8 @@ from typing import Literal
 import yaml
 
 from axolotl.cli.cloud.base import CloudLauncher
+from axolotl.cli.cloud.images import build_and_push_image
+from axolotl.utils.schemas.cloud import BasetenImageConfig
 
 
 class BasetenCloud(CloudLauncher):
@@ -16,6 +18,9 @@ class BasetenCloud(CloudLauncher):
 
     def __init__(self, config: dict):
         self.config = config
+        self.image_config = BasetenImageConfig.model_validate(config)
+        if self.image_config.image_build and not self.image_config.image_build.tag:
+            raise ValueError("Baseten image_build requires a registry tag")
 
     def preprocess(self, config_yaml: str, *args, **kwargs) -> None:
         raise NotImplementedError(
@@ -33,6 +38,9 @@ class BasetenCloud(CloudLauncher):
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = self.config.copy()
+            if build := self.image_config.image_build:
+                config["image"] = build_and_push_image(build)
+            config.pop("image_build", None)
             config["launcher"] = launcher
             config["launcher_args"] = launcher_args
             with open(tmp_dir + "/cloud.yaml", "w", encoding="utf-8") as cloud_fout:
@@ -44,5 +52,5 @@ class BasetenCloud(CloudLauncher):
                 dirname(__file__) + "/template/train_sft.py", tmp_dir + "/train_sft.py"
             )
             subprocess.run(  # nosec B603 B607
-                ["truss", "train", "push", "train_sft.py"], cwd=tmp_dir, check=False
+                ["truss", "train", "push", "train_sft.py"], cwd=tmp_dir, check=True
             )

@@ -18,6 +18,12 @@ def load_cloud_cfg(cloud_config: Path | str) -> DictDefault:
         config = yaml.safe_load(file)
     if not isinstance(config, dict):
         raise ValueError("Cloud configuration must be a YAML mapping")
+    if isinstance(config.get("image_build"), dict):
+        context = config["image_build"].get("context")
+        if isinstance(context, str):
+            config["image_build"]["context"] = str(
+                (Path(cloud_config).resolve().parent / context).resolve()
+            )
     return DictDefault(config)
 
 
