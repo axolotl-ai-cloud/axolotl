@@ -4,6 +4,7 @@ set -e
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 set -o pipefail
+mkdir -p "${HF_HOME}/hub/"
 for i in 1 2 3; do
   if curl --silent --show-error --fail -L \
     https://axolotl-ci.b-cdn.net/hf-cache.tar.zst \
@@ -22,7 +23,7 @@ done
 # hf download "microsoft/Phi-3-medium-128k-instruct"
 
 # Run unit tests with initial coverage report
-pytest -v --durations=10 -n8 \
+pytest -v --durations=10 -n8 -m "not slow and not nf4_distributed" \
   --ignore=tests/e2e/ \
   --ignore=tests/integrations/ \
   --ignore=tests/patched/ \

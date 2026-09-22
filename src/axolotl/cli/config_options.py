@@ -685,6 +685,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use bitsandbytes 4 bit",
     ),
     (
+        ("--nf4-backend",),
+        None,
+        None,
+        "NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
+    ),
+    (
         ("--adapter",),
         None,
         None,
@@ -820,7 +826,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--qlora-sharded-model-loading/--no-qlora-sharded-model-loading",),
         None,
         None,
-        "load qlora model in sharded format for FSDP using answer.ai technique.",
+        "Load QLoRA weights in sharded format for FSDP. Defaults to true for FSDP2 QLoRA with load_in_4bit and cpu_ram_efficient_loading, and false otherwise.",
     ),
     (
         ("--lora-on-cpu/--no-lora-on-cpu",),
@@ -1677,6 +1683,36 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "The number of elements in each group for per-group fake quantization",
     ),
     (
+        ("--export.format",),
+        "export__format",
+        None,
+        "Deployment format to export to.",
+    ),
+    (
+        ("--export.outtype",),
+        "export__outtype",
+        None,
+        "Weight type of the GGUF conversion.",
+    ),
+    (
+        ("--export.quantize",),
+        "export__quantize",
+        None,
+        "llama.cpp quant types to additionally emit, e.g. ['Q4_K_M', 'Q8_0'].",
+    ),
+    (
+        ("--export.outfile",),
+        "export__outfile",
+        "str",
+        "Output path; `{ftype}` is replaced by each weight type. Default: {output_dir}/gguf/{run}-{ftype}.gguf",
+    ),
+    (
+        ("--export.llama-cpp-dir",),
+        "export__llama_cpp_dir",
+        "str",
+        "Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
+    ),
+    (
         ("--reward-model/--no-reward-model",),
         None,
         None,
@@ -2513,12 +2549,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to use deepcompile for faster training with deepspeed",
     ),
     (
-        ("--fsdp",),
-        None,
-        None,
-        "FSDP configuration",
-    ),
-    (
         ("--fsdp-config.fsdp-version",),
         "fsdp_config__fsdp_version",
         "int",
@@ -2539,12 +2569,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Offload parameters to CPU to reduce GPU memory usage",
     ),
     (
-        ("--fsdp-config.sync-module-states/--no-fsdp-config.sync-module-states",),
-        "fsdp_config__sync_module_states",
-        None,
-        "Synchronize module states across all processes",
-    ),
-    (
         (
             "--fsdp-config.cpu-ram-efficient-loading/--no-fsdp-config.cpu-ram-efficient-loading",
         ),
@@ -2559,12 +2583,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "fsdp_config__cpu_offload_pin_memory",
         None,
         "Disabling this enables swap memory usage for resource-constrained setups when offload_params is enabled.",
-    ),
-    (
-        ("--fsdp-config.use-orig-params/--no-fsdp-config.use-orig-params",),
-        "fsdp_config__use_orig_params",
-        None,
-        "Use original parameters instead of flattened parameters",
     ),
     (
         ("--fsdp-config.state-dict-type",),
@@ -2618,7 +2636,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fp32-norms/--no-fp32-norms",),
         None,
         None,
-        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_version: 2.",
+        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_config.",
     ),
     (
         ("--fp32-norm-classes",),

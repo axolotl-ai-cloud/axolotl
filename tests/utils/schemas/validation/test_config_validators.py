@@ -317,3 +317,117 @@ class TestContextParallelAttnImplValidator:
         )
         with pytest.raises(ValueError, match="only supports the flash attention 2"):
             validate_config(cfg)
+
+
+class TestStagedNF4ConstraintTable:
+    """check_staged_nf4 raises from a table, so an empty or messageless table would pass silently."""
+
+    def test_every_constraint_carries_a_message(self):
+        from axolotl.utils.schemas.validation import STAGED_NF4_CONSTRAINTS
+
+        assert STAGED_NF4_CONSTRAINTS
+        for predicate, message in STAGED_NF4_CONSTRAINTS:
+            assert callable(predicate)
+            assert isinstance(message, str) and message
+
+
+class TestValueDependentInitOnExpertTargets:
+    """PEFT's value-dependent inits read base_layer.weight, which fused experts lack;
+    the failure must surface at validation, not after the model has loaded."""
+
+    @pytest.mark.parametrize("init", ["pissa", "olora", "loftq", "corda", "eva"])
+    def test_value_dependent_init_with_target_parameters_is_rejected(
+        self, min_base_cfg, init
+    ):
+        cfg = min_base_cfg | DictDefault(
+            adapter="lora",
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_parameters=["mlp.experts.gate_up_proj"],
+            peft_init_lora_weights=init,
+        )
+        with pytest.raises(ValueError, match="lora_target_parameters"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("init", [None, True, "gaussian"])
+    def test_default_init_with_target_parameters_passes(self, min_base_cfg, init):
+        cfg = min_base_cfg | DictDefault(
+            adapter="lora",
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_parameters=["mlp.experts.gate_up_proj"],
+        )
+        if init is not None:
+            cfg["peft_init_lora_weights"] = init
+        validate_config(cfg)
+
+
+class TestBnbBlocksizeValidator:
+    """bitsandbytes 4-bit loading always quantizes at blocksize 64, so a different
+    request must fail rather than silently train at 64 and merge at the requested size."""
+
+    def _cfg(self, min_base_cfg, **kwargs):
+        return min_base_cfg | DictDefault(
+            adapter="qlora",
+            load_in_4bit=True,
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_linear=True,
+            **kwargs,
+        )
+
+    def test_non_default_blocksize_rejected(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, bnb_config_kwargs={"blocksize": 128})
+        with pytest.raises(ValueError, match="blocksize"):
+            validate_config(cfg)
+
+    def test_default_blocksize_passes(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, bnb_config_kwargs={"blocksize": 64})
+        validate_config(cfg)
+
+    def test_unset_blocksize_passes(self, min_base_cfg):
+        validate_config(self._cfg(min_base_cfg))
+
+    def test_blocksize_without_4bit_ignored(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(bnb_config_kwargs={"blocksize": 128})
+        validate_config(cfg)
+
+
+class TestFlashAttnAvailabilityMessage:
+    """The error names the hub failure transformers swallows."""
+
+    def test_hub_failure_reason_is_reported(self, min_base_cfg, monkeypatch):
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+        )
+
+        def failing_get_kernel(*_, **__):
+            raise RuntimeError("HTTP 429 Too Many Requests")
+
+        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
+            validate_config(cfg)
+
+    def test_no_reason_when_lookup_succeeds(self, min_base_cfg, monkeypatch):
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+        )
+        monkeypatch.setattr(kernels, "get_kernel", lambda *_, **__: object())
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        with pytest.raises(ValueError) as excinfo:
+            validate_config(cfg)
+        assert "lookup failed" not in str(excinfo.value)

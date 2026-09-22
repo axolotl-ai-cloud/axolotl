@@ -296,7 +296,7 @@ Install: `pip install axolotl[qgalore]`
 
 This optimizer is for **full fine-tuning**. It is incompatible with `adapter`
 (LoRA/QLoRA), `load_in_8bit`, and `load_in_4bit`. DeepSpeed is currently gated
-off; FSDP requires `fsdp_version: 2` with `use_orig_params: true`.
+off; FSDP2 (`fsdp_config:`) is supported.
 
 ```yaml
 optimizer: q_galore_adamw8bit

@@ -209,7 +209,7 @@ def test_scoring_correctness():
     print(f"  Padding ratio: {1 - total_real / total_padded:.1%}")
 
     with torch.no_grad():
-        logps_pad, _ = trainer._get_per_token_logps_and_entropies(
+        logps_pad, _, _ = trainer._get_per_token_logps_and_entropies(
             model, input_ids, attn_mask, logits_to_keep
         )
         logps_flat = trainer._get_per_token_logps_flattened(
@@ -245,7 +245,7 @@ def test_training_loss_correctness():
 
     # Padded path (with grad)
     with torch.autocast("cuda", dtype=torch.bfloat16):
-        logps_pad, _ = trainer._get_per_token_logps_and_entropies(
+        logps_pad, _, _ = trainer._get_per_token_logps_and_entropies(
             model, input_ids, attn_mask, logits_to_keep
         )
 
@@ -285,13 +285,13 @@ def test_gradient_correctness():
     trainer_pad = make_mock_trainer(model_pad)
 
     with torch.no_grad():
-        old_logps, _ = trainer_pad._get_per_token_logps_and_entropies(
+        old_logps, _, _ = trainer_pad._get_per_token_logps_and_entropies(
             model_pad, input_ids, attn_mask, logits_to_keep
         )
 
     model_pad.zero_grad()
     with torch.autocast("cuda", dtype=torch.bfloat16):
-        logps_pad, _ = trainer_pad._get_per_token_logps_and_entropies(
+        logps_pad, _, _ = trainer_pad._get_per_token_logps_and_entropies(
             model_pad, input_ids, attn_mask, logits_to_keep
         )
     # Simple GRPO-style loss
@@ -388,7 +388,7 @@ def test_variable_completion_lengths():
     print(f"  Padding ratio: {1 - total_real / total_padded:.1%}")
 
     with torch.no_grad():
-        logps_pad, _ = trainer._get_per_token_logps_and_entropies(
+        logps_pad, _, _ = trainer._get_per_token_logps_and_entropies(
             model, input_ids, attn_mask, max_compl
         )
         logps_flat = trainer._get_per_token_logps_flattened(
@@ -454,7 +454,7 @@ def test_prompt_mask_edge_case():
 
     with torch.no_grad():
         # Padded reference (always correct since it uses logits_to_keep slicing)
-        logps_pad, _ = trainer._get_per_token_logps_and_entropies(
+        logps_pad, _, _ = trainer._get_per_token_logps_and_entropies(
             model, input_ids, attention_mask, logits_to_keep
         )
 
@@ -525,7 +525,7 @@ def test_training_flattened_gradients():
     ref_model = setup_model()
     ref_trainer = make_mock_trainer(ref_model)
     with torch.no_grad():
-        old_logps, _ = ref_trainer._get_per_token_logps_and_entropies(
+        old_logps, _, _ = ref_trainer._get_per_token_logps_and_entropies(
             ref_model, input_ids, attn_mask, logits_to_keep
         )
     del ref_model
@@ -538,7 +538,7 @@ def test_training_flattened_gradients():
     trainer_pad = make_mock_trainer(model_pad)
     model_pad.zero_grad()
     with torch.autocast("cuda", dtype=torch.bfloat16):
-        logps_pad, _ = trainer_pad._get_per_token_logps_and_entropies(
+        logps_pad, _, _ = trainer_pad._get_per_token_logps_and_entropies(
             model_pad, input_ids, attn_mask, logits_to_keep
         )
     ratio_pad = torch.exp(logps_pad - old_logps.detach())

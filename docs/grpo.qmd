@@ -451,11 +451,11 @@ FP8 requires patching for zero-padding edge cases. The `act_quant_kernel` can pr
 FSDP distributes model parameters across multiple GPUs for training while vLLM runs on a separate GPU:
 
 ```yaml
-fsdp:
-  - full_shard
-  - auto_wrap
+fsdp_version: 2
 fsdp_config:
-  fsdp_transformer_layer_cls_to_wrap: Qwen2DecoderLayer
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen2DecoderLayer
+  reshard_after_forward: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 ```

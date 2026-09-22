@@ -187,17 +187,26 @@ def patch_nvfp4_fsdp():
         self, mesh, outer_size=None, outer_stride=None, module=None, mp_policy=None
     ):
         inputs = (self.qdata, self.scale)
-        if self.per_tensor_scale is not None:
-            inputs = inputs + (self.per_tensor_scale,)
-        meta = (self.per_tensor_scale is not None,)
+        pts = self.per_tensor_scale
+        scalar_pts = pts is not None and pts.dim() == 0
+        if pts is not None:
+            # FSDP concatenates every input on dim 0, including shared scales.
+            if pts.numel() == 1:
+                pts = (
+                    pts.reshape(1, 1, 1).expand(self.qdata.shape[0], 1, 1).contiguous()
+                )
+            inputs = inputs + (pts,)
+        meta = (pts is not None, scalar_pts)
         return inputs, meta
 
     def fsdp_post_all_gather(
         self, all_gather_outputs, metadata, param_dtype, *, out=None
     ):
-        (has_pts,) = metadata
+        has_pts, scalar_pts = metadata
         if has_pts:
             qdata, scale, pts = all_gather_outputs
+            if scalar_pts:
+                pts = pts[0, 0, 0]
         else:
             qdata, scale = all_gather_outputs
             pts = None

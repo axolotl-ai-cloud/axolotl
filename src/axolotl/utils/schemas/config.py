@@ -42,6 +42,7 @@ from axolotl.utils.schemas.enums import (
     RLType,
     attn_impl_base,
 )
+from axolotl.utils.schemas.export import ExportConfig
 from axolotl.utils.schemas.fp8 import FP8Config
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
@@ -281,6 +282,12 @@ class AxolotlInputConfig(
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None
+    export: ExportConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Configuration for `axolotl export` (GGUF conversion)"
+        },
+    )
     reward_model: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},
@@ -1060,16 +1067,11 @@ class AxolotlInputConfig(
             "description": "Whether to use deepcompile for faster training with deepspeed"
         },
     )
-    fsdp: list[str] | None = Field(
-        default=None,
-        json_schema_extra={"description": "FSDP configuration"},
-        deprecated="Configuring FSDP using `fsdp` is deprecated. Please use `fsdp_config` instead. ",
-    )
     fsdp_config: FSDPConfig | None = Field(
         default=None, json_schema_extra={"description": "FSDP configuration options"}
     )
     fsdp_version: int | None = Field(
-        default=None,
+        default=2,
         json_schema_extra={"description": "FSDP version"},
     )
     fp32_norms: bool | None = Field(
@@ -1077,7 +1079,7 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": (
                 "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them "
-                "under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_version: 2."
+                "under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_config."
             )
         },
     )
@@ -1677,19 +1679,11 @@ class AxolotlInputConfig(
     @model_validator(mode="after")
     def check_fp32_norms(self):
         if self.fp32_norms:
-            # FSDP must actually be configured — fsdp_version alone is not
-            # sufficient since the rest of axolotl treats fsdp_config as the
-            # canonical "is_fsdp" signal.
+            # fsdp_config is the canonical "is_fsdp" signal across axolotl
             if self.fsdp_config is None:
                 raise ValueError(
                     "fp32_norms requires FSDP to be enabled "
                     "(fsdp_config block must be set)."
-                )
-            if str(self.fsdp_version) != "2":
-                raise ValueError(
-                    "fp32_norms requires fsdp_version: 2. FSDP1's flat-param "
-                    "dtype uniformity constraint is incompatible with keeping "
-                    "norms in fp32 while decoder layers run in bf16."
                 )
         if self.fp32_norm_classes and not self.fp32_norms:
             LOG.warning(
@@ -1760,7 +1754,7 @@ class AxolotlInputConfig(
     def check_ple_cpu_offload(cls, data):
         if data.get("ple_cpu_offload"):
             # both place parameters themselves, so the table would be sharded or gathered
-            if data.get("fsdp_config") is not None or data.get("fsdp") is not None:
+            if data.get("fsdp_config") is not None:
                 raise ValueError("ple_cpu_offload is not compatible with FSDP")
             if data.get("deepspeed"):
                 raise ValueError("ple_cpu_offload is not compatible with DeepSpeed")
@@ -1928,26 +1922,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_multigpu_lora_kernels(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-            or data.get("lora_embedding_kernel")
-        ):
-            capabilities = data.get("capabilities")
-            is_fsdp = data.get("fsdp_config") is not None
-            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
-
-            if capabilities and capabilities.get("n_gpu", 0) > 1 and not is_fsdp2:
-                if is_fsdp:
-                    raise ValueError(
-                        "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not compatible with FSDP1."
-                    )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_quantize_moe_experts(cls, data):
         if data.get("quantize_moe_experts"):
             if data.get("lora_target_linear"):
@@ -2050,35 +2024,24 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 if is_moe:
                     return data
 
-            # Check multi-GPU compatibility
-            capabilities = data.get("capabilities")
-            is_multi_gpu = capabilities and capabilities.get("n_gpu", 0) > 1
-            is_fsdp = data.get("fsdp_config") is not None
-            is_fsdp2 = is_fsdp and str(data.get("fsdp_version")) == "2"
+            # Auto-enable kernels if not explicitly set by user
+            if data.get("lora_mlp_kernel") is None:
+                data["lora_mlp_kernel"] = True
 
-            if (
-                not is_multi_gpu
-                or (is_multi_gpu and not is_fsdp)
-                or (is_multi_gpu and is_fsdp2)
-            ):
-                # Auto-enable kernels if not explicitly set by user
-                if data.get("lora_mlp_kernel") is None:
-                    data["lora_mlp_kernel"] = True
+            if data.get("lora_qkv_kernel") is None:
+                data["lora_qkv_kernel"] = True
 
-                if data.get("lora_qkv_kernel") is None:
-                    data["lora_qkv_kernel"] = True
+            if data.get("lora_o_kernel") is None:
+                data["lora_o_kernel"] = True
 
-                if data.get("lora_o_kernel") is None:
-                    data["lora_o_kernel"] = True
+            if data.get("lora_embedding_kernel") is None:
+                data["lora_embedding_kernel"] = True
 
-                if data.get("lora_embedding_kernel") is None:
-                    data["lora_embedding_kernel"] = True
-
-                LOG.warning(
-                    "Auto-enabling LoRA kernel optimizations for faster training. "
-                    + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
-                    + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
-                )
+            LOG.warning(
+                "Auto-enabling LoRA kernel optimizations for faster training. "
+                + "Please explicitly set `lora_*_kernel` config values to `false` to disable. "
+                + "See https://docs.axolotl.ai/docs/lora_optims.html for more info."
+            )
 
         return data
 
@@ -2206,7 +2169,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
             torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
 
-        if data.get("fsdp_config") and str(data.get("fsdp_version")) == "2":
+        if data.get("fsdp_config"):
             if version.parse(torch_version) < version.parse("2.7.0"):
                 raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
 

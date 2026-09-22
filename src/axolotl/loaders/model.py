@@ -7,12 +7,15 @@ from __future__ import annotations
 import gc
 import math
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from functools import cached_property
 from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any
 
 import peft
 import torch
+import torch.distributed as dist
 import transformers
 import transformers.modeling_utils
 from accelerate import init_empty_weights
@@ -41,7 +44,7 @@ from transformers.integrations.deepspeed import (
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders.adapter import load_adapter
+from axolotl.loaders.adapter import load_adapter, read_saved_adapter_config
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.patch_manager import PatchManager
 from axolotl.loaders.utils import (
@@ -69,12 +72,79 @@ from axolotl.utils.fp32_norms import (
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
+from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 if TYPE_CHECKING:
     from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
+
+
+def _nf4_shape_stand_in(original):
+    def forward(self, data, *args, **kwargs):
+        if args or kwargs:
+            return original(self, data, *args, **kwargs)
+        return torch.zeros((), dtype=self.dtype, device=data.device).expand(self.shape)
+
+    return forward
+
+
+@contextmanager
+def _nf4_shape_stand_ins() -> Iterator[None]:
+    """Answer shape, dtype and device queries on packed weights without dequantizing.
+
+    PEFT reads ``base_layer.weight`` around twenty times per targeted module while it
+    builds the LoRA layers, and on a staged NF4 model every read dequantizes the whole
+    tensor on rank zero. Nothing in that path needs the values, so hand back a
+    zero-storage view of the right shape instead.
+
+    The stand-in is installed on the parametrization classes, not their instances:
+    adapter creation may deepcopy modules (``peft_layer_replication``), and a copy
+    would carry an instance-level override past the end of this scope.
+    """
+    from axolotl.utils.nf4 import BnbNF4Parametrization, TorchaoNF4Parametrization
+
+    originals = [
+        (cls, cls.forward) for cls in (BnbNF4Parametrization, TorchaoNF4Parametrization)
+    ]
+    try:
+        for cls, original in originals:
+            cls.forward = _nf4_shape_stand_in(original)  # type: ignore[method-assign]
+        yield
+    finally:
+        for cls, original in originals:
+            cls.forward = original  # type: ignore[method-assign]
+
+
+def should_convert_embedding_dtypes(cfg: DictDefault) -> bool:
+    """Whether the post-quantization pass converts modules back to `torch_dtype`."""
+    fsdp_enabled = cfg.fsdp_config is not None or cfg.fsdp is not None
+    qlora_and_fsdp_enabled = fsdp_enabled and cfg.adapter == "qlora"
+    needs_fa2_dtype = bool(cfg.adapter or fsdp_enabled)
+
+    return bool(
+        # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
+        # we need to convert them back to fp16/bf16 for flash-attn compatibility.
+        ((needs_fa2_dtype or cfg.attn_needs_dtype_cast) and not qlora_and_fsdp_enabled)
+        or (
+            # CCE requires embedding layers to be in fp16/bf16 for backward pass
+            cfg.cut_cross_entropy
+        )
+    )
+
+
+def should_skip_peft_embedding_upcast(cfg: DictDefault) -> bool:
+    """Whether PEFT's kbit preparation should leave the embeddings alone.
+
+    Upcasting them there is pure peak memory whenever the later conversion back to
+    `torch_dtype` reverts it, so skip it then unless the user asked otherwise.
+    """
+    if not cfg.adapter:
+        return False
+    if cfg.embeddings_skip_upcast is not None:
+        return bool(cfg.embeddings_skip_upcast)
+    return should_convert_embedding_dtypes(cfg)
 
 
 class ModelLoader:
@@ -192,24 +262,29 @@ class ModelLoader:
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
 
         skip_move_to_device = self._build_model()
-        self.patch_manager.apply_post_model_build_patches(self.model)
+        from axolotl.utils.nf4_loading import nf4_phase
 
-        PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
+        staged_nf4 = getattr(self.model, "_axolotl_staged_nf4", False)
+        with nf4_phase("NF4 post-load configuration", enabled=staged_nf4):
+            self.patch_manager.apply_post_model_build_patches(self.model)
 
-        # Post-build model configuration
-        self._apply_post_model_load_setup()
+            PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
 
-        # Load adapters (LoRA, etc.)
-        PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
-        lora_config = self._load_adapters()
-        PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
-        self._materialize_trainable_meta_params()
+            # Post-build model configuration
+            self._apply_post_model_load_setup()
 
-        # Apply remaining patches and finalize
-        self._apply_post_lora_load_setup(skip_move_to_device)
-        self.patch_manager.apply_post_model_load_patches(self.model)
-        PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+        with nf4_phase("NF4 adapter initialization", enabled=staged_nf4):
+            # Load adapters (LoRA, etc.)
+            PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
+            lora_config = self._load_adapters()
+            PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
+            self._materialize_trainable_meta_params()
 
+        with nf4_phase("NF4 post-adapter configuration", enabled=staged_nf4):
+            # Apply remaining patches and finalize
+            self._apply_post_lora_load_setup(skip_move_to_device)
+            self.patch_manager.apply_post_model_load_patches(self.model)
+            PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
         if self.cfg.fp32_norms:
             tag_model_fp32_norms(self.model, self.cfg)
 
@@ -226,8 +301,6 @@ class ModelLoader:
                     and self.cfg.context_parallel_size > 1
                 )
             )
-            if self.cfg.fsdp_config and self.cfg.fsdp_version != 2:
-                self.use_parallel_config = False
 
         if self.use_parallel_config:
             self._set_parallel_config()
@@ -243,17 +316,15 @@ class ModelLoader:
         self._set_attention_config()
         self._check_model_requirements()
 
-        # MX-quantized checkpoints carry MXTensor weights but no HF quantizer, so
-        # transformers' load-time weight re-init would crash on them; this guards it.
-        # torchao is absent on macOS/aarch64, where MX checkpoints can't exist anyway.
-        try:
-            from axolotl.utils.quantization import (
-                patch_transformers_skip_quantized_init,
-            )
+        self._patch_quantized_init()
 
-            patch_transformers_skip_quantized_init()
-        except ImportError:
-            pass
+    @staticmethod
+    def _patch_quantized_init():
+        from axolotl.monkeypatch.quantized_init import (
+            patch_transformers_skip_quantized_init,
+        )
+
+        patch_transformers_skip_quantized_init()
 
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
@@ -432,19 +503,25 @@ class ModelLoader:
         ):
             self.model.config.eos_token_id = self.tokenizer.eos_token_id
 
+    def _should_convert_embedding_dtypes(self) -> bool:
+        """Whether the post-quantization pass converts modules back to `torch_dtype`."""
+        return should_convert_embedding_dtypes(self.cfg)
+
     def _configure_embedding_dtypes(self):
         """Configure embedding module dtypes."""
         # Get embedding modules
         embedding_modules = get_linear_embedding_layers(self.cfg.model_config_type)
 
-        # Initial dtype conversion
-        if not self.is_fsdp_enabled:
-            # We don't run this during FSDP because this will leave mixed and bfloat16
-            # dtypes in the model which FSDP doesn't like
-            if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
-                embedding_modules = []
+        should_convert = self._should_convert_embedding_dtypes()
+
+        # An upcast the conversion below would immediately revert is pure peak memory:
+        # the `.to()` holds an fp32 and a `torch_dtype` copy of the embeddings at once.
+        upcast_embeddings = not should_convert and not (
+            self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast
+        )
+        if upcast_embeddings or not self.is_fsdp_enabled:
             self._convert_embedding_modules_dtype(
-                embedding_modules,
+                embedding_modules if upcast_embeddings else [],
                 dist_dtype=torch.float32,
                 before_kbit_train_or_finetune=True,
             )
@@ -457,29 +534,12 @@ class ModelLoader:
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed
-        needs_fa2_dtype = self.cfg.adapter or self.is_fsdp_enabled
-        if self.cfg.adapter in ["lora", "qlora"]:
-            needs_fa2_dtype = True
-            if self.cfg.gradient_checkpointing:
-                self.model.gradient_checkpointing_enable(
-                    gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
-                )
+        if self.cfg.adapter in ["lora", "qlora"] and self.cfg.gradient_checkpointing:
+            self.model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
+            )
 
         self._prepare_model_for_quantization()
-
-        # Convert dtypes if needed
-        should_convert = (
-            # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
-            # we need to convert them back to fp16/bf16 for flash-attn compatibility.
-            (
-                (needs_fa2_dtype or self.cfg.attn_needs_dtype_cast)
-                and not self.is_qlora_and_fsdp_enabled
-            )
-            or (
-                # CCE requires embedding layers to be in fp16/bf16 for backward pass
-                self.cfg.cut_cross_entropy
-            )
-        )
 
         if should_convert:
             LOG.info("Converting modules to %s", self.cfg.torch_dtype)
@@ -502,9 +562,40 @@ class ModelLoader:
                 self.cfg.qat.quantize_embedding,
             )
 
+    def _reject_value_dependent_saved_adapter_init(self) -> None:
+        """`check_staged_nf4` rejects value-dependent inits from the config, but PEFT re-runs
+        the saved adapter's own init on load, so `lora_model_dir` can still request one."""
+        if not self.cfg.lora_model_dir:
+            return
+        saved = read_saved_adapter_config(self.cfg.lora_model_dir, from_hub=True)
+        if saved is None:
+            raise ValueError(
+                f"Could not read adapter_config.json for {self.cfg.lora_model_dir}, so "
+                "its LoRA init cannot be checked; CPU-staged NF4 cannot resume an adapter "
+                "saved with a value-dependent init."
+            )
+        if bool(saved.get("loftq_config")) or (
+            saved.get("init_lora_weights", True) not in VALUE_INDEPENDENT_LORA_INIT
+        ):
+            raise ValueError(
+                f"The adapter in {self.cfg.lora_model_dir} was saved with a "
+                "value-dependent LoRA init "
+                f"({saved.get('init_lora_weights')!r}), which CPU-staged NF4 cannot "
+                "resume: PEFT re-runs that init on load and a packed base weight cannot "
+                "take the residual write-back. Convert the adapter with PEFT's "
+                "`path_initial_model_for_weight_conversion` before resuming."
+            )
+
     def _load_adapters(self) -> PeftConfig | None:
         """Load LoRA or other adapters."""
-        # Load LoRA or adapter
+        staged = getattr(self.model, "_axolotl_staged_nf4", False)
+        if staged:
+            self._reject_value_dependent_saved_adapter_init()
+        with _nf4_shape_stand_ins() if staged else nullcontext():
+            return self._build_adapters()
+
+    def _build_adapters(self) -> PeftConfig | None:
+        """Build the adapter, or only its config for a reference model."""
         lora_config = None
         if not self.reference_model or self.cfg.lora_model_dir:
             # If we're not loading the reference model, then we're loading the model
@@ -532,11 +623,20 @@ class ModelLoader:
     def _materialize_trainable_meta_params(self):
         """Non-rank-0 loads onto meta and PEFT follows the base layer's device; the optimizer is
         built before `accelerator.prepare`, which remaps its params by `data_ptr()` (0 on meta)."""
-        if (
-            self.cfg.fsdp_config
-            and self.cfg.fsdp_config.cpu_ram_efficient_loading
-            and int(os.getenv("LOCAL_RANK", "0")) != 0
+        if not (
+            self.cfg.fsdp_config and self.cfg.fsdp_config.cpu_ram_efficient_loading
         ):
+            return
+        # staged NF4 loads on global rank 0 only, so on other nodes local rank 0 is meta too
+        if getattr(self.model, "_axolotl_staged_nf4", False):
+            rank = (
+                dist.get_rank()
+                if dist.is_initialized()
+                else int(os.getenv("RANK", "0"))
+            )
+        else:
+            rank = int(os.getenv("LOCAL_RANK", "0"))
+        if rank != 0:
             materialize_trainable_meta_params(self.model)
 
     def _keep_no_placement_params_on_cpu(self):
@@ -967,6 +1067,31 @@ class ModelLoader:
 
     def _build_model(self) -> bool:
         """Load model, with load strategy depending on config."""
+        from axolotl.loaders.nf4 import load_nf4_model, uses_staged_nf4
+        from axolotl.monkeypatch.bnb_large_tensors import patch_bnb_large_tensors
+
+        if self.cfg.load_in_4bit:
+            patch_bnb_large_tensors()
+        if uses_staged_nf4(self.cfg):
+            if getattr(self.model_config, "quantization_config", None):
+                raise ValueError(
+                    "CPU-staged NF4 requires an unquantized base checkpoint"
+                )
+            self.model_kwargs["device_map"] = {"": "cpu"}
+            if self.cfg.fsdp_config:
+                init_distributed_state()
+            kwargs = dict(self.model_kwargs)
+            kwargs["trust_remote_code"] = self.cfg.trust_remote_code or False
+            self.model = load_nf4_model(
+                self.auto_model_loader, self.model_config, kwargs, self.cfg
+            )
+            self.model._moe_experts_quantized = bool(self.cfg.quantize_moe_experts)
+            if not self.cfg.fsdp_config:
+                self.model.to(
+                    f"{str(get_device_type())}:{int(os.environ.get('LOCAL_RANK', 0))}"
+                )
+            return True
+
         skip_move_to_device = False
 
         if self.cfg.tensor_parallel_size > 1:
@@ -995,7 +1120,6 @@ class ModelLoader:
             if (
                 self.cfg.tensor_parallel_size <= 1
                 and self.cfg.fsdp_config.cpu_ram_efficient_loading
-                and self.cfg.fsdp_version == 2
             ):
                 # setting device_map for TP is not supported
                 local_rank = int(os.getenv("LOCAL_RANK", "0"))
@@ -1136,7 +1260,9 @@ class ModelLoader:
             # Make sure everything is in the same dtype
             skip_prepare_model_for_kbit_training = True
 
-        if getattr(self.model, "_moe_experts_quantized", False):
+        if getattr(self.model, "_moe_experts_quantized", False) or getattr(
+            self.model, "_axolotl_staged_nf4", False
+        ):
             # Parametrized expert tensors dequantize on access — would OOM.
             skip_prepare_model_for_kbit_training = True
 

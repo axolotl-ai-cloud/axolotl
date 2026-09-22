@@ -141,8 +141,8 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         cfg_without_version = validate_config(cfg_without_version)
 
-        self.assertEqual(cfg_without_version.fsdp_version, 1)
-        self.assertEqual(cfg_without_version.fsdp_config.fsdp_version, 1)
+        self.assertEqual(cfg_without_version.fsdp_version, 2)
+        self.assertEqual(cfg_without_version.fsdp_config.fsdp_version, 2)
         self.assertEqual(
             cfg_without_version.fsdp_config.auto_wrap_policy, "SIZE_BASED_WRAP"
         )
@@ -160,7 +160,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
         cfg = validate_config(cfg)
 
         self.assertNotIn("fsdp_config", cfg)
-        self.assertNotIn("fsdp_version", cfg)
+        self.assertEqual(cfg.fsdp_version, 2)
 
     def test_migrate_fsdp_config_empty_fsdp_config(self):
         """Test migration with empty fsdp_config"""
@@ -168,7 +168,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         cfg = validate_config(cfg)
 
-        self.assertNotIn("fsdp_version", cfg)
+        self.assertEqual(cfg.fsdp_version, 2)
         self.assertEqual(cfg.fsdp_config, {})
 
     def test_migrate_fsdp_config_mixed_keys(self):
@@ -176,7 +176,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
         cfg = self._get_base_cfg() | DictDefault(
             {
                 "fsdp_config": {
-                    "fsdp_version": 1,
+                    "fsdp_version": 2,
                     "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "mixed_precision_policy": "fp16",
                     "activation_checkpointing": True,
@@ -187,7 +187,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         cfg = validate_config(cfg)
 
-        self.assertEqual(cfg.fsdp_version, 1)
+        self.assertEqual(cfg.fsdp_version, 2)
         self.assertEqual(cfg.fsdp_config.state_dict_type, "FULL_STATE_DICT")
         self.assertEqual(cfg.fsdp_config.reshard_after_forward, False)
         self.assertEqual(cfg.fsdp_config.mixed_precision_policy, "fp16")

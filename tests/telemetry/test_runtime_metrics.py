@@ -56,6 +56,9 @@ def mock_torch():
             (device + 1) * 1024 * 1024 * 1024
         )
 
+        mock_torch.cuda.max_memory_allocated.side_effect = lambda device: (
+            mock_torch.cuda.memory_allocated(device)
+        )
         yield mock_torch
 
 
@@ -355,3 +358,48 @@ class TestRuntimeMetricsTracker:
         assert (
             memory_metrics["gpu_1_peak_memory_bytes"] == 4 * 1024 * 1024 * 1024
         )  # Peak value we set
+
+
+@pytest.mark.parametrize("backend_name", ["cuda", "hip", "xpu", "npu"])
+def test_allocator_peak_between_steps(
+    mock_psutil, mock_telemetry_manager, backend_name
+):
+    """Transient allocations survive a later counter reset and freed tensors."""
+    from types import SimpleNamespace
+
+    backend = MagicMock()
+    backend.is_available.return_value = True
+    backend.device_count.return_value = 1
+    backend.memory_allocated.return_value = 100
+    backend.max_memory_allocated.return_value = 900
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+    )
+    setattr(fake_torch, backend_name, backend)
+    with patch("axolotl.telemetry.runtime_metrics.torch", fake_torch):
+        tracker = RuntimeMetricsTracker()
+        tracker.update_step(1)
+        backend.max_memory_allocated.return_value = 100
+        tracker.update_step(2)
+        result = tracker.metrics.to_dict()["gpu_memory"]
+        assert result["gpu_0_peak_memory_bytes"] == 900
+        assert result["gpu_0_peak_memory_source"] == "allocator_high_water_mark"
+        backend.reset_peak_memory_stats.assert_not_called()
+
+
+def test_mps_peak_is_labeled_sampled(mock_psutil, mock_telemetry_manager):
+    """Backends without allocator peaks advertise the sampling limitation."""
+    from types import SimpleNamespace
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: True)),
+        mps=SimpleNamespace(current_allocated_memory=lambda: 100),
+    )
+    with patch("axolotl.telemetry.runtime_metrics.torch", fake_torch):
+        tracker = RuntimeMetricsTracker()
+        tracker.update_step(1)
+        result = tracker.get_memory_metrics()
+        assert result["gpu_0_peak_memory_bytes"] == 100
+        assert result["gpu_0_peak_memory_source"] == "sampled"

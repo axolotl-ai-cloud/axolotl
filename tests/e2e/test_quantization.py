@@ -503,8 +503,8 @@ class TestMXQuantizeSaveLoad:
             import torch
             from torch import nn
             from transformers import AutoModelForCausalLM
-            # mirrors ModelLoader._apply_pre_model_load_setup (no quantize_model here)
-            from axolotl.utils.quantization import (
+            # mirrors ModelLoader._patch_quantized_init (no quantize_model here)
+            from axolotl.monkeypatch.quantized_init import (
                 patch_transformers_skip_quantized_init,
             )
 

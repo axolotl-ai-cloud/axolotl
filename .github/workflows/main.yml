@@ -25,12 +25,6 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
             pytorch: 2.12.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
@@ -39,6 +33,12 @@ jobs:
             cuda_version: 13.0.0
             python_version: "3.12"
             pytorch: 2.13.0
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.14.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
     runs-on: axolotl-gpu-runner
@@ -101,12 +101,6 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
             pytorch: 2.12.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
@@ -115,6 +109,12 @@ jobs:
             cuda_version: 13.0.0
             python_version: "3.12"
             pytorch: 2.13.0
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.14.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
     runs-on: axolotl-gpu-runner
@@ -171,12 +171,6 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
-            axolotl_extras:
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
             pytorch: 2.12.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
@@ -185,6 +179,12 @@ jobs:
             cuda_version: 13.0.0
             python_version: "3.12"
             pytorch: 2.13.0
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.14.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
     runs-on: axolotl-gpu-runner

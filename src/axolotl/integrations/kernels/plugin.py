@@ -99,6 +99,9 @@ def _base_is_nvfp4_modelopt(cfg) -> bool:
     from axolotl.integrations.kernels.adapters.glm_moe_dsa import (
         is_glm_moe_dsa_nvfp4_modelopt,
     )
+    from axolotl.integrations.kernels.adapters.nemotron_h import (
+        is_nemotron_h_nvfp4_modelopt,
+    )
     from axolotl.integrations.kernels.adapters.nvfp4_moe import is_moe_nvfp4_modelopt
     from axolotl.integrations.kernels.adapters.qwen3_moe import (
         is_qwen3_moe_nvfp4_modelopt,
@@ -108,6 +111,7 @@ def _base_is_nvfp4_modelopt(cfg) -> bool:
         is_qwen3_moe_nvfp4_modelopt(cfg)
         or is_gemma4_nvfp4_modelopt(cfg)
         or is_glm_moe_dsa_nvfp4_modelopt(cfg)
+        or is_nemotron_h_nvfp4_modelopt(cfg)
         or is_moe_nvfp4_modelopt(cfg)
     )
 
