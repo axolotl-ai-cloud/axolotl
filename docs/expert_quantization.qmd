@@ -112,9 +112,11 @@ is adopted as-is: the checkpoint's packed weights and quantization state are sta
 without requantizing, so `bnb_config_kwargs` that disagree with the checkpoint are
 ignored (with a warning). The compute dtype must match the checkpoint's
 `bnb_4bit_quant_storage` when that storage is a floating-point dtype. The torchao
-backend and `quantize_moe_experts` still need an unquantized base checkpoint, and
-`axolotl merge-lora` cannot merge an adapter back into a prequantized base: it streams
-the base checkpoint and has no path that unpacks bitsandbytes components.
+backend and `quantize_moe_experts` still need an unquantized base checkpoint.
+`axolotl merge-lora` unpacks the checkpoint's bitsandbytes components and folds the
+adapter into the dequantized weights, so such a base always merges to a bf16
+checkpoint with no `quantization_config`; the packed 4-bit format cannot be preserved
+through the merge. A bitsandbytes 8-bit base is rejected.
 
 ### LoRA init compatibility
 
