@@ -252,7 +252,7 @@ class ModalCloud(CloudLauncher):
 
     def get_train_gpu(self):
         count = self.config.gpu_count or 1
-        family = self.config.gpu.lower() or "l40s"
+        family = (self.config.gpu or "l40s").lower()
 
         if family == "l40s":
             return modal.gpu.L40S(count=count)

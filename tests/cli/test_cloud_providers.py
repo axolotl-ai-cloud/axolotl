@@ -425,3 +425,29 @@ else:
     raise AssertionError("Missing Modal SDK should produce an installation hint")
 """
     subprocess.run([sys.executable, "-c", script], check=True)
+
+
+@pytest.mark.parametrize("config", [{}, {"gpu": None}, {"gpu": ""}, {"gpu": "L40S"}])
+def test_modal_default_gpu(config, monkeypatch):
+    pytest.importorskip("modal")
+    from axolotl.integrations.modal import cloud as modal_cloud
+
+    gpu = MagicMock()
+    monkeypatch.setattr(modal_cloud.modal.gpu, "L40S", gpu)
+    provider = modal_cloud.ModalCloud(config, app=MagicMock())
+    assert provider.get_train_gpu() is gpu.return_value
+    gpu.assert_called_once_with(count=1)
+
+
+def test_baseten_rejects_overrides_before_submission(monkeypatch):
+    from axolotl.integrations.baseten import cloud as baseten_cloud
+
+    submit = MagicMock()
+    build = MagicMock()
+    monkeypatch.setattr(baseten_cloud.subprocess, "run", submit)
+    monkeypatch.setattr(baseten_cloud, "build_and_push_image", build)
+    provider = baseten_cloud.BasetenCloud({})
+    with pytest.raises(ValueError, match="learning_rate, max_steps"):
+        provider.train("base_model: example", max_steps=5, learning_rate=0.001)
+    submit.assert_not_called()
+    build.assert_not_called()

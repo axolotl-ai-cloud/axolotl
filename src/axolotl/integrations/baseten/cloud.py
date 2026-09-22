@@ -33,7 +33,7 @@ class BasetenCloud(CloudLauncher):
     def preprocess(self, config_yaml: str, *args, **kwargs) -> None:
         raise NotImplementedError(
             "Separate preprocess function for Baseten is not "
-            "implemented and will happen during hte train step."
+            "implemented and will happen during the train step."
         )
 
     def train(
@@ -44,6 +44,12 @@ class BasetenCloud(CloudLauncher):
         local_dirs: dict[str, str] | None = None,  # pylint: disable=unused-argument
         **kwargs,
     ):
+        if kwargs:
+            raise ValueError(
+                "Baseten does not support config overrides: "
+                + ", ".join(sorted(kwargs))
+                + ". Set these values in the training YAML instead."
+            )
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = self.config.copy()
             if build := self.image_config.image_build:
