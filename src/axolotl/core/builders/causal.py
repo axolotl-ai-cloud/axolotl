@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Type, Union
 
+import pyarrow.compute as pc
 import transformers
 from transformers import (
     DataCollatorWithFlattening,
@@ -46,7 +47,6 @@ from axolotl.utils.collators import (
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
-from axolotl.utils.samplers import get_dataset_lengths
 
 LOG = get_logger(__name__)
 
@@ -389,7 +389,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             pad_len = self.cfg.sequence_len
             if self.cfg.pad_to_sequence_len == "auto":
                 pad_len = self._longest_sample_len()
-                LOG.info(f"pad_to_sequence_len: auto resolved to {pad_len} tokens")
+                LOG.debug(f"pad_to_sequence_len: auto resolved to {pad_len} tokens")
             data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
                 pad_len / multiple
             )
@@ -471,10 +471,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def _longest_sample_len(self) -> int:
         datasets = [d for d in (self.train_dataset, self.eval_dataset) if d]
-        if self.cfg.reward_model:
-            cols = ("chosen_ids", "rejected_ids")
-            return max(len(x) for d in datasets for c in cols for x in d[c])
-        return int(max(get_dataset_lengths(d).max() for d in datasets))
+        cols = (
+            ("chosen_ids", "rejected_ids") if self.cfg.reward_model else ("input_ids",)
+        )
+        return max(
+            pc.max(pc.list_value_length(d.data.column(c))).as_py()
+            for d in datasets
+            for c in cols
+        )
 
     def build_collator(
         self,
