@@ -268,6 +268,9 @@ def normalize_config(cfg):
 
     # Apply pre-config load patches (e.g., for Kimi Linear remote code patching)
     from axolotl.loaders.patch_manager import PatchManager
+    from axolotl.monkeypatch.models.recurrent_support import (
+        validate_recurrent_model_config,
+    )
 
     PatchManager.apply_pre_config_load_patches(cfg)
 
@@ -283,6 +286,7 @@ def normalize_config(cfg):
     )
 
     cfg.model_config_type = model_config.model_type
+    validate_recurrent_model_config(cfg)
 
     cfg.is_multimodal = (
         (resolved_support is not None and resolved_support.is_multimodal)

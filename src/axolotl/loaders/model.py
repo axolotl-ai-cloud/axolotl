@@ -54,7 +54,6 @@ from axolotl.loaders.utils import (
     materialize_trainable_meta_params,
 )
 from axolotl.model_support import get_model_support, resolve_model_support
-from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -1152,24 +1151,6 @@ class ModelLoader:
                 quantization_config=quantization_config,
             )
             skip_move_to_device = True
-        elif self.model_type == "MambaLMHeadModel":
-            if self.cfg.reinit_weights:
-                LOG.warning(
-                    "reinit_weights is not supported with MambaLMHeadModel. "
-                    "Loading from pretrained weights instead."
-                )
-            # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()
-
-            self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
-            self.model_kwargs["device"] = torch.cuda.current_device()
-            self.model_kwargs.pop("torch_dtype", None)
-            self.model_kwargs.pop("device_map", None)
-
-            self.model = MambaLMHeadModel.from_pretrained(
-                self.base_model,
-                **self.model_kwargs,
-            )
         else:
             # Please don't remove underscore binding without reading the fn docstring
             _ = self._configure_zero3_memory_efficient_loading()

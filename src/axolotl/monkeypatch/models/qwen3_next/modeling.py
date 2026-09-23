@@ -44,6 +44,22 @@ def get_cu_seqlens(position_ids):
     return cu_seq_lens_q
 
 
+def _causal_conv1d_dense(module, x, conv1d, activation):
+    """Causal conv over an unpacked ``[B, D, T]`` batch, mirroring the stock fallback order."""
+    weight = conv1d.weight.squeeze(1)
+    if getattr(module, "causal_conv1d_fn", None) is not None:
+        return module.causal_conv1d_fn(x, weight, conv1d.bias, activation=activation)
+    if fla_causal_conv1d is not None:
+        out, _ = fla_causal_conv1d(
+            x=x.transpose(1, 2),
+            weight=weight,
+            bias=conv1d.bias,
+            activation=activation,
+        )
+        return out.transpose(1, 2)
+    return F.silu(conv1d(x)[:, :, : x.shape[-1]])
+
+
 def patch_qwen3_next_decoder_layer():
     """Patch Qwen3NextDecoderLayer to pass position_ids to linear attention."""
     try:
@@ -206,11 +222,8 @@ def patch_qwen3_next_gateddelta_layer():
                     mixed_qkv, self.layer_idx, conv_kernel_size=self.conv_kernel_size
                 )
 
-            mixed_qkv = modeling.causal_conv1d_fn(
-                mixed_qkv,
-                self.conv1d.weight.squeeze(1),
-                self.conv1d.bias,
-                activation=self.activation,
+            mixed_qkv = _causal_conv1d_dense(
+                modeling, mixed_qkv, self.conv1d, self.activation
             )
 
             # Drop the additional previous states

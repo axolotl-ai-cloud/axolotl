@@ -419,3 +419,80 @@ def wrap_mamba_scan_for_cp(target_module):
 
     setattr(target_module, scan_attr, _cp_scan_wrapper)
     target_module._cp_scan_wrapped = True
+
+
+def patch_model_forward_seq_idx(model_cls) -> None:
+    """Inject ``seq_idx`` (from ``position_ids``) into ``model_cls.forward`` kwargs.
+
+    For architectures whose mixers already accept ``seq_idx`` through ``**kwargs``
+    but whose model forward never derives it, this is the only piece missing for
+    sample packing.
+    """
+    if getattr(model_cls.forward, "_axolotl_seq_idx_patch", False):
+        return
+
+    original_forward = model_cls.forward
+
+    @functools.wraps(original_forward)
+    def patched_forward(self, *args, **kwargs):
+        position_ids = kwargs.get("position_ids")
+        if position_ids is None and len(args) > 2:
+            position_ids = args[2]
+
+        past_key_values = kwargs.get("past_key_values")
+        if past_key_values is None and len(args) > 3:
+            past_key_values = args[3]
+
+        is_decoding = (
+            past_key_values is not None
+            and hasattr(past_key_values, "has_previous_state")
+            and past_key_values.has_previous_state
+        )
+
+        if position_ids is not None and not is_decoding and "seq_idx" not in kwargs:
+            kwargs["seq_idx"] = get_seq_idx(position_ids)
+
+        return original_forward(self, *args, **kwargs)
+
+    patched_forward._axolotl_seq_idx_patch = True
+    model_cls.forward = patched_forward
+
+
+def kernel_accepts(fn, name: str) -> bool | None:
+    """Whether a hub-wrapped kernel's live implementation takes ``name``.
+
+    transformers resolves the pip kernel at import time and filters kwargs to
+    its signature, so a torch fallback (which takes ``**kwargs``) drops
+    ``seq_idx`` without a word. Returns None when the wrapper cannot be
+    introspected (e.g. already replaced by a Hub kernel).
+    """
+    import inspect
+
+    try:
+        # kernels >= 0.16 turns a hub-decorated function into an nn.Module whose
+        # forward closes over the transformers wrapper
+        if not inspect.isroutine(fn) and hasattr(fn, "forward"):
+            fn = inspect.getclosurevars(fn.forward).nonlocals["func"]
+        implementation = inspect.getclosurevars(fn).nonlocals["implementation"]
+        return name in inspect.signature(implementation).parameters
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
+
+def require_seq_idx_kernels(mod, names, model_type: str, kernels_enabled: bool) -> None:
+    """Raise unless every kernel in ``names`` honours ``seq_idx`` (or Hub kernels will)."""
+    if kernels_enabled:
+        return
+    dropped = [
+        name
+        for name in names
+        if getattr(mod, name, None) is not None
+        and kernel_accepts(getattr(mod, name), "seq_idx") is False
+    ]
+    if dropped:
+        raise RuntimeError(
+            f"{model_type} sample packing requires kernels that take seq_idx, but "
+            f"{', '.join(dropped)} resolved to the transformers torch fallback, which "
+            "silently mixes state across packed samples. Install them (`pip install "
+            "mamba-ssm causal-conv1d`) or set `use_kernels: true`."
+        )
