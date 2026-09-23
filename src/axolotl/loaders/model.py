@@ -1073,10 +1073,6 @@ class ModelLoader:
         if self.cfg.load_in_4bit:
             patch_bnb_large_tensors()
         if uses_staged_nf4(self.cfg):
-            if getattr(self.model_config, "quantization_config", None):
-                raise ValueError(
-                    "CPU-staged NF4 requires an unquantized base checkpoint"
-                )
             self.model_kwargs["device_map"] = {"": "cpu"}
             if self.cfg.fsdp_config:
                 init_distributed_state()

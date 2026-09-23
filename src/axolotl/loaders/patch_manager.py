@@ -469,9 +469,12 @@ class PatchManager:
         from axolotl.loaders.model import should_skip_peft_embedding_upcast
 
         if should_skip_peft_embedding_upcast(self.cfg):
+            from axolotl.loaders.utils import get_linear_embedding_layers
             from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
 
-            patch_peft_prep_code()
+            patch_peft_prep_code(
+                get_linear_embedding_layers(self.cfg.model_config_type)
+            )
 
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""

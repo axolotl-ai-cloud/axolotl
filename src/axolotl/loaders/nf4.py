@@ -27,11 +27,88 @@ if TYPE_CHECKING:
 from axolotl.utils.nf4 import (
     BnbNF4Parametrization,
     checkpoint_nf4_linear,
+    prequantized_bnb_4bit,
     quantize_bnb_4bit,
     quantize_torchao_nf4,
 )
 
 LOG = get_logger(__name__)
+
+_CHECKPOINT_SETTINGS = (
+    "bnb_4bit_quant_type",
+    "bnb_4bit_use_double_quant",
+    "bnb_4bit_quant_storage",
+)
+
+
+def checkpoint_bnb_quantization(
+    model_config: "PretrainedConfig",
+    cfg: DictDefault,
+    dtype: "torch.dtype | str | None" = None,
+) -> dict | None:
+    """Resolve a base checkpoint's bitsandbytes 4-bit settings, rejecting other formats.
+
+    Returns:
+        The checkpoint's quantization settings, or None when it is unquantized.
+    """
+    quantization = getattr(model_config, "quantization_config", None)
+    if not quantization:
+        return None
+    if not isinstance(quantization, dict):
+        quantization = quantization.to_dict()
+    if quantization.get("quant_method") != "bitsandbytes" or not quantization.get(
+        "load_in_4bit"
+    ):
+        raise ValueError(
+            "CPU-staged NF4 loads unquantized checkpoints and bitsandbytes 4-bit "
+            f"checkpoints; this one is quantized with {quantization.get('quant_method')!r}"
+        )
+    if cfg.get("nf4_backend") == "torchao":
+        raise ValueError(
+            "The torchao NF4 backend cannot adopt a bitsandbytes 4-bit checkpoint; "
+            "use nf4_backend: bitsandbytes or an unquantized base model"
+        )
+    if cfg.quantize_moe_experts:
+        raise ValueError(
+            "quantize_moe_experts needs an unquantized base checkpoint; a bitsandbytes "
+            "4-bit checkpoint only carries quantized Linear weights"
+        )
+    _reject_reinterpreted_storage(quantization, dtype)
+    for key in _CHECKPOINT_SETTINGS:
+        requested = (cfg.bnb_config_kwargs or {}).get(key)
+        stored = quantization.get(key)
+        if requested is not None and str(requested).removeprefix("torch.") != str(
+            stored
+        ).removeprefix("torch."):
+            LOG.warning(
+                f"bnb_config_kwargs.{key}={requested!r} is ignored; the prequantized "
+                f"checkpoint was written with {stored!r}"
+            )
+    return quantization
+
+
+def _reject_reinterpreted_storage(
+    quantization: dict, dtype: "torch.dtype | str | None"
+) -> None:
+    # Transformers casts a prequantized weight whose key was not renamed to the compute
+    # dtype, which reinterprets packed nibbles held in a floating-point storage dtype
+    stored = str(quantization.get("bnb_4bit_quant_storage") or "uint8").removeprefix(
+        "torch."
+    )
+    storage_dtype = getattr(torch, stored, None)
+    requested = str(dtype).removeprefix("torch.")
+    if (
+        not isinstance(storage_dtype, torch.dtype)
+        or not storage_dtype.is_floating_point
+        or dtype is None
+        or requested in {"auto", "None", stored}
+    ):
+        return
+    raise ValueError(
+        f"the prequantized checkpoint packs its 4-bit weights as {stored} "
+        f"(bnb_4bit_quant_storage); training in {requested} reinterprets those bytes, "
+        f"so train in {stored} or requantize the base model"
+    )
 
 
 def load_nf4_model(
@@ -87,6 +164,9 @@ def _load_nf4_model(
     reset_moe_load_state()
 
     quantization = model_kwargs.pop("quantization_config", None)
+    checkpoint_bnb_quantization(
+        model_config, cfg, dtype=model_kwargs.get("dtype", cfg.torch_dtype)
+    )
     distributed = bool(cfg.fsdp_config)
     main = not distributed or dist.get_rank() == 0
 
@@ -215,6 +295,7 @@ def staged_nf4_loading(
 ) -> Iterator[None]:
     """Temporarily intercept Transformers loading to convert selected weights in chunks."""
     import transformers.core_model_loading as loading
+    import transformers.integrations as integrations
     import transformers.modeling_utils as modeling
 
     from axolotl.monkeypatch.moe_quant import record_quantized_expert
@@ -256,10 +337,18 @@ def staged_nf4_loading(
         if value.is_meta or not nf4_should_quantize(
             target_name, linear=linear, expert=expert, skips=skips
         ):
+            if not value.is_meta and getattr(value, "quant_state", None) is not None:
+                raise ValueError(
+                    f"{target_name} is already 4-bit in the checkpoint but excluded "
+                    "from NF4 conversion; its packed bytes cannot be restored to a "
+                    "full-precision weight"
+                )
             return
         if expert:
             record_quantized_expert(path, module)
-        if backend == "torchao":
+        if getattr(value, "quant_state", None) is not None:
+            data, transform = prequantized_bnb_4bit(value)
+        elif backend == "torchao":
             data, transform = quantize_torchao_nf4(
                 value, device=device, storage_device=storage
             )
@@ -293,6 +382,12 @@ def staged_nf4_loading(
             ),
             patch.object(loading, "set_param_for_module", set_param),
             patch.object(modeling, "caching_allocator_warmup", lambda *a, **k: None),
+            # a prequantized checkpoint registers a bitsandbytes quantizer; its Linear4bit
+            # modules would hold the packed bytes where the staged path needs a
+            # parametrized nn.Linear
+            patch.object(
+                integrations, "replace_with_bnb_linear", lambda model, *a, **k: model
+            ),
         ):
             yield
         complete = True
