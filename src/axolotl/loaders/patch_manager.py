@@ -584,6 +584,7 @@ class PatchManager:
 
         if packed_boundaries_needed:
             self._apply_linear_attention_packing_patches()
+            self._apply_ssm_packing_patches()
 
         # Patches requiring CUDA
         if torch.cuda.is_available():
@@ -677,6 +678,24 @@ class PatchManager:
         "lfm2_moe": ("transformers.models.lfm2_moe.modeling_lfm2_moe", "Lfm2MoeModel"),
         "bamba": ("transformers.models.bamba.modeling_bamba", "BambaModel"),
     }
+
+    _SSM_PACKING_PATCHES = {
+        "mamba": "patch_mamba_modeling_packing",
+        "mamba2": "patch_mamba2_modeling_packing",
+        "falcon_mamba": "patch_falcon_mamba_modeling_packing",
+    }
+
+    def _apply_ssm_packing_patches(self):
+        """Thread packed-document boundaries into the pure-SSM Mamba family."""
+        patch_name = self._SSM_PACKING_PATCHES.get(self.cfg.model_config_type)
+        if patch_name is None:
+            return
+
+        from axolotl.monkeypatch.models.mamba import modeling as mamba_modeling
+
+        getattr(mamba_modeling, patch_name)(
+            kernels_enabled=bool(getattr(self.cfg, "use_kernels", False))
+        )
 
     def _apply_linear_attention_packing_patches(self):
         """Thread packed-document boundaries into GatedDeltaNet / short-conv mixers.

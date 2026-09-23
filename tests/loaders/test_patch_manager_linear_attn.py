@@ -16,6 +16,12 @@ GDN_PATCHES = {
     "qwen3_5_moe_text": "axolotl.monkeypatch.models.qwen3_5.modeling.patch_qwen3_5_moe_modeling_packing",
 }
 
+SSM_PATCHES = {
+    "mamba": "patch_mamba_modeling_packing",
+    "mamba2": "patch_mamba2_modeling_packing",
+    "falcon_mamba": "patch_falcon_mamba_modeling_packing",
+}
+
 SEQ_IDX_INJECTED = {
     "lfm2": "Lfm2Model",
     "lfm2_moe": "Lfm2MoeModel",
@@ -85,3 +91,35 @@ def test_ssm_hybrid_patch_applies_for_context_parallel_without_packing(monkeypat
     _manager("falcon_h1", context_parallel_size=2)._apply_model_specific_patches()
 
     assert calls == ["falcon_h1"]
+
+
+@pytest.mark.parametrize("model_type,patch_name", SSM_PATCHES.items())
+@pytest.mark.parametrize("mode", ["sample_packing", "batch_flattening"])
+def test_pure_ssm_models_get_their_packing_patch(
+    monkeypatch, model_type, patch_name, mode
+):
+    calls = []
+    monkeypatch.setattr(
+        f"axolotl.monkeypatch.models.mamba.modeling.{patch_name}",
+        lambda kernels_enabled: calls.append((model_type, kernels_enabled)),
+    )
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    _manager(
+        model_type, use_kernels=True, **{mode: True}
+    )._apply_model_specific_patches()
+
+    assert calls == [(model_type, True)]
+
+
+@pytest.mark.parametrize("model_type,patch_name", SSM_PATCHES.items())
+def test_pure_ssm_patch_skipped_when_unpacked(monkeypatch, model_type, patch_name):
+    calls = []
+    monkeypatch.setattr(
+        f"axolotl.monkeypatch.models.mamba.modeling.{patch_name}",
+        lambda kernels_enabled: calls.append(model_type),
+    )
+
+    _manager(model_type)._apply_model_specific_patches()
+
+    assert calls == []

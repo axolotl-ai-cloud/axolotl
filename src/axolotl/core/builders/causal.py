@@ -155,7 +155,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
             if trainer_cls:
                 return trainer_cls
-        if self.cfg.model_config_type == "mamba":
+        if self.cfg.type_of_model == "MambaLMHeadModel":
             return AxolotlMambaTrainer
         if self.cfg.reward_model:
             return AxolotlRewardTrainer
@@ -481,7 +481,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ):
                 return None
 
-        if self.cfg.model_config_type == "mamba":
+        if self.cfg.type_of_model == "MambaLMHeadModel":
             return MambaDataCollator(tokenizer=self.tokenizer)
 
         use_batch_sampler_collator = False
