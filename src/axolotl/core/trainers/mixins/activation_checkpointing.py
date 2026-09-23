@@ -11,6 +11,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
 )
 from torch.distributed.fsdp.wrap import ModuleWrapPolicy
+from torch.distributed.tensor import DTensor
 from transformers import GradientCheckpointingLayer, Trainer
 from trl.models.activation_offloading import (
     NoOpManager,
@@ -59,6 +60,14 @@ def _patch_trl_offload_current_stream() -> None:
     )
 
 
+def _is_offload_parameter_view(tensor, parameter_storages) -> bool:
+    local = tensor._local_tensor if isinstance(tensor, DTensor) else tensor
+    try:
+        return local.untyped_storage().data_ptr() in parameter_storages
+    except (RuntimeError, AttributeError):
+        return False
+
+
 def _patch_trl_offload_compute_stream_clone() -> None:
     """Clone offset/non-contiguous saved tensors on the COMPUTE stream before TRL's pack hook.
 
@@ -88,6 +97,8 @@ def _patch_trl_offload_compute_stream_clone() -> None:
                 torch.is_tensor(tensor)
                 and tensor.device.type in ("cuda", "xpu", "npu")
                 and not isinstance(tensor, torch.nn.Parameter)
+                # Cloning a weight view would defeat TRL's parameter-storage filter.
+                and not _is_offload_parameter_view(tensor, self.param_storages)
                 and (not tensor.is_contiguous() or tensor.storage_offset() != 0)
             ):
                 tensor = tensor.clone(memory_format=torch.contiguous_format)
