@@ -1,5 +1,8 @@
 """Tests for phase-2 SAC CPU offload."""
 
+import contextlib
+from types import SimpleNamespace
+
 import pytest
 import torch
 import torch.nn.functional as F
@@ -7,6 +10,7 @@ from torch.utils.checkpoint import checkpoint
 
 from axolotl.monkeypatch.selective_checkpointing_offload import (
     SacOffloadEngine,
+    _OffloadRef,
     build_sac_offload_context_fn,
 )
 
@@ -97,3 +101,43 @@ class TestSacOffloadFunctional:
         assert engine.stats.restored_tensors == engine.stats.offloaded_tensors
         for g0, g1 in zip(baseline, grads, strict=True):
             torch.testing.assert_close(g0, g1)
+
+
+class TestSacOffloadRestore:
+    @pytest.mark.parametrize(
+        "make_view",
+        [lambda base: base[2:], lambda base: base[:, 2:]],
+        ids=["dense_offset", "gapped_stride_offset"],
+    )
+    def test_restore_rebases_offset_view(self, monkeypatch, make_view):
+        engine = SacOffloadEngine()
+        if not torch.cuda.is_available():
+            # the engine is CUDA-only; stub its stream plumbing to reach the restore body
+            monkeypatch.setattr(
+                torch.cuda, "stream", lambda _: contextlib.nullcontext()
+            )
+            monkeypatch.setattr(
+                engine, "s1", SimpleNamespace(record_event=lambda: None)
+            )
+
+        source = make_view(torch.arange(32, dtype=torch.float32).reshape(4, 8))
+        assert source.storage_offset() != 0
+
+        cpu_tensor = torch.empty_strided(
+            source.size(), source.stride(), dtype=source.dtype, device="cpu"
+        )
+        cpu_tensor.copy_(source)
+
+        ref = _OffloadRef(
+            region_id=0,
+            device=source.device,
+            size=source.size(),
+            stride=tuple(source.stride()),
+            buffer_key=engine._buffer_key(source),
+            cpu_tensor=cpu_tensor,
+        )
+        engine._start_restore(ref)
+
+        assert ref.gpu_tensor.storage_offset() == 0
+        assert ref.gpu_tensor.stride() == source.stride()
+        assert torch.equal(ref.gpu_tensor, source)
