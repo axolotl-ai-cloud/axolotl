@@ -16,11 +16,7 @@ GDN_PATCHES = {
     "qwen3_5_moe_text": "axolotl.monkeypatch.models.qwen3_5.modeling.patch_qwen3_5_moe_modeling_packing",
 }
 
-SSM_PATCHES = {
-    "mamba": "patch_mamba_modeling_packing",
-    "mamba2": "patch_mamba2_modeling_packing",
-    "falcon_mamba": "patch_falcon_mamba_modeling_packing",
-}
+SSM_PATCHES = {"mamba2": "patch_mamba2_modeling_packing"}
 
 SEQ_IDX_INJECTED = {
     "lfm2": "Lfm2Model",

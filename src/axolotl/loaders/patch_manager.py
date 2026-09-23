@@ -679,14 +679,10 @@ class PatchManager:
         "bamba": ("transformers.models.bamba.modeling_bamba", "BambaModel"),
     }
 
-    _SSM_PACKING_PATCHES = {
-        "mamba": "patch_mamba_modeling_packing",
-        "mamba2": "patch_mamba2_modeling_packing",
-        "falcon_mamba": "patch_falcon_mamba_modeling_packing",
-    }
+    _SSM_PACKING_PATCHES = {"mamba2": "patch_mamba2_modeling_packing"}
 
     def _apply_ssm_packing_patches(self):
-        """Thread packed-document boundaries into the pure-SSM Mamba family."""
+        """Thread packed-document boundaries into the pure-SSM Mamba2 model."""
         patch_name = self._SSM_PACKING_PATCHES.get(self.cfg.model_config_type)
         if patch_name is None:
             return

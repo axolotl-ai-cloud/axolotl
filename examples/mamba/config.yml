@@ -1,4 +1,4 @@
-base_model: state-spaces/mamba-2.8b-hf
+base_model: mistralai/Mamba-Codestral-7B-v0.1
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
@@ -10,7 +10,10 @@ val_set_size: 0.0
 output_dir: ./outputs/out
 
 sequence_len: 2048
-# packing needs the mamba-ssm and causal-conv1d kernels (pip install -e .[mamba-ssm])
+# packing needs Mamba2 kernels that take seq_idx: the HF Hub builds below, or
+# pip install -e .[mamba-ssm]. Mamba1 checkpoints (state-spaces/mamba-*-hf,
+# falcon-mamba) cannot pack.
+use_kernels: true
 sample_packing: true
 pad_to_sequence_len: true
 
