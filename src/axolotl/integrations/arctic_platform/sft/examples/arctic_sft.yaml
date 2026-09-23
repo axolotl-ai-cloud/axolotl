@@ -1,0 +1,55 @@
+# SFT via a remote Arctic Platform training server (ArcticSFTClient).
+#
+# The axolotl process itself needs no GPUs — all forward/backward/step work is
+# dispatched to the server. Colocate a local server on this box with
+# `launch_local_server: true` + `server_cuda_visible_devices`, or point
+# host/port at a server running elsewhere.
+#
+# Usage (colocated, CPU-only client):
+#   CUDA_VISIBLE_DEVICES= axolotl train \
+#     src/axolotl/integrations/arctic_platform/sft/examples/arctic_sft.yaml
+
+base_model: NousResearch/Llama-3.2-1B
+
+plugins:
+  - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
+
+arctic_sft:
+  host: localhost
+  port: 8765
+  training_gpus: 2
+  launch_local_server: true
+  server_cuda_visible_devices: "0,1"
+  # sft_ce + memory: tile hidden through the LM head (never materializes
+  # [B,S,V]). Peak-mem is the tile budget; unused if logits_optimization=none.
+  # Alternatives: none (full logits), compute (chunked softmax).
+  loss_fn: sft_ce
+  logits_optimization: memory
+  logits_optimization_peak_mem_size_in_gib: 4
+  checkpoint_path: /tmp/arctic-sft/server_ckpt
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    split: train[:64]
+    type: alpaca
+
+sequence_len: 256
+# Top-level only (same as native axolotl). Default FA2 if unset; use sdpa if FA unavailable.
+# Do not set bf16/fp16 here: the client is CPU-only (HF TrainingArguments would
+# reject bf16). The plugin always sends bf16 AMP to the AP server.
+attn_implementation: flash_attention_2
+
+# Standard training knobs — forwarded to the server optimizer.
+learning_rate: 1.0e-5
+adam_beta1: 0.9
+adam_beta2: 0.999
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+num_epochs: 1
+max_steps: 5
+micro_batch_size: 2            # must be a multiple of training_gpus
+gradient_accumulation_steps: 1
+logging_steps: 1
+
+output_dir: /tmp/arctic-sft
