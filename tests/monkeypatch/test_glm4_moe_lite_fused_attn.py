@@ -12,7 +12,7 @@ requires_cuda = pytest.mark.skipif(
 )
 
 
-def _config(interleave=True, q_rank=64):
+def _config(interleave=True, q_rank=64, v_head_dim=256):
     from transformers.models.glm4_moe_lite.configuration_glm4_moe_lite import (
         Glm4MoeLiteConfig,
     )
@@ -26,7 +26,7 @@ def _config(interleave=True, q_rank=64):
         kv_lora_rank=64,
         qk_nope_head_dim=192,
         qk_rope_head_dim=64,
-        v_head_dim=256,
+        v_head_dim=v_head_dim,
         rope_interleave=interleave,
         attention_dropout=0.0,
     )
@@ -44,8 +44,11 @@ def _relative_close(actual, expected):
 @requires_cuda
 @pytest.mark.parametrize("interleave", [False, True])
 @pytest.mark.parametrize("q_rank", [None, 64])
+@pytest.mark.parametrize("v_head_dim", [128, 256])
 @pytest.mark.parametrize("backend", ["sdpa", "kernels-community/flash-attn2@v3"])
-def test_attention_outputs_and_all_parameter_gradients(interleave, q_rank, backend):
+def test_attention_outputs_and_all_parameter_gradients(
+    interleave, q_rank, v_head_dim, backend
+):
     from transformers.models.glm4_moe_lite.modeling_glm4_moe_lite import (
         Glm4MoeLiteAttention,
         Glm4MoeLiteRotaryEmbedding,
@@ -58,7 +61,7 @@ def test_attention_outputs_and_all_parameter_gradients(interleave, q_rank, backe
 
         load_and_register_attn_kernel(backend)
     torch.manual_seed(42)
-    config = _config(interleave, q_rank)
+    config = _config(interleave, q_rank, v_head_dim)
     config._attn_implementation = backend
     original = Glm4MoeLiteAttention(config, 0).cuda().bfloat16()
     fused = copy.deepcopy(original)
