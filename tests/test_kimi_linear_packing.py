@@ -132,3 +132,40 @@ def test_decoder_layer_hands_position_ids_to_the_kda_branch():
     decoder(torch.randn(1, 4, HIDDEN), position_ids=position_ids)
 
     assert calls[0]["position_ids"] is position_ids
+
+
+def test_model_hands_position_ids_to_every_decoder_layer():
+    config = KimiLinearConfig(
+        vocab_size=64,
+        hidden_size=HIDDEN,
+        intermediate_size=HIDDEN,
+        num_hidden_layers=1,
+        num_attention_heads=HEADS,
+        linear_attn_config={
+            "short_conv_kernel_size": 4,
+            "head_dim": HEAD_DIM,
+            "num_heads": HEADS,
+            "kda_layers": [1],
+            "full_attn_layers": [],
+        },
+    )
+    model = modeling_kimi.KimiLinearModel(config).eval()
+    calls = []
+
+    class _Recorder(nn.Module):
+        is_linear_attn = True
+
+        def forward(self, hidden_states, **kwargs):
+            calls.append(kwargs)
+            return hidden_states
+
+    model.layers[0] = _Recorder()
+    position_ids = torch.tensor([[0, 1, 2, 0, 1]])
+
+    model(
+        input_ids=torch.randint(0, 64, (1, 5)),
+        position_ids=position_ids,
+        use_cache=False,
+    )
+
+    assert calls[0]["position_ids"] is position_ids

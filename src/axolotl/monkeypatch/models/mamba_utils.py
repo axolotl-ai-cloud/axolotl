@@ -456,3 +456,39 @@ def patch_model_forward_seq_idx(model_cls) -> None:
 
     patched_forward._axolotl_seq_idx_patch = True
     model_cls.forward = patched_forward
+
+
+def kernel_accepts(fn, name: str) -> bool | None:
+    """Whether a hub-wrapped kernel's live implementation takes ``name``.
+
+    transformers resolves the pip kernel at import time and filters kwargs to
+    its signature, so a torch fallback (which takes ``**kwargs``) drops
+    ``seq_idx`` without a word. Returns None when the wrapper cannot be
+    introspected (e.g. already replaced by a Hub kernel).
+    """
+    import inspect
+
+    try:
+        implementation = inspect.getclosurevars(fn).nonlocals["implementation"]
+        return name in inspect.signature(implementation).parameters
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
+
+def require_seq_idx_kernels(mod, names, model_type: str, kernels_enabled: bool) -> None:
+    """Raise unless every kernel in ``names`` honours ``seq_idx`` (or Hub kernels will)."""
+    if kernels_enabled:
+        return
+    dropped = [
+        name
+        for name in names
+        if getattr(mod, name, None) is not None
+        and kernel_accepts(getattr(mod, name), "seq_idx") is False
+    ]
+    if dropped:
+        raise RuntimeError(
+            f"{model_type} sample packing requires kernels that take seq_idx, but "
+            f"{', '.join(dropped)} resolved to the transformers torch fallback, which "
+            "silently mixes state across packed samples. Install them (`pip install "
+            "mamba-ssm causal-conv1d`) or set `use_kernels: true`."
+        )

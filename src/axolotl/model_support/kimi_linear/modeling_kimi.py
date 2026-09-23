@@ -5,6 +5,7 @@ Source: https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/main
 Revision: 6e163f3
 """
 
+import inspect
 import math
 from collections.abc import Callable
 from typing import Any, List, Optional, Tuple, Union
@@ -57,6 +58,8 @@ assert version.parse(transformers.__version__) >= version.parse("4.56.0"), (
 )
 
 logger = logging.get_logger(__name__)
+
+_CREATE_CAUSAL_MASK_PARAMS = frozenset(inspect.signature(create_causal_mask).parameters)
 
 
 def load_balancing_loss_func(
@@ -1252,13 +1255,18 @@ class KimiLinearModel(KimiPreTrainedModel):
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
+        # transformers 5.15 renamed input_embeds and dropped cache_position
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "input_embeds": inputs_embeds,
+            "attention_mask": attention_mask,
+            "cache_position": cache_position,
+            "past_key_values": past_key_values,
+            "position_ids": position_ids,
+        }
         causal_mask = create_causal_mask(
-            config=self.config,
-            input_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            past_key_values=past_key_values,
-            position_ids=position_ids,
+            **{k: v for k, v in mask_kwargs.items() if k in _CREATE_CAUSAL_MASK_PARAMS}
         )
         linear_attn_mask = self._update_linear_attn_mask(attention_mask, cache_position)
 
@@ -1274,6 +1282,7 @@ class KimiLinearModel(KimiPreTrainedModel):
             hidden_states = decoder_layer(
                 hidden_states,
                 attention_mask=layer_mask,
+                position_ids=position_ids,
                 past_key_values=past_key_values,
                 cache_position=cache_position,
                 **kwargs,

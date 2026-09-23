@@ -697,6 +697,13 @@ class PatchManager:
             kernels_enabled=bool(getattr(self.cfg, "use_kernels", False))
         )
 
+    # hub-wrapped kernels that must take seq_idx for the injection to mean anything
+    _SEQ_IDX_KERNELS = (
+        "causal_conv1d_fn",
+        "mamba2_split_conv1d_scan_combined",
+        "mamba2_chunk_scan",
+    )
+
     def _apply_linear_attention_packing_patches(self):
         """Thread packed-document boundaries into GatedDeltaNet / short-conv mixers.
 
@@ -733,11 +740,18 @@ class PatchManager:
 
             from axolotl.monkeypatch.models.mamba_utils import (
                 patch_model_forward_seq_idx,
+                require_seq_idx_kernels,
             )
 
             module_name, cls_name = self._SEQ_IDX_INJECTED_MODELS[model_type]
-            model_cls = getattr(importlib.import_module(module_name), cls_name)
-            patch_model_forward_seq_idx(model_cls)
+            module = importlib.import_module(module_name)
+            require_seq_idx_kernels(
+                module,
+                self._SEQ_IDX_KERNELS,
+                model_type,
+                bool(getattr(self.cfg, "use_kernels", False)),
+            )
+            patch_model_forward_seq_idx(getattr(module, cls_name))
             LOG.info("Applied %s sample packing patch (seq_idx injection)", model_type)
 
     @staticmethod

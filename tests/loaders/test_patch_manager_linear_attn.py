@@ -75,10 +75,37 @@ def test_seq_idx_injected_for_short_conv_and_mamba2_models(
         "axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx",
         lambda cls: patched.append(cls.__name__),
     )
+    monkeypatch.setattr(
+        "axolotl.monkeypatch.models.mamba_utils.require_seq_idx_kernels",
+        lambda *args, **kwargs: None,
+    )
 
     _manager(model_type, sample_packing=True)._apply_model_specific_patches()
 
     assert patched == [cls_name]
+
+
+@pytest.mark.parametrize("model_type", sorted(SEQ_IDX_INJECTED))
+def test_seq_idx_injection_fails_closed_on_torch_fallback_kernels(
+    monkeypatch, model_type
+):
+    modeling = pytest.importorskip(
+        f"transformers.models.{model_type}.modeling_{model_type}"
+    )
+    from axolotl.monkeypatch.models.mamba_utils import kernel_accepts
+
+    if kernel_accepts(modeling.causal_conv1d_fn, "seq_idx") is not False:
+        pytest.skip("boundary-aware conv kernel installed")
+    monkeypatch.setattr(
+        "axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx",
+        lambda cls: None,
+    )
+
+    with pytest.raises(RuntimeError, match="use_kernels"):
+        _manager(model_type, sample_packing=True)._apply_model_specific_patches()
+    _manager(
+        model_type, sample_packing=True, use_kernels=True
+    )._apply_model_specific_patches()
 
 
 def test_ssm_hybrid_patch_applies_for_context_parallel_without_packing(monkeypatch):
