@@ -543,8 +543,14 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
+        # packed rows (multipack) and flattened batches both mark document
+        # boundaries with position_ids restarting at 0; recurrent mixers need
+        # that threaded into their kernels as seq_idx / cu_seqlens.
+        packed_boundaries_needed = bool(
+            self.cfg.sample_packing or getattr(self.cfg, "batch_flattening", False)
+        )
         ssm_hybrid_patch_needed = (
-            self.cfg.sample_packing or self.cfg.context_parallel_size > 1
+            packed_boundaries_needed or self.cfg.context_parallel_size > 1
         )
 
         if self.cfg.model_config_type == "nemotron_h":
@@ -576,35 +582,11 @@ class PatchManager:
 
             patch_granitemoehybrid_modeling_packing()
 
+        if packed_boundaries_needed:
+            self._apply_linear_attention_packing_patches()
+
         # Patches requiring CUDA
         if torch.cuda.is_available():
-            if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
-                from axolotl.monkeypatch.models.qwen3_next.modeling import (
-                    patch_qwen3_next_modeling_packing,
-                )
-
-                patch_qwen3_next_modeling_packing()
-
-            if (
-                self.cfg.model_config_type in ("qwen3_5", "qwen3_5_text")
-                and self.cfg.sample_packing
-            ):
-                from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                    patch_qwen3_5_modeling_packing,
-                )
-
-                patch_qwen3_5_modeling_packing()
-
-            if (
-                self.cfg.model_config_type in ("qwen3_5_moe", "qwen3_5_moe_text")
-                and self.cfg.sample_packing
-            ):
-                from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                    patch_qwen3_5_moe_modeling_packing,
-                )
-
-                patch_qwen3_5_moe_modeling_packing()
-
             if (
                 self.cfg.model_config_type in ["qwen3_5", "qwen3_5_moe"]
                 and self.cfg.is_multimodal
@@ -687,6 +669,57 @@ class PatchManager:
                 )
 
                 patch_qwen3_5_moe_fused_attn()
+
+    # model types whose mixers accept seq_idx through kwargs but whose model
+    # forward never derives it from position_ids
+    _SEQ_IDX_INJECTED_MODELS = {
+        "lfm2": ("transformers.models.lfm2.modeling_lfm2", "Lfm2Model"),
+        "lfm2_moe": ("transformers.models.lfm2_moe.modeling_lfm2_moe", "Lfm2MoeModel"),
+        "bamba": ("transformers.models.bamba.modeling_bamba", "BambaModel"),
+    }
+
+    def _apply_linear_attention_packing_patches(self):
+        """Thread packed-document boundaries into GatedDeltaNet / short-conv mixers.
+
+        Applied whenever position_ids carry document boundaries (sample packing
+        or batch flattening), and regardless of CUDA availability: the patched
+        forwards raise if the varlen kernels are missing, which beats the stock
+        forwards silently mixing state across documents.
+        """
+        model_type = self.cfg.model_config_type
+
+        if model_type == "qwen3_next":
+            from axolotl.monkeypatch.models.qwen3_next.modeling import (
+                patch_qwen3_next_modeling_packing,
+            )
+
+            patch_qwen3_next_modeling_packing()
+
+        if model_type in ("qwen3_5", "qwen3_5_text"):
+            from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                patch_qwen3_5_modeling_packing,
+            )
+
+            patch_qwen3_5_modeling_packing()
+
+        if model_type in ("qwen3_5_moe", "qwen3_5_moe_text"):
+            from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                patch_qwen3_5_moe_modeling_packing,
+            )
+
+            patch_qwen3_5_moe_modeling_packing()
+
+        if model_type in self._SEQ_IDX_INJECTED_MODELS:
+            import importlib
+
+            from axolotl.monkeypatch.models.mamba_utils import (
+                patch_model_forward_seq_idx,
+            )
+
+            module_name, cls_name = self._SEQ_IDX_INJECTED_MODELS[model_type]
+            model_cls = getattr(importlib.import_module(module_name), cls_name)
+            patch_model_forward_seq_idx(model_cls)
+            LOG.info("Applied %s sample packing patch (seq_idx injection)", model_type)
 
     @staticmethod
     def _fix_nemotron_h_conversion_mapping():

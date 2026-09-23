@@ -419,3 +419,40 @@ def wrap_mamba_scan_for_cp(target_module):
 
     setattr(target_module, scan_attr, _cp_scan_wrapper)
     target_module._cp_scan_wrapped = True
+
+
+def patch_model_forward_seq_idx(model_cls) -> None:
+    """Inject ``seq_idx`` (from ``position_ids``) into ``model_cls.forward`` kwargs.
+
+    For architectures whose mixers already accept ``seq_idx`` through ``**kwargs``
+    but whose model forward never derives it, this is the only piece missing for
+    sample packing.
+    """
+    if getattr(model_cls.forward, "_axolotl_seq_idx_patch", False):
+        return
+
+    original_forward = model_cls.forward
+
+    @functools.wraps(original_forward)
+    def patched_forward(self, *args, **kwargs):
+        position_ids = kwargs.get("position_ids")
+        if position_ids is None and len(args) > 2:
+            position_ids = args[2]
+
+        past_key_values = kwargs.get("past_key_values")
+        if past_key_values is None and len(args) > 3:
+            past_key_values = args[3]
+
+        is_decoding = (
+            past_key_values is not None
+            and hasattr(past_key_values, "has_previous_state")
+            and past_key_values.has_previous_state
+        )
+
+        if position_ids is not None and not is_decoding and "seq_idx" not in kwargs:
+            kwargs["seq_idx"] = get_seq_idx(position_ids)
+
+        return original_forward(self, *args, **kwargs)
+
+    patched_forward._axolotl_seq_idx_patch = True
+    model_cls.forward = patched_forward
