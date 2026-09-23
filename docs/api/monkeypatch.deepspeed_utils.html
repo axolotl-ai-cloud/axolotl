@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -915,6 +915,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.deepspeed_utils.apply_deepspeed_patches" id="toc-axolotl.monkeypatch.deepspeed_utils.apply_deepspeed_patches" class="nav-link" data-scroll-target="#axolotl.monkeypatch.deepspeed_utils.apply_deepspeed_patches">apply_deepspeed_patches</a></li>
   <li><a href="#axolotl.monkeypatch.deepspeed_utils.patch_checkpoint_wrapper_setattr" id="toc-axolotl.monkeypatch.deepspeed_utils.patch_checkpoint_wrapper_setattr" class="nav-link" data-scroll-target="#axolotl.monkeypatch.deepspeed_utils.patch_checkpoint_wrapper_setattr">patch_checkpoint_wrapper_setattr</a></li>
+  <li><a href="#axolotl.monkeypatch.deepspeed_utils.patch_zero_gradient_accumulation_dtype" id="toc-axolotl.monkeypatch.deepspeed_utils.patch_zero_gradient_accumulation_dtype" class="nav-link" data-scroll-target="#axolotl.monkeypatch.deepspeed_utils.patch_zero_gradient_accumulation_dtype">patch_zero_gradient_accumulation_dtype</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -947,6 +948,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.monkeypatch.deepspeed_utils.patch_checkpoint_wrapper_setattr">patch_checkpoint_wrapper_setattr</a></td>
 <td>Patch CheckpointWrapper to properly forward DeepSpeed attributes to wrapped modules.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.deepspeed_utils.patch_zero_gradient_accumulation_dtype">patch_zero_gradient_accumulation_dtype</a></td>
+<td>Preserve requested FP32 ZeRO reduction and accumulation buffers.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.monkeypatch.deepspeed_utils.apply_deepspeed_patches" class="level3">
@@ -969,6 +974,11 @@ ZeRO-3 to fail when gradient checkpointing is enabled.</p>
 - https://github.com/deepspeedai/DeepSpeed/issues/7203
 - https://github.com/deepspeedai/DeepSpeed/blob/38d1a9eb64c9e01e32eccc50b25ba18925287441/deepspeed/runtime/zero/parameter_offload.py#L424-L458
 - https://github.com/axolotl-ai-cloud/axolotl/pull/3102</p>
+</section>
+<section id="axolotl.monkeypatch.deepspeed_utils.patch_zero_gradient_accumulation_dtype" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.deepspeed_utils.patch_zero_gradient_accumulation_dtype">patch_zero_gradient_accumulation_dtype</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.deepspeed_utils.patch_zero_gradient_accumulation_dtype()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Preserve requested FP32 ZeRO reduction and accumulation buffers.</p>
 
 
 </section>

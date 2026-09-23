@@ -81,7 +81,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -916,7 +916,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#merge-aware-training-nvfp4_merge_aware" id="toc-merge-aware-training-nvfp4_merge_aware" class="nav-link" data-scroll-target="#merge-aware-training-nvfp4_merge_aware">Merge-aware training (<code>nvfp4_merge_aware</code>)</a></li>
   <li><a href="#merging-without-merge-aware-training" id="toc-merging-without-merge-aware-training" class="nav-link" data-scroll-target="#merging-without-merge-aware-training">Merging without merge-aware training</a></li>
   </ul></li>
-  <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See also</a></li>
+  <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See also</a>
+  <ul class="collapse">
+  <li><a href="#dense-lora-kernels-with-merge-aware-training" id="toc-dense-lora-kernels-with-merge-aware-training" class="nav-link" data-scroll-target="#dense-lora-kernels-with-merge-aware-training">Dense LoRA kernels with merge-aware training</a></li>
+  <li><a href="#which-nvfp4-loading-path-is-supported" id="toc-which-nvfp4-loading-path-is-supported" class="nav-link" data-scroll-target="#which-nvfp4-loading-path-is-supported">Which NVFP4 loading path is supported?</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -1034,11 +1038,11 @@ Important
 </div>
 <p>Constraints:</p>
 <ul>
-<li>Requires <code>use_sonicmoe: true</code> and <code>adapter: lora</code> (enforced at config validation). ScatterMoE is not supported.</li>
-<li>Incompatible with the fused LoRA kernels (<code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>, <code>lora_mlp_kernel</code>): they bypass <code>lora.Linear.forward</code>, silently skipping the fake-quant. Axolotl does not auto-enable them under this flag and rejects the explicit combination.</li>
+<li>Requires <code>use_sonicmoe: true</code> and either <code>adapter: lora</code> or <code>adapter: multilora</code> (enforced at config validation). ScatterMoE is not supported.</li>
+<li>Dense LoRA kernels (<code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>, <code>lora_mlp_kernel</code>) are opt-in with merge-aware training. Protected projections use their original forward so fake quantization is preserved; other projections can use optimized kernels.</li>
 <li>DoRA modules are skipped with a warning.</li>
 <li>Single-node only: under FSDP, ranks that load on the meta device cannot capture the base scale grid.</li>
-<li>Step-time overhead is roughly 1.3x versus plain NVFP4 LoRA (fake-quant plus losing the fused LoRA kernels); peak memory is unchanged.</li>
+<li>Fake quantization adds work to each protected projection. The opt-in kernel dispatch has not yet been benchmarked on a full NVFP4 training run; measure throughput and memory for your configuration.</li>
 </ul>
 <p>On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter’s improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.</p>
 </section>
@@ -1058,8 +1062,54 @@ Important
 <li><a href="../docs/expert_quantization.html">MoE expert quantization</a> for on-load quantization of bf16 checkpoints</li>
 <li><a href="../docs/quantize.html">Quantization with torchao</a> and <a href="../docs/qat.html">QAT</a> for producing quantized checkpoints</li>
 </ul>
+<section id="dense-lora-kernels-with-merge-aware-training" class="level3">
+<h3 class="anchored" data-anchor-id="dense-lora-kernels-with-merge-aware-training">Dense LoRA kernels with merge-aware training</h3>
+<p><code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>, and <code>lora_mlp_kernel</code> may be enabled
+explicitly with <code>nvfp4_merge_aware</code>. They remain opt-in. Projections carrying
+merge-aware forward hooks retain their fake-quantized forward and STE gradients;
+ordinary projections still use optimized LoRA kernels. A fused group containing
+a merge-aware projection dispatches its projections individually. Routed experts
+continue to use the SonicMoE merge-aware path.</p>
+<p>This avoids bypassing fake quantization; it does not turn the snapped effective
+weight into an ordinary low-rank update or guarantee a speedup. Benchmark the
+mixture of quantized and unquantized projections in the actual checkpoint.</p>
+<p>Native weight-only torchao <code>NVFP4Tensor</code> dense weights retain the <strong>base layer’s</strong> forward and
+autograd, while a custom LoRA delta function fuses adapter output addition and
+computes input/A/B gradients. FP32 adapter parameters retain FP32 reduction outputs
+without full-size FP32 activation copies. Native SwiGLU/GEGLU MLPs also use fused
+activation forward/backward kernels. This optimizes the adapter side; it does not
+replace the NVFP4 base kernel. DoRA, merged/disabled adapters, and multiple active
+PEFT adapters retain PEFT’s forward. Expert kernels are unchanged.</p>
+<p>Dynamic NVFP4 activation quantization is rejected by the LoRA kernel path because
+torchao’s activation conversion does not retain the base input gradient. Use
+weight-only NVFP4 bases for training with these kernels.</p>
+</section>
+<section id="which-nvfp4-loading-path-is-supported" class="level3">
+<h3 class="anchored" data-anchor-id="which-nvfp4-loading-path-is-supported">Which NVFP4 loading path is supported?</h3>
+<ul>
+<li>With <code>plugins: [axolotl.integrations.kernels.KernelsPlugin]</code> and
+<code>use_sonicmoe: true</code> or <code>use_scattermoe: true</code>, ModelOpt NVFP4/MIXED_PRECISION
+checkpoints retain packed routed experts, while attention/shared linears load
+as BF16. Their checkpoint <code>input_scale</code> is deliberately discarded for training.
+The ordinary dense LoRA kernels apply; <code>nvfp4_merge_aware: true</code> additionally
+preserves the snapped effective-weight objective on marked projections.</li>
+<li>Axolotl’s <code>axolotl quantize</code> NVFP4 weight configuration produces TorchAO
+<code>NVFP4WeightOnlyConfig</code> checkpoints. Load that saved checkpoint as <code>base_model</code>,
+set <code>adapter: lora</code>, and enable <code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>, and
+<code>lora_mlp_kernel</code> for the optimized native weight-only adapter path.</li>
+<li><code>dsv4_fp4_grouped_mode: nvfp4</code> controls routed-expert activation quantization
+inside the existing MoE backend; it is separate from native dense activation
+quantization and retains that backend’s training gradient convention.</li>
+<li>Gemma’s <code>nonexpert_quantization: nvfp4</code> uses frozen Marlin W4A16 non-expert
+modules for an experts-only LoRA configuration. It does not attach dense PEFT
+adapters and is outside the native TorchAO dense LoRA path above.</li>
+</ul>
+<p>Externally supplied TorchAO checkpoints with dynamic NVFP4 activation quantization
+are outside these supported dense training paths. No new straight-through
+activation-gradient convention is introduced by the LoRA kernel options.</p>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
