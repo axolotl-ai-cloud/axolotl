@@ -10,9 +10,9 @@ val_set_size: 0.0
 output_dir: ./outputs/out
 
 sequence_len: 2048
-# packing needs Mamba2 kernels that take seq_idx: the HF Hub builds below, or
-# pip install -e .[mamba-ssm]. Mamba1 checkpoints (state-spaces/mamba-*-hf,
-# falcon-mamba) cannot pack.
+# Mamba2 packing needs kernels that take seq_idx: the HF Hub builds below, or
+# pip install -e .[mamba-ssm]. Mamba1 (state-spaces/mamba-*-hf, falcon-mamba)
+# packs on the torch fallbacks with no kernels at all.
 use_kernels: true
 sample_packing: true
 pad_to_sequence_len: true

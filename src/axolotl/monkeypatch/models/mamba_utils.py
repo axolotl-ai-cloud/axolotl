@@ -464,7 +464,9 @@ def kernel_accepts(fn, name: str) -> bool | None:
     transformers resolves the pip kernel at import time and filters kwargs to
     its signature, so a torch fallback (which takes ``**kwargs``) drops
     ``seq_idx`` without a word. Once kernelize has swapped in a Hub kernel, its
-    own signature is checked instead. Returns None when nothing can be told.
+    own signature is checked instead; the Hub layers declare ``**kwargs`` and pop
+    the name inside, so their source is searched. Returns None when nothing can
+    be told.
     """
     import inspect
 
@@ -479,8 +481,12 @@ def kernel_accepts(fn, name: str) -> bool | None:
                 params = inspect.signature(forward).parameters
                 if name in params:
                     return True
-                takes_kwargs = any(p.kind is p.VAR_KEYWORD for p in params.values())
-                return None if takes_kwargs else False
+                if not any(p.kind is p.VAR_KEYWORD for p in params.values()):
+                    return False
+                try:
+                    return True if name in inspect.getsource(forward) else None
+                except (OSError, TypeError):
+                    return None
         implementation = inspect.getclosurevars(fn).nonlocals["implementation"]
         return name in inspect.signature(implementation).parameters
     except Exception:  # pylint: disable=broad-exception-caught
