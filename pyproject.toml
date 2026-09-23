@@ -167,6 +167,7 @@ test = [
 axolotl = "axolotl.cli.main:main"
 
 [project.entry-points."axolotl.cloud_providers"]
+nebius = "axolotl.integrations.nebius.cloud:NebiusCloud"
 modal = "axolotl.integrations.modal.cloud:ModalCloud"
 baseten = "axolotl.integrations.baseten.cloud:BasetenCloud"
 

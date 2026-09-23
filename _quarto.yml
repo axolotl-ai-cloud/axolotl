@@ -513,6 +513,7 @@ website:
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
             - docs/skypilot.qmd
+            - docs/nebius-serverless.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 
