@@ -760,7 +760,8 @@ def _dequant_nvfp4(w, scale, scale2, dev: str) -> torch.Tensor:
 
     wt = w.to(dev)
     st = scale.to(dev)
-    p = scale2.to(dev).float().reshape(()) if scale2 is not None else None
+    # A scalar FP32 tensor would leave BF16 block scales in BF16 during multiplication.
+    p = scale2.to(dev).float().reshape(1, 1, 1) if scale2 is not None else None
     *lead, N, K = wt.shape
     # a padded swizzled scale has more elements than the plain block-16 grid; torchao must unswizzle it
     expect = 1

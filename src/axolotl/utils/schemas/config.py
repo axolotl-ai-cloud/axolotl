@@ -1947,14 +1947,21 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
+    def check_lora_fp32_gradients(cls, data):
+        if data.get("lora_fp32_gradients"):
+            if data.get("adapter") not in ("lora", "qlora", "multilora"):
+                raise ValueError("lora_fp32_gradients requires a LoRA adapter")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_auto_enable_lora_kernels(cls, data):
         # Only proceed if using LoRA or QLoRA adapter
         if data.get("rl"):
             # RL trainers not tested so don't enable kernels by default
             return data
         if data.get("nvfp4_merge_aware"):
-            # fused LoRA kernels bypass lora.Linear.forward, so NVFP4 non-expert
-            # projections would train un-snapped and the merge identity is void
+            # Keep merge-aware kernel selection opt-in until its overhead is benchmarked.
             return data
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set or using 8-bit

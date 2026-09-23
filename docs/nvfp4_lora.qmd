@@ -80,11 +80,11 @@ With `nvfp4_merge_aware`, the **merged checkpoint is the trained model**; the ra
 
 Constraints:
 
-- Requires `use_sonicmoe: true` and `adapter: lora` (enforced at config validation). ScatterMoE is not supported.
-- Incompatible with the fused LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`): they bypass `lora.Linear.forward`, silently skipping the fake-quant. Axolotl does not auto-enable them under this flag and rejects the explicit combination.
+- Requires `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora` (enforced at config validation). ScatterMoE is not supported.
+- Dense LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`) are opt-in with merge-aware training. Protected projections use their original forward so fake quantization is preserved; other projections can use optimized kernels.
 - DoRA modules are skipped with a warning.
 - Single-node only: under FSDP, ranks that load on the meta device cannot capture the base scale grid.
-- Step-time overhead is roughly 1.3x versus plain NVFP4 LoRA (fake-quant plus losing the fused LoRA kernels); peak memory is unchanged.
+- Fake quantization adds work to each protected projection. The opt-in kernel dispatch has not yet been benchmarked on a full NVFP4 training run; measure throughput and memory for your configuration.
 
 On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter's improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.
 
@@ -100,3 +100,51 @@ For adapters trained without the flag, the format-preserving merge reuses the ba
 - [Expert kernels](optimizations.qmd#expert-kernels) for SonicMoE/ScatterMoE details
 - [MoE expert quantization](expert_quantization.qmd) for on-load quantization of bf16 checkpoints
 - [Quantization with torchao](quantize.qmd) and [QAT](qat.qmd) for producing quantized checkpoints
+
+### Dense LoRA kernels with merge-aware training
+
+`lora_qkv_kernel`, `lora_o_kernel`, and `lora_mlp_kernel` may be enabled
+explicitly with `nvfp4_merge_aware`. They remain opt-in. Projections carrying
+merge-aware forward hooks retain their fake-quantized forward and STE gradients;
+ordinary projections still use optimized LoRA kernels. A fused group containing
+a merge-aware projection dispatches its projections individually. Routed experts
+continue to use the SonicMoE merge-aware path.
+
+This avoids bypassing fake quantization; it does not turn the snapped effective
+weight into an ordinary low-rank update or guarantee a speedup. Benchmark the
+mixture of quantized and unquantized projections in the actual checkpoint.
+
+Native weight-only torchao `NVFP4Tensor` dense weights retain the **base layer's** forward and
+autograd, while a custom LoRA delta function fuses adapter output addition and
+computes input/A/B gradients. FP32 adapter parameters retain FP32 reduction outputs
+without full-size FP32 activation copies. Native SwiGLU/GEGLU MLPs also use fused
+activation forward/backward kernels. This optimizes the adapter side; it does not
+replace the NVFP4 base kernel. DoRA, merged/disabled adapters, and multiple active
+PEFT adapters retain PEFT's forward. Expert kernels are unchanged.
+
+Dynamic NVFP4 activation quantization is rejected by the LoRA kernel path because
+torchao's activation conversion does not retain the base input gradient. Use
+weight-only NVFP4 bases for training with these kernels.
+
+### Which NVFP4 loading path is supported?
+
+- With `plugins: [axolotl.integrations.kernels.KernelsPlugin]` and
+  `use_sonicmoe: true` or `use_scattermoe: true`, ModelOpt NVFP4/MIXED_PRECISION
+  checkpoints retain packed routed experts, while attention/shared linears load
+  as BF16. Their checkpoint `input_scale` is deliberately discarded for training.
+  The ordinary dense LoRA kernels apply; `nvfp4_merge_aware: true` additionally
+  preserves the snapped effective-weight objective on marked projections.
+- Axolotl's `axolotl quantize` NVFP4 weight configuration produces TorchAO
+  `NVFP4WeightOnlyConfig` checkpoints. Load that saved checkpoint as `base_model`,
+  set `adapter: lora`, and enable `lora_qkv_kernel`, `lora_o_kernel`, and
+  `lora_mlp_kernel` for the optimized native weight-only adapter path.
+- `dsv4_fp4_grouped_mode: nvfp4` controls routed-expert activation quantization
+  inside the existing MoE backend; it is separate from native dense activation
+  quantization and retains that backend's training gradient convention.
+- Gemma's `nonexpert_quantization: nvfp4` uses frozen Marlin W4A16 non-expert
+  modules for an experts-only LoRA configuration. It does not attach dense PEFT
+  adapters and is outside the native TorchAO dense LoRA path above.
+
+Externally supplied TorchAO checkpoints with dynamic NVFP4 activation quantization
+are outside these supported dense training paths. No new straight-through
+activation-gradient convention is introduced by the LoRA kernel options.

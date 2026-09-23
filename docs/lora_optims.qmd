@@ -138,3 +138,78 @@ computation path.
 - Support for additional model architectures
 - Support for dropout and bias
 - Additional operator fusions
+
+
+## FP32 LoRA gradients
+
+```yaml
+adapter: lora  # also supported with qlora
+bf16: true
+lora_fp32_gradients: true
+```
+
+On single-device, DDP, and FSDP2 training, this opt-in setting keeps trainable LoRA
+parameters and their accumulated gradients in FP32. PyTorch requires a parameter
+and its `.grad` to have the same dtype. DeepSpeed instead uses native FP32 master
+gradients and accumulation buffers, described below.
+Frozen base weights and unrelated trainable tensors retain their existing dtype.
+It applies to newly initialized and loaded adapters, overrides adapter downcasting,
+and defaults to `false` so existing parameter-storage choices stay unchanged.
+
+Dense fused QKV, QK, output, gated-MLP, and GatedDeltaNet projection kernels now
+retain FP32 parameter-gradient reduction outputs whenever their original LoRA
+parameters are FP32, including adapters already upcast by PEFT. CUDA uses BF16/FP16
+GEMM inputs with FP32 outputs, avoiding full-size FP32 activation copies. Embedding
+backward already accumulates in FP32. Low-rank intermediates, activation derivatives,
+and forward outputs still use their compute dtype; this reduces rounding but does
+not make fused and unfused implementations bit-identical. Merge-aware NVFP4
+projections continue through their protected forward to preserve fake quantization.
+Native weight-only torchao `NVFP4Tensor` base layers retain their quantized forward/autograd,
+while adapter output addition and input/A/B gradients use a custom LoRA delta
+function. Dense SwiGLU/GEGLU activations use fused forward/backward kernels.
+Nemotron-H dense/shared ReLU² MLPs use optimized up/down LoRA projections and a
+fused ReLU² activation derivative. Routed 3D expert tensors stay with their MoE
+backend; these dense kernels do not optimize routed experts.
+
+The setting supports single-device/DDP, FSDP2, and DeepSpeed ZeRO. For FSDP2,
+Axolotl preserves the loaded parameter dtypes (`param_dtype: null`) and selects
+FP32 gradient reduction (`reduce_dtype: float32`). Frozen base weights remain in
+their loaded precision; LoRA parameters stay FP32 through unsharding. Normal BF16
+training/autocast still applies to compute operations.
+
+For DeepSpeed, Axolotl sets `data_types.grad_accum_dtype: fp32` and
+`communication_data_type: fp32`, disables FP16/BF16 master gradients and BF16 optimizer states,
+and enables immediate BF16 gradient-buffer updates. These settings override
+conflicting values in the supplied DeepSpeed config via a generated copy; the
+original JSON file is unchanged. DeepSpeed can retain BF16 working parameters and
+per-microbatch gradients while its master gradients and accumulation buffers are
+FP32. The fused per-microbatch reduction therefore still follows working-parameter
+precision on that backend. Use ZeRO stages 1–3 for BF16 DeepSpeed training; stage 0
+with BF16 working parameters and FP32 accumulation is unsupported by DeepSpeed.
+Gradient communication precision applies to all trainable tensors in the backend.
+Axolotl also preserves FP32 reduction and partition buffers in ZeRO-2/3 and
+converts each ZeRO-2 microbatch gradient before summing. Some DeepSpeed versions
+otherwise round reduced gradients back to the working-parameter dtype or apply
+the requested dtype only after accumulation. FP32 reduction buckets and partition
+buffers use twice the memory of BF16 buffers; ZeRO-2 overlapping communication
+uses two reduction buckets. Working model parameters keep their original dtype.
+ZeRO-1/2 **optimizer offload is rejected** with this option: its separate offload
+path still accumulates in the working-parameter dtype. Disable optimizer offload
+or use ZeRO-3; ZeRO-3 offload has not been validated here.
+
+For BF16 LoRA weights, FP32 adds two bytes per parameter for weights and another
+two for gradients. Qwen3-8B rank 16 on q/k/v/o/gate/up/down has 43,646,976 adapter
+parameters: about 167 MiB extra for weights plus gradients per adapter. Optimizers
+that keep moments in parameter dtype, such as ordinary AdamW, can add another
+167 MiB for their two moments; other optimizers differ. PEFT may already keep these
+tensors in FP32, in which case there is no additional persistent allocation.
+
+Use the same setting when resuming an exact experiment. Single-device/DDP/FSDP2 adapter checkpoints contain
+FP32 weights; DeepSpeed exports may retain the working-parameter dtype. The YAML
+controls loading/training precision. Multi-LoRA honors
+this top-level option for adapter storage and its independent accumulation windows;
+its separate buffer-only option does not promote adapter weights.
+
+Dynamic NVFP4 activation quantization is rejected by the LoRA kernel path because
+torchao's activation conversion does not retain the base input gradient. Use
+weight-only NVFP4 bases for training with these kernels.
