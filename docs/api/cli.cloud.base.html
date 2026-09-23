@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -907,7 +907,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.cli.cloud.base.Cloud" id="toc-axolotl.cli.cloud.base.Cloud" class="nav-link" data-scroll-target="#axolotl.cli.cloud.base.Cloud">Cloud</a></li>
+  <li><a href="#axolotl.cli.cloud.base.CloudLauncher" id="toc-axolotl.cli.cloud.base.CloudLauncher" class="nav-link" data-scroll-target="#axolotl.cli.cloud.base.CloudLauncher">CloudLauncher</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -922,7 +922,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.cli.cloud.base" class="level1">
 <h1>cli.cloud.base</h1>
 <p><code>cli.cloud.base</code></p>
-<p>base class for cloud platforms from cli</p>
+<p>Launcher contract for complete remote Axolotl jobs.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -934,17 +934,53 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.cli.cloud.base.Cloud">Cloud</a></td>
-<td>Abstract base class for cloud platforms.</td>
+<td><a href="#axolotl.cli.cloud.base.CloudLauncher">CloudLauncher</a></td>
+<td>Launcher plugin for a complete remote Axolotl process.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.cli.cloud.base.Cloud" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.cloud.base.Cloud">Cloud</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.cloud.base.Cloud()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Abstract base class for cloud platforms.</p>
+<section id="axolotl.cli.cloud.base.CloudLauncher" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.cloud.base.CloudLauncher">CloudLauncher</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.cloud.base.CloudLauncher(config)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Launcher plugin for a complete remote Axolotl process.</p>
+<p>Providers accept a cloud configuration dict and own its validation. Training
+receives the original YAML, local directory mounts, launcher arguments, and
+config overrides. Provider-specific training hooks belong in BasePlugin.
+Only train is required; optional operations fail explicitly by default.
+Per-step remote compute belongs in a training backend, not this interface.</p>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.cli.cloud.base.CloudLauncher.from_config">from_config</a></td>
+<td>Construct a provider; config_dir anchors provider-owned relative paths.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.cli.cloud.base.CloudLauncher.get_local_dirs">get_local_dirs</a></td>
+<td>Choose remote mounts for the caller’s working directory.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.cli.cloud.base.CloudLauncher.from_config" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.cli.cloud.base.CloudLauncher.from_config">from_config</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.cloud.base.CloudLauncher.from_config(config, <span class="op">*</span>, config_dir<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Construct a provider; config_dir anchors provider-owned relative paths.</p>
+</section>
+<section id="axolotl.cli.cloud.base.CloudLauncher.get_local_dirs" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.cli.cloud.base.CloudLauncher.get_local_dirs">get_local_dirs</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.cloud.base.CloudLauncher.get_local_dirs(cwd)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Choose remote mounts for the caller’s working directory.</p>
 
 
+</section>
+</section>
 </section>
 </section>
 </section>

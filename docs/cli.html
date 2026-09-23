@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -922,11 +922,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#export" id="toc-export" class="nav-link" data-scroll-target="#export">export</a></li>
   </ul></li>
   <li><a href="#legacy-cli-usage" id="toc-legacy-cli-usage" class="nav-link" data-scroll-target="#legacy-cli-usage">Legacy CLI Usage</a></li>
-  <li><a href="#remote-compute-with-modal-cloud" id="toc-remote-compute-with-modal-cloud" class="nav-link" data-scroll-target="#remote-compute-with-modal-cloud">Remote Compute with Modal Cloud</a>
+  <li><a href="#remote-compute-with-cloud-launchers" id="toc-remote-compute-with-cloud-launchers" class="nav-link" data-scroll-target="#remote-compute-with-cloud-launchers">Remote Compute with Cloud Launchers</a>
   <ul class="collapse">
   <li><a href="#cloud-configuration" id="toc-cloud-configuration" class="nav-link" data-scroll-target="#cloud-configuration">Cloud Configuration</a></li>
   <li><a href="#running-on-modal-cloud" id="toc-running-on-modal-cloud" class="nav-link" data-scroll-target="#running-on-modal-cloud">Running on Modal Cloud</a></li>
-  <li><a href="#cloud-configuration-options" id="toc-cloud-configuration-options" class="nav-link" data-scroll-target="#cloud-configuration-options">Cloud Configuration Options</a></li>
+  <li><a href="#modal-configuration-options" id="toc-modal-configuration-options" class="nav-link" data-scroll-target="#modal-configuration-options">Modal Configuration Options</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -1169,10 +1169,19 @@ Important
 </div>
 </div>
 </section>
-<section id="remote-compute-with-modal-cloud" class="level2">
-<h2 class="anchored" data-anchor-id="remote-compute-with-modal-cloud">Remote Compute with Modal Cloud</h2>
-<p>Axolotl supports running training and inference workloads on Modal cloud infrastructure. This is configured using a
-cloud YAML file alongside your regular Axolotl config.</p>
+<section id="remote-compute-with-cloud-launchers" class="level2">
+<h2 class="anchored" data-anchor-id="remote-compute-with-cloud-launchers">Remote Compute with Cloud Launchers</h2>
+<p>Axolotl supports remote training through Modal, Baseten, and installed cloud launcher plugins.
+Configure the provider in a cloud YAML file alongside your regular Axolotl config. Install the Modal SDK
+with <code>pip install 'axolotl[modal]'</code>; Baseten uses <code>pip install 'axolotl[baseten]'</code>.</p>
+<p>The cloud YAML’s <code>provider</code> selects the launcher: <code>modal</code> (the default), <code>baseten</code>,
+or an installed <a href="../docs/custom_integrations.html#adding-a-cloud-launcher">cloud launcher plugin</a>.
+Use <code>image: registry/image:tag</code> for a prebuilt runtime, or <code>image_build</code> with a
+Dockerfile and local context to deploy a fork and custom plugins. See
+<a href="../docs/custom_integrations.html#selecting-or-building-the-runtime-image">image configuration</a>.</p>
+<p>Training, preprocessing, and lm-eval all use this selection; providers report
+unsupported operations explicitly. Baseten currently supports training only. Set training overrides directly in the
+training YAML for Baseten; CLI config overrides are rejected.</p>
 <section id="cloud-configuration" class="level3">
 <h3 class="anchored" data-anchor-id="cloud-configuration">Cloud Configuration</h3>
 <p>Create a cloud config YAML with your Modal settings:</p>
@@ -1207,9 +1216,9 @@ cloud YAML file alongside your regular Axolotl config.</p>
 <span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Run lm-eval on cloud</span></span>
 <span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> lm-eval config.yml <span class="at">--cloud</span> cloud_config.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="cloud-configuration-options" class="level3">
-<h3 class="anchored" data-anchor-id="cloud-configuration-options">Cloud Configuration Options</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="co">    # compute provider, currently only `modal` is supported</span></span>
+<section id="modal-configuration-options" class="level3">
+<h3 class="anchored" data-anchor-id="modal-configuration-options">Modal Configuration Options</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> modal</span><span class="co"> # selects the Modal launcher</span></span>
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu</span><span class="kw">:</span><span class="co">         # GPU type to use</span></span>
 <span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gpu_count</span><span class="kw">:</span><span class="co">   # Number of GPUs (default: 1)</span></span>
 <span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="fu">memory</span><span class="kw">:</span><span class="co">      # RAM in GB (default: 128)</span></span>

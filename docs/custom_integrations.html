@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -1103,6 +1103,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </ul></li>
   <li><a href="#adding-a-new-integration" id="toc-adding-a-new-integration" class="nav-link" data-scroll-target="#adding-a-new-integration">Adding a new integration</a></li>
   <li><a href="#adding-a-cli-command" id="toc-adding-a-cli-command" class="nav-link" data-scroll-target="#adding-a-cli-command">Adding a CLI command</a></li>
+  <li><a href="#adding-a-cloud-launcher" id="toc-adding-a-cloud-launcher" class="nav-link" data-scroll-target="#adding-a-cloud-launcher">Adding a cloud launcher</a>
+  <ul class="collapse">
+  <li><a href="#provider-package-boundaries" id="toc-provider-package-boundaries" class="nav-link" data-scroll-target="#provider-package-boundaries">Provider package boundaries</a></li>
+  <li><a href="#cloud-launchers-and-remote-training-backends" id="toc-cloud-launchers-and-remote-training-backends" class="nav-link" data-scroll-target="#cloud-launchers-and-remote-training-backends">Cloud launchers and remote training backends</a></li>
+  <li><a href="#selecting-or-building-the-runtime-image" id="toc-selecting-or-building-the-runtime-image" class="nav-link" data-scroll-target="#selecting-or-building-the-runtime-image">Selecting or building the runtime image</a></li>
+  <li><a href="#baseten-sdk-compatibility" id="toc-baseten-sdk-compatibility" class="nav-link" data-scroll-target="#baseten-sdk-compatibility">Baseten SDK compatibility</a></li>
+  <li><a href="#container-registries-and-authentication" id="toc-container-registries-and-authentication" class="nav-link" data-scroll-target="#container-registries-and-authentication">Container registries and authentication</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -4070,8 +4078,269 @@ other core command. Integrations bundled in this repo are registered in
 that they work from a source checkout without a reinstall.</p>
 </div>
 </div>
+</section>
+<section id="adding-a-cloud-launcher" class="level2">
+<h2 class="anchored" data-anchor-id="adding-a-cloud-launcher">Adding a cloud launcher</h2>
+<p>Cloud launchers submit a complete Axolotl process before local dataset or model
+loading. They implement <code>axolotl.cli.cloud.base.CloudLauncher</code> and are discovered through
+the <code>axolotl.cloud_providers</code> entry-point group. Modal and Baseten use this same
+contract as built-in providers. <code>Cloud</code> remains an alias for <code>CloudLauncher</code>
+for existing integrations.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb120"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb120-1"><a href="#cb120-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.cloud.base <span class="im">import</span> CloudLauncher</span>
+<span id="cb120-2"><a href="#cb120-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb120-3"><a href="#cb120-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyCloud(CloudLauncher):</span>
+<span id="cb120-4"><a href="#cb120-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> train(</span>
+<span id="cb120-5"><a href="#cb120-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>,</span>
+<span id="cb120-6"><a href="#cb120-6" aria-hidden="true" tabindex="-1"></a>        config_yaml,</span>
+<span id="cb120-7"><a href="#cb120-7" aria-hidden="true" tabindex="-1"></a>        launcher<span class="op">=</span><span class="st">"accelerate"</span>,</span>
+<span id="cb120-8"><a href="#cb120-8" aria-hidden="true" tabindex="-1"></a>        launcher_args<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb120-9"><a href="#cb120-9" aria-hidden="true" tabindex="-1"></a>        local_dirs<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb120-10"><a href="#cb120-10" aria-hidden="true" tabindex="-1"></a>        <span class="op">**</span>kwargs,</span>
+<span id="cb120-11"><a href="#cb120-11" aria-hidden="true" tabindex="-1"></a>    ):</span>
+<span id="cb120-12"><a href="#cb120-12" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Validate self.config and submit the remote Axolotl process here.</span></span>
+<span id="cb120-13"><a href="#cb120-13" aria-hidden="true" tabindex="-1"></a>        ...</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Register the provider in the <strong>plugin package’s</strong> <code>pyproject.toml</code> (not in
+Axolotl’s):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb121"><pre class="sourceCode toml code-with-copy"><code class="sourceCode toml"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[project.entry-points."</span><span class="dt">axolotl.cloud_providers"</span><span class="kw">]</span></span>
+<span id="cb121-2"><a href="#cb121-2" aria-hidden="true" tabindex="-1"></a><span class="dt">my-cloud</span> <span class="op">=</span> <span class="st">"my_package.cloud:MyCloud"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Building the plugin wheel stores this declaration in its installed
+<code>.dist-info/entry_points.txt</code> metadata. Axolotl reads that metadata at runtime;
+no editable checkout or <code>pyproject.toml</code> is required on the user’s machine.
+Install the plugin alongside Axolotl in the same Python environment, then select
+it in a separate cloud YAML:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb122"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb122-1"><a href="#cb122-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> my-cloud</span></span>
+<span id="cb122-2"><a href="#cb122-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Provider-specific connection, image, and resource settings go here.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb123"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yaml <span class="at">--cloud</span> cloud.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The provider constructor receives a plain dictionary containing the cloud
+configuration, including <code>provider</code>, and owns validation of its settings. The
+registry calls <code>CloudLauncher.from_config(config, config_dir=...)</code>; the default
+implementation calls the constructor unchanged. Override that factory when the
+provider needs to resolve paths relative to the cloud YAML directory. Core
+passes the configuration through without interpreting provider fields. Only
+the selected provider is imported. The built-in names <code>modal</code> and <code>baseten</code> are
+reserved; duplicate third-party names raise an error. Modal and Baseten are
+registered in Axolotl’s own wheel metadata. A built-in fallback supports source
+checkouts with missing or stale installed metadata. Omitting <code>provider</code> retains
+the Modal default.</p>
+<p>For a provider that has no entry-point declaration, specify its import target
+directly in the cloud YAML:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb124"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb124-1"><a href="#cb124-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> my_package.cloud:MyCloud</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The class must be importable in the launching Python environment. This works
+with an existing installed package, or a local module made available through
+<code>PYTHONPATH</code>; neither requires editing or reinstalling Axolotl. The target must
+subclass <code>CloudLauncher</code>, just like a registered provider.</p>
+<p><code>train</code> receives the training YAML text, the remote process launcher
+(<code>accelerate</code>, <code>torchrun</code>, or <code>python</code>), its argument list, optional directory
+mounts (remote path to local path), and training configuration overrides in
+<code>kwargs</code>. Core obtains mounts by calling the provider’s <code>get_local_dirs(cwd)</code>
+hook, which defaults to no mounts. Providers own working-directory upload policy
+and remote mount paths. The provider must apply supported overrides and either handle or
+explicitly report unsupported mounts and options. Provider failures must
+propagate to the caller. Keep provider dependencies out of unrelated launchers.</p>
+<p>Providers can also implement <code>preprocess(config_yaml, *args, **kwargs)</code> and
+<code>lm_eval(config_yaml)</code>. Both operations raise <code>NotImplementedError</code> by default;
+all three cloud commands select the provider from the cloud YAML.</p>
+<section id="provider-package-boundaries" class="level3">
+<h3 class="anchored" data-anchor-id="provider-package-boundaries">Provider package boundaries</h3>
+<p>Providers are bundled under <code>axolotl.integrations</code> but are self-contained Python
+packages. Each owns its configuration schemas (<code>args.py</code>), SDK imports,
+authentication, runtime templates, source staging policy, and remote helpers.
+Imports between files inside a provider use relative paths so the package can
+be moved into a standalone distribution.</p>
+<p>Core supplies discovery, YAML reading, the <code>CloudLauncher</code> contract, and optional
+provider-independent image utilities. <code>CloudImageConfig.from_config</code> resolves
+image build paths when a provider explicitly opts into that shared schema;
+core dispatch does not assume providers have an image-building configuration.
+Training plugins and provider SDKs are not loaded for discovery.</p>
+<p>Install provider dependencies separately while the implementations remain bundled:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb125"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">'axolotl[modal]'</span>     <span class="co"># Modal SDK</span></span>
+<span id="cb125-2"><a href="#cb125-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">'axolotl[baseten]'</span>   <span class="co"># Truss SDK</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>To extract a provider later, move its integration directory with its schemas,
+templates, tests, and dependency declaration into its own package. Register its
+launcher through that package’s <code>axolotl.cloud_providers</code> entry point, and remove
+the bundled registration/fallback for that name from Axolotl. Runtime behavior
+stays inside the provider; no provider-specific dispatch or schema code needs to
+be removed from core. The old <code>axolotl.cli.cloud.modal_</code> and <code>baseten</code> modules
+currently contain only compatibility imports.</p>
+</section>
+<section id="cloud-launchers-and-remote-training-backends" class="level3">
+<h3 class="anchored" data-anchor-id="cloud-launchers-and-remote-training-backends">Cloud launchers and remote training backends</h3>
+<p>These are separate execution models:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Extension</th>
+<th>Submitting/client process owns</th>
+<th>Remote system owns</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Whole-job launcher (Modal, Baseten, Nebius)</td>
+<td>Packaging, submission, and job monitoring</td>
+<td>The complete Axolotl training process</td>
+</tr>
+<tr class="even">
+<td>Training backend (Arctic Platform)</td>
+<td>Data preparation and training orchestration</td>
+<td>Model execution and optimizer state</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>axolotl.cloud_providers</code> entry-point group is scoped to whole-job launchers.
+Arctic-style backends use the training YAML’s <code>plugins:</code> list and <code>BasePlugin</code>
+hooks, including <code>get_trainer_cls</code>, for per-step communication with remote
+compute. They do not implement <code>CloudLauncher</code> merely because compute is remote.</p>
+<p>The two extensions can compose: a cloud launcher can submit an Axolotl process
+whose trainer connects to an Arctic-style backend. Preserve the training plugin
+configuration when submitting a job, and provide its dependencies, connectivity,
+and credentials in the remote environment. The launcher API preserves that
+configuration; it does not define the backend’s per-step execution interface.</p>
+<p>A launcher can also package a training plugin for remote checkpoint or completion
+callbacks, as needed by providers such as Nebius. Such callbacks execute inside
+the remote training process without initializing the training plugin manager in
+the submitting process.</p>
+</section>
+<section id="selecting-or-building-the-runtime-image" class="level3">
+<h3 class="anchored" data-anchor-id="selecting-or-building-the-runtime-image">Selecting or building the runtime image</h3>
+<p>Image preparation is separate from the launcher and training backend. Modal and
+Baseten accept <code>image</code> for a prebuilt image containing Axolotl and any custom
+plugins:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb126"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb126-1"><a href="#cb126-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
+<span id="cb126-2"><a href="#cb126-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Alternatively, use <code>image_build</code> to build from an explicit local context:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb127"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
+<span id="cb127-2"><a href="#cb127-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
+<span id="cb127-3"><a href="#cb127-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-training-source</span></span>
+<span id="cb127-4"><a href="#cb127-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
+<span id="cb127-5"><a href="#cb127-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
+<span id="cb127-6"><a href="#cb127-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">build_args</span><span class="kw">:</span></span>
+<span id="cb127-7"><a href="#cb127-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">AXOLOTL_EXTRAS</span><span class="kw">:</span><span class="at"> deepspeed</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>context</code> is relative to the cloud YAML file; <code>dockerfile</code> is relative to that
+context and must be inside it. Use either <code>image</code> or <code>image_build</code>. Omitting both
+preserves the provider’s existing default image. Builds target <code>linux/amd64</code> by
+default; <code>image_build.platform</code> can select <code>linux/arm64</code> for compatible providers
+(Modal requires <code>linux/amd64</code>). Build settings are validated
+before submission. The Dockerfile controls installation of Axolotl, dependencies,
+and custom plugins; building a context does not automatically install its files.
+For example, a context containing <code>axolotl/</code> and <code>my-plugin/</code> could use:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb128"><pre class="sourceCode dockerfile code-with-copy"><code class="sourceCode dockerfile"><span id="cb128-1"><a href="#cb128-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> axolotlai/axolotl:main-py3.11-cu128-2.9.1</span>
+<span id="cb128-2"><a href="#cb128-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> axolotl/ /opt/axolotl-fork/</span>
+<span id="cb128-3"><a href="#cb128-3" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> my-plugin/ /opt/my-plugin/</span>
+<span id="cb128-4"><a href="#cb128-4" aria-hidden="true" tabindex="-1"></a><span class="kw">RUN</span> <span class="ex">python</span> <span class="at">-m</span> pip install <span class="at">--no-build-isolation</span> /opt/axolotl-fork /opt/my-plugin</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This includes local edits selected by the Dockerfile’s <code>COPY</code> instructions and
+the context’s <code>.dockerignore</code>. Choose a base image with a compatible Python,
+PyTorch, and CUDA environment, and install into the environment used by the
+<code>axolotl</code> command. Put extra package installation in the Dockerfile.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Provider</th>
+<th><code>image_build</code> execution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Modal</td>
+<td>Without <code>tag</code>, sends the Dockerfile and context to Modal’s native image builder. With <code>tag</code>, builds and pushes through local Docker, then pulls the published image.</td>
+</tr>
+<tr class="even">
+<td>Baseten</td>
+<td>Runs local <code>docker build</code> and <code>docker push</code>, then submits the resulting registry tag. Requires Docker, a <code>tag</code>, and local push credentials; the remote service must also be able to pull that image.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="https://modal.com/docs/reference/modal.Image#from_dockerfile">Modal’s Dockerfile support</a>
+for supported Dockerfile instructions. Baseten’s <a href="https://docs.baseten.co/reference/sdk/training#image">training Image API</a>
+accepts a registry image. Registry-based providers can reuse
+<code>axolotl.cli.cloud.images.build_and_push_image</code>; native builders can consume the
+validated <code>CloudImageBuild</code> settings directly. Build or push failures stop
+submission. This workflow builds and publishes an image when the cloud command
+runs; configuration parsing alone performs neither action.</p>
+<p>Modal’s existing <code>branch</code> and <code>dockerfile_commands</code> settings remain available for
+its registry-image path. With <code>image_build</code>, put those changes in the Dockerfile;
+combining the modes is rejected. <code>docker_tag</code> remains the legacy selector for an
+Axolotl image tag and cannot be combined with <code>image</code> or <code>image_build</code>.</p>
+<p>Source upload is another mechanism: Baseten’s SDK can upload a workspace and run
+installation commands at startup, including installing a Git fork pinned to a
+commit. Its training configuration does not expose a dedicated Git repository/ref
+field. The Axolotl Baseten launcher currently stages its config and launch scripts;
+use the image options above to deploy a local fork and plugins. Runtime source
+mounts and uploads do not by themselves install a fork or rebuild an image.</p>
+</section>
+<section id="baseten-sdk-compatibility" class="level3">
+<h3 class="anchored" data-anchor-id="baseten-sdk-compatibility">Baseten SDK compatibility</h3>
+<p>Install the tested SDK with <code>pip install 'axolotl[baseten]'</code> (or
+<code>pip install -e '.[baseten]'</code> from a checkout). The extra pins Truss <code>0.18.30</code>.
+The launcher uses <code>truss train push CONFIG</code>, and the job definition uses the
+released training SDK’s <code>Image</code>, <code>Compute</code>, <code>Runtime</code>, and <code>TrainingProject</code>
+models. <code>gpu</code> selects the SDK accelerator name, for example <code>h100</code> or <code>h200</code>.</p>
+<p>The integration tests construct real SDK job definitions without submitting
+jobs. Run them in an isolated environment when updating the pin:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb129"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run <span class="at">--no-project</span> <span class="at">--with</span> truss==0.18.30 <span class="at">--with</span> pytest python <span class="at">-m</span> pytest <span class="dt">\</span></span>
+<span id="cb129-2"><a href="#cb129-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--confcutdir</span><span class="op">=</span>tests/cli tests/cli/test_baseten_sdk.py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>These checks cover CLI syntax, selected images, accelerator settings, secrets,
+and registry authentication. They do not verify live provisioning or multi-node
+training. Upstream documentation and the SDK’s main branch may expose fields
+that are not in the pinned release.</p>
+</section>
+<section id="container-registries-and-authentication" class="level3">
+<h3 class="anchored" data-anchor-id="container-registries-and-authentication">Container registries and authentication</h3>
+<p><code>image</code> and <code>image_build.tag</code> are complete OCI image references. They can name
+AWS ECR, Google Artifact Registry, Azure Container Registry, GHCR, Docker Hub,
+or another compatible registry. Registry addresses are preserved; no Docker Hub
+prefix is added. Use a tag for build output; prebuilt images may use a digest.</p>
+<p>Local builds and pushes use the Docker client’s existing login or credential
+helper configuration. Remote pulls use the cloud provider’s own credentials.
+Configure both when building into a private registry. Credentials are configured
+through the providers’ secret stores or workload identities, independently of the
+source build context. These settings concern container images; checkpoint and
+dataset object stores are separate provider settings.</p>
+<p>For Modal, choose its native registry loader and a named Modal secret:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb130"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb130-1"><a href="#cb130-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> modal</span></span>
+<span id="cb130-2"><a href="#cb130-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork</span></span>
+<span id="cb130-3"><a href="#cb130-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image_registry</span><span class="kw">:</span></span>
+<span id="cb130-4"><a href="#cb130-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">provider</span><span class="kw">:</span><span class="at"> aws_ecr</span></span>
+<span id="cb130-5"><a href="#cb130-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">secret</span><span class="kw">:</span><span class="at"> ecr-pull</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Use <code>aws_ecr</code> with an AWS IAM/OIDC secret, <code>gcp_artifact_registry</code> with a GCP
+service-account secret, or <code>registry</code> with <code>REGISTRY_USERNAME</code> and
+<code>REGISTRY_PASSWORD</code> in the named secret (for example, GHCR or ACR). See
+<a href="https://modal.com/docs/guide/existing-images#load-images-from-private-registries">Modal private-registry authentication</a>
+for secret contents. The same settings apply to a local <code>image_build</code> with a
+registry <code>tag</code>. Untagged native Modal builds do not use these pull credentials;
+for a Dockerfile with private base images, use the tagged local build path with
+Docker credentials for those bases.</p>
+<p>For Baseten, <code>docker_auth</code> follows its SDK’s <code>DockerAuth</code> configuration. For
+example, ECR with named Baseten secrets:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb131"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb131-1"><a href="#cb131-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
+<span id="cb131-2"><a href="#cb131-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork</span></span>
+<span id="cb131-3"><a href="#cb131-3" aria-hidden="true" tabindex="-1"></a><span class="fu">docker_auth</span><span class="kw">:</span></span>
+<span id="cb131-4"><a href="#cb131-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auth_method</span><span class="kw">:</span><span class="at"> AWS_IAM</span></span>
+<span id="cb131-5"><a href="#cb131-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">registry</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com</span></span>
+<span id="cb131-6"><a href="#cb131-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">aws_iam_docker_auth</span><span class="kw">:</span></span>
+<span id="cb131-7"><a href="#cb131-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access_key_secret_ref</span><span class="kw">:</span></span>
+<span id="cb131-8"><a href="#cb131-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ecr-access-key</span></span>
+<span id="cb131-9"><a href="#cb131-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">secret_access_key_secret_ref</span><span class="kw">:</span></span>
+<span id="cb131-10"><a href="#cb131-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ecr-secret-key</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This also works with <code>image_build.tag</code> pointing at ECR. Baseten validates the
+native authentication fields when Truss loads the job definition. GCP
+service-account JSON and generic registry secret references (for GHCR or ACR)
+are also supported. AWS OIDC/assume-role and GCP OIDC require a Truss release
+whose training <code>DockerAuth</code> model includes those fields; see
+<a href="https://docs.baseten.co/reference/sdk/training#dockerauth">Baseten DockerAuth</a>.
+Use a Truss version that supports the chosen authentication method.</p>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
