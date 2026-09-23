@@ -6,16 +6,16 @@ import triton.language as tl
 
 
 @triton.jit
-def _relu2_forward(x, out, count: tl.constexpr, BLOCK: tl.constexpr):
-    index = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+def _relu2_forward(x, out, count, BLOCK: tl.constexpr):
+    index = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     value = tl.load(x + index, index < count, other=0)
     positive = tl.maximum(value, 0)
     tl.store(out + index, positive * positive, index < count)
 
 
 @triton.jit
-def _relu2_backward(grad, x, out, count: tl.constexpr, BLOCK: tl.constexpr):
-    index = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+def _relu2_backward(grad, x, out, count, BLOCK: tl.constexpr):
+    index = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     value = tl.load(x + index, index < count, other=0)
     upstream = tl.load(grad + index, index < count, other=0)
     derivative = (2.0 * tl.maximum(value.to(tl.float32), 0.0)).to(value.dtype)

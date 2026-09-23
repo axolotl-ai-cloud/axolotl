@@ -215,3 +215,32 @@ def test_nemotron_relu2_installer_dense_and_shared(block):
     assert dense.forward.__func__ is apply_lora_mlp_relu2
     if block == "moe":
         assert mixer.experts.forward.__func__ is not apply_lora_mlp_relu2
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_relu2_variable_lengths_share_compiled_kernels(dtype):
+    import triton
+
+    from axolotl.kernels.relu2 import _relu2_backward, _relu2_forward, apply_relu2
+
+    forward_hashes, backward_hashes = set(), set()
+    for count in (257, 513, 2049):
+        x = torch.randn(count, device="cuda", dtype=dtype, requires_grad=True)
+        reference = x.detach().clone().requires_grad_(True)
+        upstream = torch.randn_like(x)
+        actual = apply_relu2(x)
+        expected = reference.clamp_min(0).square()
+        actual.backward(upstream)
+        expected.backward(upstream)
+        torch.testing.assert_close(actual, expected)
+        torch.testing.assert_close(x.grad, reference.grad)
+        out = torch.empty_like(x)
+        grid = (triton.cdiv(count, 1024),)
+        forward_hashes.add(
+            _relu2_forward.warmup(x, out, count, BLOCK=1024, grid=grid).hash
+        )
+        backward_hashes.add(
+            _relu2_backward.warmup(upstream, x, out, count, BLOCK=1024, grid=grid).hash
+        )
+    assert len(forward_hashes) == len(backward_hashes) == 1

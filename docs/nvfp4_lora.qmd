@@ -80,7 +80,7 @@ With `nvfp4_merge_aware`, the **merged checkpoint is the trained model**; the ra
 
 Constraints:
 
-- Requires `use_sonicmoe: true` and `adapter: lora` (enforced at config validation). ScatterMoE is not supported.
+- Requires `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora` (enforced at config validation). ScatterMoE is not supported.
 - Dense LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`) are opt-in with merge-aware training. Protected projections use their original forward so fake quantization is preserved; other projections can use optimized kernels.
 - DoRA modules are skipped with a warning.
 - Single-node only: under FSDP, ranks that load on the meta device cannot capture the base scale grid.

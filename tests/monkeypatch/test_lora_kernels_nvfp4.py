@@ -230,6 +230,7 @@ def test_standalone_activation_retained_backward_preserves_upstream(kind):
 
 
 def test_dynamic_nvfp4_activation_quantization_fails_before_training():
+    pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
     from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
     from axolotl.kernels.lora import apply_lora_linear
@@ -245,6 +246,7 @@ def test_dynamic_nvfp4_activation_quantization_fails_before_training():
 
 
 def test_axolotl_nvfp4_quantization_produces_weight_only_base():
+    pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
     from torchao.quantization import quantize_
 
     from axolotl.utils.quantization import get_quantization_config
@@ -258,6 +260,7 @@ def test_axolotl_nvfp4_quantization_produces_weight_only_base():
 
 
 def test_native_nvfp4_quantizer_allows_only_frozen_adapter_training(tmp_path):
+    pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
     from peft import LoraConfig, get_peft_model
     from transformers import LlamaConfig, LlamaForCausalLM, Trainer, TrainingArguments
     from transformers.trainer_utils import validate_quantization_for_training
