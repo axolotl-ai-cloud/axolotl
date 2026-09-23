@@ -1050,13 +1050,23 @@ execute an individual wrapped layer, including its dequantized weights. While sh
 distributed, rank zero also briefly holds one full packed tensor on its accelerator, bounded
 by the largest quantized tensor; this peak is smaller than the wrapped-layer requirement
 above.</p>
-<p><code>offload_params</code> controls FSDP parameter offloading after loading. This path requires
-an unquantized base checkpoint and supports a single FSDP2 data-parallel mesh;
-DeepSpeed, tensor/context/expert parallelism, DoRA, <code>modules_to_save</code> and
-value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
+<p><code>offload_params</code> controls FSDP parameter offloading after loading. This path supports
+a single FSDP2 data-parallel mesh; DeepSpeed, tensor/context/expert parallelism,
+DoRA, <code>modules_to_save</code> and value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
 olora remains available on the non-staged bitsandbytes loader with
 <code>cpu_ram_efficient_loading: false</code> (the torchao backend is always staged); pissa and
 loftq require an unquantized base.</p>
+<p>A base model that is already quantized with bitsandbytes 4-bit (its <code>config.json</code>
+carries a <code>quantization_config</code> with <code>quant_method: bitsandbytes</code> and <code>load_in_4bit</code>)
+is adopted as-is: the checkpoint’s packed weights and quantization state are staged
+without requantizing, so <code>bnb_config_kwargs</code> that disagree with the checkpoint are
+ignored (with a warning). The compute dtype must match the checkpoint’s
+<code>bnb_4bit_quant_storage</code> when that storage is a floating-point dtype. The torchao
+backend and <code>quantize_moe_experts</code> still need an unquantized base checkpoint.
+<code>axolotl merge-lora</code> unpacks the checkpoint’s bitsandbytes components and folds the
+adapter into the dequantized weights, so such a base always merges to a bf16
+checkpoint with no <code>quantization_config</code>; the packed 4-bit format cannot be preserved
+through the merge. A bitsandbytes 8-bit base is rejected.</p>
 <section id="lora-init-compatibility" class="level3">
 <h3 class="anchored" data-anchor-id="lora-init-compatibility">LoRA init compatibility</h3>
 <table class="caption-top table">
