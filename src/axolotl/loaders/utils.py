@@ -3,7 +3,6 @@
 import contextlib
 from typing import Type
 
-import addict
 import torch
 import transformers
 from transformers import AutoConfig, PretrainedConfig, PreTrainedModel
@@ -148,7 +147,7 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         )
 
 
-def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
+def load_model_config(cfg: DictDefault) -> PretrainedConfig:
     """Loads and configures a model configuration from HuggingFace or local sources.
 
     This function determines the appropriate model config source, loads it, applies any
@@ -183,20 +182,11 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
     if cfg.cls_model_config:
         config_cls = getattr(transformers, cfg.cls_model_config)
 
-    try:
-        model_config = config_cls.from_pretrained(
-            model_config_name,
-            trust_remote_code=trust_remote_code,
-            **config_kwargs,
-        )
-    except ValueError as error:
-        if "mamba" in model_config_name:
-            return addict.Dict(
-                {
-                    "model_type": "mamba",
-                }
-            )
-        raise error
+    model_config = config_cls.from_pretrained(
+        model_config_name,
+        trust_remote_code=trust_remote_code,
+        **config_kwargs,
+    )
 
     if cfg.overrides_of_model_config:
         for key, val in cfg.overrides_of_model_config.items():

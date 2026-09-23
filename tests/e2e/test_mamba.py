@@ -1,10 +1,8 @@
 """
-E2E tests for lora llama
+E2E tests for HF-format Mamba
 """
 
 import unittest
-
-import pytest
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
@@ -14,7 +12,6 @@ from axolotl.utils.dict import DictDefault
 from .utils import check_model_output_exists, with_temp_dir
 
 
-@pytest.mark.skip(reason="skipping until upstreamed into transformers")
 class TestMamba(unittest.TestCase):
     """
     Test case for Mamba models
@@ -24,12 +21,11 @@ class TestMamba(unittest.TestCase):
     def test_fft(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "state-spaces/mamba-130m",
-                "model_type": "MambaLMHeadModel",
-                "tokenizer_type": "AutoTokenizer",
-                "tokenizer_config": "EleutherAI/gpt-neox-20b",
+                "base_model": "state-spaces/mamba-130m-hf",
                 "flash_attention": False,
                 "sequence_len": 1024,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "load_in_8bit": False,
                 "val_set_size": 0.0,
                 "datasets": [
