@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -907,6 +907,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.utils.cu_seqlens_from_position_ids" id="toc-axolotl.monkeypatch.utils.cu_seqlens_from_position_ids" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.cu_seqlens_from_position_ids">cu_seqlens_from_position_ids</a></li>
   <li><a href="#axolotl.monkeypatch.utils.get_cu_seqlens" id="toc-axolotl.monkeypatch.utils.get_cu_seqlens" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_cu_seqlens">get_cu_seqlens</a></li>
   <li><a href="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" id="toc-axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</a></li>
   <li><a href="#axolotl.monkeypatch.utils.get_max_seqlen_in_batch" id="toc-axolotl.monkeypatch.utils.get_max_seqlen_in_batch" class="nav-link" data-scroll-target="#axolotl.monkeypatch.utils.get_max_seqlen_in_batch">get_max_seqlen_in_batch</a></li>
@@ -936,32 +937,45 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.monkeypatch.utils.cu_seqlens_from_position_ids">cu_seqlens_from_position_ids</a></td>
+<td>Flat <code>[N + 1]</code> document offsets for fla’s varlen API, or None if unpacked.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.utils.get_cu_seqlens">get_cu_seqlens</a></td>
 <td>generate a cumulative sequence length mask for flash attention using attn mask</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</a></td>
 <td>generate a cumulative sequence length mask for flash attention using pos ids</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.utils.get_max_seqlen_in_batch">get_max_seqlen_in_batch</a></td>
 <td>Token counts for each packed sub-sequence in a multipack attention mask.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.monkeypatch.utils.cu_seqlens_from_position_ids" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.cu_seqlens_from_position_ids">cu_seqlens_from_position_ids</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.cu_seqlens_from_position_ids(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Flat <code>[N + 1]</code> document offsets for fla’s varlen API, or None if unpacked.</p>
+<p>Axolotl removes the packed attention mask whenever sample packing is on
+(<code>sample_packing_drop_attention_mask</code>), so a <code>position_ids</code> restarting at 0
+is the only remaining signal for a document boundary. A batch is concatenated
+into a single varlen stream, so each row boundary is a document boundary too.</p>
+</section>
 <section id="axolotl.monkeypatch.utils.get_cu_seqlens" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.get_cu_seqlens">get_cu_seqlens</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_cu_seqlens(attn_mask)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_cu_seqlens(attn_mask)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>generate a cumulative sequence length mask for flash attention using attn mask</p>
 </section>
 <section id="axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.get_cu_seqlens_from_pos_ids">get_cu_seqlens_from_pos_ids</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_cu_seqlens_from_pos_ids(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_cu_seqlens_from_pos_ids(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>generate a cumulative sequence length mask for flash attention using pos ids</p>
 </section>
 <section id="axolotl.monkeypatch.utils.get_max_seqlen_in_batch" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.utils.get_max_seqlen_in_batch">get_max_seqlen_in_batch</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_max_seqlen_in_batch(attention_mask)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.utils.get_max_seqlen_in_batch(attention_mask)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Token counts for each packed sub-sequence in a multipack attention mask.</p>
 <p>Multipack encodes every packed document as a distinct positive integer id
 (<code>1, 2, 3, ...</code>) with <code>0</code> for padding, so a row looks like

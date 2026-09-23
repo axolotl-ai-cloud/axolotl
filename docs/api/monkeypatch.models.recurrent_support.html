@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>models.mamba.configuration_mamba – Axolotl</title>
+<title>monkeypatch.models.recurrent_support – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -903,11 +903,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.models.mamba.configuration_mamba" id="toc-axolotl.models.mamba.configuration_mamba" class="nav-link active" data-scroll-target="#axolotl.models.mamba.configuration_mamba">models.mamba.configuration_mamba</a>
+  <li><a href="#axolotl.monkeypatch.models.recurrent_support" id="toc-axolotl.monkeypatch.models.recurrent_support" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.models.recurrent_support">monkeypatch.models.recurrent_support</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.models.mamba.configuration_mamba.MambaConfig" id="toc-axolotl.models.mamba.configuration_mamba.MambaConfig" class="nav-link" data-scroll-target="#axolotl.models.mamba.configuration_mamba.MambaConfig">MambaConfig</a></li>
+  <li><a href="#axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config" id="toc-axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config">validate_recurrent_model_config</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -919,12 +919,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.models.mamba.configuration_mamba" class="level1">
-<h1>models.mamba.configuration_mamba</h1>
-<p><code>models.mamba.configuration_mamba</code></p>
-<p>HF Transformers MambaConfig</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
+<section id="axolotl.monkeypatch.models.recurrent_support" class="level1">
+<h1>monkeypatch.models.recurrent_support</h1>
+<p><code>monkeypatch.models.recurrent_support</code></p>
+<p>Which recurrent / linear-attention architectures can train on packed sequences.</p>
+<p>A packed row concatenates documents, and attention isolates them through the
+mask or <code>cu_seqlens</code>. Recurrent mixers (Mamba, GatedDeltaNet, KDA, short
+convolutions) carry state along the row instead, so each one needs a boundary
+signal (<code>seq_idx</code> or <code>cu_seqlens</code>) threaded into its kernel, and each rank
+under context parallelism needs the previous rank’s final state. Neither
+failure raises: the loss just quietly trains on cross-document state.</p>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -934,28 +940,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.models.mamba.configuration_mamba.MambaConfig">MambaConfig</a></td>
-<td>modeling configuration for state space model/mamba</td>
+<td><a href="#axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config">validate_recurrent_model_config</a></td>
+<td>Raise when a recurrent architecture would silently train on leaked state.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.models.mamba.configuration_mamba.MambaConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.models.mamba.configuration_mamba.MambaConfig">MambaConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>models.mamba.configuration_mamba.MambaConfig(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    vocab_size<span class="op">=</span><span class="dv">50280</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    d_model<span class="op">=</span><span class="dv">2560</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    n_layer<span class="op">=</span><span class="dv">64</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    rms_norm<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    residual_in_fp32<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    fused_add_norm<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    pad_vocab_size_multiple<span class="op">=</span><span class="dv">8</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    pad_token_id<span class="op">=</span><span class="dv">50277</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    bos_token_id<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    eos_token_id<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    tie_word_embeddings<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>modeling configuration for state space model/mamba</p>
+<section id="axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config">validate_recurrent_model_config</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.recurrent_support.validate_recurrent_model_config(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Raise when a recurrent architecture would silently train on leaked state.</p>
 
 
 </section>

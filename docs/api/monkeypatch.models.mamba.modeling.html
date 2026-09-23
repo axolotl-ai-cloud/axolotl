@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>core.trainers.mamba – Axolotl</title>
+<title>monkeypatch.models.mamba.modeling – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -903,11 +903,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.trainers.mamba" id="toc-axolotl.core.trainers.mamba" class="nav-link active" data-scroll-target="#axolotl.core.trainers.mamba">core.trainers.mamba</a>
+  <li><a href="#axolotl.monkeypatch.models.mamba.modeling" id="toc-axolotl.monkeypatch.models.mamba.modeling" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.models.mamba.modeling">monkeypatch.models.mamba.modeling</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.mamba.AxolotlMambaTrainer" id="toc-axolotl.core.trainers.mamba.AxolotlMambaTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</a></li>
+  <li><a href="#axolotl.monkeypatch.models.mamba.modeling.PackedSegments" id="toc-axolotl.monkeypatch.models.mamba.modeling.PackedSegments" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba.modeling.PackedSegments">PackedSegments</a></li>
+  </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.models.mamba.modeling.build_segment_plan" id="toc-axolotl.monkeypatch.models.mamba.modeling.build_segment_plan" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba.modeling.build_segment_plan">build_segment_plan</a></li>
+  <li><a href="#axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan" id="toc-axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan">packed_selective_scan</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -919,10 +924,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.core.trainers.mamba" class="level1">
-<h1>core.trainers.mamba</h1>
-<p><code>core.trainers.mamba</code></p>
-<p>Module for mamba trainer</p>
+<section id="axolotl.monkeypatch.models.mamba.modeling" class="level1">
+<h1>monkeypatch.models.mamba.modeling</h1>
+<p><code>monkeypatch.models.mamba.modeling</code></p>
+<p>Sample-packing patches for the pure-SSM transformers models: Mamba, Mamba2, Falcon-Mamba.</p>
+<p>None of these forwards accept <code>position_ids</code>, so the ForCausalLM wrapper turns
+them into <code>seq_idx</code> and stashes the boundaries on every block, which passes them
+to its mixer as a kwarg. The mixers forward kwargs into their kernels, so Mamba2
+needs nothing more than a live kernel that takes <code>seq_idx</code>.</p>
+<p>Mamba1’s selective scan has no such argument, so a packed row is scattered into
+right-padded per-document batches for the scan alone (the conv resets through
+<code>seq_idx</code>) and gathered back: exact for real tokens, padding costs only the
+scan. Its fused training kernel bakes in the whole row, so it is disabled for
+packed batches and the forward continues on the unfused branch.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -934,21 +948,78 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</a></td>
-<td>Mamba specific trainer to handle loss calculation</td>
+<td><a href="#axolotl.monkeypatch.models.mamba.modeling.PackedSegments">PackedSegments</a></td>
+<td>Document boundaries of a packed batch, with a lazily built scatter plan.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.mamba.AxolotlMambaTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mamba.AxolotlMambaTrainer">AxolotlMambaTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mamba.AxolotlMambaTrainer(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>_args,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    bench_data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    eval_data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    dataset_tags<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Mamba specific trainer to handle loss calculation</p>
+<section id="axolotl.monkeypatch.models.mamba.modeling.PackedSegments" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba.modeling.PackedSegments">PackedSegments</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba.modeling.PackedSegments(seq_idx, _plan<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Document boundaries of a packed batch, with a lazily built scatter plan.</p>
+<section id="attributes" class="level4">
+<h4 class="anchored" data-anchor-id="attributes">Attributes</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.models.mamba.modeling.PackedSegments.plan">plan</a></td>
+<td><code>[(index, mask)]</code> groups, each <code>[docs, max_len]</code> into the flat <code>B*T</code> axis.</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.models.mamba.modeling.build_segment_plan">build_segment_plan</a></td>
+<td>Group documents by length so no group pads beyond <code>pad_factor</code> of its tokens.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan">packed_selective_scan</a></td>
+<td>Run <code>scan_fn</code> on each packed document separately; returns <code>[B, D, T]</code>.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.monkeypatch.models.mamba.modeling.build_segment_plan" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba.modeling.build_segment_plan">build_segment_plan</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba.modeling.build_segment_plan(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    seq_idx,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    pad_factor<span class="op">=</span>PAD_FACTOR,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Group documents by length so no group pads beyond <code>pad_factor</code> of its tokens.</p>
+</section>
+<section id="axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan">packed_selective_scan</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba.modeling.packed_selective_scan(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    scan_fn,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    segments,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    u,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    delta,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    A,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    B,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    C,</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    D,</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    z,</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    delta_bias,</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Run <code>scan_fn</code> on each packed document separately; returns <code>[B, D, T]</code>.</p>
 
 
 </section>
