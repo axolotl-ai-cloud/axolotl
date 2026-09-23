@@ -291,18 +291,18 @@ When overriding CLI parameters in the legacy CLI, use same notation as in yaml f
 
 ## Remote Compute with Cloud Launchers
 
-Axolotl supports remote training through Modal, Baseten, and installed cloud launcher plugins.
+Axolotl supports remote training through Modal, Baseten, Nebius, and installed cloud launcher plugins.
 Configure the provider in a cloud YAML file alongside your regular Axolotl config. Install the Modal SDK
 with `pip install 'axolotl[modal]'`; Baseten uses `pip install 'axolotl[baseten]'`.
 
-The cloud YAML's `provider` selects the launcher: `modal` (the default), `baseten`,
+The cloud YAML's `provider` selects the launcher: `modal` (the default), `baseten`, `nebius`,
 or an installed [cloud launcher plugin](custom_integrations.qmd#adding-a-cloud-launcher).
 Use `image: registry/image:tag` for a prebuilt runtime, or `image_build` with a
 Dockerfile and local context to deploy a fork and custom plugins. See
 [image configuration](custom_integrations.qmd#selecting-or-building-the-runtime-image).
 
 Training, preprocessing, and lm-eval all use this selection; providers report
-unsupported operations explicitly. Baseten currently supports training only. Set training overrides directly in the
+unsupported operations explicitly. Baseten and [Nebius Serverless Jobs](nebius-serverless.qmd) currently support training only. Set training overrides directly in the
 training YAML for Baseten; CLI config overrides are rejected.
 
 ### Cloud Configuration

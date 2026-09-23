@@ -8,6 +8,7 @@ from axolotl.cli.cloud.base import CloudLauncher
 ENTRY_POINT_GROUP = "axolotl.cloud_providers"
 
 BUILTIN_PROVIDERS = {
+    "nebius": "axolotl.integrations.nebius.cloud:NebiusCloud",
     "modal": "axolotl.integrations.modal.cloud:ModalCloud",
     "baseten": "axolotl.integrations.baseten.cloud:BasetenCloud",
 }

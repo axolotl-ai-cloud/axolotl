@@ -79,10 +79,39 @@ timeout: 3600
 output: auto
 ```
 
-`timeout` is an integer number of seconds, from 3600 to 604800. `image`, `platform`
-and `preset` are required. `output: auto` uses the CLI's managed project bucket;
+`timeout` is an integer number of seconds, from 3600 to 604800. `platform` and
+`preset` are required, along with either `image` or `image_build`. `output: auto` uses the CLI's managed project bucket;
 you can also specify an existing bucket ID/name or an S3 URI supported by
 `nebius ai job run --output`.
+
+### Runtime images and local forks
+
+Nebius is registered through `axolotl.cloud_providers` and implements the shared
+`CloudLauncher` API. Its schemas, job bootstrap, checkpoint export, and recovery
+logic live in `axolotl.integrations.nebius`.
+
+Use `image` for an existing Axolotl runtime. To deploy your local fork and plugins,
+replace `image` with a tagged build:
+
+```yaml
+image_build:
+  context: ../my-axolotl-fork
+  dockerfile: Dockerfile
+  tag: registry.example.com/team/axolotl:my-fork
+  platform: linux/amd64
+```
+
+The context is relative to the cloud YAML. Docker builds and pushes the image
+before job submission, using your local Docker registry credentials. The
+Dockerfile must install your fork and plugins; the launcher does not implicitly
+copy the working directory. The tag must identify a registry image the Nebius job
+can pull. Local push credentials are not uploaded or configured as remote pull
+credentials. The shared builder accepts OCI registry references, including ECR;
+remote registry access must be configured separately for the selected platform.
+
+A build requires a tag and `linux/amd64`. For `show_context` or `dry_run`, use a
+prebuilt `image`; build configurations are rejected so previews do not build or
+push artifacts. See the [shared image configuration](custom_integrations.qmd#selecting-or-building-the-runtime-image).
 
 Start with the small LoRA example:
 
@@ -306,7 +335,8 @@ See [Nebius Endpoints](https://docs.nebius.com/serverless/endpoints/manage).
 | Cloud key | Meaning |
 |---|---|
 | `provider` | `nebius` |
-| `image`, `platform`, `preset` | Required container image and explicit GPU resource choice |
+| `image` / `image_build` | Prebuilt runtime or tagged local Docker build (choose one) |
+| `platform`, `preset` | Required explicit GPU resource choice |
 | `profile`, `parent_id`, `subnet_id` | Optional CLI profile/project/subnet selection |
 | `disk_size` | Optional container disk size, such as `250Gi` |
 | `timeout` | Seconds; defaults to 86400, allowed range 3600–604800 |

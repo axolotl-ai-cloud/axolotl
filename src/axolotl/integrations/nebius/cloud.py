@@ -8,136 +8,32 @@ import shutil
 import subprocess  # nosec B404
 import tempfile
 import uuid
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
 
 import yaml
 
-from axolotl.cli.cloud.base import Cloud
+from axolotl.cli.cloud.base import CloudLauncher
+from axolotl.cli.cloud.images import build_and_push_image
+
+from .args import NebiusCloudConfig
 
 LOG = logging.getLogger(__name__)
 
 
-class NebiusCloud(Cloud):
+class NebiusCloud(CloudLauncher):
     """Submit one training job using an installed, authenticated Nebius CLI."""
 
-    OPTIONS = {
-        "provider",
-        "image",
-        "platform",
-        "preset",
-        "profile",
-        "parent_id",
-        "subnet_id",
-        "disk_size",
-        "timeout",
-        "output",
-        "volumes",
-        "env",
-        "env_secret",
-        "show_context",
-        "dry_run",
-    }
+    def __init__(self, config: dict, *, config_dir: Path | None = None):
+        self.image_config = NebiusCloudConfig.from_config(config, config_dir=config_dir)
+        self.config = self.image_config.model_dump(exclude={"image_build"})
+        self.volumes = self.config["volumes"]
+        self.env = self.config["env"]
+        self.env_secret = self.config["env_secret"]
 
-    def __init__(self, config):
-        self.config = dict(config)
-        unknown = self.config.keys() - self.OPTIONS
-        if unknown:
-            raise ValueError(
-                f"Unknown Nebius cloud options: {', '.join(sorted(unknown))}"
-            )
-        for key in ("image", "platform", "preset"):
-            self._string(key, required=True)
-        for key in ("profile", "parent_id", "subnet_id", "disk_size", "output"):
-            self._string(key)
-        timeout = self.config.get("timeout", 86400)
-        if type(timeout) is not int or not 3600 <= timeout <= 604800:
-            raise ValueError(
-                "Nebius timeout must be an integer from 3600 to 604800 seconds"
-            )
-        for key in ("show_context", "dry_run"):
-            if key in self.config and type(self.config[key]) is not bool:
-                raise ValueError(f"Nebius {key} must be a boolean")
-        if self.config.get("show_context") and self.config.get("dry_run"):
-            raise ValueError("Choose either show_context or dry_run")
-        self.volumes = self._volumes()
-        self.env = self._environment("env")
-        self.env_secret = self._environment("env_secret")
-        if self.env.keys() & self.env_secret.keys():
-            raise ValueError("A variable cannot appear in both env and env_secret")
-
-    def _string(self, key, required=False):
-        value = self.config.get(key)
-        if value is None and not required:
-            return None
-        if not isinstance(value, str) or not value.strip() or "\x00" in value:
-            raise ValueError(f"Nebius {key} must be a nonempty string")
-        return value
-
-    def _environment(self, key):
-        values = self.config.get(key, {})
-        if not isinstance(values, dict):
-            raise ValueError(f"Nebius {key} must map variable names to strings")
-        for name, value in values.items():
-            if not isinstance(name, str) or not re.fullmatch(
-                r"[A-Za-z_][A-Za-z0-9_]*", name
-            ):
-                raise ValueError(f"Invalid environment variable name in {key}")
-            if name in {
-                "NEBIUS_OUTPUT_DIR",
-                "AXOLOTL_NEBIUS_COMPLETION_FILE",
-                "AXOLOTL_NEBIUS_EXPORT_DIR",
-            }:
-                raise ValueError(f"{name} is managed by the Nebius launcher")
-            if (
-                not isinstance(value, str)
-                or "\x00" in value
-                or (key == "env_secret" and not value)
-            ):
-                raise ValueError(f"Nebius {key} values must be strings")
-        return values
-
-    def _volumes(self):
-        volumes = self.config.get("volumes", [])
-        if not isinstance(volumes, list):
-            raise ValueError("Nebius volumes must be a list")
-        mounts = [PurePosixPath("/outputs")]
-        result = []
-        for volume in volumes:
-            if not isinstance(volume, dict) or volume.keys() - {
-                "source",
-                "mount",
-                "mode",
-            }:
-                raise ValueError("Each volume needs source, mount, and optional mode")
-            source, mount = volume.get("source"), volume.get("mount")
-            mode = volume.get("mode", "ro")
-            if (
-                not isinstance(source, str)
-                or not source
-                or ":" in source
-                or "\x00" in source
-            ):
-                raise ValueError("Volume source must be a Nebius resource ID or name")
-            if (
-                not isinstance(mount, str)
-                or not mount.startswith("/")
-                or ":" in mount
-                or "\x00" in mount
-            ):
-                raise ValueError("Volume mount must be an absolute container path")
-            path = PurePosixPath("/" + mount.lstrip("/"))
-            if ".." in path.parts or any(
-                path.is_relative_to(p) or p.is_relative_to(path) for p in mounts
-            ):
-                raise ValueError(
-                    "Volume mounts must not overlap each other or /outputs"
-                )
-            if mode not in {"ro", "rw"}:
-                raise ValueError("Volume mode must be ro or rw")
-            mounts.append(path)
-            result.append({"source": source, "mount": str(path), "mode": mode})
-        return result
+    @classmethod
+    def from_config(cls, config: dict, *, config_dir: Path | None = None):
+        return cls(config, config_dir=config_dir)
 
     def preprocess(self, config_yaml: str, *args, **kwargs) -> None:
         raise NotImplementedError(
@@ -152,7 +48,7 @@ class NebiusCloud(Cloud):
         local_dirs: dict[str, str] | None = None,
         **kwargs,
     ):
-        from axolotl.cli.cloud.nebius.runner import validate_config
+        from .runner import validate_config
 
         cfg = yaml.safe_load(config_yaml)
         if not isinstance(cfg, dict):
@@ -173,6 +69,9 @@ class NebiusCloud(Cloud):
             raise RuntimeError(
                 "Install the Nebius CLI (with 'ai job run') and run 'nebius auth login'"
             )
+        image = self.image_config.image
+        if build := self.image_config.image_build:
+            image = build_and_push_image(build)
         name = f"axolotl-{uuid.uuid4().hex}"
         with tempfile.TemporaryDirectory(prefix="axolotl-nebius-") as directory:
             root = Path(directory)
@@ -193,9 +92,18 @@ class NebiusCloud(Cloud):
                 ("storage.py", "nebius_storage.py"),
             ):
                 shutil.copyfile(Path(__file__).with_name(source), root / target)
-            command = [executable, "ai", "job", "run", "run.py", "--name", name]
+            command = [
+                executable,
+                "ai",
+                "job",
+                "run",
+                "run.py",
+                "--name",
+                name,
+                "--image",
+                image,
+            ]
             for key in (
-                "image",
                 "platform",
                 "preset",
                 "profile",

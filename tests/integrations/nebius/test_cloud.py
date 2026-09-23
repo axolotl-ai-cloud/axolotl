@@ -17,7 +17,8 @@ from axolotl.cli.cloud import (
     do_cli_train,
     load_cloud_provider,
 )
-from axolotl.cli.cloud.nebius import NebiusCloud, runner, storage
+from axolotl.integrations.nebius import runner, storage
+from axolotl.integrations.nebius.cloud import NebiusCloud
 from axolotl.utils.dict import DictDefault
 
 
@@ -40,7 +41,7 @@ def training_config():
 def capture_launch(monkeypatch):
     captured = {}
     monkeypatch.setattr(
-        "axolotl.cli.cloud.nebius.shutil.which", lambda _: "/bin/nebius"
+        "axolotl.integrations.nebius.cloud.shutil.which", lambda _: "/bin/nebius"
     )
 
     def run(command, cwd, check):
@@ -49,7 +50,7 @@ def capture_launch(monkeypatch):
         captured["cwd"] = cwd
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", run)
+    monkeypatch.setattr("axolotl.integrations.nebius.cloud.subprocess.run", run)
     return captured
 
 
@@ -158,14 +159,16 @@ def test_training_validation_before_cli(
 ):
     training_config.update(changes)
     called = Mock()
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", called)
+    monkeypatch.setattr("axolotl.integrations.nebius.cloud.subprocess.run", called)
     with pytest.raises(ValueError):
         NebiusCloud(cloud_config).train(yaml.safe_dump(training_config))
     called.assert_not_called()
 
 
 def test_missing_cli_is_actionable(cloud_config, training_config, monkeypatch):
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.shutil.which", lambda _: None)
+    monkeypatch.setattr(
+        "axolotl.integrations.nebius.cloud.shutil.which", lambda _: None
+    )
     with pytest.raises(RuntimeError, match="Install the Nebius CLI"):
         NebiusCloud(cloud_config).train(yaml.safe_dump(training_config))
 
@@ -176,10 +179,10 @@ def test_failure_is_not_retried_or_reported_as_success(
 ):
     cloud_config["env"] = {"PRIVATE_VALUE": "do-not-log-this"}
     monkeypatch.setattr(
-        "axolotl.cli.cloud.nebius.shutil.which", lambda _: "/bin/nebius"
+        "axolotl.integrations.nebius.cloud.shutil.which", lambda _: "/bin/nebius"
     )
     called = Mock(return_value=SimpleNamespace(returncode=returncode))
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", called)
+    monkeypatch.setattr("axolotl.integrations.nebius.cloud.subprocess.run", called)
     with pytest.raises(RuntimeError) as exc:
         NebiusCloud(cloud_config).train(yaml.safe_dump(training_config))
     assert f"code {returncode}" in str(exc.value)
@@ -193,7 +196,7 @@ def test_interrupt_keeps_remote_job_and_cleans_local_context(
     cloud_config, training_config, monkeypatch
 ):
     monkeypatch.setattr(
-        "axolotl.cli.cloud.nebius.shutil.which", lambda _: "/bin/nebius"
+        "axolotl.integrations.nebius.cloud.shutil.which", lambda _: "/bin/nebius"
     )
     directories = []
 
@@ -201,7 +204,7 @@ def test_interrupt_keeps_remote_job_and_cleans_local_context(
         directories.append(cwd)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", interrupt)
+    monkeypatch.setattr("axolotl.integrations.nebius.cloud.subprocess.run", interrupt)
     with pytest.raises(KeyboardInterrupt):
         NebiusCloud(cloud_config).train(yaml.safe_dump(training_config))
     assert len(directories) == 1
@@ -228,23 +231,6 @@ def test_unsupported_nebius_command_does_not_launch_modal(
     config.write_text("base_model: test/model")
     with pytest.raises(NotImplementedError):
         action(cloud, config)
-
-
-@pytest.mark.parametrize("provider", [None, "modal", "baseten"])
-def test_existing_provider_dispatch(monkeypatch, provider):
-    modal_cls, baseten_cls = Mock(), Mock()
-    monkeypatch.setitem(
-        sys.modules, "axolotl.cli.cloud.modal_", SimpleNamespace(ModalCloud=modal_cls)
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "axolotl.cli.cloud.baseten",
-        SimpleNamespace(BasetenCloud=baseten_cls),
-    )
-    cfg = DictDefault({"provider": provider})
-    assert load_cloud_provider(cfg) is (
-        baseten_cls.return_value if provider == "baseten" else modal_cls.return_value
-    )
 
 
 def test_unknown_provider_rejected():
@@ -529,7 +515,7 @@ def test_failure_diagnoses_remote_state(
     cloud_config.update(profile="profile with spaces", parent_id="project-test")
     cloud_config["env"] = {"PRIVATE_VALUE": "do-not-log-this"}
     monkeypatch.setattr(
-        "axolotl.cli.cloud.nebius.shutil.which", lambda _: "/bin/nebius"
+        "axolotl.integrations.nebius.cloud.shutil.which", lambda _: "/bin/nebius"
     )
     calls = []
 
@@ -557,7 +543,7 @@ def test_failure_diagnoses_remote_state(
             ),
         )
 
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", run)
+    monkeypatch.setattr("axolotl.integrations.nebius.cloud.subprocess.run", run)
     with pytest.raises(RuntimeError) as exc:
         NebiusCloud(cloud_config).train(yaml.safe_dump(training_config))
     message = str(exc.value)
@@ -595,7 +581,7 @@ def test_status_lookup_failure_preserves_safe_guidance(
             raise result
         return result
 
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", run)
+    monkeypatch.setattr("axolotl.integrations.nebius.cloud.subprocess.run", run)
     message = NebiusCloud(cloud_config)._failure_message(
         "/bin/nebius", "axolotl-test", 6
     )
@@ -611,9 +597,134 @@ def test_failed_preview_does_not_query_or_submit_job(
 ):
     cloud_config[preview] = True
     called = Mock()
-    monkeypatch.setattr("axolotl.cli.cloud.nebius.subprocess.run", called)
+    monkeypatch.setattr("axolotl.integrations.nebius.cloud.subprocess.run", called)
     message = NebiusCloud(cloud_config)._failure_message(
         "/bin/nebius", "axolotl-test", 2
     )
     assert "no training job was requested" in message
     called.assert_not_called()
+
+
+@pytest.fixture
+def image_build(tmp_path):
+    context = tmp_path / "fork"
+    context.mkdir()
+    (context / "Dockerfile").write_text("FROM example/axolotl:base\n")
+    return {"context": "fork", "tag": "123.dkr.ecr.us-east-1.amazonaws.com/fork:test"}
+
+
+def test_build_and_submit_from_cloud_yaml(
+    cloud_config, training_config, image_build, tmp_path, monkeypatch, capture_launch
+):
+    from axolotl.integrations.nebius import cloud
+
+    cloud_config.pop("image")
+    cloud_config["image_build"] = image_build
+    config_path = tmp_path / "cloud.yml"
+    config_path.write_text(yaml.safe_dump(cloud_config))
+    train_path = tmp_path / "train.yml"
+    train_path.write_text(yaml.safe_dump(training_config))
+    build = Mock(return_value=image_build["tag"])
+    monkeypatch.setattr(cloud, "build_and_push_image", build)
+    monkeypatch.chdir(tmp_path.parent)
+    do_cli_train(config_path, train_path)
+    resolved = build.call_args.args[0]
+    assert resolved.context == tmp_path / "fork"
+    assert resolved.dockerfile == tmp_path / "fork" / "Dockerfile"
+    command = capture_launch["command"]
+    assert command[command.index("--image") + 1] == image_build["tag"]
+    assert set(capture_launch["context"]) == {
+        "train.yaml",
+        "launch.json",
+        "run.py",
+        "nebius_completion.py",
+        "nebius_storage.py",
+    }
+    assert image_build["context"] == "fork"
+
+
+@pytest.mark.parametrize("preview", ["show_context", "dry_run"])
+def test_build_preview_rejected(cloud_config, image_build, tmp_path, preview):
+    cloud_config.pop("image")
+    cloud_config.update(image_build=image_build, **{preview: True})
+    with pytest.raises(ValueError, match="prebuilt image"):
+        load_cloud_provider(cloud_config, config_dir=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [({"tag": None}, "registry tag"), ({"platform": "linux/arm64"}, "linux/amd64")],
+)
+def test_invalid_build_rejected(cloud_config, image_build, tmp_path, change, expected):
+    cloud_config.pop("image")
+    image_build.update(change)
+    cloud_config["image_build"] = image_build
+    with pytest.raises(ValueError, match=expected):
+        load_cloud_provider(cloud_config, config_dir=tmp_path)
+
+
+def test_build_failure_prevents_submission(
+    cloud_config, image_build, tmp_path, monkeypatch, capture_launch
+):
+    from axolotl.integrations.nebius import cloud
+
+    cloud_config.pop("image")
+    cloud_config["image_build"] = image_build
+    build = Mock(side_effect=subprocess.CalledProcessError(1, ["docker", "push"]))
+    monkeypatch.setattr(cloud, "build_and_push_image", build)
+    provider = load_cloud_provider(cloud_config, config_dir=tmp_path)
+    with pytest.raises(subprocess.CalledProcessError):
+        provider.train("base_model: example")
+    assert capture_launch == {}
+
+
+def test_provider_package_can_be_relocated(tmp_path):
+    import shutil
+
+    from axolotl.integrations.nebius import cloud
+
+    shutil.copytree(Path(cloud.__file__).parent, tmp_path / "standalone_nebius")
+    metadata = tmp_path / "standalone_nebius-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: standalone-nebius\nVersion: 1.0\n"
+    )
+    (metadata / "entry_points.txt").write_text(
+        "[axolotl.cloud_providers]\nexternal-nebius = standalone_nebius.cloud:NebiusCloud\n"
+    )
+    script = """
+import importlib.abc
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+class BlockBundledProviders(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith(("axolotl.integrations.nebius", "axolotl.integrations.modal", "axolotl.integrations.baseten")):
+            raise ImportError("Bundled providers are unavailable")
+
+sys.meta_path.insert(0, BlockBundledProviders())
+sys.path.insert(0, sys.argv[1])
+from axolotl.cli.cloud.registry import load_cloud_provider
+provider = load_cloud_provider({
+    "provider": "external-nebius", "image": "example/fork:tag",
+    "platform": "gpu-h100-sxm", "preset": "1gpu-16vcpu-200gb",
+})
+assert type(provider).__module__ == "standalone_nebius.cloud"
+assert type(provider.image_config).__module__ == "standalone_nebius.args"
+assert provider.get_local_dirs(Path.cwd()) == {}
+def submit(command, cwd, check):
+    root = Path(cwd)
+    for name in ("run.py", "nebius_completion.py", "nebius_storage.py", "train.yaml", "launch.json"):
+        assert (root / name).is_file()
+    return SimpleNamespace(returncode=0)
+with patch("shutil.which", return_value="/bin/nebius"), patch("subprocess.run", side_effect=submit) as run:
+    provider.train("base_model: example")
+    run.assert_called_once()
+assert "torch" not in sys.modules
+assert "transformers" not in sys.modules
+"""
+    subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)], check=True, timeout=30
+    )
