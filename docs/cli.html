@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nebius Serverless Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -1171,16 +1177,16 @@ Important
 </section>
 <section id="remote-compute-with-cloud-launchers" class="level2">
 <h2 class="anchored" data-anchor-id="remote-compute-with-cloud-launchers">Remote Compute with Cloud Launchers</h2>
-<p>Axolotl supports remote training through Modal, Baseten, and installed cloud launcher plugins.
+<p>Axolotl supports remote training through Modal, Baseten, Nebius, and installed cloud launcher plugins.
 Configure the provider in a cloud YAML file alongside your regular Axolotl config. Install the Modal SDK
 with <code>pip install 'axolotl[modal]'</code>; Baseten uses <code>pip install 'axolotl[baseten]'</code>.</p>
-<p>The cloud YAML’s <code>provider</code> selects the launcher: <code>modal</code> (the default), <code>baseten</code>,
+<p>The cloud YAML’s <code>provider</code> selects the launcher: <code>modal</code> (the default), <code>baseten</code>, <code>nebius</code>,
 or an installed <a href="../docs/custom_integrations.html#adding-a-cloud-launcher">cloud launcher plugin</a>.
 Use <code>image: registry/image:tag</code> for a prebuilt runtime, or <code>image_build</code> with a
 Dockerfile and local context to deploy a fork and custom plugins. See
 <a href="../docs/custom_integrations.html#selecting-or-building-the-runtime-image">image configuration</a>.</p>
 <p>Training, preprocessing, and lm-eval all use this selection; providers report
-unsupported operations explicitly. Baseten currently supports training only. Set training overrides directly in the
+unsupported operations explicitly. Baseten and <a href="../docs/nebius-serverless.html">Nebius Serverless Jobs</a> currently support training only. Set training overrides directly in the
 training YAML for Baseten; CLI config overrides are rejected.</p>
 <section id="cloud-configuration" class="level3">
 <h3 class="anchored" data-anchor-id="cloud-configuration">Cloud Configuration</h3>

@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="description" content="Launch Axolotl training directly on Nebius Serverless Jobs">
 
-<title>prompt_strategies.alpaca_chat – Axolotl</title>
+<title>Nebius Serverless Jobs – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -64,23 +65,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-78a647deb80769e567571e157382893c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -119,7 +120,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -129,9 +130,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -147,7 +148,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/nebius-serverless.html">Nebius Serverless Jobs</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -161,7 +162,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -176,31 +177,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Support Matrix</span></a>
   </div>
 </li>
@@ -215,91 +216,91 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Muse Glimmer</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">North Micro Vision Instruct</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Shieldstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Kimi Linear</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/plano.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/plano.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Plano Orchestrator</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MiMo</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">InternVL 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PaddleOCR-VL</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Trinity</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Arcee AFM</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
@@ -314,19 +315,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Vision</span></a>
   </div>
 </li>
@@ -343,19 +344,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Vision</span></a>
   </div>
 </li>
@@ -363,157 +364,157 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 3.1/3.2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Voxtral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Devstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral 7B</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3.8 Flash Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.7-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.6V</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Apertus</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GPT-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Seed-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/phi.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/phi.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Phi</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SmolVLM 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Granite 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Liquid Foundation Models 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Hunyuan</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Jamba</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Orpheus</span></a>
   </div>
 </li>
@@ -521,25 +522,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Telemetry</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -547,7 +548,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -556,37 +557,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -603,49 +604,49 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/skypilot.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/skypilot.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SkyPilot</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -662,97 +663,97 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ebft.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">EBFT Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">vLLM Serving for GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/export.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Exporting to GGUF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">1.58-bit Finetuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -769,43 +770,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Streaming Datasets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/attention.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/attention.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Attention</span></a>
   </div>
 </li>
@@ -822,43 +823,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FSDP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MoE Expert Quantization</span></a>
   </div>
 </li>
@@ -875,25 +876,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/training_stability.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Training Stability &amp; Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -909,102 +910,377 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.prompt_strategies.alpaca_chat" id="toc-axolotl.prompt_strategies.alpaca_chat" class="nav-link active" data-scroll-target="#axolotl.prompt_strategies.alpaca_chat">prompt_strategies.alpaca_chat</a>
+  <li><a href="#tested-configuration" id="toc-tested-configuration" class="nav-link active" data-scroll-target="#tested-configuration">Tested configuration</a></li>
+  <li><a href="#prerequisites" id="toc-prerequisites" class="nav-link" data-scroll-target="#prerequisites">Prerequisites</a></li>
+  <li><a href="#launch-training" id="toc-launch-training" class="nav-link" data-scroll-target="#launch-training">Launch training</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.prompt_strategies.alpaca_chat.AlpacaChatPrompter" id="toc-axolotl.prompt_strategies.alpaca_chat.AlpacaChatPrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.alpaca_chat.AlpacaChatPrompter">AlpacaChatPrompter</a></li>
-  <li><a href="#axolotl.prompt_strategies.alpaca_chat.AlpacaConcisePrompter" id="toc-axolotl.prompt_strategies.alpaca_chat.AlpacaConcisePrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.alpaca_chat.AlpacaConcisePrompter">AlpacaConcisePrompter</a></li>
-  <li><a href="#axolotl.prompt_strategies.alpaca_chat.AlpacaQAPromptTokenizingStrategy" id="toc-axolotl.prompt_strategies.alpaca_chat.AlpacaQAPromptTokenizingStrategy" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.alpaca_chat.AlpacaQAPromptTokenizingStrategy">AlpacaQAPromptTokenizingStrategy</a></li>
-  <li><a href="#axolotl.prompt_strategies.alpaca_chat.CamelAIPromptTokenizingStrategy" id="toc-axolotl.prompt_strategies.alpaca_chat.CamelAIPromptTokenizingStrategy" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.alpaca_chat.CamelAIPromptTokenizingStrategy">CamelAIPromptTokenizingStrategy</a></li>
-  <li><a href="#axolotl.prompt_strategies.alpaca_chat.NoSystemPrompter" id="toc-axolotl.prompt_strategies.alpaca_chat.NoSystemPrompter" class="nav-link" data-scroll-target="#axolotl.prompt_strategies.alpaca_chat.NoSystemPrompter">NoSystemPrompter</a></li>
+  <li><a href="#runtime-images-and-local-forks" id="toc-runtime-images-and-local-forks" class="nav-link" data-scroll-target="#runtime-images-and-local-forks">Runtime images and local forks</a></li>
   </ul></li>
-  </ul></li>
+  <li><a href="#dataset-inputs-and-secrets" id="toc-dataset-inputs-and-secrets" class="nav-link" data-scroll-target="#dataset-inputs-and-secrets">Dataset inputs and secrets</a></li>
+  <li><a href="#outputs-and-checkpoints" id="toc-outputs-and-checkpoints" class="nav-link" data-scroll-target="#outputs-and-checkpoints">Outputs and checkpoints</a></li>
+  <li><a href="#resume-explicitly" id="toc-resume-explicitly" class="nav-link" data-scroll-target="#resume-explicitly">Resume explicitly</a></li>
+  <li><a href="#status-cancellation-and-cleanup" id="toc-status-cancellation-and-cleanup" class="nav-link" data-scroll-target="#status-cancellation-and-cleanup">Status, cancellation and cleanup</a></li>
+  <li><a href="#optional-serving-handoff" id="toc-optional-serving-handoff" class="nav-link" data-scroll-target="#optional-serving-handoff">Optional serving handoff</a></li>
+  <li><a href="#configuration-reference" id="toc-configuration-reference" class="nav-link" data-scroll-target="#configuration-reference">Configuration reference</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/nebius-serverless.html">Nebius Serverless Jobs</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Nebius Serverless Jobs</h1>
+</div>
+
+<div>
+  <div class="description">
+    Launch Axolotl training directly on Nebius Serverless Jobs
+  </div>
+</div>
 
 
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
 
 
-<section id="axolotl.prompt_strategies.alpaca_chat" class="level1">
-<h1>prompt_strategies.alpaca_chat</h1>
-<p><code>prompt_strategies.alpaca_chat</code></p>
-<p>Module for Alpaca prompt strategy classes</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
+</header>
+
+
+<p>Run an Axolotl training configuration with Nebius Serverless Jobs through the
+existing <code>--cloud</code> option. The provider uses the installed Nebius CLI to package
+the configuration, launch a container, stream logs and follow the job to completion.
+It does not require SkyPilot. For SkyPilot-managed clusters, including distributed
+training, see the <a href="../docs/skypilot.html">SkyPilot guide</a>.</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This provider is experimental. The single-GPU validation below covers one runtime
+and storage configuration. Validate your selected image, region and training
+configuration with a short run before starting a long job.</p>
+</div>
+</div>
+<section id="tested-configuration" class="level2">
+<h2 class="anchored" data-anchor-id="tested-configuration">Tested configuration</h2>
+<p>On September 11, 2026, validation in <code>eu-north1</code> used Nebius CLI <code>0.12.265</code>,
+<code>gpu-h100-sxm</code> / <code>1gpu-16vcpu-200gb</code>, and this pinned Linux amd64 image:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The container reported Python 3.12.13, Torch 2.12.1+cu130, CUDA 13.0,
+Transformers 5.16.1 and PEFT 0.20.0; the host NVIDIA driver was 580.173.02.
+The public model was <code>NousResearch/Llama-3.2-1B</code>, pinned for validation with:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> a9745ffc3556f145a830ac0c203509ba860582a3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The 30-step LoRA example completed. Its exported files passed independent S3
+size/hash checks, and all 64 adapter tensors matched after loading with that
+base revision; inference produced finite outputs. A separate job was cancelled
+after checkpoint 10 was published and verified through S3. A fresh job restored
+optimizer, scheduler and RNG state, started at step 11, and completed at step 30.
+The resumed exports also passed independent size/hash checks. The cancelled
+job’s VM and boot disk were removed while its checkpoint remained readable.</p>
+<p>A separate <code>cpu-d3</code> / <code>2vcpu-8gb</code> probe with a 3600-second timeout entered
+<code>FAILED</code> with <code>TimeoutExceeded</code> about one hour after job creation (including
+provisioning and image startup), rather than one hour of training time. Allow
+for that overhead when choosing the timeout.</p>
+<p>These observations establish the tested save/readback/resume path, not a general
+storage durability guarantee or bit-identical training across runs. Publication
+uses ordinary file close through the mount; there is no explicit object-storage
+flush barrier or atomic directory transaction.</p>
+</section>
+<section id="prerequisites" class="level2">
+<h2 class="anchored" data-anchor-id="prerequisites">Prerequisites</h2>
+<ul>
+<li>An Axolotl installation containing the Nebius cloud provider.</li>
+<li>An installed, authenticated <a href="https://docs.nebius.com/cli/install">Nebius CLI</a>
+that supports <code>nebius ai job run</code> (the interface was checked with 0.12.265).
+Run <code>nebius auth login</code> and select your project in the CLI profile.</li>
+<li>Project permissions, quota and a subnet suitable for the selected GPU platform
+and preset. See <a href="https://docs.nebius.com/serverless/jobs/manage">Jobs prerequisites</a>.</li>
+<li>A <a href="../docs/docker.html">plain Axolotl container image</a> compatible with the GPU driver.
+Use an explicit image and pin a validated digest for repeatable runs. Cloud
+images that start Jupyter or tmux are unnecessary.</li>
+</ul>
+<p>The Nebius CLI credentials stay on your machine. The provider does not copy your
+working directory, <code>.env</code>, cloud YAML or local credential files into the job.</p>
+</section>
+<section id="launch-training" class="level2">
+<h2 class="anchored" data-anchor-id="launch-training">Launch training</h2>
+<p>Copy <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/cloud/nebius.yaml"><code>examples/cloud/nebius.yaml</code></a>
+and select the image, platform and preset available in your project:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> nebius</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">platform</span><span class="kw">:</span><span class="at"> gpu-h100-sxm</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">preset</span><span class="kw">:</span><span class="at"> 1gpu-16vcpu-200gb</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">3600</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">output</span><span class="kw">:</span><span class="at"> auto</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>timeout</code> is an integer number of seconds, from 3600 to 604800. <code>platform</code> and
+<code>preset</code> are required, along with either <code>image</code> or <code>image_build</code>. <code>output: auto</code> uses the CLI’s managed project bucket;
+you can also specify an existing bucket ID/name or an S3 URI supported by
+<code>nebius ai job run --output</code>.</p>
+<section id="runtime-images-and-local-forks" class="level3">
+<h3 class="anchored" data-anchor-id="runtime-images-and-local-forks">Runtime images and local forks</h3>
+<p>Nebius is registered through <code>axolotl.cloud_providers</code> and implements the shared
+<code>CloudLauncher</code> API. Its schemas, job bootstrap, checkpoint export, and recovery
+logic live in <code>axolotl.integrations.nebius</code>.</p>
+<p>Use <code>image</code> for an existing Axolotl runtime. To deploy your local fork and plugins,
+replace <code>image</code> with a tagged build:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-axolotl-fork</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">platform</span><span class="kw">:</span><span class="at"> linux/amd64</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The context is relative to the cloud YAML. Docker builds and pushes the image
+before job submission, using your local Docker registry credentials. The
+Dockerfile must install your fork and plugins; the launcher does not implicitly
+copy the working directory. The tag must identify a registry image the Nebius job
+can pull. Local push credentials are not uploaded or configured as remote pull
+credentials. The shared builder accepts OCI registry references, including ECR;
+remote registry access must be configured separately for the selected platform.</p>
+<p>A build requires a tag and <code>linux/amd64</code>. For <code>show_context</code> or <code>dry_run</code>, use a
+prebuilt <code>image</code>; build configurations are rejected so previews do not build or
+push artifacts. See the <a href="../docs/custom_integrations.html#selecting-or-building-the-runtime-image">shared image configuration</a>.</p>
+<p>Start with the small LoRA example:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/nebius-serverless/lora-1b.yml <span class="dt">\</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--cloud</span> examples/cloud/nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Or use your existing training configuration:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Training option overrides are applied to the uploaded YAML. The launcher and its
+arguments are forwarded to the remote Axolotl command, for example
+<code>--launcher python</code>. This is a single-node integration; multi-node rendezvous and
+cluster scheduling are not provided. The initial example uses one GPU.</p>
+<p>For a local preview, set <code>show_context: true</code> in the cloud YAML and run the same
+command. This invokes <code>job run --show-context</code> and submits nothing. Set
+<code>dry_run: true</code> instead for the CLI’s server-side request validation without
+creating a Job. With CLI 0.12.265, a managed-output dry run was rejected with
+<code>unsupported volume source type "nebius"</code>; use <code>show_context</code> for a local preview
+on that release. Remove either setting to execute training; they are mutually
+exclusive.</p>
+<p>Only the resolved training YAML, launcher settings and small bootstrap modules
+are packaged in a temporary directory. The Nebius CLI enforces its 64 KiB
+compressed context limit. Models, datasets, local Python modules and local config
+includes are not uploaded. Put dependencies in the image and data on Hub or a
+mounted volume. Relative local paths will not refer to files on your workstation.</p>
+</section>
+</section>
+<section id="dataset-inputs-and-secrets" class="level2">
+<h2 class="anchored" data-anchor-id="dataset-inputs-and-secrets">Dataset inputs and secrets</h2>
+<p>A public Hub dataset in your Axolotl YAML works with the ordinary dataset loader.
+For a private dataset in Nebius storage, attach its bucket read-only:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Cloud configuration</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_INPUT_BUCKET</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /data</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Training configuration</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /data/train.jsonl</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Volumes use Nebius resource IDs/names and absolute container mount paths. The
+mode defaults to <code>ro</code>. Overlapping mounts, including anything covering <code>/outputs</code>,
+are rejected. The provider does not provision custom volumes or IAM credentials.</p>
+<p>For gated models or private Hub datasets, inject a token through a Nebius secret:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Cloud configuration; values are secret references, never token values.</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">env_secret</span><span class="kw">:</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_TOKEN</span><span class="kw">:</span><span class="at"> mbsec-YOUR_SECRET_ID</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Create a payload entry named <code>HF_TOKEN</code> in that secret. CLI 0.12.265 was tested
+with <code>ENV_NAME=SECRET_ID</code>: the environment variable name selects the payload key.
+Its <code>job run --help</code> advertises <code>secret-id/key</code>, but that form was rejected by the
+service in testing. A disposable probe verified runtime injection with a plain
+secret ID; gated Hugging Face access was not part of that test. Unlike the Modal
+provider, this configuration does not read secrets from your local environment.
+Ordinary nonsecret variables use an <code>env</code> mapping:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_HOME</span><span class="kw">:</span><span class="at"> /tmp/huggingface</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Do not embed tokens in training YAML. Direct S3 dataset access requires separate
+S3-compatible credentials and endpoint configuration; a Nebius control-plane
+login is not an AWS profile. See the <a href="../docs/dataset_loading.html">dataset loading guide</a>
+and <a href="https://docs.nebius.com/object-storage/interfaces/aws-cli">Nebius storage access</a>.</p>
+</section>
+<section id="outputs-and-checkpoints" class="level2">
+<h2 class="anchored" data-anchor-id="outputs-and-checkpoints">Outputs and checkpoints</h2>
+<p>The CLI mounts output storage and exposes <code>NEBIUS_OUTPUT_DIR</code>. The training
+configuration’s <code>output_dir</code> selects the export destination underneath that mount;
+absolute paths must start with <code>/outputs</code>. Training itself writes to a temporary
+directory on the container’s local disk. For example:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> training</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_total_limit</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Each submission gets a new name, <code>axolotl-&lt;unique-id&gt;</code>. With the documented CLI
+layout, the output location is <code>runs/&lt;job-name&gt;/training/</code> inside the selected
+bucket. Use the CLI’s printed storage hints to confirm the actual location.
+The provider refuses to train into an existing nonempty output directory.</p>
+<p>Axolotl serializes its ordinary checkpoints and final model/adapter on local disk.
+After each Trainer save, a callback streams the closed checkpoint files to output
+storage without copying POSIX metadata or renaming directories. Direct
+<code>safetensors</code> serialization into the bucket mount can fail with
+<code>Operation not permitted</code>; the local staging directory avoids that operation.
+Budget enough local disk for model caches, retained checkpoints and a staged
+resume checkpoint; use <code>disk_size</code> in the cloud YAML when needed.</p>
+<p>Each completed checkpoint export ends with <code>nebius-checkpoint.json</code>, listing file
+sizes and SHA-256 hashes. A failed copy does not produce this manifest. Saves wait
+for the copy before training continues. <code>save_total_limit</code> controls local retention
+only: exported checkpoints remain in the bucket until you remove them.</p>
+<p>The bootstrap requires both normal Trainer completion and a zero process exit
+before exporting the final files and writing <code>nebius-result.json</code>. This distinguishes
+normal completion from Axolotl’s weights-only SIGINT path, which may exit with code
+zero. The result manifest lists final files and their hashes, with the final step
+under <code>training.global_step</code>. It is not a model-quality check.</p>
+<p>Check that final adapter weights, <code>adapter_config.json</code> and tokenizer files can be
+downloaded and loaded with the same base model. Use the standard S3 interface:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> <span class="at">--endpoint-url</span> https://storage.REGION.nebius.cloud <span class="dt">\</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  s3 cp s3://BUCKET/runs/JOB_NAME/training/ ./downloaded-training/ <span class="at">--recursive</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This requires the separate S3 credential setup described above. Job completion
+and file presence do not prove that an interrupted checkpoint is complete.
+The manifest is written last, but this is not a transactional directory save or
+a guarantee that the mount has flushed all data to remote storage. Resume verifies
+every listed file after copying it back to local disk. Automatic recovery after
+preemption is not implemented.</p>
+</section>
+<section id="resume-explicitly" class="level2">
+<h2 class="anchored" data-anchor-id="resume-explicitly">Resume explicitly</h2>
+<p>Attach the bucket containing a previous checkpoint at another, read-only path:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Cloud configuration</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_OUTPUT_BUCKET</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /previous</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Select a complete checkpoint in the training YAML:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resume_from_checkpoint</span><span class="kw">:</span><span class="at"> /previous/runs/PREVIOUS_JOB_NAME/training/checkpoint-10</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Submit a new Job with the same model/tokenizer revisions, dataset order, adapter
+configuration and training schedule. Output goes to the new Job’s own prefix.
+The bootstrap requires <code>nebius-checkpoint.json</code>, stages every listed file on local
+disk, and verifies file sizes and SHA-256 hashes before starting Axolotl. It then
+checks for readable Trainer state, optimizer/scheduler and RNG state, and weights.
+Checkpoints from earlier direct-to-mount runs without a manifest are rejected.
+These checks do not validate model/config compatibility. Test a short resumed run;
+if a checkpoint is incomplete, select an earlier complete checkpoint explicitly.</p>
+<p>Automatic selection of the newest directory is rejected. Starting from adapter
+weights alone is continued adapter training, not restoration of optimizer and
+scheduler state. Distributed/sharded checkpoint layouts require additional
+validation and are outside the initial resume support.</p>
+</section>
+<section id="status-cancellation-and-cleanup" class="level2">
+<h2 class="anchored" data-anchor-id="status-cancellation-and-cleanup">Status, cancellation and cleanup</h2>
+<p>The Nebius CLI streams training logs to stdout and writes job identity/progress to
+stderr. It blocks until a terminal outcome. A nonzero CLI result is raised as an
+error, and the provider never automatically resubmits a failed or ambiguous launch.
+On failure, it makes one read-only lookup by the unique job name, using the same
+CLI profile/project, with a 15-second limit. A confirmed terminal
+<code>NotEnoughResources</code> error identifies the requested platform/preset and suggests
+retrying later. Other terminal failures point to job logs. If the job completed,
+it recommends checking outputs; if it is active or its state cannot be confirmed,
+it warns against submitting a duplicate and provides a status-check command.
+Lookup errors do not replace the original CLI exit code. Preview failures do not
+query job status. Keep the Job ID and name printed at submission.</p>
+<p><strong>Ctrl+C stops following the Job; it does not cancel remote training.</strong> Query or
+cancel using the Nebius CLI and the same profile/project:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get JOB_ID <span class="at">--format</span> json</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job logs JOB_ID <span class="at">--follow</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job cancel JOB_ID</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job delete JOB_ID</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>If the submission response was lost, use <code>nebius ai job get-by-name --help</code> or
+<code>nebius ai job list</code> to resolve the unique name before considering another launch.
+CLI code 6 can mean cancellation or interrupted following; query remote status.</p>
+<p>Jobs report <code>COMPLETED</code>, <code>FAILED</code>, <code>ERROR</code> or <code>CANCELLED</code>. Inspect status details for
+workload errors, timeouts and unavailable resources. The provider does not restart
+Jobs, choose replacement GPUs or promise immediate capacity. See
+<a href="https://docs.nebius.com/serverless/lifecycle">Nebius lifecycle</a>.</p>
+<p>Nebius manages VM/boot-disk cleanup. Retained buckets and mounted volumes remain
+and should be removed only when their data is no longer needed. Verify cleanup
+through supported Job/console observations; a successful training process is not
+proof that teardown has finished. Avoid a sleep-on-failure wrapper for normal runs.</p>
+</section>
+<section id="optional-serving-handoff" class="level2">
+<h2 class="anchored" data-anchor-id="optional-serving-handoff">Optional serving handoff</h2>
+<p>Download and validate the adapter with the exact base model/tokenizer. You may
+then prepare a separate authenticated Nebius Endpoint using an appropriate serving
+runtime, such as vLLM with that base model and adapter. This provider does not
+create Endpoints, merge adapters, publish to Hub, autoscale or scale to zero.
+See <a href="https://docs.nebius.com/serverless/endpoints/manage">Nebius Endpoints</a>.</p>
+</section>
+<section id="configuration-reference" class="level2">
+<h2 class="anchored" data-anchor-id="configuration-reference">Configuration reference</h2>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
 <thead>
 <tr class="header">
-<th>Name</th>
-<th>Description</th>
+<th>Cloud key</th>
+<th>Meaning</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.prompt_strategies.alpaca_chat.AlpacaChatPrompter">AlpacaChatPrompter</a></td>
-<td>Alpaca Chat Prompter extending the system prompt to for chat-instruct answers</td>
+<td><code>provider</code></td>
+<td><code>nebius</code></td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.prompt_strategies.alpaca_chat.AlpacaConcisePrompter">AlpacaConcisePrompter</a></td>
-<td>Alpaca Prompter extending the system prompt to ask for concise chat-instruct answers</td>
+<td><code>image</code> / <code>image_build</code></td>
+<td>Prebuilt runtime or tagged local Docker build (choose one)</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.prompt_strategies.alpaca_chat.AlpacaQAPromptTokenizingStrategy">AlpacaQAPromptTokenizingStrategy</a></td>
-<td>Tokenizing strategy for AlpacaQA</td>
+<td><code>platform</code>, <code>preset</code></td>
+<td>Required explicit GPU resource choice</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.prompt_strategies.alpaca_chat.CamelAIPromptTokenizingStrategy">CamelAIPromptTokenizingStrategy</a></td>
-<td>Tokenizing strategy for CamelAI datasets</td>
+<td><code>profile</code>, <code>parent_id</code>, <code>subnet_id</code></td>
+<td>Optional CLI profile/project/subnet selection</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.prompt_strategies.alpaca_chat.NoSystemPrompter">NoSystemPrompter</a></td>
-<td>Null Prompter with no system prompts</td>
+<td><code>disk_size</code></td>
+<td>Optional container disk size, such as <code>250Gi</code></td>
+</tr>
+<tr class="even">
+<td><code>timeout</code></td>
+<td>Seconds; defaults to 86400, allowed range 3600–604800</td>
+</tr>
+<tr class="odd">
+<td><code>output</code></td>
+<td>Managed output bucket selection; defaults to <code>auto</code></td>
+</tr>
+<tr class="even">
+<td><code>volumes</code></td>
+<td>List of <code>source</code>, <code>mount</code>, and optional <code>mode</code> (<code>ro</code> or <code>rw</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>env</code></td>
+<td>Mapping of nonsecret environment variables to string values</td>
+</tr>
+<tr class="even">
+<td><code>env_secret</code></td>
+<td>Mapping of environment variables to Nebius secret references</td>
+</tr>
+<tr class="odd">
+<td><code>show_context</code></td>
+<td>Local packaging preview; no submission</td>
+</tr>
+<tr class="even">
+<td><code>dry_run</code></td>
+<td>Server-side request validation; no Job creation</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.prompt_strategies.alpaca_chat.AlpacaChatPrompter" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_chat.AlpacaChatPrompter">AlpacaChatPrompter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_chat.AlpacaChatPrompter()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Alpaca Chat Prompter extending the system prompt to for chat-instruct answers</p>
-</section>
-<section id="axolotl.prompt_strategies.alpaca_chat.AlpacaConcisePrompter" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_chat.AlpacaConcisePrompter">AlpacaConcisePrompter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_chat.AlpacaConcisePrompter(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    prompt_style<span class="op">=</span>PromptStyle.INSTRUCT.value,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Alpaca Prompter extending the system prompt to ask for concise chat-instruct answers</p>
-</section>
-<section id="axolotl.prompt_strategies.alpaca_chat.AlpacaQAPromptTokenizingStrategy" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_chat.AlpacaQAPromptTokenizingStrategy">AlpacaQAPromptTokenizingStrategy</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_chat.AlpacaQAPromptTokenizingStrategy(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Tokenizing strategy for AlpacaQA</p>
-</section>
-<section id="axolotl.prompt_strategies.alpaca_chat.CamelAIPromptTokenizingStrategy" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_chat.CamelAIPromptTokenizingStrategy">CamelAIPromptTokenizingStrategy</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_chat.CamelAIPromptTokenizingStrategy(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    prompter,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    train_on_inputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Tokenizing strategy for CamelAI datasets</p>
-</section>
-<section id="axolotl.prompt_strategies.alpaca_chat.NoSystemPrompter" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.prompt_strategies.alpaca_chat.NoSystemPrompter">NoSystemPrompter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>prompt_strategies.alpaca_chat.NoSystemPrompter()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Null Prompter with no system prompts</p>
+<p>Unknown cloud keys are rejected. Separate remote preprocessing and lm-eval are
+not implemented for Nebius; preprocessing takes place within the training Job.</p>
 
 
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->
