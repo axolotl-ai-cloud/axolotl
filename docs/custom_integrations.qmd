@@ -170,3 +170,288 @@ other core command. Integrations bundled in this repo are registered in
 that they work from a source checkout without a reinstall.
 
 :::
+
+## Adding a cloud launcher
+
+Cloud launchers submit a complete Axolotl process before local dataset or model
+loading. They implement `axolotl.cli.cloud.base.CloudLauncher` and are discovered through
+the `axolotl.cloud_providers` entry-point group. Modal and Baseten use this same
+contract as built-in providers. `Cloud` remains an alias for `CloudLauncher`
+for existing integrations.
+
+```python
+from axolotl.cli.cloud.base import CloudLauncher
+
+class MyCloud(CloudLauncher):
+    def train(
+        self,
+        config_yaml,
+        launcher="accelerate",
+        launcher_args=None,
+        local_dirs=None,
+        **kwargs,
+    ):
+        # Validate self.config and submit the remote Axolotl process here.
+        ...
+```
+
+Register the provider in the **plugin package's** `pyproject.toml` (not in
+Axolotl's):
+
+```toml
+[project.entry-points."axolotl.cloud_providers"]
+my-cloud = "my_package.cloud:MyCloud"
+```
+
+Building the plugin wheel stores this declaration in its installed
+`.dist-info/entry_points.txt` metadata. Axolotl reads that metadata at runtime;
+no editable checkout or `pyproject.toml` is required on the user's machine.
+Install the plugin alongside Axolotl in the same Python environment, then select
+it in a separate cloud YAML:
+
+```yaml
+provider: my-cloud
+# Provider-specific connection, image, and resource settings go here.
+```
+
+```bash
+axolotl train train.yaml --cloud cloud.yaml
+```
+
+The provider constructor receives a plain dictionary containing the cloud
+configuration, including `provider`, and owns validation of its settings. The
+registry calls `CloudLauncher.from_config(config, config_dir=...)`; the default
+implementation calls the constructor unchanged. Override that factory when the
+provider needs to resolve paths relative to the cloud YAML directory. Core
+passes the configuration through without interpreting provider fields. Only
+the selected provider is imported. The built-in names `modal` and `baseten` are
+reserved; duplicate third-party names raise an error. Modal and Baseten are
+registered in Axolotl's own wheel metadata. A built-in fallback supports source
+checkouts with missing or stale installed metadata. Omitting `provider` retains
+the Modal default.
+
+For a provider that has no entry-point declaration, specify its import target
+directly in the cloud YAML:
+
+```yaml
+provider: my_package.cloud:MyCloud
+```
+
+The class must be importable in the launching Python environment. This works
+with an existing installed package, or a local module made available through
+`PYTHONPATH`; neither requires editing or reinstalling Axolotl. The target must
+subclass `CloudLauncher`, just like a registered provider.
+
+`train` receives the training YAML text, the remote process launcher
+(`accelerate`, `torchrun`, or `python`), its argument list, optional directory
+mounts (remote path to local path), and training configuration overrides in
+`kwargs`. Core obtains mounts by calling the provider's `get_local_dirs(cwd)`
+hook, which defaults to no mounts. Providers own working-directory upload policy
+and remote mount paths. The provider must apply supported overrides and either handle or
+explicitly report unsupported mounts and options. Provider failures must
+propagate to the caller. Keep provider dependencies out of unrelated launchers.
+
+Providers can also implement `preprocess(config_yaml, *args, **kwargs)` and
+`lm_eval(config_yaml)`. Both operations raise `NotImplementedError` by default;
+all three cloud commands select the provider from the cloud YAML.
+
+### Provider package boundaries
+
+Providers are bundled under `axolotl.integrations` but are self-contained Python
+packages. Each owns its configuration schemas (`args.py`), SDK imports,
+authentication, runtime templates, source staging policy, and remote helpers.
+Imports between files inside a provider use relative paths so the package can
+be moved into a standalone distribution.
+
+Core supplies discovery, YAML reading, the `CloudLauncher` contract, and optional
+provider-independent image utilities. `CloudImageConfig.from_config` resolves
+image build paths when a provider explicitly opts into that shared schema;
+core dispatch does not assume providers have an image-building configuration.
+Training plugins and provider SDKs are not loaded for discovery.
+
+Install provider dependencies separately while the implementations remain bundled:
+
+```bash
+pip install 'axolotl[modal]'     # Modal SDK
+pip install 'axolotl[baseten]'   # Truss SDK
+```
+
+To extract a provider later, move its integration directory with its schemas,
+templates, tests, and dependency declaration into its own package. Register its
+launcher through that package's `axolotl.cloud_providers` entry point, and remove
+the bundled registration/fallback for that name from Axolotl. Runtime behavior
+stays inside the provider; no provider-specific dispatch or schema code needs to
+be removed from core. The old `axolotl.cli.cloud.modal_` and `baseten` modules
+currently contain only compatibility imports.
+
+### Cloud launchers and remote training backends
+
+These are separate execution models:
+
+| Extension | Submitting/client process owns | Remote system owns |
+| --- | --- | --- |
+| Whole-job launcher (Modal, Baseten, Nebius) | Packaging, submission, and job monitoring | The complete Axolotl training process |
+| Training backend (Arctic Platform) | Data preparation and training orchestration | Model execution and optimizer state |
+
+The `axolotl.cloud_providers` entry-point group is scoped to whole-job launchers.
+Arctic-style backends use the training YAML's `plugins:` list and `BasePlugin`
+hooks, including `get_trainer_cls`, for per-step communication with remote
+compute. They do not implement `CloudLauncher` merely because compute is remote.
+
+The two extensions can compose: a cloud launcher can submit an Axolotl process
+whose trainer connects to an Arctic-style backend. Preserve the training plugin
+configuration when submitting a job, and provide its dependencies, connectivity,
+and credentials in the remote environment. The launcher API preserves that
+configuration; it does not define the backend's per-step execution interface.
+
+A launcher can also package a training plugin for remote checkpoint or completion
+callbacks, as needed by providers such as Nebius. Such callbacks execute inside
+the remote training process without initializing the training plugin manager in
+the submitting process.
+
+### Selecting or building the runtime image
+
+Image preparation is separate from the launcher and training backend. Modal and
+Baseten accept `image` for a prebuilt image containing Axolotl and any custom
+plugins:
+
+```yaml
+provider: baseten
+image: registry.example.com/team/axolotl:my-fork
+```
+
+Alternatively, use `image_build` to build from an explicit local context:
+
+```yaml
+provider: baseten
+image_build:
+  context: ../my-training-source
+  dockerfile: Dockerfile
+  tag: registry.example.com/team/axolotl:my-fork
+  build_args:
+    AXOLOTL_EXTRAS: deepspeed
+```
+
+`context` is relative to the cloud YAML file; `dockerfile` is relative to that
+context and must be inside it. Use either `image` or `image_build`. Omitting both
+preserves the provider's existing default image. Builds target `linux/amd64` by
+default; `image_build.platform` can select `linux/arm64` for compatible providers
+(Modal requires `linux/amd64`). Build settings are validated
+before submission. The Dockerfile controls installation of Axolotl, dependencies,
+and custom plugins; building a context does not automatically install its files.
+For example, a context containing `axolotl/` and `my-plugin/` could use:
+
+```dockerfile
+FROM axolotlai/axolotl:main-py3.11-cu128-2.9.1
+COPY axolotl/ /opt/axolotl-fork/
+COPY my-plugin/ /opt/my-plugin/
+RUN python -m pip install --no-build-isolation /opt/axolotl-fork /opt/my-plugin
+```
+
+This includes local edits selected by the Dockerfile's `COPY` instructions and
+the context's `.dockerignore`. Choose a base image with a compatible Python,
+PyTorch, and CUDA environment, and install into the environment used by the
+`axolotl` command. Put extra package installation in the Dockerfile.
+
+| Provider | `image_build` execution |
+| --- | --- |
+| Modal | Without `tag`, sends the Dockerfile and context to Modal's native image builder. With `tag`, builds and pushes through local Docker, then pulls the published image. |
+| Baseten | Runs local `docker build` and `docker push`, then submits the resulting registry tag. Requires Docker, a `tag`, and local push credentials; the remote service must also be able to pull that image. |
+
+See [Modal's Dockerfile support](https://modal.com/docs/reference/modal.Image#from_dockerfile)
+for supported Dockerfile instructions. Baseten's [training Image API](https://docs.baseten.co/reference/sdk/training#image)
+accepts a registry image. Registry-based providers can reuse
+`axolotl.cli.cloud.images.build_and_push_image`; native builders can consume the
+validated `CloudImageBuild` settings directly. Build or push failures stop
+submission. This workflow builds and publishes an image when the cloud command
+runs; configuration parsing alone performs neither action.
+
+Modal's existing `branch` and `dockerfile_commands` settings remain available for
+its registry-image path. With `image_build`, put those changes in the Dockerfile;
+combining the modes is rejected. `docker_tag` remains the legacy selector for an
+Axolotl image tag and cannot be combined with `image` or `image_build`.
+
+Source upload is another mechanism: Baseten's SDK can upload a workspace and run
+installation commands at startup, including installing a Git fork pinned to a
+commit. Its training configuration does not expose a dedicated Git repository/ref
+field. The Axolotl Baseten launcher currently stages its config and launch scripts;
+use the image options above to deploy a local fork and plugins. Runtime source
+mounts and uploads do not by themselves install a fork or rebuild an image.
+
+### Baseten SDK compatibility
+
+Install the tested SDK with `pip install 'axolotl[baseten]'` (or
+`pip install -e '.[baseten]'` from a checkout). The extra pins Truss `0.18.30`.
+The launcher uses `truss train push CONFIG`, and the job definition uses the
+released training SDK's `Image`, `Compute`, `Runtime`, and `TrainingProject`
+models. `gpu` selects the SDK accelerator name, for example `h100` or `h200`.
+
+The integration tests construct real SDK job definitions without submitting
+jobs. Run them in an isolated environment when updating the pin:
+
+```bash
+uv run --no-project --with truss==0.18.30 --with pytest python -m pytest \
+  --confcutdir=tests/cli tests/cli/test_baseten_sdk.py
+```
+
+These checks cover CLI syntax, selected images, accelerator settings, secrets,
+and registry authentication. They do not verify live provisioning or multi-node
+training. Upstream documentation and the SDK's main branch may expose fields
+that are not in the pinned release.
+
+### Container registries and authentication
+
+`image` and `image_build.tag` are complete OCI image references. They can name
+AWS ECR, Google Artifact Registry, Azure Container Registry, GHCR, Docker Hub,
+or another compatible registry. Registry addresses are preserved; no Docker Hub
+prefix is added. Use a tag for build output; prebuilt images may use a digest.
+
+Local builds and pushes use the Docker client's existing login or credential
+helper configuration. Remote pulls use the cloud provider's own credentials.
+Configure both when building into a private registry. Credentials are configured
+through the providers' secret stores or workload identities, independently of the
+source build context. These settings concern container images; checkpoint and
+dataset object stores are separate provider settings.
+
+For Modal, choose its native registry loader and a named Modal secret:
+
+```yaml
+provider: modal
+image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork
+image_registry:
+  provider: aws_ecr
+  secret: ecr-pull
+```
+
+Use `aws_ecr` with an AWS IAM/OIDC secret, `gcp_artifact_registry` with a GCP
+service-account secret, or `registry` with `REGISTRY_USERNAME` and
+`REGISTRY_PASSWORD` in the named secret (for example, GHCR or ACR). See
+[Modal private-registry authentication](https://modal.com/docs/guide/existing-images#load-images-from-private-registries)
+for secret contents. The same settings apply to a local `image_build` with a
+registry `tag`. Untagged native Modal builds do not use these pull credentials;
+for a Dockerfile with private base images, use the tagged local build path with
+Docker credentials for those bases.
+
+For Baseten, `docker_auth` follows its SDK's `DockerAuth` configuration. For
+example, ECR with named Baseten secrets:
+
+```yaml
+provider: baseten
+image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork
+docker_auth:
+  auth_method: AWS_IAM
+  registry: 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  aws_iam_docker_auth:
+    access_key_secret_ref:
+      name: ecr-access-key
+    secret_access_key_secret_ref:
+      name: ecr-secret-key
+```
+
+This also works with `image_build.tag` pointing at ECR. Baseten validates the
+native authentication fields when Truss loads the job definition. GCP
+service-account JSON and generic registry secret references (for GHCR or ACR)
+are also supported. AWS OIDC/assume-role and GCP OIDC require a Truss release
+whose training `DockerAuth` model includes those fields; see
+[Baseten DockerAuth](https://docs.baseten.co/reference/sdk/training#dockerauth).
+Use a Truss version that supports the chosen authentication method.

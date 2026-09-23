@@ -29,7 +29,6 @@ dependencies = [
     "hf_transfer",
     "sentencepiece",
     "gradio==6.10.0",
-    "modal==1.3.0.post1",
     "pydantic==2.12.5",
     "addict",
     "fire",
@@ -90,6 +89,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+modal = ["modal==1.3.0.post1"]
+baseten = ["truss==0.18.30"]
 flash-attn = ["flash-attn==2.8.3"]
 ring-flash-attn = [
     "flash-attn==2.8.3",
@@ -165,6 +166,10 @@ test = [
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
 
+[project.entry-points."axolotl.cloud_providers"]
+modal = "axolotl.integrations.modal.cloud:ModalCloud"
+baseten = "axolotl.integrations.baseten.cloud:BasetenCloud"
+
 [project.urls]
 Homepage = "https://axolotl.ai/"
 Documentation = "https://docs.axolotl.ai/"
@@ -179,6 +184,8 @@ axolotl = [
     "**/*.jinja",
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
 ]
+
+"axolotl.integrations.baseten" = ["template/*.sh", "template/*.py"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

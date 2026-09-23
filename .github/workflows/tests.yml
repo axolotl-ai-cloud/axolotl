@@ -79,7 +79,7 @@ jobs:
       matrix:
         python_version: ["3.12"]
         pytorch_version: ["2.12.1", "2.13.0", "2.14.0"]
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: cleanup node
@@ -117,7 +117,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
+          uv pip install --no-build-isolation -e '.[modal,baseten]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
@@ -143,6 +143,7 @@ jobs:
         run: hf cache ls
 
       - name: Run tests
+        timeout-minutes: 30
         run: |
           pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
@@ -181,7 +182,7 @@ jobs:
       matrix:
         python_version: ["3.12"]
         pytorch_version: ["2.12.1", "2.13.0", "2.14.0"]
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: cleanup node
@@ -221,7 +222,9 @@ jobs:
         run: |
           uv pip install packaging setuptools_scm build wheel psutil
           python -m build --no-isolation --sdist
-          uv pip install --no-build-isolation dist/axolotl*.tar.gz --override /tmp/torch-pin.txt
+          for sdist in dist/axolotl*.tar.gz; do
+            uv pip install --no-build-isolation "${sdist}[modal,baseten]" --override /tmp/torch-pin.txt
+          done
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
@@ -253,6 +256,7 @@ jobs:
         run: hf cache ls
 
       - name: Run tests
+        timeout-minutes: 30
         run: |
           pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml

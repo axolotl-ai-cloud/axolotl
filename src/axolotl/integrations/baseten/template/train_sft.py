@@ -24,7 +24,7 @@ if launcher_args:
     launcher_args_str = "-- " + " ".join(launcher_args)
 
 # 1. Define a base image for your training job
-BASE_IMAGE = "axolotlai/axolotl:main-py3.11-cu128-2.9.1"
+BASE_IMAGE = cloud_config.get("image") or "axolotlai/axolotl:main-py3.11-cu128-2.9.1"
 
 # 2. Define the Runtime Environment for the Training Job
 # This includes start commands and environment variables.a
@@ -49,7 +49,7 @@ training_runtime = definitions.Runtime(
 training_compute = definitions.Compute(
     node_count=node_count,
     accelerator=truss_config.AcceleratorSpec(
-        accelerator=truss_config.Accelerator.H100,
+        accelerator=truss_config.Accelerator(gpu.upper()),
         count=gpu_count,
     ),
 )
@@ -57,7 +57,16 @@ training_compute = definitions.Compute(
 # 4. Define the Training Job
 # This brings together the image, compute, and runtime configurations.
 my_training_job = definitions.TrainingJob(
-    image=definitions.Image(base_image=BASE_IMAGE),
+    image=definitions.Image(
+        base_image=BASE_IMAGE,
+        docker_auth=(
+            definitions.DockerAuth.model_validate(
+                cloud_config["docker_auth"], strict=False
+            )
+            if cloud_config.get("docker_auth")
+            else None
+        ),
+    ),
     compute=training_compute,
     runtime=training_runtime,
 )
