@@ -128,6 +128,12 @@ class LoraConfig(BaseModel):
             )
         },
     )
+    lora_fp32_gradients: bool = Field(
+        default=False,
+        description="Accumulate LoRA gradients in FP32. Keeps LoRA parameters in FP32 "
+        "on single-device/DDP/FSDP2; DeepSpeed uses native FP32 gradient buffers. "
+        "Fused reductions follow parameter precision. Frozen base weights are not promoted.",
+    )
     peft_autocast_adapter_dtype: bool | None = Field(
         default=None,
         json_schema_extra={

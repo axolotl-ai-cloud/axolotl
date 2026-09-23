@@ -545,6 +545,20 @@ def setup_deepspeed_env(cfg, stage=None):
             "Distributed State already initialized before Deepspeed setup"
         )
 
+    if cfg.lora_fp32_gradients:
+        from axolotl.monkeypatch.deepspeed_utils import (
+            patch_zero_gradient_accumulation_dtype,
+        )
+        from axolotl.utils.lora_precision import configure_deepspeed_lora_precision
+
+        if isinstance(cfg.deepspeed, dict):
+            ds_config = dict(cfg.deepspeed)
+        else:
+            with open(cfg.deepspeed, encoding="utf-8") as stream:
+                ds_config = json.load(stream)
+        cfg.deepspeed = DictDefault(configure_deepspeed_lora_precision(ds_config))
+        patch_zero_gradient_accumulation_dtype()
+
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     if isinstance(cfg.deepspeed, DictDefault):
         with NamedTemporaryFile(

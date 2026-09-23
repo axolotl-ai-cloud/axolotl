@@ -10,10 +10,10 @@ liger_rms_norm: true
 liger_glu_activation: true
 liger_rms_norm_gated: true
 
-# LoRA kernel patches are incompatible with this architecture — see README.
+# Attention kernels support mixer blocks; relu2 experts use the MoE backend.
 lora_mlp_kernel: false
-lora_qkv_kernel: false
-lora_o_kernel: false
+lora_qkv_kernel: true
+lora_o_kernel: true
 
 chat_template: tokenizer_default
 datasets:

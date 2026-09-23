@@ -2597,7 +2597,8 @@ class TestQuantizedBaseMerge:
         assert torch.equal(fake_quant_nvfp4(fq, pts_e), fq)
 
     @pytest.mark.parametrize("scale_shape", [(), (1,), (1, 1), (1, 1, 1)])
-    def test_nonexpert_fresh_requant_matches_training_snap(self, scale_shape):
+    @pytest.mark.parametrize("seed", [0, 719])
+    def test_nonexpert_fresh_requant_matches_training_snap(self, scale_shape, seed):
         """The non-expert (2D linear, e.g. attention) writer path: fresh-mode
         ``_requant_by_format`` on the merged bf16 weight must reproduce bitwise the
         grid the merge-aware LoRA-linear forward trained against (same
@@ -2609,7 +2610,7 @@ class TestQuantizedBaseMerge:
             quantize_nvfp4_merge,
         )
 
-        torch.manual_seed(0)
+        torch.manual_seed(seed)
         w0 = (torch.randn(32, 64) * 0.02).to(torch.bfloat16)
         pts = (w0.float().abs().max() / (6.0 * 448.0)).reshape(scale_shape)
         base_w = fake_quant_nvfp4(w0, pts)

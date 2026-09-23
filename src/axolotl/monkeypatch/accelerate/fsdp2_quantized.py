@@ -148,7 +148,14 @@ def cast_residual_fp32(model, compute_dtype=torch.bfloat16) -> int:
     from torch.distributed.tensor import DTensor
 
     n = 0
-    for p in model.parameters():
+    preserve_lora = getattr(model, "_axolotl_lora_fp32_gradients", False)
+    for name, p in model.named_parameters():
+        if (
+            preserve_lora
+            and p.requires_grad
+            and any(part.startswith("lora_") for part in name.split("."))
+        ):
+            continue
         if p.dtype == torch.float32 and not isinstance(p.data, DTensor):
             p.data = p.data.to(compute_dtype)
             n += 1

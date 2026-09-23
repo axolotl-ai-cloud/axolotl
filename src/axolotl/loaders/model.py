@@ -284,6 +284,23 @@ class ModelLoader:
             self._apply_post_lora_load_setup(skip_move_to_device)
             self.patch_manager.apply_post_model_load_patches(self.model)
             PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+        quantizer = getattr(self.model, "hf_quantizer", None)
+        if (
+            self.cfg.adapter in ("lora", "qlora")
+            and quantizer is not None
+            and quantizer.quantization_config.quant_method == "torchao"
+        ):
+            from axolotl.monkeypatch.torchao_lora import (
+                enable_native_nvfp4_lora_training,
+            )
+
+            enable_native_nvfp4_lora_training(self.model)
+        if self.cfg.lora_fp32_gradients:
+            from axolotl.utils.lora_precision import upcast_lora_parameters
+
+            self.model._axolotl_lora_fp32_gradients = True
+            if not self.cfg.deepspeed:
+                upcast_lora_parameters(self.model)
         if self.cfg.fp32_norms:
             tag_model_fp32_norms(self.model, self.cfg)
 

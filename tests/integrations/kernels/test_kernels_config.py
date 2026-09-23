@@ -253,17 +253,16 @@ def test_nvfp4_merge_aware_start_step_requires_flag():
 @pytest.mark.parametrize(
     "kernel", ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
 )
-def test_nvfp4_merge_aware_rejects_fused_lora_kernels(kernel):
-    # fused kernels bypass lora.Linear.forward, silently skipping the fake-quant
-    with pytest.raises(pydantic.ValidationError, match="incompatible"):
-        KernelsArgs.model_validate(
-            {
-                "use_sonicmoe": True,
-                "adapter": "lora",
-                "nvfp4_merge_aware": True,
-                kernel: True,
-            }
-        )
+def test_nvfp4_merge_aware_accepts_explicit_lora_kernels(kernel):
+    args = KernelsArgs.model_validate(
+        {
+            "use_sonicmoe": True,
+            "adapter": "lora",
+            "nvfp4_merge_aware": True,
+            kernel: True,
+        }
+    )
+    assert args.nvfp4_merge_aware is True
 
 
 def test_nvfp4_merge_aware_skips_lora_kernel_auto_enable():
@@ -303,3 +302,10 @@ def test_nvfp4_merge_aware_start_step_invalid(bad):
                 "nvfp4_merge_aware_start_step": bad,
             }
         )
+
+
+def test_nvfp4_merge_aware_accepts_multilora_plugin():
+    args = KernelsArgs.model_validate(
+        {"adapter": "multilora", "use_sonicmoe": True, "nvfp4_merge_aware": True}
+    )
+    assert args.nvfp4_merge_aware

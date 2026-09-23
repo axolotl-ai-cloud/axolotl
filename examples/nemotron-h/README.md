@@ -31,13 +31,18 @@ across samples.
 
 ## LoRA kernel patches
 
-All three LoRA Triton kernel patches must be disabled:
+Attention LoRA kernels support the attention blocks under `NemotronHBlock.mixer`.
+Mamba and MoE blocks are skipped by attention patching:
 
 ```yaml
-lora_qkv_kernel: false   # attention lives in NemotronHBlock.mixer, not layer.self_attn
-lora_o_kernel: false     # same reason
-lora_mlp_kernel: false   # relu2 (mlp_hidden_act) is not supported by lora_mlp_kernel
+lora_qkv_kernel: true
+lora_o_kernel: true
+lora_mlp_kernel: true    # dense/shared up_proj + down_proj adapters only
 ```
+
+The MLP option fuses dense/shared-expert LoRA projections and ReLU² activation
+forward/backward. Include `up_proj` and `down_proj` in `lora_target_modules` to
+adapt these modules. Attention-only examples leave this option disabled.
 
 ## MoE expert weights
 
@@ -54,5 +59,5 @@ lora_target_parameters:
 
 ## Limitations
 
-- **MoE Triton kernels**: `lora_mlp_kernel` is not supported for NemotronH's MoE expert layers. The expert weights are 3D `nn.Parameter` tensors (not `nn.Linear`), which the Triton kernel does not support. Keep `lora_mlp_kernel: false`.
+- **Routed experts**: `lora_mlp_kernel` only patches dense/shared modules. Routed 3D expert tensors retain their existing PEFT or configured MoE backend; enabling dense MLP kernels does not optimize these routed expert tensors.
 - **Sample packing / context parallelism**: requires `mamba-ssm` and `causal-conv1d`; see Requirements above.
