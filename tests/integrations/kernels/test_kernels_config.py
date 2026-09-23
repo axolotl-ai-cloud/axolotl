@@ -158,7 +158,16 @@ def test_moe_dequant_chunk_size_non_integer_rejected(bad):
         KernelsArgs.model_validate({"moe_dequant_chunk_size": bad})
 
 
-def test_warn_unclaimed_nonexpert_quantization_fires(caplog):
+@pytest.fixture
+def kernel_caplog(caplog, monkeypatch):
+    import logging
+
+    logger = logging.getLogger("axolotl.integrations.kernels.plugin")
+    monkeypatch.setattr(logger, "handlers", [*logger.handlers, caplog.handler])
+    return caplog
+
+
+def test_warn_unclaimed_nonexpert_quantization_fires(kernel_caplog):
     # A non-expert quant policy set with no adapter that consumes it -> warn (no silent no-op).
     import logging
 
@@ -166,14 +175,15 @@ def test_warn_unclaimed_nonexpert_quantization_fires(caplog):
     from axolotl.integrations.kernels.plugin import KernelsPlugin
 
     cfg = {"nonexpert_quantization": "nf4"}
-    with caplog.at_level(logging.WARNING):
+    with kernel_caplog.at_level(logging.WARNING):
         KernelsPlugin._warn_unclaimed_nonexpert_quantization(cfg, [ModelAdapter()])
     assert any(
-        "no active model adapter consumes it" in r.message for r in caplog.records
+        "no active model adapter consumes it" in r.message
+        for r in kernel_caplog.records
     )
 
 
-def test_warn_unclaimed_nonexpert_quantization_silent_when_consumed(caplog):
+def test_warn_unclaimed_nonexpert_quantization_silent_when_consumed(kernel_caplog):
     import logging
 
     from axolotl.integrations.kernels.adapters import ModelAdapter
@@ -186,25 +196,29 @@ def test_warn_unclaimed_nonexpert_quantization_silent_when_consumed(caplog):
             return True
 
     cfg = {"nonexpert_quantization": "nf4"}
-    with caplog.at_level(logging.WARNING):
+    with kernel_caplog.at_level(logging.WARNING):
         KernelsPlugin._warn_unclaimed_nonexpert_quantization(cfg, [_Consumer()])
     assert not any(
-        "no active model adapter consumes it" in r.message for r in caplog.records
+        "no active model adapter consumes it" in r.message
+        for r in kernel_caplog.records
     )
 
 
 @pytest.mark.parametrize("policy", [None, "none", "bf16"])
-def test_warn_unclaimed_nonexpert_quantization_skips_noop_policies(policy, caplog):
+def test_warn_unclaimed_nonexpert_quantization_skips_noop_policies(
+    policy, kernel_caplog
+):
     import logging
 
     from axolotl.integrations.kernels.adapters import ModelAdapter
     from axolotl.integrations.kernels.plugin import KernelsPlugin
 
     cfg = {} if policy is None else {"nonexpert_quantization": policy}
-    with caplog.at_level(logging.WARNING):
+    with kernel_caplog.at_level(logging.WARNING):
         KernelsPlugin._warn_unclaimed_nonexpert_quantization(cfg, [ModelAdapter()])
     assert not any(
-        "no active model adapter consumes it" in r.message for r in caplog.records
+        "no active model adapter consumes it" in r.message
+        for r in kernel_caplog.records
     )
 
 
