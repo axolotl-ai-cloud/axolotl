@@ -405,6 +405,15 @@ def download_muse_glimmer_tokenizer_fixture():
     )
 
 
+@pytest.fixture(scope="session")
+def download_minicpm5_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "openbmb/MiniCPM5-2B",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json", "chat_template.jinja"],
+    )
+
+
 # mistral-common tokenizers live in tekken.json, which `*token*` does not match
 @pytest.fixture(scope="session")
 def download_magistral_tokenizer_fixture():
