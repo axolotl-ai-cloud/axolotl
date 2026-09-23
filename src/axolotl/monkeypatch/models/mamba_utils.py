@@ -469,6 +469,10 @@ def kernel_accepts(fn, name: str) -> bool | None:
     import inspect
 
     try:
+        # kernels >= 0.16 turns a hub-decorated function into an nn.Module whose
+        # forward closes over the transformers wrapper
+        if not inspect.isroutine(fn) and hasattr(fn, "forward"):
+            fn = inspect.getclosurevars(fn.forward).nonlocals["func"]
         implementation = inspect.getclosurevars(fn).nonlocals["implementation"]
         return name in inspect.signature(implementation).parameters
     except Exception:  # pylint: disable=broad-exception-caught
