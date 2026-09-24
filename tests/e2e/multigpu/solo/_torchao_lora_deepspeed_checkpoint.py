@@ -1,12 +1,16 @@
 """Two-rank native TorchAO NVFP4 + ordinary LoRA DeepSpeed checkpoint smoke."""
 
 import os
+import sys
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 
 import torch
 import torch.distributed as dist
+
+sys.path.insert(0, str(Path(__file__).parents[3] / "monkeypatch"))
+
 from _torchao_lora_ddp import barrier, make_base, model_with_lora
 from datasets import Dataset
 
