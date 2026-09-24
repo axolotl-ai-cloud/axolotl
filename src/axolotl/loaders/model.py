@@ -80,6 +80,22 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
+def _is_native_nvfp4_quantization_config(config) -> bool:
+    quant_type = getattr(config, "quant_type", None)
+    if type(quant_type).__name__ == "NVFP4WeightOnlyConfig":
+        return True
+    if not isinstance(config, dict):
+        return False
+    pending = [config]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            if value.get("_type") == "NVFP4WeightOnlyConfig":
+                return True
+            pending.extend(value.values())
+    return False
+
+
 def _nf4_shape_stand_in(original):
     def forward(self, data, *args, **kwargs):
         if args or kwargs:
@@ -1079,6 +1095,19 @@ class ModelLoader:
             "trust_remote_code": self.cfg.trust_remote_code or False,
             **self.model_kwargs,
         }
+        quantization_config = self.model_kwargs.get(
+            "quantization_config",
+            getattr(self.model_config, "quantization_config", None),
+        )
+        if (
+            self.cfg.tensor_parallel_size or 1
+        ) > 1 and _is_native_nvfp4_quantization_config(quantization_config):
+            from axolotl.monkeypatch.torchao_tp import (
+                native_nvfp4_tp_checkpoint_loading,
+            )
+
+            with native_nvfp4_tp_checkpoint_loading(self.device_mesh):
+                return loader.from_pretrained(self.base_model, **kwargs)
         return loader.from_pretrained(self.base_model, **kwargs)
 
     def _build_model(self) -> bool:
