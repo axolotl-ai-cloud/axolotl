@@ -19,7 +19,7 @@ python scripts/cutcrossentropy_install.py | sh
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@3574df5"
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@latest"
 ```
 
 ## Usage
@@ -28,6 +28,18 @@ pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transform
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 ```
+
+### Options
+
+```yaml
+cut_cross_entropy: true                      # default when the plugin is loaded
+cut_cross_entropy_accum_c_fp32: true         # fp32 classifier (lm_head) gradient accumulation
+cut_cross_entropy_c_grad_chunk_size: auto    # or a positive multiple of 128, e.g. 32768
+```
+
+`cut_cross_entropy_accum_c_fp32` improves numerical stability for large vocabularies at the cost of a full fp32 copy of the `lm_head` gradient during the backward pass.
+
+`cut_cross_entropy_c_grad_chunk_size` bounds that fp32 buffer to the given number of vocabulary rows, launching the backward kernel once per chunk. `auto` resolves once at model load from `micro_batch_size`, `sequence_len` (divided by `context_parallel_size`) and the model's vocab and hidden size, picking a size that keeps the GPU busy while capping the scratch buffer at 1 GiB; the chosen value is logged. The gradient is identical to the unchunked path; only peak memory and throughput change. Requires `cut_cross_entropy_accum_c_fp32: true` and Triton >= 3.2.
 
 ## Supported Models
 

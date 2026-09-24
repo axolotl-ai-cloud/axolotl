@@ -20,6 +20,7 @@ from Apple's ML team.
 """
 
 import importlib
+import inspect
 from functools import partial
 
 import torch
@@ -36,7 +37,7 @@ LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@3574df5"`'
+    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@latest"`'
 )
 
 
@@ -102,12 +103,61 @@ class CutCrossEntropyPlugin(BasePlugin):
                 f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
             )
 
-            # The patch checks model_type internally
+            patch_kwargs = {
+                "remote_model_id": cfg.base_model if cfg.trust_remote_code else None,
+                "accum_c_fp32": bool(cfg.cut_cross_entropy_accum_c_fp32),
+            }
+            if cfg.cut_cross_entropy_c_grad_chunk_size:
+                if "c_grad_chunk_size" not in inspect.signature(cce_patch).parameters:
+                    raise ImportError(
+                        "The installed cut_cross_entropy does not support "
+                        "`cut_cross_entropy_c_grad_chunk_size`. " + _CCE_INSTALL_MESSAGE
+                    )
+                patch_kwargs["c_grad_chunk_size"] = self._resolve_c_grad_chunk_size(cfg)
 
-            cce_patch(
-                cfg.model_config_type,
-                remote_model_id=cfg.base_model if cfg.trust_remote_code else None,
+            # The patch checks model_type internally
+            cce_patch(cfg.model_config_type, **patch_kwargs)
+
+    def _resolve_c_grad_chunk_size(self, cfg) -> int:
+        chunk = cfg.cut_cross_entropy_c_grad_chunk_size
+        if chunk != "auto":
+            return int(chunk)
+
+        try:
+            from cut_cross_entropy import recommend_c_grad_chunk_size
+        except ImportError as e:
+            raise ImportError(
+                "The installed cut_cross_entropy cannot recommend a chunk size. "
+                + _CCE_INSTALL_MESSAGE
+            ) from e
+        if not torch.cuda.is_available():
+            raise ValueError(
+                "`cut_cross_entropy_c_grad_chunk_size: auto` needs a CUDA device to "
+                "size the chunk; set an explicit multiple of 128 instead."
             )
+
+        from axolotl.loaders.utils import load_model_config
+
+        model_config = load_model_config(cfg)
+        if hasattr(model_config, "get_text_config"):
+            model_config = model_config.get_text_config()
+
+        # tokens the loss sees per local microbatch; CP splits the sequence across ranks
+        num_tokens = cfg.micro_batch_size * (
+            cfg.sequence_len // max(cfg.context_parallel_size or 1, 1)
+        )
+        chunk = recommend_c_grad_chunk_size(
+            num_tokens=num_tokens,
+            vocab_size=model_config.vocab_size,
+            hidden_size=model_config.hidden_size,
+            device=torch.cuda.current_device(),
+        )
+        LOG.info(
+            "Cut Cross Entropy classifier-gradient chunk size resolved to %d "
+            "(0 keeps the full fp32 accumulator)",
+            chunk,
+        )
+        return chunk
 
     def patch_llama_like(
         self,
