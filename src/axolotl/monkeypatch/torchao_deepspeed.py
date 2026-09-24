@@ -159,14 +159,20 @@ def _zero3_reconstruct_native_weight(module):
         else module._axolotl_nvfp4_per_tensor_scale_bytes.view(
             module._axolotl_nvfp4_per_tensor_scale_dtype
         ).reshape(module._axolotl_nvfp4_per_tensor_scale_shape),
-        None,
+        None
+        if module._axolotl_nvfp4_act_per_tensor_scale_bytes is None
+        else module._axolotl_nvfp4_act_per_tensor_scale_bytes.view(
+            module._axolotl_nvfp4_act_per_tensor_scale_dtype
+        ).reshape(module._axolotl_nvfp4_act_per_tensor_scale_shape),
         module._axolotl_nvfp4_is_swizzled_scales,
         module._axolotl_nvfp4_use_triton_kernel,
-        None,
+        module._axolotl_nvfp4_act_quant_kwargs,
     )
 
 
 class _NVFP4Zero3Linear(torch.autograd.Function):
+    """Native static or dynamic NVFP4 forward with dequantized-weight input STE."""
+
     @staticmethod
     def forward(ctx, inputs, bias, module):
         output = torch.nn.functional.linear(
@@ -197,8 +203,8 @@ def _zero3_native_forward(module, inputs):
 def _install_zero3_native_components(module, weight, source=None) -> tuple[str, str]:
     import torch
 
-    if getattr(weight, "act_quant_kwargs", None) is not None or weight.ndim != 2:
-        raise ValueError("ZeRO-3 native NVFP4 supports static dense 2-D weights only")
+    if weight.ndim != 2:
+        raise ValueError("ZeRO-3 native NVFP4 supports dense 2-D weights only")
     module._parameters.pop("weight")
     module.weight = torch.empty(weight.shape, dtype=weight.orig_dtype, device="meta")
     if source is None:
@@ -217,12 +223,32 @@ def _install_zero3_native_components(module, weight, source=None) -> tuple[str, 
             if weight.per_tensor_scale is None
             else tuple(weight.per_tensor_scale.shape)
         )
+        act_per_tensor_scale_bytes = (
+            None
+            if weight.act_per_tensor_scale is None
+            else weight.act_per_tensor_scale.detach().reshape(-1).view(torch.uint8)
+        )
+        act_per_tensor_scale_dtype = (
+            None
+            if weight.act_per_tensor_scale is None
+            else weight.act_per_tensor_scale.dtype
+        )
+        act_per_tensor_scale_shape = (
+            None
+            if weight.act_per_tensor_scale is None
+            else tuple(weight.act_per_tensor_scale.shape)
+        )
+        act_quant_kwargs = weight.act_quant_kwargs
     else:
         qdata = source._axolotl_nvfp4_qdata
         scale_bytes = source._axolotl_nvfp4_scale_bytes
         per_tensor_scale_bytes = source._axolotl_nvfp4_per_tensor_scale_bytes
         per_tensor_scale_dtype = source._axolotl_nvfp4_per_tensor_scale_dtype
         per_tensor_scale_shape = source._axolotl_nvfp4_per_tensor_scale_shape
+        act_per_tensor_scale_bytes = source._axolotl_nvfp4_act_per_tensor_scale_bytes
+        act_per_tensor_scale_dtype = source._axolotl_nvfp4_act_per_tensor_scale_dtype
+        act_per_tensor_scale_shape = source._axolotl_nvfp4_act_per_tensor_scale_shape
+        act_quant_kwargs = source._axolotl_nvfp4_act_quant_kwargs
     module.register_parameter("_axolotl_nvfp4_qdata", qdata)
     module.register_parameter("_axolotl_nvfp4_scale_bytes", scale_bytes)
     module.register_buffer(
@@ -232,6 +258,14 @@ def _install_zero3_native_components(module, weight, source=None) -> tuple[str, 
     )
     module._axolotl_nvfp4_per_tensor_scale_dtype = per_tensor_scale_dtype
     module._axolotl_nvfp4_per_tensor_scale_shape = per_tensor_scale_shape
+    module.register_buffer(
+        "_axolotl_nvfp4_act_per_tensor_scale_bytes",
+        act_per_tensor_scale_bytes,
+        persistent=False,
+    )
+    module._axolotl_nvfp4_act_per_tensor_scale_dtype = act_per_tensor_scale_dtype
+    module._axolotl_nvfp4_act_per_tensor_scale_shape = act_per_tensor_scale_shape
+    module._axolotl_nvfp4_act_quant_kwargs = act_quant_kwargs
     module._axolotl_nvfp4_block_size = weight.block_size
     module._axolotl_nvfp4_orig_dtype = weight.orig_dtype
     module._axolotl_nvfp4_is_swizzled_scales = weight.is_swizzled_scales
@@ -241,7 +275,7 @@ def _install_zero3_native_components(module, weight, source=None) -> tuple[str, 
 
 
 def prepare_native_nvfp4_zero3(model, device) -> bool:
-    """Replace static dense native weights with raw byte ZeRO-3 components."""
+    """Replace dense native weights with raw byte ZeRO-3 components."""
     del device
     weights = [
         (name, parameter)
@@ -250,12 +284,7 @@ def prepare_native_nvfp4_zero3(model, device) -> bool:
     ]
     if not weights:
         return False
-    if any(
-        parameter.requires_grad
-        or parameter.ndim != 2
-        or getattr(parameter, "act_quant_kwargs", None) is not None
-        for _, parameter in weights
-    ):
+    if any(parameter.requires_grad or parameter.ndim != 2 for _, parameter in weights):
         return False
     modules = dict(model.named_modules(remove_duplicate=False))
     targets = []

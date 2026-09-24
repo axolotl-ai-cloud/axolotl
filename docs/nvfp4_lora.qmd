@@ -146,5 +146,9 @@ weight-only NVFP4 bases for training with these kernels.
   adapters and is outside the native TorchAO dense LoRA path above.
 
 Externally supplied TorchAO checkpoints with dynamic NVFP4 activation quantization
-are outside these supported dense training paths. No new straight-through
-activation-gradient convention is introduced by the LoRA kernel options.
+are supported for ordinary PEFT LoRA with DeepSpeed ZeRO-3 native components.
+The forward remains TorchAO's quantized NVFP4 operation. For base-input
+backpropagation, Axolotl uses the dequantized frozen weight as a
+straight-through approximation; it is not the exact derivative through activation
+quantization. This convention applies only to the native ZeRO-3 path, not the
+LoRA kernel options.

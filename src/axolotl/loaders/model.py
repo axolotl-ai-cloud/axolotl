@@ -277,6 +277,8 @@ class ModelLoader:
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
 
         skip_move_to_device = self._build_model()
+        if getattr(self, "_native_nvfp4_zero3_loading", False):
+            self.model._axolotl_native_nvfp4_zero3_dynamic_allowed = True
         from axolotl.utils.nf4_loading import nf4_phase
 
         staged_nf4 = getattr(self.model, "_axolotl_staged_nf4", False)
@@ -1198,8 +1200,9 @@ class ModelLoader:
             )
             skip_move_to_device = True
         else:
-            # Please don't remove underscore binding without reading the fn docstring
+            # Transformers stores only a weakref, so keep this local through from_pretrained.
             _ = self._configure_zero3_memory_efficient_loading()
+            self._native_nvfp4_zero3_loading = _ is not None
 
             if (
                 self.model_type

@@ -425,3 +425,63 @@ def test_save_model_delegates_for_ordinary_model_with_save_on_each_node(monkeypa
     trainer.save_model("out", True)
 
     assert calls == [("out", True)]
+
+
+@pytest.mark.parametrize("dynamic_amax", [False, True])
+def test_zero3_components_preserve_dynamic_nvfp4_metadata_and_ste_input_gradient(
+    monkeypatch, dynamic_amax
+):
+    from torchao.prototype.mx_formats.nvfp4_tensor import QuantizeTensorToNVFP4Kwargs
+
+    act_scale = None if dynamic_amax else torch.tensor(1.0012345, dtype=torch.float32)
+    weight = torch.nn.Parameter(
+        NVFP4Tensor.to_nvfp4(
+            torch.randn(4, 16, dtype=torch.bfloat16),
+            act_per_tensor_scale=act_scale,
+            act_quant_kwargs=QuantizeTensorToNVFP4Kwargs(
+                use_dynamic_per_tensor_scale=dynamic_amax
+            ),
+        ),
+        requires_grad=False,
+    )
+    model = torch.nn.Module()
+    model.layer = torch.nn.Linear(16, 4, bias=False, dtype=torch.bfloat16)
+    model.layer.weight = weight
+    inputs = torch.randn(2, 16, dtype=torch.bfloat16)
+    expected = torch.nn.functional.linear(inputs, weight.dequantize())
+    assert prepare_native_nvfp4_zero3(model, torch.device("cpu"))
+    from axolotl.monkeypatch.torchao_deepspeed import _zero3_reconstruct_native_weight
+
+    rebuilt = _zero3_reconstruct_native_weight(model.layer)
+    assert rebuilt.act_quant_kwargs == weight.act_quant_kwargs
+    if act_scale is not None:
+        torch.testing.assert_close(
+            rebuilt.act_per_tensor_scale, act_scale, rtol=0, atol=0
+        )
+    native_linear = torch.nn.functional.linear
+    monkeypatch.setattr(
+        torch.nn.functional,
+        "linear",
+        lambda value, native_weight, bias=None: native_linear(
+            value, native_weight.dequantize(), bias
+        ),
+    )
+    actual_input = inputs.detach().clone().requires_grad_()
+    actual = model.layer(actual_input)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    actual.float().sum().backward()
+    expected_grad = torch.ones_like(actual).matmul(weight.dequantize())
+    torch.testing.assert_close(actual_input.grad, expected_grad, rtol=0, atol=0)
+    assert (
+        model.layer._axolotl_nvfp4_act_quant_kwargs.use_dynamic_per_tensor_scale
+        == dynamic_amax
+    )
+    if act_scale is None:
+        assert model.layer._axolotl_nvfp4_act_per_tensor_scale_bytes is None
+    else:
+        torch.testing.assert_close(
+            model.layer._axolotl_nvfp4_act_per_tensor_scale_bytes,
+            act_scale.reshape(-1).view(torch.uint8),
+            rtol=0,
+            atol=0,
+        )
