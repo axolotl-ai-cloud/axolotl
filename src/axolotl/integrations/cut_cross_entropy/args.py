@@ -16,9 +16,9 @@
 Module for handling Cut Cross Entropy input arguments.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from axolotl.utils.logging import get_logger
 
@@ -31,6 +31,18 @@ class CutCrossEntropyArgs(BaseModel):
     """
 
     cut_cross_entropy: Optional[bool] = True
+    cut_cross_entropy_accum_c_fp32: Optional[bool] = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Accumulate the classifier (lm_head) gradient in fp32 for better numerical stability at the cost of a full fp32 copy of the gradient."
+        },
+    )
+    cut_cross_entropy_c_grad_chunk_size: Optional[int | Literal["auto"]] = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Bound the fp32 classifier-gradient accumulator to this many vocabulary rows (a positive multiple of 128) to reduce peak backward memory, or 'auto' to let CCE pick a size that balances GPU occupancy against a 1 GiB scratch cap. Requires cut_cross_entropy_accum_c_fp32 and Triton >= 3.2."
+        },
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -52,3 +64,18 @@ class CutCrossEntropyArgs(BaseModel):
                 "Please set `chunked_cross_entropy` to `False` or disable Cut Cross Entropy."
             )
         return data
+
+    @model_validator(mode="after")
+    def check_c_grad_chunk_size(self):
+        chunk = self.cut_cross_entropy_c_grad_chunk_size
+        if chunk is None or chunk == 0:
+            return self
+        if chunk != "auto" and (chunk < 0 or chunk % 128):
+            raise ValueError(
+                "`cut_cross_entropy_c_grad_chunk_size` must be 'auto' or a positive multiple of 128."
+            )
+        if not self.cut_cross_entropy_accum_c_fp32:
+            raise ValueError(
+                "`cut_cross_entropy_c_grad_chunk_size` requires `cut_cross_entropy_accum_c_fp32: true`."
+            )
+        return self

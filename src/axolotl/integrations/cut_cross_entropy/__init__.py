@@ -20,6 +20,7 @@ from Apple's ML team.
 """
 
 import importlib
+import inspect
 from functools import partial
 
 import torch
@@ -36,7 +37,7 @@ LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@3574df5"`'
+    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@latest"`'
 )
 
 
@@ -102,12 +103,22 @@ class CutCrossEntropyPlugin(BasePlugin):
                 f"Applying Cut Cross Entropy to model type: {cfg.model_config_type}"
             )
 
-            # The patch checks model_type internally
+            patch_kwargs = {
+                "remote_model_id": cfg.base_model if cfg.trust_remote_code else None,
+                "accum_c_fp32": bool(cfg.cut_cross_entropy_accum_c_fp32),
+            }
+            if cfg.cut_cross_entropy_c_grad_chunk_size:
+                if "c_grad_chunk_size" not in inspect.signature(cce_patch).parameters:
+                    raise ImportError(
+                        "The installed cut_cross_entropy does not support "
+                        "`cut_cross_entropy_c_grad_chunk_size`. " + _CCE_INSTALL_MESSAGE
+                    )
+                patch_kwargs["c_grad_chunk_size"] = (
+                    cfg.cut_cross_entropy_c_grad_chunk_size
+                )
 
-            cce_patch(
-                cfg.model_config_type,
-                remote_model_id=cfg.base_model if cfg.trust_remote_code else None,
-            )
+            # The patch checks model_type internally
+            cce_patch(cfg.model_config_type, **patch_kwargs)
 
     def patch_llama_like(
         self,

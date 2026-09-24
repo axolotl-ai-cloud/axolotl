@@ -57,10 +57,23 @@ class TestCutCrossEntropyIntegration:
     e2e tests for cut_cross_entropy integration with Axolotl
     """
 
-    def test_llama_w_cce(self, min_cfg, temp_dir):
-        cfg = DictDefault(min_cfg)
-        cfg = validate_config(cfg)
+    @pytest.mark.parametrize(
+        "cce_overrides",
+        [
+            {},
+            {"cut_cross_entropy_accum_c_fp32": True},
+            {
+                "cut_cross_entropy_accum_c_fp32": True,
+                "cut_cross_entropy_c_grad_chunk_size": "auto",
+            },
+        ],
+        ids=["default", "accum_c_fp32", "chunked_auto"],
+    )
+    def test_llama_w_cce(self, min_cfg, temp_dir, cce_overrides):
+        cfg = DictDefault(min_cfg | cce_overrides)
+        # plugin args only merge into the schema once the plugin is registered
         prepare_plugins(cfg)
+        cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
