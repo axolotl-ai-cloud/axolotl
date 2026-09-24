@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 
-def prepare_native_nvfp4_ddp(model, device) -> bool:
-    """Synchronize frozen native NVFP4 components before DDP wraps the model."""
+def prepare_native_nvfp4_components(model, device) -> tuple[str, ...]:
+    """Validate and synchronize frozen native NVFP4 parameter components."""
     import torch
     import torch.distributed as dist
 
     if not dist.is_initialized() or dist.get_world_size() == 1:
-        return False
+        return ()
     weights = [
         (name, param)
         for name, param in model.named_parameters()
@@ -44,7 +44,7 @@ def prepare_native_nvfp4_ddp(model, device) -> bool:
             "Native NVFP4 DDP requires identical component layouts on every rank"
         )
     if not weights:
-        return False
+        return ()
     with torch.no_grad():
         for _, param in weights:
             for component in components:
@@ -56,7 +56,15 @@ def prepare_native_nvfp4_ddp(model, device) -> bool:
                 dist.broadcast(broadcast_value.reshape(-1).view(torch.uint8), src=0)
                 if broadcast_value is not value:
                     value.copy_(broadcast_value.to(value.device))
+    return tuple(name for name, _ in weights)
+
+
+def prepare_native_nvfp4_ddp(model, device) -> bool:
+    """Synchronize frozen native NVFP4 components before DDP wraps the model."""
+    weights = prepare_native_nvfp4_components(model, device)
+    if not weights:
+        return False
     ignored = set(getattr(model, "_ddp_params_and_buffers_to_ignore", ()))
-    ignored.update(name for name, _ in weights)
+    ignored.update(weights)
     model._ddp_params_and_buffers_to_ignore = ignored
     return True
