@@ -29,6 +29,23 @@ _ROLE_MASK_WARNED: set[str] = set()
 _VALID_TRAIN_ON_EOS = ("turn", "all", "none", "last")
 
 
+def resize_image(
+    image: Image.Image,
+    image_size: int | tuple[int, int],
+    resize_algorithm: Resampling | None = None,
+) -> Image.Image:
+    resize_algorithm = resize_algorithm or Resampling.BILINEAR
+    if isinstance(image_size, tuple):
+        return image.resize(image_size, resize_algorithm)
+    # Int image_size: preserve aspect ratio then pad to square (black) to avoid distortion.
+    return ImageOps.pad(
+        image,
+        (image_size, image_size),
+        method=resize_algorithm,
+        color=(0, 0, 0),
+    )
+
+
 @dataclass(frozen=True)
 class RoleBoundary:
     """One role's token-level span markers for the masking scanner.
@@ -284,20 +301,9 @@ class ProcessingStrategy:
                     assert hasattr(image_value, "resize"), (
                         "Image does not have a resize method"
                     )
-
-                    if isinstance(self.image_size, tuple):
-                        image_value = image_value.resize(
-                            self.image_size, self.image_resize_algorithm
-                        )
-                    else:
-                        # Int image_size: preserve aspect ratio then pad to square (black) to avoid distortion.
-                        padding_color = (0, 0, 0)
-                        image_value = ImageOps.pad(
-                            image_value,
-                            (self.image_size, self.image_size),
-                            method=self.image_resize_algorithm,
-                            color=padding_color,
-                        )
+                    image_value = resize_image(
+                        image_value, self.image_size, self.image_resize_algorithm
+                    )
 
                 msg_ind_to_add = None
                 ind_to_add = None
