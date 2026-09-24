@@ -81,7 +81,7 @@ jobs:
             num_gpus: 3
             test_suite: nf4
             nf4_test_stack: pinned
-    name: ${{ matrix.test_suite }} (${{ matrix.nf4_test_stack || 'default' }} ${{ matrix.pytorch }}-${{ matrix.cuda }})
+    name: ${{ matrix.test_suite }} (${{ matrix.nf4_test_stack || 'default' }} ${{ matrix.pytorch }}-cu${{ matrix.cuda }})
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     steps:
