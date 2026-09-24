@@ -15,6 +15,7 @@ class TestFlashAttnAvailabilityValidator:
 
     @staticmethod
     def _force_availability(monkeypatch, value: bool):
+        import kernels
         import transformers.utils
 
         monkeypatch.setattr(
@@ -23,6 +24,13 @@ class TestFlashAttnAvailabilityValidator:
         monkeypatch.setattr(
             transformers.utils, "is_flash_attn_3_available", lambda **_: value
         )
+        if not value:
+            # a hub lookup that succeeds overrides transformers' verdict, so
+            # "unavailable" has to fail there as well
+            def no_build(*_, **__):
+                raise FileNotFoundError("Cannot find a build variant")
+
+            monkeypatch.setattr(kernels, "get_kernel", no_build)
 
     def test_fa2_unavailable_raises(self, min_base_cfg, monkeypatch):
         self._force_availability(monkeypatch, False)
