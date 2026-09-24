@@ -6,7 +6,8 @@ from axolotl.monkeypatch.torchao_deepspeed import load_native_nvfp4_adapter_stat
 
 def _model():
     model = torch.nn.Module()
-    model.base = torch.nn.Parameter(torch.ones(2), requires_grad=False)
+    native = type("NVFP4Tensor", (torch.nn.Parameter,), {})
+    model.base = native(torch.ones(2), requires_grad=False)
     model.adapter = torch.nn.Parameter(torch.zeros(2))
     return model
 
@@ -200,3 +201,49 @@ def test_marked_engine_rejects_frozen_native_alias_before_load():
             {"module": {"adapter": torch.ones(2), "base_alias": torch.zeros(2)}}
         )
     assert torch.equal(model.adapter, before)
+
+
+def test_marked_engine_rejects_ordinary_frozen_parameter_replacement():
+    from axolotl.monkeypatch.torchao_deepspeed import (
+        _install_native_nvfp4_broadcast_filter,
+    )
+
+    class Engine:
+        def __init__(self, model):
+            self.module = model
+
+        def _broadcast_model(self):
+            pass
+
+    model = torch.nn.Module()
+    model.base = torch.nn.Parameter(torch.ones(2), requires_grad=False)
+    model._axolotl_native_nvfp4_deepspeed_names = {"base"}
+    _install_native_nvfp4_broadcast_filter(Engine)
+    with pytest.raises(ValueError, match="must remain frozen"):
+        Engine(model)._broadcast_model()
+
+
+def test_unconverted_native_engine_rejects_zero3_fetch_on_restore():
+    from axolotl.monkeypatch.torchao_deepspeed import (
+        _install_native_nvfp4_broadcast_filter,
+    )
+
+    class Engine:
+        def __init__(self, model):
+            self.module = model
+
+        def _broadcast_model(self):
+            pass
+
+        def load_module_state_dict(
+            self, checkpoint, strict=True, custom_load_fn=None, fetch_z3_params=False
+        ):
+            return None
+
+    model = _model()
+    model._axolotl_native_nvfp4_deepspeed_names = {"base"}
+    _install_native_nvfp4_broadcast_filter(Engine)
+    with pytest.raises(ValueError, match="does not support ZeRO-3"):
+        Engine(model).load_module_state_dict(
+            {"module": {"adapter": torch.ones(2)}}, fetch_z3_params=True
+        )
