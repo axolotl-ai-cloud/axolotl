@@ -306,3 +306,36 @@ def test_native_nvfp4_quantizer_allows_only_frozen_adapter_training(tmp_path):
         args=TrainingArguments(output_dir=str(tmp_path), use_cpu=True, report_to=[]),
     )
     assert trainer.model is model
+
+
+@pytest.mark.parametrize("backend", ["plain", "ddp", "fsdp"])
+def test_dynamic_native_nvfp4_requires_loader_zero3_marker(backend):
+    pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
+    from peft import LoraConfig, get_peft_model
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    from axolotl.monkeypatch.torchao_lora import enable_native_nvfp4_lora_training
+    from axolotl.utils.quantization import quantize_model
+    from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+    base = LlamaForCausalLM(
+        LlamaConfig(
+            vocab_size=32,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+        )
+    ).bfloat16()
+    quantize_model(base, TorchAOQuantDType.nvfp4)
+    model = get_peft_model(base, LoraConfig(r=2, target_modules=["q_proj"]))
+    model.hf_quantizer.quantization_config.quant_type = type(
+        "NVFP4DynamicActivationNVFP4WeightConfig", (), {}
+    )()
+    native = next(p for p in model.parameters() if type(p).__name__ == "NVFP4Tensor")
+    native.act_quant_kwargs = object()
+    setattr(model, f"_{backend}_configured", True)
+    assert not enable_native_nvfp4_lora_training(model)
+    model._axolotl_native_nvfp4_zero3_dynamic_allowed = True
+    assert enable_native_nvfp4_lora_training(model)

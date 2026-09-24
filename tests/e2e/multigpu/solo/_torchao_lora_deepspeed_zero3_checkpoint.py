@@ -14,7 +14,6 @@ from datasets import Dataset
 sys.path.insert(0, str(Path(__file__).parents[3] / "monkeypatch"))
 _ddp = importlib.import_module("_torchao_lora_ddp")
 barrier = _ddp.barrier
-model_with_lora = _ddp.model_with_lora
 
 
 def _local(value):
@@ -217,7 +216,7 @@ def configure_zero3_model_loading():
     )
 
 
-def make_base_with_non_bf16_per_tensor_scale(base):
+def make_base_with_non_bf16_per_tensor_scale(base, dynamic_activation=False):
     from transformers import LlamaConfig, LlamaForCausalLM
 
     from axolotl.utils.quantization import quantize_model, save_quantized_model
@@ -235,11 +234,55 @@ def make_base_with_non_bf16_per_tensor_scale(base):
             pad_token_id=0,
         )
     ).bfloat16()
-    quantize_model(model, TorchAOQuantDType.nvfp4)
-    for parameter in model.parameters():
-        if type(parameter).__name__ == "NVFP4Tensor":
-            parameter.per_tensor_scale.fill_(1.0012345)
+    quantize_model(
+        model,
+        TorchAOQuantDType.nvfp4,
+        activation_dtype=(TorchAOQuantDType.nvfp4 if dynamic_activation else None),
+    )
+    if not dynamic_activation:
+        for parameter in model.parameters():
+            if type(parameter).__name__ == "NVFP4Tensor":
+                parameter.per_tensor_scale.fill_(1.0012345)
     save_quantized_model(model, base)
+
+
+def model_with_lora(base, device, dynamic_activation):
+    if not dynamic_activation:
+        return _ddp.model_with_lora(base, device)
+
+    from axolotl.loaders.model import ModelLoader
+    from axolotl.utils.dict import DictDefault
+
+    class Tokenizer:
+        bos_token_id = 1
+        eos_token_id = 2
+
+        def __len__(self):
+            return 32
+
+    config = DictDefault(
+        base_model=str(base),
+        adapter="lora",
+        lora_r=2,
+        lora_alpha=2,
+        lora_dropout=0.0,
+        lora_target_modules=["q_proj"],
+        torch_dtype=torch.bfloat16,
+        deepspeed={
+            "train_batch_size": 2,
+            "gradient_accumulation_steps": 1,
+            "bf16": {"enabled": True},
+            "zero_optimization": {"stage": 3},
+        },
+        micro_batch_size=1,
+        gradient_accumulation_steps=1,
+        tensor_parallel_size=1,
+        context_parallel_size=1,
+        sequence_len=0,
+    )
+    model, _ = ModelLoader(config, tokenizer=Tokenizer()).load()
+    assert getattr(model, "_axolotl_native_nvfp4_zero3_dynamic_allowed", False)
+    return model
 
 
 def main():
@@ -249,21 +292,34 @@ def main():
     dist.init_process_group("nccl")
     root = Path(os.environ["TORCHAO_LORA_DEEPSPEED_CHECKPOINT_TMP"])
     base = root / "base"
+    dynamic_activation = os.environ.get("TORCHAO_LORA_DEEPSPEED_DYNAMIC") == "1"
     if dist.get_rank() == 0 and not base.exists():
-        make_base_with_non_bf16_per_tensor_scale(base)
+        make_base_with_non_bf16_per_tensor_scale(base, dynamic_activation)
     barrier()
     zero3_load_config = configure_zero3_model_loading()
     phase = os.environ["TORCHAO_LORA_DEEPSPEED_PHASE"]
-    model = model_with_lora(base, device)
+    model = model_with_lora(base, device, dynamic_activation)
     baseline_components = native_component_snapshot(model)
     baseline_per_tensor_scales = native_per_tensor_scale_snapshot(model)
     expected_scale_bytes = (
         torch.tensor(1.0012345, dtype=torch.float32).reshape(-1).view(torch.uint8)
     )
-    assert baseline_per_tensor_scales and all(
-        torch.equal(value, expected_scale_bytes)
-        for value in baseline_per_tensor_scales.values()
-    )
+    if dynamic_activation:
+        dynamic_weights = [
+            parameter
+            for parameter in model.parameters()
+            if type(parameter).__name__ == "NVFP4Tensor"
+        ]
+        assert dynamic_weights and all(
+            parameter.act_quant_kwargs.use_dynamic_per_tensor_scale
+            for parameter in dynamic_weights
+        )
+        assert getattr(model, "_axolotl_native_nvfp4_zero3_dynamic_allowed", False)
+    else:
+        assert baseline_per_tensor_scales and all(
+            torch.equal(value, expected_scale_bytes)
+            for value in baseline_per_tensor_scales.values()
+        )
     if phase == "reference":
         before = adapters(model)
         trainer = train(model, root / "run")

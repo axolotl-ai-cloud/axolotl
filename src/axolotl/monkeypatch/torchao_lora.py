@@ -16,14 +16,16 @@ def enable_native_nvfp4_lora_training(model):
         model, "peft_config", None
     ):
         return False
-    if (
-        type(quantizer.quantization_config.quant_type).__name__
-        != "NVFP4WeightOnlyConfig"
-    ):
+    if type(quantizer.quantization_config.quant_type).__name__ not in {
+        "NVFP4WeightOnlyConfig",
+        "NVFP4DynamicActivationNVFP4WeightConfig",
+    }:
         return False
     weights = [p for p in model.parameters() if type(p).__name__ == "NVFP4Tensor"]
-    if not weights or any(
-        p.requires_grad or p.act_quant_kwargs is not None for p in weights
+    if not weights or any(p.requires_grad for p in weights):
+        return False
+    if any(p.act_quant_kwargs is not None for p in weights) and not getattr(
+        model, "_axolotl_native_nvfp4_zero3_dynamic_allowed", False
     ):
         return False
     quantizer.__class__ = _NVFP4LoRAQuantizer

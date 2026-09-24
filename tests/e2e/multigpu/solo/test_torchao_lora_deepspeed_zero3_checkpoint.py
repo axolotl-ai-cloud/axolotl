@@ -9,12 +9,17 @@ import pytest
 import torch
 
 
+@pytest.mark.parametrize("dynamic_activation", [False, True])
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="two CUDA devices required")
-def test_native_nvfp4_lora_deepspeed_zero3_checkpoint_resume(tmp_path):
+def test_native_nvfp4_lora_deepspeed_zero3_checkpoint_resume(
+    tmp_path, dynamic_activation
+):
     env = os.environ | {
         "TORCHAO_LORA_DEEPSPEED_CHECKPOINT_TMP": str(tmp_path),
         "ZERO_STAGE": "3",
         "OMP_NUM_THREADS": "1",
+        "ACCELERATE_DEEPSPEED_ZERO_STAGE": "3",
+        "TORCHAO_LORA_DEEPSPEED_DYNAMIC": str(int(dynamic_activation)),
     }
     worker = str(
         Path(__file__).with_name("_torchao_lora_deepspeed_zero3_checkpoint.py")
