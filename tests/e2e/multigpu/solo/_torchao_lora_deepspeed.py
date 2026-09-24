@@ -1,11 +1,15 @@
 """Two-rank native TorchAO NVFP4 + ordinary LoRA DeepSpeed smoke."""
 
 import os
+import sys
 from pathlib import Path
 
 import deepspeed
 import torch
 import torch.distributed as dist
+
+sys.path.insert(0, str(Path(__file__).parents[3] / "monkeypatch"))
+
 from _torchao_lora_ddp import (
     adapters,
     barrier,
