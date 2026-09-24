@@ -64,21 +64,20 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.1
-            axolotl_extras:
-            # axolotl_extras: fbgemm-gpu
-            num_gpus: 2
-            test_suite: multigpu
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
             pytorch: 2.13.0
             axolotl_extras:
             num_gpus: 2
             test_suite: multigpu
           - cuda: 130
+            cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.1
+            pytorch: 2.14.0
+            axolotl_extras:
+            num_gpus: 2
+            test_suite: multigpu
+          - cuda: 130
+            python_version: "3.12"
+            pytorch: 2.13.0
             num_gpus: 3
             test_suite: nf4
             nf4_test_stack: pinned
