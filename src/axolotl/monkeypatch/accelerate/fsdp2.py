@@ -461,6 +461,17 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     fsdp2_plugin = accelerator.state.fsdp_plugin
 
+    from axolotl.monkeypatch.accelerate.fsdp2_quantized import model_has_nvfp4_params
+
+    if model_has_nvfp4_params(model):
+        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
+            normalize_dense_nvfp4_scales,
+            patch_nvfp4_fsdp,
+        )
+
+        normalize_dense_nvfp4_scales(model)
+        patch_nvfp4_fsdp()
+
     staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
     original_sd = (
         model.state_dict()
@@ -645,7 +656,6 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         cast_residual_fp32,
         model_has_float_logical_quantized_params,
         model_has_nonfloat_params,
-        model_has_nvfp4_params,
         nonfloat_param_guard,
         shard_fp32_modules,
     )
@@ -658,14 +668,6 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     # packed, which includes bnb Params4bit) and stays gated on that.
     _quantized = model_has_float_logical_quantized_params(model)
     _needs_nonfloat_guard = model_has_nonfloat_params(model)
-    if model_has_nvfp4_params(model):
-        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
-            normalize_dense_nvfp4_scales,
-            patch_nvfp4_fsdp,
-        )
-
-        normalize_dense_nvfp4_scales(model)
-        patch_nvfp4_fsdp()
     if _needs_nonfloat_guard:
         # PatchManager applies this for fsdp2 + 4/8-bit configs; direct callers of
         # this function (tests, probes) would otherwise see FSDP2 cast packed bytes

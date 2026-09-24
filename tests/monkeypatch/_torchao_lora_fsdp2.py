@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 import torch.distributed as dist
-from _torchao_lora_ddp import barrier, make_base, model_with_lora, native
+from _torchao_lora_ddp import barrier, make_base, model_with_lora
 from datasets import Dataset
 
 
@@ -77,7 +77,12 @@ def main():
     train(model, root / "first")
     after = adapters(model)
     assert any(not torch.equal(before[name], after[name]) for name in before)
-    assert all(not parameter.requires_grad for parameter in native(model))
+    frozen = [
+        parameter
+        for parameter in model.parameters()
+        if type(_local(parameter)).__name__ == "NVFP4Tensor"
+    ]
+    assert frozen and all(not parameter.requires_grad for parameter in frozen)
     checkpoint = root / "first" / "checkpoint-1"
     assert checkpoint.is_dir()
     fresh = model_with_lora(base, device)
