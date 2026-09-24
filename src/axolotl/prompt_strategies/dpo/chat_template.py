@@ -3,6 +3,7 @@ DPO prompt strategies for using tokenizer chat templates.
 """
 
 from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
+from axolotl.utils.data.utils import is_vision_dataset
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
 
 
@@ -90,6 +91,10 @@ def default(cfg, dataset_idx=0, **kwargs):
             "role": role_map[rejected_msg[message_property_mappings["role"]]],
             "content": rejected_msg[message_property_mappings["content"]],
         }
+        if is_vision_dataset(sample.keys()):
+            # TRL renders vision samples with the processor at collate time.
+            return {"prompt": messages, "chosen": [chosen], "rejected": [rejected]}
+
         dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
 
         result = {}
@@ -210,6 +215,13 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
             "role": role_map[rejected_raw[-1][message_property_mappings["role"]]],
             "content": rejected_raw[-1][message_property_mappings["content"]],
         }
+
+        if is_vision_dataset(sample.keys()):
+            return {
+                "prompt": chosen_messages,
+                "chosen": [chosen_response],
+                "rejected": [rejected_response],
+            }
 
         dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
 
