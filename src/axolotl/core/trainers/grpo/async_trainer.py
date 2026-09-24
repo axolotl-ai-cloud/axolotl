@@ -1292,7 +1292,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
         else:
             return
 
-        pad_id = self.processing_class.pad_token_id
+        pad_id = getattr(
+            self.processing_class, "tokenizer", self.processing_class
+        ).pad_token_id
         if pad_id is not None and pad_id < embed.weight.shape[0]:
             with torch.no_grad():
                 embed.weight.data[pad_id].zero_()
