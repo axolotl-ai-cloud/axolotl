@@ -77,6 +77,7 @@ class TestCutCrossEntropyIntegration:
         # plugin args only merge into the schema once the plugin is registered
         prepare_plugins(cfg)
         cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
@@ -130,6 +131,7 @@ class TestCutCrossEntropyIntegration:
         )
         prepare_plugins(cfg)
         cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
@@ -165,6 +167,7 @@ class TestCutCrossEntropyIntegration:
         )
         prepare_plugins(cfg)
         cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
@@ -197,6 +200,7 @@ class TestCutCrossEntropyIntegration:
         )
         prepare_plugins(cfg)
         cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 

@@ -95,6 +95,9 @@ class CutCrossEntropyPlugin(BasePlugin):
                 hint="Disable cut_cross_entropy for this model.",
             )
             self._check_requirements()
+            if getattr(cfg, "adapter", None) == "multilora":
+                LOG.info("Multi-LoRA will apply Cut Cross Entropy per adapter")
+                return
             self.patch_llama_like(cfg.model_config_type)
 
             from cut_cross_entropy.transformers.patch import cce_patch
