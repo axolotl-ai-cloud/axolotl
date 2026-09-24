@@ -244,11 +244,13 @@ def test_native_nvfp4_deepspeed_filters_only_tagged_frozen_parameters():
 
     native = type("NVFP4Tensor", (types.SimpleNamespace,), {})(requires_grad=False)
     adapter = types.SimpleNamespace(requires_grad=True)
+    remove_duplicate_calls = []
 
     class Model:
         _axolotl_native_nvfp4_deepspeed_names = {"base.weight"}
 
-        def named_parameters(self):
+        def named_parameters(self, remove_duplicate=True):
+            remove_duplicate_calls.append(remove_duplicate)
             return iter((("base.weight", native), ("adapter.weight", adapter)))
 
     class Engine:
@@ -263,6 +265,7 @@ def test_native_nvfp4_deepspeed_filters_only_tagged_frozen_parameters():
     engine = Engine()
     engine._broadcast_model()
     assert engine.broadcast == ["adapter.weight"]
+    assert remove_duplicate_calls[:2] == [False, True]
     assert list(engine.module.named_parameters()) == [
         ("base.weight", native),
         ("adapter.weight", adapter),

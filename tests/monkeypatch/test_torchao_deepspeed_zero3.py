@@ -7,6 +7,15 @@ from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 from axolotl.monkeypatch.torchao_deepspeed import prepare_native_nvfp4_zero3
 
 
+@pytest.fixture(autouse=True)
+def stub_broadcast_filter(monkeypatch):
+    import axolotl.monkeypatch.torchao_deepspeed as torchao_deepspeed
+
+    monkeypatch.setattr(
+        torchao_deepspeed, "_install_native_nvfp4_broadcast_filter", lambda: None
+    )
+
+
 def _weight(shape=(4, 16)):
     torch.manual_seed(0)
     return torch.nn.Parameter(
