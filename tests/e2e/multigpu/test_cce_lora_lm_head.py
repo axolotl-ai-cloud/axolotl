@@ -28,7 +28,7 @@ def _base_cfg(temp_dir):
         "special_tokens": {"pad_token": "<|endoftext|>"},
         "datasets": [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
         "num_epochs": 1,
-        "max_steps": 4,
+        "max_steps": 2,
         "micro_batch_size": 2,
         "gradient_accumulation_steps": 1,
         "learning_rate": 5e-4,

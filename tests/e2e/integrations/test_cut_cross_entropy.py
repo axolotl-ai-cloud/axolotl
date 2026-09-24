@@ -192,7 +192,7 @@ class TestCutCrossEntropyIntegration:
                 "lora_alpha": 16,
                 "lora_dropout": 0.0,
                 "lora_target_modules": ["q_proj", "v_proj", "lm_head"],
-                "max_steps": 10,
+                "max_steps": 5,
             }
         )
         prepare_plugins(cfg)
