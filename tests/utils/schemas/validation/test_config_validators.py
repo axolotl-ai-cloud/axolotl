@@ -7,7 +7,7 @@ Covers:
   - lora_target_modules with invalid regex patterns is rejected
   - GRPO: generation batch size must be divisible by num_generations,
     num_generations >= 2, and effective_gbs >= num_generations * world_size
-  - context_parallel_size > 1 rejects any attn_implementation but flash_attention_2
+  - context_parallel_size > 1 requires the plugin and kernel-backed attention
 """
 
 import pytest
@@ -299,23 +299,47 @@ class TestBatchSizeFieldsValidator:
 
 
 class TestContextParallelAttnImplValidator:
-    """Ring attention only supports the flash attention 2 backend, so CP > 1 rejects the rest."""
+    """CP requires its plugin and a kernel-backed attention implementation."""
+
+    plugin = "axolotl.integrations.context_parallel.ContextParallelPlugin"
+
+    def test_plugin_required(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            context_parallel_size=2, attn_implementation="sdpa"
+        )
+        with pytest.raises(ValueError, match="requires the ContextParallelPlugin"):
+            validate_config(cfg)
 
     @pytest.mark.parametrize(
         "impl",
         [
+            "flash_attention_2",
             "flash_attention_3",
             "flash_attention_4",
             "kernels-community/flash-attn2",
             "kernels-community/flash-attn3",
             "sdpa",
+            "flex_attention",
         ],
     )
-    def test_non_fa2_rejected(self, min_base_cfg, impl):
+    def test_kernel_backends_allowed(self, min_base_cfg, impl, monkeypatch):
+        monkeypatch.setattr("torch.cuda.is_available", lambda: False)
         cfg = min_base_cfg | DictDefault(
-            context_parallel_size=2, attn_implementation=impl
+            context_parallel_size=2,
+            attn_implementation=impl,
+            plugins=[self.plugin],
         )
-        with pytest.raises(ValueError, match="only supports the flash attention 2"):
+        validated = validate_config(cfg)
+        assert validated.context_parallel_size == 2
+        assert validated.attn_implementation == impl
+
+    def test_eager_rejected(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            context_parallel_size=2,
+            attn_implementation="eager",
+            plugins=[self.plugin],
+        )
+        with pytest.raises(ValueError, match="kernel-backed attention"):
             validate_config(cfg)
 
 
