@@ -11,6 +11,7 @@ from axolotl.monkeypatch.models.mamba import modeling as mamba_packing
 from axolotl.monkeypatch.models.mamba.modeling import (
     PackedSegments,
     build_segment_plan,
+    packed_causal_conv,
     packed_selective_scan,
 )
 from axolotl.monkeypatch.models.mamba_utils import (
@@ -153,6 +154,32 @@ class TestPackedSelectiveScan:
         assert out[0, 0].tolist() == [float(i) for i in range(1, 17)] + [1.0] * 8
 
 
+class TestPackedCausalConv:
+    def test_matches_convolving_each_document_alone(self):
+        modeling = pytest.importorskip("transformers.models.mamba.modeling_mamba")
+        torch.manual_seed(0)
+        channels, kernel = 3, 4
+        seq_idx = torch.tensor([[0, 0, 0, 1, 1, 2, 2, 2, 2]], dtype=torch.int32)
+        x = torch.randn(1, channels, 9)
+        weight = torch.randn(channels, kernel)
+        bias = torch.randn(channels)
+
+        out = packed_causal_conv(
+            modeling.causal_conv1d_fn,
+            PackedSegments(seq_idx),
+            x,
+            weight,
+            bias,
+            activation="silu",
+        )
+
+        for start, end in ((0, 3), (3, 5), (5, 9)):
+            expected = modeling.causal_conv1d_fn(
+                x[..., start:end], weight, bias, activation="silu"
+            )
+            torch.testing.assert_close(out[..., start:end], expected)
+
+
 class TestKernelIntrospection:
     """The pinned transformers wraps every kernel and filters kwargs to the live one."""
 
@@ -190,6 +217,32 @@ class TestKernelIntrospection:
     def test_plain_function_is_unknown(self):
         assert kernel_accepts(lambda x: x, "seq_idx") is None
 
+    def _kernelized(self, forward):
+        """After kernelize the wrapper's forward is the hub kernel itself."""
+        func = self._wrapped(None)
+        func.forward = forward
+        return func
+
+    def test_hub_kernel_signature_is_read_after_kernelize(self):
+        def hub_kernel(hidden_states, weight, bias=None, seq_idx=None):
+            return hidden_states
+
+        def hub_kernel_without(hidden_states, weight, bias=None):
+            return hidden_states
+
+        def opaque(hidden_states, **kwargs):
+            return hidden_states
+
+        def pops_from_kwargs(hidden_states, **kwargs):
+            # the kernels-community layers take **kwargs and pop seq_idx inside
+            _ = kwargs.pop("seq_idx", None)
+            return hidden_states
+
+        assert kernel_accepts(self._kernelized(hub_kernel), "seq_idx") is True
+        assert kernel_accepts(self._kernelized(hub_kernel_without), "seq_idx") is False
+        assert kernel_accepts(self._kernelized(opaque), "seq_idx") is None
+        assert kernel_accepts(self._kernelized(pops_from_kwargs), "seq_idx") is True
+
     def test_require_raises_on_fallback_unless_hub_kernels(self):
         mod = ModuleType("fake_modeling")
         mod.causal_conv1d_fn = self._wrapped(None)
@@ -207,18 +260,39 @@ class TestKernelIntrospection:
 
 
 class TestUnfusedPackedScan:
-    def test_fused_kernel_is_disabled_and_scan_split(self):
+    FAMILY = {
+        "fused": "mamba_inner_fn",
+        "scan": "mamba_selective_scan",
+        "conv": "causal_conv1d_fn",
+    }
+
+    @staticmethod
+    def _module(conv):
         mod = ModuleType("fake_mamba_modeling")
         mod.mamba_inner_fn = lambda *a, **k: "fused"
         mod.mamba_selective_scan = _reference_scan
-        originals = (mod.mamba_inner_fn, mod.mamba_selective_scan)
+        mod.causal_conv1d_fn = conv
+        return mod
+
+    def test_fused_kernel_is_disabled_and_scan_split(self):
+        conv_batches = []
+
+        def conv(x, weight, bias=None, activation=None, **_):
+            conv_batches.append(x.shape[0])
+            return x
+
+        mod = self._module(conv)
+        originals = (mod.mamba_inner_fn, mod.mamba_selective_scan, mod.causal_conv1d_fn)
         seq_idx = torch.tensor([[0, 0, 1]], dtype=torch.int32)
         u = torch.ones(1, 1, 3)
 
         with mamba_packing._unfused_packed_scan(
-            mod, PackedSegments(seq_idx), "mamba_inner_fn", "mamba_selective_scan"
+            mod, PackedSegments(seq_idx), self.FAMILY
         ):
             assert mod.mamba_inner_fn(u) is None
+            # the torch fallback conv has no seq_idx, so it goes per document too
+            assert mod.causal_conv1d_fn(u, None, seq_idx=seq_idx).shape == u.shape
+            assert conv_batches == [2]
             out = mod.mamba_selective_scan(
                 u,
                 u,
@@ -233,7 +307,22 @@ class TestUnfusedPackedScan:
             )
 
         assert out[0, 0].tolist() == [1.0, 2.0, 1.0]
-        assert (mod.mamba_inner_fn, mod.mamba_selective_scan) == originals
+        assert (
+            mod.mamba_inner_fn,
+            mod.mamba_selective_scan,
+            mod.causal_conv1d_fn,
+        ) == originals
+
+    def test_conv_kernel_taking_seq_idx_is_left_alone(self):
+        def kernel(hidden_states, weight, bias=None, seq_idx=None):
+            return hidden_states
+
+        mod = self._module(TestKernelIntrospection()._wrapped(kernel))
+        conv = mod.causal_conv1d_fn
+        segments = PackedSegments(torch.tensor([[0, 1]], dtype=torch.int32))
+
+        with mamba_packing._unfused_packed_scan(mod, segments, self.FAMILY):
+            assert mod.causal_conv1d_fn is conv
 
 
 class _RecordingMixer(nn.Module):
@@ -322,6 +411,7 @@ def patched_mixer(request, monkeypatch):
 
     def conv(hidden_states, weight, bias=None, activation=None, seq_idx=None, **_):
         seen["conv_seq_idx"] = seq_idx
+        seen["conv_batches"] = seen.get("conv_batches", []) + [hidden_states.shape[0]]
         return hidden_states
 
     monkeypatch.setattr(modeling, "causal_conv1d_fn", conv)
@@ -368,14 +458,28 @@ def test_mixer_threads_seq_idx_into_its_kernels(patched_mixer):
     out = mixer(hidden, segments=PackedSegments(seq_idx))
 
     assert out.shape == hidden.shape
-    assert seen["conv_seq_idx"] is seq_idx
     if model_type == "mamba2":
+        assert seen["conv_seq_idx"] is seq_idx
         assert seen["fused_seq_idx"] is seq_idx
         assert seen["scan_seq_idx"] is seq_idx
     else:
-        # the fused row kernel is bypassed and the scan sees the two documents as a batch
+        # the fused row kernel is bypassed; the fallback conv and the scan both see
+        # the two documents as a batch
         assert "fused_called" not in seen
+        assert seen["conv_batches"] == [2]
         assert seen["scan_batches"] == [2]
+
+
+@pytest.mark.parametrize("model_type,cls_prefix", FAMILIES[::2])
+def test_mamba1_packing_needs_no_cuda_or_kernels(model_type, cls_prefix):
+    modeling, model = _tiny_model(model_type, cls_prefix)
+
+    mamba_packing._assert_packed_ready(
+        model.backbone.layers[0].mixer,
+        modeling,
+        mamba_packing._FAMILIES[model_type],
+        model_type,
+    )
 
 
 def test_packed_forward_off_cuda_raises(monkeypatch):

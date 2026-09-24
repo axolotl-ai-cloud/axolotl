@@ -6,10 +6,11 @@ to its mixer as a kwarg. The mixers forward kwargs into their kernels, so Mamba2
 needs nothing more than a live kernel that takes ``seq_idx``.
 
 Mamba1's selective scan has no such argument, so a packed row is scattered into
-right-padded per-document batches for the scan alone (the conv resets through
-``seq_idx``) and gathered back: exact for real tokens, padding costs only the
-scan. Its fused training kernel bakes in the whole row, so it is disabled for
-packed batches and the forward continues on the unfused branch.
+right-padded per-document batches for the causal conv and the scan and gathered
+back: exact for real tokens, padding costs only those two ops. A conv kernel that
+takes ``seq_idx`` is used as is; the torch fallback goes per document too, so no
+kernel is required. Its fused training kernel bakes in the whole row, so it is
+disabled for packed batches and the forward continues on the unfused branch.
 """
 
 import contextlib
@@ -34,13 +35,15 @@ PAD_FACTOR = 2.0
 _FAMILIES = {
     "mamba": {
         "prefix": "Mamba",
-        "seq_idx_kernels": ("causal_conv1d_fn",),
+        "seq_idx_kernels": (),
+        "conv": "causal_conv1d_fn",
         "fused": "mamba_inner_fn",
         "scan": "mamba_selective_scan",
     },
     "falcon_mamba": {
         "prefix": "FalconMamba",
-        "seq_idx_kernels": ("causal_conv1d_fn",),
+        "seq_idx_kernels": (),
+        "conv": "causal_conv1d_fn",
         "fused": "mamba_inner_fn",
         "scan": "mamba_selective_scan",
     },
@@ -51,6 +54,7 @@ _FAMILIES = {
             "mamba2_split_conv1d_scan_combined",
             "mamba2_chunk_scan",
         ),
+        "conv": None,
         "fused": None,
         "scan": None,
     },
@@ -111,67 +115,98 @@ def build_segment_plan(
     return plan
 
 
+def _to_docs(x, index, mask):
+    """``[B, C, T]`` -> ``[docs, C, max_len]``, zero padded on the right."""
+    # a device_map can place this layer away from where the plan was built
+    index, mask = index.to(x.device), mask.to(x.device)
+    flat = x.transpose(1, 2).reshape(-1, x.shape[1])
+    return (flat[index] * mask[..., None].to(flat.dtype)).transpose(1, 2).contiguous()
+
+
+def _from_docs(groups, batch_size, seq_len):
+    """Scatter ``[(index, mask, [docs, C, max_len])]`` back to ``[B, C, T]``."""
+    flat_out = None
+    for index, mask, out in groups:
+        index, mask = index.to(out.device), mask.to(out.device)
+        if flat_out is None:
+            flat_out = out.new_zeros(batch_size * seq_len, out.shape[1])
+        flat_out[index[mask]] = out.transpose(1, 2)[mask]
+    return flat_out.view(batch_size, seq_len, -1).transpose(1, 2)
+
+
 def packed_selective_scan(
     scan_fn, segments: PackedSegments, u, delta, A, B, C, D, z, delta_bias, **kwargs
 ):
     """Run ``scan_fn`` on each packed document separately; returns ``[B, D, T]``."""
     batch_size, _, seq_len = u.shape
-    flat_out = None
-
-    def to_docs(x, index, mask):  # [B, C, T] -> [docs, C, max_len], zero padded
-        flat = x.transpose(1, 2).reshape(batch_size * seq_len, -1)
-        return (
-            (flat[index] * mask[..., None].to(flat.dtype)).transpose(1, 2).contiguous()
-        )
-
+    groups = []
     for index, mask in segments.plan:
         out = scan_fn(
-            to_docs(u, index, mask),
-            to_docs(delta, index, mask),
+            _to_docs(u, index, mask),
+            _to_docs(delta, index, mask),
             A,
-            to_docs(B, index, mask),
-            to_docs(C, index, mask),
+            _to_docs(B, index, mask),
+            _to_docs(C, index, mask),
             D,
-            to_docs(z, index, mask) if z is not None else None,
+            _to_docs(z, index, mask) if z is not None else None,
             delta_bias,
             **kwargs,
         )
         if isinstance(out, tuple):
             out = out[0]
-        if flat_out is None:
-            flat_out = out.new_zeros(batch_size * seq_len, out.shape[1])
-        flat_out[index[mask]] = out.transpose(1, 2)[mask]
+        groups.append((index, mask, out))
+    return _from_docs(groups, batch_size, seq_len)
 
-    return flat_out.view(batch_size, seq_len, -1).transpose(1, 2)
+
+def packed_causal_conv(conv_fn, segments: PackedSegments, x, *args, **kwargs):
+    """Run a causal conv on each packed document separately; returns ``[B, C, T]``.
+
+    Right padding never reaches earlier positions of a causal conv, so the
+    per-document outputs are exact.
+    """
+    batch_size, _, seq_len = x.shape
+    groups = [
+        (index, mask, conv_fn(_to_docs(x, index, mask), *args, **kwargs))
+        for index, mask in segments.plan
+    ]
+    return _from_docs(groups, batch_size, seq_len)
 
 
 @contextlib.contextmanager
-def _unfused_packed_scan(mod, segments: PackedSegments, fused: str, scan: str):
-    """Disable the fused row kernel and split the selective scan per document.
+def _unfused_packed_scan(mod, segments: PackedSegments, family: dict):
+    """Disable the fused row kernel and split the conv and scan per document.
 
     The mixer looks these up as module globals at call time, so swapping the
     attributes for the duration of the call is enough, and a gradient
     checkpointing recompute re-enters through the same patched mixer forward.
+    A conv kernel that takes ``seq_idx`` resets on its own and is left alone.
     """
-    original_fused = getattr(mod, fused)
-    original_scan = getattr(mod, scan)
+    fused, scan, conv = family["fused"], family["scan"], family["conv"]
+    originals = {name: getattr(mod, name) for name in (fused, scan, conv)}
 
-    @functools.wraps(original_scan)
-    def packed_shim(u, delta, A, B, C, D=None, z=None, delta_bias=None, **kwargs):
+    @functools.wraps(originals[scan])
+    def packed_scan(u, delta, A, B, C, D=None, z=None, delta_bias=None, **kwargs):
         kwargs.pop("return_last_state", None)
         return packed_selective_scan(
-            original_scan, segments, u, delta, A, B, C, D, z, delta_bias, **kwargs
+            originals[scan], segments, u, delta, A, B, C, D, z, delta_bias, **kwargs
         )
+
+    @functools.wraps(originals[conv])
+    def packed_conv(x, *args, **kwargs):
+        kwargs.pop("seq_idx", None)
+        return packed_causal_conv(originals[conv], segments, x, *args, **kwargs)
 
     # returning None is the stock "no fused kernel" signal; the forward then
     # continues on the unfused branch
     setattr(mod, fused, lambda *args, **kwargs: None)
-    setattr(mod, scan, packed_shim)
+    setattr(mod, scan, packed_scan)
+    if kernel_accepts(originals[conv], "seq_idx") is not True:
+        setattr(mod, conv, packed_conv)
     try:
         yield
     finally:
-        setattr(mod, fused, original_fused)
-        setattr(mod, scan, original_scan)
+        for name, original in originals.items():
+            setattr(mod, name, original)
 
 
 def _binarize(attention_mask):
@@ -246,6 +281,8 @@ def _patch_block(block_cls) -> None:
 
 def _assert_packed_ready(mixer, mod, family: dict, model_type: str) -> None:
     """Fail closed before a packed batch reaches a kernel that would drop seq_idx."""
+    if not family["seq_idx_kernels"]:
+        return
     if "cuda" not in mixer.in_proj.weight.device.type:
         raise RuntimeError(
             f"{model_type} sample packing needs the CUDA kernels; the torch fallbacks "
@@ -286,7 +323,7 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
                 **kwargs,
             )
         _assert_packed_ready(self, mod, family, model_type)
-        kwargs["seq_idx"] = segments.seq_idx
+        kwargs["seq_idx"] = segments.seq_idx.to(hidden_states.device)
         if family["scan"] is None:
             return original_forward(
                 self,
@@ -295,7 +332,7 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
                 attention_mask=attention_mask,
                 **kwargs,
             )
-        with _unfused_packed_scan(mod, segments, family["fused"], family["scan"]):
+        with _unfused_packed_scan(mod, segments, family):
             return original_forward(
                 self,
                 hidden_states,
