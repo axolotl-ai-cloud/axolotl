@@ -938,7 +938,7 @@ class AxolotlTrainer(
         has_quantized_frozen_base = any(
             not parameter.requires_grad and self._is_fsdp2_quantized_param(parameter)
             for parameter in model.parameters()
-        )
+        ) or bool(getattr(model, "_axolotl_native_nvfp4_zero3_components", ()))
         exclude_frozen = (
             self.is_deepspeed_enabled
             and getattr(model, "_axolotl_native_nvfp4_deepspeed_prepared", False)
