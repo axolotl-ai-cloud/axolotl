@@ -84,7 +84,7 @@ body:
     attributes:
       label: Python Version
       description: Which {Programming} version are you using?
-      placeholder: 3.10 / please change accordingly
+      placeholder: 3.12 / please change accordingly
     validations:
       required: true
 

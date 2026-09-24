@@ -7,7 +7,7 @@ name = "axolotl"
 dynamic = ["version"]
 description = "LLM Trainer"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 # license = "Apache-2.0"
 
 dependencies = [
@@ -196,7 +196,7 @@ version = { file = "VERSION" }
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "B", "I"]
