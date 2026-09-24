@@ -3,13 +3,6 @@ title: Hugging Face Jobs
 description: How to run Axolotl training on Hugging Face Jobs
 ---
 
-<!-- LOCAL DRAFT, not pushed. Tested 2026-09-24 on 0.19.0 unless noted (job IDs in the Work vault note):
-- First run (Gemma 4 E2B, a10g-large), curl + flags, bucket config + checkpoints, model-repo config, merge chain, 4-GPU ZeRO-2, fineweb-edu streaming: all passed.
-- main-latest works with `hf jobs run` (no cuda13_env needed).
-- Gemma 4 E2B on 0.19.0 hung on a10g-small (RUNNING, no logs) 4 times; fine on a10g-large, and on a10g-small with main-latest. Hence a10g-large on this page.
-- Resume from a bucket checkpoint is untested; the page does not claim it.
--->
-
 [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) is a compute service: it runs your workload on Hugging Face hardware, from a CPU to several H200s, and bills by the minute while the workload runs. A Job can be a Python script whose dependencies `uv` installs, or a command in any Docker image. When the command ends, the Job stops and the billing stops with it.
 
 For Axolotl, the simplest route is its Docker image, which already contains Axolotl, PyTorch and CUDA. You give Jobs the image, a GPU flavor and an `axolotl train` command. The Job trains from your config, pushes the model to the Hub and stops. There is no machine to set up or shut down.
@@ -57,7 +50,7 @@ Then launch it:
 hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
   --name gemma4-e2b-trial \
   -v ./configs:/configs \
-  axolotlai/axolotl:0.19.0-py3.12-cu130-2.12.1 -- \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
   axolotl train /configs/train.yml
 ```
 
@@ -115,12 +108,12 @@ All three run the same `axolotl train` command; only the source of the YAML chan
 A [Storage Bucket](https://huggingface.co/docs/hub/storage-buckets) is file storage on the Hub. Upload the configs once, then mount the bucket in every Job:
 
 ```bash
-hf buckets create your-username/axolotl-runs
+hf buckets create your-username/axolotl-runs --private
 hf buckets sync ./configs hf://buckets/your-username/axolotl-runs/configs
 
 hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
   -v hf://buckets/your-username/axolotl-runs:/runs \
-  axolotlai/axolotl:0.19.0-py3.12-cu130-2.12.1 -- \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
   axolotl train /runs/configs/train.yml
 ```
 
@@ -138,7 +131,7 @@ hf upload your-username/gemma4-e2b-lora ./configs/train.yml train.yml
 
 hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
   -v hf://your-username/gemma4-e2b-lora:/configs \
-  axolotlai/axolotl:0.19.0-py3.12-cu130-2.12.1 -- \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
   axolotl train /configs/train.yml
 ```
 
@@ -167,7 +160,7 @@ To use more GPUs, change the flavor and nothing else. On `a10g-largex4`, `axolot
 ```bash
 hf jobs run --flavor a10g-largex4 --timeout 1h -s HF_TOKEN \
   -v ./configs:/configs \
-  axolotlai/axolotl:0.19.0-py3.12-cu130-2.12.1 -- \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
   bash -c 'axolotl fetch deepspeed_configs && axolotl train /configs/train.yml'
 ```
 
@@ -196,7 +189,7 @@ For a LoRA run, you can push a merged model instead of the adapter by chaining t
 ```bash
 hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
   -v ./configs:/configs \
-  axolotlai/axolotl:0.19.0-py3.12-cu130-2.12.1 -- bash -c '
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- bash -c '
     axolotl train /configs/train.yml &&
     axolotl merge-lora /configs/train.yml &&
     hf upload your-username/gemma4-e2b-merged ./outputs/gemma4-e2b-vision-lora/merged . --private'
