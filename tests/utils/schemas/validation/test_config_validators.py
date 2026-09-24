@@ -397,7 +397,8 @@ class TestBnbBlocksizeValidator:
 
 
 class TestFlashAttnAvailabilityMessage:
-    """The error names the hub failure transformers swallows."""
+    """The error names the hub failure transformers swallows, and a hub lookup
+    that succeeds on retry overrides transformers' cached verdict."""
 
     def test_hub_failure_reason_is_reported(self, min_base_cfg, monkeypatch):
         import kernels
@@ -417,17 +418,29 @@ class TestFlashAttnAvailabilityMessage:
         with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
             validate_config(cfg)
 
-    def test_no_reason_when_lookup_succeeds(self, min_base_cfg, monkeypatch):
+    def test_successful_lookup_overrides_transformers_verdict(
+        self, min_base_cfg, monkeypatch
+    ):
+        """transformers' probe swallows transient hub errors as "unavailable"."""
         import kernels
         import torch
         from transformers import utils as transformers_utils
 
+        cleared = []
+
+        def unavailable(**_):
+            return False
+
+        unavailable.cache_clear = lambda: cleared.append(True)
+
         monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
         monkeypatch.setattr(
-            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+            transformers_utils, "is_flash_attn_2_available", unavailable
         )
         monkeypatch.setattr(kernels, "get_kernel", lambda *_, **__: object())
         cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
-        with pytest.raises(ValueError) as excinfo:
-            validate_config(cfg)
-        assert "lookup failed" not in str(excinfo.value)
+
+        validated = validate_config(cfg)
+
+        assert validated.attn_implementation == "flash_attention_2"
+        assert cleared == [True]
