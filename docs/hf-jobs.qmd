@@ -154,7 +154,7 @@ A Job's disk is discarded when the Job ends. For long runs, mount a bucket and p
 hf jobs run --flavor a10g-large --timeout 4h -s HF_TOKEN \
   -v ./configs:/configs \
   -v hf://buckets/your-username/axolotl-runs:/runs \
-  axolotlai/axolotl:0.19.0-py3.12-cu130-2.12.1 -- \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
   axolotl train /configs/train.yml
 ```
 
