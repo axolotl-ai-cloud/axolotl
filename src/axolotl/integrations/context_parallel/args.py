@@ -10,35 +10,51 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ContextParallelConfig(BaseModel):
     """Nested ``context_parallel:`` config block for the ringmaster plugin."""
 
-    size: int = 1
+    model_config = ConfigDict(extra="forbid")
+
+    size: int = Field(default=1, ge=1)
     """Total context-parallel degree. 1 = disabled."""
 
     backend: Literal["auto", "ulysses", "ring", "usp"] = "auto"
 
-    ulysses_size: Optional[int] = None
+    ulysses_size: Optional[int] = Field(default=None, ge=1)
     """All-to-all (head) degree. None = auto-select."""
 
-    ring_size: Optional[int] = None
+    ring_size: Optional[int] = Field(default=None, ge=1)
     """Ring degree. None = auto-select. ulysses_size * ring_size must == size."""
 
     rotate_method: Literal["allgather", "alltoall"] = "allgather"
-    load_balance: Literal["none", "head_tail", "distflash", "per_document", "ptrr"] = (
-        "head_tail"
-    )
+    load_balance: Literal["auto", "none", "head_tail", "distflash"] = "auto"
     ring_impl: Literal["auto", "torch_native", "hf_kernels"] = "auto"
     """Ring block-kernel provider. auto -> hf_kernels (FA2/3/4 via HF kernels) when
     the model uses a flash kernel, else torch_native (SDPA/flex)."""
 
     @model_validator(mode="after")
     def _validate(self):
-        if self.size < 1:
-            raise ValueError(f"context_parallel.size must be >= 1 (got {self.size})")
+        for name in ("ulysses_size", "ring_size"):
+            degree = getattr(self, name)
+            if degree is not None and self.size % degree:
+                raise ValueError(
+                    f"{name} ({degree}) must divide context_parallel.size ({self.size})"
+                )
+        if self.backend == "ulysses" and (
+            self.ring_size not in (None, 1)
+            or self.ulysses_size not in (None, self.size)
+        ):
+            raise ValueError(
+                "backend=ulysses requires ring_size=1 and ulysses_size=size"
+            )
+        if self.backend == "ring" and (
+            self.ulysses_size not in (None, 1)
+            or self.ring_size not in (None, self.size)
+        ):
+            raise ValueError("backend=ring requires ulysses_size=1 and ring_size=size")
         if self.ulysses_size and self.ring_size:
             if self.ulysses_size * self.ring_size != self.size:
                 raise ValueError(

@@ -14,7 +14,6 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RLType,
-    attn_impl_base,
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
@@ -1946,16 +1945,6 @@ class ComplexValidationMixin:
             self.context_parallel_size = self.sequence_parallel_degree
         if not self.context_parallel_size:
             self.context_parallel_size = 1
-        elif self.context_parallel_size > 1 and getattr(
-            self, "use_glm_dsa_kernels", False
-        ):
-            # The GLM DSA kernels provide their own context-parallel attention (the sequence is sharded
-            # on the cp axis with a compressed-KV all-gather + per-rank q_offset), so the flash /
-            # ring_flash_attn stack the generic CP path below requires does not apply.
-            LOG.warning(
-                "context_parallel_size > 1 with use_glm_dsa_kernels: the DSA kernels handle context "
-                "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
-            )
         elif self.context_parallel_size > 1:
             # ringmaster (via ContextParallelPlugin) is the only CP backend; the
             # legacy ring_flash_attn path was removed.
@@ -1966,12 +1955,14 @@ class ComplexValidationMixin:
                     "'axolotl.integrations.context_parallel.ContextParallelPlugin' "
                     "to `plugins:`."
                 )
-            if self.sample_packing:
+            if self.sample_packing or self.batch_flattening:
                 raise ValueError(
-                    "sample_packing is not yet supported with ringmaster context "
+                    "sample_packing / batch_flattening is not yet supported with ringmaster context "
                     "parallelism; disable sample_packing or context parallelism."
                 )
-            if self.attn_implementation == "eager":
+            if self.attn_implementation == "eager" and not getattr(
+                self, "use_glm_dsa_kernels", False
+            ):
                 raise ValueError(
                     "context parallelism wraps a kernel-backed attention "
                     "implementation (sdpa/flash/flex); `attn_implementation: eager` "
@@ -1999,24 +1990,6 @@ class ComplexValidationMixin:
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
                 "for more details."
             )
-
-            _SSM_HYBRID_MODEL_TYPES = {
-                "nemotron_h",
-                "falcon_h1",
-                "granitemoehybrid",
-            }
-            _model_config_type = getattr(self, "model_config_type", None) or ""
-            if _model_config_type in _SSM_HYBRID_MODEL_TYPES:
-                LOG.warning(
-                    f"context_parallel_size={self.context_parallel_size} with "
-                    f"model_type={_model_config_type}: SSM/Mamba layers use P2P "
-                    "hidden-state passing and additive output correction across "
-                    "CP ranks. Attention layers use ring attention. This is "
-                    "mathematically exact but has not been extensively validated "
-                    "end-to-end — verify loss curves match single-GPU baselines. "
-                    "Recommended: run a short training job and compare loss curves "
-                    "against a single-GPU baseline with the same data/seed."
-                )
 
         return self
 

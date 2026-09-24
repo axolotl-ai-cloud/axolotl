@@ -11,8 +11,7 @@ flash_attention: true            # the kernel ringmaster's Ulysses leg wraps
 context_parallel:
   size: 8                        # total context-parallel degree
   backend: auto                  # auto-selects ulysses / ring / usp from KV heads + topology
-  rotate_method: allgather       # ring KV movement (allgather is fastest at scale)
-  load_balance: head_tail        # ring-only zigzag balancing (Ulysses is inherently balanced)
+  load_balance: auto             # choose a compatible layout for the selected strategy
   ring_impl: auto                # auto -> hf_kernels flash for ring (no flash_attn pypi)
 
 # Composes with FSDP2; the cp dim is taken from the accelerate device mesh.

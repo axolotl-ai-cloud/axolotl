@@ -556,9 +556,6 @@ class PatchManager:
         packed_boundaries_needed = bool(
             self.cfg.sample_packing or getattr(self.cfg, "batch_flattening", False)
         )
-        ssm_hybrid_patch_needed = (
-            packed_boundaries_needed or self.cfg.context_parallel_size > 1
-        )
 
         if self.cfg.model_config_type == "nemotron_h":
             from axolotl.monkeypatch.models.nemotron_h.modeling import (
@@ -570,19 +567,22 @@ class PatchManager:
             # quantized weight cannot serve; guard it for every run.
             guard_nemotron_h_fused_scan()
 
-            if ssm_hybrid_patch_needed:
+            if packed_boundaries_needed:
                 patch_nemotron_h_modeling_packing(
                     kernels_enabled=bool(getattr(self.cfg, "use_kernels", False))
                 )
 
-        if self.cfg.model_config_type == "falcon_h1" and ssm_hybrid_patch_needed:
+        if self.cfg.model_config_type == "falcon_h1" and packed_boundaries_needed:
             from axolotl.monkeypatch.models.falcon_h1.modeling import (
                 patch_falcon_h1_modeling_packing,
             )
 
             patch_falcon_h1_modeling_packing()
 
-        if self.cfg.model_config_type == "granitemoehybrid" and ssm_hybrid_patch_needed:
+        if (
+            self.cfg.model_config_type == "granitemoehybrid"
+            and packed_boundaries_needed
+        ):
             from axolotl.monkeypatch.models.granitemoehybrid.modeling import (
                 patch_granitemoehybrid_modeling_packing,
             )

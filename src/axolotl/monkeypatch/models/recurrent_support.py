@@ -44,9 +44,6 @@ PACKING_UNSUPPORTED = frozenset(
     }
 )
 
-# recurrent model types whose SSM state is exchanged across context-parallel ranks
-CONTEXT_PARALLEL_SUPPORTED = frozenset({"falcon_h1", "granitemoehybrid", "nemotron_h"})
-
 RECURRENT_MODEL_TYPES = PACKING_PATCHED | PACKING_UNSUPPORTED
 
 
@@ -64,14 +61,4 @@ def validate_recurrent_model_config(cfg) -> None:
             f"{model_type}: its recurrent layers have no packed-sequence boundary "
             "handling, so state would leak across packed samples. Set "
             "`sample_packing: false` and `batch_flattening: false`."
-        )
-
-    if (cfg.context_parallel_size or 1) > 1 and (
-        model_type not in CONTEXT_PARALLEL_SUPPORTED
-    ):
-        raise ValueError(
-            f"context_parallel_size > 1 is not supported for model_type={model_type}: "
-            "its recurrent layers carry state that is not exchanged across "
-            "context-parallel ranks, so every rank would restart from zero. "
-            "Set `context_parallel_size: 1`."
         )

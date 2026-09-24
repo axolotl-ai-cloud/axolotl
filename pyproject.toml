@@ -89,11 +89,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+fla = ["flash-linear-attention[tilelang]==0.5.2", "tilelang==0.1.14"]
 modal = ["modal==1.3.0.post1"]
 baseten = ["truss==0.18.30"]
 flash-attn = ["flash-attn==2.8.3"]
 ringmaster = [
-    "axolotl-ringmaster>=0.1.0",
+    "axolotl-ringmaster>=0.2.0",
 ]
 deepspeed = [
     "deepspeed>=0.18.6,<0.20.0",

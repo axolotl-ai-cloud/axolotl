@@ -5,7 +5,7 @@ directory; the descriptor's pre-load hooks redirect transformers' remote-code
 loading to these in-tree copies.
 """
 
-from axolotl.model_support.base import ModelSupport
+from axolotl.model_support.base import Experimental, ModelSupport
 from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
@@ -57,6 +57,11 @@ class KimiLinearSupport(ModelSupport):
     model_types = ("kimi_linear",)
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
+        capabilities={
+            "context_parallel": Experimental(
+                "Requires Ringmaster native FLA KDA state passing and contiguous, unpacked shards."
+            ),
+        },
         matchers=ModelMatchers(cfg=_matches_kimi_cfg),
         hooks=ModelHooks(
             by_phase={

@@ -1,4 +1,4 @@
-"""Sample-packing and context-parallelism patch for Falcon-H1 (parallel Mamba2/Attention hybrid).
+"""Sample-packing patch for Falcon-H1 (parallel Mamba2/Attention hybrid).
 
 Threads seq_idx (derived from position_ids) into the Mamba2 SSM kernels so
 packed-sequence boundaries reset SSM state.  Upstream hard-codes seq_idx=None,
@@ -17,7 +17,6 @@ from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
     get_seq_idx,
     is_cp_active,
-    wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
 
@@ -358,7 +357,5 @@ def patch_falcon_h1_modeling_packing():
         return outputs
 
     FalconH1DecoderLayer.forward = patched_decoder_forward
-
-    wrap_mamba_scan_for_cp(mod)
 
     LOG.info("Applied Falcon-H1 sample packing patch (seq_idx threading into Mamba2)")

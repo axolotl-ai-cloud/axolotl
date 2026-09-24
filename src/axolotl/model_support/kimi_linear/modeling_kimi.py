@@ -534,7 +534,13 @@ class KimiDeltaAttention(nn.Module):
                 )
         use_cache = cache_params is not None
         batch_size, q_len, _ = hidden_states.shape
-        mode = "fused_recurrent" if q_len <= 64 else self.mode
+        mode = (
+            "chunk"
+            if self.training
+            else "fused_recurrent"
+            if q_len <= 64
+            else self.mode
+        )
         if self.training:
             assert mode == "chunk", "Only chunk mode is supported in training."
 
@@ -598,7 +604,7 @@ class KimiDeltaAttention(nn.Module):
                 g=g,
                 beta=beta,
                 initial_state=recurrent_state,
-                output_final_state=True,
+                output_final_state=use_cache,
                 use_qk_l2norm_in_kernel=True,
                 cu_seqlens=cu_seqlens,
             )
@@ -610,7 +616,7 @@ class KimiDeltaAttention(nn.Module):
                 g=g,
                 beta=beta,
                 initial_state=recurrent_state,
-                output_final_state=True,
+                output_final_state=use_cache,
                 use_qk_l2norm_in_kernel=True,
                 cu_seqlens=cu_seqlens,
             )

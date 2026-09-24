@@ -57,13 +57,9 @@ def _train(cfg):
 
 def _hub_mamba_kernels_available() -> bool:
     """Whether the hub kernels transformers maps Mamba2 onto have a build for this torch."""
-    try:
-        from kernels import get_kernel
+    from kernels import has_kernel
 
-        get_kernel("kernels-community/mamba-ssm", version=2)
-    except Exception:  # pylint: disable=broad-exception-caught
-        return False
-    return True
+    return has_kernel("kernels-community/mamba-ssm", version=2)
 
 
 class TestMamba(unittest.TestCase):

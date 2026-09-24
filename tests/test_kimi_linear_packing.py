@@ -12,7 +12,6 @@ from axolotl.model_support.kimi_linear.configuration_kimi import (  # noqa: E402
 )
 
 HIDDEN, HEADS, HEAD_DIM = 16, 2, 4
-# training asserts the chunk kernel, which Kimi only picks above 64 tokens
 SEQ = 96
 
 
@@ -66,6 +65,15 @@ def layer(monkeypatch):
     monkeypatch.setattr(modeling_kimi, "fused_kda_gate", lambda g, A_log, dt_bias: g)
     kda.train()
     return kda, seen
+
+
+@pytest.mark.parametrize("length", [1, 32, 64])
+def test_short_training_sequences_use_chunk_kernel(layer, length):
+    kda, seen = layer
+    hidden = torch.randn(1, length, HIDDEN)
+    output = kda(hidden)
+    assert output.shape == hidden.shape
+    assert seen["batch"] == 1
 
 
 def test_packed_row_yields_document_boundaries(layer):

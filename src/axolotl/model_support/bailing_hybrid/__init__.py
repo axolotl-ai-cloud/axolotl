@@ -5,7 +5,7 @@ hooks redirect transformers' dynamic-module loading to the training-ready copy
 in this directory.
 """
 
-from axolotl.model_support.base import ModelSupport
+from axolotl.model_support.base import Experimental, ModelSupport
 from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
@@ -36,19 +36,6 @@ def _redirect_remote_code(_context: ModelHookContext) -> None:
     redirect_dynamic_modules(BAILING_PACKAGE, BAILING_MODULES)
 
 
-def _reject_context_parallel(context: ModelHookContext) -> None:
-    """Ring attention shards the sequence across ranks and nothing hands a KDA
-    layer's recurrent state to the next one, so each rank would restart it from zero
-    -- silently, with a loss curve that still looks reasonable."""
-    if (context.cfg.context_parallel_size or 1) > 1:
-        raise ValueError(
-            "context_parallel_size > 1 is not supported for Ling 3.0 "
-            "(bailing_hybrid): its linear-attention layers carry a recurrent state "
-            "that is not exchanged across context-parallel ranks. "
-            "Set context_parallel_size: 1."
-        )
-
-
 def _weight_conversions():
     from transformers.conversion_mapping import get_checkpoint_conversion_mapping
     from transformers.core_model_loading import WeightRenaming
@@ -68,6 +55,11 @@ class BailingHybridSupport(ModelSupport):
     model_types = ("bailing_hybrid",)
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
+        capabilities={
+            "context_parallel": Experimental(
+                "Requires Ringmaster native FLA KDA state passing and contiguous, unpacked shards."
+            ),
+        },
         matchers=ModelMatchers(cfg=_matches_bailing_cfg),
         registrations=ModelRegistrationOverrides(
             weight_conversions=_weight_conversions
@@ -75,7 +67,6 @@ class BailingHybridSupport(ModelSupport):
         hooks=ModelHooks(
             by_phase={
                 ModelHookPhase.BEFORE_CONFIG_LOAD: (_redirect_remote_code,),
-                ModelHookPhase.CONFIGURE_RUN: (_reject_context_parallel,),
                 ModelHookPhase.BEFORE_TOKENIZER_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_MODEL_BUILD: (_redirect_remote_code,),
             }

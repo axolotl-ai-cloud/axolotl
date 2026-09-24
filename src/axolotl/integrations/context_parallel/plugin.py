@@ -8,10 +8,8 @@
 
 """Context-parallel plugin backed by the standalone ``ringmaster`` package.
 
-Phase 1 wires the Ulysses backend: it switches the model's attention to a
-ringmaster wrapper (all-to-all around the model's own HF kernel) and installs a
-forward pre-hook that shards each batch along the sequence dim, plus loss
-corrections across the CP group.
+Switches attention to a ringmaster wrapper and installs batch-sharding hooks
+while preserving Trainer's accumulation-window loss normalization.
 
 Setup runs in ``post_trainer_create`` because the accelerate device mesh (the
 ``cp`` dim FSDP2 reduces gradients over) only exists once the trainer's
@@ -35,6 +33,10 @@ class ContextParallelPlugin(BasePlugin):
         self._cp_ctx = None
         self._hook_handles = []
         self._gather_outputs = False
+        self._restore_trainer = None
+        self._restore_recurrent = None
+        self._original_caches = []
+        self._attention_configs = []
 
     def get_input_args(self) -> str | None:
         return "axolotl.integrations.context_parallel.args.ContextParallelArgs"
@@ -65,6 +67,9 @@ class ContextParallelPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         if not self._enabled(cfg):
             return
+        from .settings import check_model_capability
+
+        check_model_capability(getattr(cfg, "model_config_type", None))
         try:
             from ringmaster.compat import require_torch
         except ImportError as exception:
@@ -79,7 +84,14 @@ class ContextParallelPlugin(BasePlugin):
     def post_trainer_create(self, cfg, trainer):
         if not self._enabled(cfg):
             return
+        try:
+            self._configure(cfg, trainer)
+        except Exception:
+            if self._runtime is not None:
+                self.post_train_unload(cfg)
+            raise
 
+    def _configure(self, cfg, trainer):
         import ringmaster as rm
 
         cp = self._cp_cfg(cfg)
@@ -96,7 +108,7 @@ class ContextParallelPlugin(BasePlugin):
             ulysses_size=cp.ulysses_size if cp.ulysses_size else rm.AUTO,
             ring_size=cp.ring_size if cp.ring_size else rm.AUTO,
             rotate_method=rm.RotateMethod(cp.rotate_method),
-            load_balance=rm.LoadBalance(cp.load_balance),
+            load_balance=rm.LoadBalance.NONE,
             ring_impl=rm.RingImpl(cp.ring_impl),
         )
 
@@ -109,6 +121,82 @@ class ContextParallelPlugin(BasePlugin):
         num_kv_heads = self._num_kv_heads(models[0])
         device_mesh = getattr(trainer.accelerator, "torch_device_mesh", None)
 
+        from ringmaster.mesh import intra_node_size
+
+        rm_cfg.normalize(num_kv_heads=num_kv_heads, intra_node_size=intra_node_size())
+        from ringmaster.strategies.state_passing import recurrent_plan
+
+        from .settings import check_model_capability, resolve_settings
+
+        for model in models:
+            model_config = model.config
+            check_model_capability(getattr(model_config, "model_type", None))
+            if hasattr(model_config, "get_text_config"):
+                check_model_capability(
+                    getattr(model_config.get_text_config(), "model_type", None)
+                )
+
+        mixers, kda_mixers, mamba_mixers = recurrent_plan(models, cp.size)
+        if (mixers or kda_mixers) and (getattr(cfg, "micro_batch_size", 1) or 1) != 1:
+            raise ValueError("FLA context parallelism requires micro_batch_size: 1")
+        recurrent = bool(mixers or kda_mixers or mamba_mixers)
+        glm_dsa = self._glm_dsa_requires_contiguous(cfg)
+        reason = (
+            "recurrent state passing"
+            if recurrent
+            else "GLM DSA attention"
+            if glm_dsa
+            else "output gathering"
+            if self._gather_outputs
+            else None
+        )
+        communication = resolve_settings(
+            cp,
+            rm_cfg,
+            num_kv_heads=num_kv_heads,
+            contiguous_reason=reason,
+            sliding_window=any(
+                getattr(module, "sliding_window", None)
+                for model in models
+                for module in model.modules()
+            ),
+            glm_dsa=glm_dsa,
+            inner_attn=inner_attn,
+            dropout=max(
+                float(
+                    getattr(
+                        model.config.get_text_config()
+                        if hasattr(model.config, "get_text_config")
+                        else model.config,
+                        "attention_dropout",
+                        0.0,
+                    )
+                    or 0.0
+                )
+                for model in models
+            ),
+        )
+        if rm_cfg.ring_size > 1 and not glm_dsa:
+            from ringmaster.strategies.ring import resolve_ring_impl
+
+            if (
+                resolve_ring_impl(rm_cfg.ring_impl, inner_attn)
+                == rm.RingImpl.TORCH_NATIVE
+            ):
+                raise ValueError(
+                    "Ringmaster's torch_native Ring kernel is forward-only. "
+                    "For Ring/USP training use flash_attention_2/3/4 with "
+                    "ring_impl: hf_kernels, or use backend: ulysses with SDPA."
+                )
+        if device_mesh is not None and rm_cfg.ulysses_size > 1 and rm_cfg.ring_size > 1:
+            from .mesh import RingmasterMesh
+
+            device_mesh = RingmasterMesh(
+                device_mesh,
+                ring_size=rm_cfg.ring_size,
+                ulysses_size=rm_cfg.ulysses_size,
+            )
+
         self._runtime = rm.setup(
             rm_cfg,
             num_kv_heads=num_kv_heads,
@@ -118,18 +206,29 @@ class ContextParallelPlugin(BasePlugin):
         )
 
         LOG.info(
-            "ringmaster CP enabled: size=%d backend=%s ulysses=%d ring=%d inner=%s mesh=%s",
+            "ringmaster CP enabled: size=%d backend=%s ulysses=%d ring=%d inner=%s mesh=%s balance=%s communication=%s recurrent=%s",
             rm_cfg.size,
             rm_cfg.backend.value,
             rm_cfg.ulysses_size,
             rm_cfg.ring_size,
             inner_attn,
             "accelerate" if device_mesh is not None else "standalone",
+            rm_cfg.load_balance.value,
+            communication,
+            "fla_native" if mixers or kda_mixers else "mamba" if recurrent else "none",
         )
 
-        glm_dsa = self._glm_dsa_requires_contiguous(cfg)
         if self._runtime.attn_implementation and not glm_dsa:
+            seen_configs = set()
             for model in models:
+                for module in [model, *model.modules()]:
+                    config = getattr(module, "config", None)
+                    if config is not None and id(config) not in seen_configs:
+                        seen_configs.add(id(config))
+                        if hasattr(config, "_attn_implementation"):
+                            self._attention_configs.append(
+                                (config, config._attn_implementation)
+                            )
                 model.set_attn_implementation(self._runtime.attn_implementation)
 
         # The mamba/SSM CP corrections and the GRPO trainer resolve the CP group
@@ -138,26 +237,39 @@ class ContextParallelPlugin(BasePlugin):
 
         set_ring_attn_group(self._runtime.cp_group)
 
-        has_recurrent = any(self._wire_recurrent_layers(model) for model in models)
+        if recurrent:
+            from ringmaster import wire_recurrent_layers
 
-        # Zigzag sharding permutes tokens; anything that needs contiguous per-rank
-        # spans must downgrade to LoadBalance.NONE (contiguous, always correct).
-        contiguity_reason = None
-        if has_recurrent:
-            contiguity_reason = "hybrid SSM recurrence needs contiguous token order"
-        elif glm_dsa:
-            contiguity_reason = "GLM DSA attention assumes q_offset=rank*s_local"
-        elif self._gather_outputs:
-            contiguity_reason = "output gathering reassembles contiguous shards"
-        if (
-            contiguity_reason
-            and self._runtime.config.load_balance == rm.LoadBalance.HEAD_TAIL
-        ):
-            LOG.info(
-                "ringmaster: forcing contiguous CP sharding (%s)", contiguity_reason
-            )
-            self._runtime.config.load_balance = rm.LoadBalance.NONE
+            restores = []
+            self._restore_recurrent = lambda: [
+                restore() for restore in reversed(restores)
+            ]
+            for model in models:
+                restores.append(
+                    wire_recurrent_layers(model, group=self._runtime.cp_group).restore
+                )
 
+        if recurrent:
+            for model in models:
+                config = (
+                    model.config.get_text_config()
+                    if hasattr(model.config, "get_text_config")
+                    else model.config
+                )
+                self._original_caches.append(
+                    (
+                        config,
+                        hasattr(config, "use_cache"),
+                        getattr(config, "use_cache", None),
+                    )
+                )
+                config.use_cache = False
+
+        from .trainer import configure_trainer
+
+        self._restore_trainer = configure_trainer(
+            trainer, gather_outputs=self._gather_outputs
+        )
         self._install_hooks(models, cfg)
 
     @staticmethod
@@ -166,22 +278,22 @@ class ContextParallelPlugin(BasePlugin):
         (``q_offset=rank*s_local``), so ringmaster must not zigzag-shard for it."""
         return bool(getattr(cfg, "use_glm_dsa_kernels", False))
 
-    @staticmethod
-    def _wire_recurrent_layers(model):
-        """Apply Mamba2/linear-attention CP state-passing to recurrent mixer layers.
-        No-op without the mamba-ssm kernel. Returns True if anything was wired."""
-        import ringmaster as rm
-
-        wiring = rm.wire_recurrent_layers(model)
-        if wiring:
-            LOG.info(
-                "ringmaster: wired recurrent-layer CP (mamba modules=%s, linear-attn mixers=%d)",
-                list(wiring.mamba_modules),
-                wiring.linear_attn_mixers,
-            )
-        return bool(wiring)
-
     def post_train_unload(self, cfg):
+        for config, implementation in self._attention_configs:
+            config._attn_implementation = implementation
+        self._attention_configs = []
+        for config, existed, value in self._original_caches:
+            if existed:
+                config.use_cache = value
+            else:
+                del config.use_cache
+        self._original_caches = []
+        if self._restore_recurrent is not None:
+            self._restore_recurrent()
+            self._restore_recurrent = None
+        if self._restore_trainer is not None:
+            self._restore_trainer()
+            self._restore_trainer = None
         for handle in self._hook_handles:
             handle.remove()
         self._hook_handles = []
@@ -237,7 +349,7 @@ class ContextParallelPlugin(BasePlugin):
         return args, kwargs
 
     def _install_hooks(self, models, cfg):
-        from ringmaster import ContextParallelContextManager
+        from .trainer import TrainerContextParallelContextManager
 
         grad_accum = int(getattr(cfg, "gradient_accumulation_steps", 1) or 1)
         if self._gather_outputs:
@@ -248,7 +360,7 @@ class ContextParallelPlugin(BasePlugin):
                     )
                 )
 
-        self._cp_ctx = ContextParallelContextManager(
+        self._cp_ctx = TrainerContextParallelContextManager(
             models,
             self._runtime.cp_group,
             gradient_accumulation_steps=grad_accum,

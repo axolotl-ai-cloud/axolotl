@@ -108,7 +108,7 @@ def test_seq_idx_injection_fails_closed_on_torch_fallback_kernels(
     )._apply_model_specific_patches()
 
 
-def test_ssm_hybrid_patch_applies_for_context_parallel_without_packing(monkeypatch):
+def test_context_parallel_does_not_install_packing_patch(monkeypatch):
     calls = []
     monkeypatch.setattr(
         "axolotl.monkeypatch.models.falcon_h1.modeling.patch_falcon_h1_modeling_packing",
@@ -117,7 +117,7 @@ def test_ssm_hybrid_patch_applies_for_context_parallel_without_packing(monkeypat
 
     _manager("falcon_h1", context_parallel_size=2)._apply_model_specific_patches()
 
-    assert calls == ["falcon_h1"]
+    assert calls == []
 
 
 @pytest.mark.parametrize("model_type,patch_name", SSM_PATCHES.items())
