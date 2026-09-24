@@ -197,9 +197,26 @@ def patch_nf4_adapter_state() -> None:
             and options.full_state_dict
         )
 
+    def needs_native_adapter_state(model, adapter_only, options):
+        return (
+            adapter_only
+            and options is not None
+            and getattr(model, "peft_config", None) is not None
+            and any(
+                type(getattr(parameter, "_local_tensor", parameter)).__name__
+                in {"NVFP4Tensor", "Float8Tensor", "MXTensor"}
+                and not parameter.requires_grad
+                for parameter in model.parameters()
+            )
+            and any(parameter.requires_grad for parameter in model.parameters())
+        )
+
     @wraps(original_get)
     def get_state(model, adapter_only=False, sd_options=None):
-        if not needs_full_state(model, adapter_only, sd_options):
+        if not (
+            needs_full_state(model, adapter_only, sd_options)
+            or needs_native_adapter_state(model, adapter_only, sd_options)
+        ):
             return original_get(model, adapter_only=adapter_only, sd_options=sd_options)
         state = get_model_state_dict(
             model, options=replace(sd_options, ignore_frozen_params=True)

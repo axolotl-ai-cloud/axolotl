@@ -68,6 +68,15 @@ def _is_float_logical_quantized_param(p) -> bool:
     return data is not None and type(data).__name__ in _QUANT_TENSOR_CLASS_NAMES
 
 
+def model_has_nvfp4_params(model) -> bool:
+    """True iff the model carries a native TorchAO NVFP4 tensor subclass."""
+    return any(
+        type(p).__name__ == "NVFP4Tensor"
+        or type(getattr(p, "data", None)).__name__ == "NVFP4Tensor"
+        for p in model.parameters()
+    )
+
+
 def model_has_float_logical_quantized_params(model) -> bool:
     """Capability check for the dtype/cast/sharding policy: ONLY float-logical quantized tensor
     subclasses (the pre-quantized NVFP4/Float8 checkpoint case). Plain bnb Params4bit QLoRA is
