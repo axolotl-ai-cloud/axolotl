@@ -240,7 +240,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 |---|---|
 | QLoRA | `load_in_4bit: true` |
 | Expert Parallel | FSDP2 + DeepEP + Ampere/Hopper (NVLink) |
-| Context/Sequence parallel | flash attention (FA2/FA3) |
+| Context/Sequence parallel | Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention |
 | SonicMoE | Hopper/Blackwell + CUDA 12.9 (else auto-falls back to ScatterMoE) |
 | FP8 attention | SM90+ and PyTorch >= 2.11 |
 | `quantize_moe_experts` | LoRA/QLoRA + 4/8-bit + CUDA (use `lora_target_parameters`, not `lora_target_linear`) |

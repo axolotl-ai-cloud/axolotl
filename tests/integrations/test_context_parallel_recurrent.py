@@ -5,7 +5,8 @@ from functools import wraps
 from types import SimpleNamespace
 
 import pytest
-from ringmaster import recurrent
+
+recurrent = pytest.importorskip("ringmaster.recurrent")
 
 
 def test_missing_fla_fails_before_cp_setup(monkeypatch):
@@ -59,3 +60,31 @@ def test_rebinding_preserves_decorators_and_original_globals():
     assert cloned(3) == 6
     assert forward(3) == 4
     assert events == [3, 3]
+
+
+@pytest.mark.parametrize("fused", [False, True])
+def test_nemotron_guard_preserves_kernel_detection(monkeypatch, fused):
+    from ringmaster.mamba import _uses_fused_norm
+
+    from axolotl.monkeypatch.models.nemotron_h import modeling
+
+    def kernel(*args, **kwargs):
+        return "called"
+
+    kernel.__name__ = (
+        "mamba_split_conv1d_scan_combined"
+        if fused
+        else "mamba2_split_conv1d_scan_combined"
+    )
+    kernel.__module__ = (
+        "mamba_ssm.ops.triton.ssd_combined"
+        if fused
+        else "transformers.models.nemotron_h.modeling_nemotron_h"
+    )
+    mod = SimpleNamespace(mamba2_split_conv1d_scan_combined=kernel)
+    modeling.guard_nemotron_h_fused_scan(mod)
+    assert _uses_fused_norm(mod.mamba2_split_conv1d_scan_combined) is fused
+    monkeypatch.setattr(modeling, "is_cp_active", lambda: False)
+    assert mod.mamba2_split_conv1d_scan_combined() == "called"
+    monkeypatch.setattr(modeling, "is_cp_active", lambda: True)
+    assert mod.mamba2_split_conv1d_scan_combined() is None

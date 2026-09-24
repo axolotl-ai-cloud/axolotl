@@ -1972,8 +1972,7 @@ class ComplexValidationMixin:
                 getattr(self, "context_parallel", None), "size", None
             )
             if (
-                cp_block_size
-                and cp_block_size > 1
+                cp_block_size is not None
                 and cp_block_size != self.context_parallel_size
             ):
                 raise ValueError(

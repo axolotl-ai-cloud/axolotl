@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 import torch
 
@@ -45,7 +46,11 @@ def test_ringmaster_mamba_fsdp2_parity(hub):
         pytest.importorskip("kernels")
         from kernels import has_kernel
 
-        if not has_kernel("kernels-community/mamba-ssm", version=2):
+        try:
+            available = has_kernel("kernels-community/mamba-ssm", version=2)
+        except httpx.HTTPError as exc:
+            pytest.skip(f"Mamba Hub kernel availability probe failed: {exc}")
+        if not available:
             pytest.skip("Mamba Hub kernel is unavailable for this platform")
     result = subprocess.run(
         [

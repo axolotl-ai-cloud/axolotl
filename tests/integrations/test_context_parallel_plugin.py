@@ -167,3 +167,44 @@ def test_num_kv_heads_reads_text_config():
         config=LlamaConfig(num_key_value_heads=8, num_attention_heads=32)
     )
     assert plugin._num_kv_heads(model) == 8
+
+
+@pytest.mark.parametrize(
+    "sync", [ensure_context_parallel_plugin, ContextParallelPlugin().register]
+)
+def test_size_sync_preserves_backend(sync):
+    cfg = DictDefault(context_parallel_size=4, context_parallel={"backend": "ring"})
+    sync(cfg)
+    assert cfg.context_parallel == {"backend": "ring", "size": 4}
+    assert cfg.context_parallel_size == 4
+
+
+@pytest.mark.parametrize(
+    "sync", [ensure_context_parallel_plugin, ContextParallelPlugin().register]
+)
+@pytest.mark.parametrize("nested,flat", [(1, 4), (4, 1), (4, 8)])
+def test_explicit_size_conflicts(sync, nested, flat):
+    cfg = DictDefault(context_parallel_size=flat, context_parallel={"size": nested})
+    with pytest.raises(ValueError, match="conflicts"):
+        sync(cfg)
+
+
+def test_schema_rejects_disabled_nested_cp(min_base_cfg):
+    from axolotl.integrations.context_parallel.args import ContextParallelArgs
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    class Config(ContextParallelArgs, AxolotlInputConfig):
+        pass
+
+    with pytest.raises(ValueError, match="conflicts"):
+        Config(
+            **(
+                min_base_cfg
+                | dict(
+                    context_parallel_size=4,
+                    context_parallel={"size": 1},
+                    plugins=[PLUGIN_PATH],
+                    attn_implementation="sdpa",
+                )
+            )
+        )

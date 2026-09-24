@@ -117,7 +117,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --no-build-isolation -e '.[modal,baseten]' --override /tmp/torch-pin.txt
+          uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
@@ -223,7 +223,7 @@ jobs:
           uv pip install packaging setuptools_scm build wheel psutil
           python -m build --no-isolation --sdist
           for sdist in dist/axolotl*.tar.gz; do
-            uv pip install --no-build-isolation "${sdist}[modal,baseten]" --override /tmp/torch-pin.txt
+            uv pip install --no-build-isolation "${sdist}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
           done
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \

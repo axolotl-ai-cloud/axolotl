@@ -44,17 +44,18 @@ class ContextParallelPlugin(BasePlugin):
     def register(self, cfg: dict):
         # cfg is the raw pre-validation dict; keep `context_parallel.size` and the
         # flat `context_parallel_size` (which drives accelerate's cp mesh dim) in sync.
-        size = (cfg.get("context_parallel") or {}).get("size")
+        block = cfg.get("context_parallel") or {}
+        size = block.get("size")
         flat = cfg.get("context_parallel_size")
-        if size and size > 1:
-            if flat and flat != size:
-                raise ValueError(
-                    f"context_parallel.size ({size}) conflicts with "
-                    f"context_parallel_size ({flat}); set only one"
-                )
+        if size is not None and flat is not None and flat != size:
+            raise ValueError(
+                f"context_parallel.size ({size}) conflicts with "
+                f"context_parallel_size ({flat}); set only one"
+            )
+        if size is not None:
             cfg["context_parallel_size"] = size
-        elif flat and flat > 1 and not cfg.get("context_parallel"):
-            cfg["context_parallel"] = {"size": flat}
+        elif flat is not None:
+            cfg["context_parallel"] = {**block, "size": flat}
 
     @staticmethod
     def _cp_cfg(cfg):

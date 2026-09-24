@@ -4,6 +4,7 @@ E2E tests for HF-format Mamba and Mamba2 with sample packing
 
 import unittest
 
+import httpx
 import pytest
 
 from axolotl.common.datasets import load_datasets
@@ -59,7 +60,10 @@ def _hub_mamba_kernels_available() -> bool:
     """Whether the hub kernels transformers maps Mamba2 onto have a build for this torch."""
     from kernels import has_kernel
 
-    return has_kernel("kernels-community/mamba-ssm", version=2)
+    try:
+        return has_kernel("kernels-community/mamba-ssm", version=2)
+    except httpx.HTTPError:
+        return False
 
 
 class TestMamba(unittest.TestCase):

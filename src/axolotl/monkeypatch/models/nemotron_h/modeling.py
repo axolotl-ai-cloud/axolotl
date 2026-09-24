@@ -46,13 +46,13 @@ def guard_nemotron_h_fused_scan(mod=None):
     if getattr(mod, "_axolotl_fused_scan_guard", False):
         return
 
-    original_fused = mod.mamba2_split_conv1d_scan_combined
+    implementation = mod.mamba2_split_conv1d_scan_combined
 
-    @functools.wraps(original_fused)
+    @functools.wraps(implementation)
     def guarded_fused(*args, **kwargs):
         if is_cp_active() or _is_quantized(kwargs.get("outproj_weight")):
             return None
-        return original_fused(*args, **kwargs)
+        return implementation(*args, **kwargs)
 
     mod.mamba2_split_conv1d_scan_combined = guarded_fused
     mod._axolotl_fused_scan_guard = True
