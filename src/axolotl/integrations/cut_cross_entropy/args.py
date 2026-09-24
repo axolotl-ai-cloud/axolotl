@@ -40,7 +40,7 @@ class CutCrossEntropyArgs(BaseModel):
     cut_cross_entropy_c_grad_chunk_size: Optional[int | Literal["auto"]] = Field(
         default=None,
         json_schema_extra={
-            "description": "Bound the fp32 classifier-gradient accumulator to this many vocabulary rows (a positive multiple of 128) to reduce peak backward memory, or 'auto' to let CCE pick a size that balances GPU occupancy against a 1 GiB scratch cap. Requires cut_cross_entropy_accum_c_fp32 and Triton >= 3.2."
+            "description": "Bound the fp32 classifier-gradient accumulator to this many vocabulary rows (a positive multiple of 128) to reduce peak backward memory, or 'auto' to size it once at load time from micro_batch_size, sequence_len and the model's vocab/hidden size (balancing GPU occupancy against a 1 GiB scratch cap). Requires cut_cross_entropy_accum_c_fp32 and Triton >= 3.2."
         },
     )
 

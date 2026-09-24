@@ -1,5 +1,6 @@
 """Config validation and cce_patch wiring for the Cut Cross Entropy plugin."""
 
+from types import SimpleNamespace
 from unittest.mock import create_autospec, patch
 
 import pytest
@@ -101,11 +102,38 @@ class TestCutCrossEntropyPluginPatchKwargs:
     def test_options_are_forwarded(self):
         cfg = _cfg(
             cut_cross_entropy_accum_c_fp32=True,
-            cut_cross_entropy_c_grad_chunk_size="auto",
+            cut_cross_entropy_c_grad_chunk_size=32768,
         )
         mocked = self._run(cfg, _cce_patch_stub(with_chunk=True))
         mocked.assert_called_once_with(
-            "llama", remote_model_id=None, accum_c_fp32=True, c_grad_chunk_size="auto"
+            "llama", remote_model_id=None, accum_c_fp32=True, c_grad_chunk_size=32768
+        )
+
+    def test_auto_resolves_once_from_config(self):
+        cfg = _cfg(
+            cut_cross_entropy_accum_c_fp32=True,
+            cut_cross_entropy_c_grad_chunk_size="auto",
+            micro_batch_size=4,
+            sequence_len=2048,
+            context_parallel_size=2,
+        )
+        model_config = SimpleNamespace(vocab_size=151936, hidden_size=4096)
+        with (
+            patch("torch.cuda.is_available", return_value=True),
+            patch("torch.cuda.current_device", return_value=0),
+            patch("axolotl.loaders.utils.load_model_config", return_value=model_config),
+            patch(
+                "cut_cross_entropy.recommend_c_grad_chunk_size",
+                create=True,
+                return_value=16384,
+            ) as recommend,
+        ):
+            mocked = self._run(cfg, _cce_patch_stub(with_chunk=True))
+        recommend.assert_called_once_with(
+            num_tokens=4 * 1024, vocab_size=151936, hidden_size=4096, device=0
+        )
+        mocked.assert_called_once_with(
+            "llama", remote_model_id=None, accum_c_fp32=True, c_grad_chunk_size=16384
         )
 
     def test_old_cce_still_works_without_chunking(self):
