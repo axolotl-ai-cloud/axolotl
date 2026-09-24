@@ -64,6 +64,29 @@ Supported: Gemma4 (`gemma4_text`), Mixtral, Qwen MoE variants, Nemotron-3 (`nemo
 
 Nemotron-3 latentmoe (`nemotron_h`) experts are non-gated (`up_proj`/`down_proj`, relu², no gate_proj) in `moe_latent_size` width: target `experts.up_proj`/`experts.down_proj` in `lora_target_parameters`, and add `fc1_latent_proj`/`fc2_latent_proj` to `lora_target_modules` for the shared latent projections. NVFP4 checkpoints (modelopt MIXED_PRECISION) use the same plugin with `dsv4_fp4_grouped_mode: nvfp4`; only the routed experts stay packed NVFP4, everything else dequantizes to bf16 at load.
 
+## GLM-4.7-Flash
+
+**Model type**: `glm4_moe_lite`.
+
+The Liger plugin supports RMSNorm, dense/shared-expert SwiGLU, and both rotary layouts. Routed experts use the selected expert backend (for example, SonicMoE). To combine these optimizations with CCE:
+
+```yaml
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_cross_entropy: false
+liger_fused_linear_cross_entropy: false
+cut_cross_entropy: true
+use_sonicmoe: true
+fused_attn_kernel: true
+```
+
+For this architecture, `fused_attn_kernel` fuses partial RoPE and MLA Q/K/V assembly; latent RMSNorms remain separate. It preserves the selected attention backend and packed-sequence metadata. When enabled, it replaces the attention preparation normally handled by Liger RoPE. Cached decoding, CPU execution, and trainable rotary embeddings retain the Transformers forward path.
+
 ## Gemma 4
 
 **Models**: `google/gemma-4-26B-A4B` (MoE), `google/gemma-4-31B` (dense), `google/gemma-4-E2B`, `google/gemma-4-E4B`
