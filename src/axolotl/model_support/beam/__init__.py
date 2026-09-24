@@ -24,11 +24,9 @@ class BeamSupport(ModelSupport):
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
         capabilities={
-            "cut_cross_entropy": Unsupported(
-                "The config sets final_logit_softcapping=30.0 and an fp32 lm_head. "
-                "CCE fuses the projection into the loss and never applies the "
-                "tanh softcap, so training would optimize an objective the model "
-                "was not trained with -- and the loss curve still looks plausible."
+            "cut_cross_entropy": Experimental(
+                "Needs the beam patch registered in ml-cross-entropy; apply_lce "
+                "takes the logit softcap, but the fp32 lm_head path is unverified."
             ),
             "lora_kernels": Unsupported(
                 "ReflectionAttention adds an output gate (self_attn.gate_proj plus "
