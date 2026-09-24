@@ -933,7 +933,38 @@ class AxolotlTrainer(
             with open(tokens_state_path, "w", encoding="utf-8") as f:
                 json.dump(tokens_state, f)
 
-        result = super()._save_checkpoint(model, trial, **kwargs)
+        engine = getattr(self, "model_wrapped", None)
+        save_checkpoint = getattr(engine, "save_checkpoint", None)
+        has_quantized_frozen_base = any(
+            not parameter.requires_grad and self._is_fsdp2_quantized_param(parameter)
+            for parameter in model.parameters()
+        )
+        exclude_frozen = (
+            self.is_deepspeed_enabled
+            and getattr(model, "_axolotl_native_nvfp4_deepspeed_prepared", False)
+            and has_quantized_frozen_base
+            and any(parameter.requires_grad for parameter in model.parameters())
+            and save_checkpoint is not None
+            and "exclude_frozen_parameters"
+            in inspect.signature(save_checkpoint).parameters
+        )
+        missing = object()
+        previous = getattr(engine, "__dict__", {}).get("save_checkpoint", missing)
+        if exclude_frozen:
+
+            def save_without_frozen(*args, **checkpoint_kwargs):
+                checkpoint_kwargs.setdefault("exclude_frozen_parameters", True)
+                return save_checkpoint(*args, **checkpoint_kwargs)
+
+            engine.save_checkpoint = save_without_frozen
+        try:
+            result = super()._save_checkpoint(model, trial, **kwargs)
+        finally:
+            if exclude_frozen:
+                if previous is missing:
+                    del engine.save_checkpoint
+                else:
+                    engine.save_checkpoint = previous
 
         # Reclaim VRAM held by the FSDP full-state-dict gather.
         gc.collect()
