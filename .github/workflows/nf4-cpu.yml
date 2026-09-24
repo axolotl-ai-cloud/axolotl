@@ -8,7 +8,7 @@ on:
         default: false
       pytorch_versions:
         type: string
-        default: '["2.12.1", "2.13.0", "2.14.0"]'
+        default: '["2.13.0", "2.14.0"]'
     secrets:
       CODECOV_TOKEN:
         required: false
