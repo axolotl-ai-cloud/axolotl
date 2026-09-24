@@ -142,8 +142,10 @@ during rank 0's staging.
 `src/axolotl/model_support/reflection/` marks these broken rather than letting
 their generic fallbacks run silently:
 
-- **`cut_cross_entropy`** — CCE fuses the projection into the loss and skips
-  `final_logit_softcapping`, silently optimizing a different objective.
+- **`cut_cross_entropy`** (experimental, warns) — works once the patch in
+  [`cce/`](cce/) is registered in ml-cross-entropy; `apply_lce` applies the logit
+  softcap. Measured 80% lower peak memory at seq 2048 on the tiny model, loss
+  matching to 1.5e-05. The `lm_head_dtype: fp32` path is unverified.
 - **`lora_kernels`** — the fused QKV/O kernels match a llama-like projection set
   by name and would bypass the attention output gate.
 - **`liger`** — its RMSNorm/SwiGLU replacements carry neither the sandwich norms
