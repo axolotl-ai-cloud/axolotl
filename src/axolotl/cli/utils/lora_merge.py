@@ -760,7 +760,8 @@ def _dequant_nvfp4(w, scale, scale2, dev: str) -> torch.Tensor:
 
     wt = w.to(dev)
     st = scale.to(dev)
-    p = scale2.to(dev).float().reshape(()) if scale2 is not None else None
+    # A scalar FP32 tensor would leave BF16 block scales in BF16 during multiplication.
+    p = scale2.to(dev).float().reshape(1, 1, 1) if scale2 is not None else None
     *lead, N, K = wt.shape
     # a padded swizzled scale has more elements than the plain block-16 grid; torchao must unswizzle it
     expect = 1
@@ -771,6 +772,137 @@ def _dequant_nvfp4(w, scale, scale2, dev: str) -> torch.Tensor:
         wt, st, 16, torch.bfloat16, per_tensor_scale=p, is_swizzled_scales=swizzled
     )
     return nv.dequantize(torch.bfloat16)
+
+
+_BNB_4BIT_STATE_RE = re.compile(r"\.quant_state\.bitsandbytes__(?:nf4|fp4)$")
+
+
+def _collect_bnb_4bit_components(
+    shard_tensors: Dict[str, torch.Tensor],
+    extra_components: Optional[Dict[str, torch.Tensor]] = None,
+) -> Dict[str, Dict[str, torch.Tensor]]:
+    """Group the serialized bitsandbytes 4-bit quant-state components by their weight key.
+
+    A prequantized bitsandbytes checkpoint stores the packed nibbles under the weight key itself and
+    the quant state as siblings (``weight.absmax``, ``weight.quant_map``, ``weight.nested_*``,
+    ``weight.quant_state.bitsandbytes__nf4``). ``extra_components`` carries the siblings that the
+    checkpoint sharded away from their packed weight."""
+    pool = {**(extra_components or {}), **shard_tensors}
+    groups: Dict[str, Dict[str, torch.Tensor]] = {}
+    for key in pool:
+        match = _BNB_4BIT_STATE_RE.search(key)
+        if match is None:
+            continue
+        weight_key = key[: match.start()]
+        if weight_key not in shard_tensors:
+            continue
+        prefix = weight_key + "."
+        groups[weight_key] = {
+            name[len(prefix) :]: tensor
+            for name, tensor in pool.items()
+            if name.startswith(prefix)
+        }
+    return groups
+
+
+def _load_split_bnb_4bit_components(model_shards) -> Dict[str, torch.Tensor]:
+    """Load the bitsandbytes quant-state components that a shard boundary separated from their packed
+    weight, so such a weight is still dequantized (and its siblings still dropped).
+
+    Reads safetensors headers to locate the groups and only materializes the stray siblings."""
+    shard_keys: list = []
+    for shard in model_shards:
+        if not str(shard).endswith(".safetensors"):
+            if len(model_shards) > 1:
+                raise ValueError(
+                    "Merging a sharded bitsandbytes 4-bit .bin checkpoint is "
+                    "unsupported because quantization state can be stored in a "
+                    "different shard from its packed weight. Convert the base to "
+                    "safetensors first."
+                )
+            return {}
+        with safetensors.safe_open(shard, framework="pt") as f:
+            shard_keys.append((shard, set(f.keys())))
+    if len(shard_keys) < 2:
+        return {}
+    quantized: set = set()
+    home: Dict[str, object] = {}
+    for shard, keys in shard_keys:
+        for key in keys:
+            home[key] = shard
+            match = _BNB_4BIT_STATE_RE.search(key)
+            if match is not None:
+                quantized.add(key[: match.start()])
+    extra: Dict[str, torch.Tensor] = {}
+    for shard, keys in shard_keys:
+        wanted = sorted(
+            key
+            for key in keys
+            if key not in quantized
+            and any(
+                key.rsplit(".", depth)[0] in quantized
+                and home.get(key.rsplit(".", depth)[0]) != shard
+                for depth in (1, 2)
+            )
+        )
+        if not wanted:
+            continue
+        with safetensors.safe_open(shard, framework="pt") as f:
+            for key in wanted:
+                extra[key] = f.get_tensor(key)
+    if extra:
+        LOG.warning(
+            "bitsandbytes 4-bit base: %d quant-state components are sharded away from their packed "
+            "weight; loading them with the shard that holds the weight.",
+            len(extra),
+        )
+    return extra
+
+
+def _dequant_bnb_4bit(
+    packed: torch.Tensor, components: Dict[str, torch.Tensor], dev: str
+) -> torch.Tensor:
+    """bitsandbytes 4-bit (nf4/fp4): packed nibbles + serialized quant state -> the training weight."""
+    from bitsandbytes.functional import QuantState
+
+    from axolotl.utils.nf4 import dequantize_bnb_4bit
+
+    state = QuantState.from_dict(
+        dict(components), device=dev
+    )  # from_dict consumes the mapping
+    # a floating-point bnb_4bit_quant_storage holds the same bytes under another dtype
+    data = packed.to(dev).view(torch.uint8).reshape(-1, 1)
+    expected = (math.prod(state.shape) + 1) // 2
+    if data.numel() != expected:
+        raise ValueError(
+            f"bitsandbytes 4-bit weight holds {data.numel()} packed bytes for a "
+            f"{tuple(state.shape)} tensor that needs {expected}"
+        )
+    return dequantize_bnb_4bit(data, state)
+
+
+def _detect_bnb_4bit_base(base_model_path: Path) -> bool:
+    """Whether the base ``config.json`` declares a bitsandbytes 4-bit quantization."""
+    import json as _json
+
+    config_path = base_model_path / "config.json"
+    if not config_path.exists():
+        return False
+    try:
+        quant_cfg = (
+            _json.loads(config_path.read_text()).get("quantization_config") or {}
+        )
+    except (OSError, ValueError):
+        return False
+    if quant_cfg.get("quant_method") != "bitsandbytes":
+        return False
+    if quant_cfg.get("load_in_8bit"):
+        raise ValueError(
+            "bitsandbytes 8-bit bases cannot be merged: the checkpoint stores int8 weights "
+            "with outlier state the merge cannot reconstruct. Merge the adapter into the "
+            "unquantized base instead."
+        )
+    return bool(quant_cfg.get("load_in_4bit"))
 
 
 def _detect_quant_format(key, w, shard_tensors, e8m0):
@@ -967,6 +1099,7 @@ def _dequantize_quantized_shard(
     weight_renamings: Optional[Dict[str, str]] = None,
     dequant_all: bool = True,
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
+    bnb_extra: Optional[Dict[str, torch.Tensor]] = None,
 ) -> tuple[Dict[str, torch.Tensor], bool, bool, Dict]:
     """Dequantize quantized weights to bf16 so the LoRA delta folds into the true value.
 
@@ -981,7 +1114,10 @@ def _dequantize_quantized_shard(
 
     Formats (detected by scale sibling): block-fp8 (``_scale_inv`` fp32, 128x128), mxfp8 (``_scale``
     e8m0/32), nvfp4 (``_scale`` e4m3/16 [+ ``_scale_2``]), mxfp4 (``_scale`` e8m0/32). Covers 2D linears
-    and fused-3D experts; native per-expert-unfused nvfp4/mxfp4 is not handled here."""
+    and fused-3D experts; native per-expert-unfused nvfp4/mxfp4 is not handled here.
+
+    bitsandbytes 4-bit weights (detected by their serialized quant-state components) are ALWAYS
+    dequantized, whatever ``dequant_all`` says: the merged checkpoint is bf16."""
     dev = device if (device != "cpu" and torch.cuda.is_available()) else "cpu"
     e8m0 = getattr(torch, "float8_e8m0fnu", None)
     out: Dict[str, torch.Tensor] = dict(shard_tensors)
@@ -990,8 +1126,23 @@ def _dequantize_quantized_shard(
     did = False
     left = False
     lora_state = lora_state or {}
+    # bitsandbytes components carry their own quant state and have no format-preserving path
+    bnb_groups = _collect_bnb_4bit_components(shard_tensors, bnb_extra)
+    drop.update(key for key in (bnb_extra or {}) if key in shard_tensors)
+    for key, components in bnb_groups.items():
+        out[key] = (
+            _dequant_bnb_4bit(shard_tensors[key], components, dev)
+            .to(torch.bfloat16)
+            .cpu()
+        )
+        did = True
+        drop.update(f"{key}.{name}" for name in components)
     for key, w in shard_tensors.items():
-        if key in drop or key.endswith(("_scale", "_scale_inv", "_scale_2")):
+        if (
+            key in drop
+            or key in bnb_groups
+            or key.endswith(("_scale", "_scale_inv", "_scale_2"))
+        ):
             continue
         if w.ndim not in (2, 3):
             continue
@@ -1412,8 +1563,9 @@ def _find_full_override(
 
 
 def _strip_quantization_config(output_path: Path) -> None:
-    """After a block-fp8 -> bf16 merge, remove ``quantization_config`` from the merged ``config.json``
-    so the merged checkpoint loads as bf16 (not FineGrainedFP8) and set ``torch_dtype`` to bfloat16."""
+    """After a dequantizing merge, remove ``quantization_config`` from the merged ``config.json`` so
+    the merged checkpoint loads as bf16 (not FineGrainedFP8 / bitsandbytes 4-bit) and set
+    ``torch_dtype`` to bfloat16."""
     import json as _json
 
     cfg_path = output_path / "config.json"
@@ -1427,7 +1579,7 @@ def _strip_quantization_config(output_path: Path) -> None:
     if changed:
         cfg_path.write_text(_json.dumps(cfg, indent=2))
         LOG.info(
-            "Stripped quantization_config from merged config.json (block-fp8 -> bf16 merge)"
+            "Stripped quantization_config from merged config.json (dequantized -> bf16 merge)"
         )
 
 
@@ -1452,7 +1604,7 @@ def _warn_if_quant_undequantized(key: str, tensor: torch.Tensor, do_nf4: bool) -
     LOG.warning(
         "LoRA merge: '%s' is still %s (a quantized format the merge did not dequantize) yet a LoRA "
         "delta targets it — folding into raw quantized data is WRONG. This format is unsupported by "
-        "the efficient merge (handled: bf16, nf4-sim, block-fp8, mxfp8, fused-nvfp4). For per-expert "
+        "the efficient merge (handled: bf16, nf4-sim, bnb-4bit, block-fp8, mxfp8, fused-nvfp4). For per-expert "
         "nvfp4/mxfp4 experts use the nvfp4 expert-merge writer; otherwise use merge_method: legacy.",
         key,
         tensor.dtype,
@@ -2177,6 +2329,19 @@ def merge_lora_sharded_efficient(
             snapshot_download(str(base_model_path), revision=revision)
         )
 
+    bnb_4bit_base = _detect_bnb_4bit_base(base_model_path)
+    bnb_split_components: Dict[str, torch.Tensor] = {}
+    if bnb_4bit_base:
+        if not dequant:
+            LOG.warning(
+                "bitsandbytes 4-bit base: the merge always writes a dequantized bf16 checkpoint "
+                "(the packed 4-bit format cannot be preserved through the fold)."
+            )
+            dequant = True
+        # the checkpoint already holds the quantized values training saw
+        simulate_nf4 = False
+        simulate_nf4_experts = False
+
     meta_model = _build_meta_model(base_model_path, trust_remote_code=trust_remote_code)
 
     # Check for weight conversion requirements (transformers v5)
@@ -2302,6 +2467,9 @@ def merge_lora_sharded_efficient(
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
 
+    if bnb_4bit_base:
+        bnb_split_components = _load_split_bnb_4bit_components(model_shards)
+
     LOG.debug(f"Found {len(model_shards)} model shards in {base_model_path}")
     os.makedirs(output_path, exist_ok=True)
     copy_non_model_files(base_model_path, output_path, model_shards)
@@ -2401,6 +2569,7 @@ def merge_lora_sharded_efficient(
                 weight_renamings=weight_renamings,
                 dequant_all=dequant,
                 param_wrapper_map=param_wrapper_map,
+                bnb_extra=bnb_split_components,
             )
         )
         block_fp8_dequantized = block_fp8_dequantized or _shard_deq

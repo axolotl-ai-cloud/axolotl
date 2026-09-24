@@ -5,6 +5,7 @@ Source: https://huggingface.co/moonshotai/Kimi-Linear-48B-A3B-Instruct/blob/main
 Revision: 6e163f3
 """
 
+import inspect
 import math
 from collections.abc import Callable
 from typing import Any, List, Optional, Tuple, Union
@@ -33,10 +34,14 @@ from transformers.utils import (
     can_return_tuple,
     logging,
 )
-from transformers.utils.generic import OutputRecorder
 
 try:
-    from fla.layers.utils import get_unpad_data, index_first_axis, pad_input
+    from transformers.utils.output_capturing import OutputRecorder
+except ImportError:  # transformers < 5.14
+    from transformers.utils.generic import OutputRecorder
+
+try:
+    from fla.layers.utils import index_first_axis, pad_input
     from fla.modules import FusedRMSNormGated, ShortConvolution
     from fla.ops.kda import chunk_kda, fused_recurrent_kda
     from fla.ops.kda.gate import fused_kda_gate
@@ -46,12 +51,15 @@ except ImportError as err:
     ) from err
 
 from axolotl.model_support.kimi_linear.configuration_kimi import KimiLinearConfig
+from axolotl.monkeypatch.utils import cu_seqlens_from_position_ids, get_unpad_data
 
 assert version.parse(transformers.__version__) >= version.parse("4.56.0"), (
     "Please upgrade transformers to >= 4.56.0"
 )
 
 logger = logging.get_logger(__name__)
+
+_CREATE_CAUSAL_MASK_PARAMS = frozenset(inspect.signature(create_causal_mask).parameters)
 
 
 def load_balancing_loss_func(
@@ -512,6 +520,7 @@ class KimiDeltaAttention(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         cache_params: Optional[KimiDynamicCache] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         **kwargs: Unpack[dict],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Cache]]:
         if attention_mask is not None:
@@ -531,11 +540,19 @@ class KimiDeltaAttention(nn.Module):
 
         cu_seqlens = kwargs.get("cu_seqlens", None)
         indices = None
+        flattened = False
         if attention_mask is not None:
+            # multipack encodes one id per packed document, so unpadding also splits documents
             indices, cu_seqlens, _ = get_unpad_data(attention_mask[:, -q_len:])
             hidden_states = index_first_axis(
                 rearrange(hidden_states, "b s ... -> (b s) ..."), indices
             ).unsqueeze(0)
+        elif cu_seqlens is None and cache_params is None:
+            cu_seqlens = cu_seqlens_from_position_ids(position_ids)
+            if cu_seqlens is not None and batch_size > 1:
+                # the offsets index one flat stream; fla has no batched varlen form
+                hidden_states = hidden_states.reshape(1, batch_size * q_len, -1)
+                flattened = True
 
         conv_state_q, conv_state_k, conv_state_v = None, None, None
         recurrent_state = None
@@ -611,8 +628,10 @@ class KimiDeltaAttention(nn.Module):
 
         o = rearrange(o, "b t h d -> b t (h d)")
         o = self.o_proj(o)
-        if attention_mask is not None:
+        if indices is not None:
             o = pad_input(o.squeeze(0), indices, batch_size, q_len)
+        elif flattened:
+            o = o.reshape(batch_size, q_len, -1)
 
         return o
 
@@ -1106,6 +1125,7 @@ class KimiDecoderLayer(nn.Module):
             hidden_states = self.self_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
+                position_ids=position_ids,
                 cache_params=past_key_values,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
@@ -1235,13 +1255,18 @@ class KimiLinearModel(KimiPreTrainedModel):
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
+        # transformers 5.15 renamed input_embeds and dropped cache_position
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "input_embeds": inputs_embeds,
+            "attention_mask": attention_mask,
+            "cache_position": cache_position,
+            "past_key_values": past_key_values,
+            "position_ids": position_ids,
+        }
         causal_mask = create_causal_mask(
-            config=self.config,
-            input_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            past_key_values=past_key_values,
-            position_ids=position_ids,
+            **{k: v for k, v in mask_kwargs.items() if k in _CREATE_CAUSAL_MASK_PARAMS}
         )
         linear_attn_mask = self._update_linear_attn_mask(attention_mask, cache_position)
 
@@ -1257,6 +1282,7 @@ class KimiLinearModel(KimiPreTrainedModel):
             hidden_states = decoder_layer(
                 hidden_states,
                 attention_mask=layer_mask,
+                position_ids=position_ids,
                 past_key_values=past_key_values,
                 cache_position=cache_position,
                 **kwargs,

@@ -959,15 +959,11 @@ STAGED_NF4_CONSTRAINTS = [
         "CPU-staged NF4 requires adapter: qlora and load_in_4bit: true",
     ),
     (
-        # torchao stages on a single device too; the bitsandbytes flag means FSDP
         lambda self: (
-            (self.nf4_backend != "torchao" and not self.fsdp_config)
-            or (
-                bool(self.fsdp_config)
-                and (
-                    not self.fsdp_config.cpu_ram_efficient_loading
-                    or not self.qlora_sharded_model_loading
-                )
+            bool(self.fsdp_config)
+            and (
+                not self.fsdp_config.cpu_ram_efficient_loading
+                or not self.qlora_sharded_model_loading
             )
         ),
         "CPU-staged NF4 requires FSDP2, cpu_ram_efficient_loading and qlora_sharded_model_loading",
@@ -1406,6 +1402,13 @@ class OptimizationValidationMixin:
                 "`fsdp_config.cpu_ram_efficient_loading: true`; every rank will load "
                 "and quantize the full model. Enable cpu_ram_efficient_loading for "
                 "CPU-staged NF4 loading."
+            )
+            self.qlora_sharded_model_loading = False
+            return self
+        if self.nf4_backend != "torchao" and not self.fsdp_config:
+            LOG.warning(
+                "`qlora_sharded_model_loading: true` has no effect without an "
+                "`fsdp_config`; every rank will load and quantize the full model."
             )
             self.qlora_sharded_model_loading = False
             return self

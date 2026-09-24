@@ -865,6 +865,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to tie adapter weights for tied model weights. See https://github.com/huggingface/peft/issues/2864",
     ),
     (
+        ("--lora-fp32-gradients/--no-lora-fp32-gradients",),
+        None,
+        None,
+        "Accumulate LoRA gradients in FP32. Keeps LoRA parameters in FP32 on single-device/DDP/FSDP2; DeepSpeed uses native FP32 gradient buffers. Fused reductions follow parameter precision. Frozen base weights are not promoted.",
+    ),
+    (
         ("--peft-autocast-adapter-dtype/--no-peft-autocast-adapter-dtype",),
         None,
         None,

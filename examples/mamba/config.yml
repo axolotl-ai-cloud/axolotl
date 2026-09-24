@@ -1,8 +1,4 @@
-base_model: state-spaces/mamba-2.8b
-# optionally might have model_type or tokenizer_type or tokenizer_config
-model_type: MambaLMHeadModel
-tokenizer_type: AutoTokenizer
-tokenizer_config: EleutherAI/gpt-neox-20b
+base_model: state-spaces/mamba-2.8b-hf
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
@@ -14,8 +10,9 @@ val_set_size: 0.0
 output_dir: ./outputs/out
 
 sequence_len: 2048
-sample_packing: false
-pad_to_sequence_len: false
+# packing needs the mamba-ssm and causal-conv1d kernels (pip install -e .[mamba-ssm])
+sample_packing: true
+pad_to_sequence_len: true
 
 wandb_project:
 wandb_entity:

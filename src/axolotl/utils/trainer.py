@@ -242,7 +242,7 @@ def filter_sequences_by_length(
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
+    drop_attn_mask = cfg.model_config_type in ["gemma3"]
     if drop_attn_mask:
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
@@ -425,11 +425,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_num_tokens = total_num_tokens
 
-    skip_estimates = cfg.model_config_type == "mamba"
-
     if (
-        not skip_estimates
-        and not cfg.total_supervised_tokens
+        not cfg.total_supervised_tokens
         and not cfg.skip_prepare_dataset
         and not cfg.reward_model
     ):
@@ -447,7 +444,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
 
-    if not skip_estimates and cfg.sample_packing:
+    if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 
@@ -547,6 +544,20 @@ def setup_deepspeed_env(cfg, stage=None):
         raise RuntimeError(
             "Distributed State already initialized before Deepspeed setup"
         )
+
+    if cfg.lora_fp32_gradients:
+        from axolotl.monkeypatch.deepspeed_utils import (
+            patch_zero_gradient_accumulation_dtype,
+        )
+        from axolotl.utils.lora_precision import configure_deepspeed_lora_precision
+
+        if isinstance(cfg.deepspeed, dict):
+            ds_config = dict(cfg.deepspeed)
+        else:
+            with open(cfg.deepspeed, encoding="utf-8") as stream:
+                ds_config = json.load(stream)
+        cfg.deepspeed = DictDefault(configure_deepspeed_lora_precision(ds_config))
+        patch_zero_gradient_accumulation_dtype()
 
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     if isinstance(cfg.deepspeed, DictDefault):

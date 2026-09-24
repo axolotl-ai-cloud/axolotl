@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.14"
           cache: "pip" # caching pip dependencies
       - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
         env:
@@ -77,9 +77,9 @@ jobs:
       max-parallel: 2
       fail-fast: false
       matrix:
-        python_version: ["3.12"]
-        pytorch_version: ["2.12.1", "2.13.0", "2.14.0"]
-    timeout-minutes: 30
+        python_version: ["3.12", "3.14"]
+        pytorch_version: ["2.13.0", "2.14.0"]
+    timeout-minutes: 45
 
     steps:
       - name: cleanup node
@@ -117,7 +117,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
+          uv pip install --no-build-isolation -e '.[modal,baseten]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
@@ -131,7 +131,7 @@ jobs:
           axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.1' }}
+        if: ${{ matrix.python_version == '3.14' && matrix.pytorch_version == '2.14.0' }}
         run: |
           axolotl generate-cli-config-options --check
 
@@ -143,6 +143,7 @@ jobs:
         run: hf cache ls
 
       - name: Run tests
+        timeout-minutes: 30
         run: |
           pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
@@ -179,9 +180,9 @@ jobs:
       max-parallel: 2
       fail-fast: false
       matrix:
-        python_version: ["3.12"]
-        pytorch_version: ["2.12.1", "2.13.0", "2.14.0"]
-    timeout-minutes: 30
+        python_version: ["3.12", "3.14"]
+        pytorch_version: ["2.13.0", "2.14.0"]
+    timeout-minutes: 45
 
     steps:
       - name: cleanup node
@@ -221,7 +222,9 @@ jobs:
         run: |
           uv pip install packaging setuptools_scm build wheel psutil
           python -m build --no-isolation --sdist
-          uv pip install --no-build-isolation dist/axolotl*.tar.gz --override /tmp/torch-pin.txt
+          for sdist in dist/axolotl*.tar.gz; do
+            uv pip install --no-build-isolation "${sdist}[modal,baseten]" --override /tmp/torch-pin.txt
+          done
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
@@ -253,6 +256,7 @@ jobs:
         run: hf cache ls
 
       - name: Run tests
+        timeout-minutes: 30
         run: |
           pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml

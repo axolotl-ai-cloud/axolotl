@@ -16,8 +16,8 @@ import importlib
 
 from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
-    get_seq_idx,
     is_cp_active,
+    patch_model_forward_seq_idx,
     wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
@@ -42,32 +42,9 @@ def patch_granitemoehybrid_modeling_packing():
     GraniteMoeHybridModel = mod.GraniteMoeHybridModel
     GraniteMoeHybridMambaLayer = mod.GraniteMoeHybridMambaLayer
 
-    # Patch 1: Model-level seq_idx injection
-    original_model_forward = GraniteMoeHybridModel.forward
+    patch_model_forward_seq_idx(GraniteMoeHybridModel)
 
-    def patched_model_forward(self, *args, **kwargs):
-        position_ids = kwargs.get("position_ids")
-        if position_ids is None and len(args) > 2:
-            position_ids = args[2]
-
-        past_key_values = kwargs.get("past_key_values")
-        if past_key_values is None and len(args) > 3:
-            past_key_values = args[3]
-
-        is_decoding = (
-            past_key_values is not None
-            and hasattr(past_key_values, "has_previous_state")
-            and past_key_values.has_previous_state
-        )
-
-        if position_ids is not None and not is_decoding and "seq_idx" not in kwargs:
-            kwargs["seq_idx"] = get_seq_idx(position_ids)
-
-        return original_model_forward(self, *args, **kwargs)
-
-    GraniteMoeHybridModel.forward = patched_model_forward
-
-    # Patch 2: Minimal wrapper to force slow path when CP is active.
+    # Minimal wrapper to force slow path when CP is active.
     # The fused mamba_split_conv1d_scan_combined doesn't return SSM state, so
     # CP correction (handled by the scan wrapper) needs the slow path.
     original_cuda_kernels_forward = GraniteMoeHybridMambaLayer.cuda_kernels_forward

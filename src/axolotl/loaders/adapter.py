@@ -422,6 +422,11 @@ def load_lora(
         if param.requires_grad and param.dtype == torch.float8_e4m3fn:
             param.data = param.data.to(_fp8_cast_dtype)
 
+    if cfg.lora_fp32_gradients and not cfg.deepspeed:
+        from axolotl.utils.lora_precision import upcast_lora_parameters
+
+        upcast_lora_parameters(model)
+
     if rank == 0:
         try:
             model.print_trainable_parameters()

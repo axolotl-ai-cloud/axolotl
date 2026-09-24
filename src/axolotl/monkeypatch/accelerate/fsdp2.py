@@ -522,6 +522,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             else None
         ),
     }
+    if getattr(model, "_axolotl_lora_fp32_gradients", False):
+        from axolotl.utils.lora_precision import lora_fsdp2_precision_policy
+
+        fsdp2_kwargs["mp_policy"] = lora_fsdp2_precision_policy(
+            fsdp2_kwargs["mp_policy"]
+        )
     model_has_params4bit = False
     for _, param in model.named_parameters():
         # this is a temporary fix whereby loading models with bnb params cannot be moved from

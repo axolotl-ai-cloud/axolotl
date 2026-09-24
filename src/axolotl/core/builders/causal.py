@@ -16,7 +16,6 @@ from trl.trainer.reward_trainer import DataCollatorForPreference
 
 from axolotl.core.builders.base import TrainerBuilderBase
 from axolotl.core.trainers import (
-    AxolotlMambaTrainer,
     AxolotlPRMTrainer,
     AxolotlRewardTrainer,
     AxolotlTrainer,
@@ -40,7 +39,6 @@ from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
-    MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
@@ -155,8 +153,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
             if trainer_cls:
                 return trainer_cls
-        if self.cfg.model_config_type == "mamba":
-            return AxolotlMambaTrainer
         if self.cfg.reward_model:
             return AxolotlRewardTrainer
         if self.cfg.process_reward_model:
@@ -480,9 +476,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.micro_batch_size == 1 and is_eval is False
             ):
                 return None
-
-        if self.cfg.model_config_type == "mamba":
-            return MambaDataCollator(tokenizer=self.tokenizer)
 
         use_batch_sampler_collator = False
         if is_eval is False and training_args.sample_packing:

@@ -191,6 +191,30 @@ class BnbNF4Parametrization(nn.Module):
         return dequantize_bnb_4bit(data, self.quant_state)
 
 
+def prequantized_bnb_4bit(
+    value: torch.Tensor,
+) -> tuple[torch.Tensor, BnbNF4Parametrization]:
+    """Adopt a checkpoint's 4-bit payload in the layout ``quantize_bnb_4bit`` produces.
+
+    Args:
+        value: A bitsandbytes ``Params4bit`` restored from serialized components.
+
+    Returns:
+        Packed weights and the parametrization that dequantizes them.
+    """
+    state = value.quant_state
+    data = value.detach().as_subclass(torch.Tensor).view(torch.uint8).reshape(-1, 1)
+    packed = (math.prod(state.shape) + 1) // 2
+    if data.numel() != packed:
+        raise ValueError(
+            f"prequantized weight holds {data.numel()} packed bytes for a "
+            f"{tuple(state.shape)} tensor that needs {packed}; floating-point "
+            "bnb_4bit_quant_storage is reinterpreted when the checkpoint is cast to "
+            "another compute dtype, so train in the checkpoint's storage dtype"
+        )
+    return data, BnbNF4Parametrization(state)
+
+
 class TorchaoNF4Parametrization(nn.Module):
     """Reconstruct torchao NF4Tensor chunks from FSDP-compatible packed storage."""
 

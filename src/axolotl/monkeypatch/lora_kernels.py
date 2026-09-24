@@ -16,6 +16,7 @@ from axolotl.kernels.lora import (
     apply_lora_gdn_in_proj,
     apply_lora_linear,
     apply_lora_mlp_geglu,
+    apply_lora_mlp_relu2,
     apply_lora_mlp_swiglu,
     apply_lora_o,
     apply_lora_qk,
@@ -343,13 +344,15 @@ def patch_self_attn_lora(cfg: DictDefault):
 def find_self_attn_in_layer(
     layer: nn.Module,
 ) -> Generator[Tuple[nn.Module], None, None]:
-    # general case of most models
-    if hasattr(layer, "self_attn"):
-        if all(
-            hasattr(layer.self_attn, proj)
-            for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]
+    seen = set()
+    for name in ("self_attn", "mixer"):
+        attention = getattr(layer, name, None)
+        if id(attention) not in seen and all(
+            hasattr(attention, proj)
+            for proj in ("q_proj", "k_proj", "v_proj", "o_proj")
         ):
-            yield layer.self_attn
+            seen.add(id(attention))
+            yield attention
 
 
 # GatedDeltaNet projections routed through the fused kernels to avoid peft's
@@ -612,6 +615,20 @@ def apply_lora_kernel_patches(
                     patched = True
                 if patched:
                     linear_attn_patched_layers += 1
+        if cfg.lora_mlp_kernel and activation == "relu2":
+            candidates = [getattr(layer, name, None) for name in ("mlp", "mixer")]
+            mixer = getattr(layer, "mixer", None)
+            candidates.append(getattr(mixer, "shared_experts", None))
+            for mlp in candidates:
+                if (
+                    mlp is not None
+                    and not hasattr(mlp, "gate_proj")
+                    and all(
+                        hasattr(getattr(mlp, name, None), "lora_A")
+                        for name in ("up_proj", "down_proj")
+                    )
+                ):
+                    mlp.forward = types.MethodType(apply_lora_mlp_relu2, mlp)
         # When ScatterMoE/SonicMoE owns the routed experts, lora_mlp_kernel must only fuse the
         # DENSE shared MLP, never the routed-expert containers (which the MoE kernel handles).
         _moe_kernels_own_experts = bool(cfg.use_scattermoe) or bool(cfg.use_sonicmoe)
@@ -635,7 +652,7 @@ def apply_lora_kernel_patches(
 
                 if can_patch_mlp:
                     apply_fn = APPLY_FN_MAPPING[activation]
-                    layer.mlp.forward = types.MethodType(apply_fn, mlp)
+                    mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
                         "Cannot patch some MLP layers - requires LoRA adapters"

@@ -54,7 +54,6 @@ from axolotl.loaders.utils import (
     materialize_trainable_meta_params,
 )
 from axolotl.model_support import get_model_support, resolve_model_support
-from axolotl.models.mamba import fix_mamba_attn_for_loss
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -285,6 +284,23 @@ class ModelLoader:
             self._apply_post_lora_load_setup(skip_move_to_device)
             self.patch_manager.apply_post_model_load_patches(self.model)
             PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+        quantizer = getattr(self.model, "hf_quantizer", None)
+        if (
+            self.cfg.adapter in ("lora", "qlora")
+            and quantizer is not None
+            and quantizer.quantization_config.quant_method == "torchao"
+        ):
+            from axolotl.monkeypatch.torchao_lora import (
+                enable_native_nvfp4_lora_training,
+            )
+
+            enable_native_nvfp4_lora_training(self.model)
+        if self.cfg.lora_fp32_gradients:
+            from axolotl.utils.lora_precision import upcast_lora_parameters
+
+            self.model._axolotl_lora_fp32_gradients = True
+            if not self.cfg.deepspeed:
+                upcast_lora_parameters(self.model)
         if self.cfg.fp32_norms:
             tag_model_fp32_norms(self.model, self.cfg)
 
@@ -1076,10 +1092,6 @@ class ModelLoader:
         if self.cfg.load_in_4bit:
             patch_bnb_large_tensors()
         if uses_staged_nf4(self.cfg):
-            if getattr(self.model_config, "quantization_config", None):
-                raise ValueError(
-                    "CPU-staged NF4 requires an unquantized base checkpoint"
-                )
             self.model_kwargs["device_map"] = {"": "cpu"}
             if self.cfg.fsdp_config:
                 init_distributed_state()
@@ -1159,24 +1171,6 @@ class ModelLoader:
                 quantization_config=quantization_config,
             )
             skip_move_to_device = True
-        elif self.model_type == "MambaLMHeadModel":
-            if self.cfg.reinit_weights:
-                LOG.warning(
-                    "reinit_weights is not supported with MambaLMHeadModel. "
-                    "Loading from pretrained weights instead."
-                )
-            # FIXME this is janky at best and hacked together to make it work
-            MambaLMHeadModel = fix_mamba_attn_for_loss()
-
-            self.model_kwargs["dtype"] = self.model_kwargs["torch_dtype"]
-            self.model_kwargs["device"] = torch.cuda.current_device()
-            self.model_kwargs.pop("torch_dtype", None)
-            self.model_kwargs.pop("device_map", None)
-
-            self.model = MambaLMHeadModel.from_pretrained(
-                self.base_model,
-                **self.model_kwargs,
-            )
         else:
             # Please don't remove underscore binding without reading the fn docstring
             _ = self._configure_zero3_memory_efficient_loading()
