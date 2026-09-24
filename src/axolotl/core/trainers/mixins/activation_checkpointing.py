@@ -61,11 +61,84 @@ def _patch_trl_offload_current_stream() -> None:
 
 
 def _is_offload_parameter_view(tensor, parameter_storages) -> bool:
-    local = tensor._local_tensor if isinstance(tensor, DTensor) else tensor
+    local = (
+        getattr(tensor, "_local_tensor", tensor)
+        if isinstance(tensor, DTensor)
+        else tensor
+    )
     try:
         return local.untyped_storage().data_ptr() in parameter_storages
     except (RuntimeError, AttributeError):
         return False
+
+
+def _storage_ptr(tensor):
+    local = (
+        getattr(tensor, "_local_tensor", tensor)
+        if isinstance(tensor, DTensor)
+        else tensor
+    )
+    try:
+        return local.untyped_storage().data_ptr()
+    except (RuntimeError, AttributeError):
+        return None
+
+
+def _install_live_fsdp_parameter_storage_hooks(context, model) -> None:
+    if not hasattr(context, "param_storages"):
+        return
+    if getattr(context, "_axolotl_live_parameter_storage_hooks", False):
+        return
+    if not any(isinstance(parameter, DTensor) for parameter in model.parameters()):
+        return
+
+    # TRL captures storage before Accelerate applies FSDP2. Those pointers can be
+    # freed and reused, so only retain storage observed while a parameter owner runs.
+    context.param_storages.clear()
+    active_storages: dict[int, int] = {}
+    forward_storages: dict[int, list[set[int]]] = {}
+    owners = {
+        module
+        for module in model.modules()
+        if any(True for _ in module.parameters(recurse=False))
+    }
+    wrapper_owners = {
+        module
+        for module in model.modules()
+        if hasattr(module, "base_layer")
+        and (hasattr(module, "lora_A") or hasattr(module, "lora_embedding_A"))
+    }
+    owners.update(wrapper_owners)
+
+    def enter(module, _args):
+        pointers = {
+            pointer
+            for parameter in module.parameters(recurse=module in wrapper_owners)
+            if (pointer := _storage_ptr(parameter)) not in (None, 0)
+        }
+        forward_storages.setdefault(id(module), []).append(pointers)
+        for pointer in pointers:
+            active_storages[pointer] = active_storages.get(pointer, 0) + 1
+            context.param_storages.add(pointer)
+
+    def exit(module, _args, _output):
+        stacks = forward_storages.get(id(module))
+        if not stacks:
+            return
+        for pointer in stacks.pop():
+            remaining = active_storages[pointer] - 1
+            if remaining:
+                active_storages[pointer] = remaining
+            else:
+                del active_storages[pointer]
+                context.param_storages.discard(pointer)
+
+    handles = []
+    for module in owners:
+        handles.append(module.register_forward_pre_hook(enter))
+        handles.append(module.register_forward_hook(exit, always_call=True))
+    context._axolotl_live_parameter_storage_hooks = True
+    context._axolotl_live_parameter_storage_hook_handles = handles
 
 
 def _patch_trl_offload_compute_stream_clone() -> None:
@@ -152,6 +225,9 @@ class ActivationOffloadingMixin(Trainer):
             self.activation_offload_context = contextlib.nullcontext()
 
     def training_step(self, *args, **kwargs):
+        _install_live_fsdp_parameter_storage_hooks(
+            self.activation_offload_context, self.model
+        )
         with self.activation_offload_context:
             return super().training_step(*args, **kwargs)
 
