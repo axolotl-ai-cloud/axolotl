@@ -142,6 +142,18 @@ Paper: [https://arxiv.org/abs/2502.16982v1](https://arxiv.org/abs/2502.16982v1)
 optimizer: muon
 ```
 
+### muon_8bit
+
+Muon with its momentum buffer stored as blockwise (2048) linear int8 between steps, cutting
+Muon state memory ~4x; AdamW-backed params (embeddings, lm_head, 1D) stay full precision.
+Runs on a single GPU or FSDP2.
+
+Paper: [https://arxiv.org/abs/2509.23106](https://arxiv.org/abs/2509.23106)
+
+```yaml
+optimizer: muon_8bit
+```
+
 ### dion
 
 Microsoft's Dion (DIstributed OrthoNormalization) optimizer is a scalable and communication-efficient

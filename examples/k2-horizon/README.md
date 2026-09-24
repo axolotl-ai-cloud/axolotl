@@ -25,6 +25,8 @@ is required.
 
 ### Tips
 
+- For the MoE checkpoints, prefer an explicit `lora_target_modules` list over `lora_target_linear: true`
+  to keep the adapter count manageable; note MoVA attention has `v_experts` instead of `v_proj`.
 - Use `lora_target_modules` or `lora_target_linear: true` to target the MoE layers; the experts are
   plain `nn.Linear` modules.
 - `sample_packing: true` is supported.
