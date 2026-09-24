@@ -38,6 +38,24 @@ class DistributedParallelMixin(Trainer):
 
                 if prepare_native_nvfp4_ddp(model, self.accelerator.device):
                     model._axolotl_native_nvfp4_ddp_prepared = True
+        deepspeed = getattr(distributed_type, "name", distributed_type) == "DEEPSPEED"
+        if deepspeed and not getattr(
+            model, "_axolotl_native_nvfp4_deepspeed_prepared", False
+        ):
+            plugin = getattr(
+                getattr(self.accelerator, "state", None), "deepspeed_plugin", None
+            )
+            config = getattr(plugin, "deepspeed_config", {}) or {}
+            zero_stage = config.get("zero_optimization", {}).get("stage", 0)
+            if zero_stage in (1, 2):
+                from axolotl.monkeypatch.torchao_deepspeed import (
+                    prepare_native_nvfp4_deepspeed,
+                )
+
+                if prepare_native_nvfp4_deepspeed(
+                    model, self.accelerator.device, zero_stage
+                ):
+                    model._axolotl_native_nvfp4_deepspeed_prepared = True
         return super()._wrap_model(model, *args, **kwargs)
 
     def _save(self, output_dir: str | None = None, state_dict=None):
