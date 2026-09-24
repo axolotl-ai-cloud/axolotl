@@ -35,14 +35,6 @@ jobs:
             cuda_version: 13.0.0
             cudnn_version: ""
             python_version: "3.12"
-            pytorch: 2.11.0
-            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: "130"
-            cuda_version: 13.0.0
-            cudnn_version: ""
-            python_version: "3.12"
             pytorch: 2.12.1
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
             dockerfile: "Dockerfile-uv-base"
@@ -58,7 +50,23 @@ jobs:
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
+            python_version: "3.14"
+            pytorch: 2.13.0
+            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
             python_version: "3.12"
+            pytorch: 2.14.0
+            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.14"
             pytorch: 2.14.0
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
             dockerfile: "Dockerfile-uv-base"
@@ -66,7 +74,7 @@ jobs:
           - cuda: "132"
             cuda_version: 13.2.1
             cudnn_version: ""
-            python_version: "3.12"
+            python_version: "3.14"
             pytorch: 2.14.0
             torch_index_url: "https://download.pytorch.org/whl/cu132"
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
