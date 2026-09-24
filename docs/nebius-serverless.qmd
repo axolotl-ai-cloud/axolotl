@@ -236,8 +236,19 @@ The CLI limits the compressed upload context to 64 KiB.
 
 On a CLI failure, Axolotl attempts one read-only status lookup and reports guidance
 for the returned state. It never automatically resubmits or cancels the job.
-If you lost the job ID, use `nebius ai job list` or `nebius ai job get-by-name --help`
-to locate the job by its printed name.
+If you lost the job ID, look it up by the name printed at launch:
+
+```bash
+nebius ai job get-by-name \
+  --name JOB_NAME \
+  --parent-id project-YOUR_PROJECT_ID \
+  --format json
+```
+
+Use the `parent_id` from `nebius.yaml` and read the job ID from `metadata.id`.
+If the cloud YAML sets `profile`, also pass `--profile PROFILE_NAME` with that
+value. Otherwise, use the same active CLI profile as submission. If you omitted
+`parent_id`, use the project selected by that profile at launch.
 
 ## Configuration reference
 
