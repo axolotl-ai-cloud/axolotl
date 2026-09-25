@@ -579,3 +579,41 @@ def test_model_loader_uses_native_tp_hook_for_native_nvfp4(monkeypatch):
         ),
         ("exit", model_loader.device_mesh),
     ]
+
+
+def test_model_loader_prepares_tp_lora_after_adapter_load(monkeypatch):
+    from types import SimpleNamespace
+
+    from axolotl.loaders import model as model_module
+    from axolotl.loaders.model import ModelLoader
+    from axolotl.monkeypatch import torchao_tp_lora
+
+    base = object()
+    adapted = object()
+    config = object()
+    calls = []
+
+    def load_adapter(model, cfg, adapter):
+        calls.append(("load_adapter", model, cfg, adapter))
+        return adapted, config
+
+    def prepare(model):
+        calls.append(("prepare", model))
+        return True
+
+    monkeypatch.setattr(model_module, "load_adapter", load_adapter)
+    monkeypatch.setattr(torchao_tp_lora, "prepare_native_nvfp4_tp_lora", prepare)
+    loader = object.__new__(ModelLoader)
+    loader.model = base
+    loader.reference_model = False
+    loader.cfg = SimpleNamespace(
+        adapter="lora",
+        lora_model_dir=None,
+        rl=None,
+        merge_lora=False,
+        tensor_parallel_size=2,
+    )
+
+    assert loader._build_adapters() is config
+    assert loader.model is adapted
+    assert calls == [("load_adapter", base, loader.cfg, "lora"), ("prepare", adapted)]

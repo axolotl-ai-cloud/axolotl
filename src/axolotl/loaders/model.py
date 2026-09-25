@@ -651,6 +651,12 @@ class ModelLoader:
                 self.model, lora_config = load_adapter(
                     self.model, self.cfg, self.cfg.adapter
                 )
+                if (self.cfg.tensor_parallel_size or 1) > 1:
+                    from axolotl.monkeypatch.torchao_tp_lora import (
+                        prepare_native_nvfp4_tp_lora,
+                    )
+
+                    prepare_native_nvfp4_tp_lora(self.model)
 
         return lora_config
 
