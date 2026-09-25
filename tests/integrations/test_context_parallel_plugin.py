@@ -216,3 +216,40 @@ def test_schema_rejects_disabled_nested_cp(min_base_cfg):
                 )
             )
         )
+
+
+@pytest.mark.parametrize("size", [1, 4])
+def test_prepare_after_validation_preserves_cp_settings(min_base_cfg, size):
+    from axolotl.integrations.base import PluginManager
+
+    cfg = validate_config(
+        min_base_cfg
+        | DictDefault(context_parallel_size=size, attn_implementation="sdpa")
+    )
+    prepare_plugins(cfg)
+    plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
+    assert plugin._cp_cfg(cfg).size == size
+    assert plugin._enabled(cfg) is (size > 1)
+    if size == 1:
+        plugin.pre_model_load(cfg)
+
+
+@pytest.mark.parametrize("size", [1, 4])
+def test_runtime_accepts_plain_cp_dict(size):
+    cfg = DictDefault()
+    cfg["context_parallel"] = {"size": size, "backend": "ulysses"}
+    plugin = ContextParallelPlugin()
+    assert plugin._cp_cfg(cfg).backend == "ulysses"
+    assert plugin._enabled(cfg) is (size > 1)
+
+
+def test_prepare_after_validation_without_cp_is_inactive(min_base_cfg):
+    from axolotl.integrations.base import PluginManager
+
+    cfg = validate_config(min_base_cfg)
+    prepare_plugins(cfg)
+    plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
+    plugin.pre_model_load(cfg)
+    plugin.post_model_load(cfg, None)
+    plugin.post_trainer_create(cfg, None)
+    assert not plugin._enabled(cfg)

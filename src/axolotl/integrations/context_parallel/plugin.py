@@ -62,7 +62,12 @@ class ContextParallelPlugin(BasePlugin):
 
     @staticmethod
     def _cp_cfg(cfg):
-        return getattr(cfg, "context_parallel", None)
+        from .args import ContextParallelConfig
+
+        cp = getattr(cfg, "context_parallel", None)
+        if isinstance(cp, dict):
+            return ContextParallelConfig.model_validate(cp)
+        return cp
 
     def _enabled(self, cfg) -> bool:
         cp = self._cp_cfg(cfg)
