@@ -119,7 +119,9 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
-        if getattr(self.model, "_axolotl_native_nvfp4_metadata", None):
+        if getattr(self.model, "_axolotl_native_nvfp4_metadata", None) or getattr(
+            self.model, "_axolotl_native_nvfp4_metadata_requested", False
+        ):
             from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
                 NativeNVFP4MergeMetadataCallback,
             )
@@ -210,6 +212,14 @@ class TrainerBuilderBase(abc.ABC):
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
         callbacks = []
+        if getattr(
+            self.model, "_axolotl_native_nvfp4_deepspeed_merge_aware_requested", False
+        ):
+            from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
+                DeepSpeedNativeNVFP4MergeAwareCallback,
+            )
+
+            callbacks.append(DeepSpeedNativeNVFP4MergeAwareCallback(trainer))
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
             callbacks.extend(

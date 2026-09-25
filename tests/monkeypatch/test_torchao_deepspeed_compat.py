@@ -8,6 +8,7 @@ import torch
 from axolotl.monkeypatch.torchao_deepspeed_compat import (
     _suspend_native_debug_refs,
     install_native_nvfp4_debug_compat,
+    install_native_nvfp4_zero3_dtype_compat,
 )
 
 
@@ -120,3 +121,57 @@ def test_installer_is_idempotent_and_delegates_ordinary_models():
     model = torch.nn.Linear(2, 2)
     assert Engine()._configure_distributed_model(model, flag=True) == 42
     assert calls == [(model, True)]
+
+
+class _Offload:
+    def __init__(self, module):
+        self.dtype = next(module.parameters()).dtype
+        self.seen_dtype = None
+
+    def _convert_to_zero_parameters(self, ds_config, module, mpu):
+        del ds_config, module, mpu
+        self.seen_dtype = self.dtype
+
+
+def _component_model(*, native):
+    model = torch.nn.Module()
+    model.register_parameter(
+        "packed",
+        torch.nn.Parameter(torch.ones(2, dtype=torch.uint8), requires_grad=False),
+    )
+    model.register_parameter(
+        "adapter", torch.nn.Parameter(torch.ones(2, dtype=torch.bfloat16))
+    )
+    if native:
+        model._axolotl_native_nvfp4_zero3_components = {"packed"}
+    return model
+
+
+def test_zero3_dtype_compat_delegates_ordinary_byte_first_models():
+    install_native_nvfp4_zero3_dtype_compat(_Offload)
+    model = _component_model(native=False)
+    offload = _Offload(model)
+
+    offload._convert_to_zero_parameters(None, model, None)
+
+    assert offload.dtype == torch.uint8
+    assert offload.seen_dtype == torch.uint8
+
+
+def test_zero3_dtype_compat_uses_floating_parameter_for_native_components():
+    install_native_nvfp4_zero3_dtype_compat(_Offload)
+    model = _component_model(native=True)
+    offload = _Offload(model)
+
+    offload._convert_to_zero_parameters(None, model, None)
+
+    assert offload.dtype == torch.bfloat16
+    assert offload.seen_dtype == torch.bfloat16
+
+
+def test_zero3_dtype_compat_installer_is_idempotent():
+    install_native_nvfp4_zero3_dtype_compat(_Offload)
+    installed = _Offload._convert_to_zero_parameters
+    install_native_nvfp4_zero3_dtype_compat(_Offload)
+
+    assert _Offload._convert_to_zero_parameters is installed

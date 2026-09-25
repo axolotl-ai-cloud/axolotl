@@ -68,7 +68,7 @@ def test_final_metadata_respects_rank_after_teardown(rank, initialized, enabled)
 
 
 @pytest.mark.parametrize("backend", [None, "FSDP", "DeepSpeed"])
-@pytest.mark.parametrize("requested", [None, False])
+@pytest.mark.parametrize("requested", [None, True, False])
 def test_native_setup_respects_opt_out_and_backend_limits(backend, requested):
     from types import SimpleNamespace
 
@@ -87,10 +87,14 @@ def test_native_setup_respects_opt_out_and_backend_limits(backend, requested):
         patch("axolotl.integrations.kernels.merge_aware_setup.LOG.warning") as warning,
     ):
         configure_native_merge_aware(cfg, model, sharded_backend=backend)
-    if backend == "FSDP" and requested is None:
+    if backend in ("FSDP", "DeepSpeed") and requested is not False:
         install.assert_not_called()
         warning.assert_not_called()
-        assert model._axolotl_native_nvfp4_merge_aware_requested
+        if backend == "FSDP":
+            assert model._axolotl_native_nvfp4_merge_aware_requested
+        else:
+            assert model._axolotl_native_nvfp4_deepspeed_merge_aware_requested
+        assert model._axolotl_native_nvfp4_metadata_requested
     elif backend or requested is False:
         install.assert_not_called()
         assert model._axolotl_merge_aware_unsupported
@@ -139,3 +143,73 @@ def test_native_multilora_ownership_preserves_explicit_opt_out(requested):
         )
     assert warning.called is (not requested)
     assert getattr(model, "_axolotl_merge_aware_unsupported", False) is (not requested)
+
+
+def test_deepspeed_post_engine_callback_installs_on_engine_module(monkeypatch):
+    from types import SimpleNamespace
+
+    from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
+        DeepSpeedNativeNVFP4MergeAwareCallback,
+    )
+
+    model = SimpleNamespace(_axolotl_native_nvfp4_deepspeed_merge_aware_requested=True)
+    trainer = SimpleNamespace(model_wrapped=SimpleNamespace(module=model))
+    installed = []
+    monkeypatch.setattr(
+        "axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora.install_deepspeed_native_nvfp4_merge_aware_lora_linears",
+        lambda target: installed.append(target) or 1,
+    )
+
+    control = object()
+    assert (
+        DeepSpeedNativeNVFP4MergeAwareCallback(trainer).on_train_begin(
+            None, None, control
+        )
+        is control
+    )
+    assert installed == [model]
+    assert model._axolotl_native_nvfp4_deepspeed_merge_aware_installed == 1
+
+
+def test_deepspeed_post_engine_callback_marks_no_eligible_projection(monkeypatch):
+    from types import SimpleNamespace
+
+    from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
+        DeepSpeedNativeNVFP4MergeAwareCallback,
+    )
+
+    model = SimpleNamespace(_axolotl_native_nvfp4_deepspeed_merge_aware_requested=True)
+    trainer = SimpleNamespace(model_wrapped=SimpleNamespace(module=model))
+    monkeypatch.setattr(
+        "axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora.install_deepspeed_native_nvfp4_merge_aware_lora_linears",
+        lambda _: 0,
+    )
+
+    DeepSpeedNativeNVFP4MergeAwareCallback(trainer).on_train_begin(None, None, None)
+    assert model._axolotl_merge_aware_unsupported
+
+
+def test_builder_registers_deepspeed_post_engine_callback():
+    from types import SimpleNamespace
+
+    from axolotl.core.builders.base import TrainerBuilderBase
+    from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
+        DeepSpeedNativeNVFP4MergeAwareCallback,
+    )
+
+    class Builder(TrainerBuilderBase):
+        def build(self, total_num_steps):
+            del total_num_steps
+
+    builder = object.__new__(Builder)
+    builder.cfg = SimpleNamespace(plugins=[])
+    builder.model = SimpleNamespace(
+        _axolotl_native_nvfp4_deepspeed_merge_aware_requested=True
+    )
+    trainer = object()
+
+    callbacks = builder.get_post_trainer_create_callbacks(trainer)
+
+    assert len(callbacks) == 1
+    assert isinstance(callbacks[0], DeepSpeedNativeNVFP4MergeAwareCallback)
+    assert callbacks[0].trainer is trainer

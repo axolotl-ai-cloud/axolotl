@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -11,6 +12,9 @@ from transformers import TrainerCallback
 from axolotl.monkeypatch.torchao_nvfp4_merge_metadata import (
     build_native_merge_aware_metadata,
 )
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def _target_name(name):
@@ -71,6 +75,73 @@ def native_metadata_valid_for_save(model):
         getattr(module, "_axolotl_merge_aware_unsupported", False)
         for module in model.modules()
     )
+
+
+def prepare_sharded_native_metadata(model):
+    """Capture original recipes before distributed wrapping changes weight storage."""
+    from peft.tuners.lora.layer import Linear as LoraLinear
+
+    from axolotl.monkeypatch.torchao_nvfp4_merge import _native_merge_aware_reason
+
+    distributed = (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
+    source = not distributed or torch.distributed.get_rank() == 0
+    payload = [None]
+    if source:
+        try:
+            weights = {}
+            for name, module in model.named_modules():
+                if not isinstance(module, LoraLinear):
+                    continue
+                weight = module.get_base_layer().weight
+                if type(weight).__name__ != "NVFP4Tensor":
+                    continue
+                adapters = [a for a in module.active_adapters if a in module.lora_A]
+                if (
+                    len(adapters) != 1
+                    or _native_merge_aware_reason(module, adapters)
+                    or weight.ndim != 2
+                    or weight.act_quant_kwargs is not None
+                ):
+                    continue
+                weights[_target_name(name)] = weight
+            payload[0] = {
+                "metadata": build_native_merge_aware_metadata(weights, 0)
+                if weights
+                else None
+            }
+        except (RuntimeError, TypeError, ValueError) as error:
+            payload[0] = {"error": str(error)}
+    if distributed:
+        torch.distributed.broadcast_object_list(payload, src=0)
+    result = payload[0]
+    if result.get("error"):
+        model._axolotl_native_nvfp4_metadata_valid = False
+        LOG.warning(
+            "NVFP4 MERGE WARNING: cannot capture the original sharded quantizer recipe (%s); "
+            "adapter saves will not carry a merge-aware guarantee.",
+            result["error"],
+        )
+    model._axolotl_native_nvfp4_metadata = result.get("metadata")
+
+
+def persist_native_metadata_after_save(model, adapter_dir):
+    """Write the cached recipe on the saving rank without entering collectives."""
+    metadata = getattr(model, "_axolotl_native_nvfp4_metadata", None)
+    if not metadata:
+        return
+    rank = (
+        torch.distributed.get_rank()
+        if torch.distributed.is_available() and torch.distributed.is_initialized()
+        else int(os.environ.get("RANK", "0"))
+    )
+    if rank != 0:
+        return
+    if native_metadata_valid_for_save(model):
+        write_native_metadata(adapter_dir, metadata)
+    else:
+        clear_native_metadata(adapter_dir)
 
 
 class NativeNVFP4MergeMetadataCallback(TrainerCallback):

@@ -303,6 +303,11 @@ def save_trained_model(
         from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
 
         if save_fsdp2_lora_adapter(model, cfg.output_dir):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                persist_native_metadata_after_save,
+            )
+
+            persist_native_metadata_after_save(model, cfg.output_dir)
             return
 
     if trainer.is_fsdp_enabled or cfg.fsdp_config:

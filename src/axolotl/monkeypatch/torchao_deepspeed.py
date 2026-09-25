@@ -42,11 +42,15 @@ def _install_native_nvfp4_broadcast_filter(engine_class=None) -> None:
 
         engine_class = DeepSpeedEngine
     DeepSpeedEngine = engine_class
+    from deepspeed.runtime.zero.parameter_offload import DeepSpeedZeRoOffload
+
     from axolotl.monkeypatch.torchao_deepspeed_compat import (
         install_native_nvfp4_debug_compat,
+        install_native_nvfp4_zero3_dtype_compat,
     )
 
     install_native_nvfp4_debug_compat(DeepSpeedEngine)
+    install_native_nvfp4_zero3_dtype_compat(DeepSpeedZeRoOffload)
     if getattr(DeepSpeedEngine, "_axolotl_native_nvfp4_broadcast_filter", False):
         return
     original_broadcast_model = DeepSpeedEngine._broadcast_model

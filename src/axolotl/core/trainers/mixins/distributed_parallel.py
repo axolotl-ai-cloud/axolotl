@@ -39,6 +39,19 @@ class DistributedParallelMixin(Trainer):
                 if prepare_native_nvfp4_ddp(model, self.accelerator.device):
                     model._axolotl_native_nvfp4_ddp_prepared = True
         deepspeed = getattr(distributed_type, "name", distributed_type) == "DEEPSPEED"
+        if (
+            deepspeed
+            and getattr(
+                model, "_axolotl_native_nvfp4_deepspeed_merge_aware_requested", False
+            )
+            and not getattr(model, "_axolotl_native_nvfp4_metadata_prepared", False)
+        ):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                prepare_sharded_native_metadata,
+            )
+
+            prepare_sharded_native_metadata(model)
+            model._axolotl_native_nvfp4_metadata_prepared = True
         if deepspeed and not getattr(
             model, "_axolotl_native_nvfp4_deepspeed_prepared", False
         ):
@@ -57,6 +70,24 @@ class DistributedParallelMixin(Trainer):
                 ):
                     model._axolotl_native_nvfp4_deepspeed_prepared = True
         return super()._wrap_model(model, *args, **kwargs)
+
+    def _clip_grad_norm(self, model):
+        from torch.distributed.fsdp import CPUOffloadPolicy
+
+        plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
+        if not isinstance(getattr(plugin, "cpu_offload", None), CPUOffloadPolicy):
+            return super()._clip_grad_norm(model)
+
+        from axolotl.utils.gradient_clipping import (
+            clip_grad_norm_local_shards_,
+            has_cpu_offloaded_dtensor_gradients,
+        )
+
+        parameters = list(model.parameters())
+        if not has_cpu_offloaded_dtensor_gradients(parameters):
+            return super()._clip_grad_norm(model)
+        self.accelerator.unscale_gradients()
+        return clip_grad_norm_local_shards_(parameters, self.args.max_grad_norm)
 
     def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
         from axolotl.monkeypatch.torchao_deepspeed import (
@@ -94,6 +125,11 @@ class DistributedParallelMixin(Trainer):
         if self.args.should_save:
             try:
                 self._save(output_dir, state_dict=state_dict)
+                from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                    persist_native_metadata_after_save,
+                )
+
+                persist_native_metadata_after_save(self.model, output_dir)
             except Exception as exc:  # pylint: disable=broad-except
                 error = f"{type(exc).__name__}: {exc}"
         if self.accelerator.num_processes > 1:

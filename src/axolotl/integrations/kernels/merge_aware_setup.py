@@ -54,6 +54,20 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
         and cfg.get("nvfp4_merge_aware") is not False
     ):
         model._axolotl_native_nvfp4_merge_aware_requested = True
+        model._axolotl_native_nvfp4_metadata_requested = not (
+            cfg.get("use_sonicmoe") or cfg.get("lora_target_parameters")
+        )
+        return
+    if sharded_backend == "DeepSpeed" and cfg.get("nvfp4_merge_aware") is not False:
+        from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
+            preserve_deepspeed_native_nvfp4_lora_forwards,
+        )
+
+        preserve_deepspeed_native_nvfp4_lora_forwards(model)
+        model._axolotl_native_nvfp4_deepspeed_merge_aware_requested = True
+        model._axolotl_native_nvfp4_metadata_requested = not (
+            cfg.get("use_sonicmoe") or cfg.get("lora_target_parameters")
+        )
         return
     if cfg.get("nvfp4_merge_aware") is False or sharded_backend:
         reason = (
@@ -80,7 +94,7 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
             )
 
             model._axolotl_native_nvfp4_metadata = capture_static_native_metadata(
-                model, cfg.get("nvfp4_merge_aware_start_step")
+                model, 0
             )
         LOG.info(
             "Enabled native NVFP4 merge-aware training on %d projections", installed
