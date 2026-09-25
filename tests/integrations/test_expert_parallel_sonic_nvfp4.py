@@ -87,3 +87,26 @@ def test_sonicmoe_local_keeps_dense_sentinel_and_bucket_behavior(monkeypatch):
     assert received["hidden_states"].shape[0] == 1024
     assert torch.all(received["topk_idx"][:3][local_ids < 0] == 2)
     assert torch.equal(received["topk_weights"][:3], weights)
+
+
+def test_sonicmoe_local_native_all_sentinels_preserves_raw_ep_routing(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora import experts as scatter
+
+    native = _native_weight()
+    experts = SimpleNamespace(gate_up_proj=native, down_proj=native, num_experts=2)
+    received = {}
+
+    def merge_aware(module, hidden_states, topk_idx, topk_weights):
+        received.update(ids=topk_idx, weights=topk_weights)
+        return hidden_states * 0
+
+    monkeypatch.setattr(scatter, "scattermoe_experts_forward_ep", merge_aware)
+    hidden = torch.randn(0, 16)
+    ids = torch.empty((0, 2), dtype=torch.long)
+    weights = torch.empty((0, 2))
+
+    output = experts_fn._sonicmoe_local(experts, hidden, ids, weights)
+
+    assert output.shape == hidden.shape
+    assert received["ids"] is ids
+    assert received["weights"] is weights
