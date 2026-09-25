@@ -41,25 +41,6 @@ class ContextParallelPlugin(BasePlugin):
     def get_input_args(self) -> str | None:
         return "axolotl.integrations.context_parallel.args.ContextParallelArgs"
 
-    def register(self, cfg: dict):
-        # cfg is the raw pre-validation dict; keep `context_parallel.size` and the
-        # flat `context_parallel_size` (which drives accelerate's cp mesh dim) in sync.
-        block = cfg.get("context_parallel") or {}
-        size = block.get("size")
-        flat = cfg.get("context_parallel_size")
-        if flat is None:
-            flat = cfg.get("sequence_parallel_degree")
-        if size is not None and flat is not None and flat != size:
-            raise ValueError(
-                f"context_parallel.size ({size}) conflicts with "
-                f"context_parallel_size ({flat}); set only one"
-            )
-        if size is not None:
-            cfg["context_parallel_size"] = size
-        elif flat is not None:
-            cfg["context_parallel_size"] = flat
-            cfg["context_parallel"] = {**block, "size": flat}
-
     @staticmethod
     def _cp_cfg(cfg):
         from .args import ContextParallelConfig

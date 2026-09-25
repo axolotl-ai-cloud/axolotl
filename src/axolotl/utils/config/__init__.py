@@ -459,11 +459,6 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
-    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
-
-    plugin_manager = PluginManager.get_instance()
-    for plugin_name in BUILTIN_PLUGINS:
-        plugin_manager.plugins[plugin_name].register(cfg)
     AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
 
     # Convert datasets to proper format if needed

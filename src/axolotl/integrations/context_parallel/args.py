@@ -68,3 +68,29 @@ class ContextParallelArgs(BaseModel):
     """Input args contributed by the ringmaster context-parallel plugin."""
 
     context_parallel: Optional[ContextParallelConfig] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_context_parallel_size(cls, data):
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        block = data.get("context_parallel") or {}
+        if isinstance(block, ContextParallelConfig):
+            block = block.model_dump(exclude_unset=True)
+        if not isinstance(block, dict):
+            return data
+        size = block.get("size")
+        flat = data.get("context_parallel_size")
+        if flat is None:
+            flat = data.get("sequence_parallel_degree")
+        if size is not None and flat is not None and flat != size:
+            raise ValueError(
+                f"context_parallel.size ({size}) conflicts with "
+                f"context_parallel_size ({flat}); set only one"
+            )
+        size = size if size is not None else flat
+        if size is not None:
+            data["context_parallel_size"] = size
+            data["context_parallel"] = {**block, "size": size}
+        return data

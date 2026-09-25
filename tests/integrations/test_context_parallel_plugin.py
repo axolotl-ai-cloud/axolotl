@@ -9,7 +9,7 @@ from axolotl.integrations.context_parallel import (
     ContextParallelConfig,
     ContextParallelPlugin,
 )
-from axolotl.utils.config import prepare_plugins, validate_config
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
@@ -58,21 +58,6 @@ def test_resolve_inner_attn():
     assert plugin._resolve_inner_attn(fa3) == "flash_attention_3"
 
 
-def test_register_syncs_block_and_flat_size():
-    plugin = ContextParallelPlugin()
-
-    cfg = {"context_parallel": {"size": 8}}
-    plugin.register(cfg)
-    assert cfg["context_parallel_size"] == 8
-
-    cfg = {"context_parallel_size": 4}
-    plugin.register(cfg)
-    assert cfg["context_parallel"] == {"size": 4}
-
-    with pytest.raises(ValueError, match="conflicts"):
-        plugin.register({"context_parallel": {"size": 8}, "context_parallel_size": 4})
-
-
 def test_gather_outputs_enum_detection():
     """cfg.rl is an RLType enum after validation; GRPO/EBFT must enable gathering."""
     assert RLType.GRPO in (RLType.GRPO, RLType.EBFT)
@@ -113,18 +98,21 @@ def test_builtin_cp_without_plugin_entry(min_base_cfg, settings):
 
 
 @pytest.mark.parametrize("explicit", [False, True])
-def test_builtin_preparation_is_idempotent(explicit):
+def test_builtin_preparation_is_idempotent(min_base_cfg, explicit):
     from axolotl.cli.config import prepare_plugins as cli_prepare_plugins
     from axolotl.integrations.base import PluginManager
 
-    cfg = DictDefault(context_parallel_size=4)
+    cfg = min_base_cfg | DictDefault(
+        context_parallel_size=4, attn_implementation="sdpa"
+    )
     if explicit:
         cfg.plugins = [PLUGIN_PATH]
+    cfg = validate_config(cfg)
     plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
     for prepare in (prepare_plugins, cli_prepare_plugins):
         prepare(cfg)
         assert PluginManager.get_instance().plugins[PLUGIN_PATH] is plugin
-        assert cfg.context_parallel == {"size": 4}
+        assert cfg.context_parallel.size == 4
     assert cfg.plugins == ([PLUGIN_PATH] if explicit else None)
 
 
@@ -181,20 +169,26 @@ def test_num_kv_heads_reads_text_config():
     assert plugin._num_kv_heads(model) == 8
 
 
-@pytest.mark.parametrize("sync", [prepare_plugins, ContextParallelPlugin().register])
-def test_size_sync_preserves_backend(sync):
-    cfg = DictDefault(context_parallel_size=4, context_parallel={"backend": "ring"})
-    sync(cfg)
-    assert cfg.context_parallel == {"backend": "ring", "size": 4}
-    assert cfg.context_parallel_size == 4
+def test_size_sync_preserves_backend(min_base_cfg):
+    cfg = validate_config(
+        min_base_cfg
+        | DictDefault(
+            context_parallel_size=4,
+            context_parallel={"backend": "ring"},
+            attn_implementation="sdpa",
+        )
+    )
+    assert cfg.context_parallel.backend == "ring"
+    assert cfg.context_parallel.size == cfg.context_parallel_size == 4
 
 
-@pytest.mark.parametrize("sync", [prepare_plugins, ContextParallelPlugin().register])
 @pytest.mark.parametrize("nested,flat", [(1, 4), (4, 1), (4, 8)])
-def test_explicit_size_conflicts(sync, nested, flat):
-    cfg = DictDefault(context_parallel_size=flat, context_parallel={"size": nested})
+def test_explicit_size_conflicts(min_base_cfg, nested, flat):
+    cfg = min_base_cfg | DictDefault(
+        context_parallel_size=flat, context_parallel={"size": nested}
+    )
     with pytest.raises(ValueError, match="conflicts"):
-        sync(cfg)
+        validate_config(cfg)
 
 
 def test_schema_rejects_disabled_nested_cp(min_base_cfg):
@@ -227,6 +221,7 @@ def test_prepare_after_validation_preserves_cp_settings(min_base_cfg, size):
         | DictDefault(context_parallel_size=size, attn_implementation="sdpa")
     )
     prepare_plugins(cfg)
+    normalize_config(cfg)
     plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
     assert plugin._cp_cfg(cfg).size == size
     assert plugin._enabled(cfg) is (size > 1)
@@ -248,8 +243,26 @@ def test_prepare_after_validation_without_cp_is_inactive(min_base_cfg):
 
     cfg = validate_config(min_base_cfg)
     prepare_plugins(cfg)
+    normalize_config(cfg)
     plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
     plugin.pre_model_load(cfg)
     plugin.post_model_load(cfg, None)
     plugin.post_trainer_create(cfg, None)
     assert not plugin._enabled(cfg)
+
+
+def test_validation_does_not_call_register(min_base_cfg, monkeypatch):
+    from unittest.mock import Mock
+
+    from axolotl.integrations.base import PluginManager
+
+    plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
+    register = Mock()
+    monkeypatch.setattr(plugin, "register", register)
+    cfg = validate_config(
+        min_base_cfg | DictDefault(context_parallel_size=4, attn_implementation="sdpa")
+    )
+    register.assert_not_called()
+    assert cfg.context_parallel.size == 4
+    prepare_plugins(cfg)
+    register.assert_called_once_with(cfg)
