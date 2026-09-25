@@ -1825,6 +1825,20 @@ def test_init_distributed_state_surfaces_partialstate_errors(monkeypatch):
         logger.removeHandler(handler)
 
 
+_PROPAGATION_GROUP_TIMEOUT = 30
+_PROPAGATION_BOUND = 5
+
+
+def _propagation_latency(outcomes, survivor):
+    """Seconds from the last rank reaching the status exchange to the survivor raising.
+
+    Measured from the exchange rather than from the start of loading so that a slow
+    checkpoint load on a busy machine cannot be mistaken for a collective timeout.
+    """
+    arrived = max(outcome["exchanges"][-1] for outcome in outcomes)
+    return outcomes[survivor]["finished"] - arrived
+
+
 def _nf4_failure_propagation_worker(rank, checkpoint, rendezvous, results, failing):
     import json
     import time
@@ -1843,14 +1857,14 @@ def _nf4_failure_propagation_worker(rank, checkpoint, rendezvous, results, faili
         init_method=f"file://{rendezvous}",
         rank=rank,
         world_size=2,
-        timeout=timedelta(seconds=5),
+        timeout=timedelta(seconds=_PROPAGATION_GROUP_TIMEOUT),
     )
     cfg = DictDefault(
         base_model=checkpoint,
         fsdp_config={"cpu_ram_efficient_loading": True},
         nf4_backend="bitsandbytes",
         torch_dtype=torch.float32,
-        ddp_timeout=5,
+        ddp_timeout=_PROPAGATION_GROUP_TIMEOUT,
     )
 
     def peer_boom(*args, **kwargs):
@@ -1862,7 +1876,14 @@ def _nf4_failure_propagation_worker(rank, checkpoint, rendezvous, results, faili
     def payload_boom(*args, **kwargs):
         raise RuntimeError("payload boom")
 
-    patches = []
+    exchanges = []
+    real_exchange = nf4_loader._raise_on_any_rank_failure
+
+    def timed_exchange(error, group):
+        exchanges.append(time.monotonic())
+        return real_exchange(error, group)
+
+    patches = [patch.object(nf4_loader, "_raise_on_any_rank_failure", timed_exchange)]
     if failing == "peer" and rank == 1:
         patches.append(patch.object(LlamaForCausalLM, "_from_config", peer_boom))
     if failing == "rank_zero_metadata" and rank == 0:
@@ -1888,9 +1909,16 @@ def _nf4_failure_propagation_worker(rank, checkpoint, rendezvous, results, faili
                 entry.stop()
     except BaseException as exc:  # pylint: disable=broad-except
         error = f"{type(exc).__name__}: {exc}"
-    elapsed = time.monotonic() - start
+    finished = time.monotonic()
     Path(results, f"rank{rank}.json").write_text(
-        json.dumps({"error": error, "elapsed": elapsed})
+        json.dumps(
+            {
+                "error": error,
+                "elapsed": finished - start,
+                "exchanges": exchanges,
+                "finished": finished,
+            }
+        )
     )
     try:
         dist.destroy_process_group()
@@ -1935,7 +1963,7 @@ def test_nf4_peer_load_failure_propagates_to_rank_zero(failing, tmp_path, monkey
     assert outcomes[0]["error"], "rank zero completed while a peer failed"
     assert "rank 1" in outcomes[0]["error"], outcomes[0]["error"]
     assert cause in outcomes[0]["error"], outcomes[0]["error"]
-    assert outcomes[0]["elapsed"] < 5, outcomes[0]
+    assert _propagation_latency(outcomes, 0) < _PROPAGATION_BOUND, outcomes
 
 
 @pytest.mark.nf4_distributed
@@ -1947,7 +1975,7 @@ def test_nf4_rank_zero_metadata_failure_propagates_to_peers(tmp_path, monkeypatc
     assert outcomes[1]["error"], "peer completed while rank zero failed"
     assert "rank 0" in outcomes[1]["error"], outcomes[1]["error"]
     assert "meta boom" in outcomes[1]["error"], outcomes[1]["error"]
-    assert outcomes[1]["elapsed"] < 5, outcomes[1]
+    assert _propagation_latency(outcomes, 1) < _PROPAGATION_BOUND, outcomes
 
 
 _UNSET = object()

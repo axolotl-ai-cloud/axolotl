@@ -101,3 +101,116 @@ def test_checkpoint_wrapped_adapter_round_trips_sharded_state(tmp_path, monkeypa
         dist.destroy_process_group()
         PartialState._reset_state()
         axolotl_distributed.distributed_state = None
+
+
+def test_native_frozen_adapter_state_ignores_base_parameters(monkeypatch):
+    import types
+
+    from accelerate.utils import fsdp_utils
+    from torch.distributed.checkpoint import state_dict as checkpoint_state
+
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_adapter_state
+
+    native = type("NVFP4Tensor", (types.SimpleNamespace,), {})(requires_grad=False)
+    adapter = types.SimpleNamespace(requires_grad=True)
+    model = types.SimpleNamespace(
+        active_adapter="default",
+        peft_config={},
+        parameters=lambda: iter((native, adapter)),
+    )
+    options = checkpoint_state.StateDictOptions(full_state_dict=False)
+    seen = {}
+
+    def original(*_args, **_kwargs):
+        raise AssertionError("native adapter state must not use the default getter")
+
+    def get_state(_model, options):
+        seen["options"] = options
+        return {
+            "base.weight": object(),
+            "lora_A.default.weight": object(),
+            "modules_to_save.default.weight": object(),
+        }
+
+    monkeypatch.setattr(fsdp_utils, "_get_model_state_dict", original)
+    monkeypatch.setattr(checkpoint_state, "get_model_state_dict", get_state)
+    import peft
+
+    monkeypatch.setattr(
+        peft,
+        "get_peft_model_state_dict",
+        lambda _model, state_dict, adapter_name: {
+            key: value
+            for key, value in state_dict.items()
+            if "lora_" in key or "modules_to_save" in key
+        },
+    )
+    patch_nf4_adapter_state()
+    state = fsdp_utils._get_model_state_dict(
+        model, adapter_only=True, sd_options=options
+    )
+    assert seen["options"].ignore_frozen_params
+    assert set(state) == {"lora_A.default.weight", "modules_to_save.default.weight"}
+
+
+def test_native_frozen_nonpeft_state_uses_default_getter(monkeypatch):
+    import types
+
+    from accelerate.utils import fsdp_utils
+    from torch.distributed.checkpoint import state_dict as checkpoint_state
+
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_adapter_state
+
+    native = type("NVFP4Tensor", (types.SimpleNamespace,), {})(requires_grad=False)
+    adapter = types.SimpleNamespace(requires_grad=True)
+    model = types.SimpleNamespace(parameters=lambda: iter((native, adapter)))
+    sentinel = {"default": object()}
+    called = []
+
+    def original(*_args, **_kwargs):
+        called.append(True)
+        return sentinel
+
+    monkeypatch.setattr(fsdp_utils, "_get_model_state_dict", original)
+    patch_nf4_adapter_state()
+    assert (
+        fsdp_utils._get_model_state_dict(
+            model,
+            adapter_only=True,
+            sd_options=checkpoint_state.StateDictOptions(full_state_dict=False),
+        )
+        is sentinel
+    )
+    assert called
+
+
+def test_native_frozen_fsdp1_without_options_uses_default_getter(monkeypatch):
+    import types
+
+    from accelerate.utils import fsdp_utils
+
+    from axolotl.monkeypatch.accelerate.fsdp2_nf4 import patch_nf4_adapter_state
+
+    native = type("NVFP4Tensor", (types.SimpleNamespace,), {})(requires_grad=False)
+    adapter = types.SimpleNamespace(requires_grad=True)
+    model = types.SimpleNamespace(
+        active_adapter="default",
+        peft_config={},
+        parameters=lambda: iter((native, adapter)),
+    )
+    sentinel = {"default": object()}
+
+    monkeypatch.setattr(
+        fsdp_utils, "_get_model_state_dict", lambda *_args, **_kwargs: sentinel
+    )
+    patch_nf4_adapter_state()
+    assert (
+        fsdp_utils._get_model_state_dict(model, adapter_only=True, sd_options=None)
+        is sentinel
+    )
+
+
+def test_transformers_fsdp_save_requests_adapter_only():
+    from transformers.distributed.fsdp import get_fsdp_ckpt_kwargs
+
+    assert get_fsdp_ckpt_kwargs() == {"adapter_only": True}

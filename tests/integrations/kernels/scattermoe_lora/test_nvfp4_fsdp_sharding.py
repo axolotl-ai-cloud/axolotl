@@ -202,3 +202,90 @@ def test_nvfp4_split_dim_other_than_zero_rejected():
     nv = _make_nvfp4(4, 8, 16)
     with pytest.raises(NotImplementedError, match="only on dim 0"):
         torch.split(nv, 4, 1)
+
+
+def _make_dense_nvfp4(rows, cols=64):
+    torch.manual_seed(rows)
+    nv = NVFP4Tensor.to_nvfp4(
+        torch.randn(rows, cols, dtype=torch.bfloat16),
+        per_tensor_scale=torch.tensor(0.73),
+        is_swizzled_scales=True,
+    )
+    nvfp4_fsdp.normalize_dense_nvfp4_scales(nv)
+    return nv
+
+
+@pytest.mark.parametrize("rows", [32, 64, 128, 256])
+def test_dense_swizzled_nvfp4_component_roundtrip(rows):
+    nv = _make_dense_nvfp4(rows)
+    original_rows = nvfp4_fsdp._dense_row_scales(nv).clone()
+    original_qdata = nv.qdata.clone()
+    original = nv.dequantize()
+    for world in (1, 2, 3):
+        shard = _cdiv(rows, world)
+        padded = shard * world
+        full = nv.new_zeros([padded, *nv.shape[1:]]) if padded != rows else nv.clone()
+        if padded != rows:
+            full.narrow(0, 0, rows).copy_(nv)
+        parts = torch.split(full, shard, 0)
+        pre = [part.fsdp_pre_all_gather(mesh=None) for part in parts]
+        gathered = tuple(
+            torch.cat([item[0][index] for item in pre], 0)
+            for index in range(len(pre[0][0]))
+        )
+        rebuilt, _ = parts[0].fsdp_post_all_gather(gathered, pre[0][1], torch.bfloat16)
+        rebuilt = rebuilt.narrow(0, 0, rows)
+        assert torch.equal(rebuilt.qdata, original_qdata)
+        assert torch.equal(nvfp4_fsdp._dense_row_scales(rebuilt), original_rows)
+        assert torch.equal(rebuilt.dequantize(), original)
+
+
+def test_dense_normalization_preserves_view_copy_aliases():
+    nv = _make_dense_nvfp4(64)
+    padded = nv.new_zeros([96, 64])
+    view = padded.narrow(0, 16, 64)
+    view.copy_(nv)
+    assert (
+        view.qdata.untyped_storage().data_ptr()
+        == padded.qdata.untyped_storage().data_ptr()
+    )
+    assert (
+        view.scale.untyped_storage().data_ptr()
+        == padded.scale.untyped_storage().data_ptr()
+    )
+    assert torch.equal(padded.scale[16:80], nv.scale)
+    assert torch.equal(padded.qdata[16:80], nv.qdata)
+
+
+def test_dense_swizzled_sharding_requires_normalization():
+    nv = NVFP4Tensor.to_nvfp4(
+        torch.randn(64, 64, dtype=torch.bfloat16),
+        per_tensor_scale=torch.tensor(0.73),
+        is_swizzled_scales=True,
+    )
+    with pytest.raises(ValueError, match="Normalize dense NVFP4 scales"):
+        torch.split(nv, 32, 0)
+    with pytest.raises(ValueError, match="Normalize dense NVFP4 scales"):
+        nv.narrow(0, 0, 32)
+
+
+def test_dense_normalization_preserves_values_storage_and_parameter_identity():
+    nv = NVFP4Tensor.to_nvfp4(
+        torch.randn(64, 64, dtype=torch.bfloat16),
+        per_tensor_scale=torch.tensor(0.73),
+        is_swizzled_scales=True,
+    )
+    model = torch.nn.Module()
+    model.register_parameter("weight", torch.nn.Parameter(nv, requires_grad=False))
+    parameter = model.weight
+    original = parameter.dequantize().clone()
+    qdata_pointer = parameter.qdata.untyped_storage().data_ptr()
+    scale = parameter.per_tensor_scale.clone()
+    assert nvfp4_fsdp.normalize_dense_nvfp4_scales(model) == 1
+    assert model.weight is parameter
+    assert parameter.qdata.untyped_storage().data_ptr() == qdata_pointer
+    assert torch.equal(parameter.per_tensor_scale, scale)
+    assert torch.equal(parameter.dequantize(), original)
+    assert nvfp4_fsdp.normalize_dense_nvfp4_scales(model) == 0
+    assert model.weight is parameter
+    assert torch.equal(parameter.dequantize(), original)

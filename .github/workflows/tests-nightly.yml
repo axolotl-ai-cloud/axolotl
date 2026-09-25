@@ -51,7 +51,7 @@ jobs:
     uses: ./.github/workflows/nf4-cpu.yml
     with:
       nightly: true
-      pytorch_versions: '["2.12.1"]'
+      pytorch_versions: '["2.13.0"]'
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
@@ -62,8 +62,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.12"]
-        pytorch_version: ["2.12.1", "2.13.0", "2.14.0"]
+        python_version: ["3.12", "3.14"]
+        pytorch_version: ["2.13.0", "2.14.0"]
     timeout-minutes: 20
 
     steps:
@@ -160,14 +160,14 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
+            pytorch: 2.13.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.12.1
+            python_version: "3.14"
+            pytorch: 2.14.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -213,14 +213,14 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.1
+            pytorch: 2.14.0
             num_gpus: 2
             axolotl_extras:
             nightly_build: "true"
             test_suite: multigpu
           - cuda: 130
             python_version: "3.12"
-            pytorch: 2.12.1
+            pytorch: 2.14.0
             num_gpus: 3
             nightly_build: "true"
             test_suite: nf4
@@ -269,14 +269,14 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
+            pytorch: 2.13.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.12.1
+            python_version: "3.14"
+            pytorch: 2.14.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"

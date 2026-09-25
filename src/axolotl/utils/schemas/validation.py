@@ -1568,11 +1568,22 @@ class SystemValidationMixin:
         # kernels_fallback_ok mirrors runtime resolution: the flash-attn package OR a
         # kernels-hub binary matching this torch build.
         if self.attn_implementation == "flash_attention_3":
-            available = is_flash_attn_3_available(kernels_fallback_ok=True)
+            checker = is_flash_attn_3_available
         else:
-            available = is_flash_attn_2_available(kernels_fallback_ok=True)
+            checker = is_flash_attn_2_available
+        available = checker(kernels_fallback_ok=True)
+        reason = None
         if not available:
             reason = _flash_attn_kernel_failure(self.attn_implementation)
+            if reason is None:
+                # the hub kernel loads: transformers' probe hit a transient (its
+                # version lookup lists repo refs over the network and any
+                # exception reads as "unavailable"); drop the cached verdict
+                cache_clear = getattr(checker, "cache_clear", None)
+                if cache_clear is not None:
+                    cache_clear()
+                available = True
+        if not available:
             raise ValueError(
                 f"attn_implementation: {self.attn_implementation} is set, but no "
                 "flash-attn build is available in this environment: the flash-attn "

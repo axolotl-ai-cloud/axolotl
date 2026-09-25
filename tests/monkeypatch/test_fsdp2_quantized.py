@@ -133,3 +133,51 @@ def test_builds_original_state_dict_skips_staged_nf4_peers():
         for staged in (False, True)
         for main in (True, False)
     ] == [True, True, True, False]
+
+
+def test_nvfp4_dense_scale_normalization_precedes_state_snapshot(monkeypatch):
+    from types import SimpleNamespace
+
+    import torch
+
+    from axolotl.integrations.kernels.libs.scattermoe_lora import nvfp4_fsdp
+    from axolotl.monkeypatch.accelerate import fsdp2, fsdp2_quantized
+
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(1), requires_grad=False)
+            self.normalized = False
+
+        def state_dict(self, *args, **kwargs):
+            assert self.normalized, "FSDP snapshot captured swizzled dense NVFP4 scales"
+            return super().state_dict(*args, **kwargs)
+
+    model = Model()
+    plugin = SimpleNamespace(
+        auto_wrap_policy=None,
+        activation_checkpointing=False,
+        reshard_after_forward=True,
+        cpu_offload=None,
+        mixed_precision_policy=None,
+        cpu_ram_efficient_loading=False,
+        set_auto_wrap_policy=lambda _model: None,
+    )
+    accelerator = SimpleNamespace(
+        state=SimpleNamespace(
+            fsdp_plugin=plugin, device_mesh=None, parallelism_config=None
+        ),
+        is_main_process=True,
+        device=torch.device("cpu"),
+    )
+    monkeypatch.setattr(fsdp2_quantized, "model_has_nvfp4_params", lambda _: True)
+    monkeypatch.setattr(
+        nvfp4_fsdp,
+        "normalize_dense_nvfp4_scales",
+        lambda m: setattr(m, "normalized", True) or 1,
+    )
+    monkeypatch.setattr(nvfp4_fsdp, "patch_nvfp4_fsdp", lambda: None)
+    monkeypatch.setattr(
+        torch.distributed.fsdp, "fully_shard", lambda module, **_: module
+    )
+    fsdp2.fsdp2_prepare_model(accelerator, model)

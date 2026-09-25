@@ -40,6 +40,15 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
         pass
 
     try:
+        from torchao.prototype.mx_formats import NVFP4DynamicActivationNVFP4WeightConfig
+
+        quantization_config_to_str[NVFP4DynamicActivationNVFP4WeightConfig] = (
+            "nvfp4-dynamic"
+        )
+    except (ImportError, RuntimeError):
+        pass
+
+    try:
         from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
         quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
@@ -123,6 +132,16 @@ def get_quantization_config(
 
         if group_size is not None and group_size != 16:
             raise ValueError("NVFP4 quantization must use a group_size of 16")
+        if activation_dtype == TorchAOQuantDType.nvfp4:
+            from torchao.prototype.mx_formats import (
+                NVFP4DynamicActivationNVFP4WeightConfig,
+            )
+
+            return NVFP4DynamicActivationNVFP4WeightConfig(use_triton_kernel=False)
+        if activation_dtype is not None:
+            raise ValueError(
+                "NVFP4 weights support only NVFP4 or unquantized activations"
+            )
         return NVFP4WeightOnlyConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:

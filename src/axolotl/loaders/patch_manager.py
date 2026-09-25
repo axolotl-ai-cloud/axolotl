@@ -251,6 +251,8 @@ class PatchManager:
 
     def _apply_model_support_pre_load_hook(self):
         support = get_model_support(self.cfg.model_config_type)
+        if self.cfg.fused_attn_kernel:
+            check_capability(support, "fused_attn_kernel", self.cfg.model_config_type)
         run_model_support_hooks(
             support,
             ModelHookPhase.BEFORE_MODEL_BUILD,
@@ -515,6 +517,11 @@ class PatchManager:
         if not getattr(cfg, "fused_attn_kernel", False):
             return
         mct = getattr(cfg, "model_config_type", None)
+        support = get_model_support(mct)
+        check_capability(support, "fused_attn_kernel", mct)
+        resolved = resolve_model_support(support)
+        if resolved is not None and "fused_attn_kernel" in resolved.capabilities:
+            return
         if mct and mct not in PatchManager._FUSED_ATTN_KERNEL_SUPPORTED:
             LOG.warning(
                 "`fused_attn_kernel: true` is set but model_config_type=%r is not "
