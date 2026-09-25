@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from datasets import Dataset
+from transformers import CLIPImageProcessor, LlavaProcessor
 
 from axolotl.core.builders import HFRLTrainerBuilder
 from axolotl.utils.data import prepare_preference_datasets
@@ -164,6 +165,87 @@ def rand_reward_func(prompts, completions) -> list[float]:
             # remove imported module from path
             if str(rewards_dir) in sys.path:
                 sys.path.remove(str(rewards_dir))
+
+    def test_dpo_vision_dataset_uses_processor(self, dpo_cfg, model, tokenizer):
+        from axolotl.utils.collators.mm_rl import AxolotlVisionPreferenceCollator
+
+        processor = LlavaProcessor(
+            image_processor=CLIPImageProcessor(), tokenizer=tokenizer
+        )
+        builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer, processor=processor)
+        builder.train_dataset = Dataset.from_list(
+            [
+                {
+                    "prompt": [{"role": "user", "content": "Question?"}],
+                    "chosen": [{"role": "assistant", "content": "Yes."}],
+                    "rejected": [{"role": "assistant", "content": "No."}],
+                    "images": [],
+                }
+            ]
+            * 4
+        )
+
+        trainer = builder.build(100)
+
+        assert trainer.processing_class is processor
+        assert processor.chat_template == tokenizer.chat_template
+        assert isinstance(trainer.data_collator, AxolotlVisionPreferenceCollator)
+
+    def test_grpo_vision_dataset_uses_processor(
+        self, grpo_cfg, model, tokenizer, tmp_path
+    ):
+        from axolotl.utils.collators.mm_rl import MultimodalRLExampleNormalizer
+
+        rewards_dir = tmp_path / "rewards_test"
+        self._write_rewards_file(rewards_dir)
+        sys.path.insert(0, str(rewards_dir))
+        try:
+            processor = LlavaProcessor(
+                image_processor=CLIPImageProcessor(), tokenizer=tokenizer
+            )
+            builder = HFRLTrainerBuilder(
+                grpo_cfg, model, tokenizer, processor=processor
+            )
+            builder.train_dataset = Dataset.from_dict(
+                {
+                    "prompt": [[{"role": "user", "content": "Question?"}]] * 8,
+                    "images": [[]] * 8,
+                }
+            )
+
+            trainer = builder.build(100)
+
+            assert trainer.processing_class is processor
+            assert isinstance(trainer.data_collator, MultimodalRLExampleNormalizer)
+        finally:
+            if str(rewards_dir) in sys.path:
+                sys.path.remove(str(rewards_dir))
+
+    def test_vision_dataset_unsupported_rl_raises(self, orpo_cfg, model, tokenizer):
+        processor = LlavaProcessor(
+            image_processor=CLIPImageProcessor(), tokenizer=tokenizer
+        )
+        builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer, processor=processor)
+        builder.train_dataset = Dataset.from_list(
+            [{"prompt": "Q?", "chosen": "Yes.", "rejected": "No.", "images": []}]
+        )
+
+        with pytest.raises(ValueError, match="not supported for rl: orpo"):
+            builder.build(100)
+
+    def test_vision_string_prompt_without_image_token_raises(
+        self, dpo_cfg, model, tokenizer
+    ):
+        processor = LlavaProcessor(
+            image_processor=CLIPImageProcessor(), tokenizer=tokenizer
+        )
+        builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer, processor=processor)
+        builder.train_dataset = Dataset.from_list(
+            [{"prompt": "Q?", "chosen": "Yes.", "rejected": "No.", "images": ["a.png"]}]
+        )
+
+        with pytest.raises(ValueError, match="needs conversational prompts"):
+            builder.build(100)
 
     def test_ipo_training_arguments(self, ipo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(ipo_cfg, model, tokenizer)

@@ -14,11 +14,14 @@ from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
+from axolotl.utils.data.utils import is_vision_dataset
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 
 LOG = get_logger(__name__)
+
+VISION_RL_TYPES = {RLType.DPO, RLType.IPO, RLType.KTO, RLType.GRPO, RLType.GDPO}
 
 
 class HFRLTrainerBuilder(TrainerBuilderBase):
@@ -228,6 +231,74 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         return training_args, trainer_kwargs
 
+    def _is_vision_rl(self) -> bool:
+        if self.processor is None or self.train_dataset is None:
+            return False
+        if not is_vision_dataset(self.train_dataset.column_names):
+            return False
+        if self.cfg.rl not in VISION_RL_TYPES:
+            raise ValueError(
+                "Multimodal (image) datasets are not supported for "
+                f"rl: {RLType(self.cfg.rl).value}. Supported: "
+                f"{', '.join(sorted(rl.value for rl in VISION_RL_TYPES))}."
+            )
+        if (
+            self.cfg.rl in {RLType.GRPO, RLType.GDPO}
+            and (self.cfg.context_parallel_size or 1) > 1
+        ):
+            raise ValueError(
+                "Multimodal GRPO does not support context_parallel_size > 1."
+            )
+        if self.cfg.tokenizer_use_mistral_common:
+            raise ValueError(
+                "Multimodal RL does not support tokenizer_use_mistral_common."
+            )
+
+        sample = self.train_dataset[0]
+        prompt = sample.get("prompt")
+        image_token = getattr(self.processor, "image_token", None)
+        if (
+            isinstance(prompt, str)
+            and (sample.get("images") or sample.get("image"))
+            and image_token
+            and image_token not in prompt
+        ):
+            raise ValueError(
+                "Multimodal RL needs conversational prompts (e.g. dataset `type: "
+                "chat_template`) or string prompts that already contain the "
+                f"processor's image token {image_token!r}."
+            )
+        return True
+
+    def _build_vision_collator(self):
+        from axolotl.utils.collators.mm_rl import (
+            AxolotlVisionPreferenceCollator,
+            AxolotlVisionUnpairedPreferenceCollator,
+            MultimodalRLExampleNormalizer,
+        )
+
+        normalizer = MultimodalRLExampleNormalizer(
+            image_size=self.cfg.image_size,
+            image_resize_algorithm=self.cfg.image_resize_algorithm,
+        )
+        if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
+            return normalizer
+
+        if self.cfg.pad_to_multiple_of:
+            LOG.warning(
+                "pad_to_multiple_of is not supported for multimodal RL and is ignored."
+            )
+        collator_cls = (
+            AxolotlVisionUnpairedPreferenceCollator
+            if self.cfg.rl is RLType.KTO
+            else AxolotlVisionPreferenceCollator
+        )
+        return collator_cls(
+            processor=self.processor,
+            max_length=self.cfg.sequence_len,
+            normalizer=normalizer,
+        )
+
     def build_collator(self, **kwargs):
         """Build a data collator for preference-tuning trainers.
 
@@ -266,7 +337,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
     def build(self, total_num_steps):
         training_args, trainer_kwargs = self._build_training_arguments(total_num_steps)
 
-        if (data_collator := self.build_collator()) is not None:
+        is_vision = self._is_vision_rl()
+        if is_vision:
+            trainer_kwargs["data_collator"] = self._build_vision_collator()
+        elif (data_collator := self.build_collator()) is not None:
             trainer_kwargs["data_collator"] = data_collator
 
         if self.eval_dataset:
@@ -280,11 +354,18 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         trainer_cls, trainer_cls_args = self._get_trainer_cls(trainer_kwargs)
 
+        processing_class = self.tokenizer
+        if is_vision:
+            # TRL renders vision prompts with the processor's template; use the resolved one.
+            if getattr(self.tokenizer, "chat_template", None):
+                self.processor.chat_template = self.tokenizer.chat_template
+            processing_class = self.processor
+
         sig = inspect.signature(trainer_cls)
         if "tokenizer" in sig.parameters:
-            trainer_kwargs["tokenizer"] = self.tokenizer
+            trainer_kwargs["tokenizer"] = processing_class
         else:
-            trainer_kwargs["processing_class"] = self.tokenizer
+            trainer_kwargs["processing_class"] = processing_class
 
         if self.cfg.datasets is not None and (
             trainer_cls is DPOStrategy.get_trainer_class()

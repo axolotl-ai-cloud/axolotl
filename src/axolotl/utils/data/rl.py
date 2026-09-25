@@ -25,6 +25,7 @@ from axolotl.utils.data.shared import (
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
+    is_vision_dataset,
     retry_on_request_exceptions,
 )
 from axolotl.utils.dict import DictDefault
@@ -362,7 +363,12 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             # "prompt", "chosen", and "rejected" already preprocessed
             split_datasets[i] = dataset
 
-        if not cfg.skip_prepare_dataset:
+        if is_vision_dataset(split_datasets[i].column_names):
+            # Image token counts depend on the processor; TRL truncates at collate time.
+            LOG.info(
+                f"Skipping sequence length filtering for multimodal dataset index {i}"
+            )
+        elif not cfg.skip_prepare_dataset:
             excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
 
             if excess_length_strategy == "truncate":
