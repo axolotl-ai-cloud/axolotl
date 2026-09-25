@@ -246,3 +246,43 @@ def test_dynamic_input_setup_is_independent_of_merge_aware_opt_out(backend, requ
     if not requested:
         assert model._axolotl_merge_aware_unsupported
         assert "explicitly disabled" in warning.call_args.args[1]
+
+
+@pytest.mark.parametrize("requested", [True, False])
+@pytest.mark.parametrize("backend", [None, "FSDP", "DeepSpeed"])
+def test_native_multilora_never_installs_generic_dynamic_ste(
+    monkeypatch, requested, backend
+):
+    from types import SimpleNamespace
+
+    import axolotl.monkeypatch.torchao_nvfp4_dynamic_ste as dynamic_ste
+    from axolotl.integrations.kernels.merge_aware_setup import (
+        configure_native_merge_aware,
+    )
+
+    class NVFP4Tensor:
+        act_quant_kwargs = object()
+
+    model = SimpleNamespace(
+        parameters=lambda: iter([NVFP4Tensor()]),
+        _axolotl_multilora_native_merge_aware_managed=True,
+    )
+    monkeypatch.setattr(
+        dynamic_ste,
+        "install_native_nvfp4_dynamic_input_stes",
+        lambda _: pytest.fail("core generic STE must not replace Multi-LoRA routing"),
+    )
+
+    configure_native_merge_aware(
+        DictDefault(adapter="multilora", nvfp4_merge_aware=requested),
+        model,
+        sharded_backend=backend,
+    )
+
+    assert (
+        getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients", False) is False
+    )
+    assert (
+        getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients_requested", None)
+        is None
+    )
