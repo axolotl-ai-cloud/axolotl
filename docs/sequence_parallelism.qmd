@@ -11,7 +11,7 @@ and FSDP2 gradient reduction.
 ## Configuration
 
 Install `pip install 'axolotl[ringmaster]'` and use torch >= 2.13. The integration
-targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.0.
+targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.1.
 
 ```yaml
 context_parallel_size: 4
@@ -43,12 +43,12 @@ during setup instead of being silently ignored.
 
 - Ulysses supports SDPA and Flash Attention. Ring/USP training requires Flash
   Attention; Ringmaster's `torch_native` Ring implementation is forward-only.
-- Sample packing and batch flattening with CP are not supported.
+- Sample packing and batch flattening are supported with CP; automatic load balancing selects contiguous shards for packed inputs. GLM DSA kernels remain incompatible with packed CP.
 - SFT requires the model's causal LM loss with loss-kwargs support. Custom loss
   functions and label smoothing are not supported.
 - GRPO/EBFT use output gathering to retain full-sequence logits.
 - GDN and KDA recurrent models require `pip install 'axolotl[fla,ringmaster]'`,
-  `micro_batch_size: 1`, contiguous shards, and disabled KV caching. Setup checks
+  a single batch row after flattening (`micro_batch_size: 1` or `batch_flattening: true`), contiguous shards, and disabled KV caching. Setup checks
   for importable native FLA CP kernels, including when CP is greater than two.
   Both UV Docker images include FLA and TileLang.
 

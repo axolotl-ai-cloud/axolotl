@@ -108,9 +108,7 @@ class TestGlmDsaContextParallelValidation:
 
 @pytest.mark.parametrize("glm_dsa", [False, True])
 @pytest.mark.parametrize("packing", ["sample_packing", "batch_flattening"])
-def test_cp_rejects_packed_inputs_for_all_attention_owners(
-    monkeypatch, glm_dsa, packing
-):
+def test_cp_packed_inputs_depend_on_attention_owner(monkeypatch, glm_dsa, packing):
     monkeypatch.setenv("WORLD_SIZE", "4")
     cfg = _cfg(
         plugins=["axolotl.integrations.kernels.KernelsPlugin"],
@@ -119,8 +117,12 @@ def test_cp_rejects_packed_inputs_for_all_attention_owners(
         **{packing: True},
     )
     prepare_plugins(cfg)
-    with pytest.raises(ValueError, match="sample_packing / batch_flattening"):
-        validate_config(cfg)
+    if glm_dsa:
+        with pytest.raises(ValueError, match="GLM DSA context parallelism"):
+            validate_config(cfg)
+    else:
+        cfg.attn_implementation = "flash_attention_2"
+        assert validate_config(cfg).context_parallel.size == 2
 
 
 def test_dsa_cp_uses_builtin_sharding_plugin(monkeypatch):

@@ -1946,10 +1946,11 @@ class ComplexValidationMixin:
         if not self.context_parallel_size:
             self.context_parallel_size = 1
         elif self.context_parallel_size > 1:
-            if self.sample_packing or self.batch_flattening:
+            if (self.sample_packing or self.batch_flattening) and getattr(
+                self, "use_glm_dsa_kernels", False
+            ):
                 raise ValueError(
-                    "sample_packing / batch_flattening is not yet supported with ringmaster context "
-                    "parallelism; disable sample_packing or context parallelism."
+                    "GLM DSA context parallelism does not support packed inputs"
                 )
             if self.attn_implementation == "eager" and not getattr(
                 self, "use_glm_dsa_kernels", False

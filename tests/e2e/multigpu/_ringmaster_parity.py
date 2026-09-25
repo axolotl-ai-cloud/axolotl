@@ -105,22 +105,72 @@ def main():
             ids = torch.arange(n, device=rank).unsqueeze(0) + 1
             labels = ids.clone()
             labels[:, :masked] = -100
-            batches.append(dict(input_ids=ids, labels=labels))
+            batch = dict(input_ids=ids, labels=labels)
+            if os.environ.get("RM_PACKED") == "1":
+                split = 3
+                batch["position_ids"] = torch.cat(
+                    (
+                        torch.arange(split, device=rank),
+                        torch.arange(n - split, device=rank),
+                    )
+                ).unsqueeze(0)
+                labels[:, split] = -100
+                batch["attention_mask"] = (
+                    torch.cat(
+                        (
+                            torch.ones(split, device=rank),
+                            torch.full((n - split,), 2, device=rank),
+                        )
+                    )
+                    .unsqueeze(0)
+                    .long()
+                )
+            batches.append(batch)
+
+        def reference_batch(batch):
+            if os.environ.get("RM_PACKED") != "1":
+                return batch
+            batch = dict(batch)
+            segments = batch["attention_mask"]
+            n = segments.shape[1]
+            causal = torch.ones(n, n, device=segments.device, dtype=torch.bool).tril()
+            batch["attention_mask"] = (segments[:, :, None] == segments[:, None, :])[
+                :, None
+            ] & causal
+            return batch
+
+        def reference_forward(batch, num_items=None, reference=reference):
+            if (
+                os.environ.get("RM_MODEL") != "mamba2"
+                or os.environ.get("RM_PACKED") != "1"
+            ):
+                return reference(**reference_batch(batch), num_items_in_batch=num_items)
+            if num_items is None:
+                num_items = (batch["labels"][:, 1:] != -100).sum()
+            losses = []
+            for start, end in ((0, 3), (3, batch["input_ids"].shape[1])):
+                losses.append(
+                    reference(
+                        input_ids=batch["input_ids"][:, start:end],
+                        labels=batch["labels"][:, start:end],
+                        num_items_in_batch=num_items,
+                    ).loss
+                )
+            return SimpleNamespace(loss=sum(losses))
+
         count = trainer._get_num_items_in_batch(batches, torch.device("cuda", rank))
         total = sum((b["labels"][:, 1:] != -100).sum() for b in batches)
         reference.train()
         losses = []
         for b in batches:
-            loss = reference(**b, num_items_in_batch=total).loss
+            loss = reference_forward(b, total).loss
             loss.backward()
             losses.append(trainer.training_step(trainer.model, dict(b), count))
         loss_sum = torch.stack(losses).sum()
         dist.all_reduce(loss_sum)
         loss_sum /= dist.get_world_size()
         with torch.no_grad():
-            expected_loss = sum(
-                reference(**b, num_items_in_batch=total).loss for b in batches
-            )
+            expected_loss = sum(reference_forward(b, total).loss for b in batches)
         torch.testing.assert_close(
             loss_sum,
             expected_loss,
@@ -170,7 +220,7 @@ def main():
             )
             dist.all_reduce(eval_loss)
             eval_loss /= dist.get_world_size()
-            expected_eval = reference(**batches[0]).loss
+            expected_eval = reference_forward(batches[0]).loss
             torch.testing.assert_close(
                 eval_loss,
                 expected_eval,

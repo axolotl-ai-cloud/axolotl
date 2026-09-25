@@ -7,9 +7,9 @@ dependency**. This is a built-in plugin: configure `context_parallel_size` or
 `context_parallel` without adding a `plugins:` entry.
 
 Requires **torch ≥ 2.13**. The integration targets the pinned upstream releases
-**Transformers 5.17.0**, **Accelerate 1.15.0**, and **axolotl-ringmaster ≥0.2.0**.
+**Transformers 5.17.0**, **Accelerate 1.15.0**, and **axolotl-ringmaster ≥0.2.1**.
 No custom Transformers or Accelerate branch is required. The companion Ringmaster
-changes must be released as 0.2.0 or installed from the matching source checkout.
+changes must be released as 0.2.1 or installed from the matching source checkout.
 
 ## Usage
 
@@ -32,7 +32,7 @@ scarce (MQA); USP otherwise (Ulysses intra-node × Ring inter-node).
 
 Ulysses can wrap SDPA or Flash Attention. Ring/USP training requires a Flash
 Attention kernel (`ring_impl: hf_kernels` or automatic selection); Ringmaster's
-`torch_native` block kernel is forward-only. Sample packing and batch flattening with CP are not supported.
+`torch_native` block kernel is forward-only. Sample packing and batch flattening are supported with CP; automatic load balancing selects contiguous shards for packed inputs. GLM DSA kernels remain incompatible with packed CP.
 SFT uses the model's causal LM loss and requires loss-kwargs support; custom loss
 functions and label smoothing are rejected. GRPO/EBFT retain their output-gathering
 path.
@@ -60,7 +60,7 @@ coverage remains hardware-dependent.
 
 Install `axolotl[fla,ringmaster]` for native FLA context parallelism and TileLang.
 Both Docker UV images install these extras. GDN and KDA mixers require importable
-FLA kernels exposing `cp_context`, `micro_batch_size: 1`, contiguous shards, and
+FLA kernels exposing `cp_context`, a single batch row after flattening (`micro_batch_size: 1` or `batch_flattening: true`), contiguous shards, and
 `use_cache: false`. Missing or incompatible FLA fails during setup, including for
 CP degrees greater than two. The four-rank forward/backward parity test is marked
 `slow`; the regular e2e suite has one small optional kernel smoke test.
@@ -76,7 +76,7 @@ public `wire_recurrent_layers(model)` API installs instance-local adapters and
 returns a wiring object with a `restore()` callback. Axolotl uses this same API
 after model kernelization, so Mamba adapters preserve the selected Hub kernel's
 normalization semantics.
-Core packing support does not imply that packing combined with CP is supported.
+Packed CP preserves global document boundaries for attention, FLA state passing, and Mamba convolution/scan resets. These fixes require the companion Ringmaster packing update; released 0.2.0 does not contain them.
 
 ## Architecture capabilities
 

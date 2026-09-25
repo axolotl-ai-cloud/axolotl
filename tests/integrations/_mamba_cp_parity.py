@@ -1,6 +1,8 @@
 """Four-rank Mamba2 mixer parity, including halo and prefix-state gradients."""
 
 import copy
+import os
+from types import SimpleNamespace
 
 import torch
 import torch.distributed as dist
@@ -28,7 +30,21 @@ def main():
         reference = copy.deepcopy(model)
         x = torch.randn(2, 64, 16)
         target_x = x.clone().requires_grad_()
-        expected = reference(target_x)
+        packed = os.environ.get("RM_PACKED") == "1"
+        lengths = [5, 19, 1, 21, 18]
+        expected = (
+            torch.cat(
+                [reference(chunk) for chunk in target_x.split(lengths, dim=1)], dim=1
+            )
+            if packed
+            else reference(target_x)
+        )
+        if packed:
+            from ringmaster.runtime import set_runtime
+            from ringmaster.shard import varlen_meta
+
+            positions = torch.cat([torch.arange(n) for n in lengths]).expand(2, -1)
+            set_runtime(SimpleNamespace(varlen=varlen_meta(positions, 64)))
         grad = torch.randn_like(expected)
         (expected * grad).sum().backward()
         mixers = mamba2_mixers(model)

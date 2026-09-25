@@ -31,7 +31,8 @@ def test_usp_mesh_preserves_data_parallel_groups():
 
 
 @pytest.mark.slow
-def test_mamba_four_rank_forward_backward():
+@pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
+def test_mamba_four_rank_forward_backward(packed):
     pytest.importorskip("ringmaster")
     result = subprocess.run(
         [
@@ -43,7 +44,12 @@ def test_mamba_four_rank_forward_backward():
             "--module",
             "tests.integrations._mamba_cp_parity",
         ],
-        env=os.environ | {"OMP_NUM_THREADS": "1", "USE_HUB_KERNELS": "0"},
+        env=os.environ
+        | {
+            "OMP_NUM_THREADS": "1",
+            "USE_HUB_KERNELS": "0",
+            "RM_PACKED": "1" if packed else "0",
+        },
         capture_output=True,
         text=True,
         timeout=300,

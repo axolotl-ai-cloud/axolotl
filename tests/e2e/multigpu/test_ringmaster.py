@@ -11,11 +11,12 @@ import torch
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
 @pytest.mark.parametrize(
     "backend,inner", [("ulysses", "sdpa"), ("ring", "flash_attention_2")]
 )
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
-def test_ringmaster_fsdp2_parity(backend, inner):
+def test_ringmaster_fsdp2_parity(backend, inner, packed):
     pytest.importorskip("ringmaster")
     result = subprocess.run(
         [
@@ -27,7 +28,12 @@ def test_ringmaster_fsdp2_parity(backend, inner):
             str(Path(__file__).with_name("_ringmaster_parity.py")),
         ],
         env=os.environ
-        | {"RM_BACKEND": backend, "RM_INNER": inner, "OMP_NUM_THREADS": "1"},
+        | {
+            "RM_BACKEND": backend,
+            "RM_INNER": inner,
+            "OMP_NUM_THREADS": "1",
+            "RM_PACKED": "1" if packed else "0",
+        },
         capture_output=True,
         text=True,
         timeout=600,
@@ -38,9 +44,10 @@ def test_ringmaster_fsdp2_parity(backend, inner):
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
 @pytest.mark.parametrize("hub", [False, True], ids=["fallback", "hub"])
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
-def test_ringmaster_mamba_fsdp2_parity(hub):
+def test_ringmaster_mamba_fsdp2_parity(hub, packed):
     pytest.importorskip("ringmaster")
     if hub:
         pytest.importorskip("kernels")
@@ -69,6 +76,7 @@ def test_ringmaster_mamba_fsdp2_parity(hub):
             "RM_INNER": "sdpa",
             "USE_HUB_KERNELS": "1" if hub else "0",
             "OMP_NUM_THREADS": "1",
+            "RM_PACKED": "1" if packed else "0",
         },
         capture_output=True,
         text=True,
@@ -80,8 +88,9 @@ def test_ringmaster_mamba_fsdp2_parity(hub):
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
 @pytest.mark.parametrize("family", ["gdn", "kda", "kimi"])
-def test_fla_cp_four_rank_parity(family):
+def test_fla_cp_four_rank_parity(family, packed):
     pytest.importorskip("fla")
     pytest.importorskip("tilelang")
     shared = os.environ.get("AXOLOTL_FLA_CP_SHARED_GPU") == "1"
@@ -100,6 +109,7 @@ def test_fla_cp_four_rank_parity(family):
         env=os.environ
         | {
             "OMP_NUM_THREADS": "1",
+            "RM_PACKED": "1" if packed else "0",
             "USE_HUB_KERNELS": "0",
             "RM_FLA_FAMILY": family,
             "RM_FLA_HYBRID": "1",

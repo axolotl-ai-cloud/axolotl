@@ -14,12 +14,17 @@ from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5GatedDeltaNet
 
 
-def assert_bf16_close(actual, expected, name):
+def assert_bf16_close(actual, expected, name, scale=None):
     # Bound BF16 accumulation error without dividing by near-zero individual entries.
     epsilon = 2 * torch.finfo(torch.bfloat16).eps
     delta = (actual.float() - expected.float()).abs()
-    relative = delta.norm() / expected.float().norm().clamp_min(1e-8)
-    maximum = delta.max() / expected.float().abs().max().clamp_min(1e-8)
+    norm, peak = (
+        scale
+        if scale is not None
+        else (expected.float().norm(), expected.float().abs().max())
+    )
+    relative = delta.norm() / norm.clamp_min(1e-8)
+    maximum = delta.max() / peak.clamp_min(1e-8)
     assert relative <= epsilon, (name, "relative L2", relative.item())
     assert maximum <= epsilon, (name, "relative maximum", maximum.item())
 
@@ -44,6 +49,19 @@ class Hybrid(torch.nn.Module):
             value.reshape(1, -1, 2, 32).transpose(1, 2)
             for value in self.qkv(hidden).chunk(3, dim=-1)
         )
+        from ringmaster.ring.loop import varlen_ring_attention
+        from ringmaster.runtime import maybe_runtime
+
+        runtime = maybe_runtime()
+        if (
+            self.group is not None
+            and runtime is not None
+            and runtime.varlen is not None
+        ):
+            attention = varlen_ring_attention(
+                q, k, v, group=self.group, scaling=None, cu_seqlens=runtime.varlen[0]
+            )
+            return hidden + self.output(attention.reshape_as(hidden))
         attention = ring_attention(
             q,
             k,
@@ -158,15 +176,60 @@ def main():
         x = torch.randn(1, 512, 64).cuda().to(torch.bfloat16)
         ref_x = x.clone().requires_grad_()
         print(f"rank={rank} reference forward", flush=True)
-        expected = reference(ref_x)
+        packed = os.environ.get("RM_PACKED") == "1"
+        lengths = [71, 57, 163, 9, 212]
+        if packed:
+            outputs = [reference(chunk) for chunk in ref_x.split(lengths, dim=1)]
+            expected = torch.cat(
+                [out[0] if isinstance(out, tuple) else out for out in outputs], dim=1
+            )
+        else:
+            expected = reference(ref_x)
         if isinstance(expected, tuple):
             expected = expected[0]
         grad = torch.randn(expected.shape).cuda().to(torch.bfloat16)
         print(f"rank={rank} reference backward", flush=True)
-        (expected.float() * grad).sum().backward()
+        gradient_scales = {}
+        if packed:
+            handles = []
+            for name, parameter in reference.named_parameters():
+                if name.endswith("A_log"):
+
+                    def capture(contribution, name=name):
+                        # Bound reduction error before independent documents cancel.
+                        norm, peak = gradient_scales.get(name, (0, 0))
+                        value = contribution.float()
+                        gradient_scales[name] = (
+                            norm + value.norm(),
+                            peak + value.abs().max(),
+                        )
+
+                    handles.append(parameter.register_hook(capture))
+            for out, dy in zip(outputs, grad.split(lengths, dim=1), strict=True):
+                if isinstance(out, tuple):
+                    out = out[0]
+                (out.float() * dy).sum().backward()
+            for handle in handles:
+                handle.remove()
+        else:
+            (expected.float() * grad).sum().backward()
         world = dist.get_world_size()
         from ringmaster import wire_recurrent_layers
 
+        if packed:
+            from types import SimpleNamespace
+
+            from ringmaster.runtime import set_runtime
+            from ringmaster.shard import varlen_meta
+
+            positions = torch.cat(
+                [torch.arange(n, device=x.device) for n in lengths]
+            ).unsqueeze(0)
+            set_runtime(
+                SimpleNamespace(
+                    varlen=varlen_meta(positions, 512), shard_load_balance="contiguous"
+                )
+            )
         restore = wire_recurrent_layers(model, group=dist.group.WORLD).restore
         if isinstance(model, Hybrid):
             model.group = dist.group.WORLD
@@ -197,7 +260,7 @@ def main():
             if family == "gdn":
                 assert error < 0.04, (name, error.item())
             else:
-                assert_bf16_close(param.grad, ref.grad, name)
+                assert_bf16_close(param.grad, ref.grad, name, gradient_scales.get(name))
         restore()
         print(
             f"PASS FLA CP={world} rank={rank} family={family} forward/backward",

@@ -127,12 +127,28 @@ class ContextParallelPlugin(BasePlugin):
                 )
 
         mixers, kda_mixers, mamba_mixers = recurrent_plan(models, cp.size)
-        if (mixers or kda_mixers) and (getattr(cfg, "micro_batch_size", 1) or 1) != 1:
+        if (
+            (mixers or kda_mixers)
+            and not getattr(cfg, "batch_flattening", False)
+            and (getattr(cfg, "micro_batch_size", 1) or 1) != 1
+        ):
             raise ValueError("FLA context parallelism requires micro_batch_size: 1")
         recurrent = bool(mixers or kda_mixers or mamba_mixers)
         glm_dsa = self._glm_dsa_requires_contiguous(cfg)
+        packed = bool(
+            getattr(cfg, "sample_packing", False)
+            or getattr(cfg, "batch_flattening", False)
+        )
+        if (
+            packed
+            and (getattr(cfg, "micro_batch_size", 1) or 1) > 1
+            and cp.load_balance not in ("none", "auto")
+        ):
+            raise ValueError("Multi-row packed CP requires load_balance: none or auto")
         reason = (
-            "recurrent state passing"
+            "packed sequences"
+            if packed
+            else "recurrent state passing"
             if recurrent
             else "GLM DSA attention"
             if glm_dsa
