@@ -8,8 +8,8 @@ dependency**. This is a built-in plugin: configure `context_parallel_size` or
 
 Requires **torch ≥ 2.13**. The integration targets the pinned upstream releases
 **Transformers 5.17.0**, **Accelerate 1.15.0**, and **axolotl-ringmaster ≥0.2.1**.
-No custom Transformers or Accelerate branch is required. The companion Ringmaster
-changes must be released as 0.2.1 or installed from the matching source checkout.
+No custom Transformers or Accelerate branch is required. Ringmaster 0.2.1 includes
+the packed attention and recurrent context-parallel adapters.
 
 ## Usage
 
@@ -76,7 +76,7 @@ public `wire_recurrent_layers(model)` API installs instance-local adapters and
 returns a wiring object with a `restore()` callback. Axolotl uses this same API
 after model kernelization, so Mamba adapters preserve the selected Hub kernel's
 normalization semantics.
-Packed CP preserves global document boundaries for attention, FLA state passing, and Mamba convolution/scan resets. These fixes require the companion Ringmaster packing update; released 0.2.0 does not contain them.
+Packed CP preserves global document boundaries for attention, FLA state passing, and Mamba convolution/scan resets. Ringmaster 0.2.1 is the minimum version for these packed CP paths.
 
 ## Architecture capabilities
 
