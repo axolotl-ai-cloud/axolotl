@@ -21,7 +21,7 @@ def prepare_native_nvfp4_components(model, device) -> tuple[str, ...]:
             return tuple(sorted((str(key), repr(item)) for key, item in value.items()))
         return repr(value)
 
-    components = ("qdata", "scale", "per_tensor_scale")
+    components = ("qdata", "scale", "per_tensor_scale", "act_per_tensor_scale")
     errors = []
     local = []
     for name, param in weights:
@@ -34,6 +34,10 @@ def prepare_native_nvfp4_components(model, device) -> tuple[str, ...]:
             entry.append(
                 None if value is None else (tuple(value.shape), str(value.dtype))
             )
+        entry.extend(
+            getattr(param, attr, None)
+            for attr in ("orig_dtype", "is_swizzled_scales", "use_triton_kernel")
+        )
         local.append(tuple(entry))
     gathered = [None] * dist.get_world_size()
     dist.all_gather_object(gathered, (local, errors))

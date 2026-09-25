@@ -2548,6 +2548,44 @@ def merge_lora_sharded_efficient(
 
         total_tensors += len(shard_tensors)
 
+        from axolotl.cli.utils.native_nvfp4_merge import (
+            has_native_nvfp4_weights,
+            merge_native_nvfp4_shard,
+        )
+
+        native_present = has_native_nvfp4_weights(metadata)
+        native_processed: set[str] = set()
+
+        def merge_native_dense(weight, key, processed=native_processed):
+            result, did_merge = _merge_tensor_with_lora(
+                weight,
+                key,
+                lora_state,
+                scale,
+                lora_config_dict,
+                device,
+                use_dora=use_dora,
+                weight_renamings=weight_renamings,
+                layer_type_map=layer_type_map,
+                param_wrapper_map=param_wrapper_map,
+            )
+            if did_merge:
+                processed.add(key)
+            return result, did_merge
+
+        shard_tensors, metadata, native_merged = merge_native_nvfp4_shard(
+            shard_tensors,
+            metadata,
+            merge_native_dense,
+            dequant=dequant,
+            quantization_device=device,
+        )
+        merged_count += native_merged
+        left_quantized = left_quantized or has_native_nvfp4_weights(metadata)
+        block_fp8_dequantized = block_fp8_dequantized or (
+            native_present and dequant and not has_native_nvfp4_weights(metadata)
+        )
+
         # Per-expert unfused NVFP4 experts with a fused adapter: the writer claims those tensors
         # (buffered across shard boundaries) and emits the merged per-expert keys itself, so the
         # dequant/fuse/per-tensor passes below never see them.
@@ -2604,7 +2642,7 @@ def merge_lora_sharded_efficient(
         # Step 2: Merge remaining (non-fused) tensors with LoRA
         # Skip keys already processed by fuse/unfuse to avoid double NF4 roundtrip
         for key, tensor in shard_tensors.items():
-            if key in fused_keys:
+            if key in fused_keys or key in native_processed:
                 merged_tensors[key] = tensor.detach().cpu()
                 continue
             # Full-weight override (modules_to_save / resized embed_tokens+lm_head): replace, don't

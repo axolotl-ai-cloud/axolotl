@@ -656,7 +656,26 @@ class ModelLoader:
                         prepare_native_nvfp4_tp_lora,
                     )
 
-                    prepare_native_nvfp4_tp_lora(self.model)
+                    prepare_native_nvfp4_tp_lora(
+                        self.model,
+                        merge_aware=self.cfg.get("nvfp4_merge_aware") is not False,
+                    )
+                elif not self.cfg.merge_lora:
+                    from axolotl.integrations.kernels.merge_aware_setup import (
+                        configure_native_merge_aware,
+                    )
+
+                    configure_native_merge_aware(
+                        self.cfg,
+                        self.model,
+                        sharded_backend=(
+                            "FSDP"
+                            if self.is_fsdp_enabled
+                            else "DeepSpeed"
+                            if self.cfg.deepspeed
+                            else None
+                        ),
+                    )
 
         return lora_config
 

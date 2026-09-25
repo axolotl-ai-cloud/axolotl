@@ -4,15 +4,21 @@ import shutil
 import torch
 import torch.distributed as dist
 from peft import LoraConfig, get_peft_model
-from safetensors.torch import save_file
+from safetensors.torch import load_file, save_file
 from torch.distributed.device_mesh import init_device_mesh
 from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 from torchao.prototype.safetensors.safetensors_support import flatten_tensor_state_dict
 from transformers import LlamaConfig, LlamaForCausalLM, TorchAoConfig
 
+from axolotl.monkeypatch.torchao_nvfp4_merge import (
+    install_native_nvfp4_merge_aware_lora_linears,
+)
 from axolotl.monkeypatch.torchao_tp import native_nvfp4_tp_checkpoint_loading
-from axolotl.monkeypatch.torchao_tp_lora import prepare_native_nvfp4_tp_lora
+from axolotl.monkeypatch.torchao_tp_lora import (
+    native_nvfp4_tp_peft_state_dict,
+    prepare_native_nvfp4_tp_lora,
+)
 
 
 def _factors(model):
@@ -208,6 +214,10 @@ def main():
                 name: parameter.detach().cpu()
                 for name, parameter in _factors(serial).items()
             }
+            installed = install_native_nvfp4_merge_aware_lora_linears(serial)
+            assert installed == 2, (
+                f"expected merge-aware q/o wrappers, installed {installed}"
+            )
             inputs = torch.randn(1, 3, 64, device="cuda", dtype=dtype)
 
         _run_rank_zero_stage("serial model preparation", rank, make_serial_reference)
@@ -282,6 +292,19 @@ def main():
             )
 
         _run_stage("LoRA optimizer-step parity", verify_parameters)
+        export_state = native_nvfp4_tp_peft_state_dict(
+            model, collect_on_this_rank=rank == 0
+        )
+
+        def verify_export():
+            export_path = f"{path}-adapter"
+            model.save_pretrained(export_path, state_dict=export_state)
+            saved = load_file(f"{export_path}/adapter_model.safetensors")
+            for name, value in final.items():
+                key = name.replace(".default.", ".")
+                torch.testing.assert_close(saved[key], value)
+
+        _run_rank_zero_stage("TP adapter export", rank, verify_export)
         print("HF_NVFP4_TP_LORA_PARAMETER_ERROR", rank, parameter_error[0], flush=True)
         print("HF_NVFP4_TP_LORA_PARITY", rank, "ok", flush=True)
     except Exception as error:

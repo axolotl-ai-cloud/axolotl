@@ -29,11 +29,23 @@ from .libs.sonicmoe.nvfp4_quant import fake_quant_nvfp4_dispatch
 LOG = get_logger(__name__)
 
 
+def _warn_merge_aware_fallback(module, reason):
+    if not getattr(module, "_axolotl_merge_aware_unsupported", False):
+        LOG.warning(
+            "NVFP4 MERGE WARNING: %s is unsupported for merge-aware LoRA. "
+            "Continuing with ordinary LoRA; merging may round away the adapter update.",
+            reason,
+        )
+    module._axolotl_merge_aware_unsupported = True
+
+
 def _merge_aware_lora_linear_forward(self, x, *args, **kwargs):
     if not merge_aware_enabled() or self.disable_adapters or self.merged:
         return self._ma_orig_forward(x, *args, **kwargs)
     adapters = [a for a in self.active_adapters if a in self.lora_A.keys()]
     if len(adapters) != 1:
+        if len(adapters) > 1:
+            _warn_merge_aware_fallback(self, "multiple active adapters")
         return self._ma_orig_forward(x, *args, **kwargs)
     adapter = adapters[0]
 
@@ -80,7 +92,14 @@ def install_merge_aware_lora_linears(model: torch.nn.Module) -> int:
             count += 1
             continue
         if any(module.use_dora.get(a) for a in module.lora_A.keys()):
-            LOG.warning("merge-aware: skipping %s (DoRA is unsupported)", name)
+            _warn_merge_aware_fallback(module, f"DoRA on {name}")
+            continue
+        if getattr(module, "lora_variant", {}) or any(
+            layer.bias is not None
+            for layers in (module.lora_A, module.lora_B)
+            for layer in layers.values()
+        ):
+            _warn_merge_aware_fallback(module, f"LoRA variant or factor bias on {name}")
             continue
         module._ma_orig_forward = module.forward  # type: ignore[assignment]
         module.forward = types.MethodType(  # type: ignore[method-assign]

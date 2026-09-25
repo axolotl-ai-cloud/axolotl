@@ -42,13 +42,31 @@ lora_target_parameters:
 
 Full config: [examples/qwen3/30b-a3b-nvfp4-lora.yaml](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml).
 
+## Native TorchAO checkpoints
+
+For native TorchAO NVFP4 dense weights, supported ordinary LoRA projections use
+merge-aware training by default. The static-weight path supports materialized
+adapter factors and the supported input/output tensor-parallel layouts. TP saves
+gather complete adapter factors before writing the PEFT checkpoint.
+
+Native dynamic activation quantization, native merge-aware FSDP/DeepSpeed
+integration, routed native multi-LoRA, and unsupported LoRA variants currently warn and continue with
+ordinary LoRA. That warning means merged-NVFP4 parity is not guaranteed. This is
+separate from the ModelOpt/SonicMoE expert path described below. Set
+`nvfp4_merge_aware: false` to explicitly select ordinary LoRA.
+
+The native merge writer preserves TorchAO's quantization recipe and serialized
+weight components. Use a format-preserving merge for deployment of a merge-aware
+adapter; serving its unsnapped adapter alongside the frozen base computes a
+different model.
+
 ## Merging the adapter
 
 Merging LoRA into a 4-bit base is normally lossy: the NVFP4 grid step is 25-50% of a block's max weight, while a typical trained LoRA delta is well under 1% of the weight magnitude. Re-quantizing `base + delta` onto the base grid therefore rounds most of the delta away. `axolotl merge-lora` detects this and warns `NEAR-NO-OP expert merge` when the delta is far below the grid step.
 
 ### Merge-aware training (`nvfp4_merge_aware`)
 
-`nvfp4_merge_aware: true` solves this by making training optimize the merged model directly. The forward pass computes
+For recognized ModelOpt NVFP4 bases with SonicMoE and `adapter: lora` or `adapter: multilora`, merge-aware training is enabled automatically unless explicitly disabled. `nvfp4_merge_aware: true` makes that choice explicit and makes training optimize the merged model directly. The forward pass computes
 
 ```
 out = x @ Q(dequant(base) + scaling * (B @ A))^T
@@ -80,10 +98,10 @@ With `nvfp4_merge_aware`, the **merged checkpoint is the trained model**; the ra
 
 Constraints:
 
-- Requires `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora` (enforced at config validation). ScatterMoE is not supported.
+- The ModelOpt merge-aware path uses `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora`. An unsupported backend or an explicit `nvfp4_merge_aware: false` produces a prominent `NVFP4 MERGE WARNING` and continues with ordinary LoRA. That fallback can lose learned updates when merged into NVFP4.
 - Dense LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`) are opt-in with merge-aware training. Protected projections use their original forward so fake quantization is preserved; other projections can use optimized kernels.
-- DoRA modules are skipped with a warning.
-- Single-node only: under FSDP, ranks that load on the meta device cannot capture the base scale grid.
+- Unsupported projections warn and fall back. If any distributed rank reports a fallback, checkpoints do not carry a merge-aware guarantee; stale merge-aware metadata is removed.
+- FSDP2 reconstruction preserves weight and activation scales, including ranks loaded on the meta device. Expert-parallel local routing has CPU output/gradient parity coverage; end-to-end DeepEP dispatch with FSDP2 still requires qualification on a supported NVLink setup.
 - Fake quantization adds work to each protected projection. The opt-in kernel dispatch has not yet been benchmarked on a full NVFP4 training run; measure throughput and memory for your configuration.
 
 On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter's improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.

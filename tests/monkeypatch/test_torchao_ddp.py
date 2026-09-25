@@ -330,3 +330,37 @@ def test_distributed_mixin_dispatches_deepspeed_zero12_only(monkeypatch):
     assert trainer._wrap_model(model) is model
     assert called == [(model, torch.device("cpu"), 2)]
     assert model._axolotl_native_nvfp4_deepspeed_prepared
+
+
+def test_native_nvfp4_ddp_broadcasts_activation_scale(tmp_path, monkeypatch):
+    model = _model(tmp_path)
+    native = next(
+        parameter
+        for parameter in model.parameters()
+        if type(parameter).__name__ == "NVFP4Tensor"
+    )
+    native.act_per_tensor_scale = torch.tensor(0.25)
+    scale = native.act_per_tensor_scale
+    broadcasts = _collectives(monkeypatch, lambda value: value)
+    prepare_native_nvfp4_ddp(model, torch.device("cpu"))
+    assert any(value.data_ptr() == scale.data_ptr() for value, _ in broadcasts)
+    assert native.act_per_tensor_scale is scale
+
+
+@pytest.mark.parametrize("offset", [-3, -2, -1])
+def test_native_nvfp4_ddp_rejects_different_quantization_recipe(
+    tmp_path, monkeypatch, offset
+):
+    model = _model(tmp_path)
+
+    def remote(value):
+        layout, errors = copy.deepcopy(value)
+        entry = list(layout[0])
+        entry[offset] = "different recipe"
+        layout[0] = tuple(entry)
+        return layout, errors
+
+    broadcasts = _collectives(monkeypatch, remote)
+    with pytest.raises(ValueError, match="identical component layouts"):
+        prepare_native_nvfp4_ddp(model, torch.device("cpu"))
+    assert not broadcasts

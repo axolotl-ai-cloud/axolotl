@@ -815,3 +815,82 @@ def grouped_moe_reference_forward(
     return combine_expert_outputs(
         y_grouped, gather_token_idx, weights_grouped, hidden_states.shape[0]
     )
+
+
+def grouped_moe_merge_aware_ep_forward(
+    hidden_states: torch.Tensor,
+    local_top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    w1: torch.Tensor,
+    b1: Optional[torch.Tensor],
+    w2: torch.Tensor,
+    b2: Optional[torch.Tensor],
+    lora1: Optional[tuple[torch.Tensor, torch.Tensor]],
+    lora2: Optional[tuple[torch.Tensor, torch.Tensor]],
+    num_experts_local: int,
+    *,
+    act: str,
+    concat: bool,
+    scaling1: float,
+    scaling2: float,
+    limit: Optional[float] = None,
+    gated: bool = True,
+) -> torch.Tensor:
+    """Merge-aware grouped MoE forward for a rank's local DeepEP experts."""
+    if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
+        raise ValueError("merge-aware EP forward requires native NVFP4 expert weights")
+
+    num_tokens, top_k = local_top_k_index.shape
+    flat_expert = local_top_k_index.reshape(-1)
+    valid = flat_expert >= 0
+    if not bool(valid.any()):
+        return hidden_states.sum(dim=-1, keepdim=True).expand(-1, w2.shape[-2]) * 0
+
+    token_ids = torch.arange(
+        num_tokens, device=hidden_states.device, dtype=torch.long
+    ).repeat_interleave(top_k)
+    flat_weight = top_k_weights.reshape(-1).to(hidden_states.dtype)
+    flat_expert = flat_expert[valid].to(torch.long)
+    token_ids = token_ids[valid]
+    flat_weight = flat_weight[valid]
+
+    sorted_experts, order = torch.sort(flat_expert, stable=True)
+    gather_token_idx = token_ids[order]
+    weights_grouped = flat_weight[order]
+    x_grouped = hidden_states.index_select(0, gather_token_idx)
+    expert_offsets = torch.searchsorted(
+        sorted_experts,
+        torch.arange(
+            num_experts_local + 1,
+            device=hidden_states.device,
+            dtype=sorted_experts.dtype,
+        ),
+    )
+    merge_aware1 = lora1 is not None
+    merge_aware2 = lora2 is not None
+
+    y_grouped = grouped_expert_mlp_lora(
+        x_grouped,
+        expert_offsets,
+        dequantize_expert_weight(w1),
+        b1,
+        dequantize_expert_weight(w2),
+        b2,
+        lora1,
+        lora2,
+        act=act,
+        backend="torch",
+        concat=concat,
+        scaling1=scaling1,
+        scaling2=scaling2,
+        limit=limit,
+        merge_aware1=merge_aware1,
+        ma_pts1=w1.per_tensor_scale if merge_aware1 else None,
+        merge_aware2=merge_aware2,
+        ma_pts2=w2.per_tensor_scale if merge_aware2 else None,
+        gated=gated,
+    )
+    output = y_grouped.new_zeros((num_tokens, y_grouped.shape[-1]))
+    return output.index_add(
+        0, gather_token_idx, y_grouped * weights_grouped.unsqueeze(-1)
+    )

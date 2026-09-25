@@ -185,23 +185,12 @@ class KernelsPlugin(BasePlugin):
             # Same frozen-quantized-base + LoRA pattern as the scattermoe path above.
             relax_quantized_training_guard()
 
-            # NVFP4-ness is only in the downloaded base config, not the YAML, so not a validator.
-            if (
-                cfg.adapter == "lora"
-                and not cfg.nvfp4_merge_aware
-                and _base_is_nvfp4_modelopt(cfg)
-            ):
-                LOG.warning(
-                    "NVFP4 base + sonicmoe LoRA WITHOUT nvfp4_merge_aware: the "
-                    "format-preserving `axolotl merge-lora` snaps dequant(base) + "
-                    "scaling*(B@A) back onto the base NVFP4 grid and ERASES the "
-                    "sub-grid-step LoRA delta, so the merged checkpoint reverts to the "
-                    "base model and this training run is wasted.\n"
-                    "Set `nvfp4_merge_aware: true` to fake-quant the effective weight "
-                    "during training so the format-preserving merge reproduces the "
-                    "trained model, or plan to merge with `--dequant` (bf16 output, "
-                    "loses the NVFP4 format)."
-                )
+        if cfg.adapter in ("lora", "multilora") and _base_is_nvfp4_modelopt(cfg):
+            from axolotl.integrations.kernels.merge_aware_setup import (
+                configure_modelopt_merge_aware,
+            )
+
+            configure_modelopt_merge_aware(cfg)
 
         adapters = self._adapters(cfg)
         self._warn_unclaimed_nonexpert_quantization(cfg, adapters)
@@ -270,9 +259,10 @@ class KernelsPlugin(BasePlugin):
                 MergeAwareScheduleCallback,
             )
 
-            callbacks.append(
-                MergeAwareScheduleCallback(cfg.nvfp4_merge_aware_start_step)
+            self._merge_aware_schedule_callback = MergeAwareScheduleCallback(
+                cfg.nvfp4_merge_aware_start_step
             )
+            callbacks.append(self._merge_aware_schedule_callback)
         return callbacks
 
     def post_train_unload(self, cfg):
@@ -283,11 +273,23 @@ class KernelsPlugin(BasePlugin):
         from axolotl.integrations.kernels.merge_aware_callback import (
             write_merge_aware_metadata,
         )
-        from axolotl.utils.distributed import is_main_process
+
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            is_main = torch.distributed.get_rank() == 0
+        else:
+            is_main = os.environ.get("RANK", "0") == "0"
 
         # merge_aware_enabled() still False => start_step was never reached, the
         # adapter never trained through the fake-quant: leave it unstamped
-        if is_main_process() and merge_aware_enabled():
+        callback = getattr(self, "_merge_aware_schedule_callback", None)
+        if is_main and callback is not None and not callback.merge_aware_valid:
+            from axolotl.integrations.kernels.merge_aware_callback import (
+                clear_merge_aware_metadata,
+            )
+
+            clear_merge_aware_metadata(cfg.output_dir)
+            return
+        if is_main and merge_aware_enabled():
             if write_merge_aware_metadata(
                 cfg.output_dir, start_step=cfg.nvfp4_merge_aware_start_step
             ):
