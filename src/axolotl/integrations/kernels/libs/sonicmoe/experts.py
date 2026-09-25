@@ -378,6 +378,10 @@ def register_sonicmoe_experts() -> None:
     except (ImportError, AttributeError):
         pass
 
+    from ..scattermoe_lora.nvfp4_fsdp import patch_nvfp4_fsdp
+
+    patch_nvfp4_fsdp()
+
 
 # Re-export utilities for tests / external callers.
 __all__ = [

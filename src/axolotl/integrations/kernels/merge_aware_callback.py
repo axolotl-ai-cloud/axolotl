@@ -7,6 +7,7 @@
 import json
 from pathlib import Path
 
+import torch
 from transformers import TrainerCallback
 
 from axolotl.utils.logging import get_logger
@@ -42,6 +43,15 @@ def write_merge_aware_metadata(adapter_dir, start_step=None) -> bool:
     return True
 
 
+def clear_merge_aware_metadata(adapter_dir):
+    """Remove a stale guarantee when a training path fell back to ordinary LoRA."""
+    path = Path(adapter_dir) / "adapter_config.json"
+    if path.exists():
+        cfg = json.loads(path.read_text())
+        if cfg.pop("nvfp4_merge_aware", None) is not None:
+            path.write_text(json.dumps(cfg, indent=2))
+
+
 class MergeAwareScheduleCallback(TrainerCallback):
     """Turn on the merge-aware fake-quant forward at ``start_step``.
 
@@ -54,6 +64,7 @@ class MergeAwareScheduleCallback(TrainerCallback):
     def __init__(self, start_step: int | float | None = None):
         self.start_step = start_step or 0
         self._enabled = False
+        self.merge_aware_valid = True
 
     def _threshold(self, state) -> int:
         if isinstance(self.start_step, float) and 0 < self.start_step < 1:
@@ -80,9 +91,38 @@ class MergeAwareScheduleCallback(TrainerCallback):
     def on_step_begin(self, args, state, control, **kwargs):
         self._maybe_enable(state)
 
+    def _check_fallback(self, model):
+        if model is None:
+            return
+        unsupported = not self.merge_aware_valid or any(
+            getattr(module, "_axolotl_merge_aware_unsupported", False)
+            for module in model.modules()
+        )
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            device = (
+                torch.device("cuda", torch.cuda.current_device())
+                if torch.distributed.get_backend() == "nccl"
+                else torch.device("cpu")
+            )
+            flag = torch.tensor(int(unsupported), device=device)
+            torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
+            unsupported = bool(flag.item())
+        if unsupported and self.merge_aware_valid:
+            LOG.warning(
+                "NVFP4 MERGE WARNING: at least one training path used ordinary LoRA. "
+                "Continuing training without merge-aware metadata; NVFP4 merging "
+                "may round away the learned adapter update."
+            )
+        self.merge_aware_valid = not unsupported
+
+    def on_train_end(self, args, state, control, **kwargs):
+        self._check_fallback(kwargs.get("model"))
+
     def on_save(self, args, state, control, **kwargs):
-        # stamp only adapters that actually trained through the fake-quant;
-        # a pre-warm-up checkpoint is an unprepared adapter and must merge as one
-        if self._enabled and state.is_world_process_zero:
+        self._check_fallback(kwargs.get("model"))
+        if state.is_world_process_zero:
             ckpt = Path(args.output_dir) / f"checkpoint-{state.global_step}"
-            write_merge_aware_metadata(ckpt, start_step=self.start_step)
+            if self._enabled and self.merge_aware_valid:
+                write_merge_aware_metadata(ckpt, start_step=self.start_step)
+            else:
+                clear_merge_aware_metadata(ckpt)

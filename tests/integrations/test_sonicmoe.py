@@ -413,3 +413,15 @@ class TestEpilogueCheck:
         bad._apply_gate = lambda gate_up: gate_up.chunk(2, dim=-1)[0]
         with pytest.raises(ValueError, match="wrong expert math"):
             self._check(bad, limit=None, path="dense")
+
+
+def test_sonicmoe_registration_installs_nvfp4_fsdp(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora import nvfp4_fsdp
+    from axolotl.integrations.kernels.libs.sonicmoe import experts
+
+    calls = []
+    monkeypatch.setattr(nvfp4_fsdp, "patch_nvfp4_fsdp", lambda: calls.append(True))
+
+    experts.register_sonicmoe_experts()
+
+    assert calls == [True]

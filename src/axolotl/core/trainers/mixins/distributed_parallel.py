@@ -62,12 +62,17 @@ class DistributedParallelMixin(Trainer):
         from axolotl.monkeypatch.torchao_deepspeed import (
             native_nvfp4_zero3_peft_state_dict,
         )
+        from axolotl.monkeypatch.torchao_tp_lora import (
+            native_nvfp4_tp_peft_state_dict,
+        )
 
-        if not getattr(self.model, "_axolotl_native_nvfp4_zero3_components", ()):
-            return super().save_model(output_dir, _internal_call)
         state_dict = native_nvfp4_zero3_peft_state_dict(
             self.model, collect_on_this_rank=self.args.should_save
         )
+        if state_dict is None:
+            state_dict = native_nvfp4_tp_peft_state_dict(
+                self.model, collect_on_this_rank=self.args.should_save
+            )
         if state_dict is None:
             return super().save_model(output_dir, _internal_call)
         output_dir = output_dir or self.args.output_dir

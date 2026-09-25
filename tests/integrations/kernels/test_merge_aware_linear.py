@@ -322,3 +322,18 @@ def test_fp32_adapter_matches_export_effective_weight(autocast, device):
     assert x.grad is not None
     assert lora.lora_A["default"].weight.grad.dtype == torch.float32
     assert lora.lora_B["default"].weight.grad.dtype == torch.float32
+
+
+def test_factor_bias_warns_without_installing_incomplete_forward():
+    from unittest.mock import patch
+
+    model, lora = _wrapped_model()
+    lora.lora_B["default"].bias = nn.Parameter(torch.zeros(OUT, dtype=torch.bfloat16))
+    forward = lora.forward
+    with patch(
+        "axolotl.integrations.kernels.merge_aware_linear.LOG.warning"
+    ) as warning:
+        assert install_merge_aware_lora_linears(model) == 0
+    assert lora.forward == forward
+    assert lora._axolotl_merge_aware_unsupported
+    assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]

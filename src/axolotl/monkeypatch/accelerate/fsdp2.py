@@ -28,6 +28,27 @@ def _nvfp4_local_tensor_cls(p):
     return NVFP4Tensor if isinstance(lt, NVFP4Tensor) else None
 
 
+def _rebuild_nvfp4_like(
+    reference, qdata, scale, per_tensor_scale, act_per_tensor_scale=None
+):
+    """Rebuild an NVFP4 shard without changing its encoding recipe."""
+    return type(reference)(
+        qdata,
+        scale,
+        reference.block_size,
+        reference.orig_dtype,
+        per_tensor_scale=per_tensor_scale,
+        act_per_tensor_scale=(
+            reference.act_per_tensor_scale
+            if act_per_tensor_scale is None
+            else act_per_tensor_scale
+        ),
+        is_swizzled_scales=reference.is_swizzled_scales,
+        use_triton_kernel=reference.use_triton_kernel,
+        act_quant_kwargs=reference.act_quant_kwargs,
+    )
+
+
 def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp4_cls):
     """Scatter rank-0's full NVFP4Tensor expert param to each rank's shard.
 
@@ -41,8 +62,6 @@ def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp
     placements = sharded_meta_param.placements
     local_meta = sharded_meta_param._local_tensor
     e_global = sharded_meta_param.shape[0]
-    block_size = local_meta.block_size
-    dtype = local_meta.dtype
 
     def _scatter_component(name, ref_local):
         # Direct per-shard scatter: send each rank ONLY its dim-0 (expert-axis) shard. Avoids the
@@ -83,24 +102,25 @@ def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp
     local_qdata = _scatter_component("qdata", local_meta.qdata)
     local_scale = _scatter_component("scale", local_meta.scale)
 
-    local_pts = None
-    pts_ref = getattr(local_meta, "per_tensor_scale", None)
-    if pts_ref is not None:
-        if pts_ref.dim() >= 1 and pts_ref.shape[0] == local_meta.qdata.shape[0]:
-            # per-expert scale shards along dim 0 like qdata/scale
-            local_pts = _scatter_component("per_tensor_scale", pts_ref)
+    def _local_aux_scale(name):
+        ref = getattr(local_meta, name, None)
+        if ref is None:
+            return None
+        if ref.dim() >= 1 and ref.shape[0] == local_meta.qdata.shape[0]:
+            return _scatter_component(name, ref)
+        group = mesh.get_group()
+        src_rank = dist.get_process_group_ranks(group)[0]
+        if is_main:
+            local = getattr(full_nvfp4, name).to(device)
         else:
-            # replicated scalar — plain broadcast
-            if is_main:
-                local_pts = full_nvfp4.per_tensor_scale.to(device)
-            else:
-                local_pts = torch.empty(
-                    pts_ref.shape, device=device, dtype=pts_ref.dtype
-                )
-            dist.broadcast(local_pts, src=0)
+            local = torch.empty(ref.shape, device=device, dtype=ref.dtype)
+        dist.broadcast(local, src=src_rank, group=group)
+        return local
 
-    local_nvfp4 = nvfp4_cls(
-        local_qdata, local_scale, block_size, dtype, per_tensor_scale=local_pts
+    local_pts = _local_aux_scale("per_tensor_scale")
+    local_act_pts = _local_aux_scale("act_per_tensor_scale")
+    local_nvfp4 = _rebuild_nvfp4_like(
+        local_meta, local_qdata, local_scale, local_pts, local_act_pts
     )
     return DTensor.from_local(local_nvfp4, mesh, placements, run_check=False)
 
@@ -123,17 +143,18 @@ def _ep_expert_from_local(sharded_meta_param, full_local, nvfp4_cls):
     s = slice(dp_rank * e_dp, (dp_rank + 1) * e_dp)
     qd = full_local.qdata[s].to(dev)
     sc = full_local.scale[s].to(dev)
-    pts = getattr(full_local, "per_tensor_scale", None)
-    local_pts = None
-    if pts is not None:
-        local_pts = (
-            pts[s].to(dev)
-            if (pts.dim() >= 1 and pts.shape[0] == full_local.qdata.shape[0])
-            else pts.to(dev)
-        )
-    local_nv = nvfp4_cls(
-        qd, sc, local_meta.block_size, local_meta.dtype, per_tensor_scale=local_pts
-    )
+
+    def _local_aux_scale(name):
+        value = getattr(full_local, name, None)
+        if value is None:
+            return None
+        if value.dim() >= 1 and value.shape[0] == full_local.qdata.shape[0]:
+            return value[s].to(dev)
+        return value.to(dev)
+
+    local_pts = _local_aux_scale("per_tensor_scale")
+    local_act_pts = _local_aux_scale("act_per_tensor_scale")
+    local_nv = _rebuild_nvfp4_like(full_local, qd, sc, local_pts, local_act_pts)
     return DTensor.from_local(local_nv, mesh, placements, run_check=False)
 
 
