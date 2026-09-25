@@ -59,7 +59,7 @@ Each part of the command does one thing:
 - `--flavor a10g-large` picks the hardware, here one A10G GPU with 24 GB of memory. `hf jobs hardware` lists the others.
 - `--timeout 1h` sets the maximum run time. The default is 30 minutes, which is short for training. When a Job times out, everything on its disk is lost, so set the timeout comfortably above the expected run time.
 - `-s HF_TOKEN` passes your local token to the Job as a secret. Axolotl needs it to push to `hub_model_id` and to download gated models. When `hub_model_id` is set, Axolotl pushes to a private repo.
-- `--name gemma4-e2b-trial` labels the Job, so you can find it again later with `hf jobs ps --name gemma4-e2b-trial`. Names do not have to be unique.
+- `--name gemma4-e2b-trial` labels the Job, so you can find it again later with `hf jobs ps -a --name gemma4-e2b-trial` (`-a` includes finished Jobs). Names do not have to be unique.
 - `-v ./configs:/configs` uploads the `configs` folder to a private `jobs-artifacts` bucket in your account and mounts it read-only in the container. The YAML on your disk is the YAML the run uses. Edit it and launch again; only changed files are uploaded.
 - Everything after `--` is the command to run inside the image.
 
@@ -79,7 +79,7 @@ hf jobs cancel <job_id>    # stop it
 
 `hf jobs stats` is a quick check that the run uses the GPU. If GPU use stays low while CPU use is high, the run is often waiting on data loading: try raising `dataloader_num_workers` or `micro_batch_size` in the YAML. `hf jobs logs -f` returns when the log stream ends, whether the run succeeded or not, so use `hf jobs inspect` or `hf jobs wait` for the final status. The Job's page on the Hub shows the same status and logs in the browser.
 
-Any top-level config key can also be passed as a flag after the config path, with underscores written as dashes, for example `axolotl train /configs/train.yml --max-steps 5`. Flags override the file, which is handy for a quick change, but the YAML stays the record of what ran.
+Any top-level config key can also be passed as a flag after the config path, with underscores written as dashes, for example `axolotl train /configs/train.yml --max-steps 5`. Flags override the file without changing it, which is handy for a quick change. For a change you want to keep, edit the YAML, so the file stays a record of what ran.
 
 When the trial run works, remove `max_steps` for the full run, point `datasets` at your own data, and raise `--timeout` to match.
 
@@ -126,7 +126,7 @@ A model repo on the Hub is a git repository. If the config lives in the repo the
 Create the repo, upload the config, and mount the repo:
 
 ```bash
-hf repos create your-username/gemma4-e2b-lora --private
+hf repos create your-username/gemma4-e2b-lora --private --exist-ok
 hf upload your-username/gemma4-e2b-lora ./configs/train.yml train.yml
 
 hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
