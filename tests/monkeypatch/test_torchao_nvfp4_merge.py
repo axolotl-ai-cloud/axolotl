@@ -276,3 +276,129 @@ def test_dynamic_native_lora_matches_native_forward_and_activation_ste(supplied_
         assert torch.equal(deployed.act_per_tensor_scale, weight.act_per_tensor_scale)
     else:
         assert deployed.act_per_tensor_scale is None
+
+
+def _dynamic_native_linear(device):
+    source = torch.randn(128, 128, device=device, dtype=torch.bfloat16)
+    weight = NVFP4Tensor.to_nvfp4(
+        source,
+        per_tensor_scale=per_tensor_amax_to_scale(source.abs().max()),
+        is_swizzled_scales=True,
+        act_quant_kwargs=QuantizeTensorToNVFP4Kwargs(
+            use_dynamic_per_tensor_scale=True,
+            is_swizzled_scales=True,
+        ),
+    )
+    linear = nn.Linear(128, 128, bias=False, device=device, dtype=torch.bfloat16)
+    linear.weight = nn.Parameter(weight, requires_grad=False)
+    return linear
+
+
+class _DynamicNativePEFTChain(nn.Module):
+    def __init__(self, device):
+        super().__init__()
+        base = _dynamic_native_linear(device)
+        config = LoraConfig(r=8, lora_alpha=16, lora_dropout=0.0)
+        self.q_proj = LoraLinear(
+            base,
+            adapter_name="default",
+            config=config,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+        )
+        self.o_proj = _dynamic_native_linear(device)
+        with torch.no_grad():
+            self.q_proj.lora_A["default"].weight.copy_(
+                torch.randn(8, 128, device=device, dtype=torch.bfloat16) * 0.1
+            )
+            self.q_proj.lora_B["default"].weight.copy_(
+                torch.randn(128, 8, device=device, dtype=torch.bfloat16) * 0.1
+            )
+
+    def forward(self, inputs):
+        return self.o_proj(self.q_proj(inputs))
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 10,
+    reason="CUDA sm100+ required",
+)
+@pytest.mark.parametrize("merge_aware", [False, True])
+def test_plain_dynamic_native_peft_lora_setup_and_opt_out_gradients(
+    monkeypatch, merge_aware
+):
+    from axolotl.integrations.kernels import merge_aware_setup
+    from axolotl.integrations.kernels.merge_aware_setup import (
+        configure_native_merge_aware,
+    )
+    from axolotl.monkeypatch.torchao_nvfp4_merge import (
+        capture_native_nvfp4_recipe,
+    )
+    from axolotl.utils.dict import DictDefault
+
+    warnings = []
+    monkeypatch.setattr(
+        merge_aware_setup.LOG,
+        "warning",
+        lambda *args, **kwargs: warnings.append((args, kwargs)),
+    )
+    torch.manual_seed(701)
+    model = _DynamicNativePEFTChain(torch.device("cuda"))
+    first_base = model.q_proj.get_base_layer()
+    first_recipe = capture_native_nvfp4_recipe(first_base.weight).fingerprint()
+    second_recipe = capture_native_nvfp4_recipe(model.o_proj.weight).fingerprint()
+    configure_native_merge_aware(
+        DictDefault(adapter="lora", nvfp4_merge_aware=merge_aware), model
+    )
+
+    assert model._axolotl_native_nvfp4_dynamic_input_gradients
+    if merge_aware:
+        assert hasattr(model.q_proj, "_axolotl_native_nvfp4_orig_forward")
+        assert not getattr(model, "_axolotl_merge_aware_unsupported", False)
+    else:
+        assert warnings
+        assert "explicitly disabled" in warnings[0][0][1]
+        assert model._axolotl_merge_aware_unsupported
+        assert not hasattr(model.q_proj, "_axolotl_native_nvfp4_orig_forward")
+
+    inputs = torch.randn(
+        3, 128, device="cuda", dtype=torch.bfloat16, requires_grad=True
+    )
+    grad_output = torch.randn(3, 128, device="cuda", dtype=torch.bfloat16)
+    outputs = model(inputs)
+    outputs.backward(grad_output)
+
+    a = model.q_proj.lora_A["default"].weight
+    b = model.q_proj.lora_B["default"].weight
+    scaling = model.q_proj.scaling["default"]
+
+    assert torch.isfinite(outputs).all()
+    assert inputs.grad is not None and torch.isfinite(inputs.grad).all()
+    assert a.grad is not None and torch.isfinite(a.grad).all()
+    assert b.grad is not None and torch.isfinite(b.grad).all()
+    assert inputs.grad.norm() > 0
+    assert a.grad.norm() > 0
+    assert b.grad.norm() > 0
+    if not merge_aware:
+        first_dense = first_base.weight.dequantize()
+        second_dense = model.o_proj.weight.dequantize()
+        upstream = grad_output.matmul(second_dense)
+        expected_inputs = upstream.matmul(first_dense) + (
+            upstream.matmul(b).matmul(a) * scaling
+        )
+        expected_b = (
+            upstream.transpose(0, 1).matmul(inputs.detach().matmul(a.T)) * scaling
+        )
+        expected_a = (upstream.matmul(b)).transpose(0, 1).matmul(
+            inputs.detach()
+        ) * scaling
+        torch.testing.assert_close(inputs.grad, expected_inputs, rtol=0.02, atol=0.003)
+        torch.testing.assert_close(a.grad, expected_a, rtol=0.02, atol=0.003)
+        torch.testing.assert_close(b.grad, expected_b, rtol=0.02, atol=0.003)
+    assert first_base.weight.grad is None
+    assert model.o_proj.weight.grad is None
+    assert capture_native_nvfp4_recipe(first_base.weight).fingerprint() == first_recipe
+    assert (
+        capture_native_nvfp4_recipe(model.o_proj.weight).fingerprint() == second_recipe
+    )

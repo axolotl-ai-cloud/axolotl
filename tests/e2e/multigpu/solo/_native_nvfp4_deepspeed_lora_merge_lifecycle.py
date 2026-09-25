@@ -1,4 +1,4 @@
-"""Two-rank Trainer lifecycle coverage for static native NVFP4 DeepSpeed LoRA."""
+"""Two-rank Trainer lifecycle coverage for native NVFP4 DeepSpeed LoRA."""
 
 import datetime
 import faulthandler
@@ -75,7 +75,8 @@ def _make_model(base, device):
     from axolotl.utils.dict import DictDefault
 
     torch.manual_seed(19)
-    model = checkpoint.model_with_lora(base, device, False)
+    dynamic = os.environ.get("TORCHAO_LORA_DEEPSPEED_DYNAMIC") == "1"
+    model = checkpoint.model_with_lora(base, device, dynamic)
     for name, parameter in model.named_parameters():
         if "lora_B" in name:
             parameter.data.normal_(mean=0.0, std=0.05)
@@ -188,21 +189,49 @@ def _assert_frozen_base_omitted(model, trainer, checkpoint_path):
     assert trainable <= saved
 
 
-def _merge_and_compare(base, export, merged, expected, device):
-    from transformers import AutoModelForCausalLM
-    from transformers.integrations.deepspeed import unset_hf_deepspeed_config
-
-    from axolotl.cli.utils.lora_merge import merge_lora_sharded_efficient
-
-    unset_hf_deepspeed_config()
-    merge_lora_sharded_efficient(base, export, merged, device="cpu")
-    model = (
-        AutoModelForCausalLM.from_pretrained(merged, torch_dtype=torch.bfloat16)
-        .to(device)
-        .eval()
+def _merge_and_compare(base, export, merged, expected_path, device):
+    worker = Path(__file__).with_name("_native_nvfp4_merge_inference.py")
+    env = os.environ.copy()
+    for key in (
+        "RANK",
+        "WORLD_SIZE",
+        "LOCAL_RANK",
+        "MASTER_ADDR",
+        "MASTER_PORT",
+        "ACCELERATE_DEEPSPEED_ZERO_STAGE",
+        "DEEPSPEED_CONFIG_FILE",
+    ):
+        env.pop(key, None)
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible_devices:
+        env["CUDA_VISIBLE_DEVICES"] = visible_devices.split(",")[device.index]
+    else:
+        env["CUDA_VISIBLE_DEVICES"] = str(device.index)
+    result = __import__("subprocess").run(
+        [
+            sys.executable,
+            str(worker),
+            "--base",
+            str(base),
+            "--adapter",
+            str(export),
+            "--merged",
+            str(merged),
+            "--expected",
+            str(expected_path),
+        ],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
     )
-    assert type(model.model.layers[0].self_attn.q_proj.weight).__name__ == "NVFP4Tensor"
-    torch.testing.assert_close(_logits(model, device), expected, rtol=0, atol=0)
+    if result.returncode:
+        raise RuntimeError(
+            "isolated merge/inference failed:\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
 
 
 def main():
@@ -217,7 +246,9 @@ def main():
         base = root / "base"
         phase = os.environ["TORCHAO_LORA_DEEPSPEED_PHASE"]
         if rank == 0 and not base.exists():
-            checkpoint.make_base_with_non_bf16_per_tensor_scale(base)
+            checkpoint.make_base_with_non_bf16_per_tensor_scale(
+                base, os.environ.get("TORCHAO_LORA_DEEPSPEED_DYNAMIC") == "1"
+            )
         _stage("base checkpoint creation", dist.barrier)
 
         import axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora as bridge
@@ -289,7 +320,7 @@ def main():
                             base,
                             export,
                             root / "merged",
-                            expected["logits"],
+                            root / f"expected-{rank}.pt",
                             torch.device("cuda", local_rank),
                         )
                         if rank == 0

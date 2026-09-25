@@ -9,8 +9,24 @@ class _NVFP4LoRAQuantizer(TorchAoHfQuantizer):
         return True
 
 
+def _has_dynamic_native_nvfp4_input_gradient_path(model) -> bool:
+    if getattr(model, "_axolotl_native_nvfp4_zero3_dynamic_allowed", False):
+        return True
+    if getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients", False):
+        return True
+    if getattr(
+        model, "_axolotl_native_nvfp4_dynamic_input_gradients_requested", None
+    ) in ("FSDP", "DeepSpeed"):
+        from axolotl.monkeypatch.torchao_nvfp4_dynamic_ste import (
+            native_nvfp4_dynamic_input_ste_preflight,
+        )
+
+        return native_nvfp4_dynamic_input_ste_preflight(model)
+    return False
+
+
 def enable_native_nvfp4_lora_training(model):
-    """Relax only this model's quantizer after checking the supported base layout."""
+    """Relax only native NVFP4 bases with a supported LoRA training path."""
     quantizer = getattr(model, "hf_quantizer", None)
     if not isinstance(quantizer, TorchAoHfQuantizer) or not getattr(
         model, "peft_config", None
@@ -24,8 +40,8 @@ def enable_native_nvfp4_lora_training(model):
     weights = [p for p in model.parameters() if type(p).__name__ == "NVFP4Tensor"]
     if not weights or any(p.requires_grad for p in weights):
         return False
-    if any(p.act_quant_kwargs is not None for p in weights) and not getattr(
-        model, "_axolotl_native_nvfp4_zero3_dynamic_allowed", False
+    if any(p.act_quant_kwargs is not None for p in weights) and not (
+        _has_dynamic_native_nvfp4_input_gradient_path(model)
     ):
         return False
     quantizer.__class__ = _NVFP4LoRAQuantizer

@@ -17,13 +17,18 @@ import pytest
         pytest.param(False, True, id="cpu-offload"),
     ],
 )
+@pytest.mark.parametrize("dynamic_activation", [False, True])
 @pytest.mark.skipif(not __import__("torch").cuda.is_available(), reason="requires CUDA")
 def test_native_nvfp4_fsdp2_merge_aware_checkpoint_resume(
-    tmp_path, cpu_ram_efficient, cpu_offload
+    tmp_path, cpu_ram_efficient, cpu_offload, dynamic_activation
 ):
     torch = __import__("torch")
     if torch.cuda.device_count() < 2:
         pytest.skip("requires two CUDA GPUs")
+    if dynamic_activation and any(
+        torch.cuda.get_device_capability(index)[0] < 10 for index in range(2)
+    ):
+        pytest.skip("dynamic NVFP4 requires two SM100+ GPUs")
 
     worker = Path(__file__).with_name(
         "_native_nvfp4_fsdp2_merge_aware_resume_worker.py"
@@ -34,6 +39,7 @@ def test_native_nvfp4_fsdp2_merge_aware_checkpoint_resume(
     env["NVFP4_FSDP2_RESUME_ROOT"] = str(tmp_path)
     env["NVFP4_FSDP2_CPU_RAM_EFFICIENT"] = str(int(cpu_ram_efficient))
     env["NVFP4_FSDP2_CPU_OFFLOAD"] = str(int(cpu_offload))
+    env["NVFP4_FSDP2_DYNAMIC_ACTIVATION"] = str(int(dynamic_activation))
     env["OMP_NUM_THREADS"] = "1"
 
     with log_path.open("w") as log:

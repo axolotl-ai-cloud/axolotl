@@ -1,4 +1,4 @@
-"""Two-rank Trainer lifecycle gate for static native NVFP4 DeepSpeed LoRA."""
+"""Two-rank Trainer lifecycle gate for native NVFP4 DeepSpeed LoRA."""
 
 import os
 import signal
@@ -11,7 +11,8 @@ import torch
 
 
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="two CUDA GPUs required")
-def test_native_nvfp4_deepspeed_lora_merge_lifecycle(tmp_path):
+@pytest.mark.parametrize("dynamic", [False, True])
+def test_native_nvfp4_deepspeed_lora_merge_lifecycle(tmp_path, dynamic):
     pytest.importorskip("deepspeed")
     worker = Path(__file__).with_name("_native_nvfp4_deepspeed_lora_merge_lifecycle.py")
     env = os.environ | {
@@ -19,6 +20,7 @@ def test_native_nvfp4_deepspeed_lora_merge_lifecycle(tmp_path):
         "TORCHAO_LORA_DEEPSPEED_CHECKPOINT_TMP": str(tmp_path),
         "OMP_NUM_THREADS": "1",
         "ACCELERATE_DEEPSPEED_ZERO_STAGE": "3",
+        "TORCHAO_LORA_DEEPSPEED_DYNAMIC": str(int(dynamic)),
     }
     for phase in ("reference", "resume"):
         log = tmp_path / f"{phase}.log"
