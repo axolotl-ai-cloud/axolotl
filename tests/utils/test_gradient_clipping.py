@@ -176,3 +176,111 @@ def test_bfloat16_uses_full_precision_clip_coefficient():
 
     expected = (before * (max_norm / (norm + 1e-6))).to(torch.bfloat16)
     torch.testing.assert_close(gradient, expected)
+
+
+@pytest.mark.parametrize("norm_type", [2.0, float("inf")])
+def test_missing_dtensor_gradients_keep_per_parameter_collective_order(
+    monkeypatch, norm_type
+):
+    class Shard:
+        pass
+
+    class Mesh:
+        def get_group(self, axis):
+            assert axis == 0
+            return "shard-group"
+
+    class LocalShard:
+        placements = (Shard(),)
+        device_mesh = Mesh()
+
+        def __init__(self, local, grad=None, requires_grad=True):
+            self.local = local
+            self.grad = grad
+            self.requires_grad = requires_grad
+
+        def to_local(self):
+            return self.local
+
+    calls = []
+    monkeypatch.setattr(gradient_clipping, "DTensor", LocalShard)
+    monkeypatch.setattr(gradient_clipping, "Shard", Shard)
+    monkeypatch.setattr(gradient_clipping, "Partial", type("Partial", (), {}))
+    monkeypatch.setattr(gradient_clipping.dist, "is_available", lambda: True)
+    monkeypatch.setattr(gradient_clipping.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(gradient_clipping.dist, "get_backend", lambda group: "gloo")
+    monkeypatch.setattr(
+        gradient_clipping.dist,
+        "all_reduce",
+        lambda value, op, group: calls.append((group, float(value))),
+    )
+    present = LocalShard(torch.tensor([1.0]), LocalShard(torch.tensor([3.0])))
+    missing = LocalShard(torch.tensor([2.0]))
+    after = LocalShard(torch.tensor([4.0]), LocalShard(torch.tensor([4.0])))
+
+    norm = gradient_clipping.clip_grad_norm_local_shards_(
+        [present, missing, after], max_norm=1.0, norm_type=norm_type
+    )
+
+    assert calls == [
+        ("shard-group", 3.0 if norm_type == float("inf") else 9.0),
+        ("shard-group", 0.0),
+        ("shard-group", 4.0 if norm_type == float("inf") else 16.0),
+    ]
+    assert missing.grad is None
+    torch.testing.assert_close(
+        norm, torch.tensor(4.0 if norm_type == float("inf") else 5.0)
+    )
+
+
+def test_frozen_dtensor_without_gradient_skips_shard_reductions(monkeypatch):
+    class Shard:
+        pass
+
+    class Mesh:
+        def get_group(self, axis):
+            return "shard-group"
+
+    class LocalShard:
+        placements = (Shard(),)
+        device_mesh = Mesh()
+
+        def __init__(self, local, requires_grad):
+            self.local = local
+            self.requires_grad = requires_grad
+            self.grad = None
+
+        def to_local(self):
+            return self.local
+
+    calls = []
+    monkeypatch.setattr(gradient_clipping, "DTensor", LocalShard)
+    monkeypatch.setattr(gradient_clipping, "Shard", Shard)
+    monkeypatch.setattr(gradient_clipping, "Partial", type("Partial", (), {}))
+    monkeypatch.setattr(gradient_clipping.dist, "is_available", lambda: True)
+    monkeypatch.setattr(gradient_clipping.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(gradient_clipping.dist, "get_backend", lambda group: "gloo")
+    monkeypatch.setattr(
+        gradient_clipping.dist,
+        "all_reduce",
+        lambda value, op, group: calls.append(group),
+    )
+
+    gradient_clipping.clip_grad_norm_local_shards_(
+        [LocalShard(torch.ones(1), requires_grad=False)], 1.0
+    )
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("norm_type", [2.0, float("inf")])
+def test_norm_only_local_shards_preserves_gradients(norm_type):
+    gradient = torch.tensor([3.0, 4.0])
+    parameter = SimpleNamespace(grad=gradient)
+
+    norm = gradient_clipping.get_grad_norm_local_shards_([parameter], norm_type)
+
+    torch.testing.assert_close(
+        norm, torch.tensor(4.0 if norm_type == float("inf") else 5.0)
+    )
+    torch.testing.assert_close(gradient, torch.tensor([3.0, 4.0]))

@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
     GroupedDownProjLoRA,
     GroupedUpProjLoRA,
+    _lora_grouped_mm_supported,
     grouped_expert_mlp_lora,
 )
 
@@ -83,6 +84,17 @@ def _oracle_moe(
             y_e = y_e + b2[e]
         y[st:en] = y_e
     return y
+
+
+def test_grouped_lora_rank_alignment_uses_safe_fallback(monkeypatch):
+    monkeypatch.setattr(
+        "axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora._use_grouped_mm",
+        lambda _: True,
+    )
+    x = torch.empty(1, 128, dtype=torch.bfloat16)
+    assert not _lora_grouped_mm_supported(x, torch.empty(8, 128, dtype=x.dtype), 2)
+    assert not _lora_grouped_mm_supported(x, torch.empty(6, 128, dtype=x.dtype), 2)
+    assert _lora_grouped_mm_supported(x, torch.empty(16, 128, dtype=x.dtype), 2)
 
 
 # =============================================================================
@@ -373,12 +385,16 @@ def test_merge_aware_forward_matches_snapped_oracle():
             continue
         A1e = A1.reshape(E, r, H)[e]
         B1e = B1.reshape(two_i, r, E).permute(2, 0, 1)[e]
-        W1fq = fake_quant_nvfp4(w1d[e] + B1e @ (A1e * s1), pts1[e])
+        W1fq = fake_quant_nvfp4(
+            w1d[e].float() + B1e.float() @ (A1e.float() * s1), pts1[e]
+        )
         h_e = F.linear(x[st:en], W1fq)
         a_e = _ref_gated_activation(h_e, "silu", concat=True)
         A2e = A2.reshape(E, r, I)[e]
         B2e = B2.reshape(H, r, E).permute(2, 0, 1)[e]
-        W2fq = fake_quant_nvfp4(w2d[e] + B2e @ (A2e * s2), pts2[e])
+        W2fq = fake_quant_nvfp4(
+            w2d[e].float() + B2e.float() @ (A2e.float() * s2), pts2[e]
+        )
         y_ref[st:en] = F.linear(a_e, W2fq)
 
     assert torch.equal(y, y_ref)
@@ -434,7 +450,7 @@ def test_merge_aware_ste_gradients():
         dim1, dim2 = dims
         A_e = A_.reshape(E, r, dim2)[e]
         B_e = B_.reshape(dim1, r, E).permute(2, 0, 1)[e]
-        w_eff = w_e + scaling * (B_e @ A_e)
+        w_eff = w_e.float() + scaling * (B_e.float() @ A_e.float())
         return w_eff + (fake_quant_nvfp4(w_eff.detach(), pts_e) - w_eff.detach())
 
     xo = x.detach().clone().requires_grad_(True)
@@ -524,7 +540,8 @@ def test_merge_aware_global_toggle_reference_forward():
         set_merge_aware_enabled(False)
 
 
-def test_merge_aware_train_then_merge_forward_identity():
+@pytest.mark.parametrize("adapter_dtype", [torch.bfloat16, torch.float32])
+def test_merge_aware_train_then_merge_forward_identity(adapter_dtype):
     """Capstone: 'train' a few SGD steps with the merge-aware flag on, quantize
     the final effective weights with the shared quantizer (simulating the file
     write + reload), and assert the merged BASE-ONLY forward reproduces the last
@@ -551,8 +568,8 @@ def test_merge_aware_train_then_merge_forward_identity():
     w1d, w2d = w1.dequantize(), w2.dequantize()
     pts1 = w1.per_tensor_scale
     pts2 = w2.per_tensor_scale
-    A1, B1 = _make_lora(E, two_i, H, r, torch.float32)
-    A2, B2 = _make_lora(E, H, I, r, torch.float32)
+    A1, B1 = _make_lora(E, two_i, H, r, adapter_dtype)
+    A2, B2 = _make_lora(E, H, I, r, adapter_dtype)
     x = torch.randn(T, H)
 
     def fwd(lora1, lora2, w1_, w2_, ma):
@@ -590,11 +607,13 @@ def test_merge_aware_train_then_merge_forward_identity():
         # stored representation (packed codes + e4m3 scales + pts), reload
         def merge(w_dense, lora_A, lora_B, scaling, pts):
             dim1, dim2 = w_dense.shape[1:]
-            A_3d = lora_A.reshape(E, r, dim2)
-            B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1)
-            w_eff = w_dense + torch.bmm(B_3d, A_3d * scaling)
+            A_3d = lora_A.reshape(E, r, dim2).float()
+            B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1).float()
+            writer_effective = (w_dense.float() + torch.bmm(B_3d, A_3d) * scaling).to(
+                w_dense.dtype
+            )
             packed, scale = quantize_nvfp4_merge(
-                w_eff, pts.reshape(-1), scale_mode="fresh"
+                writer_effective, pts.reshape(-1), scale_mode="fresh"
             )
             return NVFP4Tensor(
                 packed, scale, 16, torch.bfloat16, per_tensor_scale=pts
@@ -604,8 +623,12 @@ def test_merge_aware_train_then_merge_forward_identity():
         w2_merged = merge(w2d, A2, B2, s2, pts2)
 
         # the reloaded merged weight IS the snapped training operand
-        assert torch.equal(w1_merged, _merge_aware_wfq(w1d, A1, B1, s1, pts1))
-        assert torch.equal(w2_merged, _merge_aware_wfq(w2d, A2, B2, s2, pts2))
+        snapped_w1 = _merge_aware_wfq(w1d, A1, B1, s1, pts1)
+        snapped_w2 = _merge_aware_wfq(w2d, A2, B2, s2, pts2)
+        assert snapped_w1.dtype == w1d.dtype
+        assert snapped_w2.dtype == w2d.dtype
+        assert torch.equal(w1_merged, snapped_w1)
+        assert torch.equal(w2_merged, snapped_w2)
 
         y_merged = fwd(None, None, w1_merged, w2_merged, ma=False)
 
@@ -673,3 +696,154 @@ def test_fake_quant_triton_bitwise_vs_reference():
             assert torch.equal(actual, expected), (
                 f"single-level ties mismatch ({dtype})"
             )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA + Triton required")
+@pytest.mark.parametrize("r", [3, 4, 8])
+def test_bf16_grouped_merge_aware_triton_matches_actual_expert_writer_after_update(
+    monkeypatch, r
+):
+    pytest.importorskip("torchao")
+    from axolotl.cli.utils.lora_merge import _build_peft_layer_and_get_delta
+    from axolotl.integrations.kernels.libs.sonicmoe import triton_nvfp4
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+        _merge_aware_wfq,
+    )
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+        quantize_nvfp4_merge,
+    )
+
+    if not triton_nvfp4.triton_available():
+        pytest.skip("Triton unavailable")
+
+    torch.manual_seed(913)
+    device = torch.device("cuda")
+    E, H, I, T = 2, 128, 64, 9  # noqa: E741
+    s1, s2 = 0.75, 1.25
+    offsets = _rand_offsets(E, T, device=device)
+    w1 = torch.randn(E, 2 * I, H, device=device, dtype=torch.bfloat16) * 0.02
+    w2 = torch.randn(E, H, I, device=device, dtype=torch.bfloat16) * 0.02
+    A1, B1 = _make_lora(E, 2 * I, H, r, torch.bfloat16)
+    A2, B2 = _make_lora(E, H, I, r, torch.bfloat16)
+    A1, B1, A2, B2 = (
+        item.detach().to(device).requires_grad_() for item in (A1, B1, A2, B2)
+    )
+    x = torch.randn(T, H, device=device, dtype=torch.bfloat16, requires_grad=True)
+    pts = torch.tensor([1.125, 1.25], device=device).view(E, 1, 1)
+    calls = []
+    original_triton = triton_nvfp4.fake_quant_nvfp4_triton
+
+    def record_triton(weight, per_tensor_scale=None, *, inplace=False):
+        calls.append((weight.dtype, inplace))
+        return original_triton(weight, per_tensor_scale, inplace=inplace)
+
+    monkeypatch.setattr(triton_nvfp4, "fake_quant_nvfp4_triton", record_triton)
+    grouped_calls = []
+    original_grouped_mm = torch._grouped_mm
+
+    def record_grouped_mm(*args, **kwargs):
+        grouped_calls.append(
+            tuple(arg.shape for arg in args if isinstance(arg, torch.Tensor))
+        )
+        return original_grouped_mm(*args, **kwargs)
+
+    monkeypatch.setattr(torch, "_grouped_mm", record_grouped_mm)
+
+    def writer_snapped(base, a, b, scaling):
+        delta = _build_peft_layer_and_get_delta(
+            a.detach(),
+            b.detach(),
+            {"r": r, "lora_alpha": scaling * r},
+            base.detach(),
+            is_param_wrapper=True,
+            canonical_fp32=True,
+        )
+        writer_effective = (base.float() + delta.float()).to(base.dtype)
+        packed, scale = quantize_nvfp4_merge(
+            writer_effective, pts.reshape(-1), scale_mode="fresh"
+        )
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+        return NVFP4Tensor(
+            packed, scale, 16, torch.bfloat16, per_tensor_scale=pts
+        ).dequantize(torch.bfloat16)
+
+    for base, a, b, scaling in ((w1, A1, B1, s1), (w2, A2, B2, s2)):
+        snapped = _merge_aware_wfq(base, a, b, scaling, pts)
+        assert snapped.dtype == torch.bfloat16
+        assert torch.equal(snapped, writer_snapped(base, a, b, scaling))
+
+    optimizer = torch.optim.SGD([A1, B1, A2, B2], lr=0.02)
+    trained = grouped_expert_mlp_lora(
+        x,
+        offsets,
+        w1,
+        None,
+        w2,
+        None,
+        (A1, B1),
+        (A2, B2),
+        act="silu",
+        backend="torch",
+        concat=True,
+        scaling1=s1,
+        scaling2=s2,
+        merge_aware1=True,
+        ma_pts1=pts,
+        merge_aware2=True,
+        ma_pts2=pts,
+    )
+    trained.float().square().mean().backward()
+    assert all(
+        item.grad is not None and torch.isfinite(item.grad).all()
+        for item in (A1, B1, A2, B2)
+    )
+    optimizer.step()
+    optimizer.zero_grad()
+
+    with torch.no_grad():
+        trained = grouped_expert_mlp_lora(
+            x.detach(),
+            offsets,
+            w1,
+            None,
+            w2,
+            None,
+            (A1, B1),
+            (A2, B2),
+            act="silu",
+            backend="torch",
+            concat=True,
+            scaling1=s1,
+            scaling2=s2,
+            merge_aware1=True,
+            ma_pts1=pts,
+            merge_aware2=True,
+            ma_pts2=pts,
+        )
+        merged = grouped_expert_mlp_lora(
+            x.detach(),
+            offsets,
+            writer_snapped(w1, A1, B1, s1),
+            None,
+            writer_snapped(w2, A2, B2, s2),
+            None,
+            None,
+            None,
+            act="silu",
+            backend="torch",
+            concat=True,
+            scaling1=s1,
+            scaling2=s2,
+        )
+    assert calls and all(
+        dtype == torch.bfloat16 and inplace for dtype, inplace in calls
+    )
+    rank_grouped_calls = [
+        shapes for shapes in grouped_calls if any(shape[-1] == r for shape in shapes)
+    ]
+    if r % 8 == 0:
+        assert rank_grouped_calls
+    else:
+        assert not rank_grouped_calls
+    assert torch.equal(trained, merged)

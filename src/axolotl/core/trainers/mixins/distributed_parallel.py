@@ -105,6 +105,40 @@ class DistributedParallelMixin(Trainer):
             )
         return clip_grad_norm_local_shards_(parameters, self.args.max_grad_norm)
 
+    def _get_grad_norm(self, model, grad_norm=None):
+        if grad_norm is not None:
+            return super()._get_grad_norm(model, grad_norm)
+        from torch.distributed.fsdp import CPUOffloadPolicy
+
+        plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
+        parameters = list(model.parameters())
+        if not isinstance(getattr(plugin, "cpu_offload", None), CPUOffloadPolicy):
+            return super()._get_grad_norm(model, grad_norm)
+        from axolotl.utils.gradient_clipping import (
+            ep_local_parameter_ids,
+            get_grad_norm_ep_local_shards_,
+            get_grad_norm_local_shards_,
+            has_cpu_offloaded_dtensor_parameters,
+        )
+
+        if not has_cpu_offloaded_dtensor_parameters(parameters):
+            return super()._get_grad_norm(model, grad_norm)
+        self.accelerator.unscale_gradients()
+        parallelism = getattr(self.accelerator, "parallelism_config", None)
+        if getattr(parallelism, "ep_enabled", False):
+            return get_grad_norm_ep_local_shards_(
+                parameters,
+                ep_local_parameters=ep_local_parameter_ids(model),
+                global_mesh=getattr(
+                    self.accelerator,
+                    "torch_device_mesh",
+                    getattr(
+                        getattr(self.accelerator, "state", None), "device_mesh", None
+                    ),
+                ),
+            )
+        return get_grad_norm_local_shards_(parameters)
+
     def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
         from axolotl.monkeypatch.torchao_deepspeed import (
             native_nvfp4_zero3_peft_state_dict,

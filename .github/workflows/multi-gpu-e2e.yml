@@ -12,6 +12,7 @@ on:
       - "cicd/multigpu.py"
       - "cicd/multigpu.sh"
       - "cicd/nf4.sh"
+      - "cicd/nvfp4.sh"
       - "cicd/Dockerfile*.jinja"
       - "src/axolotl/loaders/**.py"
       - "src/axolotl/utils/nf4.py"
@@ -21,6 +22,7 @@ on:
       - "src/axolotl/monkeypatch/bnb_large_tensors.py"
       - "src/axolotl/monkeypatch/moe_quant.py"
       - "src/axolotl/monkeypatch/peft/**.py"
+      - "src/axolotl/monkeypatch/torchao*.py"
       - "src/axolotl/cli/merge_lora.py"
       - "src/axolotl/cli/utils/lora_merge.py"
       - "src/axolotl/integrations/kernels/libs/scattermoe_lora/**.py"
@@ -71,6 +73,14 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
+            pytorch: 2.13.0
+            axolotl_extras:
+            num_gpus: 2
+            gpu_type: B200
+            test_suite: nvfp4
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
             pytorch: 2.14.0
             axolotl_extras:
             num_gpus: 2
@@ -105,6 +115,7 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=${{ matrix.gpu_type || 'H100' }}" >> $GITHUB_ENV
           echo "MULTIGPU_TEST_SUITE=${{ matrix.test_suite }}" >> $GITHUB_ENV
           echo "NF4_TEST_STACK=${{ matrix.nf4_test_stack }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV

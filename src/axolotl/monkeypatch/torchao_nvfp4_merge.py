@@ -112,10 +112,8 @@ def quantize_native_effective_weight(base_weight, lora_a, lora_b, scaling):
     """Encode ``dequant(base) + scaling * (B @ A)`` with the base's native recipe."""
     recipe = capture_native_nvfp4_recipe(base_weight)
     with torch.autocast(device_type=lora_a.device.type, enabled=False):
-        delta = (lora_b @ lora_a) * scaling
-        effective = (base_weight.dequantize().float() + delta.float()).to(
-            recipe.orig_dtype
-        )
+        delta = (lora_b.float() @ lora_a.float()) * scaling
+        effective = (base_weight.dequantize().float() + delta).to(recipe.orig_dtype)
     return recipe.quantize(effective)
 
 

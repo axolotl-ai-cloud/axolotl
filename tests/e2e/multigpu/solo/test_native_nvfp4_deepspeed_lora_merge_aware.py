@@ -10,7 +10,14 @@ import pytest
 import torch
 
 
+def _require_dynamic_nvfp4():
+    if any(torch.cuda.get_device_capability(index)[0] < 10 for index in range(2)):
+        pytest.skip("dynamic NVFP4 requires two SM100+ GPUs")
+
+
 def _run_worker(tmp_path, stage, dynamic, *, opt_out=False):
+    if dynamic:
+        _require_dynamic_nvfp4()
     pytest.importorskip("deepspeed")
     try:
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor

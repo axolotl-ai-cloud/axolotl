@@ -193,9 +193,9 @@ def _merge_aware_tp_forward(module, layout: str, process_group):
         local_base = base.weight.to_local()
         lora_input = self._cast_input_dtype(x, lora_a.dtype)
         effective = (
-            local_base.dequantize(lora_a.dtype)
-            + (lora_b @ lora_a) * self.scaling[adapter]
-        )
+            local_base.dequantize().float()
+            + (lora_b.float() @ lora_a.float()) * self.scaling[adapter]
+        ).to(lora_a.dtype)
         from axolotl.monkeypatch.torchao_nvfp4_merge import (
             quantize_native_effective_weight,
         )

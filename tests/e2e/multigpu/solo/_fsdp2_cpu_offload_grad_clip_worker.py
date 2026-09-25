@@ -8,7 +8,10 @@ import torch.distributed as dist
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.tensor import DTensor, Replicate, Shard
 
-from axolotl.utils.gradient_clipping import clip_grad_norm_local_shards_
+from axolotl.utils.gradient_clipping import (
+    clip_grad_norm_local_shards_,
+    get_grad_norm_local_shards_,
+)
 
 
 def _cpu_local_dtensor(local, mesh, shape):
@@ -49,6 +52,21 @@ def main():
     ]
 
     reference = torch.tensor((3**2 + 4**2 + 12**2 + 8**2 + 5**2 + 6**2) ** 0.5)
+    before_telemetry = [
+        parameter.grad.to_local().clone()
+        if isinstance(parameter.grad, DTensor)
+        else parameter.grad.clone()
+        for parameter in parameters
+    ]
+    telemetry = get_grad_norm_local_shards_(parameters)
+    torch.testing.assert_close(telemetry.cpu(), reference)
+    for parameter, before in zip(parameters, before_telemetry, strict=True):
+        actual = (
+            parameter.grad.to_local()
+            if isinstance(parameter.grad, DTensor)
+            else parameter.grad
+        )
+        torch.testing.assert_close(actual, before)
     norm = clip_grad_norm_local_shards_(parameters, reference.item() / 2)
     torch.testing.assert_close(norm.cpu(), reference)
     for parameter in parameters:
@@ -63,6 +81,50 @@ def main():
     torch.testing.assert_close(empty_shard.to_local(), expected_empty)
     torch.testing.assert_close(replica.to_local(), torch.tensor([2.5]))
     torch.testing.assert_close(plain, torch.tensor([3.0]))
+
+    for norm_type in (2.0, float("inf")):
+
+        def parameter(local, gradient):
+            value = _cpu_local_dtensor(torch.zeros_like(local), mesh, (2,))
+            result = torch.nn.Parameter(value)
+            if gradient is not None:
+                result.grad = _cpu_local_dtensor(gradient, mesh, (2,))
+            return result
+
+        before = parameter(
+            torch.tensor([0.0]), torch.tensor([3.0 if rank == 0 else 4.0])
+        )
+        missing = parameter(
+            torch.tensor([0.0]), None if rank == 0 else torch.tensor([5.0])
+        )
+        after = parameter(
+            torch.tensor([0.0]), torch.tensor([6.0]) if rank == 0 else None
+        )
+        parameters = [before, missing, after]
+        pointers = [
+            parameter.to_local().untyped_storage().data_ptr()
+            for parameter in parameters
+        ]
+        expected = torch.tensor(86.0).sqrt() if norm_type == 2.0 else torch.tensor(6.0)
+        norm = clip_grad_norm_local_shards_(parameters, expected.item() / 2, norm_type)
+        torch.testing.assert_close(norm.cpu(), expected)
+        coefficient = expected / 2 / (expected + 1e-6)
+        expected_before = torch.tensor([3.0 if rank == 0 else 4.0]) * coefficient
+        torch.testing.assert_close(before.grad.to_local(), expected_before)
+        if rank == 0:
+            assert missing.grad is None
+            torch.testing.assert_close(
+                after.grad.to_local(), torch.tensor([6.0]) * coefficient
+            )
+        else:
+            torch.testing.assert_close(
+                missing.grad.to_local(), torch.tensor([5.0]) * coefficient
+            )
+            assert after.grad is None
+        assert pointers == [
+            parameter.to_local().untyped_storage().data_ptr()
+            for parameter in parameters
+        ]
 
     inf_shard = _cpu_local_dtensor(
         torch.tensor([8.0]) if rank == 0 else torch.empty(0), mesh, (1,)
