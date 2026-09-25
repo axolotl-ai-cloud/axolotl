@@ -7,7 +7,7 @@ from collections.abc import Iterable
 
 import torch
 import torch.distributed as dist
-from torch.distributed.tensor import DTensor, Partial, Shard
+from torch.distributed.tensor import DTensor, Partial, Replicate, Shard
 
 
 def _local_gradient(gradient):
@@ -89,6 +89,136 @@ def clip_grad_norm_local_shards_(
         total = total.pow(1.0 / norm_type)
     coefficient = (float(max_norm) / (total + 1e-6)).clamp(max=1.0)
     for gradient in gradients:
+        local = _local_gradient(gradient)
+        local.detach().mul_(coefficient.to(device=local.device))
+    return total.to(first_local.device)
+
+
+def ep_local_parameter_ids(model: torch.nn.Module) -> set[int]:
+    """Return trainable parameters whose identity is local to an EP rank."""
+    parameters: set[int] = set()
+    for module in model.modules():
+        base = getattr(module, "num_local_experts", None)
+        global_count = getattr(module, "num_experts_global", None)
+        if getattr(module, "_ep_lora_sharded", False) or (
+            base is not None and global_count is not None and base < global_count
+        ):
+            parameters.update(id(parameter) for parameter in module.parameters())
+    return parameters
+
+
+def _mesh_covered_axes(mesh, global_mesh) -> set[str]:
+    if global_mesh is None:
+        return set(mesh.mesh_dim_names or ())
+    names = global_mesh.mesh_dim_names or ()
+    covered = set()
+    for mesh_axis in range(mesh.ndim):
+        ranks = dist.get_process_group_ranks(mesh.get_group(mesh_axis))
+        coordinates = [(global_mesh.mesh == rank).nonzero()[0] for rank in ranks]
+        for axis, name in enumerate(names):
+            if len({int(coordinate[axis]) for coordinate in coordinates}) > 1:
+                covered.add(name)
+    return covered
+
+
+def _owns_omitted_mesh_axes(mesh, global_mesh) -> bool:
+    if global_mesh is None:
+        return True
+    coordinate = global_mesh.get_coordinate()
+    if coordinate is None:
+        return False
+    covered = _mesh_covered_axes(mesh, global_mesh)
+    return all(
+        name in covered or coordinate[axis] == 0
+        for axis, name in enumerate(global_mesh.mesh_dim_names or ())
+    )
+
+
+def _is_ep_plain_owner(global_mesh) -> bool:
+    if global_mesh is None:
+        return True
+    coordinate = global_mesh.get_coordinate()
+    if coordinate is None:
+        return False
+    return all(
+        name == "ep" or coordinate[axis] == 0
+        for axis, name in enumerate(global_mesh.mesh_dim_names or ())
+    )
+
+
+def _owns_dtensor_local_piece(
+    gradient: DTensor, *, ep_local: bool, global_mesh
+) -> bool:
+    coordinate = gradient.device_mesh.get_coordinate()
+    if coordinate is None or any(
+        isinstance(placement, Replicate) and coordinate[axis] != 0
+        for axis, placement in enumerate(gradient.placements)
+    ):
+        return False
+    return ep_local or _owns_omitted_mesh_axes(gradient.device_mesh, global_mesh)
+
+
+def clip_grad_norm_ep_local_shards_(
+    parameters: Iterable[torch.Tensor],
+    max_norm: float,
+    norm_type: float = 2.0,
+    *,
+    ep_local_parameters: set[int],
+    global_mesh=None,
+) -> torch.Tensor:
+    """Clip an EP/FSDP model by one ownership-filtered global gradient norm."""
+    parameters = list(parameters)
+    pairs = [
+        (parameter, parameter.grad)
+        for parameter in parameters
+        if parameter.grad is not None
+    ]
+    norm_type = float(norm_type)
+    if norm_type <= 0 or math.isnan(norm_type):
+        raise ValueError(f"norm_type must be positive or inf, got {norm_type}")
+    for _, gradient in pairs:
+        if isinstance(gradient, DTensor) and any(
+            isinstance(placement, Partial) for placement in gradient.placements
+        ):
+            raise NotImplementedError(
+                "EP CPU-offloaded DTensor gradient clipping does not support Partial placements"
+            )
+
+    first_local = _local_gradient(pairs[0][1]) if pairs else torch.zeros(())
+    accumulator = torch.zeros((), dtype=torch.float32, device=first_local.device)
+    is_inf = math.isinf(norm_type)
+    for parameter, gradient in pairs:
+        owns_piece = (
+            _owns_dtensor_local_piece(
+                gradient,
+                ep_local=id(parameter) in ep_local_parameters,
+                global_mesh=global_mesh,
+            )
+            if isinstance(gradient, DTensor)
+            else id(parameter) in ep_local_parameters
+            and _is_ep_plain_owner(global_mesh)
+            or id(parameter) not in ep_local_parameters
+            and (
+                not (dist.is_available() and dist.is_initialized())
+                or dist.get_rank() == 0
+            )
+        )
+        if not owns_piece:
+            continue
+        value = _local_gradient(gradient).detach().to(torch.float32).abs()
+        if is_inf:
+            accumulator = torch.maximum(
+                accumulator, value.max() if value.numel() else value.new_zeros(())
+            )
+        else:
+            accumulator = accumulator + value.pow(norm_type).sum()
+
+    reduction = dist.ReduceOp.MAX if is_inf else dist.ReduceOp.SUM
+    total = _all_reduce_scalar(accumulator, reduction)
+    if not is_inf:
+        total = total.pow(1.0 / norm_type)
+    coefficient = (float(max_norm) / (total + 1e-6)).clamp(max=1.0)
+    for _, gradient in pairs:
         local = _local_gradient(gradient)
         local.detach().mul_(coefficient.to(device=local.device))
     return total.to(first_local.device)

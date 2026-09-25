@@ -79,7 +79,9 @@ class DistributedParallelMixin(Trainer):
             return super()._clip_grad_norm(model)
 
         from axolotl.utils.gradient_clipping import (
+            clip_grad_norm_ep_local_shards_,
             clip_grad_norm_local_shards_,
+            ep_local_parameter_ids,
             has_cpu_offloaded_dtensor_gradients,
         )
 
@@ -87,6 +89,20 @@ class DistributedParallelMixin(Trainer):
         if not has_cpu_offloaded_dtensor_gradients(parameters):
             return super()._clip_grad_norm(model)
         self.accelerator.unscale_gradients()
+        parallelism = getattr(self.accelerator, "parallelism_config", None)
+        if getattr(parallelism, "ep_enabled", False):
+            return clip_grad_norm_ep_local_shards_(
+                parameters,
+                self.args.max_grad_norm,
+                ep_local_parameters=ep_local_parameter_ids(model),
+                global_mesh=getattr(
+                    self.accelerator,
+                    "torch_device_mesh",
+                    getattr(
+                        getattr(self.accelerator, "state", None), "device_mesh", None
+                    ),
+                ),
+            )
         return clip_grad_norm_local_shards_(parameters, self.args.max_grad_norm)
 
     def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
