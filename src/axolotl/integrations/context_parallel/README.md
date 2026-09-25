@@ -57,8 +57,10 @@ also tests USP attention outputs and q/k/v gradients on four CPU ranks; GPU USP
 coverage remains hardware-dependent.
 
 An opt-in 16-process CPU test (`pytest -m slow tests/integrations/test_context_parallel_mesh.py::test_ringmaster_nd_cpu_parity`)
-uses Torch 2.13+, Accelerate mesh construction, real tensor-parallel linear layers,
-and FSDP2/HSDP. It compares dense and packed attention outputs, parameter gradients,
+uses Torch 2.13+, Axolotl's patched Accelerate mesh configuration and FSDP2
+preparation, real tensor-parallel linear layers, and FSDP2/HSDP. It exercises
+Axolotl's token counting and Transformers' loss scaling with token averaging
+enabled and disabled, including unequal supervised-token counts across DP groups. It compares dense and packed attention outputs, parameter gradients,
 and an SGD update against an unsharded reference, with different batches per DP
 group and non-contiguous CP groups. The layouts are DP=2 × CP=4 × TP=2
 (with Ring=2 × Ulysses=2) and DP-replicate=2 × DP-shard=2 × CP=2 × TP=2.

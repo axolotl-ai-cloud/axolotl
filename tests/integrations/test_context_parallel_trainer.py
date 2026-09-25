@@ -189,7 +189,7 @@ def test_forward_only_ring_rejected_before_setup(monkeypatch):
     setup.assert_not_called()
 
 
-@pytest.mark.parametrize("average, expected", [(True, 5), (False, 1.25)])
+@pytest.mark.parametrize("average, expected", [(True, 5), (False, 2.5)])
 def test_token_count_with_tensor_and_context_parallelism(average, expected):
     trainer = _trainer(average)
     trainer.accelerator.parallelism_config = ParallelismConfig(cp_size=2, tp_size=2)
@@ -197,3 +197,28 @@ def test_token_count_with_tensor_and_context_parallelism(average, expected):
     configure_trainer(trainer)
     batches = [{"labels": torch.tensor([[1, 2, 3, 4, 5, 6]])}]
     assert trainer._get_num_items_in_batch(batches, "cpu").item() == expected
+
+
+def test_ulysses_rejects_degree_exceeding_tp_local_heads(monkeypatch):
+    import ringmaster as rm
+
+    from axolotl.integrations.context_parallel import (
+        ContextParallelConfig,
+        ContextParallelPlugin,
+    )
+
+    setup = Mock()
+    monkeypatch.setattr(rm, "setup", setup)
+    cfg = SimpleNamespace(
+        context_parallel=ContextParallelConfig(size=4, backend="ulysses"),
+        attn_implementation="sdpa",
+    )
+    trainer = SimpleNamespace(
+        model=SimpleNamespace(config=SimpleNamespace(num_key_value_heads=8)),
+        accelerator=SimpleNamespace(
+            parallelism_config=ParallelismConfig(cp_size=4, tp_size=4)
+        ),
+    )
+    with pytest.raises(ValueError, match="num_kv_heads"):
+        ContextParallelPlugin().post_trainer_create(cfg, trainer)
+    setup.assert_not_called()

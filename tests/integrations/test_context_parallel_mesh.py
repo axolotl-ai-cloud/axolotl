@@ -82,4 +82,4 @@ def test_ringmaster_nd_cpu_parity():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.count("PASS ND rank=") == 64
+    assert result.stdout.count("PASS ND rank=") == 128

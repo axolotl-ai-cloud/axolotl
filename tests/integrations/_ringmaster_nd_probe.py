@@ -1,26 +1,31 @@
 """CPU numerical parity for Accelerate meshes with TP, FSDP2, and Ringmaster."""
 
 import copy
+from itertools import product
+from types import SimpleNamespace
 
 import ringmaster as rm
 import torch
 import torch.distributed as dist
-from accelerate import ParallelismConfig
+from accelerate import FullyShardedDataParallelPlugin, ParallelismConfig
 from ringmaster.config import RotateMethod
 from ringmaster.ring.kernels import math_block
 from ringmaster.shard import varlen_meta
 from ringmaster.strategies.ulysses import make_ulysses_attention
 from ringmaster.strategies.usp import make_usp_attention
 from torch import nn
-from torch.distributed.fsdp import fully_shard
 from torch.distributed.tensor import Shard
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     RowwiseParallel,
     parallelize_module,
 )
+from transformers import Trainer
 
 from axolotl.integrations.context_parallel.mesh import RingmasterMesh
+from axolotl.integrations.context_parallel.trainer import configure_trainer
+from axolotl.monkeypatch.accelerate.fsdp2 import fsdp2_prepare_model
+from axolotl.monkeypatch.accelerate.parallelism_config import patch_parallelism_config
 
 
 class Attention(nn.Module):
@@ -32,7 +37,7 @@ class Attention(nn.Module):
         self.out = nn.Linear(16, 16, bias=False)
         self.attention = None
 
-    def forward(self, x, lengths):
+    def forward(self, x, lengths, labels=None, num_items_in_batch=None):
         q, k, v = [
             layer(x).unflatten(-1, (-1, 2)) for layer in (self.q, self.k, self.v)
         ]
@@ -60,7 +65,20 @@ class Attention(nn.Module):
                 parts.append(part)
                 start += length
             y = torch.cat(parts, dim=1)
-        return self.out(y.flatten(-2))
+        output = self.out(y.flatten(-2))
+        if labels is not None:
+            return {
+                "loss": (output.square().sum(-1) * labels.ne(-100)).sum()
+                / num_items_in_batch,
+                "logits": output,
+            }
+        return output
+
+
+def gather(count):
+    counts = [torch.empty_like(count) for _ in range(dist.get_world_size())]
+    dist.all_gather(counts, count)
+    return torch.stack(counts)
 
 
 def check(hsdp):
@@ -93,7 +111,7 @@ def check(hsdp):
     cp_rank = dist.get_rank(original_groups["cp"])
     dp_rank = dist.get_rank(original_groups["dp"])
     dp_size = pc.dp_replicate_size * pc.dp_shard_size
-    for packed in (False, True):
+    for packed, average in product((False, True), repeat=2):
         torch.manual_seed(42)
         reference = Attention().double()
         model = copy.deepcopy(reference)
@@ -112,32 +130,78 @@ def check(hsdp):
             if hsdp
             else make_usp_attention("math", "math", RotateMethod.ALLGATHER)
         )
-        fully_shard(model, mesh=mesh[pc.fsdp_dim_names])
+        accelerator = SimpleNamespace(
+            device=torch.device("cpu"),
+            is_main_process=dist.get_rank() == 0,
+            num_processes=dist.get_world_size(),
+            parallelism_config=pc,
+            gather=gather,
+            state=SimpleNamespace(
+                device_mesh=mesh,
+                parallelism_config=pc,
+                fsdp_plugin=FullyShardedDataParallelPlugin(
+                    fsdp_version=2, cpu_ram_efficient_loading=False
+                ),
+            ),
+        )
+        model = fsdp2_prepare_model(accelerator, model)
+        trainer = SimpleNamespace(
+            accelerator=accelerator,
+            model_accepts_loss_kwargs=True,
+            compute_loss_func=None,
+            label_smoother=None,
+            _loss_shifts_labels=False,
+            args=SimpleNamespace(average_tokens_across_devices=average, n_gpu=0),
+        )
+        restore = configure_trainer(trainer)
         expected_optimizer = torch.optim.SGD(reference.parameters(), lr=0.03)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.03)
         expected_output = None
         local_input = None
         local_lengths = None
+        local_labels = None
         for sample in range(dp_size):
             torch.manual_seed(100 + sample)
             x = torch.randn(1, 16, 16, dtype=torch.float64)
             lengths = [3 + sample, 5, 8 - sample] if packed else [16]
             expected = reference(x, lengths)
-            (expected.square().sum() / dp_size).backward()
+            labels = torch.ones(1, 16, dtype=torch.long)
+            labels[:, : sample + 1] = -100
+            denominator = (
+                sum(15 - index for index in range(dp_size))
+                if average
+                else (15 - sample) * dp_size
+            )
+            (
+                (expected.square().sum(-1) * labels.ne(-100)).sum() / denominator
+            ).backward()
             if sample == dp_rank:
                 expected_output = expected.detach()
                 local_input = x
                 local_lengths = lengths
+                local_labels = labels
         positions = torch.cat(
             [torch.arange(length) for length in local_lengths]
         ).unsqueeze(0)
         runtime.varlen = varlen_meta(positions, 16) if packed else None
         chunk = 16 // pc.cp_size
         sl = slice(cp_rank * chunk, (cp_rank + 1) * chunk)
-        actual = model(local_input[:, sl].contiguous(), local_lengths)
-        torch.testing.assert_close(actual, expected_output[:, sl], atol=1e-6, rtol=1e-5)
-        # FSDP averages across CP as well as DP; each CP rank contributes distinct tokens.
-        (actual.square().sum() * pc.cp_size).backward()
+        count = trainer._get_num_items_in_batch([{"labels": local_labels}], "cpu")
+        loss, outputs = Trainer.compute_loss(
+            trainer,
+            model,
+            {
+                "x": local_input[:, sl].contiguous(),
+                "lengths": local_lengths,
+                "labels": local_labels[:, sl],
+            },
+            return_outputs=True,
+            num_items_in_batch=count,
+        )
+        torch.testing.assert_close(
+            outputs["logits"], expected_output[:, sl], atol=1e-6, rtol=1e-5
+        )
+        loss.backward()
         for name, parameter in model.named_parameters():
             torch.testing.assert_close(
                 parameter.grad.full_tensor(),
@@ -154,11 +218,16 @@ def check(hsdp):
                 atol=1e-6,
                 rtol=1e-5,
             )
-        print(f"PASS ND rank={dist.get_rank()} hsdp={hsdp} packed={packed}", flush=True)
+        restore()
+        print(
+            f"PASS ND rank={dist.get_rank()} hsdp={hsdp} packed={packed} average={average}",
+            flush=True,
+        )
     rm.teardown()
 
 
 if __name__ == "__main__":
+    patch_parallelism_config()
     dist.init_process_group("gloo")
     try:
         check(False)

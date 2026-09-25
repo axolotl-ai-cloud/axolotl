@@ -38,7 +38,7 @@ def _num_items(self, batch_samples, device):
         count = self.accelerator.gather(count).sum() / pc.non_data_parallel_size
     else:
         # CP gradients are averaged even when token averaging across DP is disabled.
-        count = count / pc.non_data_parallel_size
+        count = count / pc.cp_size
     return count.clamp_min(1e-8)
 
 

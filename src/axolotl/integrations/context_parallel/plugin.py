@@ -108,7 +108,9 @@ class ContextParallelPlugin(BasePlugin):
             models.append(ref_model)
 
         inner_attn = self._resolve_inner_attn(cfg)
-        num_kv_heads = self._num_kv_heads(models[0])
+        parallelism = getattr(trainer.accelerator, "parallelism_config", None)
+        tp_size = getattr(parallelism, "tp_size", 1) or 1
+        num_kv_heads = self._num_kv_heads(models[0], tp_size=tp_size)
         device_mesh = getattr(trainer.accelerator, "torch_device_mesh", None)
 
         from ringmaster.mesh import intra_node_size
@@ -330,7 +332,7 @@ class ContextParallelPlugin(BasePlugin):
         return "sdpa"
 
     @staticmethod
-    def _num_kv_heads(model) -> int | None:
+    def _num_kv_heads(model, *, tp_size=1) -> int | None:
         config = getattr(model, "config", None)
         if config is None:
             return None
@@ -338,9 +340,14 @@ class ContextParallelPlugin(BasePlugin):
             text_config = config.get_text_config()
         else:
             text_config = getattr(config, "text_config", config)
-        return getattr(text_config, "num_key_value_heads", None) or getattr(
+        heads = getattr(text_config, "num_key_value_heads", None) or getattr(
             text_config, "num_attention_heads", None
         )
+        if heads is None:
+            return None
+        if heads % tp_size and tp_size % heads:
+            raise ValueError("KV heads must divide or be divisible by the TP size")
+        return max(1, heads // tp_size)
 
     @staticmethod
     def _strip_logits_to_keep_pre_hook(module, args, kwargs):

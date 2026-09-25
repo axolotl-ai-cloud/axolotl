@@ -282,3 +282,18 @@ def test_no_plugins_without_builtins(min_base_cfg, monkeypatch):
     plugin_set_cfg(cfg)
     merge.assert_not_called()
     assert not cfg.plugins
+
+
+@pytest.mark.parametrize("heads,tp,local", [(8, 4, 2), (8, 2, 4), (2, 4, 1), (8, 1, 8)])
+def test_tp_local_heads_drive_ulysses_selection(heads, tp, local):
+    from types import SimpleNamespace
+
+    rm = pytest.importorskip("ringmaster")
+
+    model = SimpleNamespace(config=SimpleNamespace(num_key_value_heads=heads))
+    actual = ContextParallelPlugin._num_kv_heads(model, tp_size=tp)
+    assert actual == local
+    config = rm.RingmasterConfig(size=4)
+    config.normalize(num_kv_heads=actual, intra_node_size=4)
+    assert config.ulysses_size <= local
+    assert local % config.ulysses_size == 0
