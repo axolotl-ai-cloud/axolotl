@@ -249,3 +249,86 @@ def test_distributed_save_model_uses_cached_validity_without_collectives(
         assert "nvfp4_merge_aware" not in config
     else:
         assert config["nvfp4_merge_aware"] == metadata
+
+
+def test_fsdp_captures_recipe_before_layout_normalization():
+    from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
+        normalize_dense_nvfp4_scales,
+    )
+    from axolotl.monkeypatch.torchao_nvfp4_merge_metadata import (
+        build_native_merge_aware_metadata,
+    )
+
+    model = _model()
+    original = build_native_merge_aware_metadata(
+        {"q_proj.weight": model["q_proj"].base_layer.weight}, 0
+    )
+    persistence.prepare_sharded_native_metadata(model)
+    normalize_dense_nvfp4_scales(model)
+    assert model._axolotl_native_nvfp4_metadata == original
+
+
+def test_fsdp_recipe_receiver_never_reads_meta_weights(monkeypatch):
+    model = nn.Module()
+    metadata = {"backend": "native_torchao", "targets": {"q_proj.weight": "recipe"}}
+    monkeypatch.setattr(persistence.torch.distributed, "is_initialized", lambda: True)
+    monkeypatch.setattr(persistence.torch.distributed, "get_rank", lambda: 1)
+    monkeypatch.setattr(
+        model, "named_modules", lambda: pytest.fail("read peer meta weights")
+    )
+
+    def broadcast(payload, src):
+        assert src == 0
+        payload[0] = {"metadata": metadata}
+
+    monkeypatch.setattr(
+        persistence.torch.distributed, "broadcast_object_list", broadcast
+    )
+    persistence.prepare_sharded_native_metadata(model)
+    assert model._axolotl_native_nvfp4_metadata == metadata
+
+
+def test_fsdp_recipe_failure_is_broadcast_without_a_guarantee(monkeypatch):
+    model = _model()
+    monkeypatch.setattr(persistence.torch.distributed, "is_initialized", lambda: True)
+    monkeypatch.setattr(persistence.torch.distributed, "get_rank", lambda: 0)
+    messages = []
+
+    def fail_capture(*_args, **_kwargs):
+        raise RuntimeError("unreadable recipe")
+
+    def broadcast(payload, src):
+        assert src == 0
+        messages.append(payload[0])
+
+    monkeypatch.setattr(persistence, "build_native_merge_aware_metadata", fail_capture)
+    monkeypatch.setattr(
+        persistence.torch.distributed, "broadcast_object_list", broadcast
+    )
+    persistence.prepare_sharded_native_metadata(model)
+    assert messages == [{"error": "unreadable recipe"}]
+    assert model._axolotl_native_nvfp4_metadata is None
+    assert not model._axolotl_native_nvfp4_metadata_valid
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_fsdp_final_adapter_save_persists_cached_native_metadata(
+    monkeypatch, tmp_path, valid
+):
+    from axolotl.integrations.expert_parallel import shard
+
+    metadata = {"backend": "native_torchao", "targets": {"q_proj.weight": "recipe"}}
+    model = _AdapterSavingModel(metadata, valid)
+
+    def save_adapter(target, output):
+        target.save_pretrained(output)
+        return True
+
+    monkeypatch.setattr(shard, "save_fsdp2_lora_adapter", save_adapter)
+    monkeypatch.setattr(persistence.torch.distributed, "is_initialized", lambda: False)
+    monkeypatch.setenv("RANK", "0")
+    save_trained_model(
+        _save_cfg(tmp_path), SimpleNamespace(is_fsdp_enabled=True), model
+    )
+    saved = json.loads((tmp_path / "adapter_config.json").read_text())
+    assert saved.get("nvfp4_merge_aware") == (metadata if valid else None)

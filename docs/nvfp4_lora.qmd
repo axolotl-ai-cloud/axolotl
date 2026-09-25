@@ -51,9 +51,19 @@ gather complete adapter factors before writing the PEFT checkpoint. FSDP2 static
 dense LoRA materializes the frozen base and adapter factors through their owning
 module forwards. Two-rank projection tests cover independently sharded base/A/B
 modules, including CPU shard offload, gradients, one optimizer update and merged
-quantized-weight parity. Full Trainer checkpoint/resume qualification for this
-merge-aware FSDP2 path remains separate. Native static forwards apply quantization
-from the first forward; the scheduled warmup below applies to the ModelOpt path.
+quantized-weight parity. Full two-rank Trainer tests also cover normal loading,
+CPU-RAM-efficient loading, and CPU shard offload: adapter checkpoints resume with
+matching optimizer state and schedules, and format-preserving merged exports
+match the trained model's inference. CPU-offloaded gradients stay on CPU during
+clipping; adapter saves gather temporary copies without gathering the frozen base.
+
+Static native dense LoRA also supports DeepSpeed ZeRO-1/2/3. Merge-aware forwards
+are installed after DeepSpeed attaches its parameter-materialization hooks, and
+adapter checkpoints retain the original quantizer recipe. Two-rank tests cover
+forward and gradient parity, optimizer updates and quantized export; a full
+ZeRO-3 Trainer test covers fresh resume and merged-native inference. Native static
+forwards apply quantization from the first forward; the scheduled warmup below
+applies to the ModelOpt path.
 
 Native dynamic activation quantization is qualified for unsharded dense native TorchAO
 merge-aware LoRA on SM100+ hardware. Its forward uses a quantized effective weight and

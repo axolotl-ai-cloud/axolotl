@@ -484,6 +484,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     from axolotl.monkeypatch.accelerate.fsdp2_quantized import model_has_nvfp4_params
 
+    if getattr(model, "_axolotl_native_nvfp4_metadata_requested", False):
+        from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+            prepare_sharded_native_metadata,
+        )
+
+        prepare_sharded_native_metadata(model)
+
     if model_has_nvfp4_params(model):
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
             normalize_dense_nvfp4_scales,
