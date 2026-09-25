@@ -9,7 +9,29 @@ import pytest
 import torch
 
 
-@pytest.mark.parametrize("dynamic_activation", [False, True])
+def _dynamic_nvfp4_supported():
+    return (
+        torch.cuda.is_available()
+        and torch.cuda.device_count() >= 2
+        and all(
+            torch.cuda.get_device_capability(device) >= (10, 0) for device in range(2)
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "dynamic_activation",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.skipif(
+                not _dynamic_nvfp4_supported(),
+                reason="dynamic NVFP4 requires two SM100+ GPUs",
+            ),
+        ),
+    ],
+)
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="two CUDA devices required")
 def test_native_nvfp4_lora_deepspeed_zero3_checkpoint_resume(
     tmp_path, dynamic_activation

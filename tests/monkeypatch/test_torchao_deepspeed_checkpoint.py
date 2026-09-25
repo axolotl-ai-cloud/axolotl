@@ -247,3 +247,45 @@ def test_unconverted_native_engine_rejects_zero3_fetch_on_restore():
         Engine(model).load_module_state_dict(
             {"module": {"adapter": torch.ones(2)}}, fetch_z3_params=True
         )
+
+
+def test_marked_engine_forwards_zero3_load_keywords():
+    from axolotl.monkeypatch.torchao_deepspeed import (
+        _install_native_nvfp4_broadcast_filter,
+    )
+
+    calls = []
+
+    class Engine:
+        def __init__(self, model):
+            self.module = model
+
+        def _broadcast_model(self):
+            pass
+
+        def load_module_state_dict(
+            self,
+            checkpoint,
+            strict=True,
+            custom_load_fn=None,
+            fetch_z3_params=False,
+            **kwargs,
+        ):
+            calls.append((strict, fetch_z3_params, kwargs))
+            return custom_load_fn(src=checkpoint["module"], dst=self.module)
+
+    model = _model()
+    model.base = torch.nn.Parameter(torch.ones(2, dtype=torch.uint8), False)
+    model._axolotl_native_nvfp4_deepspeed_names = {"base"}
+    model._axolotl_native_nvfp4_zero3_components = {"base"}
+    _install_native_nvfp4_broadcast_filter(Engine)
+
+    Engine(model).load_module_state_dict(
+        {"module": {"adapter": torch.ones(2)}},
+        strict=False,
+        fetch_z3_params=True,
+        z3_params_to_fetch=[model.adapter],
+    )
+
+    assert calls == [(False, True, {"z3_params_to_fetch": [model.adapter]})]
+    assert torch.equal(model.adapter, torch.ones(2))

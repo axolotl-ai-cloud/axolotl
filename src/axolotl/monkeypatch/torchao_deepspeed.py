@@ -42,7 +42,11 @@ def _install_native_nvfp4_broadcast_filter(engine_class=None) -> None:
 
         engine_class = DeepSpeedEngine
     DeepSpeedEngine = engine_class
+    from axolotl.monkeypatch.torchao_deepspeed_compat import (
+        install_native_nvfp4_debug_compat,
+    )
 
+    install_native_nvfp4_debug_compat(DeepSpeedEngine)
     if getattr(DeepSpeedEngine, "_axolotl_native_nvfp4_broadcast_filter", False):
         return
     original_broadcast_model = DeepSpeedEngine._broadcast_model
@@ -105,7 +109,13 @@ def _install_native_nvfp4_broadcast_filter(engine_class=None) -> None:
         original_load = DeepSpeedEngine.load_module_state_dict
 
         def load_module_state_dict(
-            self, checkpoint, strict=True, custom_load_fn=None, fetch_z3_params=False
+            self,
+            checkpoint,
+            strict=True,
+            custom_load_fn=None,
+            fetch_z3_params=False,
+            *args,
+            **kwargs,
         ):
             native_names = _native_deepspeed_names(self.module)
             if native_names:
@@ -136,9 +146,11 @@ def _install_native_nvfp4_broadcast_filter(engine_class=None) -> None:
             return original_load(
                 self,
                 checkpoint,
-                strict=strict,
-                custom_load_fn=custom_load_fn,
-                fetch_z3_params=fetch_z3_params,
+                strict,
+                custom_load_fn,
+                fetch_z3_params,
+                *args,
+                **kwargs,
             )
 
         DeepSpeedEngine.load_module_state_dict = load_module_state_dict
