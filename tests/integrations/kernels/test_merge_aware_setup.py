@@ -213,3 +213,36 @@ def test_builder_registers_deepspeed_post_engine_callback():
     assert len(callbacks) == 1
     assert isinstance(callbacks[0], DeepSpeedNativeNVFP4MergeAwareCallback)
     assert callbacks[0].trainer is trainer
+
+
+@pytest.mark.parametrize("backend", [None, "FSDP", "DeepSpeed"])
+@pytest.mark.parametrize("requested", [True, False])
+def test_dynamic_input_setup_is_independent_of_merge_aware_opt_out(backend, requested):
+    from types import SimpleNamespace
+
+    from axolotl.integrations.kernels.merge_aware_setup import (
+        configure_native_merge_aware,
+    )
+
+    native = type("NVFP4Tensor", (), {"act_quant_kwargs": object()})()
+    model = SimpleNamespace(parameters=lambda: iter([native]))
+    cfg = DictDefault(adapter="lora", nvfp4_merge_aware=requested)
+    with (
+        patch(
+            "axolotl.monkeypatch.torchao_nvfp4_dynamic_ste.install_native_nvfp4_dynamic_input_stes"
+        ) as install_inputs,
+        patch(
+            "axolotl.monkeypatch.torchao_nvfp4_merge.install_native_nvfp4_merge_aware_lora_linears",
+            return_value=1,
+        ),
+        patch("axolotl.integrations.kernels.merge_aware_setup.LOG.warning") as warning,
+    ):
+        configure_native_merge_aware(cfg, model, sharded_backend=backend)
+    if backend is None:
+        install_inputs.assert_called_once_with(model)
+    else:
+        install_inputs.assert_not_called()
+        assert model._axolotl_native_nvfp4_dynamic_input_gradients_requested == backend
+    if not requested:
+        assert model._axolotl_merge_aware_unsupported
+        assert "explicitly disabled" in warning.call_args.args[1]

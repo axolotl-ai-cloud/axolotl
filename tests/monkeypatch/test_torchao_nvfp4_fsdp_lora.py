@@ -57,8 +57,11 @@ def _native_lora(dynamic=False):
     source = torch.randn(32, 32, dtype=torch.bfloat16)
     kwargs = {}
     if dynamic:
-        kwargs["act_quant_kwargs"] = QuantizeTensorToNVFP4Kwargs(
-            use_dynamic_per_tensor_scale=True
+        kwargs.update(
+            act_per_tensor_scale=torch.tensor(1.25),
+            act_quant_kwargs=QuantizeTensorToNVFP4Kwargs(
+                use_dynamic_per_tensor_scale=True
+            ),
         )
     native = NVFP4Tensor.to_nvfp4(
         source,
@@ -97,16 +100,23 @@ def test_installer_materializes_base_and_factors_through_child_forwards():
     assert result.shape == (3, 32)
 
 
-def test_installer_marks_dynamic_native_weight_unsupported():
+def test_installer_supports_dynamic_native_weight_and_preserves_recipe():
     from axolotl.monkeypatch.torchao_nvfp4_fsdp_lora import (
         install_fsdp_native_nvfp4_merge_aware_lora_linears,
     )
 
     model, lora = _native_lora(dynamic=True)
+    native = lora.get_base_layer().weight
 
-    assert install_fsdp_native_nvfp4_merge_aware_lora_linears(model) == 0
-    assert model._axolotl_merge_aware_unsupported
-    assert lora._axolotl_merge_aware_unsupported
+    assert install_fsdp_native_nvfp4_merge_aware_lora_linears(model) == 1
+    materialized = _materialize_weight(lora.get_base_layer())
+    assert materialized.act_quant_kwargs == native.act_quant_kwargs
+    torch.testing.assert_close(materialized.per_tensor_scale, native.per_tensor_scale)
+    torch.testing.assert_close(
+        materialized.act_per_tensor_scale, native.act_per_tensor_scale
+    )
+    assert not getattr(model, "_axolotl_merge_aware_unsupported", False)
+    assert not getattr(lora, "_axolotl_merge_aware_unsupported", False)
 
 
 def test_fsdp_installer_owner_does_not_register_the_model_as_a_child():

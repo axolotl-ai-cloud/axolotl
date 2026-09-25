@@ -1,4 +1,4 @@
-"""FSDP2-safe static native-NVFP4 LoRA merge-aware forwards."""
+"""FSDP2-safe native-NVFP4 LoRA merge-aware forwards."""
 
 from __future__ import annotations
 
@@ -54,7 +54,6 @@ def _fsdp_native_forward(self, x, *args, **kwargs):
         len(adapters) != 1
         or base.bias is not None
         or getattr(base_weight, "ndim", 0) != 2
-        or getattr(base_weight, "act_quant_kwargs", None) is not None
     ):
         return self._axolotl_fsdp_native_orig_forward(x, *args, **kwargs)
     adapter = adapters[0]
@@ -69,7 +68,7 @@ def _fsdp_native_forward(self, x, *args, **kwargs):
 
 
 def install_fsdp_native_nvfp4_merge_aware_lora_linears(model: torch.nn.Module) -> int:
-    """Install static native NVFP4 forwards after FSDP2 wraps all children."""
+    """Install native NVFP4 forwards after FSDP2 wraps all children."""
     from peft.tuners.lora.layer import Linear as LoraLinear
 
     installed = 0
@@ -95,8 +94,6 @@ def install_fsdp_native_nvfp4_merge_aware_lora_linears(model: torch.nn.Module) -
             reason = "base bias"
         elif getattr(native_weight, "ndim", 0) != 2:
             reason = "non-matrix base weight"
-        elif getattr(native_weight, "act_quant_kwargs", None) is not None:
-            reason = "dynamic activation quantization"
         module._axolotl_native_nvfp4_owner = weakref.ref(model)
         module._axolotl_native_nvfp4_name = name
         if reason:

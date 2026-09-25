@@ -212,8 +212,18 @@ class TrainerBuilderBase(abc.ABC):
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
         callbacks = []
-        if getattr(
-            self.model, "_axolotl_native_nvfp4_deepspeed_merge_aware_requested", False
+        if (
+            getattr(
+                self.model,
+                "_axolotl_native_nvfp4_deepspeed_merge_aware_requested",
+                False,
+            )
+            or getattr(
+                self.model,
+                "_axolotl_native_nvfp4_dynamic_input_gradients_requested",
+                None,
+            )
+            == "DeepSpeed"
         ):
             from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
                 DeepSpeedNativeNVFP4MergeAwareCallback,

@@ -26,7 +26,7 @@ from axolotl.monkeypatch.torchao_nvfp4_merge import (
 )
 
 WORLD_SIZE = 2
-WIDTH = 16
+WIDTH = 128 if os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1" else 16
 RANK = 4
 LOCAL_BATCH = 2
 LEARNING_RATE = 0.01
@@ -52,15 +52,34 @@ def _fixture_tensor(shape, start, scale):
 
 
 def _initial_fixture():
-    base = _fixture_tensor((WIDTH, WIDTH), -128, 1 / 512)
-    lora_a = _fixture_tensor((RANK, WIDTH), 1, 1 / 97)
-    lora_b = _fixture_tensor((WIDTH, RANK), -31, 1 / 89)
-    inputs = _fixture_tensor((WORLD_SIZE * LOCAL_BATCH, WIDTH), 11, 1 / 53)
+    if os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1":
+        base = _fixture_tensor((WIDTH, WIDTH), -128, 1 / 4096)
+        lora_a = _fixture_tensor((RANK, WIDTH), 1, 1 / 4096)
+        lora_b = _fixture_tensor((WIDTH, RANK), -31, 1 / 4096)
+        inputs = _fixture_tensor((WORLD_SIZE * LOCAL_BATCH, WIDTH), 11, 1 / 4096)
+    else:
+        base = _fixture_tensor((WIDTH, WIDTH), -128, 1 / 512)
+        lora_a = _fixture_tensor((RANK, WIDTH), 1, 1 / 97)
+        lora_b = _fixture_tensor((WIDTH, RANK), -31, 1 / 89)
+        inputs = _fixture_tensor((WORLD_SIZE * LOCAL_BATCH, WIDTH), 11, 1 / 53)
     return base, lora_a, lora_b, inputs
 
 
 def _native_base(dense):
-    base = NVFP4Tensor.to_nvfp4(dense.to("cuda"))
+    kwargs = {}
+    if os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1":
+        from torchao.prototype.mx_formats.nvfp4_tensor import (
+            QuantizeTensorToNVFP4Kwargs,
+        )
+
+        kwargs = {
+            "per_tensor_scale": torch.tensor(1.125, device="cuda"),
+            "act_per_tensor_scale": torch.tensor(1.25, device="cuda"),
+            "act_quant_kwargs": QuantizeTensorToNVFP4Kwargs(
+                use_dynamic_per_tensor_scale=True
+            ),
+        }
+    base = NVFP4Tensor.to_nvfp4(dense.to("cuda"), **kwargs)
     normalize_dense_nvfp4_scales(base)
     return base
 
@@ -121,21 +140,46 @@ def _serial_reference():
     base = _native_base(base_dense)
     lora_a = initial_a.cuda().requires_grad_(True)
     lora_b = initial_b.cuda().requires_grad_(True)
-    serial_inputs = inputs.cuda().requires_grad_(True)
-    outputs = native_nvfp4_merge_aware_linear(
-        serial_inputs, None, base, lora_a, lora_b, 1.0
-    )
+    dynamic = os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1"
+    if dynamic:
+        serial_inputs = [
+            value.cuda().requires_grad_(True)
+            for value in inputs.chunk(WORLD_SIZE, dim=0)
+        ]
+        outputs = torch.cat(
+            [
+                native_nvfp4_merge_aware_linear(value, None, base, lora_a, lora_b, 1.0)
+                for value in serial_inputs
+            ]
+        )
+    else:
+        serial_inputs = inputs.cuda().requires_grad_(True)
+        outputs = native_nvfp4_merge_aware_linear(
+            serial_inputs, None, base, lora_a, lora_b, 1.0
+        )
     outputs.square().mean().backward()
     with torch.no_grad():
         lora_a.add_(lora_a.grad, alpha=-LEARNING_RATE)
         lora_b.add_(lora_b.grad, alpha=-LEARNING_RATE)
-        updated_outputs = native_nvfp4_merge_aware_linear(
-            serial_inputs.detach(), None, base, lora_a, lora_b, 1.0
-        )
+        if dynamic:
+            updated_outputs = torch.cat(
+                [
+                    native_nvfp4_merge_aware_linear(
+                        value.detach(), None, base, lora_a, lora_b, 1.0
+                    )
+                    for value in serial_inputs
+                ]
+            )
+            input_grads = torch.cat([value.grad for value in serial_inputs])
+        else:
+            updated_outputs = native_nvfp4_merge_aware_linear(
+                serial_inputs.detach(), None, base, lora_a, lora_b, 1.0
+            )
+            input_grads = serial_inputs.grad
         effective = quantize_native_effective_weight(base, lora_a, lora_b, 1.0)
     return {
         "outputs": outputs.detach().cpu(),
-        "input_grads": serial_inputs.grad.detach().cpu(),
+        "input_grads": input_grads.detach().cpu(),
         "grads": {"A": lora_a.grad.detach().cpu(), "B": lora_b.grad.detach().cpu()},
         "updated_outputs": updated_outputs.detach().cpu(),
         "updated_factors": {"A": lora_a.detach().cpu(), "B": lora_b.detach().cpu()},
@@ -332,6 +376,10 @@ def main():
         )
 
         def verify_updated_output_and_encoding():
+            if os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1":
+                assert live_base[0].act_quant_kwargs.use_dynamic_per_tensor_scale
+                assert live_base[0].per_tensor_scale is not None
+                assert live_base[0].act_per_tensor_scale is not None
             updated_output = model(local_inputs.detach())
             _assert_close(
                 updated_output,

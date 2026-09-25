@@ -23,11 +23,12 @@ from axolotl.monkeypatch.torchao_nvfp4_merge import (
 )
 from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
     capture_static_native_metadata,
+    prepare_sharded_native_metadata,
     write_native_metadata,
 )
 
 
-def _dynamic_model():
+def _dynamic_model(use_dynamic_per_tensor_scale=False):
     source = torch.randn(32, 32, dtype=torch.bfloat16)
     base = nn.Linear(32, 32, bias=False, dtype=torch.bfloat16)
     base.weight = nn.Parameter(
@@ -37,7 +38,7 @@ def _dynamic_model():
             act_per_tensor_scale=per_tensor_amax_to_scale(torch.tensor(4.0)),
             is_swizzled_scales=True,
             act_quant_kwargs=QuantizeTensorToNVFP4Kwargs(
-                use_dynamic_per_tensor_scale=False,
+                use_dynamic_per_tensor_scale=use_dynamic_per_tensor_scale,
                 is_swizzled_scales=True,
             ),
         ),
@@ -69,3 +70,26 @@ def test_dynamic_native_metadata_capture_and_adapter_export(tmp_path):
     config.write_text(json.dumps({"r": 2}))
     assert write_native_metadata(tmp_path, metadata)
     assert json.loads(config.read_text())["nvfp4_merge_aware"] == metadata
+
+
+@pytest.mark.parametrize("dynamic_scale", [False, True])
+def test_sharded_dynamic_metadata_preserves_original_recipe(dynamic_scale):
+    from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
+        normalize_dense_nvfp4_scales,
+    )
+    from axolotl.monkeypatch.torchao_nvfp4_merge_metadata import (
+        build_native_merge_aware_metadata,
+    )
+
+    model = _dynamic_model(dynamic_scale)
+    weight = model["q_proj"].get_base_layer().weight
+    original = build_native_merge_aware_metadata({"q_proj.weight": weight}, 0)
+    prepare_sharded_native_metadata(model)
+    normalize_dense_nvfp4_scales(model)
+
+    assert model._axolotl_native_nvfp4_metadata == original
+    normalized = model["q_proj"].get_base_layer().weight
+    assert normalized.act_quant_kwargs.use_dynamic_per_tensor_scale == dynamic_scale
+    torch.testing.assert_close(
+        normalized.act_per_tensor_scale, weight.act_per_tensor_scale
+    )

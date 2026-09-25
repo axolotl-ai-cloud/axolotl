@@ -782,6 +782,23 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 "were installed; continuing without merged-NVFP4 parity guarantee."
             )
 
+    if (
+        getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients_requested", None)
+        == "FSDP"
+    ):
+        from axolotl.monkeypatch.torchao_nvfp4_dynamic_ste import (
+            install_fsdp_native_nvfp4_dynamic_input_stes,
+        )
+
+        install_fsdp_native_nvfp4_dynamic_input_stes(model)
+        if not getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients", False):
+            model._axolotl_merge_aware_unsupported = True
+            LOG.warning(
+                "NVFP4 MERGE WARNING: dynamic native NVFP4 input-gradient coverage "
+                "is incomplete after FSDP2 wrapping; continuing without merged-NVFP4 "
+                "parity guarantee."
+            )
+
     return model
 
 

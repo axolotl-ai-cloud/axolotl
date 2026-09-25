@@ -96,24 +96,32 @@ def _make_base(path):
     from axolotl.utils.schemas.enums import TorchAOQuantDType
 
     torch.manual_seed(7)
+    dynamic = os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1"
+    hidden_size = 128 if dynamic else 32
     model = LlamaForCausalLM(
         LlamaConfig(
             vocab_size=32,
-            hidden_size=32,
-            intermediate_size=64,
+            hidden_size=hidden_size,
+            intermediate_size=hidden_size * 2,
             num_hidden_layers=1,
-            num_attention_heads=2,
-            num_key_value_heads=2,
+            num_attention_heads=hidden_size // 16,
+            num_key_value_heads=hidden_size // 16,
             pad_token_id=0,
         )
     ).bfloat16()
-    quantize_model(model, TorchAOQuantDType.nvfp4)
+    quantize_model(
+        model,
+        TorchAOQuantDType.nvfp4,
+        activation_dtype=(
+            TorchAOQuantDType.nvfp4
+            if os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1"
+            else None
+        ),
+    )
     save_quantized_model(model, path)
 
 
 def _model_with_lora(base, device):
-    from axolotl.monkeypatch.torchao_lora import enable_native_nvfp4_lora_training
-
     torch.manual_seed(19)
     model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.bfloat16).to(
         device
@@ -125,7 +133,6 @@ def _model_with_lora(base, device):
     for name, parameter in model.named_parameters():
         if "lora_" in name:
             parameter.data.normal_(mean=0.0, std=0.05)
-    assert enable_native_nvfp4_lora_training(model)
     return model
 
 
@@ -234,6 +241,17 @@ def _run_stage(stage, action):
 
 def _merge_aware_assertions(model, calls):
     lora = next(module for module in model.modules() if hasattr(module, "lora_A"))
+    if os.environ.get("NVFP4_FSDP2_DYNAMIC_ACTIVATION") == "1":
+        weight = lora.get_base_layer().weight
+        weight = getattr(weight, "_local_tensor", weight)
+        assert weight.act_quant_kwargs.use_dynamic_per_tensor_scale
+        assert model._axolotl_native_nvfp4_dynamic_input_gradients
+        non_target = next(
+            module
+            for name, module in model.named_modules()
+            if name.endswith("mlp.gate_proj")
+        )
+        assert hasattr(non_target, "_axolotl_dynamic_nvfp4_ste_orig_forward")
     assert hasattr(lora, "_axolotl_fsdp_native_orig_forward")
     assert lora.forward.__func__.__name__ == "_fsdp_native_forward"
     assert calls[0] > 0
@@ -335,6 +353,9 @@ def main():
         assert original_base.is_swizzled_scales
         cfg = _config(cpu_ram_efficient, cpu_offload)
         configure_native_merge_aware(cfg, model, sharded_backend="FSDP")
+        from axolotl.monkeypatch.torchao_lora import enable_native_nvfp4_lora_training
+
+        assert enable_native_nvfp4_lora_training(model)
         _request_payload_assertions(model)
 
         uninterrupted = [None]
@@ -376,6 +397,7 @@ def main():
         resumed = _model_with_lora(base, torch.device("cuda", local_rank))
         resumed_cfg = _config(cpu_ram_efficient, cpu_offload)
         configure_native_merge_aware(resumed_cfg, resumed, sharded_backend="FSDP")
+        assert enable_native_nvfp4_lora_training(resumed)
         _request_payload_assertions(resumed)
         resumed_trainer = [None]
 

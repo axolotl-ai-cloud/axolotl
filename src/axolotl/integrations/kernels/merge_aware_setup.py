@@ -35,12 +35,6 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
         type(parameter).__name__ == "NVFP4Tensor" for parameter in model.parameters()
     ):
         return
-    if cfg.get("adapter") == "multilora":
-        if cfg.get("nvfp4_merge_aware") is not False and getattr(
-            model, "_axolotl_multilora_native_merge_aware_managed", False
-        ):
-            return
-        sharded_backend = "multi-LoRA"
     fsdp_config = cfg.get("fsdp_config") or {}
     fsdp_version = (
         cfg.get("fsdp_version")
@@ -48,6 +42,29 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
         or fsdp_config.get("version")
         or 2
     )
+    if any(
+        type(parameter).__name__ == "NVFP4Tensor"
+        and getattr(parameter, "act_quant_kwargs", None) is not None
+        for parameter in model.parameters()
+    ):
+        if sharded_backend is None:
+            from axolotl.monkeypatch.torchao_nvfp4_dynamic_ste import (
+                install_native_nvfp4_dynamic_input_stes,
+            )
+
+            install_native_nvfp4_dynamic_input_stes(model)
+        elif sharded_backend == "DeepSpeed" or (
+            sharded_backend == "FSDP" and int(fsdp_version) == 2
+        ):
+            model._axolotl_native_nvfp4_dynamic_input_gradients_requested = (
+                sharded_backend
+            )
+    if cfg.get("adapter") == "multilora":
+        if cfg.get("nvfp4_merge_aware") is not False and getattr(
+            model, "_axolotl_multilora_native_merge_aware_managed", False
+        ):
+            return
+        sharded_backend = "multi-LoRA"
     if (
         sharded_backend == "FSDP"
         and int(fsdp_version) == 2
@@ -71,9 +88,9 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
         return
     if cfg.get("nvfp4_merge_aware") is False or sharded_backend:
         reason = (
-            f"native merge-aware integration with {sharded_backend} is not qualified"
-            if sharded_backend
-            else "merge-aware training is explicitly disabled"
+            "merge-aware training is explicitly disabled"
+            if cfg.get("nvfp4_merge_aware") is False
+            else f"native merge-aware integration with {sharded_backend} is not qualified"
         )
         LOG.warning(
             "NVFP4 MERGE WARNING: %s. Continuing with ordinary LoRA; "

@@ -1,4 +1,4 @@
-"""Two-rank DeepSpeed static native-NVFP4 merge-aware LoRA validation."""
+"""Two-rank DeepSpeed native-NVFP4 merge-aware LoRA validation."""
 
 import os
 import signal
@@ -10,12 +10,7 @@ import pytest
 import torch
 
 
-@pytest.mark.parametrize("stage", [1, 2, 3])
-@pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.device_count() < 2,
-    reason="two CUDA GPUs required",
-)
-def test_native_nvfp4_deepspeed_lora_merge_aware(tmp_path, stage):
+def _run_worker(tmp_path, stage, dynamic, *, opt_out=False):
     pytest.importorskip("deepspeed")
     try:
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
@@ -24,10 +19,12 @@ def test_native_nvfp4_deepspeed_lora_merge_aware(tmp_path, stage):
     if NVFP4Tensor is None:
         pytest.skip("TorchAO NVFP4 unavailable")
     worker = Path(__file__).with_name("_native_nvfp4_deepspeed_lora_merge_aware.py")
-    log_path = tmp_path / f"worker-zero{stage}.log"
+    log_path = tmp_path / f"worker-zero{stage}-optout{int(opt_out)}.log"
     env = os.environ | {
         "NATIVE_NVFP4_DEEPSPEED_LORA_TMP": str(tmp_path),
         "ZERO_STAGE": str(stage),
+        "NATIVE_NVFP4_DEEPSPEED_DYNAMIC": str(int(dynamic)),
+        "NATIVE_NVFP4_DEEPSPEED_OPT_OUT": str(int(opt_out)),
         "OMP_NUM_THREADS": "1",
     }
     with log_path.open("w") as log:
@@ -61,3 +58,22 @@ def test_native_nvfp4_deepspeed_lora_merge_aware(tmp_path, stage):
     assert not timed_out, output
     assert process.returncode == 0, output
     assert output.count("NATIVE_NVFP4_DEEPSPEED_LORA_MERGE_AWARE_PASS") == 2, output
+
+
+@pytest.mark.parametrize("stage", [1, 2, 3])
+@pytest.mark.parametrize("dynamic", [False, True])
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.cuda.device_count() < 2,
+    reason="two CUDA GPUs required",
+)
+def test_native_nvfp4_deepspeed_lora_merge_aware(tmp_path, stage, dynamic):
+    _run_worker(tmp_path, stage, dynamic)
+
+
+@pytest.mark.parametrize("stage", [1, 2])
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.cuda.device_count() < 2,
+    reason="two CUDA GPUs required",
+)
+def test_native_nvfp4_deepspeed_dynamic_lora_opt_out(tmp_path, stage):
+    _run_worker(tmp_path, stage, True, opt_out=True)

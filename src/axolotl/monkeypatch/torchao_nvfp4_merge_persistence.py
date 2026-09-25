@@ -102,7 +102,6 @@ def prepare_sharded_native_metadata(model):
                     len(adapters) != 1
                     or _native_merge_aware_reason(module, adapters)
                     or weight.ndim != 2
-                    or weight.act_quant_kwargs is not None
                 ):
                     continue
                 weights[_target_name(name)] = weight

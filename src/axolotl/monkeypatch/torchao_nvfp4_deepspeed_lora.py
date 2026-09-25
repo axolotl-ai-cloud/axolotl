@@ -1,4 +1,4 @@
-"""DeepSpeed-safe static native-NVFP4 LoRA merge-aware forwards."""
+"""DeepSpeed-safe native-NVFP4 LoRA merge-aware forwards."""
 
 from __future__ import annotations
 
@@ -91,8 +91,6 @@ def _deepspeed_native_forward(self, x, *args, **kwargs):
         reason = "base bias"
     elif recipe[0] != 2:
         reason = "non-matrix base weight"
-    elif recipe[1] is not None:
-        reason = "dynamic activation quantization"
     else:
         reason = None
     if reason:
@@ -112,7 +110,7 @@ def _deepspeed_native_forward(self, x, *args, **kwargs):
 def install_deepspeed_native_nvfp4_merge_aware_lora_linears(
     model: torch.nn.Module,
 ) -> int:
-    """Install static native-NVFP4 PEFT forwards after DeepSpeed wraps children."""
+    """Install native-NVFP4 PEFT forwards after DeepSpeed wraps children."""
     from peft.tuners.lora.layer import Linear as LoraLinear
 
     installed = 0
@@ -138,8 +136,6 @@ def install_deepspeed_native_nvfp4_merge_aware_lora_linears(
             reason = "trainable native base"
         elif recipe[0] != 2:
             reason = "non-matrix base weight"
-        elif recipe[1] is not None:
-            reason = "dynamic activation quantization"
         module._axolotl_native_nvfp4_owner = weakref.ref(model)
         module._axolotl_native_nvfp4_name = name
         if reason:
@@ -171,8 +167,15 @@ def preserve_deepspeed_native_nvfp4_lora_forwards(model: torch.nn.Module) -> int
     return protected
 
 
+def _deepspeed_zero_stage(engine) -> int | None:
+    stage = getattr(engine, "zero_optimization_stage", None)
+    if callable(stage):
+        stage = stage()
+    return None if stage is None else int(stage)
+
+
 class DeepSpeedNativeNVFP4MergeAwareCallback(TrainerCallback):
-    """Install static native LoRA forwards after Accelerate creates DeepSpeed."""
+    """Install native LoRA and dynamic input-gradient forwards after DeepSpeed wraps."""
 
     def __init__(self, trainer):
         self.trainer = trainer
@@ -182,14 +185,57 @@ class DeepSpeedNativeNVFP4MergeAwareCallback(TrainerCallback):
         trainer = self.trainer
         engine = getattr(trainer, "model_wrapped", None)
         model = getattr(engine, "module", None)
-        if model is None or not getattr(
+        if model is None:
+            return control
+
+        dynamic_requested = (
+            getattr(
+                model,
+                "_axolotl_native_nvfp4_dynamic_input_gradients_requested",
+                None,
+            )
+            == "DeepSpeed"
+        )
+        if dynamic_requested:
+            from axolotl.monkeypatch.torchao_nvfp4_dynamic_ste import (
+                install_deepspeed_native_nvfp4_dynamic_input_stes,
+                native_nvfp4_dynamic_input_ste_preflight,
+                validate_native_nvfp4_dynamic_input_stes,
+            )
+
+            stage = _deepspeed_zero_stage(engine)
+            if stage in (0, 1, 2):
+                if native_nvfp4_dynamic_input_ste_preflight(model):
+                    install_deepspeed_native_nvfp4_dynamic_input_stes(model)
+                else:
+                    model._axolotl_native_nvfp4_dynamic_input_gradients = False
+                    _unsupported_native_merge_aware(
+                        model,
+                        "dynamic native input-gradient targets were not available after "
+                        "DeepSpeed engine preparation",
+                    )
+                    return control
+            elif stage != 3:
+                model._axolotl_native_nvfp4_dynamic_input_gradients = False
+                _unsupported_native_merge_aware(
+                    model,
+                    f"dynamic native input gradients are unsupported for ZeRO {stage}",
+                )
+                return control
+            if not validate_native_nvfp4_dynamic_input_stes(model):
+                _unsupported_native_merge_aware(
+                    model, "dynamic native input-gradient coverage is incomplete"
+                )
+                return control
+
+        if not getattr(
             model, "_axolotl_native_nvfp4_deepspeed_merge_aware_requested", False
         ):
             return control
         installed = install_deepspeed_native_nvfp4_merge_aware_lora_linears(model)
         if not installed:
             _unsupported_native_merge_aware(
-                model, "no supported static native LoRA projections"
+                model, "no supported native LoRA projections"
             )
         model._axolotl_native_nvfp4_deepspeed_merge_aware_installed = installed
         return control
