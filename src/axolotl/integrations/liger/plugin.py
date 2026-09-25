@@ -158,7 +158,12 @@ class LigerPlugin(BasePlugin):
                 "Cannot have both `liger_cross_entropy` and `liger_fused_linear_cross_entropy` set."
             )
 
-        if cfg.liger_use_token_scaling:
+        patch_fused_linear_cross_entropy = (
+            cfg.liger_fused_linear_cross_entropy
+            and getattr(cfg, "adapter", None) != "multilora"
+        )
+
+        if cfg.liger_use_token_scaling and getattr(cfg, "adapter", None) != "multilora":
             # Patch FLCE to set token_scaling=True for function and class API
             from liger_kernel.transformers import functional
             from liger_kernel.transformers.fused_linear_cross_entropy import (
@@ -214,9 +219,7 @@ class LigerPlugin(BasePlugin):
             if "cross_entropy" in liger_fn_sig.parameters:
                 kwargs["cross_entropy"] = cfg.liger_cross_entropy
             if "fused_linear_cross_entropy" in liger_fn_sig.parameters:
-                kwargs["fused_linear_cross_entropy"] = (
-                    cfg.liger_fused_linear_cross_entropy
-                )
+                kwargs["fused_linear_cross_entropy"] = patch_fused_linear_cross_entropy
             if "rms_norm" in liger_fn_sig.parameters:
                 kwargs["rms_norm"] = cfg.liger_rms_norm
             if "layer_norm" in liger_fn_sig.parameters:
@@ -227,6 +230,28 @@ class LigerPlugin(BasePlugin):
                 kwargs["swiglu"] = cfg.liger_glu_activation
             LOG.info(f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}")
             apply_liger_fn(**kwargs)
+        elif cfg.model_config_type == "glm4_moe_lite":
+            from .models.glm4_moe_lite import apply_liger_glm4_moe_lite
+
+            apply_liger_glm4_moe_lite(
+                rope=cfg.liger_rope,
+                rms_norm=cfg.liger_rms_norm,
+                glu_activation=cfg.liger_glu_activation,
+            )
+            if cfg.liger_cross_entropy:
+                from transformers.loss.loss_utils import nn as loss_nn
+
+                loss_nn.functional.cross_entropy = liger_cross_entropy
+            if cfg.liger_fused_linear_cross_entropy:
+                from .models.base import patch_lce_forward
+
+                patch_lce_forward(cfg.model_config_type)
+            LOG.info(
+                "Applied GLM-4 MoE Lite Liger kernels: rope=%s, rms_norm=%s, glu=%s",
+                cfg.liger_rope,
+                cfg.liger_rms_norm,
+                cfg.liger_glu_activation,
+            )
         elif cfg.model_config_type in ("mistral3", "ministral3"):
             # liger 0.8.0 has no mistral3/ministral3 entry, and its `ministral`
             # fn targets modeling_ministral, a module this arch does not use.
@@ -242,7 +267,7 @@ class LigerPlugin(BasePlugin):
                 from transformers.loss.loss_utils import nn
 
                 nn.functional.cross_entropy = liger_cross_entropy
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not implemented for the "
                     "Mistral3 multimodal wrapper. Skipping; use the "
@@ -265,7 +290,7 @@ class LigerPlugin(BasePlugin):
                 from transformers.loss.loss_utils import nn
 
                 nn.functional.cross_entropy = liger_cross_entropy
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 modeling_jamba.JambaForCausalLM.forward = jamba_lce_forward
         elif cfg.model_config_type == "deepseek_v2":
             from accelerate import init_empty_weights
@@ -293,7 +318,7 @@ class LigerPlugin(BasePlugin):
                 # We do not patch `nn.functional.cross_entropy` for DeepseekV2 as it still uses
                 # nn.CrossEntropyLoss in the forward method.
                 modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
         elif cfg.model_config_type == "qwen3_5":
             from axolotl.integrations.liger.models.qwen3_5 import (
@@ -302,7 +327,7 @@ class LigerPlugin(BasePlugin):
 
             apply_liger_kernel_to_qwen3_5(
                 cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                fused_linear_cross_entropy=patch_fused_linear_cross_entropy,
                 glu_activation=cfg.liger_glu_activation,
                 rms_norm=cfg.liger_rms_norm,
                 rms_norm_gated=getattr(cfg, "liger_rms_norm_gated", False),
@@ -315,7 +340,7 @@ class LigerPlugin(BasePlugin):
 
             apply_liger_kernel_to_qwen3_5_moe(
                 cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                fused_linear_cross_entropy=patch_fused_linear_cross_entropy,
                 glu_activation=cfg.liger_glu_activation,
                 rms_norm=cfg.liger_rms_norm,
                 rms_norm_gated=getattr(cfg, "liger_rms_norm_gated", False),
@@ -327,7 +352,7 @@ class LigerPlugin(BasePlugin):
             apply_liger_kernel_to_granite(
                 rope=cfg.liger_rope,
                 cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                fused_linear_cross_entropy=patch_fused_linear_cross_entropy,
                 rms_norm=cfg.liger_rms_norm,
                 swiglu=cfg.liger_glu_activation,
             )
@@ -375,7 +400,7 @@ class LigerPlugin(BasePlugin):
                 modeling_gemma4_unified.nn.LayerNorm = LigerLayerNorm
             if cfg.liger_cross_entropy:
                 modeling_gemma4_unified.nn.CrossEntropyLoss = LigerCrossEntropyLoss
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not compatible with "
                     "Gemma4Unified. Skipping."
@@ -408,7 +433,7 @@ class LigerPlugin(BasePlugin):
                 from transformers.loss.loss_utils import nn as loss_nn
 
                 loss_nn.functional.cross_entropy = liger_cross_entropy
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not implemented for "
                     "CohereCompass. Use cut_cross_entropy instead. Skipping."
@@ -474,7 +499,7 @@ class LigerPlugin(BasePlugin):
                     "MuseGlimmer computes its loss through self.loss_function, not "
                     "nn.CrossEntropyLoss, so the Liger swap would be a no-op. Skipping."
                 )
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not compatible with MuseGlimmer: "
                     "logits are scaled by output_multiplier and tanh-softcapped after "
@@ -485,7 +510,7 @@ class LigerPlugin(BasePlugin):
                 f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
                 f"rope={cfg.liger_rope}, layer_norm={cfg.liger_layer_norm} (vision tower)"
             )
-        elif cfg.liger_fused_linear_cross_entropy:
+        elif patch_fused_linear_cross_entropy:
             try:
                 from .models.base import patch_lce_forward
 

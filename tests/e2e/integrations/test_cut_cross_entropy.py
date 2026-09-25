@@ -2,7 +2,10 @@
 Simple end-to-end test for Cut Cross Entropy integration
 """
 
+from pathlib import Path
+
 import pytest
+from safetensors.torch import load_file
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
@@ -74,6 +77,7 @@ class TestCutCrossEntropyIntegration:
         # plugin args only merge into the schema once the plugin is registered
         prepare_plugins(cfg)
         cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
@@ -125,8 +129,9 @@ class TestCutCrossEntropyIntegration:
                 "seed": 42,
             }
         )
-        cfg = validate_config(cfg)
         prepare_plugins(cfg)
+        cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
@@ -160,8 +165,9 @@ class TestCutCrossEntropyIntegration:
                 attention_type: True,
             }
         )
-        cfg = validate_config(cfg)
         prepare_plugins(cfg)
+        cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
@@ -179,3 +185,30 @@ class TestCutCrossEntropyIntegration:
                 max_initial=2.2,
                 max_final=2.0,
             )
+
+    def test_llama_lora_lm_head_w_cce(self, min_cfg, temp_dir):
+        cfg = DictDefault(
+            min_cfg
+            | {
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.0,
+                "lora_target_modules": ["q_proj", "v_proj", "lm_head"],
+                "max_steps": 5,
+            }
+        )
+        prepare_plugins(cfg)
+        cfg = validate_config(cfg)
+        assert cfg.cut_cross_entropy
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+
+        # lora_B starts at zero, so a head adapter CCE never saw would be saved as all zeros.
+        adapter = load_file(str(Path(temp_dir) / "adapter_model.safetensors"))
+        lm_head_b = [v for k, v in adapter.items() if "lm_head" in k and "lora_B" in k]
+        assert lm_head_b, list(adapter)
+        assert all(t.float().abs().sum() > 0 for t in lm_head_b)

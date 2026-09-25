@@ -461,6 +461,17 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     fsdp2_plugin = accelerator.state.fsdp_plugin
 
+    from axolotl.monkeypatch.accelerate.fsdp2_quantized import model_has_nvfp4_params
+
+    if model_has_nvfp4_params(model):
+        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
+            normalize_dense_nvfp4_scales,
+            patch_nvfp4_fsdp,
+        )
+
+        normalize_dense_nvfp4_scales(model)
+        patch_nvfp4_fsdp()
+
     staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
     original_sd = (
         model.state_dict()
