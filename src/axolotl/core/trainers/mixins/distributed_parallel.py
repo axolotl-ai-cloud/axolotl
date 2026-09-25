@@ -74,7 +74,21 @@ class DistributedParallelMixin(Trainer):
                 self.model, collect_on_this_rank=self.args.should_save
             )
         if state_dict is None:
-            return super().save_model(output_dir, _internal_call)
+            metadata = getattr(self.model, "_axolotl_native_nvfp4_metadata", None)
+            result = super().save_model(output_dir, _internal_call)
+            if metadata and self.args.should_save:
+                from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                    clear_native_metadata,
+                    native_metadata_valid_for_save,
+                    write_native_metadata,
+                )
+
+                target = output_dir or self.args.output_dir
+                if native_metadata_valid_for_save(self.model):
+                    write_native_metadata(target, metadata)
+                else:
+                    clear_native_metadata(target)
+            return result
         output_dir = output_dir or self.args.output_dir
         error = None
         if self.args.should_save:

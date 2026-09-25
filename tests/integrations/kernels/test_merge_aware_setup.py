@@ -87,7 +87,11 @@ def test_native_setup_respects_opt_out_and_backend_limits(backend, requested):
         patch("axolotl.integrations.kernels.merge_aware_setup.LOG.warning") as warning,
     ):
         configure_native_merge_aware(cfg, model, sharded_backend=backend)
-    if backend or requested is False:
+    if backend == "FSDP" and requested is None:
+        install.assert_not_called()
+        warning.assert_not_called()
+        assert model._axolotl_native_nvfp4_merge_aware_requested
+    elif backend or requested is False:
         install.assert_not_called()
         assert model._axolotl_merge_aware_unsupported
         assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]
@@ -115,3 +119,23 @@ def test_native_setup_warns_when_no_merge_aware_forward_is_available(adapter):
         configure_native_merge_aware(DictDefault(adapter=adapter), model)
     assert model._axolotl_merge_aware_unsupported
     assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]
+
+
+@pytest.mark.parametrize("requested", [True, False])
+def test_native_multilora_ownership_preserves_explicit_opt_out(requested):
+    from types import SimpleNamespace
+
+    from axolotl.integrations.kernels.merge_aware_setup import (
+        configure_native_merge_aware,
+    )
+
+    model = SimpleNamespace(
+        parameters=lambda: iter([type("NVFP4Tensor", (), {})()]),
+        _axolotl_multilora_native_merge_aware_managed=True,
+    )
+    with patch("axolotl.integrations.kernels.merge_aware_setup.LOG.warning") as warning:
+        configure_native_merge_aware(
+            DictDefault(adapter="multilora", nvfp4_merge_aware=requested), model
+        )
+    assert warning.called is (not requested)
+    assert getattr(model, "_axolotl_merge_aware_unsupported", False) is (not requested)

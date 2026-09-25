@@ -114,6 +114,7 @@ def merge_native_nvfp4_shard(
     *,
     quantization_device: str | torch.device | None = None,
     dequant: bool = False,
+    merge_aware_metadata: dict | None = None,
 ) -> tuple[dict[str, torch.Tensor], dict[str, str], int]:
     """Merge native NVFP4 logical weights, optionally emitting dense weights.
 
@@ -154,6 +155,16 @@ def merge_native_nvfp4_shard(
         effective, did_merge = merge_dense_weight(weight.dequantize(), name)
         if not did_merge and not dequant:
             continue
+        if (
+            did_merge
+            and isinstance(merge_aware_metadata, dict)
+            and merge_aware_metadata.get("backend") == "native_torchao"
+        ):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_metadata import (
+                validate_native_merge_aware_target,
+            )
+
+            validate_native_merge_aware_target(merge_aware_metadata, name, weight)
         if dequant:
             result = {
                 key: value

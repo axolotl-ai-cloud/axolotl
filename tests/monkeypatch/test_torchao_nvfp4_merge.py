@@ -1,6 +1,7 @@
 """CPU coverage for native TorchAO NVFP4 merge-aware LoRA helpers."""
 
 import types
+import weakref
 
 import pytest
 import torch
@@ -142,6 +143,19 @@ def test_dynamic_native_weight_warns_and_falls_back():
     model, _ = _lora(_native_weight(dynamic=True))
     assert install_native_nvfp4_merge_aware_lora_linears(model) == 0
     assert model._axolotl_merge_aware_unsupported
+
+
+def test_installer_owner_does_not_register_the_model_as_a_child():
+    model, lora = _lora(_native_weight())
+
+    assert install_native_nvfp4_merge_aware_lora_linears(model) == 1
+
+    owner = lora._axolotl_native_nvfp4_owner
+    assert isinstance(owner, weakref.ReferenceType)
+    assert owner() is model
+    assert "_axolotl_native_nvfp4_owner" not in lora._modules
+    model.train()
+    assert model.state_dict()
 
 
 @pytest.mark.parametrize("unsupported", ["dropout", "bias", "variant"])

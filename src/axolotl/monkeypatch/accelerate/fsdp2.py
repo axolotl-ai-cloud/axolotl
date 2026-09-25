@@ -762,6 +762,19 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # removing the call above leads to extra memory usage as explained in the comment above
         if hasattr(model, "tie_weights"):
             model.tie_weights()
+
+    if getattr(model, "_axolotl_native_nvfp4_merge_aware_requested", False):
+        from axolotl.monkeypatch.torchao_nvfp4_fsdp_lora import (
+            install_fsdp_native_nvfp4_merge_aware_lora_linears,
+        )
+
+        if not install_fsdp_native_nvfp4_merge_aware_lora_linears(model):
+            model._axolotl_merge_aware_unsupported = True
+            LOG.warning(
+                "NVFP4 MERGE WARNING: no FSDP2-safe native merge-aware LoRA projections "
+                "were installed; continuing without merged-NVFP4 parity guarantee."
+            )
+
     return model
 
 

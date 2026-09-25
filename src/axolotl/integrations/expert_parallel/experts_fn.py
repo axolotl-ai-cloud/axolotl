@@ -146,6 +146,20 @@ def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
 
 
 def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
+    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+        _get_base_param,
+        _w1_name,
+        is_nvfp4_param,
+        scattermoe_experts_forward_ep,
+    )
+
+    w1 = _get_base_param(getattr(experts, _w1_name(experts)))
+    w2 = _get_base_param(experts.down_proj)
+    if is_nvfp4_param(w1) and is_nvfp4_param(w2):
+        return scattermoe_experts_forward_ep(
+            experts, recv_x, recv_topk_idx, recv_topk_weights
+        )
+
     from axolotl.integrations.kernels.libs.sonicmoe.experts import (
         sonicmoe_experts_forward_with_lora,
     )

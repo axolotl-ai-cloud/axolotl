@@ -36,7 +36,25 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
     ):
         return
     if cfg.get("adapter") == "multilora":
+        if cfg.get("nvfp4_merge_aware") is not False and getattr(
+            model, "_axolotl_multilora_native_merge_aware_managed", False
+        ):
+            return
         sharded_backend = "multi-LoRA"
+    fsdp_config = cfg.get("fsdp_config") or {}
+    fsdp_version = (
+        cfg.get("fsdp_version")
+        or fsdp_config.get("fsdp_version")
+        or fsdp_config.get("version")
+        or 2
+    )
+    if (
+        sharded_backend == "FSDP"
+        and int(fsdp_version) == 2
+        and cfg.get("nvfp4_merge_aware") is not False
+    ):
+        model._axolotl_native_nvfp4_merge_aware_requested = True
+        return
     if cfg.get("nvfp4_merge_aware") is False or sharded_backend:
         reason = (
             f"native merge-aware integration with {sharded_backend} is not qualified"
@@ -56,6 +74,14 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
 
     installed = install_native_nvfp4_merge_aware_lora_linears(model)
     if installed:
+        if not cfg.get("use_sonicmoe"):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                capture_static_native_metadata,
+            )
+
+            model._axolotl_native_nvfp4_metadata = capture_static_native_metadata(
+                model, cfg.get("nvfp4_merge_aware_start_step")
+            )
         LOG.info(
             "Enabled native NVFP4 merge-aware training on %d projections", installed
         )
