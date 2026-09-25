@@ -49,6 +49,33 @@ def _rebuild_nvfp4_like(
     )
 
 
+def _state_dict_entry(value, name, parameter_requires_grad, buffer_names):
+    if name in parameter_requires_grad:
+        return nn.Parameter(value, requires_grad=parameter_requires_grad[name])
+    if name in buffer_names:
+        return value
+    raise KeyError(f"state dict entry {name!r} is neither a parameter nor a buffer")
+
+
+def _restore_non_persistent_buffers(model, original_buffers, accelerator):
+    for fqn in sorted(original_buffers):
+        original = original_buffers[fqn]
+        if accelerator.is_main_process:
+            restored = original.to(accelerator.device)
+        else:
+            restored = torch.empty_like(original, device=accelerator.device)
+        dist.broadcast(restored, src=0)
+
+        if "." in fqn:
+            parent_fqn, local_buffer_name = fqn.rsplit(".", 1)
+            parent_module = model.get_submodule(parent_fqn)
+        else:
+            local_buffer_name = fqn
+            parent_module = model
+
+        parent_module.register_buffer(local_buffer_name, restored, persistent=False)
+
+
 def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp4_cls):
     """Scatter rank-0's full NVFP4Tensor expert param to each rank's shard.
 
@@ -194,6 +221,11 @@ def fsdp2_load_full_state_dict(
         return bool(_ep_tails) and ".experts." in name and name.endswith(_ep_tails)
 
     meta_sharded_sd = model.state_dict()
+    parameter_requires_grad = {
+        name: parameter.requires_grad
+        for name, parameter in model.named_parameters(remove_duplicate=False)
+    }
+    buffer_names = {name for name, _ in model.named_buffers(remove_duplicate=False)}
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
@@ -210,8 +242,8 @@ def fsdp2_load_full_state_dict(
             own = own.to(torch.device("cuda"))
             if offload_to_cpu:
                 own = own.cpu()
-            sharded_sd[param_name] = nn.Parameter(
-                own, requires_grad=sharded_meta_param.requires_grad
+            sharded_sd[param_name] = _state_dict_entry(
+                own, param_name, parameter_requires_grad, buffer_names
             )
             full_sd[param_name] = None
             continue
@@ -350,7 +382,9 @@ def fsdp2_load_full_state_dict(
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
 
-        sharded_sd[param_name] = nn.Parameter(sharded_param)
+        sharded_sd[param_name] = _state_dict_entry(
+            sharded_param, param_name, parameter_requires_grad, buffer_names
+        )
 
         del full_tensor
         full_sd[param_name] = None
@@ -589,7 +623,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model, recurse=True, fqns=True
         )
         original_non_persistent_buffers = copy.deepcopy(
-            {k: v for k, v in model.named_buffers() if k in non_persistent_buffer_fqns}
+            {
+                k: v
+                for k, v in model.named_buffers(remove_duplicate=False)
+                if k in non_persistent_buffer_fqns
+            }
         )
         # We move the model to meta device, as then sharding happens on meta device
         model = model.to(torch.device("meta"))
@@ -749,19 +787,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
-        for fqn, buffer_tensor in original_non_persistent_buffers.items():
-            buffer_tensor = buffer_tensor.to(accelerator.device)
-
-            if "." in fqn:
-                parent_fqn, local_buffer_name = fqn.rsplit(".", 1)
-                parent_module = model.get_submodule(parent_fqn)
-            else:
-                local_buffer_name = fqn
-                parent_module = model
-
-            parent_module.register_buffer(
-                local_buffer_name, buffer_tensor, persistent=False
-            )
+        _restore_non_persistent_buffers(
+            model, original_non_persistent_buffers, accelerator
+        )
 
         # We need to tie the weights again, as call to `load_full_state_dict` breaks the tie
         # Needs to be called both here and above

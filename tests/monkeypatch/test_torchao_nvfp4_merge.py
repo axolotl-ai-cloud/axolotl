@@ -90,15 +90,18 @@ def test_recipe_roundtrips_native_metadata(dynamic, supplied_scale):
 @pytest.mark.parametrize(
     "dynamic,supplied_scale", [(False, False), (True, False), (True, True)]
 )
-def test_effective_weight_uses_native_recipe(dynamic, supplied_scale):
+@pytest.mark.parametrize("adapter_dtype", [torch.bfloat16, torch.float32])
+def test_effective_weight_uses_native_recipe(dynamic, supplied_scale, adapter_dtype):
     weight = _native_weight(dynamic, supplied_scale)
-    a = torch.randn(R, IN, dtype=torch.float32)
-    b = torch.randn(OUT, R, dtype=torch.float32)
+    a = torch.randn(R, IN, dtype=torch.float32).to(adapter_dtype)
+    b = torch.randn(OUT, R, dtype=torch.float32).to(adapter_dtype)
     scaling = 1.25
     actual = quantize_native_effective_weight(weight, a, b, scaling)
     recipe = capture_native_nvfp4_recipe(weight)
     expected = recipe.quantize(
-        (weight.dequantize().float() + (b @ a * scaling).float()).to(weight.orig_dtype)
+        (weight.dequantize().float() + (b.float() @ a.float()) * scaling).to(
+            weight.orig_dtype
+        )
     )
 
     assert torch.equal(actual.qdata, expected.qdata)

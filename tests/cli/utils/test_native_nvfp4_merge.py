@@ -134,7 +134,11 @@ def test_native_writer_dequantizes_merged_and_untouched_weights():
 
 
 @pytest.mark.parametrize("dequant", [False, True])
-def test_merge_lora_sharded_efficient_matches_native_recipe(tmp_path, dequant):
+@pytest.mark.parametrize("factor_dtype", [torch.bfloat16, torch.float32])
+@pytest.mark.parametrize("merge_aware", [False, True])
+def test_merge_lora_sharded_efficient_matches_native_recipe(
+    tmp_path, dequant, factor_dtype, merge_aware
+):
     import json
 
     import safetensors
@@ -142,7 +146,7 @@ def test_merge_lora_sharded_efficient_matches_native_recipe(tmp_path, dequant):
 
     from axolotl.cli.utils.lora_merge import merge_lora_sharded_efficient
 
-    torch.manual_seed(91)
+    torch.manual_seed(3)
     base_dir = tmp_path / "base"
     adapter_dir = tmp_path / "adapter"
     output_dir = tmp_path / "merged"
@@ -152,6 +156,8 @@ def test_merge_lora_sharded_efficient_matches_native_recipe(tmp_path, dequant):
     weight = NVFP4Tensor.to_nvfp4(
         torch.randn(32, 32, dtype=torch.bfloat16), per_tensor_scale=torch.tensor(1.125)
     )
+    a = torch.randn(8, 32, dtype=factor_dtype) * 0.1
+    b = torch.randn(32, 8, dtype=factor_dtype) * 0.1
     flattened, metadata = flatten_tensor_state_dict(
         {
             key: weight,
@@ -162,8 +168,6 @@ def test_merge_lora_sharded_efficient_matches_native_recipe(tmp_path, dequant):
         flattened, base_dir / "model.safetensors", metadata=metadata
     )
     (base_dir / "config.json").write_text("{}")
-    a = torch.randn(8, 32, dtype=torch.float32) * 0.02
-    b = torch.randn(32, 8, dtype=torch.float32) * 0.02
     safetensors.torch.save_file(
         {
             f"base_model.model.{key[:-7]}.lora_A.weight": a,
@@ -171,10 +175,21 @@ def test_merge_lora_sharded_efficient_matches_native_recipe(tmp_path, dequant):
         },
         adapter_dir / "adapter_model.safetensors",
     )
-    (adapter_dir / "adapter_config.json").write_text(
-        json.dumps({"r": 8, "lora_alpha": 16, "peft_type": "LORA"})
-    )
+    config = {"r": 8, "lora_alpha": 16, "peft_type": "LORA"}
+    if merge_aware:
+        from axolotl.monkeypatch.torchao_nvfp4_merge_metadata import (
+            build_native_merge_aware_metadata,
+        )
 
+        config["nvfp4_merge_aware"] = build_native_merge_aware_metadata({key: weight})
+    (adapter_dir / "adapter_config.json").write_text(json.dumps(config))
+
+    if merge_aware and dequant:
+        with pytest.raises(ValueError, match="--dequant on a merge-aware adapter"):
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, output_dir, device="cpu", dequant=dequant
+            )
+        return
     merge_lora_sharded_efficient(
         base_dir, adapter_dir, output_dir, device="cpu", dequant=dequant
     )
@@ -183,7 +198,8 @@ def test_merge_lora_sharded_efficient_matches_native_recipe(tmp_path, dequant):
         result_tensors = {name: f.get_tensor(name) for name in f.keys()}
     rebuilt, leftover = unflatten_tensor_state_dict(result_tensors, result_metadata)
     assert not leftover
-    effective = (weight.dequantize().float() + 2 * (b @ a)).to(torch.bfloat16)
+    delta = b.float() @ a.float() if merge_aware else b @ a
+    effective = (weight.dequantize().float() + 2 * delta.float()).to(torch.bfloat16)
     if dequant:
         assert torch.equal(rebuilt[key], effective)
         assert not has_native_nvfp4_weights(result_metadata)
@@ -192,4 +208,17 @@ def test_merge_lora_sharded_efficient_matches_native_recipe(tmp_path, dequant):
     actual = rebuilt[key]
     assert torch.equal(actual.qdata, expected.qdata)
     assert torch.equal(actual.scale, expected.scale)
+    if merge_aware and factor_dtype == torch.bfloat16:
+        from axolotl.cli.utils.lora_merge import _build_peft_layer_and_get_delta
+
+        raw_delta = _build_peft_layer_and_get_delta(
+            a,
+            b,
+            {"r": 8, "lora_alpha": 16},
+            weight.dequantize(),
+        )
+        raw_expected = capture_native_nvfp4_recipe(weight).quantize(
+            (weight.dequantize().float() + raw_delta.float()).to(torch.bfloat16)
+        )
+        assert not torch.equal(actual.qdata, raw_expected.qdata)
     assert actual.act_quant_kwargs == expected.act_quant_kwargs

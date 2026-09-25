@@ -54,9 +54,9 @@ def _merge_aware_lora_linear_forward(self, x, *args, **kwargs):
     lora_a = self.lora_A[adapter].weight
     lora_b = self.lora_B[adapter].weight
     scaling = self.scaling[adapter]
-    # Match the writer's adapter-precision delta and single final base-dtype cast.
+    # Match the writer's FP32 delta and single final base-dtype cast.
     with torch.autocast(device_type=x.device.type, enabled=False):
-        delta = (lora_b @ lora_a) * scaling
+        delta = (lora_b.float() @ lora_a.float()) * scaling
         w_eff = (w.float() + delta.float()).to(w.dtype)
     pts = base._nvfp4_pts.to(device=w_eff.device)
     w_fq = fake_quant_nvfp4_dispatch(w_eff.detach(), pts) + (w_eff - w_eff.detach())

@@ -10,10 +10,17 @@ import pytest
 import torch
 
 
+def _require_dynamic_nvfp4():
+    if any(torch.cuda.get_device_capability(index)[0] < 10 for index in range(2)):
+        pytest.skip("dynamic NVFP4 requires two SM100+ GPUs")
+
+
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="two CUDA GPUs required")
 @pytest.mark.parametrize("dynamic", [False, True])
 def test_native_nvfp4_deepspeed_lora_merge_lifecycle(tmp_path, dynamic):
     pytest.importorskip("deepspeed")
+    if dynamic:
+        _require_dynamic_nvfp4()
     worker = Path(__file__).with_name("_native_nvfp4_deepspeed_lora_merge_lifecycle.py")
     env = os.environ | {
         "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "0,1"),
