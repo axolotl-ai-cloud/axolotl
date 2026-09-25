@@ -87,12 +87,12 @@ class TestGlmDsaContextParallelValidation:
         out = validate_config(cfg)  # must not raise (no flash, no ring_flash_attn)
         assert out.ring_attn_func is None
 
-    def test_cp_without_dsa_requires_plugin(self, monkeypatch):
-        """The exemption is scoped to use_glm_dsa_kernels -- plain CP demands the ContextParallelPlugin."""
+    def test_cp_without_dsa_uses_builtin_plugin(self, monkeypatch):
         monkeypatch.setenv("WORLD_SIZE", "4")
-        cfg = _cfg(context_parallel_size=2)  # no DSA kernels, no plugin
-        with pytest.raises(Exception, match="ContextParallelPlugin"):
-            validate_config(cfg)
+        cfg = _cfg(context_parallel_size=2)
+        out = validate_config(cfg)
+        assert out.context_parallel.size == 2
+        assert not out.plugins
 
     def test_dsa_without_cp_leaves_ring_attn_func_none(self, monkeypatch):
         """use_glm_dsa_kernels with context_parallel_size 1 is a no-op for the CP validators."""
@@ -123,8 +123,9 @@ def test_cp_rejects_packed_inputs_for_all_attention_owners(
         validate_config(cfg)
 
 
-def test_dsa_cp_also_requires_sharding_plugin(monkeypatch):
+def test_dsa_cp_uses_builtin_sharding_plugin(monkeypatch):
     monkeypatch.setenv("WORLD_SIZE", "4")
     cfg = _cfg(use_glm_dsa_kernels=True, context_parallel_size=2)
-    with pytest.raises(ValueError, match="ContextParallelPlugin"):
-        validate_config(cfg)
+    out = validate_config(cfg)
+    assert out.context_parallel.size == 2
+    assert not out.plugins

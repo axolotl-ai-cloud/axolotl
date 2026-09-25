@@ -211,26 +211,15 @@ def prepare_plugins(cfg: DictDefault):
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    from axolotl.utils.config import ensure_context_parallel_plugin
+    from axolotl.utils.config import prepare_plugins as prepare_config_plugins
 
-    ensure_context_parallel_plugin(cfg)
-
-    if cfg.get("plugins"):
-        from axolotl.integrations.base import PluginManager
-
-        plugin_manager = PluginManager.get_instance()
-        for plugin_name in cfg["plugins"]:
-            plugin_manager.register(plugin_name)
-        for plugin in plugin_manager.plugins.values():
-            plugin.register(cfg)
+    prepare_config_plugins(cfg)
 
 
 def plugin_set_cfg(cfg: DictDefault):
-    if cfg.get("plugins"):
-        from axolotl.integrations.base import PluginManager
+    from axolotl.integrations.base import PluginManager
 
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.cfg = cfg
+    PluginManager.get_instance().cfg = cfg
 
 
 @send_errors
@@ -321,10 +310,9 @@ def load_cfg(
     except Exception:
         # a rejected config must not leave register()-time side effects (e.g.
         # LIGER_KERNEL_IMPL) behind for the next config in this process
-        if cfg.get("plugins"):
-            from axolotl.integrations.base import PluginManager
+        from axolotl.integrations.base import PluginManager
 
-            PluginManager.get_instance().on_config_validation_error(cfg)
+        PluginManager.get_instance().on_config_validation_error(cfg)
         raise
 
     # NOTE(djsaunde): We start outputting to output_dir/debug.log at this point since we

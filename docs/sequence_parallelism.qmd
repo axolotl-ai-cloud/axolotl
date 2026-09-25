@@ -10,7 +10,7 @@ and FSDP2 gradient reduction.
 
 ## Configuration
 
-Install `pip install 'axolotl[ringmaster]'` and use torch >= 2.11. The integration
+Install `pip install 'axolotl[ringmaster]'` and use torch >= 2.13. The integration
 targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.0.
 
 ```yaml
@@ -19,7 +19,7 @@ attn_implementation: flash_attention_2
 sample_packing: false
 ```
 
-The shorthand automatically enables the context-parallel plugin. The CP degree
+Context parallelism is built in; no `plugins:` entry is needed. The CP degree
 must divide the total GPU count. For explicit strategy settings:
 
 ```yaml

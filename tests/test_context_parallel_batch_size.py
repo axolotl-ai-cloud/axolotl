@@ -3,7 +3,6 @@
 import pytest
 
 from axolotl.utils.config import (
-    ensure_context_parallel_plugin,
     normalize_config,
     validate_config,
 )
@@ -59,7 +58,6 @@ class TestContextParallelBatchSize:
     ):
         monkeypatch.setenv("WORLD_SIZE", str(world_size))
         cp_base_cfg["context_parallel_size"] = context_parallel_size
-        ensure_context_parallel_plugin(cp_base_cfg)
         cfg = validate_config(cp_base_cfg)
         normalize_config(cfg)
         assert cfg.batch_size == expected_batch_size

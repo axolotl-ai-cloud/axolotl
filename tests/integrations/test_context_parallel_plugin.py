@@ -9,7 +9,7 @@ from axolotl.integrations.context_parallel import (
     ContextParallelConfig,
     ContextParallelPlugin,
 )
-from axolotl.utils.config import ensure_context_parallel_plugin
+from axolotl.utils.config import prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
@@ -91,39 +91,51 @@ def test_strip_logits_to_keep_pre_hook():
     assert "num_logits_to_keep" not in kwargs
 
 
-def test_ensure_context_parallel_plugin_auto_enables():
-    cfg = DictDefault({"context_parallel_size": 4})
-    ensure_context_parallel_plugin(cfg)
-    assert any("ContextParallelPlugin" in str(p) for p in cfg["plugins"])
-    assert cfg["context_parallel"] == {"size": 4}
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"context_parallel_size": 4},
+        {"sequence_parallel_degree": 4},
+        {"context_parallel": {"size": 4}},
+        {"context_parallel_size": 4, "context_parallel": {"backend": "ring"}},
+    ],
+)
+def test_builtin_cp_without_plugin_entry(min_base_cfg, settings):
+    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
 
-    # deprecated alias also enables the plugin
-    cfg = DictDefault({"sequence_parallel_degree": 4})
-    ensure_context_parallel_plugin(cfg)
-    assert any("ContextParallelPlugin" in str(p) for p in cfg["plugins"])
-    assert cfg["context_parallel"] == {"size": 4}
+    cfg = min_base_cfg | DictDefault(settings, attn_implementation="sdpa")
+    validated = validate_config(cfg)
+    assert validated.context_parallel_size == 4
+    assert validated.context_parallel.size == 4
+    assert not validated.plugins
+    assert PLUGIN_PATH in BUILTIN_PLUGINS
+    assert PLUGIN_PATH in PluginManager.get_instance().plugins
 
-    # nested-only block enables the plugin and backfills the flat size
-    cfg = DictDefault({"context_parallel": {"size": 8}})
-    ensure_context_parallel_plugin(cfg)
-    assert any("ContextParallelPlugin" in str(p) for p in cfg["plugins"])
-    assert cfg["context_parallel_size"] == 8
 
-    # explicitly-listed plugin with only the flat key still gets the block
-    cfg = DictDefault({"plugins": [PLUGIN_PATH], "context_parallel_size": 4})
-    ensure_context_parallel_plugin(cfg)
-    assert cfg["plugins"].count(PLUGIN_PATH) == 1
-    assert cfg["context_parallel"] == {"size": 4}
+@pytest.mark.parametrize("explicit", [False, True])
+def test_builtin_preparation_is_idempotent(explicit):
+    from axolotl.cli.config import prepare_plugins as cli_prepare_plugins
+    from axolotl.integrations.base import PluginManager
 
-    with pytest.raises(ValueError, match="conflicts"):
-        ensure_context_parallel_plugin(
-            DictDefault({"context_parallel": {"size": 8}, "context_parallel_size": 4})
-        )
+    cfg = DictDefault(context_parallel_size=4)
+    if explicit:
+        cfg.plugins = [PLUGIN_PATH]
+    plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
+    for prepare in (prepare_plugins, cli_prepare_plugins):
+        prepare(cfg)
+        assert PluginManager.get_instance().plugins[PLUGIN_PATH] is plugin
+        assert cfg.context_parallel == {"size": 4}
+    assert cfg.plugins == ([PLUGIN_PATH] if explicit else None)
 
-    # disabled configs are untouched
-    cfg = DictDefault({"context_parallel_size": 1})
-    ensure_context_parallel_plugin(cfg)
-    assert not cfg.get("plugins")
+
+def test_builtin_is_inactive_without_cp(min_base_cfg):
+    from axolotl.integrations.base import PluginManager
+
+    validated = validate_config(min_base_cfg)
+    plugin = PluginManager.get_instance().plugins[PLUGIN_PATH]
+    assert not plugin._enabled(validated)
+    assert not validated.plugins
+    plugin.pre_model_load(validated)
 
 
 def test_plugin_merges_into_axolotl_schema():
@@ -169,9 +181,7 @@ def test_num_kv_heads_reads_text_config():
     assert plugin._num_kv_heads(model) == 8
 
 
-@pytest.mark.parametrize(
-    "sync", [ensure_context_parallel_plugin, ContextParallelPlugin().register]
-)
+@pytest.mark.parametrize("sync", [prepare_plugins, ContextParallelPlugin().register])
 def test_size_sync_preserves_backend(sync):
     cfg = DictDefault(context_parallel_size=4, context_parallel={"backend": "ring"})
     sync(cfg)
@@ -179,9 +189,7 @@ def test_size_sync_preserves_backend(sync):
     assert cfg.context_parallel_size == 4
 
 
-@pytest.mark.parametrize(
-    "sync", [ensure_context_parallel_plugin, ContextParallelPlugin().register]
-)
+@pytest.mark.parametrize("sync", [prepare_plugins, ContextParallelPlugin().register])
 @pytest.mark.parametrize("nested,flat", [(1, 4), (4, 1), (4, 8)])
 def test_explicit_size_conflicts(sync, nested, flat):
     cfg = DictDefault(context_parallel_size=flat, context_parallel={"size": nested})

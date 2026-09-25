@@ -1946,15 +1946,6 @@ class ComplexValidationMixin:
         if not self.context_parallel_size:
             self.context_parallel_size = 1
         elif self.context_parallel_size > 1:
-            # ringmaster (via ContextParallelPlugin) is the only CP backend; the
-            # legacy ring_flash_attn path was removed.
-            if not any("ContextParallelPlugin" in str(p) for p in (self.plugins or [])):
-                raise ValueError(
-                    "context_parallel_size > 1 requires the ContextParallelPlugin. "
-                    "The axolotl CLI auto-enables it; for programmatic use add "
-                    "'axolotl.integrations.context_parallel.ContextParallelPlugin' "
-                    "to `plugins:`."
-                )
             if self.sample_packing or self.batch_flattening:
                 raise ValueError(
                     "sample_packing / batch_flattening is not yet supported with ringmaster context "

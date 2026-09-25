@@ -28,10 +28,6 @@ from axolotl.model_support import (
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
-from axolotl.utils.schemas.config import (
-    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
-    AxolotlInputConfig as AxolotlInputConfigBase,
-)
 from axolotl.utils.schemas.datasets import (
     DPODataset,
     KTODataset,
@@ -463,14 +459,12 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
-    AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
-    AxolotlInputConfig = AxolotlInputConfigBase
+    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
 
-    if cfg.plugins:
-        (
-            AxolotlConfigWCapabilities,
-            AxolotlInputConfig,
-        ) = merge_input_args()
+    plugin_manager = PluginManager.get_instance()
+    for plugin_name in BUILTIN_PLUGINS:
+        plugin_manager.plugins[plugin_name].register(cfg)
+    AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
 
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
@@ -522,51 +516,14 @@ def validate_config(
     )
 
 
-def ensure_context_parallel_plugin(cfg):
-    """Auto-enable the ringmaster ContextParallelPlugin (the only CP backend) for
-    configs that request CP without listing it, and keep the nested
-    ``context_parallel`` block and flat ``context_parallel_size`` consistent."""
-    block = cfg.get("context_parallel") or {}
-    block_size = block.get("size")
-    flat_size = (
-        cfg.get("context_parallel_size")
-        if cfg.get("context_parallel_size") is not None
-        else cfg.get("sequence_parallel_degree")
-    )
-    if block_size is not None and flat_size is not None and block_size != flat_size:
-        raise ValueError(
-            f"context_parallel.size ({block_size}) conflicts with "
-            f"context_parallel_size ({flat_size}); set only one"
-        )
-    size = block_size if block_size is not None else flat_size
-    if size is None:
-        return
-    if size <= 1:
-        return
-
-    plugins = list(cfg.get("plugins") or [])
-    if not any("ContextParallelPlugin" in str(p) for p in plugins):
-        plugins.append("axolotl.integrations.context_parallel.ContextParallelPlugin")
-        cfg["plugins"] = plugins
-    cfg["context_parallel"] = {**block, "size": size}
-    if not cfg.get("context_parallel_size") and not cfg.get("sequence_parallel_degree"):
-        cfg["context_parallel_size"] = size
-
-
 def prepare_plugins(cfg):
-    """
-    Prepare the plugins for the configuration
-    """
-    ensure_context_parallel_plugin(cfg)
+    """Prepare built-in plugins and plugins explicitly selected by the config."""
+    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
 
-    if cfg.get("plugins"):
-        from axolotl.integrations.base import PluginManager
-
-        plugin_manager = PluginManager.get_instance()
-        for plugin_name in cfg["plugins"]:
+    plugin_manager = PluginManager.get_instance()
+    for plugin_name in cfg.get("plugins") or []:
+        if plugin_name not in BUILTIN_PLUGINS:
             plugin_manager.register(plugin_name)
-        # the manager is a singleton: only run hooks for plugins in THIS config,
-        # not ones retained from an earlier config in the same process
-        for plugin_name, plugin in plugin_manager.plugins.items():
-            if plugin_name in cfg["plugins"]:
-                plugin.register(cfg)
+    for plugin_name in dict.fromkeys((*BUILTIN_PLUGINS, *(cfg.get("plugins") or []))):
+        if plugin_name in plugin_manager.plugins:
+            plugin_manager.plugins[plugin_name].register(cfg)

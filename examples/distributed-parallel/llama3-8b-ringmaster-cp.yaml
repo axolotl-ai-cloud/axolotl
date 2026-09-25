@@ -3,8 +3,6 @@
 #   axolotl train examples/distributed-parallel/llama3-8b-ringmaster-cp.yaml
 base_model: NousResearch/Meta-Llama-3.1-8B
 
-plugins:
-  - axolotl.integrations.context_parallel.ContextParallelPlugin
 
 flash_attention: true            # the kernel ringmaster's Ulysses leg wraps
 

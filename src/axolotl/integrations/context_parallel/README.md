@@ -3,10 +3,10 @@
 Long-context attention via sequence parallelism, backed by the standalone
 `ringmaster` package (`pip install axolotl[ringmaster]`). Ulysses / Ring / USP that wrap
 existing HF attention kernels (FA2/FA3/FA4, sdpa, flex) — **no `flash_attn` pypi
-dependency**. The `context_parallel_size` shorthand automatically enables this
-plugin; the legacy ring-flash-attn path has been removed.
+dependency**. This is a built-in plugin: configure `context_parallel_size` or
+`context_parallel` without adding a `plugins:` entry.
 
-Requires **torch ≥ 2.11**. The integration targets the pinned upstream releases
+Requires **torch ≥ 2.13**. The integration targets the pinned upstream releases
 **Transformers 5.17.0**, **Accelerate 1.15.0**, and **axolotl-ringmaster ≥0.2.0**.
 No custom Transformers or Accelerate branch is required. The companion Ringmaster
 changes must be released as 0.2.0 or installed from the matching source checkout.
@@ -14,9 +14,6 @@ changes must be released as 0.2.0 or installed from the matching source checkout
 ## Usage
 
 ```yaml
-plugins:
-  - axolotl.integrations.context_parallel.ContextParallelPlugin
-
 flash_attention: true            # the kernel Ulysses wraps (FA2 here)
 
 context_parallel:

@@ -47,6 +47,8 @@ class ContextParallelPlugin(BasePlugin):
         block = cfg.get("context_parallel") or {}
         size = block.get("size")
         flat = cfg.get("context_parallel_size")
+        if flat is None:
+            flat = cfg.get("sequence_parallel_degree")
         if size is not None and flat is not None and flat != size:
             raise ValueError(
                 f"context_parallel.size ({size}) conflicts with "
@@ -55,6 +57,7 @@ class ContextParallelPlugin(BasePlugin):
         if size is not None:
             cfg["context_parallel_size"] = size
         elif flat is not None:
+            cfg["context_parallel_size"] = flat
             cfg["context_parallel"] = {**block, "size": flat}
 
     @staticmethod
