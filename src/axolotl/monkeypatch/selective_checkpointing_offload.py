@@ -7,8 +7,9 @@ attention outputs then cost ~zero GPU memory.
 
 Mutation caveat: an offloaded tensor is a snapshot at pack time; in-place
 mutation of the original after the save cannot be detected (torch's version
-guard only covers non-offloaded leaves). The known mutating case — PEFT's
-in-place adapter add on matmul outputs — is rejected at config validation.
+guard only covers non-offloaded leaves). The known mutating case — the fused
+LoRA kernels' in-place adapter add (``matmul_lora``'s ``addmm_``) on the base
+matmul output — is rejected at config validation.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ except ImportError:
 from axolotl.monkeypatch.selective_checkpointing import (
     SacPolicyState,
     build_sac_policy,
+    run_rule_diagnostics,
 )
 from axolotl.utils.logging import get_logger
 
@@ -235,6 +237,16 @@ class SacOffloadEngine:
         self.stats.restored_tensors += 1
         return gpu_tensor
 
+    def release_region(self, region_id: int) -> None:
+        """Drop refs that the region's recompute ended without reading."""
+        for ref in self._regions.pop(region_id, []):
+            if ref.cpu_tensor is None:
+                continue
+            event = ref.restore_event or self.s1.record_event()
+            self._pending_cpu_buffers.append((ref.buffer_key, ref.cpu_tensor, event))
+            ref.cpu_tensor = None
+            ref.gpu_tensor = None
+
     def log_once(self) -> None:
         if self.stats.logged or not self.stats.offloaded_tensors:
             return
@@ -302,6 +314,14 @@ class _OffloadCachedMode(TorchDispatchMode):
         self.engine.log_once()
         return super().__enter__()
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # early stop ends the replay before ops whose saved outputs backward
+        # never reads (e.g. a layer's last projection), so their refs linger
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.engine.release_region(self.region_id)
+
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = {} if kwargs is None else kwargs
         if func in SAC_IGNORED_OPS:
@@ -339,17 +359,26 @@ def build_sac_offload_context_fn(
     state: SacPolicyState | None = None,
     engine: SacOffloadEngine | None = None,
     recompute_layer_types: list[str] | None = None,
+    *,
+    save_modules: list[str] | None = None,
+    save_matmul_min_k: int | None = None,
 ) -> Callable:
     """Return a ``context_fn`` whose MUST_SAVE tensors are offloaded to CPU."""
     state = state or SacPolicyState()
     engine = engine or SacOffloadEngine()
     policy_fn = build_sac_policy(
-        save, state, save_sliding_window, recompute_layer_types
+        save,
+        state,
+        save_sliding_window,
+        recompute_layer_types,
+        save_modules=save_modules,
+        save_matmul_min_k=save_matmul_min_k,
     )
 
     def context_fn():
         region_id = state.regions_seen
         state.regions_seen += 1
+        run_rule_diagnostics(state)
         storage: dict[Any, list[Any]] = defaultdict(list)
         return (
             _OffloadCachingMode(policy_fn, storage, engine, region_id),
