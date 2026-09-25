@@ -50,11 +50,21 @@ so it does not install DeepSpeed's Ulysses adapter or globally disable native CP
 For USP, the plugin derives `cp_ring` and `cp_ulysses` subgroups inside each CP
 group while preserving Accelerate's original mesh for data loading and FSDP2.
 
-Two-GPU FSDP2 regression tests compare Ulysses/SDPA and Ring/Flash Attention
-losses and gradients with an unsharded tiny Llama. A separate eight-process CPU
+Two-GPU FSDP2 regression tests compare Ulysses/SDPA, Ulysses/Flash Attention 2,
+and Ring/Flash Attention losses and gradients with an unsharded tiny Llama. A separate eight-process CPU
 test checks USP subgroup isolation across two data-parallel groups. Ringmaster
 also tests USP attention outputs and q/k/v gradients on four CPU ranks; GPU USP
 coverage remains hardware-dependent.
+
+An opt-in 16-process CPU test (`pytest -m slow tests/integrations/test_context_parallel_mesh.py::test_ringmaster_nd_cpu_parity`)
+uses Torch 2.13+, Accelerate mesh construction, real tensor-parallel linear layers,
+and FSDP2/HSDP. It compares dense and packed attention outputs, parameter gradients,
+and an SGD update against an unsharded reference, with different batches per DP
+group and non-contiguous CP groups. The layouts are DP=2 × CP=4 × TP=2
+(with Ring=2 × Ulysses=2) and DP-replicate=2 × DP-shard=2 × CP=2 × TP=2.
+This exercises CPU math attention for USP and SDPA for Ulysses, not CUDA kernels or a complete
+Accelerator/Trainer launch: Accelerate does not accept CPU ND execution through
+its normal Accelerator validation.
 
 ## Recurrent models and optional kernels
 

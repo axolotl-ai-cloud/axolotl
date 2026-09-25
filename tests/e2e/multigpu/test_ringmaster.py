@@ -13,7 +13,12 @@ import torch
 @pytest.mark.slow
 @pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
 @pytest.mark.parametrize(
-    "backend,inner", [("ulysses", "sdpa"), ("ring", "flash_attention_2")]
+    "backend,inner",
+    [
+        ("ulysses", "sdpa"),
+        ("ulysses", "flash_attention_2"),
+        ("ring", "flash_attention_2"),
+    ],
 )
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
 def test_ringmaster_fsdp2_parity(backend, inner, packed):
