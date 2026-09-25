@@ -30,7 +30,12 @@ torch_version = version.parse(torch.__version__)
 # Detect the actual accelerator (cuda/npu/xpu/mps/...) so the AMP custom_fwd/bwd
 # decorators are device-agnostic. Falls back to "cuda" when torch has no
 # `accelerator` API (old PyTorch).
-_amp_device_type = str(torch.accelerator.current_accelerator()) if hasattr(torch, "accelerator") else "cuda"
+_accelerator = (
+    torch.accelerator.current_accelerator() if hasattr(torch, "accelerator") else None
+)
+# torch.amp.custom_fwd/bwd expect a device type string ("cuda", "npu", ...);
+# str(device) would be the invalid device type "None" on builds without one.
+_amp_device_type = _accelerator.type if _accelerator is not None else "cuda"
 
 if torch_version < version.parse("2.4.0"):
     torch_cuda_amp_custom_fwd = torch.cuda.amp.custom_fwd
@@ -49,7 +54,9 @@ class CPU_Offloaded_Gradient_Checkpointer(torch.autograd.Function):
     @staticmethod
     @torch_cuda_amp_custom_fwd
     def forward(ctx, forward_function, hidden_states, *args):
-        ctx._device = hidden_states.device  # remember the real compute device for backward
+        ctx._device = (
+            hidden_states.device
+        )  # remember the real compute device for backward
         saved_hidden_states = hidden_states.to("cpu", non_blocking=True)
         with torch.no_grad():
             output = forward_function(hidden_states, *args)
