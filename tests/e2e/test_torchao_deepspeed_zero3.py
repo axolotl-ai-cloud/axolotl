@@ -37,7 +37,9 @@ def test_native_nvfp4_zero3_dynamic_forward_and_ste_gradient(dynamic_amax):
     expected = torch.nn.functional.linear(inputs, weight)
 
     model = torch.nn.Module()
-    model.layer = torch.nn.Linear(128, 128, bias=False, device=device, dtype=torch.bfloat16)
+    model.layer = torch.nn.Linear(
+        128, 128, bias=False, device=device, dtype=torch.bfloat16
+    )
     model.layer.weight = weight
     assert prepare_native_nvfp4_zero3(model, device)
     model.to(dtype=torch.bfloat16)
