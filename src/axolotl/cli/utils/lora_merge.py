@@ -1045,6 +1045,13 @@ def _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer: bool = False
         raise ValueError(
             f"adapter_config.json nvfp4_merge_aware must be a dict, got {meta!r}"
         )
+    if meta.get("backend") == "native_torchao":
+        from axolotl.monkeypatch.torchao_nvfp4_merge_metadata import (
+            validate_native_merge_aware_header,
+        )
+
+        validate_native_merge_aware_header(meta)
+        return "reuse"
     try:
         import torchao
     except ImportError as ex:
@@ -2579,6 +2586,7 @@ def merge_lora_sharded_efficient(
             merge_native_dense,
             dequant=dequant,
             quantization_device=device,
+            merge_aware_metadata=lora_config_dict.get("nvfp4_merge_aware"),
         )
         merged_count += native_merged
         left_quantized = left_quantized or has_native_nvfp4_weights(metadata)

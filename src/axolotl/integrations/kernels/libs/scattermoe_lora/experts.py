@@ -106,6 +106,63 @@ def _ep_local_expert_lora(lora_A, lora_B, experts):
     return a, b, e_local, rank
 
 
+def _ep_adapter_unsupported_reason(experts):
+    """Return the first PEFT option the static EP merge path cannot reproduce."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None
+
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            continue
+        adapters = [
+            adapter
+            for adapter in getattr(param, "active_adapters", ())
+            if adapter in getattr(param, "lora_A", {})
+        ]
+        if len(adapters) > 1:
+            return "multiple active adapters"
+        if not adapters:
+            continue
+        if any(
+            getattr(dropout, "p", 0.0) != 0.0
+            for dropout in getattr(param, "lora_dropout", {}).values()
+        ):
+            return "LoRA dropout"
+        if any(getattr(param, "lora_bias", {}).values()):
+            return "LoRA bias"
+        if getattr(param, "lora_variant", None):
+            return "LoRA variant"
+        if any(getattr(param, "use_dora", {}).values()):
+            return "DoRA"
+    return None
+
+
+def _ep_factor_access_reason(experts):
+    """Reject raw factor reads that escaped their enclosing FSDP forward."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None
+
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            continue
+        lora_A, lora_B, _ = get_lora_params_from_wrapper(param)
+        if lora_A is None or lora_B is None:
+            continue
+        if type(lora_A).__name__ == "DTensor" or type(lora_B).__name__ == "DTensor":
+            return "FSDP-sharded LoRA factors outside their materialized forward"
+    return None
+
+
 def _ep_local_peft_lora(experts):
     """Return this rank's PEFT-layout LoRA factors for both expert projections."""
     try:
@@ -116,7 +173,9 @@ def _ep_local_peft_lora(experts):
     factors = []
     for name in (_w1_name(experts), "down_proj"):
         param = getattr(experts, name, None)
-        if not isinstance(param, ParamWrapper):
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
             factors.append(None)
             continue
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(param)
@@ -144,6 +203,10 @@ def _warn_merge_aware_ep_unsupported(experts, reason: str) -> None:
 
 def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
     """Run merge-aware NVFP4 LoRA over local DeepEP experts, or report why it cannot."""
+    if reason := _ep_adapter_unsupported_reason(self):
+        return None, reason
+    if reason := _ep_factor_access_reason(self):
+        return None, reason
     gup, down = _ep_local_peft_lora(self)
     if gup is None and down is None:
         return None, None
@@ -152,6 +215,11 @@ def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
     w2 = _get_base_param(self.down_proj)
     if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
         return None, "both expert projections need native NVFP4 base weights"
+    if (
+        getattr(w1, "act_quant_kwargs", None) is not None
+        or getattr(w2, "act_quant_kwargs", None) is not None
+    ):
+        return None, "dynamic activation quantization"
 
     from ..sonicmoe.nvfp4_lora import grouped_moe_merge_aware_ep_forward
 

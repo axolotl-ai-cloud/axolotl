@@ -581,12 +581,12 @@ def test_model_loader_uses_native_tp_hook_for_native_nvfp4(monkeypatch):
     ]
 
 
-def test_model_loader_prepares_tp_lora_after_adapter_load(monkeypatch):
-    from types import SimpleNamespace
-
+@pytest.mark.parametrize("merge_aware", [None, True, False])
+def test_model_loader_prepares_tp_lora_after_adapter_load(monkeypatch, merge_aware):
     from axolotl.loaders import model as model_module
     from axolotl.loaders.model import ModelLoader
     from axolotl.monkeypatch import torchao_tp_lora
+    from axolotl.utils.dict import DictDefault
 
     base = object()
     adapted = object()
@@ -597,8 +597,8 @@ def test_model_loader_prepares_tp_lora_after_adapter_load(monkeypatch):
         calls.append(("load_adapter", model, cfg, adapter))
         return adapted, config
 
-    def prepare(model):
-        calls.append(("prepare", model))
+    def prepare(model, *, merge_aware):
+        calls.append(("prepare", model, merge_aware))
         return True
 
     monkeypatch.setattr(model_module, "load_adapter", load_adapter)
@@ -606,14 +606,18 @@ def test_model_loader_prepares_tp_lora_after_adapter_load(monkeypatch):
     loader = object.__new__(ModelLoader)
     loader.model = base
     loader.reference_model = False
-    loader.cfg = SimpleNamespace(
+    loader.cfg = DictDefault(
         adapter="lora",
         lora_model_dir=None,
         rl=None,
         merge_lora=False,
         tensor_parallel_size=2,
+        nvfp4_merge_aware=merge_aware,
     )
 
     assert loader._build_adapters() is config
     assert loader.model is adapted
-    assert calls == [("load_adapter", base, loader.cfg, "lora"), ("prepare", adapted)]
+    assert calls == [
+        ("load_adapter", base, loader.cfg, "lora"),
+        ("prepare", adapted, merge_aware is not False),
+    ]

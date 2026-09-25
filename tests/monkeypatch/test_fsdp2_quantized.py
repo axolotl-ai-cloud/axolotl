@@ -181,3 +181,67 @@ def test_nvfp4_dense_scale_normalization_precedes_state_snapshot(monkeypatch):
         torch.distributed.fsdp, "fully_shard", lambda module, **_: module
     )
     fsdp2.fsdp2_prepare_model(accelerator, model)
+
+
+def test_native_merge_bridge_installs_after_meta_state_load_and_retie(monkeypatch):
+    from types import SimpleNamespace
+
+    from axolotl.monkeypatch import torchao_nvfp4_fsdp_lora
+    from axolotl.monkeypatch.accelerate import fsdp2
+
+    events = []
+
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.ones(1), requires_grad=False)
+            self._axolotl_native_nvfp4_merge_aware_requested = True
+
+        def tie_weights(self):
+            events.append(("tie", self.weight.device.type))
+
+    model = Model()
+    plugin = SimpleNamespace(
+        auto_wrap_policy=None,
+        activation_checkpointing=False,
+        reshard_after_forward=True,
+        cpu_offload=None,
+        mixed_precision_policy=None,
+        cpu_ram_efficient_loading=True,
+        set_auto_wrap_policy=lambda _model: None,
+    )
+    accelerator = SimpleNamespace(
+        state=SimpleNamespace(
+            fsdp_plugin=plugin, device_mesh=None, parallelism_config=None
+        ),
+        is_main_process=True,
+        device=torch.device("cpu"),
+    )
+
+    def load_state(_accelerator, target, state, **_kwargs):
+        assert target.weight.is_meta
+        target.load_state_dict(state, assign=True)
+        events.append(("load", target.weight.device.type))
+
+    def install(target):
+        assert events[-2:] == [("load", "cpu"), ("tie", "cpu")]
+        assert not target.weight.is_meta
+        events.append(("install", "cpu"))
+        return 1
+
+    monkeypatch.setattr(
+        torch.distributed.fsdp, "fully_shard", lambda module, **_: module
+    )
+    monkeypatch.setattr(fsdp2, "fsdp2_load_full_state_dict", load_state)
+    monkeypatch.setattr(
+        torchao_nvfp4_fsdp_lora,
+        "install_fsdp_native_nvfp4_merge_aware_lora_linears",
+        install,
+    )
+    fsdp2.fsdp2_prepare_model(accelerator, model)
+    assert events == [
+        ("tie", "meta"),
+        ("load", "cpu"),
+        ("tie", "cpu"),
+        ("install", "cpu"),
+    ]

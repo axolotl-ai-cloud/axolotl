@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import types
+import weakref
 from dataclasses import dataclass
 from typing import Any
 
@@ -161,11 +162,23 @@ class _NativeNVFP4MergeAwareLinear(torch.autograd.Function):
         return _native_merge_aware_backward(ctx, grad_output)
 
 
+def native_nvfp4_merge_aware_linear(inputs, bias, base_weight, lora_a, lora_b, scaling):
+    """Apply the native snapped effective weight with straight-through LoRA gradients."""
+    if getattr(base_weight, "act_quant_kwargs", None) is not None:
+        raise ValueError(
+            "native merge-aware linear requires static activation precision"
+        )
+    return _NativeNVFP4MergeAwareLinear.apply(
+        inputs, bias, base_weight, lora_a, lora_b, scaling
+    )
+
+
 def _unsupported_native_merge_aware(module, reason: str) -> None:
     if getattr(module, "_axolotl_merge_aware_unsupported", False):
         return
     module._axolotl_merge_aware_unsupported = True
-    owner = getattr(module, "_axolotl_native_nvfp4_owner", None)
+    owner_ref = getattr(module, "_axolotl_native_nvfp4_owner", None)
+    owner = owner_ref() if isinstance(owner_ref, weakref.ReferenceType) else None
     if owner is not None:
         owner._axolotl_merge_aware_unsupported = True
     LOG.warning(
@@ -206,7 +219,7 @@ def _native_nvfp4_lora_forward(self, x, *args, **kwargs):
         return self._axolotl_native_nvfp4_orig_forward(x, *args, **kwargs)
     adapter = adapters[0]
     base = self.get_base_layer()
-    return _NativeNVFP4MergeAwareLinear.apply(
+    return native_nvfp4_merge_aware_linear(
         x,
         base.bias,
         base.weight,
@@ -238,7 +251,7 @@ def install_native_nvfp4_merge_aware_lora_linears(model: torch.nn.Module) -> int
             reason = "non-matrix base weight"
         elif getattr(base.weight, "act_quant_kwargs", None) is not None:
             reason = "dynamic activation quantization"
-        module._axolotl_native_nvfp4_owner = model
+        module._axolotl_native_nvfp4_owner = weakref.ref(model)
         module._axolotl_native_nvfp4_name = name
         if reason:
             _unsupported_native_merge_aware(module, reason)

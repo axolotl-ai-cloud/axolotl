@@ -211,3 +211,49 @@ def test_frozen_ep_experts_do_not_mark_merge_aware_unsafe(monkeypatch):
     assert output is None
     assert reason is None
     assert not hasattr(experts, "_axolotl_merge_aware_unsupported")
+
+
+def test_ep_merge_aware_dynamic_activation_falls_back_before_native_forward(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    import axolotl.integrations.kernels.libs.scattermoe_lora.experts as expert_module
+
+    weight = SimpleNamespace(act_quant_kwargs=object())
+    experts = SimpleNamespace(gate_up_proj=weight, down_proj=weight)
+    monkeypatch.setattr(
+        expert_module,
+        "_ep_local_peft_lora",
+        lambda _: ((object(), object(), 1.0), None),
+    )
+    monkeypatch.setattr(expert_module, "is_nvfp4_param", lambda _: True)
+
+    output, reason = expert_module._ep_merge_aware_forward(experts, None, None, None)
+
+    assert output is None
+    assert reason == "dynamic activation quantization"
+
+
+def test_ep_merge_aware_sharded_factor_access_falls_back(monkeypatch):
+    from types import SimpleNamespace
+
+    import axolotl.integrations.kernels.libs.scattermoe_lora.experts as expert_module
+
+    experts = SimpleNamespace()
+    monkeypatch.setattr(expert_module, "_ep_adapter_unsupported_reason", lambda _: None)
+    monkeypatch.setattr(
+        expert_module,
+        "_ep_factor_access_reason",
+        lambda _: "FSDP-sharded LoRA factors outside their materialized forward",
+    )
+    monkeypatch.setattr(
+        expert_module,
+        "_ep_local_peft_lora",
+        lambda _: pytest.fail("unsafe factors must not be read"),
+    )
+
+    output, reason = expert_module._ep_merge_aware_forward(experts, None, None, None)
+
+    assert output is None
+    assert reason == "FSDP-sharded LoRA factors outside their materialized forward"
