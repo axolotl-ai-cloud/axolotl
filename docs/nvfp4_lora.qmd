@@ -173,10 +173,14 @@ replace the NVFP4 base kernel. DoRA, merged/disabled adapters, and multiple acti
 PEFT adapters retain PEFT's forward. Expert kernels are unchanged.
 
 The fused low-rank LoRA kernel path does not implement dynamic NVFP4 activation
-quantization. Use the native unsharded merge-aware forward for dynamic NVFP4 LoRA; it
-runs the deployed quantized forward and uses a dequantized frozen-weight, quantized-activation
-straight-through surrogate for gradients. Sharded FSDP and DeepSpeed dynamic configurations
-remain ordinary-LoRA fallbacks.
+quantization. For supported dense native TorchAO LoRA projections, the native merge-aware
+forward runs the deployed quantized operation and uses a dequantized frozen-weight,
+quantized-activation straight-through surrogate for gradients. The qualified dense path
+includes unsharded runs, FSDP2, and DeepSpeed ZeRO-1/2/3 as described above; FSDP2 installs
+after sharding and DeepSpeed after engine preparation. It does not cover
+`lora_target_parameters` expert adapters, EP/DeepEP composition, or dynamic TP training;
+ordinary-LoRA fallback is available only where the underlying backward is supported.
+These dense-path results do not establish native EP support.
 
 ### Which NVFP4 loading path is supported?
 
