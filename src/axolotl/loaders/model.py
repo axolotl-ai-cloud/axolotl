@@ -437,6 +437,8 @@ class ModelLoader:
             save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
             recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
             offload=bool(sac_kwargs.get("offload")),
+            save_modules=sac_kwargs.get("save_modules"),
+            save_matmul_min_k=sac_kwargs.get("save_matmul_min_k"),
         )
 
     def _apply_activation_checkpointing(self):

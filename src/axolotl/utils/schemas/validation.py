@@ -1,5 +1,6 @@
 """Module with validation methods for config pydantic model."""
 
+import fnmatch
 import json
 import sys
 import tempfile
@@ -22,6 +23,102 @@ from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 LOG = get_logger(__name__)
+
+# modules whose forward a fused kernel replaces, so module-scope SAC hooks on
+# them never fire; containers are listed because their hooks still fire but the
+# kernel's visible mm inside is then mutated in place
+_SAC_FUSED_MODULE_COVERAGE = (
+    (
+        "lora_mlp_kernel",
+        (
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+            "mlp",
+            "mixer",
+            "shared_experts",
+            "shared_expert",
+            "feedforward",
+            "experts",
+            "gate_projs",
+            "up_projs",
+            "down_projs",
+        ),
+    ),
+    (
+        "lora_qkv_kernel",
+        (
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "in_proj_qkv",
+            "in_proj_z",
+            "in_proj_b",
+            "in_proj_a",
+            "self_attn",
+            "linear_attn",
+            "mixer",
+        ),
+    ),
+    ("lora_o_kernel", ("o_proj", "out_proj", "self_attn", "linear_attn", "mixer")),
+    ("flash_attn_fuse_mlp", ("gate_proj", "up_proj", "down_proj", "mlp")),
+)
+
+# decoder-layer and model containers enclose every projection a LoRA kernel runs;
+# a numeric last component (``layers.0``) names a decoder layer
+_SAC_LAYER_CONTAINERS = (
+    "model",
+    "language_model",
+    "text_model",
+    "decoder",
+    "transformer",
+    "backbone",
+    "layers",
+    "layer",
+    "h",
+    "blocks",
+    "block",
+)
+
+_LORA_KERNEL_FLAGS = (
+    "lora_mlp_kernel",
+    "lora_qkv_kernel",
+    "lora_o_kernel",
+    "lora_embedding_kernel",
+)
+
+
+def _lora_kernel_enabled(cfg, flag: str) -> bool:
+    """Explicit flag value, else whether check_auto_enable_lora_kernels would set it.
+
+    Auto-enable runs only on the capabilities-aware config class, so an unset flag
+    is predicted from the same preconditions rather than read as off.
+    """
+    value = getattr(cfg, flag, None)
+    if value is not None:
+        return bool(value) and bool(cfg.adapter)
+    if cfg.adapter not in ("lora", "qlora"):
+        return False
+    if cfg.rl or cfg.trust_remote_code or getattr(cfg, "nvfp4_merge_aware", None):
+        return False
+    if cfg.adapter == "lora" and cfg.load_in_8bit:
+        return False
+    return all(getattr(cfg, f, None) is None for f in _LORA_KERNEL_FLAGS)
+
+
+def _sac_entry_covers(entry: str, module: str) -> bool:
+    last = entry.rsplit(".", 1)[-1]
+    if any(ch in last for ch in "*?["):
+        return fnmatch.fnmatchcase(module, last)
+    return last == module
+
+
+def _sac_entry_is_layer_container(entry: str) -> bool:
+    last = entry.rsplit(".", 1)[-1]
+    if any(ch in last for ch in "*?["):
+        candidates = _SAC_LAYER_CONTAINERS + tuple(str(i) for i in range(100))
+        return any(fnmatch.fnmatchcase(name, last) for name in candidates)
+    return last.isdigit() or last in _SAC_LAYER_CONTAINERS
 
 
 def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
@@ -1778,23 +1875,63 @@ class ModelCompatibilityValidationMixin:
                 "activation_offloading: hidden_states (or false); the TRL offloader "
                 "paths bypass HF gradient checkpointing"
             )
-        if self.adapter:
-            # PEFT adds the adapter delta into the base linear output in-place,
-            # mutating cached mm outputs; SAC's cache-mutation guard errors at runtime
+        sac = self.selective_checkpointing
+        fused_lora = any(
+            _lora_kernel_enabled(self, flag)
+            for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+        )
+        if fused_lora:
             matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
             bad = [
                 spec
-                for spec in self.selective_checkpointing.save
+                for spec in sac.save
                 if spec != "attention" and any(spec in op for op in matmul_ops)
             ]
             if bad:
                 raise ValueError(
                     f"selective_checkpointing.save entries {bad} match matmul ops, "
-                    "which cannot be saved when training with a LoRA/QLoRA adapter: "
-                    "PEFT mutates the base linear output in-place to add the adapter "
-                    "delta, which invalidates the cached tensor. Use save: [attention] "
-                    "or train without an adapter."
+                    "which cannot be saved while a fused LoRA kernel is enabled: the "
+                    "kernel adds the adapter delta into the base matmul output "
+                    "in-place (addmm_), which invalidates the cached tensor. Set "
+                    "lora_mlp_kernel: false, lora_qkv_kernel: false and "
+                    "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
+                    "or use save: [attention]."
                 )
+            if sac.save_matmul_min_k:
+                raise ValueError(
+                    "selective_checkpointing.save_matmul_min_k saves the base matmul "
+                    "that a fused LoRA kernel then mutates in-place (addmm_). Set "
+                    "lora_mlp_kernel: false, lora_qkv_kernel: false and "
+                    "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
+                    "or drop save_matmul_min_k."
+                )
+        for flag, modules in _SAC_FUSED_MODULE_COVERAGE:
+            enabled = (
+                _lora_kernel_enabled(self, flag)
+                if flag.startswith("lora_")
+                else bool(getattr(self, flag, None))
+            )
+            if not enabled:
+                continue
+            for entry in sac.save_modules or []:
+                if any(_sac_entry_covers(entry, module) for module in modules):
+                    raise ValueError(
+                        f"selective_checkpointing.save_modules entry {entry!r} names "
+                        f"a module whose forward is replaced by {flag}: true, so its "
+                        "hooks never fire and the rule would be a silent no-op. Set "
+                        f"{flag}: false (LoRA kernels are auto-enabled for "
+                        "LoRA/QLoRA) or remove the entry."
+                    )
+                if flag.startswith("lora_") and _sac_entry_is_layer_container(entry):
+                    raise ValueError(
+                        f"selective_checkpointing.save_modules entry {entry!r} scopes "
+                        "a decoder layer or model container, which holds the "
+                        f"projections {flag}: true runs; the kernel adds the adapter "
+                        "delta into their saved base matmul output in-place "
+                        f"(addmm_), which invalidates the cached tensor. Set {flag}: "
+                        "false (LoRA kernels are auto-enabled for LoRA/QLoRA) or name "
+                        "a projection the kernel does not cover."
+                    )
         if self.torch_compile:
             LOG.warning(
                 "selective_checkpointing with torch_compile is untested in axolotl; "
