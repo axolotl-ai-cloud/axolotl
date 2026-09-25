@@ -459,7 +459,14 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
-    AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
+    from axolotl.integrations.base import BUILTIN_PLUGINS
+    from axolotl.utils.schemas import config as config_schema
+
+    if cfg.plugins or BUILTIN_PLUGINS:
+        AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
+    else:
+        AxolotlConfigWCapabilities = config_schema.AxolotlConfigWCapabilities
+        AxolotlInputConfig = config_schema.AxolotlInputConfig
 
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
@@ -514,6 +521,9 @@ def validate_config(
 def prepare_plugins(cfg):
     """Prepare built-in plugins and plugins explicitly selected by the config."""
     from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
+
+    if not cfg.get("plugins") and not BUILTIN_PLUGINS:
+        return
 
     plugin_manager = PluginManager.get_instance()
     for plugin_name in cfg.get("plugins") or []:

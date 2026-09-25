@@ -266,3 +266,19 @@ def test_validation_does_not_call_register(min_base_cfg, monkeypatch):
     assert cfg.context_parallel.size == 4
     prepare_plugins(cfg)
     register.assert_called_once_with(cfg)
+
+
+def test_no_plugins_without_builtins(min_base_cfg, monkeypatch):
+    from unittest.mock import Mock
+
+    from axolotl.cli.config import plugin_set_cfg
+    from axolotl.integrations import base
+
+    monkeypatch.setattr(base, "BUILTIN_PLUGINS", ())
+    merge = Mock(side_effect=AssertionError("plugin schema should not be merged"))
+    monkeypatch.setattr("axolotl.utils.config.merge_input_args", merge)
+    cfg = validate_config(min_base_cfg)
+    prepare_plugins(cfg)
+    plugin_set_cfg(cfg)
+    merge.assert_not_called()
+    assert not cfg.plugins
