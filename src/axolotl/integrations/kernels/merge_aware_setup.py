@@ -42,7 +42,7 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
         or fsdp_config.get("version")
         or 2
     )
-    if any(
+    if cfg.get("adapter") == "lora" and any(
         type(parameter).__name__ == "NVFP4Tensor"
         and getattr(parameter, "act_quant_kwargs", None) is not None
         for parameter in model.parameters()
