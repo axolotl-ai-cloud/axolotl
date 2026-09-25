@@ -97,3 +97,69 @@ class TestSacOffloadFunctional:
         assert engine.stats.restored_tensors == engine.stats.offloaded_tensors
         for g0, g1 in zip(baseline, grads, strict=True):
             torch.testing.assert_close(g0, g1)
+
+    @requires_cuda
+    @pytest.mark.parametrize("post_norm,restored", [(True, 2), (False, 0)])
+    def test_module_and_shape_rules_offload(self, post_norm, restored):
+        from axolotl.monkeypatch.selective_checkpointing import (
+            SacPolicyState,
+            install_module_scope_hooks,
+        )
+
+        device = "cuda"
+        n_layers, seq, hidden, inter = 2, 256, 64, 256
+
+        class _Layer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.up = torch.nn.Linear(hidden, inter, bias=False)
+                self.down = torch.nn.Linear(inter, hidden)
+                self.norm = torch.nn.LayerNorm(hidden) if post_norm else None
+
+            def forward(self, x):
+                out = self.down(F.relu(self.up(x)))
+                if self.norm is not None:
+                    out = self.norm(out)
+                return x + out
+
+        torch.manual_seed(0)
+        layers = torch.nn.ModuleList(_Layer() for _ in range(n_layers)).to(device)
+
+        def run(context_fn=None):
+            layers.zero_grad(set_to_none=True)
+            gen = torch.Generator(device="cpu").manual_seed(5)
+            h = torch.randn(1, seq, hidden, generator=gen).to(device)
+            for layer in layers:
+                if context_fn is None:
+                    h = layer(h)
+                else:
+                    h = checkpoint(layer, h, use_reentrant=False, context_fn=context_fn)
+            h.pow(2).mean().backward()
+            torch.cuda.synchronize()
+            return [p.grad.clone() for p in layers.parameters()]
+
+        baseline = run()
+
+        state = SacPolicyState()
+        install_module_scope_hooks(layers, state, ["down"])
+        engine = SacOffloadEngine(min_offload_bytes=1024)
+        context_fn = build_sac_offload_context_fn(
+            ["attention"],
+            state=state,
+            engine=engine,
+            save_modules=["down"],
+            save_matmul_min_k=256,
+        )
+        run(context_fn)
+        grads = run(context_fn)
+
+        for g0, g1 in zip(baseline, grads, strict=True):
+            torch.testing.assert_close(g0, g1)
+        assert state.rule_saves["module:down"] == 2 * n_layers
+        # the module rule claims the op first, so the shape rule never counts it
+        assert state.rule_saves["shape"] == 0
+        assert engine.stats.offloaded_tensors == 2 * n_layers
+        # early stop never replays down when only a residual add follows it
+        assert engine.stats.restored_tensors == 2 * restored
+        # unread refs are released when their region's recompute ends
+        assert not engine._regions

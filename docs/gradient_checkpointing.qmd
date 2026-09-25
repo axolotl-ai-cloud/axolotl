@@ -102,8 +102,47 @@ Requires non-reentrant checkpointing (the default). Composes with
 `activation_offloading: hidden_states`: layer inputs go to CPU while attention outputs are saved
 (on GPU, or on CPU with `offload: true`). It is incompatible with the TRL-offloader modes
 (`true`/`legacy`/`disk`), which replace gradient checkpointing instead of running inside it.
-Saving matmul ops (e.g. `aten::mm`) is rejected for LoRA/QLoRA runs: PEFT mutates the base linear
-output in-place, which invalidates cached tensors.
+Saving matmul ops (via `save`, `save_modules` or `save_matmul_min_k`) is rejected while a
+fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
+output in place, which invalidates the cached tensor.
+
+#### Saving specific projections
+
+All projections dispatch the same `aten::mm`/`aten::addmm`, so `save: [aten::mm]` saves every
+one of them. Two rules target individual projections instead; both also work with `offload: true`.
+
+`save_modules` saves the matmuls that run inside the named modules:
+
+```yaml
+selective_checkpointing:
+  save: [attention]
+  save_modules: [o_proj]
+```
+
+An entry matches a module name exactly, as a trailing dotted suffix (`o_proj`,
+`self_attn.o_proj`), or as a glob over the full name when it contains `*`, `?` or `[`. Names are
+those of the base model, before PEFT wraps it, and a PEFT-wrapped match resolves to its
+`base_layer`, so only the frozen base matmul is saved, not `lora_A`/`lora_B`. Modules that
+enclose the decoder layers, or run outside them (`lm_head`, `embed_tokens`), are never in scope.
+
+`save_matmul_min_k` saves every matmul whose contraction dim K (a linear's `in_features`) is at
+least the threshold, including MoE expert (`aten::_grouped_mm`) and bitsandbytes 4-bit gemms:
+
+```yaml
+selective_checkpointing:
+  save: [attention]
+  save_matmul_min_k: 8192
+```
+
+Saving only helps for ops that recompute would otherwise re-run. Recompute stops at the last
+tensor backward needs, so a layer's final projection (`down_proj` in Llama/Qwen3-style layers,
+whose output only feeds the residual add) is never replayed; saving it costs memory for no
+speedup. Prefer `o_proj`, `gate_proj` or `up_proj`.
+
+Validation rejects entries covered by an enabled fused LoRA kernel (`lora_mlp_kernel`,
+`lora_qkv_kernel`, `lora_o_kernel`, auto-enabled for LoRA/QLoRA), and the error names the flag
+to turn off. At runtime a warning is logged for any rule that matched no module, whose hooks never
+fired, whose saved tensors were never replayed, or whose threshold no matmul reached.
 
 ### Enabling Layer Offloading
 
