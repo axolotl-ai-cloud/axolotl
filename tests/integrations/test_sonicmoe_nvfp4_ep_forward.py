@@ -257,3 +257,69 @@ def test_ep_merge_aware_sharded_factor_access_falls_back(monkeypatch):
 
     assert output is None
     assert reason == "FSDP-sharded LoRA factors outside their materialized forward"
+
+
+@pytest.mark.parametrize("pts_kind", ["none", "scalar", "per_expert"])
+@pytest.mark.parametrize("ep_size", [2, 4])
+def test_ep_fresh_snap_commutes_with_expert_sharding(pts_kind, ep_size):
+    """Each local expert partition must retain the full fresh-grid bytes."""
+    pytest.importorskip("torchao")
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+        fake_quant_nvfp4_dispatch,
+        quantize_nvfp4_merge,
+    )
+
+    torch.manual_seed(56)
+    experts, rows, columns = 8, 32, 32
+    weights = (torch.randn(experts, rows, columns) * 0.05).bfloat16()
+    scales = {
+        "none": None,
+        "scalar": torch.tensor(0.7),
+        "per_expert": torch.linspace(0.2, 0.9, experts),
+    }[pts_kind]
+    packed, block_scale = quantize_nvfp4_merge(weights, scales, scale_mode="fresh")
+    snapped = fake_quant_nvfp4_dispatch(weights, scales)
+
+    local_experts = experts // ep_size
+    for rank in range(ep_size):
+        start, stop = rank * local_experts, (rank + 1) * local_experts
+        local_scales = (
+            scales
+            if scales is None or scales.numel() == 1
+            else scales[start:stop].contiguous()
+        )
+        local_packed, local_block_scale = quantize_nvfp4_merge(
+            weights[start:stop].contiguous(), local_scales, scale_mode="fresh"
+        )
+        assert torch.equal(local_packed, packed[start:stop])
+        assert torch.equal(local_block_scale, block_scale[start:stop])
+        assert torch.equal(
+            fake_quant_nvfp4_dispatch(weights[start:stop].contiguous(), local_scales),
+            snapped[start:stop],
+        )
+
+
+def test_ep_fallback_marker_clears_merge_metadata(tmp_path):
+    """An EP local fallback invalidates the adapter's merge-aware certificate."""
+    import json
+    from types import SimpleNamespace
+
+    from axolotl.integrations.kernels.merge_aware_callback import (
+        MergeAwareScheduleCallback,
+    )
+
+    model = torch.nn.Module()
+    model.experts = torch.nn.Module()
+    model.experts._axolotl_merge_aware_unsupported = True
+    checkpoint = tmp_path / "checkpoint-1"
+    checkpoint.mkdir()
+    config_path = checkpoint / "adapter_config.json"
+    config_path.write_text(json.dumps({"r": 2, "nvfp4_merge_aware": {"v": 1}}))
+    callback = MergeAwareScheduleCallback()
+    callback._enabled = True
+    state = SimpleNamespace(global_step=1, max_steps=1, is_world_process_zero=True)
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(torch.distributed, "is_initialized", lambda: False)
+        callback.on_save(SimpleNamespace(output_dir=tmp_path), state, None, model=model)
+
+    assert "nvfp4_merge_aware" not in json.loads(config_path.read_text())

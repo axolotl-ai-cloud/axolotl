@@ -55,12 +55,15 @@ quantized-weight parity. Full Trainer checkpoint/resume qualification for this
 merge-aware FSDP2 path remains separate. Native static forwards apply quantization
 from the first forward; the scheduled warmup below applies to the ModelOpt path.
 
-Native dynamic activation quantization, native merge-aware DeepSpeed integration,
-and unsupported LoRA variants currently warn and continue with ordinary LoRA.
-The multi-LoRA plugin owns routed native integration; its unsupported sharded
-combinations also warn and fall back. That warning means merged-NVFP4 parity is
-not guaranteed. This is separate from the ModelOpt/SonicMoE expert path described below. Set
-`nvfp4_merge_aware: false` to explicitly select ordinary LoRA.
+Native dynamic activation quantization is qualified for unsharded dense native TorchAO
+merge-aware LoRA on SM100+ hardware. Its forward uses a quantized effective weight and
+quantizes each activation group; input and LoRA gradients use the documented straight-through
+surrogate. Native dynamic activation quantization with FSDP or DeepSpeed, sharded dynamic
+weights, and unsupported LoRA variants warn and continue with ordinary LoRA. The multi-LoRA plugin owns
+routed native integration; its unsupported sharded combinations also warn and fall back. That
+warning means merged-NVFP4 parity is not guaranteed. This is separate from the
+ModelOpt/SonicMoE expert path described below. Set `nvfp4_merge_aware: false` to explicitly
+select ordinary LoRA.
 
 The native merge writer preserves TorchAO's quantization recipe and serialized
 weight components. Use a format-preserving merge for deployment of a merge-aware
@@ -111,7 +114,7 @@ Constraints:
 - The ModelOpt merge-aware path uses `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora`. An unsupported backend or an explicit `nvfp4_merge_aware: false` produces a prominent `NVFP4 MERGE WARNING` and continues with ordinary LoRA. That fallback can lose learned updates when merged into NVFP4.
 - Dense LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`) are opt-in with merge-aware training. Protected projections use their original forward so fake quantization is preserved; other projections can use optimized kernels.
 - Unsupported projections warn and fall back. If any distributed rank reports a fallback, checkpoints do not carry a merge-aware guarantee; stale merge-aware metadata is removed.
-- FSDP2 reconstruction preserves weight and activation scales, including ranks loaded on the meta device. SonicMoE routes received NVFP4 expert batches through the local EP implementation, preserving local expert IDs and `-1` sentinel slots. Local routing has CPU output/gradient parity coverage; end-to-end DeepEP dispatch with FSDP2 still requires qualification on a supported NVLink setup. Dynamic activation quantization, unsupported adapter variants, or LoRA factors that remain sharded outside their owning forward warn and fall back without a merge-aware guarantee.
+- FSDP2 reconstruction preserves weight and activation scales, including ranks loaded on the meta device. SonicMoE routes received NVFP4 expert batches through the local EP implementation, preserving local expert IDs and `-1` sentinel slots. Local routing has CPU output/gradient parity coverage; end-to-end DeepEP dispatch with FSDP2 still requires qualification on a supported NVLink setup. Dynamic native activation quantization under FSDP or DeepSpeed, unsupported adapter variants, or LoRA factors that remain sharded outside their owning forward warn and fall back without a merge-aware guarantee.
 - Fake quantization adds work to each protected projection. The opt-in kernel dispatch has not yet been benchmarked on a full NVFP4 training run; measure throughput and memory for your configuration.
 
 On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter's improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.
@@ -150,9 +153,11 @@ activation forward/backward kernels. This optimizes the adapter side; it does no
 replace the NVFP4 base kernel. DoRA, merged/disabled adapters, and multiple active
 PEFT adapters retain PEFT's forward. Expert kernels are unchanged.
 
-Dynamic NVFP4 activation quantization is rejected by the LoRA kernel path because
-torchao's activation conversion does not retain the base input gradient. Use
-weight-only NVFP4 bases for training with these kernels.
+The fused low-rank LoRA kernel path does not implement dynamic NVFP4 activation
+quantization. Use the native unsharded merge-aware forward for dynamic NVFP4 LoRA; it
+runs the deployed quantized forward and uses a dequantized frozen-weight, quantized-activation
+straight-through surrogate for gradients. Sharded FSDP and DeepSpeed dynamic configurations
+remain ordinary-LoRA fallbacks.
 
 ### Which NVFP4 loading path is supported?
 

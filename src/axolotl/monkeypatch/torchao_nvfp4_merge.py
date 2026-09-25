@@ -119,31 +119,73 @@ def quantize_native_effective_weight(base_weight, lora_a, lora_b, scaling):
     return recipe.quantize(effective)
 
 
+def _native_dynamic_activation(inputs, weight):
+    """Mirror TorchAO's dynamic ``F.linear`` activation encoding."""
+    from torchao.prototype.mx_formats.nvfp4_tensor import (
+        NVFP4Tensor,
+        per_tensor_amax_to_scale,
+    )
+
+    quantization = weight.act_quant_kwargs
+    if quantization.use_dynamic_per_tensor_scale:
+        per_tensor_scale = per_tensor_amax_to_scale(torch.max(torch.abs(inputs)))
+    else:
+        per_tensor_scale = weight.act_per_tensor_scale
+    return NVFP4Tensor.to_nvfp4(
+        inputs.view(-1, inputs.shape[-1]),
+        block_size=quantization.block_size,
+        per_tensor_scale=per_tensor_scale,
+        is_swizzled_scales=quantization.is_swizzled_scales,
+        use_triton_kernel=quantization.use_triton_kernel,
+    )
+
+
 def _native_merge_aware_forward(
     ctx, inputs, bias, base_weight, lora_a, lora_b, scaling
 ):
     snapped = quantize_native_effective_weight(base_weight, lora_a, lora_b, scaling)
     output = F.linear(inputs, snapped, bias)
-    ctx.save_for_backward(inputs, lora_a, lora_b, snapped.dequantize())
+    activation = (
+        _native_dynamic_activation(inputs, snapped).dequantize(inputs.dtype)
+        if snapped.act_quant_kwargs is not None
+        else inputs
+    )
+    ctx.save_for_backward(activation, lora_a, lora_b, snapped.dequantize())
+    ctx.dynamic_activation = snapped.act_quant_kwargs is not None
     ctx.scaling = scaling
     ctx.bias_requires_grad = bias is not None and bias.requires_grad
     return output
 
 
 def _native_merge_aware_backward(ctx, grad_output):
-    inputs, lora_a, lora_b, snapped = ctx.saved_tensors
+    activation, lora_a, lora_b, snapped = ctx.saved_tensors
     grad_inputs = grad_output.matmul(snapped)
     flat_grad = grad_output.reshape(-1, grad_output.shape[-1])
-    flat_inputs = inputs.reshape(-1, inputs.shape[-1])
-    grad_effective = flat_grad.transpose(0, 1).matmul(flat_inputs)
-    grad_b = (
-        grad_effective.to(lora_b.dtype).matmul(lora_a.to(lora_b.dtype).transpose(0, 1))
-        * ctx.scaling
-    )
-    grad_a = (
-        lora_b.to(lora_a.dtype).transpose(0, 1).matmul(grad_effective.to(lora_a.dtype))
-        * ctx.scaling
-    )
+    flat_activation = activation.reshape(-1, activation.shape[-1])
+    if ctx.dynamic_activation:
+        grad_effective = (
+            flat_grad.float().transpose(0, 1).matmul(flat_activation.float())
+        )
+        grad_b = (
+            grad_effective.matmul(lora_a.float().transpose(0, 1)) * ctx.scaling
+        ).to(lora_b.dtype)
+        grad_a = (
+            lora_b.float().transpose(0, 1).matmul(grad_effective) * ctx.scaling
+        ).to(lora_a.dtype)
+    else:
+        grad_effective = flat_grad.transpose(0, 1).matmul(flat_activation)
+        grad_b = (
+            grad_effective.to(lora_b.dtype).matmul(
+                lora_a.to(lora_b.dtype).transpose(0, 1)
+            )
+            * ctx.scaling
+        )
+        grad_a = (
+            lora_b.to(lora_a.dtype)
+            .transpose(0, 1)
+            .matmul(grad_effective.to(lora_a.dtype))
+            * ctx.scaling
+        )
     grad_bias = None
     if ctx.bias_requires_grad:
         grad_bias = flat_grad.sum(dim=0)
@@ -164,10 +206,6 @@ class _NativeNVFP4MergeAwareLinear(torch.autograd.Function):
 
 def native_nvfp4_merge_aware_linear(inputs, bias, base_weight, lora_a, lora_b, scaling):
     """Apply the native snapped effective weight with straight-through LoRA gradients."""
-    if getattr(base_weight, "act_quant_kwargs", None) is not None:
-        raise ValueError(
-            "native merge-aware linear requires static activation precision"
-        )
     return _NativeNVFP4MergeAwareLinear.apply(
         inputs, bias, base_weight, lora_a, lora_b, scaling
     )
@@ -249,8 +287,6 @@ def install_native_nvfp4_merge_aware_lora_linears(model: torch.nn.Module) -> int
         reason = _native_merge_aware_reason(module, adapters)
         if getattr(base.weight, "ndim", 0) != 2:
             reason = "non-matrix base weight"
-        elif getattr(base.weight, "act_quant_kwargs", None) is not None:
-            reason = "dynamic activation quantization"
         module._axolotl_native_nvfp4_owner = weakref.ref(model)
         module._axolotl_native_nvfp4_name = name
         if reason:
