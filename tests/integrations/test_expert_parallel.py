@@ -933,7 +933,7 @@ def _torch_ep_cfg(**kw):
         expert_parallel_size=2,
         expert_parallel_backend="torch",
         expert_parallel_fallback_on_unsupported=True,
-        expert_parallel_save_dispatch=True,
+        expert_parallel_save_dispatch=False,
         expert_parallel_token_capacity=None,
         experts_implementation=None,
         dp_shard_size=None,
@@ -1015,7 +1015,7 @@ class TestBackendResolution:
             )
         with pytest.raises(ValueError):
             ExpertParallelArgs(expert_parallel_backend="nccl")
-        assert ExpertParallelArgs().expert_parallel_save_dispatch is True
+        assert ExpertParallelArgs().expert_parallel_save_dispatch is False
 
     @pytest.mark.parametrize(
         "installed,expected", [(True, "deep_ep"), (False, "torch")]

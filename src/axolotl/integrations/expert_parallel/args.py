@@ -39,11 +39,14 @@ class ExpertParallelArgs(BaseModel):
 
     expert_parallel_fallback_on_unsupported: bool = True
 
-    expert_parallel_save_dispatch: bool = True
+    expert_parallel_save_dispatch: bool = False
     """``torch`` backend under activation checkpointing (``gradient_checkpointing`` or FSDP2
-    ``fsdp_config.activation_checkpointing``): save the
-    dispatch/combine all-to-all outputs so recompute does not re-issue the collectives (costs the
-    received rows per layer). The routing ``topk`` and host-side split counts are always saved."""
+    ``fsdp_config.activation_checkpointing``): save the dispatch/combine all-to-all outputs so
+    backward does not re-issue the collectives, at the cost of holding the received rows per
+    layer (24 GiB on Qwen3-30B-A3B at 32k packed on 2 GPUs). Recomputing them cost 1.6 s/step on
+    a PCIe-only pair and was a tie on an NVLink pair, so the default recomputes; enable this on
+    bandwidth-starved links with memory to spare. The routing ``topk`` and host-side split
+    counts are always saved."""
 
     expert_parallel_dispatch_chunks: int = Field(default=1, ge=1)
     """``torch`` backend only: split each MoE forward's tokens into this many chunks and pipeline

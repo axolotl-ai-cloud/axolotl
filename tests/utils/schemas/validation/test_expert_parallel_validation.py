@@ -62,7 +62,7 @@ class TestTorchExpertParallelCheckpointing:
     def test_accepts(self, min_base_cfg, extra):
         cfg = _validate(min_base_cfg, expert_parallel_backend="torch", **extra)
         assert cfg.expert_parallel_backend == "torch"
-        assert cfg.expert_parallel_save_dispatch is True
+        assert cfg.expert_parallel_save_dispatch is False
 
     def test_deep_ep_allows_reentrant(self, min_base_cfg):
         _validate(
