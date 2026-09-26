@@ -35,7 +35,10 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     if repo_id is None:
         return None
     try:
-        get_kernel(repo_id, version=get_attn_kernel_version(repo_id))
+        # Direct kernels calls do not read Transformers' allow_all_hub_kernels flag.
+        get_kernel(
+            repo_id, version=get_attn_kernel_version(repo_id), trust_remote_code=True
+        )
     except Exception as err:  # noqa: BLE001
         return f"{type(err).__name__}: {err}"
     return None
@@ -1550,6 +1553,7 @@ class SystemValidationMixin:
         if not torch.cuda.is_available():
             return self
 
+        from transformers.integrations.hub_kernels import allow_all_hub_kernels
         from transformers.utils import (
             is_flash_attn_2_available,
             is_flash_attn_3_available,
@@ -1561,10 +1565,12 @@ class SystemValidationMixin:
             checker = is_flash_attn_3_available
         else:
             checker = is_flash_attn_2_available
-        available = checker(kernels_fallback_ok=True)
+        with allow_all_hub_kernels():
+            available = checker(kernels_fallback_ok=True)
         reason = None
         if not available:
-            reason = _flash_attn_kernel_failure(self.attn_implementation)
+            with allow_all_hub_kernels():
+                reason = _flash_attn_kernel_failure(self.attn_implementation)
             if reason is None:
                 # the hub kernel loads: transformers' probe hit a transient (its
                 # version lookup lists repo refs over the network and any
