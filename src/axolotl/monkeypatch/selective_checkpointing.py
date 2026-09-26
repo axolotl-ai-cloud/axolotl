@@ -24,6 +24,7 @@ from torch.utils._pytree import tree_map
 from torch.utils.checkpoint import (
     SAC_IGNORED_OPS,
     CheckpointPolicy,
+    SelectiveCheckpointContext,
     checkpoint as _torch_checkpoint,
     create_selective_checkpoint_contexts,
 )
@@ -231,12 +232,36 @@ class _StackedContext:
         return stack.__exit__(*exc) if stack is not None else False
 
 
-def with_mandatory_save_clones(contexts: tuple[Any, Any]) -> tuple[Any, Any]:
-    """Layer the mandatory-save clone mode over a SAC ``(forward, recompute)`` pair."""
-    if not _MANDATORY_SAVES:
-        return contexts
+class _RecomputeObserver(TorchDispatchMode):
+    """Call the policy on every recomputed op for its bookkeeping side effects.
+
+    torch >= 2.13's cached dispatch mode no longer consults the policy during
+    recompute, which is where replay counts and the dead-save diagnostic come from.
+    """
+
+    def __init__(self, policy_fn) -> None:
+        super().__init__()
+        self.policy_fn = policy_fn
+
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        kwargs = kwargs or {}
+        self.policy_fn(
+            SelectiveCheckpointContext(is_recompute=True), func, *args, **kwargs
+        )
+        return func(*args, **kwargs)
+
+
+def wrap_sac_contexts(contexts: tuple[Any, Any], policy_fn=None) -> tuple[Any, Any]:
+    """Layer the mandatory-save clone mode over a SAC ``(forward, recompute)`` pair, and
+    a recompute observer when the recompute mode does not call the policy itself."""
     forward_ctx, recompute_ctx = contexts
-    return _StackedContext(forward_ctx, _MandatorySaveCloner()), recompute_ctx
+    if _MANDATORY_SAVES:
+        forward_ctx = _StackedContext(forward_ctx, _MandatorySaveCloner())
+    if policy_fn is not None and not callable(
+        getattr(recompute_ctx, "policy_fn", None)
+    ):
+        recompute_ctx = _StackedContext(recompute_ctx, _RecomputeObserver(policy_fn))
+    return forward_ctx, recompute_ctx
 
 
 def _is_flash_attention_forward(name: str) -> bool:
@@ -796,8 +821,8 @@ def build_sac_context_fn(
     def context_fn():
         state.regions_seen += 1
         run_rule_diagnostics(state)
-        return with_mandatory_save_clones(
-            create_selective_checkpoint_contexts(policy_fn)
+        return wrap_sac_contexts(
+            create_selective_checkpoint_contexts(policy_fn), policy_fn
         )
 
     return context_fn

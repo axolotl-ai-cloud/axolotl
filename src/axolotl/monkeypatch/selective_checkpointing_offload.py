@@ -46,7 +46,7 @@ from axolotl.monkeypatch.selective_checkpointing import (
     SacPolicyState,
     build_sac_policy,
     run_rule_diagnostics,
-    with_mandatory_save_clones,
+    wrap_sac_contexts,
 )
 from axolotl.utils.logging import get_logger
 
@@ -381,11 +381,12 @@ def build_sac_offload_context_fn(
         state.regions_seen += 1
         run_rule_diagnostics(state)
         storage: dict[Any, list[Any]] = defaultdict(list)
-        return with_mandatory_save_clones(
+        return wrap_sac_contexts(
             (
                 _OffloadCachingMode(policy_fn, storage, engine, region_id),
                 _OffloadCachedMode(policy_fn, storage, engine, region_id),
-            )
+            ),
+            policy_fn,
         )
 
     return context_fn

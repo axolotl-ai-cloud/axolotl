@@ -1027,7 +1027,9 @@ class TestRuleFunctional:
             return result
 
         def context_fn():
-            return torch.utils.checkpoint.create_selective_checkpoint_contexts(spy)
+            return selective_checkpointing.wrap_sac_contexts(
+                torch.utils.checkpoint.create_selective_checkpoint_contexts(spy), spy
+            )
 
         baseline = _run_stack(model, model.hidden, device)
         with torch.utils.checkpoint.set_checkpoint_early_stop(early_stop):
