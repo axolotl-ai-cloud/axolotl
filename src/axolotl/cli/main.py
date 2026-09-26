@@ -40,6 +40,20 @@ LAUNCHER_COMMAND_MAPPING = {
 }
 
 
+class ConfigPath(click.Path):
+    """Click path type for `axolotl` config files.
+
+    Configs may be local files or HTTPS URLs to remote YAML files (see
+    `docs/cli.qmd`). HTTPS URLs pass conversion unchanged; they are downloaded
+    later by `axolotl.cli.config.check_remote_config` when the config loads.
+    """
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, str) and value.startswith("https://"):
+            return value
+        return super().convert(value, param, ctx)
+
+
 @click.group(cls=PluginCommandGroup)
 @click.version_option(version=axolotl.__version__, prog_name="axolotl")
 def cli():
@@ -51,7 +65,7 @@ def cli():
 
 
 @cli.command()
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @click.option("--cloud", default=None, type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(PreprocessCliArgs)
 @add_options_from_config_options(AXOLOTL_CONFIG_CLI_OPTIONS)
@@ -80,7 +94,7 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
 @cli.command(
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
 )
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @click.option(
     "--launcher",
     type=click.Choice(["accelerate", "torchrun", "python"]),
@@ -141,7 +155,7 @@ def train(
 @cli.command(
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
 )
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @click.option(
     "--launcher",
     type=click.Choice(["accelerate", "torchrun", "python"]),
@@ -185,7 +199,7 @@ def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
 @cli.command(
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
 )
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @click.option(
     "--launcher",
     type=click.Choice(["accelerate", "torchrun", "python"]),
@@ -244,7 +258,7 @@ def inference(
 @cli.command(
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True}
 )
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @click.option(
     "--launcher",
     type=click.Choice(["accelerate", "torchrun", "python"]),
@@ -288,7 +302,7 @@ def merge_sharded_fsdp_weights(
 
 
 @cli.command()
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @click.option(
     "--dequant",
     is_flag=True,
@@ -342,7 +356,7 @@ def fetch(directory: str, dest: Optional[str]):
 
 
 @cli.command()
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @add_options_from_dataclass(VllmServeCliArgs)
 @filter_none_kwargs
 def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
@@ -352,7 +366,7 @@ def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
 
 
 @cli.command()
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @add_options_from_dataclass(QuantizeCliArgs)
 @filter_none_kwargs
 def quantize(config: str, **cli_args: QuantizeCliArgs):
@@ -362,7 +376,7 @@ def quantize(config: str, **cli_args: QuantizeCliArgs):
 
 
 @cli.command()
-@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.argument("config", type=ConfigPath(exists=True, path_type=str))
 @add_options_from_dataclass(ExportCliArgs)
 @filter_none_kwargs
 def export(config: str, **cli_args: ExportCliArgs):
