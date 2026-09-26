@@ -1,4 +1,4 @@
-"""Explicit native/FLA loading for pure Mamba language models."""
+"""Config-selected mixer backends for pure Mamba language models."""
 
 from collections.abc import Mapping
 
@@ -7,16 +7,20 @@ from axolotl.model_support.profile import (
     ModelHookPhase,
     ModelHooks,
     ModelProfile,
-    ModelStrategyOverrides,
+    ModelRegistrationOverrides,
 )
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import VANILLA_CAUSAL_LM
 
 
-def _loader():
-    from .loading import MambaModelLoader
+def _patch_mappings():
+    from axolotl.monkeypatch.models.mamba.modeling import patch_mamba_boundaries
 
-    return MambaModelLoader
+    from .modeling import Mamba2Mixer, MambaMixer
+
+    patch_mamba_boundaries("mamba")
+    patch_mamba_boundaries("mamba2")
+    return {"^MambaMixer$": MambaMixer, "^Mamba2Mixer$": Mamba2Mixer}
 
 
 def _validate_adapters(context):
@@ -59,7 +63,7 @@ class MambaSupport(ModelSupport):
     model_types = ("mamba", "mamba2")
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
-        strategies=ModelStrategyOverrides(auto_model_cls=_loader),
+        registrations=ModelRegistrationOverrides(patch_mappings=_patch_mappings),
         hooks=ModelHooks(
             by_phase={
                 ModelHookPhase.CONFIGURE_RUN: (_validate_adapters,),

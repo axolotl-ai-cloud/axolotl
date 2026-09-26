@@ -6,7 +6,7 @@ import pytest
 import torch
 from transformers import Mamba2Config, MambaConfig
 
-from axolotl.model_support.mamba.loading import MambaModelLoader
+from tests.monkeypatch._mamba_model import MambaModelLoader
 
 
 def _config(family):
@@ -40,15 +40,16 @@ def test_fla_checkpoint_roundtrip(family, tied, tmp_path, monkeypatch):
     config = _config(family)
     config.tie_word_embeddings = tied
     model = MambaModelLoader(config)
-    assert model.config.norm_eps == 1e-4
+    assert model.config.layer_norm_epsilon == 1e-4
     if family == "mamba":
-        assert model.backbone.layers[0].mixer.dt_rank == 3
+        assert model.backbone.layers[0].mixer.fla_mixer.dt_rank == 3
     cloned = copy.deepcopy(model)
     mixer = cloned.backbone.layers[0].mixer
-    assert mixer._axolotl_fla_forward.__self__ is mixer
-    assert (
-        cloned.backbone.norm_f._axolotl_norm_forward.__self__ is cloned.backbone.norm_f
-    )
+    assert mixer.fla_mixer._owner is mixer
+    assert mixer.fla_mixer.in_proj is mixer.in_proj
+    mixer._hf_hook = object()
+    assert not hasattr(mixer.fla_mixer, "_hf_hook")
+    assert not any("fla_mixer" in key for key in model.state_dict())
     model.save_pretrained(tmp_path)
     config = load_model_config(DictDefault(base_model=str(tmp_path)))
     restored = MambaModelLoader.from_pretrained(tmp_path, config=config)
@@ -133,7 +134,7 @@ def test_fla_packing_gradients_and_cache(family, batch_size):
         prefix = model(input_ids=ids[:, :17], use_cache=True)
         next_token = model(
             input_ids=ids[:, 17:18],
-            past_key_values=prefix.past_key_values,
+            cache_params=prefix.cache_params,
             use_cache=True,
         )
         dense = model(input_ids=ids[:, :18], use_cache=False)
@@ -149,12 +150,15 @@ def test_fla_packing_gradients_and_cache(family, batch_size):
 
 @pytest.mark.parametrize("family", ["mamba", "mamba2"])
 def test_model_support_keeps_native_default(family):
+    from transformers import AutoModelForCausalLM
+
     from axolotl.model_support import get_model_support
 
     config = _config(family)
     del config.mamba_backend
     loader = get_model_support(family).get_auto_model_cls()
-    model = loader(config)
+    assert loader is AutoModelForCausalLM
+    model = MambaModelLoader(config)
     assert type(model).__module__.startswith("transformers.models.")
 
 
@@ -199,7 +203,9 @@ def test_fla_adapter_target_validation(target, monkeypatch):
         support.post_model_load(cfg, model)
     from transformers import MambaForCausalLM
 
-    native = MambaForCausalLM(_config("mamba"))
+    native_config = _config("mamba")
+    native_config.mamba_backend = "transformers"
+    native = MambaForCausalLM(native_config)
     with pytest.raises(ValueError, match="incompatible"):
         get_peft_model(
             native, LoraConfig(task_type="CAUSAL_LM", r=2, target_modules=["out_proj"])
@@ -295,7 +301,7 @@ def test_fla_lora_gradients_packing_and_reload(family, targets, tmp_path):
         prefix = model(input_ids=ids[:, :17], use_cache=True)
         decoded = model(
             input_ids=ids[:, 17:18],
-            past_key_values=prefix.past_key_values,
+            cache_params=prefix.cache_params,
             use_cache=True,
         ).logits
         torch.testing.assert_close(
@@ -321,7 +327,7 @@ def test_fla_from_config_loader_options(family, dtype_key, monkeypatch):
     model = MambaModelLoader.from_config(
         _config(family),
         trust_remote_code=False,
-        attn_implementation="flash_attention_2",
+        attn_implementation="eager",
         experts_implementation="eager",
         **{dtype_key: torch.bfloat16},
     )
@@ -365,32 +371,36 @@ def test_fla_logits_selection_and_output_order(
     family, with_labels, selection, monkeypatch
 ):
     pytest.importorskip("fla")
-    from transformers.modeling_outputs import CausalLMOutputWithPast
-
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     model = MambaModelLoader(_config(family))
-    logits = torch.randn(1, 5, model.config.vocab_size)
-    calls = []
-
-    def forward(self, *, logits_to_keep, **kwargs):
-        calls.append(logits_to_keep)
-        return CausalLMOutputWithPast(logits=logits[:, -logits_to_keep:])
-
-    monkeypatch.setattr(type(model).__bases__[1], "forward", forward)
     ids = torch.randint(0, model.config.vocab_size, (1, 5))
-    labels = ids if with_labels else None
-    output = model(input_ids=ids, labels=labels, logits_to_keep=selection)
-    as_tuple = model(
-        input_ids=ids, labels=labels, logits_to_keep=selection, return_dict=False
+    logits = model(input_ids=ids).logits
+    calls = []
+    model.lm_head.register_forward_pre_hook(
+        lambda module, args: calls.append(args[0].shape[1])
     )
-    expected_keep = selection if not with_labels and isinstance(selection, int) else 0
-    assert calls == [expected_keep, expected_keep]
+    labels = ids if with_labels else None
+    indices = (
+        selection if isinstance(selection, torch.Tensor) else slice(-selection, None)
+    )
+    shifted = torch.nn.functional.pad(ids, (0, 1), value=-100)[:, 1:][:, indices]
+    output = model(
+        input_ids=ids, labels=labels, shift_labels=shifted, logits_to_keep=selection
+    )
+    as_tuple = model(
+        input_ids=ids,
+        labels=labels,
+        shift_labels=shifted,
+        logits_to_keep=selection,
+        return_dict=False,
+    )
     expected = (
         logits[:, selection]
         if isinstance(selection, torch.Tensor)
         else logits[:, -selection:]
     )
     torch.testing.assert_close(output.logits, expected)
+    assert calls == [expected.shape[1], expected.shape[1]]
     assert list(output)[0] == ("loss" if with_labels else "logits")
     for value, tuple_value in zip(output.to_tuple(), as_tuple, strict=True):
         torch.testing.assert_close(value, tuple_value)
@@ -398,6 +408,174 @@ def test_fla_logits_selection_and_output_order(
         torch.testing.assert_close(
             output[0],
             model.loss_function(
-                logits=logits, labels=ids, vocab_size=model.config.vocab_size
+                logits=expected,
+                labels=ids,
+                shift_labels=shifted,
+                vocab_size=model.config.vocab_size,
             ),
         )
+
+
+@pytest.mark.parametrize("family,groups", [("mamba", 1), ("mamba2", 1), ("mamba2", 2)])
+def test_mixer_mapping_preserves_native_weights_and_math(family, groups, monkeypatch):
+    pytest.importorskip("fla")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    config = _config(family)
+    config.n_groups = groups
+    config.mamba_backend = "transformers"
+    torch.manual_seed(17)
+    native = MambaModelLoader(config)
+    config = copy.deepcopy(config)
+    config.mamba_backend = "fla"
+    torch.manual_seed(17)
+    model = MambaModelLoader(config)
+    assert type(model) is type(native)
+    assert model.state_dict().keys() == native.state_dict().keys()
+    for name, value in native.state_dict().items():
+        torch.testing.assert_close(model.state_dict()[name], value)
+    ids = torch.randint(0, config.vocab_size, (2, 17))
+    actual = model(input_ids=ids, labels=ids)
+    expected = native(input_ids=ids, labels=ids)
+    torch.testing.assert_close(actual.logits, expected.logits, atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(actual.loss, expected.loss)
+    actual.loss.backward()
+    expected.loss.backward()
+    for (_, parameter), (_, reference) in zip(
+        model.named_parameters(), native.named_parameters(), strict=True
+    ):
+        torch.testing.assert_close(parameter.grad, reference.grad, atol=1e-5, rtol=1e-4)
+    config.mamba_backend = "transformers"
+    restored_native = MambaModelLoader(config)
+    assert not hasattr(restored_native.backbone.layers[0].mixer, "fla_mixer")
+
+
+def test_mixer_mapping_does_not_match_hybrid_mixers():
+    from transformers.monkey_patching import _find_replacement_class
+
+    from axolotl.model_support.mamba import _patch_mappings
+
+    mapping = _patch_mappings()
+    assert _find_replacement_class("MambaMixer", mapping) is not None
+    assert _find_replacement_class("Mamba2Mixer", mapping) is not None
+    assert _find_replacement_class("FalconMambaMixer", mapping) is None
+    assert _find_replacement_class("Zamba2MambaMixer", mapping) is None
+
+
+def test_native_packing_after_mixer_registration(monkeypatch):
+    from axolotl.loaders.patch_manager import PatchManager
+    from axolotl.utils.dict import DictDefault
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    config = _config("mamba")
+    config.mamba_backend = "transformers"
+    manager = PatchManager(DictDefault(model_config_type="mamba"), config)
+    manager._apply_model_support_registrations()
+    manager._apply_ssm_packing_patches()
+    model = MambaModelLoader(config)
+    ids = torch.randint(0, config.vocab_size, (1, 13))
+    positions = torch.cat((torch.arange(5), torch.arange(8)))[None]
+    packed = model(input_ids=ids, position_ids=positions, labels=ids)
+    first = model(input_ids=ids[:, :5], labels=ids[:, :5], num_items_in_batch=11)
+    second = model(input_ids=ids[:, 5:], labels=ids[:, 5:], num_items_in_batch=11)
+    torch.testing.assert_close(
+        packed.logits, torch.cat((first.logits, second.logits), 1)
+    )
+    torch.testing.assert_close(packed.loss, first.loss + second.loss)
+    pytest.importorskip("fla")
+    config.mamba_backend = "fla"
+    fla = MambaModelLoader(config)
+    fla.load_state_dict(model.state_dict())
+    torch.testing.assert_close(
+        fla(input_ids=ids, position_ids=positions).logits, packed.logits
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="FLA kernels require CUDA")
+@pytest.mark.parametrize("family,groups", [("mamba", 1), ("mamba2", 1), ("mamba2", 2)])
+def test_fla_mixer_cuda_matches_native_reference(family, groups):
+    pytest.importorskip("fla")
+    config = _config(family)
+    config.n_groups = groups
+    config.mamba_backend = "transformers"
+    torch.manual_seed(19)
+    reference = MambaModelLoader(config)
+    config = copy.deepcopy(config)
+    config.mamba_backend = "fla"
+    model = MambaModelLoader(config)
+    model.load_state_dict(reference.state_dict())
+    model = model.cuda()
+    ids = torch.randint(0, config.vocab_size, (2, 31))
+    expected = reference(input_ids=ids, labels=ids)
+    actual = model(input_ids=ids.cuda(), labels=ids.cuda())
+    torch.testing.assert_close(
+        actual.logits.float().cpu(), expected.logits, atol=1e-4, rtol=1e-4
+    )
+    logits_error = (
+        actual.logits.float().cpu() - expected.logits
+    ).norm() / expected.logits.norm()
+    assert logits_error < 1e-4
+    torch.testing.assert_close(
+        actual.loss.float().cpu(), expected.loss, atol=1e-5, rtol=1e-4
+    )
+    actual.loss.backward()
+    expected.loss.backward()
+    for (name, parameter), (_, baseline) in zip(
+        model.named_parameters(), reference.named_parameters(), strict=True
+    ):
+        error = (
+            parameter.grad.float().cpu() - baseline.grad
+        ).norm() / baseline.grad.norm().clamp_min(1e-6)
+        # Triton's default FP32 dot products use TF32's ten-bit mantissa.
+        assert error < 4 * 2**-10, (name, error.item())
+
+
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+def test_fla_native_cache_rejects_unsupported_inputs(family, monkeypatch):
+    pytest.importorskip("fla")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    model = MambaModelLoader(_config(family)).eval()
+    ids = torch.randint(0, model.config.vocab_size, (1, 5))
+    with torch.no_grad():
+        cache = model(input_ids=ids, use_cache=True).cache_params
+        with pytest.raises(ValueError, match="single-token"):
+            model(input_ids=ids[:, :2], cache_params=cache, use_cache=True)
+        with pytest.raises(ValueError, match="Packed Mamba requires uncached"):
+            model(
+                input_ids=ids[:, :2],
+                cache_params=cache,
+                position_ids=torch.zeros(1, 2, dtype=torch.long),
+            )
+        cache.layers[0].record_past = True
+        with pytest.raises(ValueError, match="record_past"):
+            model(input_ids=ids[:, :1], cache_params=cache, use_cache=True)
+
+
+def test_legacy_fla_mamba2_norm_survives_native_checkpoint_roundtrip(
+    monkeypatch, tmp_path
+):
+    pytest.importorskip("fla")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    config = _config("mamba2")
+    config.n_groups = 2
+    config.architectures = ["FlaMamba2ForCausalLM"]
+    model = MambaModelLoader(config)
+    norm = model.backbone.layers[0].mixer.norm
+    hidden = torch.randn(2, 5, norm.weight.numel())
+    gate = torch.randn_like(hidden)
+    grouped = (hidden * torch.nn.functional.silu(gate)).reshape(2, 5, 2, -1)
+    expected = (
+        grouped * torch.rsqrt(grouped.square().mean(-1, keepdim=True) + norm.eps)
+    ).reshape_as(hidden)
+    torch.testing.assert_close(norm(hidden, gate), expected)
+    ids = torch.randint(0, config.vocab_size, (1, 9))
+    before = model(input_ids=ids).logits
+    model.save_pretrained(tmp_path)
+    from axolotl.loaders.utils import load_model_config
+    from axolotl.utils.dict import DictDefault
+
+    restored_config = load_model_config(DictDefault(base_model=str(tmp_path)))
+    assert restored_config.architectures == ["Mamba2ForCausalLM"]
+    assert restored_config.fla_mamba_legacy_norm
+    restored = MambaModelLoader.from_pretrained(tmp_path, config=restored_config)
+    torch.testing.assert_close(restored(input_ids=ids).logits, before)

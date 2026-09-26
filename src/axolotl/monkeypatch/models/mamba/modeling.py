@@ -230,11 +230,28 @@ def _patch_causal_lm(causal_lm_cls) -> None:
     def patched_forward(self, *args, **kwargs):
         position_ids = kwargs.pop("position_ids", None)
         segments = None
+        if (
+            position_ids is not None
+            and kwargs.get("cache_params") is not None
+            and (position_ids[:, 1:] == 0).any()
+        ):
+            raise ValueError("Packed Mamba requires uncached inputs")
         if position_ids is not None and kwargs.get("cache_params") is None:
             segments = PackedSegments(get_seq_idx(position_ids))
             # a packed eval batch would otherwise get a fresh cache and the stock path
             kwargs["use_cache"] = False
             kwargs["attention_mask"] = _binarize(kwargs.get("attention_mask"))
+        if (
+            segments is not None
+            and kwargs.get("labels") is not None
+            and kwargs.get("shift_labels") is None
+        ):
+            labels = kwargs["labels"]
+            shifted = torch.nn.functional.pad(labels, (0, 1), value=-100)[
+                ..., 1:
+            ].clone()
+            shifted[:, :-1].masked_fill_(position_ids[:, 1:] == 0, -100)
+            kwargs["shift_labels"] = shifted
         for block in self.backbone.layers:
             block._axolotl_segments = segments
         return original_forward(self, *args, **kwargs)
@@ -314,6 +331,15 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
         segments=None,
         **kwargs,
     ):
+        if hasattr(self, "fla_mixer"):
+            return original_forward(
+                self,
+                hidden_states,
+                cache_params=cache_params,
+                attention_mask=attention_mask,
+                segments=segments,
+                **kwargs,
+            )
         if segments is None or cache_params is not None:
             return original_forward(
                 self,
@@ -380,3 +406,10 @@ def patch_falcon_mamba_modeling_packing(kernels_enabled: bool = False) -> None:
 
 def patch_mamba2_modeling_packing(kernels_enabled: bool = False) -> None:
     _apply("mamba2", kernels_enabled)
+
+
+def patch_mamba_boundaries(model_type):
+    mod = _import(model_type)
+    prefix = _FAMILIES[model_type]["prefix"]
+    _patch_causal_lm(getattr(mod, f"{prefix}ForCausalLM"))
+    _patch_block(getattr(mod, f"{prefix}Block"))

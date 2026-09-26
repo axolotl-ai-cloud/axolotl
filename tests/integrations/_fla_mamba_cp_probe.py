@@ -2,11 +2,11 @@
 
 import os
 
+import pytest
 import torch
 import torch.distributed as dist
 
-from axolotl.model_support.mamba.loading import MambaModelLoader
-
+from tests.monkeypatch._mamba_model import MambaModelLoader
 from tests.monkeypatch.test_fla_mamba import _config
 
 
@@ -70,6 +70,8 @@ def main():
                 wiring = rm.wire_recurrent_layers(model, group=dist.group.WORLD)
                 start, end = rank * 96 // world, (rank + 1) * 96 // world
                 local_embeddings = embeddings[:, start:end].detach().requires_grad_()
+                with pytest.raises(ValueError, match="CP requires use_cache=False"):
+                    model(inputs_embeds=local_embeddings, use_cache=True)
                 actual = model(
                     inputs_embeds=local_embeddings, position_ids=positions[:, start:end]
                 ).logits
