@@ -9,6 +9,7 @@ the class names of modules that must stay fp32 (e.g. DeepSeek-V4 mHC) via
 from __future__ import annotations
 
 import contextlib
+import itertools
 
 import torch
 
@@ -118,6 +119,43 @@ def nonfloat_param_guard(model):
         yield
     finally:
         nn.Parameter.__new__ = orig_new
+
+
+def patch_fsdp2_traceable_wrapper_param_move() -> None:
+    """Preserve parameter trainability when FSDP2 moves tensor subclasses to its device."""
+    if getattr(patch_fsdp2_traceable_wrapper_param_move, "_axolotl_patched", False):
+        return
+
+    from torch import nn
+    from torch.distributed.fsdp._fully_shard import _fsdp_init
+    from torch.distributed.tensor import DTensor
+
+    def _move_states_to_device(params, buffers, device) -> None:
+        for tensor in itertools.chain(params, buffers):
+            if tensor.device == device or tensor.device.type == "meta":
+                continue
+            if isinstance(tensor, DTensor):
+                if (dtensor_mesh_type := tensor.device_mesh.device_type) != device.type:
+                    raise ValueError(
+                        "Requires DTensor to have mesh of the same type as the FSDP mesh "
+                        f"but got {dtensor_mesh_type} for DTensor and {device.type}"
+                    )
+                raise AssertionError(
+                    f"Expects DTensor to be moved to {dtensor_mesh_type} but got "
+                    f"{tensor.device}"
+                )
+            if _fsdp_init.is_traceable_wrapper_subclass(tensor):
+                with torch.no_grad():
+                    tensor_on_device = nn.Parameter(
+                        tensor.to(device), requires_grad=tensor.requires_grad
+                    )
+                torch.utils.swap_tensors(tensor, tensor_on_device)
+            else:
+                tensor.data = tensor.to(device)
+
+    _fsdp_init._move_states_to_device = _move_states_to_device
+    patch_fsdp2_traceable_wrapper_param_move._axolotl_patched = True
+    LOG.info("Patched FSDP2 traceable-wrapper device moves to preserve requires_grad")
 
 
 def shard_fp32_modules(model, fsdp2_kwargs, compute_dtype=torch.bfloat16) -> int:

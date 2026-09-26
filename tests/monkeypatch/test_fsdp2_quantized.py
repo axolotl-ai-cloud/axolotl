@@ -75,6 +75,42 @@ def test_nonfloat_param_guard_freezes_existing_nonfloat():
         assert m.f.requires_grad is True  # float untouched
 
 
+def test_traceable_wrapper_device_move_preserves_requires_grad(monkeypatch):
+    import torch.distributed.fsdp._fully_shard._fsdp_init as fsdp_init
+
+    class FakeTraceable(torch.Tensor):
+        @staticmethod
+        def __new__(cls, value):
+            return value.as_subclass(cls)
+
+        def to(self, *args, **kwargs):
+            return self.detach().clone().as_subclass(type(self))
+
+    def parameter(requires_grad):
+        return nn.Parameter(FakeTraceable(torch.zeros(2)), requires_grad=requires_grad)
+
+    original_move = fsdp_init._move_states_to_device
+    original_patched = getattr(
+        fq.patch_fsdp2_traceable_wrapper_param_move, "_axolotl_patched", False
+    )
+    monkeypatch.setattr(
+        fsdp_init,
+        "is_traceable_wrapper_subclass",
+        lambda value: isinstance(value, FakeTraceable),
+    )
+    try:
+        fq.patch_fsdp2_traceable_wrapper_param_move._axolotl_patched = False
+        fq.patch_fsdp2_traceable_wrapper_param_move()
+        frozen = parameter(False)
+        trainable = parameter(True)
+        fsdp_init._move_states_to_device([frozen, trainable], [], torch.device("cuda"))
+        assert not frozen.requires_grad
+        assert trainable.requires_grad
+    finally:
+        fsdp_init._move_states_to_device = original_move
+        fq.patch_fsdp2_traceable_wrapper_param_move._axolotl_patched = original_patched
+
+
 def test_register_fp32_shard_classes():
     saved = set(fq._FP32_SHARD_CLASS_NAMES)
     try:
