@@ -19,6 +19,7 @@ NVFP4_ENV
 
 pytest -v --durations=10 -n0 \
   tests/e2e/multigpu/solo/test_native_nvfp4_dynamic_ste.py \
+  tests/e2e/multigpu/solo/test_sonicmoe_nvfp4_fsdp2.py \
   tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_lora_parity.py \
   tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_merge_aware_resume.py \
   tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_recipe.py \
