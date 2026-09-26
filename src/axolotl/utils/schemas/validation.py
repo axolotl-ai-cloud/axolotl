@@ -1937,6 +1937,38 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_torch_expert_parallel_checkpointing(self):
+        if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
+            return self
+        backend = getattr(self, "expert_parallel_backend", None)
+        if backend == "auto":
+            from importlib.util import find_spec
+
+            backend = "deep_ep" if find_spec("deep_ep") is not None else "torch"
+        if backend != "torch":
+            return self
+        # recompute has to replay the forward's routing through a SAC policy
+        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
+            raise ValueError(
+                "expert_parallel_backend: torch requires non-reentrant gradient "
+                "checkpointing (gradient_checkpointing_kwargs.use_reentrant: false): "
+                "recompute must reuse the forward's routing, which reentrant "
+                "checkpointing cannot guarantee"
+            )
+        if self.gradient_checkpointing and self.activation_offloading in (
+            True,
+            "legacy",
+            "disk",
+        ):
+            raise ValueError(
+                "expert_parallel_backend: torch is incompatible with activation_offloading "
+                f"{self.activation_offloading!r}: the TRL offloader bypasses the "
+                "checkpointing policy that keeps recompute on the forward's routing. "
+                "Use activation_offloading: hidden_states or false."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_hidden_states_offloading(self):
         if self.activation_offloading != "hidden_states":
             return self

@@ -184,6 +184,7 @@ def shard_expert_weights(model, ep_group) -> int:
 
     ep_rank = dist.get_rank(ep_group)
     sharded = 0
+    e_local_counts: set[int] = set()
     ignore_names: list[str] = []
 
     for name, module in _detect_experts_modules(model):
@@ -218,6 +219,7 @@ def shard_expert_weights(model, ep_group) -> int:
         # Stash metadata the registered fn needs.
         module.local_expert_offset = start
         module.num_local_experts = E_local
+        e_local_counts.add(E_local)
         module.num_experts_global = E
         # Single global expert count for the cpu_ram_efficient load path (all routed-expert modules
         # share it); used to reshape the global expert-LoRA adapter when slicing per-rank shards.
@@ -248,7 +250,8 @@ def shard_expert_weights(model, ep_group) -> int:
         model._ddp_params_and_buffers_to_ignore = existing + ignore_names
         LOG.info(
             f"Sharded {sharded} Experts module(s) along the experts dim "
-            f"(ep_rank={ep_rank}, ep_size={ep_size}). "
+            f"(ep_rank={ep_rank}, ep_size={ep_size}, "
+            f"num_local_experts={sorted(e_local_counts)}). "
             f"Marked {len(ignore_names)} param(s) as DDP-ignored."
         )
     return sharded

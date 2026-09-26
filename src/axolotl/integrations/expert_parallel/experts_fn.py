@@ -6,22 +6,23 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""DeepEP-backed registered functions for `ALL_EXPERTS_FUNCTIONS`.
+"""Expert-parallel registered functions for `ALL_EXPERTS_FUNCTIONS`.
 
-Four names registered (eager / grouped_mm / scattermoe / sonicmoe) sharing one
-`_deep_ep_forward` body. Templates ported from `bench_deep_ep.py` Stage 1
-modes 3 and 4.
+Four local kernels (eager / grouped_mm / scattermoe / sonicmoe) times two dispatch
+backends (DeepEP, torch all-to-all), all sharing one `_ep_forward` body.
 """
 
 from __future__ import annotations
 
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
 
+from . import torch_dispatch
 from .buffer import barrier_ep, get_buffer, get_combine_config, get_dispatch_config
 
 # Per-forward [B*S] bool mask of real (non-padding) tokens, set by the EP plugin's model
-# pre-hook from the batch `attention_mask` and consumed by `_deep_ep_forward` to exclude
+# pre-hook from the batch `attention_mask` and consumed by `_ep_forward` to exclude
 # padding from the dispatch. ``None`` when there is no padding (packed / no attention_mask).
 _VALID_TOKEN_MASK: torch.Tensor | None = None
 
@@ -265,7 +266,65 @@ class _DeepEPHandleHolder:
         self.handle = handle
 
 
-def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_name):
+class _DeepEPBackend:
+    cast_bf16 = True
+
+    @staticmethod
+    def dispatch(
+        hidden_states, topk_idx, topk_w, *, num_experts_global, num_local_experts
+    ):
+        buffer = get_buffer()
+        # Layout is non-differentiable (bookkeeping only).
+        with torch.no_grad():
+            num_per_rank, _, num_per_expert, is_in_rank, _ = buffer.get_dispatch_layout(
+                topk_idx, num_experts_global
+            )
+        return _DeepEPDispatch.apply(
+            hidden_states, topk_idx, topk_w, num_per_rank, num_per_expert, is_in_rank
+        )
+
+    @staticmethod
+    def combine(local_out, handle_holder):
+        barrier_ep()  # wait out the local-kernel autotune skew before the combine collective
+        return _DeepEPCombine.apply(local_out, handle_holder)
+
+
+class _TorchBackend:
+    cast_bf16 = False
+
+    @staticmethod
+    def dispatch(
+        hidden_states, topk_idx, topk_w, *, num_experts_global, num_local_experts
+    ):
+        group = None
+        if num_experts_global != num_local_experts:
+            group = torch_dispatch.get_ep_group()
+            num_ranks = num_experts_global // num_local_experts
+            if group is None or dist.get_world_size(group) != num_ranks:
+                raise RuntimeError(
+                    f"expert_parallel torch backend: experts are sharded {num_ranks}-way "
+                    f"({num_experts_global} global / {num_local_experts} local) but the EP "
+                    f"group is {'unset' if group is None else dist.get_world_size(group)}."
+                )
+        return torch_dispatch.dispatch(
+            hidden_states,
+            topk_idx,
+            topk_w,
+            num_local_experts=num_local_experts,
+            group=group,
+        )
+
+    @staticmethod
+    def combine(local_out, handle):
+        return torch_dispatch.combine(local_out, handle)
+
+
+_BACKENDS = {"deep_ep": _DeepEPBackend, "torch": _TorchBackend}
+
+
+def _ep_forward(
+    self, hidden_states, top_k_index, top_k_weights, *, kernel_name, backend
+):
     """Shared dispatch -> local-experts -> combine pipeline.
 
     Inputs come in with **global** routing indices (we do not run
@@ -275,14 +334,14 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     to skip them (eager/scattermoe), mask them (grouped_mm), or remap them to the
     kernel's own drop id (sonicmoe: `E_local`).
     """
-    if hidden_states.dtype != torch.bfloat16:
+    ep_backend = _BACKENDS[backend]
+    original_dtype = None
+    if ep_backend.cast_bf16 and hidden_states.dtype != torch.bfloat16:
         original_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.bfloat16)
-    else:
-        original_dtype = None
 
-    buffer = get_buffer()
     E_global = getattr(self, "num_experts_global", self.num_experts)
+    E_local = getattr(self, "num_local_experts", self.num_experts)
 
     topk_idx_i64 = top_k_index.to(torch.int64)
     topk_w_f32 = top_k_weights.to(torch.float32)
@@ -298,7 +357,7 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     # `pad_to_sequence_len`, padding rows carry identical embeddings, so the router
     # sends them all to the same one or two experts — a routing imbalance DeepEP's
     # intranode dispatch can't survive ('unspecified launch failure'). Sentinelling
-    # their routing to -1 makes `get_dispatch_layout` skip them entirely (they get a
+    # their routing to -1 makes the dispatch layout skip them entirely (they get a
     # zero expert output, which is correct: their loss is masked anyway). Real long
     # sequences (packed, or a single long sample) have no padding and are unaffected.
     valid = _get_valid_token_mask()
@@ -313,19 +372,12 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
             )
         topk_idx_i64 = topk_idx_i64.masked_fill(~valid.view(-1, 1), -1)
 
-    # Layout is non-differentiable (bookkeeping only).
-    with torch.no_grad():
-        num_per_rank, _, num_per_expert, is_in_rank, _ = buffer.get_dispatch_layout(
-            topk_idx_i64, E_global
-        )
-
-    recv_x, recv_topk_idx, recv_topk_weights, handle_holder = _DeepEPDispatch.apply(
+    recv_x, recv_topk_idx, recv_topk_weights, handle = ep_backend.dispatch(
         hidden_states,
         topk_idx_i64,
         topk_w_f32,
-        num_per_rank,
-        num_per_expert,
-        is_in_rank,
+        num_experts_global=E_global,
+        num_local_experts=E_local,
     )
 
     # Pass the raw -1-tagged routing through; each local kernel handles sentinels
@@ -334,12 +386,33 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
         self, recv_x, recv_topk_idx, recv_topk_weights
     )
 
-    barrier_ep()  # wait out the local-kernel autotune skew before the combine collective
-    combined = _DeepEPCombine.apply(local_out, handle_holder)
+    combined = ep_backend.combine(local_out, handle)
 
     if original_dtype is not None:
         combined = combined.to(original_dtype)
     return combined
+
+
+def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_name):
+    return _ep_forward(
+        self,
+        hidden_states,
+        top_k_index,
+        top_k_weights,
+        kernel_name=kernel_name,
+        backend="deep_ep",
+    )
+
+
+def _torch_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_name):
+    return _ep_forward(
+        self,
+        hidden_states,
+        top_k_index,
+        top_k_weights,
+        kernel_name=kernel_name,
+        backend="torch",
+    )
 
 
 def deep_ep_experts_forward(self, hidden_states, top_k_index, top_k_weights):
@@ -366,16 +439,48 @@ def deep_ep_sonicmoe_experts_forward(self, hidden_states, top_k_index, top_k_wei
     )
 
 
+def torch_ep_experts_forward(self, hidden_states, top_k_index, top_k_weights):
+    return _torch_ep_forward(
+        self, hidden_states, top_k_index, top_k_weights, kernel_name="eager"
+    )
+
+
+def torch_ep_grouped_mm_experts_forward(
+    self, hidden_states, top_k_index, top_k_weights
+):
+    return _torch_ep_forward(
+        self, hidden_states, top_k_index, top_k_weights, kernel_name="grouped_mm"
+    )
+
+
+def torch_ep_scattermoe_experts_forward(
+    self, hidden_states, top_k_index, top_k_weights
+):
+    return _torch_ep_forward(
+        self, hidden_states, top_k_index, top_k_weights, kernel_name="scattermoe"
+    )
+
+
+def torch_ep_sonicmoe_experts_forward(self, hidden_states, top_k_index, top_k_weights):
+    return _torch_ep_forward(
+        self, hidden_states, top_k_index, top_k_weights, kernel_name="sonicmoe"
+    )
+
+
 REGISTRY = {
     "deep_ep": deep_ep_experts_forward,
     "deep_ep_grouped_mm": deep_ep_grouped_mm_experts_forward,
     "deep_ep_scattermoe": deep_ep_scattermoe_experts_forward,
     "deep_ep_sonicmoe": deep_ep_sonicmoe_experts_forward,
+    "torch_ep_eager": torch_ep_experts_forward,
+    "torch_ep_grouped_mm": torch_ep_grouped_mm_experts_forward,
+    "torch_ep_scattermoe": torch_ep_scattermoe_experts_forward,
+    "torch_ep_sonicmoe": torch_ep_sonicmoe_experts_forward,
 }
 
 
 def register_all() -> None:
-    """Register the four names in `ALL_EXPERTS_FUNCTIONS` and whitelist them."""
+    """Register every `REGISTRY` name in `ALL_EXPERTS_FUNCTIONS` and whitelist them."""
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
     from transformers.modeling_utils import PreTrainedModel
 
@@ -396,8 +501,14 @@ def register_all() -> None:
         PreTrainedModel.get_correct_experts_implementation = patched  # type: ignore[assignment]
 
 
-def kernel_to_registered_name(kernel: str) -> str:
-    """Map `expert_parallel_local_kernel` -> registered name."""
+def kernel_to_registered_name(kernel: str, backend: str = "deep_ep") -> str:
+    """Map `expert_parallel_local_kernel` + resolved backend -> registered name."""
+    if backend == "torch":
+        if kernel not in _LOCAL_KERNELS:
+            raise KeyError(kernel)
+        return f"torch_ep_{kernel}"
+    if backend != "deep_ep":
+        raise ValueError(f"unknown expert_parallel backend {backend!r}")
     return {
         "eager": "deep_ep",
         "grouped_mm": "deep_ep_grouped_mm",

@@ -95,7 +95,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 |
 | Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, axolotl-ringmaster (Ulysses/Ring/USP) |
-| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2 (DeepEP backend) |
+| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2 (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
 | N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
 Blocked combinations: **EP x TP/CP**, **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
@@ -125,7 +125,7 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 | GLM-DSA kernels | `use_glm_dsa_kernels: true` | SM90+ | GLM-4.7/5.2 sparse-MLA (DSA) attention |
 | Grouped-GEMM backend | `moe_grouped_backend: auto\|marlin\|cutlass\|deepgemm` | capability-selected | fp4 grouped experts |
 
-**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`), as does SonicMoE (`deep_ep_sonicmoe`, bf16 gated experts only; neither the NVFP4 nor the non-gated path supports EP).
+**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe` / `torch_ep_scattermoe`, per `expert_parallel_backend`), as does SonicMoE (`deep_ep_sonicmoe` / `torch_ep_sonicmoe`, bf16 gated experts only; neither the NVFP4 nor the non-gated path supports EP).
 
 **Non-gated (latentmoe) experts:** Nemotron-3 (`nemotron_h`) uses non-gated relu² experts (`up_proj`/`down_proj`, no gate) in `moe_latent_size` width. Both kernels support it: ScatterMoE natively, SonicMoE via a grouped-GEMM path (the fused CUTLASS epilogue lands with the next sonic-moe kernel build). NVFP4 checkpoints (modelopt `MIXED_PRECISION`) keep the routed experts packed NVFP4 and dequantize every other quantized weight to bf16 at load.
 
@@ -239,7 +239,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | Feature | Requires |
 |---|---|
 | QLoRA | `load_in_4bit: true` |
-| Expert Parallel | FSDP2 + DeepEP + Ampere/Hopper (NVLink) |
+| Expert Parallel | FSDP2 + `deep_ep` backend (Ampere/Hopper, NVLink) or `torch` backend (any NCCL/gloo fabric) |
 | Context/Sequence parallel | Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention |
 | SonicMoE | Hopper/Blackwell + CUDA 12.9 (else auto-falls back to ScatterMoE) |
 | FP8 attention | SM90+ and PyTorch >= 2.11 |
@@ -277,7 +277,7 @@ Works, but flagged unstable:
 - Flash Attention 4
 - Multimodal / VLM ("limited, no full feature parity")
 - N-D parallelism and Tensor Parallel
-- Expert Parallel / DeepEP
+- Expert Parallel (`deep_ep` or `torch` backend)
 
 ### 🚧 WIP / feature-branch only
 Not in a tagged release yet:

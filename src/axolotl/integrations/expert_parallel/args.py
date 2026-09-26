@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Pydantic args for the Expert-Parallel (DeepEP) plugin."""
+"""Pydantic args for the Expert-Parallel plugin."""
 
 from typing import Literal
 
@@ -23,7 +23,10 @@ class ExpertParallelArgs(BaseModel):
     expert_parallel_size: int = 1
     """Number of EP ranks. 1 = disabled (default), > 1 = enabled."""
 
-    expert_parallel_backend: Literal["deep_ep"] = "deep_ep"
+    expert_parallel_backend: Literal["auto", "deep_ep", "torch"] = "auto"
+    """Token dispatch backend. ``deep_ep``: DeepEP fused kernels (NVLink/RDMA). ``torch``: plain
+    ``all_to_all_single`` over the EP process group (any NCCL/gloo setup). ``auto``: ``deep_ep``
+    when importable, else ``torch``."""
 
     expert_parallel_num_nvl_bytes: int = 256 << 20
 
@@ -35,6 +38,12 @@ class ExpertParallelArgs(BaseModel):
     GLM-style routers concentrate more with depth — set this (e.g. 1024) for them. ``None`` = no cap."""
 
     expert_parallel_fallback_on_unsupported: bool = True
+
+    expert_parallel_save_dispatch: bool = True
+    """``torch`` backend under activation checkpointing (``gradient_checkpointing`` or FSDP2
+    ``fsdp_config.activation_checkpointing``): save the
+    dispatch/combine all-to-all outputs so recompute does not re-issue the collectives (costs the
+    received rows per layer). The routing ``topk`` and host-side split counts are always saved."""
 
     @model_validator(mode="after")
     def _validate(self):

@@ -608,6 +608,16 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         getattr(mesh, "mesh_dim_names", None) if mesh is not None else None
     )
     if _ep_shard_axis is not None:
+        from axolotl.integrations.expert_parallel.shard import _detect_experts_modules
+
+        # The EP plugin's fallback path leaves the experts unsharded; FSDP them normally then.
+        if not any(
+            getattr(m, "num_experts_global", None) is not None
+            and m.num_local_experts < m.num_experts_global
+            for _n, m in _detect_experts_modules(model)
+        ):
+            _ep_shard_axis = None
+    if _ep_shard_axis is not None:
         from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
         from axolotl.integrations.expert_parallel.shard import shard_expert_lora
 

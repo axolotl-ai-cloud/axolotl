@@ -1,12 +1,34 @@
 # Expert Parallelism Integration
 
-Replaces the MoE dispatch/combine path with DeepEP's fused kernels.
+Replaces the MoE dispatch/combine path with token-parallel expert dispatch, on one of two backends.
+
+## Backends
+
+| `expert_parallel_backend` | Dispatch | Needs |
+|----------------------------|----------|-------|
+| `deep_ep`                  | DeepEP's fused NVSHMEM kernels | NVLink (intranode) or RDMA (internode); the `deep_ep` build — see [Installation](#installation) |
+| `torch`                     | Plain `all_to_all_single` over the EP process group | Any NCCL or gloo fabric — no extra build, works over PCIe |
+| `auto` (default)            | `deep_ep` if importable, else `torch` | — |
+
+Both backends compose with the same local-experts kernel (ScatterMoE, SonicMoE, grouped_mm, eager), the same FSDP mesh, and the same sharding/save-load path — only the token dispatch/combine collective differs. Set explicitly to pin one:
+
+```yaml
+expert_parallel_backend: torch  # or deep_ep; omit for auto
+```
+
+An explicit `deep_ep` without the `deep_ep` package installed follows `expert_parallel_fallback_on_unsupported` (warn + fall back to no EP, or raise); an explicit `torch` never imports or requires `deep_ep`.
+
+### Checkpointing with the `torch` backend
+
+The `torch` backend's dispatch is training-critical to recompute correctly under activation checkpointing: the router's `topk` must not re-run (a different, nondeterministically-tied result would desync the `all_to_all` shapes each rank sends, which hangs the other ranks) and the token-count split tensors must not be recomputed either. The plugin installs a policy that always saves these under `gradient_checkpointing` (with or without `selective_checkpointing`, including `activation_offloading: hidden_states`) and under FSDP2 `fsdp_config.activation_checkpointing`; reentrant checkpointing and the TRL offloader modes (`activation_offloading: true | legacy | disk`) are rejected at config validation. The dispatched/combined rows themselves are an optional save, on by default (`expert_parallel_save_dispatch: true`) — turn it off to recompute the `all_to_all` instead of holding its output, trading a small amount of network traffic for memory.
 
 ## Requirements
 
-Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink.
+Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink — for the `deep_ep` backend only. The `torch` backend runs on any GPU topology with a working NCCL or gloo backend, including PCIe-only setups with no NVLink.
 
 ## Installation
+
+The `torch` backend needs nothing beyond axolotl's own dependencies. The rest of this section is the `deep_ep` build.
 
 **Hopper (sm_90, H100), multi-node with NCCL 2.29+ (torch 2.11+) and OFED:**
 
@@ -168,17 +190,17 @@ See full example configs at [`examples/expert_parallel/`](https://github.com/axo
 
 #### Implementation notes
 
-EP composes with the local-experts kernel you've already configured: ScatterMoE, SonicMoE, grouped_mm, or eager.
+EP composes with the local-experts kernel you've already configured: ScatterMoE, SonicMoE, grouped_mm, or eager — the same four for either backend.
 
 EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
 
-| Your existing config                                | Local kernel under DeepEP |
-|-----------------------------------------------------|---------------------------|
-| `use_scattermoe: true`                              | ScatterMoE (Triton)       |
-| `use_sonicmoe: true`                                | SonicMoE (bf16 experts)   |
-| `experts_implementation: grouped_mm` / `batched_mm` | grouped_mm (transformers) |
-| `experts_implementation: eager`                     | eager Python loop         |
-| (unset)                                             | grouped_mm (default)      |
+| Your existing config                                | Local kernel under `deep_ep` | Local kernel under `torch` |
+|-----------------------------------------------------|-------------------------------|-----------------------------|
+| `use_scattermoe: true`                              | ScatterMoE (Triton)           | ScatterMoE (Triton)         |
+| `use_sonicmoe: true`                                | SonicMoE (bf16 experts)       | SonicMoE (bf16 experts)     |
+| `experts_implementation: grouped_mm` / `batched_mm` | grouped_mm (transformers)     | grouped_mm (transformers)   |
+| `experts_implementation: eager`                     | eager Python loop             | eager Python loop           |
+| (unset)                                             | grouped_mm (default)          | grouped_mm (default)        |
 
 ## Limitations
 

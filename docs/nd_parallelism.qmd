@@ -43,12 +43,12 @@ Context Parallelism, also called [Sequence Parallelism](sequence_parallelism.qmd
 
 ### Expert Parallelism (EP) {#sec-ep}
 
-Expert Parallelism shards the experts of a Mixture-of-Experts (MoE) model across GPUs. Each rank holds `num_experts / ep_size` experts; tokens are routed to the rank that owns the chosen expert via DeepEP's fused dispatch/combine kernels.
+Expert Parallelism shards the experts of a Mixture-of-Experts (MoE) model across GPUs. Each rank holds `num_experts / ep_size` experts; tokens are routed to the rank that owns the chosen expert via a token dispatch/combine collective.
 
-- How it works: the EP plugin slices each `Experts` module's `gate_up_proj` / `down_proj` along the experts dimension and replaces the dispatch/combine path with DeepEP. Each rank sees a different batch (so EP is data-parallel for *data*) but holds different expert shards (model-parallel for *expert weights*).
+- How it works: the EP plugin slices each `Experts` module's `gate_up_proj` / `down_proj` along the experts dimension and replaces the dispatch/combine path with the chosen backend. Each rank sees a different batch (so EP is data-parallel for *data*) but holds different expert shards (model-parallel for *expert weights*).
 - When to use: MoE training where the experts dominate the parameter count and don't fit under FSDP alone, or where you want to compose with FSDP on orthogonal mesh axes.
 - Composes with FSDP: `expert_parallel_size × dp_shard_size = world_size`. EP shards experts on the `ep` axis; FSDP shards non-experts (and the per-EP-slice expert weights) on the `dp_shard` axis. Process groups are disjoint.
-- Requires the [DeepEP](https://github.com/deepseek-ai/DeepEP) library (Ampere or Hopper, NVLink). See [Expert Parallelism Integration](custom_integrations.qmd#expert-parallelism-integration) for install + integration details.
+- Two dispatch backends, set with `expert_parallel_backend` (default `auto`): `deep_ep` uses the [DeepEP](https://github.com/deepseek-ai/DeepEP) library's fused kernels (Ampere or Hopper, all-pairs NVLink/RDMA); `torch` dispatches over a plain `all_to_all_single` on the EP process group and runs on any NCCL/gloo fabric, including PCIe-only nodes with no NVLink. `auto` picks `deep_ep` when it's importable, else `torch`. See [Expert Parallelism Integration](custom_integrations.qmd#expert-parallelism-integration) for backend details, install steps, and the `torch` backend's checkpointing note.
 
 ### Hybrid Sharding Data Parallel (HSDP) {#sec-hsdp}
 

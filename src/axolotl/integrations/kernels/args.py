@@ -5,7 +5,7 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-# deep_ep[_*] are EP-plugin composites, passed through when expert_parallel_size > 1.
+# deep_ep[_*] / torch_ep_* are EP-plugin composites, passed through when expert_parallel_size > 1.
 _BUILTIN_EXPERTS_IMPLS = {"eager", "batched_mm", "grouped_mm"}
 _KERNEL_EXPERTS_IMPLS = {"scattermoe", "sonicmoe"}
 _EP_EXPERTS_IMPLS = {
@@ -13,6 +13,10 @@ _EP_EXPERTS_IMPLS = {
     "deep_ep_grouped_mm",
     "deep_ep_scattermoe",
     "deep_ep_sonicmoe",
+    "torch_ep_eager",
+    "torch_ep_grouped_mm",
+    "torch_ep_scattermoe",
+    "torch_ep_sonicmoe",
 }
 _VALID_EXPERTS_IMPLS = (
     _BUILTIN_EXPERTS_IMPLS | _KERNEL_EXPERTS_IMPLS | _EP_EXPERTS_IMPLS
