@@ -530,9 +530,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             normalize_dense_nvfp4_scales,
             patch_nvfp4_fsdp,
         )
+        from axolotl.monkeypatch.accelerate.fsdp2_quantized import (
+            patch_fsdp2_traceable_wrapper_param_move,
+        )
 
         normalize_dense_nvfp4_scales(model)
         patch_nvfp4_fsdp()
+        patch_fsdp2_traceable_wrapper_param_move()
 
     staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
     original_sd = (
