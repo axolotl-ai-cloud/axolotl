@@ -35,7 +35,11 @@ def patch_paramwrapper_sonicmoe_fastpath() -> None:
     if getattr(ParamWrapper.forward, "_sonicmoe_fastpath", False):
         return
 
-    from .lora import get_lora_params_from_wrapper
+    from .lora import (
+        get_lora_params_from_wrapper,
+        materialize_sonicmoe_lora_factors,
+        sonicmoe_runtime_lora_factors,
+    )
 
     _orig_forward = ParamWrapper.forward
 
@@ -71,8 +75,15 @@ def patch_paramwrapper_sonicmoe_fastpath() -> None:
             lora_A, lora_B, scaling = get_lora_params_from_wrapper(wrapper)
             if lora_A is None:
                 continue
-            # PEFT keeps LoRA fp32; cast to activation dtype (grads still route to the fp32 params).
-            lora[name] = (lora_A.to(x.dtype), lora_B.to(x.dtype), scaling)
+            adapter_name = wrapper.active_adapters[0]
+            lora_A, lora_B = materialize_sonicmoe_lora_factors(
+                lora_A,
+                lora_B,
+                lora_A_owner=wrapper.lora_A[adapter_name],
+                lora_B_owner=wrapper.lora_B[adapter_name],
+            )
+            lora_A, lora_B = sonicmoe_runtime_lora_factors(lora_A, lora_B, x.dtype)
+            lora[name] = (lora_A, lora_B, scaling)
 
         base._sonicmoe_lora = lora
         # Loading can create multiple ExpertsInterface registries; the experts forward binds one as

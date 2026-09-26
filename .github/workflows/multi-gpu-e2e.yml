@@ -26,6 +26,7 @@ on:
       - "src/axolotl/cli/merge_lora.py"
       - "src/axolotl/cli/utils/lora_merge.py"
       - "src/axolotl/integrations/kernels/libs/scattermoe_lora/**.py"
+      - "src/axolotl/integrations/kernels/libs/sonicmoe/**.py"
       - "pyproject.toml"
       - ".github/workflows/multi-gpu-e2e.yml"
       - "scripts/cutcrossentropy_install.py"
