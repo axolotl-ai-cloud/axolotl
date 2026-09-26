@@ -150,29 +150,29 @@ class ExpertParallelPlugin(BasePlugin):
         if not ignore_list:
             return
 
-        # PEFT prefixes parameter names. Re-resolve the list against the wrapper
-        # so DDP can match by name.
-        resolved: list[str] = []
-        wrapper_param_names = {n for n, _ in model.named_parameters()}
-        wrapper_buffer_names = {n for n, _ in model.named_buffers()}
-        all_names = wrapper_param_names | wrapper_buffer_names
+        # PEFT prefixes parameter names and ParamWrapper inserts `base_layer`
+        # segments, so resolve by object identity; a name DDP cannot match is
+        # broadcast from rank 0 and silently overwrites the rank's expert shard
+        ignored_ids = {id(p) for p in getattr(inner, "_ep_ignored_params", [])}
+        resolved = [
+            n
+            for n, p in list(model.named_parameters()) + list(model.named_buffers())
+            if id(p) in ignored_ids
+        ]
+        if len(resolved) != len(ignored_ids):
+            raise RuntimeError(
+                f"expert_parallel: resolved {len(resolved)} of {len(ignored_ids)} "
+                "EP-sharded expert parameters on the wrapped model; DDP would "
+                "broadcast the unresolved ones from rank 0 and corrupt the expert "
+                "shards."
+            )
 
-        for short_name in ignore_list:
-            # Match either an exact suffix or with PEFT's `base_model.model.` prefix.
-            for full in all_names:
-                if (
-                    full == short_name
-                    or full.endswith("." + short_name)
-                    or full.endswith(short_name)
-                ):
-                    resolved.append(full)
-
-        # De-dup while preserving order.
-        seen = set()
-        resolved = [n for n in resolved if not (n in seen or seen.add(n))]
-
-        existing = list(getattr(model, "_ddp_params_and_buffers_to_ignore", []))
-        model._ddp_params_and_buffers_to_ignore = existing + resolved
+        # read the wrapper's own attribute: PeftModel.__getattr__ would forward
+        # to the inner model and return the pre-wrap names again
+        existing = list(model.__dict__.get("_ddp_params_and_buffers_to_ignore", []))
+        model._ddp_params_and_buffers_to_ignore = existing + [
+            n for n in resolved if n not in existing
+        ]
         LOG.debug(
             f"expert_parallel: propagated {len(resolved)} DDP-ignored param "
             f"name(s) onto outer wrapper {type(model).__name__}."
