@@ -239,6 +239,9 @@ class _FlaCompatibility:
                 raise ValueError("Packed FLA Mamba requires uncached inputs")
             use_cache = False
             kwargs["_axolotl_segments"] = PackedSegments(get_seq_idx(position_ids))
+        native_logits_to_keep = (
+            logits_to_keep if labels is None and isinstance(logits_to_keep, int) else 0
+        )
         outputs = super().forward(
             input_ids=input_ids,
             attention_mask=(attention_mask != 0).to(attention_mask.dtype)
@@ -249,7 +252,7 @@ class _FlaCompatibility:
             labels=None,
             use_cache=use_cache,
             return_dict=True,
-            logits_to_keep=0,
+            logits_to_keep=native_logits_to_keep,
             **kwargs,
         )
         if labels is not None:
@@ -268,12 +271,13 @@ class _FlaCompatibility:
             )
         if isinstance(logits_to_keep, torch.Tensor):
             outputs.logits = outputs.logits[:, logits_to_keep]
-        elif logits_to_keep:
+        elif logits_to_keep and not native_logits_to_keep:
             outputs.logits = outputs.logits[:, -logits_to_keep:]
+        outputs = CausalLMOutputWithPast(**outputs)
         if return_dict is False or (
             return_dict is None and not self.config.return_dict
         ):
-            return CausalLMOutputWithPast(**outputs).to_tuple()
+            return outputs.to_tuple()
         return outputs
 
 
