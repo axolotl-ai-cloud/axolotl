@@ -92,6 +92,18 @@ def main():
                 )
 
                 assert fused.forward.__func__ is not type(fused).forward
+        if os.environ.get("RM_LORA") == "1":
+            from peft import LoraConfig, get_peft_model
+
+            lora_config = LoraConfig(
+                task_type="CAUSAL_LM", r=4, target_modules=["in_proj", "out_proj"]
+            )
+            model = get_peft_model(model, lora_config)
+            reference = get_peft_model(reference, copy.deepcopy(lora_config))
+            for name, parameter in model.named_parameters():
+                if "lora_B" in name:
+                    torch.nn.init.normal_(parameter, std=0.05)
+            reference.load_state_dict(model.state_dict())
         args = TrainingArguments(
             output_dir="/tmp/ringmaster-parity",
             report_to="none",
@@ -200,12 +212,16 @@ def main():
         for (name, p), (_, r) in zip(
             model.named_parameters(), reference.named_parameters(), strict=True
         ):
+            if not p.requires_grad:
+                assert p.grad is None and r.grad is None
+                continue
+            assert p.grad is not None and r.grad is not None, name
             grad = p.grad.full_tensor() if hasattr(p.grad, "full_tensor") else p.grad
             err = (grad - r.grad).abs().max().item()
             worst = max(worst, err)
             if os.environ.get("RM_HUB") == "1":
                 # BF16 reductions change accumulation order, especially near cancellation.
-                tolerance = 2 * torch.finfo(grad.dtype).eps
+                tolerance = 2 * torch.finfo(torch.bfloat16).eps
                 difference = grad.float() - r.grad.float()
                 assert difference.norm() <= tolerance * r.grad.float().norm(), name
                 torch.testing.assert_close(

@@ -23,6 +23,20 @@ def main():
             for packed in (False, True):
                 torch.manual_seed(31)
                 model = MambaModelLoader(_config(family)).cuda().to(torch.bfloat16)
+                if os.environ.get("RM_LORA") == "1":
+                    from peft import LoraConfig, get_peft_model
+
+                    model = get_peft_model(
+                        model,
+                        LoraConfig(
+                            task_type="CAUSAL_LM",
+                            r=4,
+                            target_modules=["in_proj", "out_proj"],
+                        ),
+                    )
+                    for name, parameter in model.named_parameters():
+                        if "lora_B" in name:
+                            torch.nn.init.normal_(parameter, std=0.05)
                 ids = torch.randint(0, 64, (1, 96), device="cuda")
                 positions = (
                     torch.cat(

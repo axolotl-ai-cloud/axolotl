@@ -9,9 +9,10 @@ import pytest
 import torch
 
 
+@pytest.mark.parametrize("lora", [False, True], ids=["full", "lora"])
 @pytest.mark.slow
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA FLA kernels")
-def test_fla_mamba_packed_cp_four_ranks():
+def test_fla_mamba_packed_cp_four_ranks(lora):
     pytest.importorskip("fla")
     pytest.importorskip("ringmaster.fla_mamba")
     result = subprocess.run(
@@ -27,6 +28,7 @@ def test_fla_mamba_packed_cp_four_ranks():
         env={
             **os.environ,
             "OMP_NUM_THREADS": "1",
+            "RM_LORA": "1" if lora else "0",
             "PYTHONPATH": str(Path(__file__).resolve().parents[2])
             + os.pathsep
             + os.environ.get("PYTHONPATH", ""),
