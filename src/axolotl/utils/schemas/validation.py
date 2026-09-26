@@ -1969,6 +1969,16 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_expert_parallel_dispatch_chunks(self):
+        chunks = getattr(self, "expert_parallel_dispatch_chunks", None) or 1
+        if chunks > 1 and getattr(self, "expert_parallel_backend", None) == "deep_ep":
+            raise ValueError(
+                "expert_parallel_dispatch_chunks > 1 requires expert_parallel_backend: "
+                "torch (DeepEP dispatches the whole batch in one fused kernel)"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_hidden_states_offloading(self):
         if self.activation_offloading != "hidden_states":
             return self

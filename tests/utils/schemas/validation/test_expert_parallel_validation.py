@@ -98,3 +98,33 @@ class TestTorchExpertParallelCheckpointing:
         else:
             with pytest.raises(ValueError, match="non-reentrant"):
                 _validate(min_base_cfg, **kwargs)
+
+
+class TestExpertParallelDispatchChunks:
+    def test_rejects_deep_ep(self, min_base_cfg):
+        with pytest.raises(ValueError, match="requires expert_parallel_backend: torch"):
+            _validate(
+                min_base_cfg,
+                expert_parallel_backend="deep_ep",
+                expert_parallel_dispatch_chunks=2,
+            )
+
+    def test_accepts_torch(self, min_base_cfg):
+        cfg = _validate(
+            min_base_cfg,
+            expert_parallel_backend="torch",
+            expert_parallel_dispatch_chunks=2,
+        )
+        assert cfg.expert_parallel_dispatch_chunks == 2
+
+    def test_defaults_to_one(self, min_base_cfg):
+        cfg = _validate(min_base_cfg, expert_parallel_backend="deep_ep")
+        assert cfg.expert_parallel_dispatch_chunks == 1
+
+    def test_rejects_zero(self, min_base_cfg):
+        with pytest.raises(ValueError, match="expert_parallel_dispatch_chunks"):
+            _validate(
+                min_base_cfg,
+                expert_parallel_backend="torch",
+                expert_parallel_dispatch_chunks=0,
+            )

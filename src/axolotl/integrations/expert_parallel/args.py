@@ -10,7 +10,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from axolotl.utils.logging import get_logger
 
@@ -44,6 +44,12 @@ class ExpertParallelArgs(BaseModel):
     ``fsdp_config.activation_checkpointing``): save the
     dispatch/combine all-to-all outputs so recompute does not re-issue the collectives (costs the
     received rows per layer). The routing ``topk`` and host-side split counts are always saved."""
+
+    expert_parallel_dispatch_chunks: int = Field(default=1, ge=1)
+    """``torch`` backend only: split each MoE forward's tokens into this many chunks and pipeline
+    them, so chunk ``i+1``'s dispatch all-to-all overlaps chunk ``i``'s expert GEMMs. ``1`` keeps
+    the unchunked path. Overlaps the forward only. Each chunk adds collective and launch overhead,
+    so this can be slower than ``1``; benchmark before raising it past ``2``."""
 
     @model_validator(mode="after")
     def _validate(self):

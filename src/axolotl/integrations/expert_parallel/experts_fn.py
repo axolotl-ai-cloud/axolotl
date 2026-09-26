@@ -37,6 +37,15 @@ def set_token_capacity(cap: int | None) -> None:
     _TOKEN_CAPACITY = cap
 
 
+# ``expert_parallel_dispatch_chunks``: token chunks the torch backend pipelines per MoE forward.
+_DISPATCH_CHUNKS: int = 1
+
+
+def set_dispatch_chunks(chunks: int) -> None:
+    global _DISPATCH_CHUNKS
+    _DISPATCH_CHUNKS = chunks
+
+
 def _apply_expert_capacity(topk_idx, topk_w, cap):
     """Cap tokens-per-expert to ``cap`` by sentinelling (-1) the lowest-weight excess (token,expert)
     assignments, then rescale each token's surviving weights back to its pre-drop gate sum. DeepEP's
@@ -293,25 +302,29 @@ class _TorchBackend:
     cast_bf16 = False
 
     @staticmethod
+    def group(num_experts_global, num_local_experts):
+        if num_experts_global == num_local_experts:
+            return None
+        group = torch_dispatch.get_ep_group()
+        num_ranks = num_experts_global // num_local_experts
+        if group is None or dist.get_world_size(group) != num_ranks:
+            raise RuntimeError(
+                f"expert_parallel torch backend: experts are sharded {num_ranks}-way "
+                f"({num_experts_global} global / {num_local_experts} local) but the EP "
+                f"group is {'unset' if group is None else dist.get_world_size(group)}."
+            )
+        return group
+
+    @staticmethod
     def dispatch(
         hidden_states, topk_idx, topk_w, *, num_experts_global, num_local_experts
     ):
-        group = None
-        if num_experts_global != num_local_experts:
-            group = torch_dispatch.get_ep_group()
-            num_ranks = num_experts_global // num_local_experts
-            if group is None or dist.get_world_size(group) != num_ranks:
-                raise RuntimeError(
-                    f"expert_parallel torch backend: experts are sharded {num_ranks}-way "
-                    f"({num_experts_global} global / {num_local_experts} local) but the EP "
-                    f"group is {'unset' if group is None else dist.get_world_size(group)}."
-                )
         return torch_dispatch.dispatch(
             hidden_states,
             topk_idx,
             topk_w,
             num_local_experts=num_local_experts,
-            group=group,
+            group=_TorchBackend.group(num_experts_global, num_local_experts),
         )
 
     @staticmethod
@@ -372,21 +385,38 @@ def _ep_forward(
             )
         topk_idx_i64 = topk_idx_i64.masked_fill(~valid.view(-1, 1), -1)
 
-    recv_x, recv_topk_idx, recv_topk_weights, handle = ep_backend.dispatch(
-        hidden_states,
-        topk_idx_i64,
-        topk_w_f32,
-        num_experts_global=E_global,
-        num_local_experts=E_local,
+    group = (
+        _TorchBackend.group(E_global, E_local)
+        if backend == "torch" and _DISPATCH_CHUNKS > 1
+        else None
     )
+    if group is not None and dist.get_world_size(group) > 1:
+        local_kernel = _LOCAL_KERNELS[kernel_name]
+        combined = torch_dispatch.dispatch_chunked_forward(
+            hidden_states,
+            topk_idx_i64,
+            topk_w_f32,
+            lambda rx, ri, rw: local_kernel(self, rx, ri, rw),
+            num_local_experts=E_local,
+            group=group,
+            chunks=_DISPATCH_CHUNKS,
+        )
+    else:
+        recv_x, recv_topk_idx, recv_topk_weights, handle = ep_backend.dispatch(
+            hidden_states,
+            topk_idx_i64,
+            topk_w_f32,
+            num_experts_global=E_global,
+            num_local_experts=E_local,
+        )
 
-    # Pass the raw -1-tagged routing through; each local kernel handles sentinels
-    # its own way (eager/scattermoe skip, grouped_mm masks, sonicmoe remaps to E_local).
-    local_out = _LOCAL_KERNELS[kernel_name](
-        self, recv_x, recv_topk_idx, recv_topk_weights
-    )
+        # Pass the raw -1-tagged routing through; each local kernel handles sentinels
+        # its own way (eager/scattermoe skip, grouped_mm masks, sonicmoe remaps to E_local).
+        local_out = _LOCAL_KERNELS[kernel_name](
+            self, recv_x, recv_topk_idx, recv_topk_weights
+        )
 
-    combined = ep_backend.combine(local_out, handle)
+        combined = ep_backend.combine(local_out, handle)
 
     if original_dtype is not None:
         combined = combined.to(original_dtype)
