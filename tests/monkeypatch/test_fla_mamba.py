@@ -356,3 +356,48 @@ def test_saved_fla_config_validates_before_model_load(mapping, options):
             ModelHookPhase.CONFIGURE_RUN,
             ModelHookContext(cfg=DictDefault(options), model_config=config),
         )
+
+
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+@pytest.mark.parametrize("with_labels", [False, True])
+@pytest.mark.parametrize("selection", [0, 2, torch.tensor([0, 3])])
+def test_fla_logits_selection_and_output_order(
+    family, with_labels, selection, monkeypatch
+):
+    pytest.importorskip("fla")
+    from transformers.modeling_outputs import CausalLMOutputWithPast
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    model = MambaModelLoader(_config(family))
+    logits = torch.randn(1, 5, model.config.vocab_size)
+    calls = []
+
+    def forward(self, *, logits_to_keep, **kwargs):
+        calls.append(logits_to_keep)
+        return CausalLMOutputWithPast(logits=logits[:, -logits_to_keep:])
+
+    monkeypatch.setattr(type(model).__bases__[1], "forward", forward)
+    ids = torch.randint(0, model.config.vocab_size, (1, 5))
+    labels = ids if with_labels else None
+    output = model(input_ids=ids, labels=labels, logits_to_keep=selection)
+    as_tuple = model(
+        input_ids=ids, labels=labels, logits_to_keep=selection, return_dict=False
+    )
+    expected_keep = selection if not with_labels and isinstance(selection, int) else 0
+    assert calls == [expected_keep, expected_keep]
+    expected = (
+        logits[:, selection]
+        if isinstance(selection, torch.Tensor)
+        else logits[:, -selection:]
+    )
+    torch.testing.assert_close(output.logits, expected)
+    assert list(output)[0] == ("loss" if with_labels else "logits")
+    for value, tuple_value in zip(output.to_tuple(), as_tuple, strict=True):
+        torch.testing.assert_close(value, tuple_value)
+    if with_labels:
+        torch.testing.assert_close(
+            output[0],
+            model.loss_function(
+                logits=logits, labels=ids, vocab_size=model.config.vocab_size
+            ),
+        )
