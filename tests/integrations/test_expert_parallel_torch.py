@@ -1096,9 +1096,15 @@ class TestChunkBounds:
         assert all(a[1] == b[0] for a, b in zip(bounds, bounds[1:], strict=False))
 
 
+class _TinyExperts(torch.nn.Module):
+    def forward(self, x):
+        # FSDP unshards the params only inside forward
+        return x @ self.gate_up_proj[0]
+
+
 def _tiny_ep_experts_model(fill: float):
     """A ``model.layers.0.mlp.experts`` module carrying this rank's 2 of 4 global experts."""
-    experts = torch.nn.Module()
+    experts = _TinyExperts()
     experts.gate_up_proj = torch.nn.Parameter(torch.full((2, 4, 4), fill))
     experts.down_proj = torch.nn.Parameter(torch.full((2, 4, 2), fill))
     experts.num_experts = 2
@@ -1208,3 +1214,62 @@ class TestEpClipGradNormPatchGate:
             self._fake_accelerator(ep, dp_shard, cp, fsdp2), [param], 1.0
         )
         assert calls == (["ep_aware"] if expect_ep_aware else ["orig"])
+
+
+def _composed_fsdp_worker(rank, world_size, port, q):
+    """EP x dp_shard on a (2, 2) CPU mesh: expert grads must be the mean over all 4 ranks'
+    losses, exactly like a dense param, even though FSDP only reduces over the 2 dp ranks."""
+    try:
+        _init_gloo(rank, world_size, port)
+        from torch.distributed.device_mesh import init_device_mesh
+
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+        mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("ep", "dp_shard"))
+        model = _tiny_ep_experts_model(0.5)
+        experts = model.model.layers[0].mlp.experts
+        ExpertParallelPlugin.fully_shard_experts(
+            model, mesh["dp_shard"], {"reshard_after_forward": True}
+        )
+        group = experts._get_fsdp_state()._fsdp_param_groups[0]
+        x = torch.full((3, 4), float(rank + 1))
+        # each rank's "loss" is x @ gate_up_proj[0] summed; d/dW = sum over rows of x
+        loss = experts(x).sum()
+        loss.backward()
+        grad = experts.gate_up_proj.grad.full_tensor()[0]
+        # ranks in this ep group: (ep_rank * 2, ep_rank * 2 + 1); expected = sum of their
+        # per-rank grads / (ep * dp) = mean over the world
+        ep_rank = rank // 2
+        expected = (
+            sum(
+                torch.full((4, 4), 3.0 * (rr + 1))
+                for rr in (2 * ep_rank, 2 * ep_rank + 1)
+            )
+            / 4.0
+        )
+        q.put(
+            (
+                rank,
+                {
+                    "divide_factor": group.gradient_divide_factor,
+                    "force_sum": group.force_sum_reduction_for_comms,
+                    "grad_ok": torch.allclose(grad, expected, atol=1e-5),
+                    "grad_mean": grad.mean().item(),
+                },
+            )
+        )
+    except Exception:  # pylint: disable=broad-except
+        q.put((rank, traceback.format_exc()))
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+class TestComposedExpertShardingGradScale:
+    def test_expert_grads_are_world_mean(self):
+        res = _run_spawned(_composed_fsdp_worker, world_size=4)
+        for rank in range(4):
+            assert isinstance(res[rank], dict), res[rank]
+            assert res[rank]["divide_factor"] == 4.0
+            assert res[rank]["force_sum"] is True
+            assert res[rank]["grad_ok"], res[rank]

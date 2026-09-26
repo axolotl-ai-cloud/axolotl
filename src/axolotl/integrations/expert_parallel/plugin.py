@@ -594,6 +594,11 @@ class ExpertParallelPlugin(BasePlugin):
             wrapped.append(pw)
 
         for module in wrapped:
+            # A non-default factor makes FSDP reduce with NCCL PREMUL_SUM, which returns zeros
+            # for bf16 (measured on H100, torch 2.13); plain SUM + a separate divide is exact.
+            # A size-1 group never reduces and divides once itself: forcing SUM there divides twice.
+            if dp_shard_mesh.size() > 1:
+                module.set_force_sum_reduction_for_comms(True)
             module.set_gradient_divide_factor(divide_factor)
 
         LOG.debug(
