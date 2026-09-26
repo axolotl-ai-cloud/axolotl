@@ -28,10 +28,6 @@ from axolotl.model_support import (
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
-from axolotl.utils.schemas.config import (
-    AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
-    AxolotlInputConfig as AxolotlInputConfigBase,
-)
 from axolotl.utils.schemas.datasets import (
     DPODataset,
     KTODataset,
@@ -463,14 +459,14 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
-    AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
-    AxolotlInputConfig = AxolotlInputConfigBase
+    from axolotl.integrations.base import BUILTIN_PLUGINS
+    from axolotl.utils.schemas import config as config_schema
 
-    if cfg.plugins:
-        (
-            AxolotlConfigWCapabilities,
-            AxolotlInputConfig,
-        ) = merge_input_args()
+    if cfg.plugins or BUILTIN_PLUGINS:
+        AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
+    else:
+        AxolotlConfigWCapabilities = config_schema.AxolotlConfigWCapabilities
+        AxolotlInputConfig = config_schema.AxolotlInputConfig
 
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
@@ -523,18 +519,16 @@ def validate_config(
 
 
 def prepare_plugins(cfg):
-    """
-    Prepare the plugins for the configuration
-    """
+    """Prepare built-in plugins and plugins explicitly selected by the config."""
+    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
 
-    if cfg.get("plugins"):
-        from axolotl.integrations.base import PluginManager
+    if not cfg.get("plugins") and not BUILTIN_PLUGINS:
+        return
 
-        plugin_manager = PluginManager.get_instance()
-        for plugin_name in cfg["plugins"]:
+    plugin_manager = PluginManager.get_instance()
+    for plugin_name in cfg.get("plugins") or []:
+        if plugin_name not in BUILTIN_PLUGINS:
             plugin_manager.register(plugin_name)
-        # the manager is a singleton: only run hooks for plugins in THIS config,
-        # not ones retained from an earlier config in the same process
-        for plugin_name, plugin in plugin_manager.plugins.items():
-            if plugin_name in cfg["plugins"]:
-                plugin.register(cfg)
+    for plugin_name in dict.fromkeys((*BUILTIN_PLUGINS, *(cfg.get("plugins") or []))):
+        if plugin_name in plugin_manager.plugins:
+            plugin_manager.plugins[plugin_name].register(cfg)

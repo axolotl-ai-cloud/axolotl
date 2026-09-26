@@ -188,6 +188,26 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig:
         **config_kwargs,
     )
 
+    # FLA registers colliding model types when imported for its attention kernels.
+    native_mamba_configs = {
+        "mamba": "MambaConfig",
+        "mamba2": "Mamba2Config",
+        "falcon_mamba": "FalconMambaConfig",
+    }
+    if (
+        config_cls is AutoConfig
+        and type(model_config).__module__.startswith("fla.")
+        and model_config.model_type in native_mamba_configs
+    ):
+        native_config = getattr(
+            transformers, native_mamba_configs[model_config.model_type]
+        )
+        model_config = native_config.from_pretrained(
+            model_config_name,
+            trust_remote_code=trust_remote_code,
+            **config_kwargs,
+        )
+
     if cfg.overrides_of_model_config:
         for key, val in cfg.overrides_of_model_config.items():
             setattr(model_config, key, val)

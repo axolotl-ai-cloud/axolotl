@@ -3,126 +3,76 @@ title: Sequence Parallelism
 description: Train with long sequences split across multiple GPUs.
 ---
 
-Sequence parallelism is a technique that splits sequences across multiple GPUs,
-allowing you to train with very long sequences that wouldn't fit on a single GPU. Each
-GPU processes a different portion of the sequence, and the results are aggregated
-through a ring communication pattern.
-
-## When to Use Sequence Parallelism
-
-Use sequence parallelism when:
-
-- You need to train with sequence lengths that don't fit into a single GPU's memory
-- You have multiple GPUs available
-- You're experiencing OOM (Out Of Memory) errors with long sequences
+Context parallelism splits each sequence across a group of GPUs to reduce the
+activation memory needed for long-context training. Axolotl uses Ringmaster for
+Ulysses, Ring, and their combination (USP), while Accelerate owns the device mesh
+and FSDP2 gradient reduction.
 
 ## Configuration
 
-To enable sequence parallelism, add the following to your configuration file:
+Install `pip install 'axolotl[ringmaster]'` and use torch >= 2.13. The integration
+targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.1.
 
 ```yaml
-# Set to a divisor (> 1) of the number of GPUs available
-context_parallel_size: 4  # Split sequences across 4 GPUs
-# Optional; strides across the key dimension. Larger values use more memory but should make training faster.
-heads_k_stride: 1
-# Optional; one of "varlen_llama3" or "batch_ring". Defaults to
-# "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.
-ring_attn_func:
+context_parallel_size: 4
+attn_implementation: flash_attention_2
+sample_packing: false
 ```
 
-The `context_parallel_size` should be a divisor of the total number of GPUs. For example:
-
-- With 8 GPUs, valid values would be 2, 4, or 8
-- With 4 GPUs, valid values would be 2 or 4
-
-## Implementation Details
-
-When sequence parallelism is enabled:
-
-1. Each sequence is divided into equal chunks across the GPUs in a sequence parallel group
-2. The data collator handles the chunking of input_ids, attention_mask, labels, and position_ids
-3. Position IDs are adjusted to maintain proper relative positions
-4. The trainer uses special ring communication patterns for attention operations
-
-## Requirements
-
-To use sequence parallelism, you need:
-
-- Multiple GPUs (at least 2)
-- The `ring-flash-attn` package. Install with:
-  - `pip install axolotl[ring-flash-attn]` (preferred)
-  - `pip install ring-flash-attn>=0.1.4`
-
-## Limitations
-
-- Flash attention must be enabled for this to work (`attn_implementation: flash_attention_2` in config YAML)
-- May have a small performance overhead due to communication between GPUs
-
-### Mamba/SSM Hybrid Models
-
-Context parallelism is supported for hybrid models that combine attention and Mamba2 SSM
-layers. These models require special handling because:
-
-- **Attention layers** work correctly via ring flash attention (same as pure-attention models).
-- **SSM (Mamba2) layers** are recurrent and need cross-rank hidden-state propagation.
-
-Axolotl handles both aspects:
-
-1. **Sample packing boundaries** (`seq_idx`): When multiple sequences are packed into one
-   row, the SSM kernels need `seq_idx` to reset state at boundaries. Under CP, chunks may
-   start mid-sample, so `seq_idx` is derived from `position_ids` using a CP-safe cumsum
-   normalization (see `mamba_utils.get_seq_idx`).
-
-2. **Cross-rank SSM state passing**: After each SSM scan, the final hidden state is sent to
-   the next rank via P2P communication (`ring_shift_ssm_state`), and an additive correction
-   is applied to account for the missing initial state (`mamba2_cp_correction`). This uses
-   the linearity property of SSMs to avoid a second forward pass.
-
-#### Supported Architectures
-
-| Model family | `model_config_type` | Architecture notes |
-|---|---|---|
-| Nemotron-H | `nemotron_h` | Mamba2 / Attention / MoE hybrid; block type selected per layer |
-| Falcon-H1 | `falcon_h1` | Mamba2 and Attention run **in parallel** in every layer |
-| Granite MoE Hybrid | `granitemoehybrid` | Mamba2 / Attention / MoE hybrid |
-
-## Example
+Context parallelism is built in; no `plugins:` entry is needed. The CP degree
+must divide the total GPU count. For explicit strategy settings:
 
 ```yaml
-base_model: meta-llama/Llama-3-8B-Instruct
-sequence_len: 8192
-
-...
-
-context_parallel_size: 4  # Split each sequence into 4 parts, one per GPU
-# Optional; strides across the key dimension. Larger values use more memory but should make training faster.
-heads_k_stride: 1
-# Optional; one of "varlen_llama3" or "batch_ring". Defaults to
-# "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.
-ring_attn_func:
-
-...
+context_parallel:
+  size: 4
+  backend: auto
+  load_balance: auto
 ```
 
-This will train the Llama 3 8B model with 8K context length, with each sequence split
-into 2 subsequences of length 4096 across 2 GPUs.
+`backend` accepts `auto`, `ulysses`, `ring`, or `usp`. Automatic selection uses
+KV-head count and topology. Explicit `ulysses_size` and `ring_size` must multiply
+to `size`, and the Ulysses degree must divide the KV-head count.
 
-## Sample Packing with Sequence Parallelism
+`load_balance: auto` selects head-tail balancing for eligible pure Ring and
+contiguous shards otherwise. Explicit `head_tail` and `distflash` require pure
+Ring and own their P2P communication schedule. With `load_balance: none`,
+`rotate_method` selects Ring KV movement. Incompatible explicit choices fail
+during setup instead of being silently ignored.
 
-Sequence parallelism is compatible with Axolotl's sample packing functionality. When using both features together:
+## Requirements and limitations
 
-1. Samples are first packed together
-2. The packed sequences are then divided across GPUs in the sequence parallel group
-3. Position IDs are automatically adjusted to maintain proper relative positions
+- Ulysses supports SDPA and Flash Attention. Ring/USP training requires Flash
+  Attention; Ringmaster's `torch_native` Ring implementation is forward-only.
+- Sample packing and batch flattening are supported with CP; automatic load balancing selects contiguous shards for packed inputs. GLM DSA kernels remain incompatible with packed CP.
+- SFT requires the model's causal LM loss with loss-kwargs support. Custom loss
+  functions and label smoothing are not supported.
+- GRPO/EBFT use output gathering to retain full-sequence logits.
+- GDN and KDA recurrent models require `pip install 'axolotl[fla,ringmaster]'`,
+  a single batch row after flattening (`micro_batch_size: 1` or `batch_flattening: true`), contiguous shards, and disabled KV caching. Setup checks
+  for importable native FLA CP kernels, including when CP is greater than two.
+  Both UV Docker images include FLA and TileLang.
 
-## Effect on Batch Size
+Ringmaster detects compatible attention and recurrent layers without requiring
+an architecture allowlist entry. ModelSupport descriptors can mark
+`context_parallel` as verified, experimental, or unsupported. Missing capability
+metadata uses generic handling; it does not imply tested accuracy for every
+architecture. Kernel and configuration prerequisites still apply.
 
-When using sequence parallelism, your effective global batch size is **divided** by the `context_parallel_size`. This happens because:
+The plugin shards input IDs, labels, masks, and positions using model hooks.
+Accelerate replicates each batch within its CP group. Trainer's supervised-token
+count is preserved across the full accumulation window, including unequal
+microbatches and partial final windows.
 
-- Each group of `context_parallel_size` GPUs works on the same batch (just different parts of each sequence)
-- The number of batches processed per step decreases
+## Effect on batch size
 
-For example:
-- With 8 GPUs and no sequence parallelism: 8 different batches processed per step
-- With 8 GPUs and `context_parallel_size=4`: Only 2 different batches processed per step (each split across 4 GPUs)
-- If your per-GPU `micro_batch_size` is 2, the global batch size decreases from 16 to 4
+Each CP group processes one batch distributed across its GPUs. With eight GPUs
+and CP=4, there are two independent data-parallel groups. A microbatch size of two
+therefore processes four distinct sequences per step before gradient accumulation.
+
+## Validation
+
+The regular e2e suite includes an optional small FLA/TileLang kernel smoke test.
+Distributed checks are marked `slow`: two-GPU FSDP2 loss/gradient parity, four-rank
+FLA recurrent-plus-attention forward/backward parity, and CPU USP mesh isolation
+and attention-gradient tests. GPU USP and additional recurrent architectures
+require further coverage.

@@ -38,6 +38,8 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+BUILTIN_PLUGINS = ("axolotl.integrations.context_parallel.ContextParallelPlugin",)
+
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
 
@@ -388,9 +390,11 @@ class PluginManager:
         """Returns the singleton instance of PluginManager. If the instance doesn't
         exist, it creates a new one.
         """
-        if PluginManager._instance is None:
-            PluginManager()
-        return PluginManager._instance  # type: ignore
+        manager = PluginManager()
+        for plugin_name in BUILTIN_PLUGINS:
+            if plugin_name not in manager.plugins:
+                manager.plugins[plugin_name] = load_plugin(plugin_name)
+        return manager
 
     @property
     def cfg(self):
@@ -423,7 +427,9 @@ class PluginManager:
     def on_config_validation_error(self, cfg):
         """Lets plugins in the current config undo register()-time side effects."""
         for plugin_name, plugin in self.plugins.items():
-            if plugin_name in (cfg.get("plugins") or []):
+            if plugin_name in BUILTIN_PLUGINS or plugin_name in (
+                cfg.get("plugins") or []
+            ):
                 plugin.on_config_validation_error(cfg)
 
     def get_input_args(self) -> list[str]:
@@ -578,7 +584,7 @@ class PluginManager:
         for plugin in self.plugins.values():
             plugin.post_model_load(cfg, model)
 
-    def get_trainer_cls(self, cfg: DictDefault) -> Trainer | None:
+    def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
         """Calls the `get_trainer_cls` method of all registered plugins and returns the
         first non-`None` trainer class.
 

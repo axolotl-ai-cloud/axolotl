@@ -94,7 +94,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | FSDP2 | `fsdp_version: 2` (default) + `fsdp_config:` | TP, CP, EP |
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 |
-| Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, ring-flash-attn |
+| Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, axolotl-ringmaster (Ulysses/Ring/USP) |
 | Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2 (DeepEP backend) |
 | N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
@@ -240,7 +240,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 |---|---|
 | QLoRA | `load_in_4bit: true` |
 | Expert Parallel | FSDP2 + DeepEP + Ampere/Hopper (NVLink) |
-| Context/Sequence parallel | flash attention (FA2/FA3) |
+| Context/Sequence parallel | Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention |
 | SonicMoE | Hopper/Blackwell + CUDA 12.9 (else auto-falls back to ScatterMoE) |
 | FP8 attention | SM90+ and PyTorch >= 2.11 |
 | `quantize_moe_experts` | LoRA/QLoRA + 4/8-bit + CUDA (use `lora_target_parameters`, not `lora_target_linear`) |

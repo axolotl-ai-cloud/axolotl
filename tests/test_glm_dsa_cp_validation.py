@@ -1,12 +1,4 @@
-"""Validation tests for the GLM DSA kernels' context-parallel exemptions.
-
-``context_parallel_size > 1`` normally requires flash attention + ``ring_flash_attn``. The GLM DSA
-kernels own context-parallel attention (compressed-KV all-gather + per-rank ``q_offset``), so when
-``use_glm_dsa_kernels`` is set the validator skips that requirement and leaves ``ring_attn_func`` None
-(the SP context manager still shards the sequence by chunking). These are config-validation checks only
--- no GPU / dist / model needed. ``ring_flash_attn`` is intentionally NOT mocked here: the DSA path must
-validate without it installed.
-"""
+"""GLM owns its attention kernel while sharing Ringmaster CP configuration guards."""
 
 import pytest
 
@@ -93,16 +85,14 @@ class TestGlmDsaContextParallelValidation:
         )
         prepare_plugins(cfg)
         out = validate_config(cfg)  # must not raise (no flash, no ring_flash_attn)
-        # ring attention is NOT substituted: ring_attn_func stays None so the SP context manager only
-        # shards the sequence (register_ring_attn skips the ring_flash_attn import when it is None).
         assert out.ring_attn_func is None
 
-    def test_cp_without_dsa_still_requires_flash(self, monkeypatch):
-        """The exemption is scoped to use_glm_dsa_kernels -- plain CP still demands flash attention."""
+    def test_cp_without_dsa_uses_builtin_plugin(self, monkeypatch):
         monkeypatch.setenv("WORLD_SIZE", "4")
-        cfg = _cfg(context_parallel_size=2)  # no DSA kernels, no flash_attention
-        with pytest.raises(Exception, match="(?i)flash attention"):
-            validate_config(cfg)
+        cfg = _cfg(context_parallel_size=2)
+        out = validate_config(cfg)
+        assert out.context_parallel.size == 2
+        assert not out.plugins
 
     def test_dsa_without_cp_leaves_ring_attn_func_none(self, monkeypatch):
         """use_glm_dsa_kernels with context_parallel_size 1 is a no-op for the CP validators."""
@@ -114,3 +104,30 @@ class TestGlmDsaContextParallelValidation:
         prepare_plugins(cfg)
         out = validate_config(cfg)
         assert out.ring_attn_func is None
+
+
+@pytest.mark.parametrize("glm_dsa", [False, True])
+@pytest.mark.parametrize("packing", ["sample_packing", "batch_flattening"])
+def test_cp_packed_inputs_depend_on_attention_owner(monkeypatch, glm_dsa, packing):
+    monkeypatch.setenv("WORLD_SIZE", "4")
+    cfg = _cfg(
+        plugins=["axolotl.integrations.kernels.KernelsPlugin"],
+        use_glm_dsa_kernels=glm_dsa,
+        context_parallel_size=2,
+        **{packing: True},
+    )
+    prepare_plugins(cfg)
+    if glm_dsa:
+        with pytest.raises(ValueError, match="GLM DSA context parallelism"):
+            validate_config(cfg)
+    else:
+        cfg.attn_implementation = "flash_attention_2"
+        assert validate_config(cfg).context_parallel.size == 2
+
+
+def test_dsa_cp_uses_builtin_sharding_plugin(monkeypatch):
+    monkeypatch.setenv("WORLD_SIZE", "4")
+    cfg = _cfg(use_glm_dsa_kernels=True, context_parallel_size=2)
+    out = validate_config(cfg)
+    assert out.context_parallel.size == 2
+    assert not out.plugins

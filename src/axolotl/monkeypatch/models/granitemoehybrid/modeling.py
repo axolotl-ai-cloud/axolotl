@@ -1,4 +1,4 @@
-"""Sample-packing and context-parallelism patch for Granite MoE Hybrid (Mamba2/Attention/MoE).
+"""Sample-packing patch for Granite MoE Hybrid (Mamba2/Attention/MoE).
 
 Upstream GraniteMoeHybridMambaLayer already accepts seq_idx on
 forward/cuda_kernels_forward, and GraniteMoeHybridDecoderLayer passes **kwargs
@@ -9,7 +9,7 @@ This patch:
 1. Injects seq_idx computation into GraniteMoeHybridModel.forward so it flows
    through kwargs -> decoder_layer -> mamba mixer automatically.
 2. Forces the slow path when CP is active (the fused path doesn't return SSM
-   state).  CP correction is handled by ``wrap_mamba_scan_for_cp``.
+   state).
 """
 
 import importlib
@@ -18,7 +18,6 @@ from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
     is_cp_active,
     patch_model_forward_seq_idx,
-    wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
 
@@ -77,8 +76,4 @@ def patch_granitemoehybrid_modeling_packing():
 
     GraniteMoeHybridMambaLayer.cuda_kernels_forward = patched_cuda_kernels_forward
 
-    wrap_mamba_scan_for_cp(mod)
-
-    LOG.info(
-        "Applied Granite MoE Hybrid sample packing patch (seq_idx + CP correction)"
-    )
+    LOG.info("Applied Granite MoE Hybrid sample packing patch (seq_idx)")

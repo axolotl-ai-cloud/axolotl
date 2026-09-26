@@ -1,7 +1,6 @@
 """Module with validation methods for config pydantic model."""
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
@@ -14,9 +13,7 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
-    RingAttnFunc,
     RLType,
-    attn_impl_base,
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
@@ -1948,68 +1945,33 @@ class ComplexValidationMixin:
             self.context_parallel_size = self.sequence_parallel_degree
         if not self.context_parallel_size:
             self.context_parallel_size = 1
-        elif self.context_parallel_size > 1 and getattr(
-            self, "use_glm_dsa_kernels", False
-        ):
-            # The GLM DSA kernels provide their own context-parallel attention (the sequence is sharded
-            # on the cp axis with a compressed-KV all-gather + per-rank q_offset), so the flash /
-            # ring_flash_attn stack the generic CP path below requires does not apply.
-            LOG.warning(
-                "context_parallel_size > 1 with use_glm_dsa_kernels: the DSA kernels handle context "
-                "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
-            )
         elif self.context_parallel_size > 1:
-            if attn_impl_base(self.attn_implementation) != "flash_attention_2":
+            if (self.sample_packing or self.batch_flattening) and getattr(
+                self, "use_glm_dsa_kernels", False
+            ):
                 raise ValueError(
-                    "context_parallel_size > 1 requires attn_implementation: "
-                    "flash_attention_2. Ring attention only supports the flash "
-                    "attention 2 backend."
+                    "GLM DSA context parallelism does not support packed inputs"
                 )
-
-            if self.sample_packing and self.micro_batch_size > 1:
+            if self.attn_implementation == "eager" and not getattr(
+                self, "use_glm_dsa_kernels", False
+            ):
                 raise ValueError(
-                    "micro_batch_size must be set to 1 when sample_packing is enabled "
-                    "due to a `ring-flash-attn` requirement"
+                    "context parallelism wraps a kernel-backed attention "
+                    "implementation (sdpa/flash/flex); `attn_implementation: eager` "
+                    "is not supported."
                 )
-
-            try:
-                import transformers.modeling_flash_attention_utils
-                from transformers.utils import (
-                    is_flash_attn_greater_or_equal,
-                    is_flash_attn_greater_or_equal_2_10,
+            cp_block_size = getattr(
+                getattr(self, "context_parallel", None), "size", None
+            )
+            if (
+                cp_block_size is not None
+                and cp_block_size != self.context_parallel_size
+            ):
+                raise ValueError(
+                    f"context_parallel.size ({cp_block_size}) conflicts with "
+                    f"context_parallel_size ({self.context_parallel_size}); "
+                    "set only one"
                 )
-
-                transformers.modeling_flash_attention_utils._flash_supports_window = (
-                    True
-                )
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ]._flash_supports_window_size = True
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
-                if not hasattr(
-                    transformers.modeling_flash_attention_utils,
-                    "is_flash_attn_greater_or_equal_2_10",
-                ):
-                    transformers.modeling_flash_attention_utils.is_flash_attn_greater_or_equal_2_10 = is_flash_attn_greater_or_equal(
-                        "2.10"
-                    )
-                sys.modules[
-                    "transformers.modeling_flash_attention_utils"
-                ].is_flash_attn_greater_or_equal_2_10 = (
-                    is_flash_attn_greater_or_equal_2_10
-                )
-                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
-            except ImportError as exception:
-                raise ImportError(
-                    "context_parallel_size > 1 but ring_flash_attn is not installed. "
-                    "Please install it with `pip install axolotl[ring-flash-attn] "
-                    "or `pip install ring-flash-attn>=0.1.4`."
-                ) from exception
 
             LOG.warning(
                 "Sequence parallelism (SP) is enabled with "
@@ -2020,47 +1982,15 @@ class ComplexValidationMixin:
                 "for more details."
             )
 
-            _SSM_HYBRID_MODEL_TYPES = {
-                "nemotron_h",
-                "falcon_h1",
-                "granitemoehybrid",
-            }
-            _model_config_type = getattr(self, "model_config_type", None) or ""
-            if _model_config_type in _SSM_HYBRID_MODEL_TYPES:
-                LOG.warning(
-                    f"context_parallel_size={self.context_parallel_size} with "
-                    f"model_type={_model_config_type}: SSM/Mamba layers use P2P "
-                    "hidden-state passing and additive output correction across "
-                    "CP ranks. Attention layers use ring attention. This is "
-                    "mathematically exact but has not been extensively validated "
-                    "end-to-end — verify loss curves match single-GPU baselines. "
-                    "Recommended: run a short training job and compare loss curves "
-                    "against a single-GPU baseline with the same data/seed."
-                )
-
         return self
 
     @model_validator(mode="after")
     def validate_ring_attn_func(self):
-        if getattr(self, "context_parallel_size", 1) == 1:
-            return self
-
-        if self.ring_attn_func is not None:
-            self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
-        elif getattr(self, "use_glm_dsa_kernels", False):
-            # The GLM DSA kernels own attention (including the context-parallel compressed-KV gather),
-            # so leave ring_attn_func None: the SP context manager still shards the sequence by chunking,
-            # but skips the ring_flash_attn substitution (which GLM doesn't use and isn't installed).
-            pass
-        else:
-            # Default ring attention function selection
-            sample_packing = getattr(self, "sample_packing", False)
-            self.ring_attn_func = (
-                RingAttnFunc.VARLEN_LLAMA3
-                if sample_packing
-                else RingAttnFunc.BATCH_RING
+        if self.ring_attn_func is not None or self.heads_k_stride is not None:
+            LOG.warning(
+                "`ring_attn_func` and `heads_k_stride` are deprecated and unused; "
+                "ringmaster context parallelism replaced the ring_flash_attn backend"
             )
-
         return self
 
     def hint_gradient_checkpointing_dpo_lora_ddp(self):

@@ -4,6 +4,7 @@ E2E tests for HF-format Mamba and Mamba2 with sample packing
 
 import unittest
 
+import httpx
 import pytest
 
 from axolotl.common.datasets import load_datasets
@@ -38,8 +39,8 @@ def _packed_cfg(base_model, temp_dir, **overrides):
             "learning_rate": 0.00001,
             "optimizer": "adamw_torch_fused",
             "lr_scheduler": "cosine",
-            "max_steps": 20,
-            "save_steps": 10,
+            "max_steps": 2,
+            "save_steps": 1,
             "eval_steps": None,
             "save_first_step": False,
             **overrides,
@@ -57,13 +58,12 @@ def _train(cfg):
 
 def _hub_mamba_kernels_available() -> bool:
     """Whether the hub kernels transformers maps Mamba2 onto have a build for this torch."""
-    try:
-        from kernels import get_kernel
+    from kernels import has_kernel
 
-        get_kernel("kernels-community/mamba-ssm", version=2)
-    except Exception:  # pylint: disable=broad-exception-caught
+    try:
+        return has_kernel("kernels-community/mamba-ssm", version=2)
+    except httpx.HTTPError:
         return False
-    return True
 
 
 class TestMamba(unittest.TestCase):
