@@ -35,7 +35,10 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     if repo_id is None:
         return None
     try:
-        get_kernel(repo_id, version=get_attn_kernel_version(repo_id))
+        # Direct kernels calls do not read Transformers' allow_all_hub_kernels flag.
+        get_kernel(
+            repo_id, version=get_attn_kernel_version(repo_id), trust_remote_code=True
+        )
     except Exception as err:  # noqa: BLE001
         return f"{type(err).__name__}: {err}"
     return None

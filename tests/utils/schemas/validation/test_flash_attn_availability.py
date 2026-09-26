@@ -1,5 +1,7 @@
 """Tests for the flash-attn availability validator."""
 
+from unittest.mock import Mock
+
 import pytest
 
 from axolotl.utils.config import validate_config
@@ -70,3 +72,37 @@ class TestFlashAttnAvailabilityValidator:
         cfg = min_base_cfg | DictDefault(attn_implementation="sdpa")
         validated = validate_config(cfg)
         assert validated.attn_implementation == "sdpa"
+
+    @pytest.mark.parametrize("attn_version", [2, 3])
+    @pytest.mark.parametrize("has_build", [True, False])
+    def test_hub_retry_with_unavailable_publisher_status(
+        self, min_base_cfg, monkeypatch, attn_version, has_build
+    ):
+        import kernels
+        import transformers.integrations.hub_kernels as hub_kernels
+        import transformers.utils
+
+        checker = Mock(return_value=False)
+        monkeypatch.setattr(
+            transformers.utils, f"is_flash_attn_{attn_version}_available", checker
+        )
+        monkeypatch.setattr(hub_kernels, "get_attn_kernel_version", lambda _: 1)
+
+        def get_kernel(repo_id, *, version, trust_remote_code=False):
+            if not trust_remote_code:
+                raise ValueError("could not verify publisher trust status")
+            if not has_build:
+                raise FileNotFoundError("Cannot find a build variant")
+            return object()
+
+        monkeypatch.setattr(kernels, "get_kernel", get_kernel)
+        attn_implementation = f"flash_attention_{attn_version}"
+        cfg = min_base_cfg | DictDefault(attn_implementation=attn_implementation)
+        if has_build:
+            validated = validate_config(cfg)
+            assert validated.attn_implementation == attn_implementation
+            checker.cache_clear.assert_called_once_with()
+        else:
+            with pytest.raises(ValueError, match="Cannot find a build variant"):
+                validate_config(cfg)
+            checker.cache_clear.assert_not_called()
