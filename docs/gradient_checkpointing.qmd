@@ -144,6 +144,21 @@ Validation rejects entries covered by an enabled fused LoRA kernel (`lora_mlp_ke
 to turn off. At runtime a warning is logged for any rule that matched no module, whose hooks never
 fired, whose saved tensors were never replayed, or whose threshold no matmul reached.
 
+`save: []` saves nothing through the list, so `save: []` with `save_modules` saves only the named
+projections and recomputes attention.
+
+#### Plugin-registered saves
+
+Plugins can register ops that every selective-checkpoint policy saves, ahead of `save` and the
+rules, through `axolotl.monkeypatch.selective_checkpointing`. `register_mandatory_save` is for
+correctness: ops whose recompute would diverge from the forward, such as a router's `topk` whose
+near-ties would re-route tokens, or a device-to-host copy that sizes a collective and would
+re-sync. Their outputs are cloned for the forward so an in-place edit (a router normalising its
+`topk` weights) cannot corrupt the cached copy. `register_preferred_save` only trades memory for
+skipping an expensive recompute. FSDP2 `activation_checkpointing` applies registered saves on its
+own; under plain `gradient_checkpointing` a plugin installs them with
+`apply_selective_checkpointing(model, save=[])`.
+
 ### Enabling Layer Offloading
 
 ```yaml
