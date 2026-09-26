@@ -35,9 +35,24 @@ def main():
                 attn_implementation=inner,
             )
         ).cuda()
-        if os.environ.get("RM_MODEL") == "mamba2":
-            model = Mamba2ForCausalLM(
-                Mamba2Config(
+        if os.environ.get("RM_MODEL") in ("mamba", "mamba2"):
+            model_cls, config_cls = Mamba2ForCausalLM, Mamba2Config
+            if os.environ.get("RM_FLA") == "1":
+                from transformers import MambaConfig
+
+                from axolotl.model_support.mamba.loading import MambaModelLoader
+
+                model_cls = MambaModelLoader
+                config_cls = (
+                    MambaConfig
+                    if os.environ.get("RM_MODEL") == "mamba"
+                    else Mamba2Config
+                )
+            model = model_cls(
+                config_cls(
+                    mamba_backend="fla"
+                    if os.environ.get("RM_FLA") == "1"
+                    else "transformers",
                     vocab_size=32,
                     hidden_size=128,
                     expand=2,
@@ -53,7 +68,7 @@ def main():
         if inner != "sdpa":
             model = model.to(torch.bfloat16)
         reference = type(model)(copy.deepcopy(model.config)).cuda().to(model.dtype)
-        if os.environ.get("RM_MODEL") != "mamba2":
+        if os.environ.get("RM_MODEL") not in ("mamba", "mamba2"):
             reference.set_attn_implementation("sdpa")
         reference.load_state_dict(model.state_dict())
         if os.environ.get("RM_HUB") == "1":
@@ -65,9 +80,13 @@ def main():
             )
 
             register_kernel_mapping_transformers()
-            kernelize(model)
-            kernelize(reference)
-            if os.environ.get("RM_MODEL") == "mamba2":
+            if os.environ.get("RM_FLA") != "1":
+                kernelize(model)
+                kernelize(reference)
+            if (
+                os.environ.get("RM_MODEL") == "mamba2"
+                and os.environ.get("RM_FLA") != "1"
+            ):
                 from transformers.models.mamba2.modeling_mamba2 import (
                     mamba2_split_conv1d_scan_combined as fused,
                 )
@@ -141,7 +160,7 @@ def main():
 
         def reference_forward(batch, num_items=None, reference=reference):
             if (
-                os.environ.get("RM_MODEL") != "mamba2"
+                os.environ.get("RM_MODEL") not in ("mamba", "mamba2")
                 or os.environ.get("RM_PACKED") != "1"
             ):
                 return reference(**reference_batch(batch), num_items_in_batch=num_items)

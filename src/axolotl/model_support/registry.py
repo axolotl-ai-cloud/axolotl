@@ -18,6 +18,7 @@ _BUILTIN_MODULES = (
     "axolotl.model_support.glm4_moe_lite",
     "axolotl.model_support.k2_horizon",
     "axolotl.model_support.kimi_linear",
+    "axolotl.model_support.mamba",
     "axolotl.model_support.muse_glimmer",
     "axolotl.model_support.paddleocr_vl",
     "axolotl.model_support.qwen4_exp",
