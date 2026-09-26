@@ -126,3 +126,40 @@ def test_fla_cp_four_rank_parity(family, packed):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("PASS FLA CP=4") == 4
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+@pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
+@pytest.mark.parametrize("lora", [False, True], ids=["full", "adapter"])
+def test_ringmaster_fla_mamba_fsdp2_parity(family, packed, lora):
+    pytest.importorskip("fla")
+    pytest.importorskip("ringmaster.fla_mamba")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc_per_node=2",
+            str(Path(__file__).with_name("_ringmaster_parity.py")),
+        ],
+        env=os.environ
+        | {
+            "RM_MODEL": family,
+            "RM_FLA": "1",
+            "RM_LORA": "1" if lora else "0",
+            "RM_HUB": "1",
+            "RM_BACKEND": "ulysses",
+            "RM_INNER": "sdpa",
+            "OMP_NUM_THREADS": "1",
+            "RM_PACKED": "1" if packed else "0",
+        },
+        capture_output=True,
+        text=True,
+        timeout=1200,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("PASS rank=") == 4

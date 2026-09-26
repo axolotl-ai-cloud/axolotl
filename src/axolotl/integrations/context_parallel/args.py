@@ -10,7 +10,7 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
 class ContextParallelConfig(BaseModel):
@@ -68,6 +68,11 @@ class ContextParallelArgs(BaseModel):
     """Input args contributed by the ringmaster context-parallel plugin."""
 
     context_parallel: Optional[ContextParallelConfig] = None
+
+    @field_serializer("context_parallel")
+    def serialize_context_parallel(self, cp: Optional[ContextParallelConfig]):
+        # Strategy resolution distinguishes omitted options from explicit defaults.
+        return cp.model_dump(exclude_unset=True) if cp is not None else None
 
     @model_validator(mode="before")
     @classmethod

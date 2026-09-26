@@ -45,6 +45,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         cli_args: Training-specific CLI arguments.
     """
     from axolotl.cli.checks import check_accelerate_default_config, check_user_token
+    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
 
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
@@ -64,9 +65,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         from axolotl.train import train as train_fn
 
     dataset_meta = None
-    if cfg.get("plugins"):
-        from axolotl.integrations.base import PluginManager
-
+    if cfg.get("plugins") or BUILTIN_PLUGINS:
         plugin_manager = PluginManager.get_instance()
         dataset_meta = plugin_manager.load_datasets(cfg, preprocess=False)
 
@@ -76,17 +75,14 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         else:
             dataset_meta = load_datasets_fn(cfg=cfg, cli_args=cli_args)
 
-    model, tokenizer, trainer = train_fn(cfg=cfg, dataset_meta=dataset_meta)
-
-    del model, tokenizer, trainer
-
-    gc.collect()
-
-    if cfg.get("plugins"):
-        from axolotl.integrations.base import PluginManager
-
-        plugin_manager = PluginManager.get_instance()
-        plugin_manager.post_train_unload(cfg)
+    try:
+        model, tokenizer, trainer = train_fn(cfg=cfg, dataset_meta=dataset_meta)
+        del model, tokenizer, trainer
+    finally:
+        if cfg.get("plugins") or BUILTIN_PLUGINS:
+            plugin_manager = PluginManager.get_instance()
+            plugin_manager.post_train_unload(cfg)
+        gc.collect()
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
