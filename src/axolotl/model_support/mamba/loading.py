@@ -29,8 +29,13 @@ class MambaModelLoader:
             from transformers import AutoModelForCausalLM
 
             return AutoModelForCausalLM.from_config(config, **kwargs)
-        kwargs.pop("trust_remote_code", None)
-        return implementation(config, **kwargs)
+        for name in (
+            "trust_remote_code",
+            "attn_implementation",
+            "experts_implementation",
+        ):
+            kwargs.pop(name, None)
+        return implementation._from_config(config, **kwargs)
 
     @classmethod
     def from_pretrained(cls, path, *, config, **kwargs):

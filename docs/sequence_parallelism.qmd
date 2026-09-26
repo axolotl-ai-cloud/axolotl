@@ -11,7 +11,7 @@ and FSDP2 gradient reduction.
 ## Configuration
 
 Install `pip install 'axolotl[ringmaster]'` and use torch >= 2.13. The integration
-targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.1.
+targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.2.
 
 ```yaml
 context_parallel_size: 4
@@ -46,7 +46,7 @@ during setup instead of being silently ignored.
 - Sample packing and batch flattening are supported with CP; automatic load balancing selects contiguous shards for packed inputs. GLM DSA kernels remain incompatible with packed CP.
 - SFT requires the model's causal LM loss with loss-kwargs support. Custom loss
   functions and label smoothing are not supported.
-- GRPO/EBFT use output gathering to retain full-sequence logits.
+- GRPO/GDPO/EBFT use output gathering to retain full-sequence logits.
 - GDN and KDA recurrent models require `pip install 'axolotl[fla,ringmaster]'`,
   a single batch row after flattening (`micro_batch_size: 1` or `batch_flattening: true`), contiguous shards, and disabled KV caching. Setup checks
   for importable native FLA CP kernels, including when CP is greater than two.
