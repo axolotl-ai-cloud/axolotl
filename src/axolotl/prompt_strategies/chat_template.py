@@ -937,7 +937,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         if locator is not None:
             full_text, token_starts, token_ends = locator
-            src_to_dst: list[int] | None = list(range(len(input_ids)))
+            src_to_dst = list(range(len(input_ids)))
         else:
             if not getattr(self.tokenizer, "is_fast", False):
                 return None
