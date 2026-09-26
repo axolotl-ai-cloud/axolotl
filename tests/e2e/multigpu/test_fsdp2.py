@@ -373,6 +373,117 @@ class TestFSDP2:
         check_lora_b_fully_trained(temp_dir)
 
     @require_torch_2_7_0
+    def test_fft_sft_expert_parallel_gradient_parity(self, temp_dir):
+        """One SGD step with FSDP alone and with FSDP + pure EP must apply the same update.
+
+        SGD makes the saved weight delta the (clipped) gradient itself, so a wrong expert
+        gradient scale (the EP combine sums over ranks where FSDP averages) shows up as a
+        2x update norm; Adam would normalize it away and the loss curve would still match.
+        The EP checkpoint must also come back with every expert, not one rank's slice.
+        """
+        from huggingface_hub import snapshot_download
+        from safetensors.torch import load_file
+
+        def load_safetensors(directory):
+            state_dict = {}
+            for file in sorted(Path(directory).glob("*.safetensors")):
+                state_dict.update(load_file(file))
+            return state_dict
+
+        def run(variant, expert_parallel):
+            out_dir = Path(temp_dir) / variant
+            cfg = DictDefault(
+                {
+                    "base_model": "axolotl-ai-co/tiny-mixtral-30m",
+                    "experts_implementation": "grouped_mm",
+                    "sequence_len": 512,
+                    "val_set_size": 0,
+                    "datasets": [
+                        {
+                            "path": "tatsu-lab/alpaca",
+                            "type": "alpaca",
+                            "split": "train[:1%]",
+                        },
+                    ],
+                    "max_steps": 1,
+                    "warmup_steps": 0,
+                    "micro_batch_size": 2,
+                    "gradient_accumulation_steps": 1,
+                    "output_dir": str(out_dir),
+                    "learning_rate": 10.0,
+                    "optimizer": "sgd",
+                    "lr_scheduler": "constant",
+                    "max_grad_norm": 1.0,
+                    "weight_decay": 0.0,
+                    "fsdp_version": 2,
+                    "fsdp_config": {
+                        "offload_params": False,
+                        "cpu_ram_efficient_loading": True,
+                        "transformer_layer_cls_to_wrap": "MixtralDecoderLayer",
+                        "state_dict_type": "FULL_STATE_DICT",
+                        "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                        "reshard_after_forward": True,
+                    },
+                    "seed": 42,
+                    "bf16": True,
+                    "save_strategy": "no",
+                    "save_only_model": True,
+                }
+            )
+            if expert_parallel:
+                cfg["plugins"] = [
+                    "axolotl.integrations.expert_parallel.ExpertParallelPlugin"
+                ]
+                cfg["expert_parallel_size"] = 2
+                cfg["expert_parallel_backend"] = "torch"
+                cfg["dp_shard_size"] = 1
+            out_dir.mkdir(parents=True, exist_ok=True)
+            with open(out_dir / "config.yaml", "w", encoding="utf-8") as fout:
+                fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+            execute_subprocess_async(
+                [
+                    "axolotl",
+                    "train",
+                    str(out_dir / "config.yaml"),
+                    "--num-processes",
+                    "2",
+                    "--main-process-port",
+                    f"{get_torch_dist_unique_port()}",
+                ]
+            )
+            return load_safetensors(out_dir)
+
+        # compare in the on-disk key format the trainer saves (Mixtral's legacy layout)
+        init = load_safetensors(
+            snapshot_download(
+                "axolotl-ai-co/tiny-mixtral-30m", allow_patterns=["*.safetensors"]
+            )
+        )
+        noep = run("noep", expert_parallel=False)
+        ep = run("ep2", expert_parallel=True)
+
+        assert set(ep) == set(noep), (
+            "EP checkpoint keys differ from the FSDP checkpoint"
+        )
+        ratios = {}
+        for key, init_w in init.items():
+            init_w = init_w.float()
+            delta_noep = (noep[key].float() - init_w).norm().item()
+            delta_ep = (ep[key].float() - init_w).norm().item()
+            assert ep[key].shape == noep[key].shape, key
+            if delta_noep == 0:
+                assert delta_ep == 0, f"{key} moved under EP but not under FSDP"
+                continue
+            ratios[key] = delta_ep / delta_noep
+        assert ratios, "no parameter moved in one SGD step"
+        experts = {k: r for k, r in ratios.items() if "experts" in k}
+        assert experts, "no expert parameter moved"
+        for key, ratio in ratios.items():
+            assert 0.85 < ratio < 1.15, (
+                f"{key}: EP update norm is {ratio:.3f}x the FSDP update norm"
+            )
+
+    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "base_model, layer_cls, expert_parallel",
         [

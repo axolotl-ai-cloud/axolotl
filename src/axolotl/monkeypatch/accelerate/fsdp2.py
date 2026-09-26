@@ -250,6 +250,31 @@ def fsdp2_load_full_state_dict(
 
         nvfp4_cls = _nvfp4_local_tensor_cls(sharded_meta_param)
 
+        # EP-sharded experts as DTensors (pure EP per-rank mesh, or an EP×dp_shard subgroup): every
+        # rank of the mesh already holds its ep-group's [E_local] slice in its own full_sd, so shard
+        # that locally instead of sourcing from a rank 0 that owns different experts.
+        if (
+            _is_ep_expert_param(param_name)
+            and nvfp4_cls is None
+            and hasattr(sharded_meta_param, "device_mesh")
+        ):
+            from torch.distributed.tensor import distribute_tensor
+
+            device_mesh = sharded_meta_param.device_mesh
+            own = full_sd[param_name].to(
+                device_mesh.device_type, dtype=sharded_meta_param.dtype
+            )
+            sharded_param = distribute_tensor(
+                own, device_mesh, sharded_meta_param.placements, src_data_rank=None
+            )
+            if offload_to_cpu:
+                sharded_param = sharded_param.cpu()
+            sharded_sd[param_name] = nn.Parameter(
+                sharded_param, requires_grad=sharded_meta_param.requires_grad
+            )
+            full_sd[param_name] = None
+            continue
+
         full_tensor = None
         # Skip the dtype cast for NVFP4 (its components are scattered raw, not cast to bf16).
         if _accelerator.is_main_process and nvfp4_cls is None:
@@ -718,9 +743,10 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # Pure EP (ep_size == world_size): no ep×dp_shard mesh is built, so the experts were
         # manually EP-sharded (shard_expert_weights scattered each rank's real [E_local] slice) but
         # there is NO dp_shard axis to FSDP them onto. Left to the outer fully_shard(mesh=None) they
-        # would be re-sharded on the flat world mesh and replicated from rank 0, destroying EP. Exclude
-        # the EP-sharded expert base params from the FSDP wrap entirely so each rank keeps its own
-        # [E_local] slice as a plain param; fsdp2_load_full_state_dict restores them per-rank.
+        # would be re-sharded on the flat world mesh and replicated from rank 0, destroying EP.
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+        from axolotl.integrations.expert_parallel.shard import _detect_experts_modules
+
         ep_ignored = {
             p
             for n, p in model.named_parameters()
@@ -729,7 +755,30 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             and n.rsplit(".", 1)[-1]
             in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
         }
-        if ep_ignored:
+        experts_train = any(p.requires_grad for p in ep_ignored)
+        if ep_ignored and experts_train:
+            # Trainable experts join the optimizer and grad clipping beside the world-sharded dense
+            # DTensors; foreach/fused optimizers reject a Tensor/DTensor mix, so wrap them on a
+            # per-rank (size-1) dp_shard mesh: every param is a DTensor, the all-gather is a no-op.
+            from torch.distributed.device_mesh import init_device_mesh
+
+            device_type = mesh.device_type if mesh is not None else "cuda"
+            ep_mesh = init_device_mesh(
+                device_type,
+                (dist.get_world_size(), 1),
+                mesh_dim_names=("ep", "dp_shard"),
+            )
+            model._ep_expert_mesh = ep_mesh
+            ExpertParallelPlugin.fully_shard_experts(
+                model, ep_mesh["dp_shard"], fsdp2_kwargs
+            )
+            LOG.info(
+                f"expert_parallel (pure EP): wrapped {len(list(_detect_experts_modules(model)))} "
+                "trainable Experts module(s) on a per-rank mesh."
+            )
+        elif ep_ignored:
+            # Frozen experts (LoRA) need no optimizer/clip participation: keep each rank's own
+            # [E_local] slice as a plain param; fsdp2_load_full_state_dict restores them per-rank.
             fsdp2_kwargs["ignored_params"] = (
                 set(fsdp2_kwargs.get("ignored_params") or set()) | ep_ignored
             )

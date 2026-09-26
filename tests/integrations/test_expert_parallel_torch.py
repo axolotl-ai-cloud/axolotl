@@ -1094,3 +1094,117 @@ class TestChunkBounds:
         assert len(bounds) == chunks
         assert bounds[0][0] == 0 and bounds[-1][1] == num_tokens
         assert all(a[1] == b[0] for a, b in zip(bounds, bounds[1:], strict=False))
+
+
+def _tiny_ep_experts_model(fill: float):
+    """A ``model.layers.0.mlp.experts`` module carrying this rank's 2 of 4 global experts."""
+    experts = torch.nn.Module()
+    experts.gate_up_proj = torch.nn.Parameter(torch.full((2, 4, 4), fill))
+    experts.down_proj = torch.nn.Parameter(torch.full((2, 4, 2), fill))
+    experts.num_experts = 2
+    experts.num_local_experts = 2
+    experts.num_experts_global = 4
+    mlp = torch.nn.Module()
+    mlp.experts = experts
+    layer = torch.nn.Module()
+    layer.mlp = mlp
+    model = torch.nn.Module()
+    model.layers = torch.nn.ModuleList([layer])
+    root = torch.nn.Module()
+    root.model = model
+    return root
+
+
+def _gather_state_dict_worker(rank, world_size, port, q):
+    try:
+        _init_gloo(rank, world_size, port)
+        from axolotl.integrations.expert_parallel.shard import (
+            gather_ep_experts_into_state_dict,
+        )
+
+        model = _tiny_ep_experts_model(float(rank + 1))
+        # CPU-offloaded full state dicts exist on rank 0 only
+        state_dict = model.state_dict() if rank == 0 else {}
+        replaced = gather_ep_experts_into_state_dict(
+            state_dict, model, dist.group.WORLD
+        )
+        out = {
+            "replaced": replaced,
+            "keys": sorted(state_dict),
+            "gate_up": state_dict.get("model.layers.0.mlp.experts.gate_up_proj"),
+            "down": state_dict.get("model.layers.0.mlp.experts.down_proj"),
+        }
+        q.put((rank, out))
+    except Exception:  # pylint: disable=broad-except
+        q.put((rank, traceback.format_exc()))
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+class TestGatherEpExpertsIntoStateDict:
+    def test_rank0_gets_full_experts_and_other_ranks_write_nothing(self):
+        res = _run_spawned(_gather_state_dict_worker)
+        for rank in range(WORLD):
+            assert isinstance(res[rank], dict), res[rank]
+        r0, r1 = res[0], res[1]
+        assert r0["replaced"] == 2 and r1["replaced"] == 0
+        assert r1["keys"] == []
+        assert tuple(r0["gate_up"].shape) == (4, 4, 4)
+        assert tuple(r0["down"].shape) == (4, 4, 2)
+        assert torch.equal(r0["gate_up"][:2], torch.full((2, 4, 4), 1.0))
+        assert torch.equal(r0["gate_up"][2:], torch.full((2, 4, 4), 2.0))
+        assert torch.equal(r0["down"][2:], torch.full((2, 4, 2), 2.0))
+
+
+class TestEpClipGradNormPatchGate:
+    """The EP-aware clip engages for pure EP under FSDP2, not only for EP x dp_shard/cp."""
+
+    @staticmethod
+    def _fake_accelerator(ep, dp_shard, cp, fsdp2):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            parallelism_config=SimpleNamespace(
+                ep_enabled=ep, dp_shard_enabled=dp_shard, cp_enabled=cp
+            ),
+            is_fsdp2=fsdp2,
+            unscale_gradients=lambda: None,
+        )
+
+    @pytest.mark.parametrize(
+        "ep,dp_shard,cp,fsdp2,expect_ep_aware",
+        [
+            (True, False, False, True, True),
+            (True, True, False, False, True),
+            (True, False, True, False, True),
+            (True, False, False, False, False),
+            (False, False, False, True, False),
+        ],
+    )
+    def test_gate(self, monkeypatch, ep, dp_shard, cp, fsdp2, expect_ep_aware):
+        from accelerate import Accelerator
+
+        from axolotl.monkeypatch.accelerate import parallelism_config as pc_mod
+
+        calls = []
+        monkeypatch.setattr(
+            Accelerator,
+            "clip_grad_norm_",
+            lambda self, p, m, norm_type=2: calls.append("orig"),
+        )
+        monkeypatch.setattr(
+            Accelerator, "_AXOLOTL_EP_CLIP_PATCHED", False, raising=False
+        )
+        monkeypatch.setattr(
+            pc_mod,
+            "_ep_aware_clip_grad_norm",
+            lambda p, m, norm_type=2.0: calls.append("ep_aware"),
+        )
+        pc_mod.patch_clip_grad_norm_for_ep()
+        param = torch.nn.Parameter(torch.ones(3))
+        param.grad = torch.ones(3)
+        Accelerator.clip_grad_norm_(
+            self._fake_accelerator(ep, dp_shard, cp, fsdp2), [param], 1.0
+        )
+        assert calls == (["ep_aware"] if expect_ep_aware else ["orig"])

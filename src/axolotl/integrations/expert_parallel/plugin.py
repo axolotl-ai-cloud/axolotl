@@ -555,8 +555,22 @@ class ExpertParallelPlugin(BasePlugin):
         kwargs["mesh"] = dp_shard_mesh
         kwargs.pop("ignored_params", None)
 
+        root = dp_shard_mesh._get_root_mesh()
+        ep_size = (
+            root["ep"].size()
+            if root is not None and "ep" in (root.mesh_dim_names or ())
+            else 1
+        )
+        # Each rank's expert grad is the SUM over its ep-group's tokens (combine backward), while
+        # dense grads are averaged over the whole world; divide the reduce-scatter by ep*dp_shard
+        # so EP / FSDP / FSDP+EP produce the same effective gradient. A post-accumulate-grad hook
+        # cannot do this: FSDP assigns sharded grads directly, so such hooks never fire.
+        divide_factor = float(ep_size * dp_shard_mesh.size())
+
+        wrapped = []
         for _name, module in _detect_experts_modules(model):
             fully_shard(module, **kwargs)
+            wrapped.append(module)
 
         # `target_parameters` expert LoRA lives on the ParamWrapper chain wrapping the experts
         # module (which `_detect_experts_modules` skips). Left to the outer decoder-layer auto-wrap
@@ -577,24 +591,23 @@ class ExpertParallelPlugin(BasePlugin):
         ]
         for pw in outer_expert_pws:
             fully_shard(pw, **kwargs)
+            wrapped.append(pw)
+
+        for module in wrapped:
+            module.set_gradient_divide_factor(divide_factor)
 
         LOG.debug(
             f"expert_parallel: pre-wrapped Experts modules + {len(outer_expert_pws)} expert "
-            f"ParamWrapper(s) on dp_shard mesh (size={dp_shard_mesh.size()})."
+            f"ParamWrapper(s) on dp_shard mesh (size={dp_shard_mesh.size()}), "
+            f"gradient divide factor {divide_factor}."
         )
-
-        root = dp_shard_mesh._get_root_mesh()
-        ep_size = (
-            root["ep"].size()
-            if root is not None and "ep" in (root.mesh_dim_names or ())
-            else 1
-        )
-        ExpertParallelPlugin._register_expert_grad_scale(model, ep_size)
 
     @staticmethod
     def _register_expert_grad_scale(model, ep_size: int) -> int:
-        """Scale expert weight grads by `1/ep_size` so EP / FSDP / FSDP+EP
-        produce the same effective gradient.
+        """Scale expert weight grads by `1/ep_size` so pure EP under DDP matches
+        FSDP / FSDP+EP. Only for plain (non-FSDP) expert params: FSDP assigns
+        sharded grads directly, so post-accumulate-grad hooks never fire there
+        (`fully_shard_experts` sets the reduce-scatter divide factor instead).
         """
         from .shard import _detect_experts_modules
 

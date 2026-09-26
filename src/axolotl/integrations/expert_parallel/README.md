@@ -192,6 +192,8 @@ fsdp_config:
   reshard_after_forward: true
 ```
 
+Full-parameter training works with either layout. At 2 GPUs (`expert_parallel_size` equal to the world size, so no `dp_shard` axis) the dense parameters FSDP-shard across the whole world while the trainable experts are wrapped on a per-rank mesh, so every parameter is a DTensor and fused/foreach optimizers and gradient clipping see one kind of tensor. The expert combine sums gradients over the ranks that sent tokens where FSDP averages, so the experts' reduce-scatter is divided by `ep × dp_shard`; the full state dict gathers the experts across the EP axis before rank 0 writes, so the saved model carries every expert.
+
 See full example configs at [`examples/expert_parallel/`](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/expert_parallel).
 
 #### Implementation notes

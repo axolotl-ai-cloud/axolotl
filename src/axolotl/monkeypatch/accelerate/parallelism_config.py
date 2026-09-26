@@ -220,10 +220,11 @@ def _ep_aware_clip_grad_norm(
 
 def patch_clip_grad_norm_for_ep():
     """Replace `Accelerator.clip_grad_norm_` with the EP-aware version when
-    the active parallelism composes `ep` with `dp_shard` and/or `cp` (i.e., the
-    FSDP+EP composition produces multi-mesh DTensor grads — the experts shard on
-    the dp_shard/cp subgroup, the non-experts on the flattened dp_shard_cp mesh,
-    so the stock `clip_grad_norm_` can't stack their per-param norms together).
+    the active parallelism composes `ep` with FSDP2 (`dp_shard`, `cp`, or pure EP
+    with FSDP-sharded dense params): the FSDP+EP composition produces multi-mesh
+    DTensor grads — the experts shard on the dp_shard/cp subgroup (or a per-rank
+    mesh), the non-experts on the flattened mesh, so the stock `clip_grad_norm_`
+    can't stack their per-param norms together.
     """
     from accelerate import Accelerator
 
@@ -233,12 +234,15 @@ def patch_clip_grad_norm_for_ep():
 
     def patched_clip_grad_norm_(self, parameters, max_norm, norm_type=2):
         pc = getattr(self, "parallelism_config", None)
+        # Pure EP under FSDP2 also mixes meshes: dense params on the flat world mesh, trainable
+        # experts on a per-rank mesh (and plain-tensor frozen experts under LoRA).
         if (
             pc is not None
             and getattr(pc, "ep_enabled", False)
             and (
                 getattr(pc, "dp_shard_enabled", False)
                 or getattr(pc, "cp_enabled", False)
+                or getattr(self, "is_fsdp2", False)
             )
         ):
             self.unscale_gradients()
