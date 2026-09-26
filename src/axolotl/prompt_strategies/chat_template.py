@@ -37,6 +37,26 @@ def _extract_input_ids(result):
     return result["input_ids"] if isinstance(result, dict) else result
 
 
+def _align_ids(src: list[int], dst: list[int]) -> list[int] | None:
+    """Map each ``src`` token onto ``dst``, allowing extra tokens in ``dst``.
+
+    Returns None when ``src`` is not a subsequence of ``dst``. A matching pair
+    returns ``range(len(src))``.
+    """
+    if src == dst:
+        return list(range(len(src)))
+    mapping: list[int] = []
+    pos = 0
+    for token in src:
+        while pos < len(dst) and dst[pos] != token:
+            pos += 1
+        if pos >= len(dst):
+            return None
+        mapping.append(pos)
+        pos += 1
+    return mapping
+
+
 class ChatTemplatePrompter(Prompter):
     """Prompter for HF chat templates"""
 
@@ -517,6 +537,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         locator = self._build_turn_locator(turns, tools, input_ids)
+        # One string scan for every turn. The per-turn locator still re-renders
+        # the whole conversation twice per trainable turn, and a failed locator
+        # re-tokenizes a growing prefix twice per turn.
+        content_spans = self._locate_turns_from_content(
+            turns, tools, input_ids, locator=locator
+        )
 
         last_eos_idx = -1
         last_eot_idx = -1
@@ -564,13 +590,19 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             # (excluding reasoning_content + template separator tokens).
             use_content_only = bool(has_any_detail and has_reasoning)
 
-            turn_start_idx, turn_end_idx = self.find_turn(
-                turns=turns,
-                turn_idx=index,
-                tools=tools,
-                content_only=use_content_only,
-                locator=locator,
+            cached_span = (
+                content_spans.get(index) if content_spans is not None else None
             )
+            if cached_span is not None and not use_content_only:
+                turn_start_idx, turn_end_idx = cached_span
+            else:
+                turn_start_idx, turn_end_idx = self.find_turn(
+                    turns=turns,
+                    turn_idx=index,
+                    tools=tools,
+                    content_only=use_content_only,
+                    locator=locator,
+                )
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
@@ -883,6 +915,77 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if content_only and thinking_key and thinking_key in turn:
             dummy_turn[thinking_key] = turn[thinking_key]
         return dummy_turn
+
+    def _locate_turns_from_content(
+        self,
+        turns: list[dict],
+        tools: list[dict] | None,
+        input_ids: list[int],
+        locator: tuple[str, list[int], list[int]] | None = None,
+    ) -> dict[int, tuple[int, int]] | None:
+        """Map every string turn onto ``input_ids`` with one render.
+
+        The rendered conversation has to contain each turn's content, in order,
+        as a verbatim substring. When ``locator`` is missing, the plain-text
+        tokenization must still be a subsequence of ``input_ids``. Returns None
+        so the caller keeps the per-turn locator.
+        """
+        if not input_ids or any(
+            not isinstance(turn.get("content"), str) for turn in turns
+        ):
+            return None
+
+        if locator is not None:
+            full_text, token_starts, token_ends = locator
+            src_to_dst = list(range(len(input_ids)))
+        else:
+            if not getattr(self.tokenizer, "is_fast", False):
+                return None
+            full_text = self.prompter.build_prompt_text(turns, tools=tools)  # type: ignore
+            if not full_text:
+                return None
+            encoded = self.tokenizer(
+                full_text, add_special_tokens=False, return_offsets_mapping=True
+            )
+            enc_ids = list(encoded["input_ids"])
+            offsets = encoded.get("offset_mapping")
+            if not enc_ids or not offsets or len(offsets) != len(enc_ids):
+                return None
+            src_to_dst = _align_ids(enc_ids, list(input_ids))
+            if src_to_dst is None:
+                return None
+            token_starts = [start for start, _ in offsets]
+            token_ends = [end for _, end in offsets]
+
+        if len(token_starts) != len(src_to_dst):
+            return None
+
+        cursor = 0
+        spans: dict[int, tuple[int, int]] = {}
+        for index, turn in enumerate(turns):
+            content = turn.get("content") or ""
+            if content == "":
+                continue
+            found = full_text.find(content, cursor)
+            if found < 0:
+                return None
+            char_start = found
+            char_end = found + len(content)
+            cursor = char_end
+            start_idx = bisect_right(token_ends, char_start)
+            end_idx = bisect_left(token_starts, char_end)
+            if start_idx >= end_idx or end_idx > len(src_to_dst):
+                return None
+            mapped = src_to_dst[start_idx:end_idx]
+            if mapped[-1] - mapped[0] + 1 != len(mapped):
+                return None
+            spans[index] = (mapped[0], mapped[-1] + 1)
+
+        seen = self.__dict__.setdefault("_logged_linear_locate", set())
+        if "ok" not in seen:
+            seen.add("ok")
+            LOG.info("chat_template: locating turns from one rendered string")
+        return spans
 
     def find_turn(
         self,
