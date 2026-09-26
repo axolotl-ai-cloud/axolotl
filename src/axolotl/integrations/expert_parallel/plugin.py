@@ -79,6 +79,7 @@ class ExpertParallelPlugin(BasePlugin):
 
         # Cross-cfg validation that args.py can't do (it only sees its own fields).
         self._validate_mesh_axes(cfg)
+        self._reject_transformers_distribution(cfg)
 
         from .experts_fn import (
             EXPERT_PARALLEL,
@@ -110,6 +111,7 @@ class ExpertParallelPlugin(BasePlugin):
 
         from .shard import shard_expert_weights
 
+        self._reject_transformers_distributed_model(model)
         ep_group = self._resolve_ep_group(cfg)
         sharded = shard_expert_weights(model, ep_group)
 
@@ -625,6 +627,40 @@ class ExpertParallelPlugin(BasePlugin):
         """EP is enabled when expert_parallel_size > 1 (mirrors TP / DP UX)."""
         ep_size = getattr(cfg, "expert_parallel_size", 1) or 1
         return ep_size > 1
+
+    @staticmethod
+    def _reject_transformers_distribution(cfg) -> None:
+        """transformers' own TP/EP (`distributed_config`, `tp_plan`) shards experts as DTensors
+        under its RouterParallel plan; it cannot coexist with this plugin's sharding."""
+        overrides = getattr(cfg, "overrides_of_model_kwargs", None) or {}
+        clashing = sorted(
+            k
+            for k in ("distributed_config", "tp_plan", "tp_size", "device_mesh")
+            if overrides.get(k) is not None
+        )
+        if clashing:
+            raise ValueError(
+                f"expert_parallel: model_kwargs {clashing} hand model sharding to transformers "
+                "(its tp/ep plan), which conflicts with the expert_parallel plugin. Remove them; "
+                "expert_parallel_size / dp_shard_size configure the mesh."
+            )
+
+    @staticmethod
+    def _reject_transformers_distributed_model(model) -> None:
+        config = getattr(model, "config", None)
+        distributed_config = getattr(config, "distributed_config", None)
+        if getattr(distributed_config, "enable_expert_parallel", False):
+            raise ValueError(
+                "expert_parallel: the model was loaded with transformers' "
+                "`enable_expert_parallel=True`, so its experts are already sharded by "
+                "transformers' ep plan. The expert_parallel plugin owns expert sharding; "
+                "disable transformers' expert parallelism."
+            )
+        if (getattr(model, "_tp_size", None) or 1) > 1:
+            raise ValueError(
+                "expert_parallel: the model was loaded with transformers' tensor parallelism "
+                f"(tp_size={model._tp_size}); EP x TP composition is not supported."
+            )
 
     @staticmethod
     def _validate_mesh_axes(cfg) -> None:

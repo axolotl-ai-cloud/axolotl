@@ -1490,3 +1490,64 @@ class TestDdpIgnoreListMirroring:
 
         with pytest.raises(RuntimeError, match="broadcast"):
             ExpertParallelPlugin().post_model_load(cfg, model)
+
+
+class TestTransformersDistributionRejected:
+    """The plugin owns expert sharding; transformers' own tp/ep plan must not run alongside it."""
+
+    @pytest.fixture
+    def _restore_ep_state(self):
+        yield
+        experts_fn.set_backend(None)
+        experts_fn.set_local_implementation("grouped_mm")
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"distributed_config": {"enable_expert_parallel": True}},
+            {"tp_plan": "auto"},
+            {"tp_size": 2},
+            {"device_mesh": object()},
+        ],
+    )
+    def test_model_kwargs_handing_sharding_to_transformers_raise(
+        self, monkeypatch, overrides
+    ):
+        _forbid_find_spec(monkeypatch)
+        cfg = _torch_ep_cfg(overrides_of_model_kwargs=overrides)
+        with pytest.raises(ValueError, match="model_kwargs"):
+            ExpertParallelPlugin().pre_model_load(cfg)
+
+    def test_unrelated_model_kwargs_pass(self, monkeypatch, _restore_ep_state):
+        _forbid_find_spec(monkeypatch)
+        cfg = _torch_ep_cfg(
+            overrides_of_model_kwargs={"trust_remote_code": True, "tp_plan": None}
+        )
+        ExpertParallelPlugin().pre_model_load(cfg)
+        assert cfg.experts_implementation == EXPERT_PARALLEL
+
+    def test_model_loaded_with_transformers_ep_raises(self):
+        from types import SimpleNamespace
+
+        model = SimpleNamespace(
+            config=SimpleNamespace(
+                distributed_config=SimpleNamespace(enable_expert_parallel=True)
+            )
+        )
+        with pytest.raises(ValueError, match="enable_expert_parallel"):
+            ExpertParallelPlugin._reject_transformers_distributed_model(model)
+
+    def test_model_loaded_with_transformers_tp_raises(self):
+        from types import SimpleNamespace
+
+        model = SimpleNamespace(config=SimpleNamespace(), _tp_size=2)
+        with pytest.raises(ValueError, match="tp_size=2"):
+            ExpertParallelPlugin._reject_transformers_distributed_model(model)
+
+    def test_plain_model_passes(self):
+        from types import SimpleNamespace
+
+        model = SimpleNamespace(
+            config=SimpleNamespace(distributed_config=None), _tp_size=None
+        )
+        ExpertParallelPlugin._reject_transformers_distributed_model(model)

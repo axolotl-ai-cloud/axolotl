@@ -217,6 +217,9 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
   the sequence on `cp`, non-expert weights on `dp_shard`). EP × **TP** is not yet supported and
   raises `NotImplementedError`. EP × CP requires the model's attention to be context-parallel-aware
   on the `cp` axis (e.g. GLM-5.2 DSA via the kernels plugin); stock attention uses accelerate CP.
+- transformers' own expert/tensor parallelism (`distributed_config` with `enable_expert_parallel`,
+  `tp_plan`, `tp_size` via `model_kwargs`) is rejected: the plugin shards the experts itself and
+  routes tokens with its own backends, not transformers' RouterParallel plan.
 - DeepEP limitation: Low-latency (LL) kernels are inter-node only by design (pure RDMA via IBGDA). Single-node + intranode setups always use the standard kernels and don't benefit from LL.
 - FP8 dispatch needs Hopper + DISABLE_SM90_FEATURES=0.
 
