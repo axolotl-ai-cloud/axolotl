@@ -550,7 +550,10 @@ class ModelLoader:
             self._set_z3_leaf_modules()
 
         # Apply gradient checkpointing if needed
-        if self.cfg.adapter in ["lora", "qlora"] and self.cfg.gradient_checkpointing:
+        if (
+            self.cfg.adapter in ["lora", "qlora", "mixlora"]
+            and self.cfg.gradient_checkpointing
+        ):
             self.model.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
             )
@@ -895,7 +898,7 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         if (
-            self.cfg.adapter in ["qlora", "lora"]
+            self.cfg.adapter in ["qlora", "lora", "mixlora"]
             and hasattr(self.model_config, "quantization_config")
             and self.model_config.quantization_config["quant_method"]
             in ["gptq", "awq", "bitsandbytes"]
@@ -914,7 +917,7 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = BitsAndBytesConfig(
                     **self.model_config.quantization_config
                 )
-        elif self.cfg.adapter == "qlora" and self.cfg.load_in_4bit:
+        elif self.cfg.adapter in ("qlora", "mixlora") and self.cfg.load_in_4bit:
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,
@@ -1262,7 +1265,7 @@ class ModelLoader:
 
         if (
             not skip_prepare_model_for_kbit_training
-            and self.cfg.adapter in ["lora", "qlora"]
+            and self.cfg.adapter in ["lora", "qlora", "mixlora"]
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
