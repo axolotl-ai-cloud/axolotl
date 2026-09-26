@@ -14,6 +14,14 @@ from transformers import (
 )
 
 
+def _rank_suffix() -> str:
+    """Distinguish per-rank artifacts; ranks share one output_dir."""
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        if torch.distributed.get_world_size() > 1:
+            return f"_rank{torch.distributed.get_rank()}"
+    return ""
+
+
 class PytorchProfilerCallback(TrainerCallback):
     """
     PyTorch Profiler callback to create snapshots of GPU memory usage at specified steps.
@@ -66,7 +74,9 @@ class PytorchProfilerCallback(TrainerCallback):
     ):
         if state.global_step == self.profiler_steps_end:
             snapshot = torch.cuda.memory._snapshot()
-            with open(Path(args.output_dir) / "snapshot.pickle", "wb") as fout:
+            with open(
+                Path(args.output_dir) / f"snapshot{_rank_suffix()}.pickle", "wb"
+            ) as fout:
                 dump(snapshot, fout)
 
             # tell CUDA to stop recording memory allocations now
@@ -75,7 +85,9 @@ class PytorchProfilerCallback(TrainerCallback):
             # Stop and export torch.profiler trace
             if self._profiler is not None:
                 self._profiler.__exit__(None, None, None)
-                trace_path = Path(args.output_dir) / "profiler_trace.json"
+                trace_path = (
+                    Path(args.output_dir) / f"profiler_trace{_rank_suffix()}.json"
+                )
                 self._profiler.export_chrome_trace(str(trace_path))
                 self._profiler = None
 
@@ -92,7 +104,9 @@ class PytorchProfilerCallback(TrainerCallback):
             and state.global_step < self.profiler_steps_end
         ):
             snapshot = torch.cuda.memory._snapshot()
-            with open(Path(args.output_dir) / "snapshot.pickle", "wb") as fout:
+            with open(
+                Path(args.output_dir) / f"snapshot{_rank_suffix()}.pickle", "wb"
+            ) as fout:
                 dump(snapshot, fout)
 
             # tell CUDA to stop recording memory allocations now
@@ -100,6 +114,6 @@ class PytorchProfilerCallback(TrainerCallback):
 
         if self._profiler is not None:
             self._profiler.__exit__(None, None, None)
-            trace_path = Path(args.output_dir) / "profiler_trace.json"
+            trace_path = Path(args.output_dir) / f"profiler_trace{_rank_suffix()}.json"
             self._profiler.export_chrome_trace(str(trace_path))
             self._profiler = None
