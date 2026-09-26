@@ -11,11 +11,18 @@ from __future__ import annotations
 import fnmatch
 import inspect
 from collections import Counter
-from typing import Any, Callable
+from contextlib import ExitStack
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable
 
 import torch
-from torch.utils._python_dispatch import _get_current_dispatch_mode_stack
+from torch.utils._python_dispatch import (
+    TorchDispatchMode,
+    _get_current_dispatch_mode_stack,
+)
+from torch.utils._pytree import tree_map
 from torch.utils.checkpoint import (
+    SAC_IGNORED_OPS,
     CheckpointPolicy,
     checkpoint as _torch_checkpoint,
     create_selective_checkpoint_contexts,
@@ -88,6 +95,150 @@ def _matmul_k(name: str, args: tuple) -> int | None:
         return None
 
 
+def _normalize_save(save: Iterable[str] | None) -> list[str]:
+    """``None`` means the default attention group; an explicit empty list saves nothing
+    beyond the registered saves."""
+    return [ATTENTION_GROUP] if save is None else list(save)
+
+
+@dataclass
+class _SaveRegistry:
+    ops: set[str] = field(default_factory=set)
+    namespaces: set[str] = field(default_factory=set)
+    cpu_copies: bool = False
+
+    def __bool__(self) -> bool:
+        return bool(self.ops or self.namespaces or self.cpu_copies)
+
+    def matches(self, op: Any, name: str, kwargs: dict) -> bool:
+        if name in self.ops or name.split(".", 1)[0] in self.ops:
+            return True
+        if self.namespaces:
+            namespace = getattr(op, "namespace", None)
+            if not isinstance(namespace, str):
+                namespace = name.split("::", 1)[0] if "::" in name else None
+            if namespace in self.namespaces:
+                return True
+        return self.cpu_copies and _is_cpu_copy(name, kwargs)
+
+
+def _is_cpu_copy(name: str, kwargs: dict) -> bool:
+    if name.split(".", 1)[0] != "aten::_to_copy":
+        return False
+    device = kwargs.get("device")
+    if device is None:
+        return False
+    try:
+        return torch.device(device).type == "cpu"
+    except (RuntimeError, TypeError):
+        return False
+
+
+_MANDATORY_SAVES = _SaveRegistry()
+_PREFERRED_SAVES = _SaveRegistry()
+
+
+def register_mandatory_save(
+    ops: Iterable[str] = (),
+    namespaces: Iterable[str] = (),
+    cpu_copies: bool = False,
+) -> None:
+    """Force-save ops in every SAC policy, ahead of the user's ``save`` list.
+
+    For correctness saves whose recompute would diverge from the forward, e.g. a
+    ``topk`` routing decision that sizes collectives (recomputed near-ties would
+    desync ranks), or device->host copies that would re-sync. ``ops`` are qualified
+    names (``"aten::topk"``, overload optional), ``namespaces`` match every op in
+    them, and ``cpu_copies`` matches ``aten::_to_copy`` onto a CPU device.
+    Registrations are process-global and additive.
+    """
+    _MANDATORY_SAVES.ops.update(ops)
+    _MANDATORY_SAVES.namespaces.update(namespaces)
+    _MANDATORY_SAVES.cpu_copies |= cpu_copies
+
+
+def register_preferred_save(
+    ops: Iterable[str] = (), namespaces: Iterable[str] = ()
+) -> None:
+    """Save ops in every SAC policy to skip their recompute (a memory/speed trade,
+    not a correctness requirement). Consulted after the mandatory saves."""
+    _PREFERRED_SAVES.ops.update(ops)
+    _PREFERRED_SAVES.namespaces.update(namespaces)
+
+
+def clear_registered_saves() -> None:
+    for registry in (_MANDATORY_SAVES, _PREFERRED_SAVES):
+        registry.ops.clear()
+        registry.namespaces.clear()
+        registry.cpu_copies = False
+
+
+def has_registered_saves() -> bool:
+    return bool(_MANDATORY_SAVES or _PREFERRED_SAVES)
+
+
+def registered_save_policy(op: Any, kwargs: dict) -> CheckpointPolicy | None:
+    """``MUST_SAVE`` / ``PREFER_SAVE`` for registered ops, ``None`` otherwise."""
+    if not has_registered_saves():
+        return None
+    name = _op_name(op)
+    if _MANDATORY_SAVES.matches(op, name, kwargs):
+        return CheckpointPolicy.MUST_SAVE
+    if _PREFERRED_SAVES.matches(op, name, kwargs):
+        return CheckpointPolicy.PREFER_SAVE
+    return None
+
+
+def _returns_alias(op: Any) -> bool:
+    schema = getattr(op, "_schema", None)
+    if schema is None:
+        return True
+    return any(ret.alias_info is not None for ret in schema.returns)
+
+
+class _MandatorySaveCloner(TorchDispatchMode):
+    """Hands the program a copy of each mandatory-saved output, keeping the cached
+    original pristine: routers normalise ``topk`` values in place, which would
+    otherwise trip SAC's cache-mutation guard (or, with offload, replay the
+    post-mutation values and skew the router gradient)."""
+
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        kwargs = {} if kwargs is None else kwargs
+        out = func(*args, **kwargs)
+        if (
+            func in SAC_IGNORED_OPS
+            or registered_save_policy(func, kwargs) is not CheckpointPolicy.MUST_SAVE
+            or _returns_alias(func)
+        ):
+            return out
+        return tree_map(lambda t: t.clone() if torch.is_tensor(t) else t, out)
+
+
+class _StackedContext:
+    def __init__(self, *contexts) -> None:
+        self._contexts = contexts
+        self._stack: ExitStack | None = None
+
+    def __enter__(self):
+        with ExitStack() as stack:
+            for ctx in self._contexts:
+                stack.enter_context(ctx)
+            self._stack = stack.pop_all()
+        return self
+
+    def __exit__(self, *exc):
+        stack, self._stack = self._stack, None
+        return stack.__exit__(*exc) if stack is not None else False
+
+
+def with_mandatory_save_clones(contexts: tuple[Any, Any]) -> tuple[Any, Any]:
+    """Layer the mandatory-save clone mode over a SAC ``(forward, recompute)`` pair."""
+    if not _MANDATORY_SAVES:
+        return contexts
+    forward_ctx, recompute_ctx = contexts
+    return _StackedContext(forward_ctx, _MandatorySaveCloner()), recompute_ctx
+
+
 def _is_flash_attention_forward(name: str) -> bool:
     lowered = name.lower()
     if "flash_attn" not in lowered and "flash_attention" not in lowered:
@@ -149,6 +300,7 @@ class SacPolicyState:
         # during checkpoint recompute (on the autograd thread), so forward and
         # replay see the same value.
         self.current_layer_type: str | None = None
+        self.registered_op_names: set[str] = set()
         # same threading assumption as current_layer_type: forward and backward
         # never overlap, so one depth counter per save_modules entry suffices
         self.module_depth: dict[str, int] = {}
@@ -160,6 +312,7 @@ class SacPolicyState:
         self.rule_replays: dict[str, int] = {}
         self.recompute_seen: bool = False
         self.warned_dead_saves: bool = False
+        self.save_list: list[str] = []
         self.save_modules: list[str] = []
         self.save_matmul_min_k: int | None = None
 
@@ -366,18 +519,22 @@ def build_sac_policy(
     """Build an eager SAC policy_fn: MUST_SAVE for matching ops, PREFER_RECOMPUTE otherwise.
 
     ``save`` entries are either the ``"attention"`` group or substrings matched
-    against the qualified op name (e.g. ``"aten::mm"``). Unless
+    against the qualified op name (e.g. ``"aten::mm"``); ``None`` means
+    ``["attention"]`` and ``[]`` saves nothing through the list. Unless
     ``save_sliding_window`` is set, hybrid-model attention calls bounded by a
     sliding window keep being recomputed — SWA is cheap and not worth the saved
-    memory; only full-attention calls are saved.
+    memory; only full-attention calls are saved. Ops registered through
+    ``register_mandatory_save`` / ``register_preferred_save`` are decided first,
+    regardless of ``save``, the rules and the layer type.
 
     Two matmul rules follow the save list. ``save_modules``: a matmul dispatched
     while a module-scope hook (``install_module_scope_hooks``) is active is saved.
     ``save_matmul_min_k``: a matmul whose contraction dim K is at least this value
     is saved. Neither rule consults layer types or sliding windows.
     """
-    save = save or [ATTENTION_GROUP]
+    save = _normalize_save(save)
     state = state or SacPolicyState()
+    state.save_list = list(save)
     state.save_modules = list(save_modules or [])
     state.save_matmul_min_k = save_matmul_min_k
     state.rule_saves.setdefault("save", 0)
@@ -419,6 +576,21 @@ def build_sac_policy(
         return any(sub in name for sub in substrings)
 
     def policy_fn(ctx, op, *args, **kwargs):  # pylint: disable=unused-argument
+        registered = registered_save_policy(op, kwargs)
+        if registered is not None:
+            name = _op_name(op)
+            if name not in state.registered_op_names:
+                state.registered_op_names.add(name)
+                kind = (
+                    "required"
+                    if registered is CheckpointPolicy.MUST_SAVE
+                    else "registered"
+                )
+                LOG.info(
+                    f"selective_checkpointing: saving `{name}` ({kind}; backward "
+                    "will not recompute it)"
+                )
+            return registered
         if _matches(op):
             name = _op_name(op)
             if state.current_layer_type in skip_layer_types:
@@ -511,7 +683,7 @@ def _warn_unmatched_rules(state: SacPolicyState) -> None:
     save_list_saved = state.rule_saves.get("save", 0) > 0 or any(
         not name.startswith(("module:", "shape:")) for name in state.saved_op_names
     )
-    if not save_list_saved:
+    if state.save_list and not save_list_saved:
         message = (
             f"selective_checkpointing: no op matched the save policy after "
             f"{n} checkpoint regions. Your attention "
@@ -610,6 +782,7 @@ def build_sac_context_fn(
     save_matmul_min_k: int | None = None,
 ) -> Callable:
     """Return a ``context_fn`` for ``torch.utils.checkpoint.checkpoint``."""
+    save = _normalize_save(save)
     state = state or SacPolicyState()
     policy_fn = build_sac_policy(
         save,
@@ -623,7 +796,9 @@ def build_sac_context_fn(
     def context_fn():
         state.regions_seen += 1
         run_rule_diagnostics(state)
-        return create_selective_checkpoint_contexts(policy_fn)
+        return with_mandatory_save_clones(
+            create_selective_checkpoint_contexts(policy_fn)
+        )
 
     return context_fn
 
@@ -642,11 +817,13 @@ def apply_selective_checkpointing(
 
     Wrapping the instance method covers every enable call site (axolotl's model
     loader, HF Trainer at train() time, PEFT's kbit prep) without placing a
-    non-serializable callable into ``TrainingArguments``.
+    non-serializable callable into ``TrainingArguments``. ``save=[]`` with no
+    rules installs a policy that saves only the registered (mandatory/preferred) ops.
     """
     if getattr(model.gradient_checkpointing_enable, "_axolotl_sac", False):
         return
 
+    save = _normalize_save(save)
     state = SacPolicyState()
     skip_layer_types = (
         set()
@@ -657,7 +834,7 @@ def apply_selective_checkpointing(
             else recompute_layer_types
         )
     )
-    if skip_layer_types:
+    if skip_layer_types and save:
         install_layer_type_hooks(model, state)
     if save_modules:
         install_module_scope_hooks(model, state, save_modules)
@@ -703,6 +880,5 @@ def apply_selective_checkpointing(
         else ""
     )
     LOG.info(
-        "selective_checkpointing enabled: "
-        f"save={save or [ATTENTION_GROUP]}{rules} (eager SAC, non-reentrant)"
+        f"selective_checkpointing enabled: save={save}{rules} (eager SAC, non-reentrant)"
     )

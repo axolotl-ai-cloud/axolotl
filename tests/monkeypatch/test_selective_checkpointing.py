@@ -1162,3 +1162,233 @@ class TestRuleFunctional:
         _assert_grads_match(baseline, actual)
         assert state.rule_saves["module:down"] == 2
         assert state.saved_op_names == {"module:down:bitsandbytes::gemm_4bit"}
+
+
+class TestRegisteredSaves:
+    SDPA_OP = torch.ops.aten._scaled_dot_product_flash_attention.default
+
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self):
+        selective_checkpointing.clear_registered_saves()
+        yield
+        selective_checkpointing.clear_registered_saves()
+
+    def test_mandatory_op_saved_regardless_of_save_list(self):
+        selective_checkpointing.register_mandatory_save(ops={"aten::topk"})
+        for save in (None, [], ["aten::mm"]):
+            policy = build_sac_policy(save)
+            assert (
+                policy(None, torch.ops.aten.topk.default) == CheckpointPolicy.MUST_SAVE
+            )
+        assert (
+            build_sac_policy([])(None, torch.ops.aten.sort.default)
+            == CheckpointPolicy.PREFER_RECOMPUTE
+        )
+
+    def test_mandatory_op_saved_on_recompute_layer_types(self):
+        selective_checkpointing.register_mandatory_save(ops={"aten::topk"})
+        state = SacPolicyState()
+        policy = build_sac_policy(["attention"], state)
+        state.current_layer_type = "sliding_attention"
+        assert policy(None, torch.ops.aten.topk.default) == CheckpointPolicy.MUST_SAVE
+        assert policy(None, self.SDPA_OP) == CheckpointPolicy.PREFER_RECOMPUTE
+        assert state.registered_op_names == {"aten::topk"}
+        assert not state.saved_op_names
+
+    def test_namespace_save(self):
+        selective_checkpointing.register_mandatory_save(
+            namespaces={"_c10d_functional", "axolotl"}
+        )
+        policy = build_sac_policy([])
+        assert (
+            policy(None, torch.ops._c10d_functional.wait_tensor.default)
+            == CheckpointPolicy.MUST_SAVE
+        )
+        assert (
+            policy(None, _FakeOp("axolotl::some_kernel")) == CheckpointPolicy.MUST_SAVE
+        )
+        assert (
+            policy(None, _FakeOp("flash_attn::_flash_attn_forward"))
+            == CheckpointPolicy.PREFER_RECOMPUTE
+        )
+
+    def test_cpu_copy_save(self):
+        op = torch.ops.aten._to_copy.default
+        assert (
+            build_sac_policy([])(None, op, device=torch.device("cpu"))
+            == CheckpointPolicy.PREFER_RECOMPUTE
+        )
+        selective_checkpointing.register_mandatory_save(cpu_copies=True)
+        policy = build_sac_policy([])
+        assert (
+            policy(None, op, device=torch.device("cpu")) == CheckpointPolicy.MUST_SAVE
+        )
+        assert policy(None, op, device="cpu") == CheckpointPolicy.MUST_SAVE
+        assert (
+            policy(None, op, device=torch.device("cuda", 0))
+            == CheckpointPolicy.PREFER_RECOMPUTE
+        )
+        assert (
+            policy(None, op, dtype=torch.bfloat16) == CheckpointPolicy.PREFER_RECOMPUTE
+        )
+        assert (
+            policy(None, torch.ops.aten.mm.default, device="cpu")
+            == CheckpointPolicy.PREFER_RECOMPUTE
+        )
+
+    def test_preferred_save_and_mandatory_precedence(self):
+        selective_checkpointing.register_preferred_save(
+            ops={"axolotl::ep_all_to_all_single"}, namespaces={"mylib"}
+        )
+        policy = build_sac_policy([])
+        assert (
+            policy(None, _FakeOp("axolotl::ep_all_to_all_single"))
+            == CheckpointPolicy.PREFER_SAVE
+        )
+        assert policy(None, _FakeOp("mylib::op")) == CheckpointPolicy.PREFER_SAVE
+        selective_checkpointing.register_mandatory_save(namespaces={"mylib"})
+        assert policy(None, _FakeOp("mylib::op")) == CheckpointPolicy.MUST_SAVE
+
+    def test_clear_registered_saves(self):
+        selective_checkpointing.register_mandatory_save(
+            ops={"aten::topk"}, cpu_copies=True
+        )
+        selective_checkpointing.register_preferred_save(namespaces={"axolotl"})
+        selective_checkpointing.clear_registered_saves()
+        policy = build_sac_policy([])
+        assert (
+            policy(None, torch.ops.aten.topk.default)
+            == CheckpointPolicy.PREFER_RECOMPUTE
+        )
+        assert (
+            selective_checkpointing.registered_save_policy(
+                torch.ops.aten._to_copy.default, {"device": "cpu"}
+            )
+            is None
+        )
+
+    def test_explicit_empty_save_skips_attention(self):
+        assert build_sac_policy([])(None, self.SDPA_OP) == (
+            CheckpointPolicy.PREFER_RECOMPUTE
+        )
+        assert build_sac_policy(None)(None, self.SDPA_OP) == CheckpointPolicy.MUST_SAVE
+
+    def test_apply_with_empty_save_injects_policy(self):
+        model = TestEnableWrap._FakeModel()
+        apply_selective_checkpointing(model, save=[])
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": True}
+        )
+        assert model.seen_kwargs["use_reentrant"] is False
+        assert callable(model.seen_kwargs["context_fn"])
+
+    def test_registered_save_precedes_rules(self):
+        selective_checkpointing.register_preferred_save(ops={"aten::mm"})
+        policy = build_sac_policy([], save_matmul_min_k=1)
+        assert (
+            policy(None, MM, torch.empty(4, 8), torch.empty(8, 4))
+            == CheckpointPolicy.PREFER_SAVE
+        )
+        assert (
+            policy(None, ADDMM, torch.empty(4), torch.empty(4, 8), torch.empty(8, 4))
+            == CheckpointPolicy.MUST_SAVE
+        )
+
+    def test_empty_save_with_rules_saves_only_rule_matmuls(self):
+        policy = build_sac_policy([], save_matmul_min_k=8)
+        assert policy(None, SDPA) == CheckpointPolicy.PREFER_RECOMPUTE
+        assert (
+            policy(None, MM, torch.empty(4, 8), torch.empty(8, 4))
+            == CheckpointPolicy.MUST_SAVE
+        )
+
+    def test_empty_save_does_not_warn_no_match(self, sac_log):
+        context_fn = build_sac_context_fn([])
+        for _ in range(_NO_MATCH_WARN_REGIONS):
+            context_fn()
+        assert not [r for r in sac_log.records if r.levelno == logging.WARNING]
+
+    def test_fsdp_activation_checkpointing_carries_registered_saves(self):
+        from axolotl.monkeypatch.accelerate.fsdp2 import (
+            _activation_checkpoint_wrapper_fn,
+        )
+
+        assert "context_fn" not in _activation_checkpoint_wrapper_fn().keywords
+        selective_checkpointing.register_mandatory_save(ops={"aten::topk"})
+        assert callable(_activation_checkpoint_wrapper_fn().keywords["context_fn"])
+
+
+class TestMandatorySaveRecompute:
+    """A router that normalises its ``topk`` values in place (Qwen3-MoE, Mixtral) under
+    a policy that must save ``topk``: backward must not re-run it and grads must match."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self):
+        selective_checkpointing.clear_registered_saves()
+        yield
+        selective_checkpointing.clear_registered_saves()
+
+    @staticmethod
+    def _router_block(x, w_router, w_out):
+        probs = torch.softmax(x @ w_router, dim=-1)
+        vals, idx = torch.topk(probs, 2, dim=-1)
+        vals /= vals.sum(dim=-1, keepdim=True)
+        gathered = torch.gather(probs, 1, idx) * vals
+        return (gathered.sum(-1, keepdim=True) * (x @ w_out)).sum()
+
+    def _run(self, context_fn):
+        from torch.utils._python_dispatch import TorchDispatchMode
+
+        class _CountTopk(TorchDispatchMode):
+            def __init__(self):
+                super().__init__()
+                self.count = 0
+
+            def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+                if func is torch.ops.aten.topk.default:
+                    self.count += 1
+                return func(*args, **(kwargs or {}))
+
+        gen = torch.Generator().manual_seed(0)
+        inputs = [
+            torch.randn(shape, generator=gen).requires_grad_(True)
+            for shape in ((16, 8), (8, 6), (8, 4))
+        ]
+        fwd, bwd = _CountTopk(), _CountTopk()
+        with fwd:
+            if context_fn is None:
+                loss = self._router_block(*inputs)
+            else:
+                loss = checkpoint(
+                    self._router_block,
+                    *inputs,
+                    use_reentrant=False,
+                    context_fn=context_fn,
+                )
+        with bwd:
+            loss.backward()
+        return fwd.count, bwd.count, [t.grad for t in inputs]
+
+    def test_topk_saved_and_grads_match(self):
+        _, _, ref = self._run(None)
+        _, replayed, _ = self._run(build_sac_context_fn([]))
+        assert replayed == 1
+
+        selective_checkpointing.register_mandatory_save(ops={"aten::topk"})
+        for save in ([], None):
+            fwd, bwd, grads = self._run(build_sac_context_fn(save))
+            assert (fwd, bwd) == (1, 0)
+            for got, want in zip(grads, ref, strict=True):
+                torch.testing.assert_close(got, want, rtol=0, atol=0)
+
+    def test_offload_engine_topk_saved_and_grads_match(self):
+        from axolotl.monkeypatch.selective_checkpointing_offload import (
+            build_sac_offload_context_fn,
+        )
+
+        _, _, ref = self._run(None)
+        selective_checkpointing.register_mandatory_save(ops={"aten::topk"})
+        fwd, bwd, grads = self._run(build_sac_offload_context_fn(save=[]))
+        assert (fwd, bwd) == (1, 0)
+        for got, want in zip(grads, ref, strict=True):
+            torch.testing.assert_close(got, want, rtol=0, atol=0)

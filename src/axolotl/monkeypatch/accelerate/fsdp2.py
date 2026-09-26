@@ -431,6 +431,26 @@ def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool
     return not staged_nf4 or is_main_process
 
 
+def _activation_checkpoint_wrapper_fn():
+    """Non-reentrant ``checkpoint_wrapper`` that honours registered mandatory SAC saves."""
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        CheckpointImpl,
+        checkpoint_wrapper,
+    )
+
+    from axolotl.monkeypatch.selective_checkpointing import (
+        build_sac_context_fn,
+        has_registered_saves,
+    )
+
+    kwargs = {}
+    if has_registered_saves():
+        kwargs["context_fn"] = build_sac_context_fn(save=[])
+    return functools.partial(
+        checkpoint_wrapper, checkpoint_impl=CheckpointImpl.NO_REENTRANT, **kwargs
+    )
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -497,18 +517,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     if fsdp2_plugin.activation_checkpointing:
         from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-            CheckpointImpl,
             apply_activation_checkpointing,
-            checkpoint_wrapper,
         )
 
         # Apply activation checkpointing before applying `fully_shard`
         apply_activation_checkpointing(
             model,
-            checkpoint_wrapper_fn=functools.partial(
-                checkpoint_wrapper,
-                checkpoint_impl=CheckpointImpl.NO_REENTRANT,
-            ),
+            checkpoint_wrapper_fn=_activation_checkpoint_wrapper_fn(),
             auto_wrap_policy=fsdp2_plugin.auto_wrap_policy,
         )
 
