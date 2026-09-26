@@ -1112,8 +1112,22 @@ class TestTorchBackendCheckpointHooks:
         for op in (
             torch.ops.axolotl.ep_all_to_all_single.default,
             torch.ops.axolotl.ep_all_to_all_single_equal.default,
+            torch.ops._c10d_functional.all_to_all_single.default,
+            torch.ops._c10d_functional.wait_tensor.default,
         ):
             assert self._policy(op) == expected
+
+    @pytest.mark.parametrize("chunks", [1, 3])
+    def test_post_model_build_sets_dispatch_chunks(self, monkeypatch, chunks):
+        from axolotl.integrations.expert_parallel import experts_fn
+
+        _forbid_find_spec(monkeypatch)
+        cfg = _torch_ep_cfg(expert_parallel_dispatch_chunks=chunks)
+        try:
+            ExpertParallelPlugin().post_model_build(cfg, _build_qwen3moe_block())
+            assert experts_fn._DISPATCH_CHUNKS == chunks
+        finally:
+            experts_fn.set_dispatch_chunks(1)
 
     class _Model(torch.nn.Module):
         def __init__(self):

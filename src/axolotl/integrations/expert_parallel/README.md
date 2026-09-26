@@ -22,6 +22,12 @@ An explicit `deep_ep` without the `deep_ep` package installed follows `expert_pa
 
 The `torch` backend's dispatch is training-critical to recompute correctly under activation checkpointing: the router's `topk` must not re-run (a different, nondeterministically-tied result would desync the `all_to_all` shapes each rank sends, which hangs the other ranks) and the token-count split tensors must not be recomputed either. The plugin installs a policy that always saves these under `gradient_checkpointing` (with or without `selective_checkpointing`, including `activation_offloading: hidden_states`) and under FSDP2 `fsdp_config.activation_checkpointing`; reentrant checkpointing and the TRL offloader modes (`activation_offloading: true | legacy | disk`) are rejected at config validation. The dispatched/combined rows themselves are an optional save, on by default (`expert_parallel_save_dispatch: true`) — turn it off to recompute the `all_to_all` instead of holding its output, trading a small amount of network traffic for memory.
 
+### Chunked dispatch with the `torch` backend
+
+`expert_parallel_dispatch_chunks: N` (default `1`, `torch` backend only) splits each MoE layer's tokens into `N` chunks and pipelines them: chunk `i+1`'s dispatch `all_to_all` is in flight while chunk `i`'s expert GEMMs run, and chunk `i`'s combine is consumed only after chunk `i+1`'s GEMMs are enqueued, so the collectives can overlap compute. All chunks' split counts come from one count exchange and one device-to-host copy per layer. Only the forward overlaps: autograd runs each chunk's backward chain back to back. An explicit `expert_parallel_backend: deep_ep` with `N > 1` is rejected at config validation.
+
+Overlap is not a speedup guarantee: each chunk adds its own collectives and kernel launches, and that per-chunk overhead can exceed what the overlap hides. On 2x PCIe GPUs (16k tokens, hidden 4096), `N: 2` was 12-18% faster when expert compute dominated and ~5% slower when communication-bound; `N: 4` helped only in the most compute-heavy case, and `N: 8` was never faster and up to 3x slower. Benchmark your model's forward before raising `N`, and start from `2`.
+
 ## Requirements
 
 Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink — for the `deep_ep` backend only. The `torch` backend runs on any GPU topology with a working NCCL or gloo backend, including PCIe-only setups with no NVLink.

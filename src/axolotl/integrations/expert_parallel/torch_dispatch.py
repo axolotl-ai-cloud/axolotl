@@ -25,9 +25,11 @@ the forward's ``topk`` result and CPU split copies rather than re-running them.
 """
 
 from dataclasses import dataclass
+from typing import Callable
 
 import torch
 import torch.distributed as dist
+import torch.distributed._functional_collectives as funcol
 
 from axolotl.kernels.op_registry import _UnregisteredOp, register_kernel_op
 from axolotl.utils.logging import get_logger
@@ -169,6 +171,22 @@ def all_to_all_single_equal(x: torch.Tensor, group: dist.ProcessGroup) -> torch.
     return _A2AEqualFallback.apply(x, group.group_name)
 
 
+def all_to_all_single_async(
+    x: torch.Tensor,
+    output_splits: list[int],
+    input_splits: list[int],
+    group: dist.ProcessGroup,
+) -> torch.Tensor:
+    """Differentiable uneven all-to-all whose wait is deferred to the output's first use.
+
+    Returns an ``AsyncCollectiveTensor`` so compute enqueued before that use overlaps the
+    collective. Dispatches as ``_c10d_functional::all_to_all_single`` / ``wait_tensor``.
+    """
+    return funcol.all_to_all_single_autograd(
+        x.contiguous(), output_splits, input_splits, group
+    )
+
+
 def compute_send_counts(
     topk_idx: torch.Tensor, num_ranks: int, num_local_experts: int
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -280,12 +298,7 @@ def dispatch(
     return recv_x, recv_idx, recv_w, handle
 
 
-def combine(
-    local_out: torch.Tensor, handle: TorchEPHandle, dtype: torch.dtype | None = None
-) -> torch.Tensor:
-    """Return ``[N_recv,H]`` expert outputs to their source ranks and sum them per token."""
-    if handle.send_token_idx is None:
-        return local_out if dtype is None else local_out.to(dtype)
+def _anchor_backward(local_out: torch.Tensor, handle: TorchEPHandle) -> torch.Tensor:
     if torch.is_grad_enabled() and (
         local_out.shape[0] == 0 or not local_out.requires_grad
     ):
@@ -298,6 +311,16 @@ def combine(
             # grad-ness can differ per rank (trainable experts, frozen inputs, zero
             # received rows); the combine backward must be issued on all or none
             local_out = local_out.detach().requires_grad_()
+    return local_out
+
+
+def combine(
+    local_out: torch.Tensor, handle: TorchEPHandle, dtype: torch.dtype | None = None
+) -> torch.Tensor:
+    """Return ``[N_recv,H]`` expert outputs to their source ranks and sum them per token."""
+    if handle.send_token_idx is None:
+        return local_out if dtype is None else local_out.to(dtype)
+    local_out = _anchor_backward(local_out, handle)
     out_send = all_to_all_single(
         local_out, handle.send_splits, handle.recv_splits, handle.group
     )
@@ -305,3 +328,106 @@ def combine(
         out_send = out_send.to(dtype)
     y = out_send.new_zeros((handle.num_tokens, out_send.shape[-1]))
     return y.index_add_(0, handle.send_token_idx, out_send)
+
+
+def chunk_bounds(num_tokens: int, chunks: int) -> list[tuple[int, int]]:
+    """``chunks`` contiguous ``[start, end)`` token ranges; the last takes the remainder,
+    so some are empty when ``num_tokens < chunks``."""
+    size = num_tokens // chunks
+    return [
+        (i * size, num_tokens if i == chunks - 1 else (i + 1) * size)
+        for i in range(chunks)
+    ]
+
+
+def dispatch_chunked_forward(
+    x: torch.Tensor,
+    topk_idx: torch.Tensor,
+    topk_weights: torch.Tensor,
+    local_kernel: Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor],
+    *,
+    num_local_experts: int,
+    group: dist.ProcessGroup,
+    chunks: int,
+) -> torch.Tensor:
+    """``dispatch -> local_kernel -> combine`` over ``chunks`` token ranges, pipelined.
+
+    Chunk ``i+1``'s dispatch all-to-alls are issued before chunk ``i``'s local kernel, and
+    chunk ``i``'s combine is consumed only after chunk ``i+1``'s kernel is enqueued, so the
+    collectives overlap expert compute in forward. The split counts of every chunk come
+    from ONE count exchange and ONE device->host copy. Every rank issues every chunk's
+    collectives in the same order, including empty ones.
+    """
+    num_ranks = dist.get_world_size(group)
+    bounds = chunk_bounds(x.shape[0], chunks)
+
+    with torch.no_grad():
+        dest, is_in_rank, _ = compute_send_counts(
+            topk_idx, num_ranks, num_local_experts
+        )
+        send_counts = torch.stack([is_in_rank[s:e].sum(dim=0) for s, e in bounds])
+        # the equal all-to-all splits dim 0 by destination rank, so exchange [P, C]
+        recv_counts = all_to_all_single_equal(send_counts.t().contiguous(), group).t()
+        splits = torch.stack((send_counts, recv_counts)).cpu()
+
+    def issue_dispatch(i):
+        s, e = bounds[i]
+        send_splits, recv_splits = splits[0, i], splits[1, i]
+        send_list, recv_list = send_splits.tolist(), recv_splits.tolist()
+        send_token_idx, _send_rank, send_idx, send_w = build_send_layout(
+            topk_idx[s:e],
+            topk_weights[s:e],
+            dest[s:e],
+            is_in_rank[s:e],
+            sum(send_list),
+            num_local_experts,
+        )
+        recv_x = all_to_all_single_async(
+            x[s:e][send_token_idx], recv_list, send_list, group
+        )
+        recv_w = all_to_all_single_async(send_w, recv_list, send_list, group)
+        with torch.no_grad():
+            recv_idx = all_to_all_single_async(send_idx, recv_list, send_list, group)
+        handle = TorchEPHandle(
+            num_tokens=e - s,
+            send_token_idx=send_token_idx,
+            send_splits=send_splits,
+            recv_splits=recv_splits,
+            group=group,
+            recv_x=recv_x,
+            recv_w=recv_w,
+        )
+        return recv_idx, handle
+
+    def issue_combine(local_out, handle):
+        local_out = _anchor_backward(local_out, handle)
+        return all_to_all_single_async(
+            local_out,
+            handle.send_splits.tolist(),
+            handle.recv_splits.tolist(),
+            group,
+        )
+
+    def finalize(out_send, handle):
+        y = out_send.new_zeros((handle.num_tokens, out_send.shape[-1]))
+        return y.index_add_(0, handle.send_token_idx, out_send)
+
+    parts: list[torch.Tensor | None] = [None] * chunks
+    in_flight: list[tuple[torch.Tensor, TorchEPHandle] | None] = [None] * chunks
+    pending = issue_dispatch(0)
+    for i in range(chunks):
+        recv_idx, handle = pending
+        if i + 1 < chunks:
+            pending = issue_dispatch(i + 1)
+        # wait before the kernel: an unwaited collective output has data_ptr() 0, so a
+        # Triton/CuTe kernel that is its first reader bypasses the deferred wait
+        handle.recv_x = funcol.wait_tensor(handle.recv_x)
+        handle.recv_w = funcol.wait_tensor(handle.recv_w)
+        recv_idx = funcol.wait_tensor(recv_idx)
+        local_out = local_kernel(handle.recv_x, recv_idx, handle.recv_w)
+        in_flight[i] = (issue_combine(local_out, handle), handle)
+        if i >= 1:
+            parts[i - 1] = finalize(*in_flight[i - 1])
+            in_flight[i - 1] = None
+    parts[-1] = finalize(*in_flight[-1])
+    return torch.cat(parts, dim=0)

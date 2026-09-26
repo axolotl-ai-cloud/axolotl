@@ -93,6 +93,7 @@ def _ep2_worker(rank, world_size, port, q):
             ("custom_op", _custom_op_checks),
             ("parity", _parity_checks),
             ("sac", _sac_checks),
+            ("chunked", _chunked_checks),
         ):
             try:
                 out[name] = fn(rank, world_size)
@@ -418,19 +419,27 @@ def _shard_experts(experts, rank, world_size):
     return s
 
 
-def _routing(rank, scenario):
+def _routing(rank, scenario, num_tokens=T):
     g = torch.Generator().manual_seed(100 + rank)
-    x = torch.randn(T, H, generator=g)
-    w = torch.rand(T, K, generator=g)
+    x = torch.randn(num_tokens, H, generator=g)
+    w = torch.rand(num_tokens, K, generator=g)
     if scenario == "mixed":
-        idx = torch.stack([torch.randperm(E, generator=g)[:K] for _ in range(T)])
+        idx = torch.stack(
+            [torch.randperm(E, generator=g)[:K] for _ in range(num_tokens)]
+        )
         idx[0] = torch.tensor([5, 6])  # both on rank 1: sent once
         idx[1] = torch.tensor([1, 2])  # both on rank 0: sent once
         idx[2] = torch.tensor([3, 4])  # one expert per rank
         idx[3] = torch.tensor([-1, -1])  # unrouted: not dispatched, zero output
         idx[4] = torch.tensor([7, -1])
     elif scenario == "rank1_receives_zero":
-        idx = torch.stack([torch.randperm(E_LOCAL, generator=g)[:K] for _ in range(T)])
+        idx = torch.stack(
+            [torch.randperm(E_LOCAL, generator=g)[:K] for _ in range(num_tokens)]
+        )
+    elif scenario == "random":
+        idx = torch.stack(
+            [torch.randperm(E, generator=g)[:K] for _ in range(num_tokens)]
+        )
     else:
         raise ValueError(scenario)
     return x, idx, w
@@ -670,3 +679,243 @@ class TestTorchEPSelectiveCheckpointing:
                 rank,
                 unsaved,
             )
+
+
+# --------------------------------------------------------------------------- #
+# Chunked, overlapped dispatch (expert_parallel_dispatch_chunks > 1)
+# --------------------------------------------------------------------------- #
+
+
+def _chunked_checks(rank, world_size):
+    """Chunked vs unchunked EP on the same shards: ``{case: {metric: max_abs_diff}}`` plus
+    per-forward collective / host-copy counts and SAC recompute parity."""
+    import collections
+    from types import SimpleNamespace
+
+    from torch.utils._python_dispatch import TorchDispatchMode
+    from torch.utils.checkpoint import checkpoint
+
+    import axolotl.monkeypatch.selective_checkpointing as sac
+    from axolotl.integrations.expert_parallel import experts_fn
+    from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+    TD.set_ep_group(dist.group.WORLD)
+    full = _build_experts()
+    shard = copy.deepcopy(full)
+    _shard_experts(shard, rank, world_size)
+
+    def run(chunks, x, idx, w, kernel, grad_inputs=True):
+        experts_fn.set_dispatch_chunks(chunks)
+        try:
+            ep = copy.deepcopy(shard)
+            xe = x.clone().requires_grad_(grad_inputs)
+            we = w.clone().requires_grad_(grad_inputs)
+            y = experts_fn._ep_forward(
+                ep, xe, idx, we, kernel_name=kernel, backend="torch"
+            )
+            gout = torch.randn(
+                y.shape, generator=torch.Generator().manual_seed(17 + rank)
+            )
+            (y * gout).sum().backward()
+            return y, xe.grad, we.grad, ep.gate_up_proj.grad, ep.down_proj.grad
+        finally:
+            experts_fn.set_dispatch_chunks(1)
+
+    names = ("fwd", "dx", "dw", "d_gate_up", "d_down")
+    results = {}
+
+    def diffs(got, ref, skip=()):
+        # a rank that receives no rows has no expert grads in either run
+        return {
+            n: 0.0 if a is None and b is None else _max_diff(a, b)
+            for n, a, b in zip(names, got, ref, strict=True)
+            if n not in skip
+        }
+
+    # 13 tokens: not divisible by 2 or 3
+    for scenario in ("mixed", "rank1_receives_zero"):
+        for kernel in ("eager", "grouped_mm"):
+            x, idx, w = _routing(rank, scenario, num_tokens=13)
+            ref = run(1, x, idx, w, kernel)
+            for chunks in (2, 3):
+                got = run(chunks, x, idx, w, kernel)
+                results[f"{scenario}/{kernel}/chunks={chunks}"] = diffs(got, ref)
+
+    # rank 0 has 2 tokens (two empty chunks at chunks=3), rank 1 has 7
+    x, idx, w = _routing(rank, "random", num_tokens=2 if rank == 0 else 7)
+    ref = run(1, x, idx, w, "eager")
+    got = run(3, x, idx, w, "eager")
+    results["empty_chunks/eager"] = diffs(got, ref)
+
+    # frozen inputs and routing weights, rank 1 receives nothing in any chunk
+    x, idx, w = _routing(rank, "rank1_receives_zero", num_tokens=13)
+    ref = run(1, x, idx, w, "eager", grad_inputs=False)
+    got = run(3, x, idx, w, "eager", grad_inputs=False)
+    results["frozen_inputs/eager"] = diffs(got, ref, skip=("dx", "dw"))
+
+    # the kernel must receive waited plain tensors: an opaque (Triton/CuTe) kernel does not
+    # go through the AsyncCollectiveTensor dispatch that would otherwise trigger the wait
+    import torch.distributed._functional_collectives as funcol
+
+    seen = []
+
+    def opaque_kernel(recv_x, recv_idx, recv_w):
+        seen.extend(type(t) for t in (recv_x, recv_idx, recv_w))
+        return recv_x * recv_w.sum(dim=-1, keepdim=True).to(recv_x.dtype)
+
+    x, idx, w = _routing(rank, "mixed", num_tokens=13)
+    TD.dispatch_chunked_forward(
+        x,
+        idx,
+        w,
+        opaque_kernel,
+        num_local_experts=E_LOCAL,
+        group=dist.group.WORLD,
+        chunks=3,
+    )
+    results["kernel_input_types"] = {
+        "num": len(seen),
+        "async": sum(issubclass(t, funcol.AsyncCollectiveTensor) for t in seen),
+    }
+
+    # one count exchange and one device->host copy per forward, whatever the chunk count
+    counts = collections.Counter()
+    real_equal, real_cpu = TD.all_to_all_single_equal, torch.Tensor.cpu
+
+    def counting_equal(*args, **kwargs):
+        counts["equal_a2a"] += 1
+        return real_equal(*args, **kwargs)
+
+    def counting_cpu(self, *args, **kwargs):
+        counts["cpu"] += 1
+        return real_cpu(self, *args, **kwargs)
+
+    x, idx, w = _routing(rank, "mixed", num_tokens=13)
+    TD.all_to_all_single_equal = counting_equal
+    torch.Tensor.cpu = counting_cpu
+    experts_fn.set_dispatch_chunks(3)
+    try:
+        experts_fn._ep_forward(
+            copy.deepcopy(shard), x, idx, w, kernel_name="eager", backend="torch"
+        )
+    finally:
+        TD.all_to_all_single_equal = real_equal
+        torch.Tensor.cpu = real_cpu
+        experts_fn.set_dispatch_chunks(1)
+    results["sync_counts"] = dict(counts)
+
+    # SAC recompute replays the chunked forward's routing and (optionally) its collectives
+    watched = {"aten::topk", "_c10d_functional::all_to_all_single"}
+
+    class _Count(TorchDispatchMode):
+        def __init__(self):
+            super().__init__()
+            self.counts = collections.Counter()
+
+        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+            name = func.name().split(".")[0]
+            if name in watched:
+                self.counts[name] += 1
+            return func(*args, **(kwargs or {}))
+
+    experts_fn.register_all()
+    block = _build_block()
+    block.experts.config._experts_implementation = "torch_ep_eager"
+    _shard_experts(block.experts, rank, world_size)
+    xb = torch.randn(1, 13, H, generator=torch.Generator().manual_seed(400 + rank))
+
+    def run_block(chunks, context_fn):
+        experts_fn.set_dispatch_chunks(chunks)
+        try:
+            xi = xb.clone().requires_grad_(True)
+            block.zero_grad(set_to_none=True)
+            bwd = _Count()
+            if context_fn is None:
+                y = block(xi)
+            else:
+                y = checkpoint(block, xi, use_reentrant=False, context_fn=context_fn)
+            with bwd:
+                (y.float() ** 2).sum().backward()
+            grads = [xi.grad] + [p.grad for p in block.parameters()]
+            return dict(bwd.counts), grads
+        finally:
+            experts_fn.set_dispatch_chunks(1)
+
+    _, ref_grads = run_block(3, None)
+    for save_dispatch in (True, False):
+        sac.clear_registered_saves()
+        ExpertParallelPlugin._register_checkpoint_saves(
+            SimpleNamespace(expert_parallel_save_dispatch=save_dispatch)
+        )
+        bwd, grads = run_block(3, sac.build_sac_context_fn(save=[]))
+        results[f"sac/save_dispatch={save_dispatch}"] = {
+            "bwd": bwd,
+            "grad_diff": max(
+                _max_diff(a, b) for a, b in zip(grads, ref_grads, strict=True)
+            ),
+        }
+    sac.clear_registered_saves()
+    return results
+
+
+class TestTorchEPChunkedDispatch:
+    @pytest.mark.parametrize(
+        "case",
+        [
+            f"{scenario}/{kernel}/chunks={chunks}"
+            for scenario in ("mixed", "rank1_receives_zero")
+            for kernel in ("eager", "grouped_mm")
+            for chunks in (2, 3)
+        ]
+        + ["empty_chunks/eager", "frozen_inputs/eager"],
+    )
+    def test_matches_unchunked(self, ep2_results, case):
+        for rank, res in _section(ep2_results, "chunked").items():
+            for metric, diff in res[case].items():
+                assert diff <= 1e-5, f"rank {rank} {case} {metric}={diff}"
+
+    def test_kernel_receives_waited_tensors(self, ep2_results):
+        for rank, res in _section(ep2_results, "chunked").items():
+            assert res["kernel_input_types"] == {"num": 9, "async": 0}, (rank, res)
+
+    def test_one_count_exchange_and_host_copy_per_forward(self, ep2_results):
+        for rank, res in _section(ep2_results, "chunked").items():
+            assert res["sync_counts"] == {"equal_a2a": 1, "cpu": 1}, (rank, res)
+
+    def test_selective_checkpointing_recompute(self, ep2_results):
+        for rank, res in _section(ep2_results, "chunked").items():
+            saved = res["sac/save_dispatch=True"]
+            unsaved = res["sac/save_dispatch=False"]
+            for r in (saved, unsaved):
+                assert r["grad_diff"] <= 1e-6, (rank, r)
+                assert "aten::topk" not in r["bwd"], (rank, r)
+            # saved: 3 chunks x 3 gradient all-to-alls (combine, recv_w, recv_x)
+            a2a = "_c10d_functional::all_to_all_single"
+            assert saved["bwd"].get(a2a) == 9, (rank, saved)
+            assert unsaved["bwd"].get(a2a, 0) > 9, (rank, unsaved)
+
+    def test_single_rank_ignores_chunks(self):
+        from axolotl.integrations.expert_parallel import experts_fn
+
+        experts = _build_experts()
+        x, idx, w = _routing(0, "mixed", num_tokens=5)
+        ref = experts_fn._ep_forward(
+            experts, x, idx, w, kernel_name="eager", backend="torch"
+        )
+        experts_fn.set_dispatch_chunks(3)
+        try:
+            got = experts_fn._ep_forward(
+                experts, x, idx, w, kernel_name="eager", backend="torch"
+            )
+        finally:
+            experts_fn.set_dispatch_chunks(1)
+        assert torch.equal(got, ref)
+
+
+class TestChunkBounds:
+    @pytest.mark.parametrize("num_tokens,chunks", [(13, 3), (12, 2), (2, 3), (0, 2)])
+    def test_cover_tokens_contiguously(self, num_tokens, chunks):
+        bounds = TD.chunk_bounds(num_tokens, chunks)
+        assert len(bounds) == chunks
+        assert bounds[0][0] == 0 and bounds[-1][1] == num_tokens
+        assert all(a[1] == b[0] for a, b in zip(bounds, bounds[1:], strict=False))

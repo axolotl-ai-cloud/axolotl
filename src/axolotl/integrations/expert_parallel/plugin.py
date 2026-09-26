@@ -97,6 +97,7 @@ class ExpertParallelPlugin(BasePlugin):
                 )
             LOG.warning(message + " Expert-parallel dispatch/combine is a no-op.")
 
+        chunks = getattr(cfg, "expert_parallel_dispatch_chunks", None) or 1
         if backend == "deep_ep":
             from .buffer import configure_buffer
 
@@ -105,10 +106,17 @@ class ExpertParallelPlugin(BasePlugin):
                 num_nvl_bytes=cfg.expert_parallel_num_nvl_bytes,
                 num_rdma_bytes=cfg.expert_parallel_num_rdma_bytes,
             )
+            if chunks > 1:
+                LOG.warning(
+                    "expert_parallel_dispatch_chunks only applies to the torch backend; "
+                    "ignored under deep_ep."
+                )
         else:
+            from .experts_fn import set_dispatch_chunks
             from .torch_dispatch import set_ep_group
 
             set_ep_group(ep_group)
+            set_dispatch_chunks(chunks)
             self._register_checkpoint_saves(cfg)
         from .experts_fn import set_token_capacity
 
@@ -246,6 +254,8 @@ class ExpertParallelPlugin(BasePlugin):
                 ops={
                     "axolotl::ep_all_to_all_single",
                     "axolotl::ep_all_to_all_single_equal",
+                    "_c10d_functional::all_to_all_single",
+                    "_c10d_functional::wait_tensor",
                 }
             )
 
