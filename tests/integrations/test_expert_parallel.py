@@ -1165,3 +1165,80 @@ class TestTorchBackendCheckpointHooks:
         model = self._Model()
         ExpertParallelPlugin().post_model_load(_torch_ep_cfg(**extra), model)
         assert not self._has_policy(model)
+
+
+class TestDdpIgnoreListMirroring:
+    """`post_model_load` must find every EP-sharded expert param on the PEFT wrapper."""
+
+    def _model_with_ignored_experts(self):
+        from transformers.models.qwen3_moe.configuration_qwen3_moe import Qwen3MoeConfig
+        from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeForCausalLM
+
+        cfg = Qwen3MoeConfig(
+            hidden_size=64,
+            intermediate_size=128,
+            moe_intermediate_size=64,
+            num_experts=4,
+            num_experts_per_tok=2,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            vocab_size=256,
+        )
+        model = Qwen3MoeForCausalLM(cfg)
+        experts = model.model.layers[0].mlp.experts
+        names = [
+            "model.layers.0.mlp.experts.gate_up_proj",
+            "model.layers.0.mlp.experts.down_proj",
+        ]
+        model._ddp_params_and_buffers_to_ignore = list(names)
+        model._ep_ignored_params = [experts.gate_up_proj, experts.down_proj]
+        return model
+
+    def _wrap_with_expert_lora(self, model):
+        from peft import LoraConfig, get_peft_model
+
+        return get_peft_model(
+            model,
+            LoraConfig(
+                r=4,
+                lora_alpha=8,
+                target_modules=["q_proj"],
+                target_parameters=["experts.gate_up_proj", "experts.down_proj"],
+            ),
+        )
+
+    def test_param_wrapper_names_resolved_by_identity(self):
+        model = self._wrap_with_expert_lora(self._model_with_ignored_experts())
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(
+            expert_parallel_size=2,
+            expert_parallel_backend="torch",
+            gradient_checkpointing=False,
+            selective_checkpointing=None,
+        )
+
+        ExpertParallelPlugin().post_model_load(cfg, model)
+
+        resolved = model._ddp_params_and_buffers_to_ignore
+        names = {n for n, _ in model.named_parameters()}
+        assert len(resolved) == 2
+        assert all(n in names for n in resolved)
+        assert all("base_layer" in n for n in resolved)
+
+    def test_unresolvable_param_raises(self):
+        model = self._wrap_with_expert_lora(self._model_with_ignored_experts())
+        inner = model.get_base_model()
+        inner._ep_ignored_params.append(torch.nn.Parameter(torch.zeros(1)))
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(
+            expert_parallel_size=2,
+            expert_parallel_backend="torch",
+            gradient_checkpointing=False,
+            selective_checkpointing=None,
+        )
+
+        with pytest.raises(RuntimeError, match="broadcast"):
+            ExpertParallelPlugin().post_model_load(cfg, model)

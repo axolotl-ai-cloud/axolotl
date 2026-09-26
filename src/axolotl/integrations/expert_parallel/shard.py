@@ -186,6 +186,7 @@ def shard_expert_weights(model, ep_group) -> int:
     sharded = 0
     e_local_counts: set[int] = set()
     ignore_names: list[str] = []
+    ignore_params: list[torch.nn.Parameter] = []
 
     for name, module in _detect_experts_modules(model):
         gp = module.gate_up_proj
@@ -231,9 +232,11 @@ def shard_expert_weights(model, ep_group) -> int:
         # and must NOT be broadcast from rank 0 at DDP construction.
         ignore_names.append(f"{name}.gate_up_proj")
         ignore_names.append(f"{name}.down_proj")
+        ignore_params.extend([module.gate_up_proj, module.down_proj])
         for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
             if isinstance(getattr(module, bias_name, None), torch.nn.Parameter):
                 ignore_names.append(f"{name}.{bias_name}")
+                ignore_params.append(getattr(module, bias_name))
 
         sharded += 1
 
@@ -248,6 +251,11 @@ def shard_expert_weights(model, ep_group) -> int:
         # Append (don't overwrite) — other systems may have set this too.
         existing = list(getattr(model, "_ddp_params_and_buffers_to_ignore", []))
         model._ddp_params_and_buffers_to_ignore = existing + ignore_names
+        # wrappers applied later (PEFT ParamWrapper) rename these; keep the
+        # objects so the names can be re-resolved by identity
+        model._ep_ignored_params = (
+            list(getattr(model, "_ep_ignored_params", [])) + ignore_params
+        )
         LOG.info(
             f"Sharded {sharded} Experts module(s) along the experts dim "
             f"(ep_rank={ep_rank}, ep_size={ep_size}, "
