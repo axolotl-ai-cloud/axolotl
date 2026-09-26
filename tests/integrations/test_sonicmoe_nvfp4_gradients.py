@@ -842,8 +842,5 @@ def test_bf16_grouped_merge_aware_triton_matches_actual_expert_writer_after_upda
     rank_grouped_calls = [
         shapes for shapes in grouped_calls if any(shape[-1] == r for shape in shapes)
     ]
-    if r % 8 == 0:
-        assert rank_grouped_calls
-    else:
-        assert not rank_grouped_calls
+    assert bool(rank_grouped_calls) is _lora_grouped_mm_supported(x, A1, E)
     assert torch.equal(trained, merged)
