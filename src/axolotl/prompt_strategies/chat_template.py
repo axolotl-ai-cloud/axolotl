@@ -57,6 +57,29 @@ def _align_ids(src: list[int], dst: list[int]) -> list[int] | None:
     return mapping
 
 
+# Role names that chat templates write next to the message body. A turn whose
+# whole content is one of these collides with that markup.
+_TEMPLATE_ROLE_WORDS = frozenset(
+    {"user", "assistant", "system", "tool", "human", "gpt", "function"}
+)
+
+
+def _unambiguous_content_start(full_text: str, content: str, cursor: int) -> int | None:
+    """Return the start of ``content`` after ``cursor`` when that match is unique.
+
+    Returns None when the string is missing, appears more than once, or is itself
+    a template role word. Callers then keep the per-turn locator for that turn.
+    """
+    if content.strip().lower() in _TEMPLATE_ROLE_WORDS:
+        return None
+    found = full_text.find(content, cursor)
+    if found < 0:
+        return None
+    if full_text.find(content, found + 1) >= 0:
+        return None
+    return found
+
+
 class ChatTemplatePrompter(Prompter):
     """Prompter for HF chat templates"""
 
@@ -593,7 +616,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             cached_span = (
                 content_spans.get(index) if content_spans is not None else None
             )
-            if cached_span is not None and not use_content_only:
+            # A reasoning turn's trained span includes reasoning_content. The
+            # cached span is the content field only, so keep the per-turn locator.
+            if cached_span is not None and not has_reasoning:
                 turn_start_idx, turn_end_idx = cached_span
             else:
                 turn_start_idx, turn_end_idx = self.find_turn(
@@ -925,10 +950,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     ) -> dict[int, tuple[int, int]] | None:
         """Map every string turn onto ``input_ids`` with one render.
 
-        The rendered conversation has to contain each turn's content, in order,
-        as a verbatim substring. When ``locator`` is missing, the plain-text
-        tokenization must still be a subsequence of ``input_ids``. Returns None
-        so the caller keeps the per-turn locator.
+        A turn is included only when its content occurs once, in order, and is
+        not a template role word. Other turns are omitted so the caller keeps
+        ``find_turn`` for them, including a leading Mistral system turn.
+        When ``locator`` is missing, the plain-text tokenization must still be
+        a subsequence of ``input_ids``. Returns None when that alignment fails.
         """
         if not input_ids or any(
             not isinstance(turn.get("content"), str) for turn in turns
@@ -962,23 +988,29 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         cursor = 0
         spans: dict[int, tuple[int, int]] = {}
+        mistral_tokenizer = (
+            "mistral" in getattr(self.tokenizer, "name_or_path", "").lower()
+        )
         for index, turn in enumerate(turns):
+            # find_turn refuses to train a leading Mistral system turn.
+            if index == 0 and turn.get("role") == "system" and mistral_tokenizer:
+                continue
             content = turn.get("content") or ""
             if content == "":
                 continue
-            found = full_text.find(content, cursor)
-            if found < 0:
-                return None
+            found = _unambiguous_content_start(full_text, content, cursor)
+            if found is None:
+                continue
             char_start = found
             char_end = found + len(content)
             cursor = char_end
             start_idx = bisect_right(token_ends, char_start)
             end_idx = bisect_left(token_starts, char_end)
             if start_idx >= end_idx or end_idx > len(src_to_dst):
-                return None
+                continue
             mapped = src_to_dst[start_idx:end_idx]
             if mapped[-1] - mapped[0] + 1 != len(mapped):
-                return None
+                continue
             spans[index] = (mapped[0], mapped[-1] + 1)
 
         seen = self.__dict__.setdefault("_logged_linear_locate", set())
