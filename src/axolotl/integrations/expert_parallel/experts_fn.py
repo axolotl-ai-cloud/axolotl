@@ -6,10 +6,12 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Expert-parallel registered functions for `ALL_EXPERTS_FUNCTIONS`.
+"""The ``expert_parallel`` experts implementation for `ALL_EXPERTS_FUNCTIONS`.
 
-Four local kernels (eager / grouped_mm / scattermoe / sonicmoe) times two dispatch
-backends (DeepEP, torch all-to-all), all sharing one `_ep_forward` body.
+Dispatches tokens to the ranks owning their experts (DeepEP or torch all-to-all), runs
+whichever experts implementation the user configured on the received rows, and combines
+the results back. Slots owned by another rank reach the local implementation as expert id
+``num_experts`` with weight 0.
 """
 
 from __future__ import annotations
@@ -95,8 +97,41 @@ def _get_valid_token_mask() -> torch.Tensor | None:
     return _VALID_TOKEN_MASK
 
 
+EXPERT_PARALLEL = "expert_parallel"
+
+# Dispatch backend (``deep_ep`` | ``torch``) and the wrapped local experts implementation,
+# both set by the EP plugin before the model is built.
+_BACKEND: str | None = None
+_LOCAL_IMPLEMENTATION: str = "grouped_mm"
+
+
+def set_backend(backend: str | None) -> None:
+    global _BACKEND
+    if backend is not None and backend not in _BACKENDS:
+        raise ValueError(f"unknown expert_parallel backend {backend!r}")
+    _BACKEND = backend
+
+
+def get_backend() -> str | None:
+    return _BACKEND
+
+
+def set_local_implementation(name: str) -> None:
+    global _LOCAL_IMPLEMENTATION
+    if name == EXPERT_PARALLEL:
+        raise ValueError(
+            "expert_parallel cannot wrap itself as the local implementation"
+        )
+    _LOCAL_IMPLEMENTATION = name
+
+
+def get_local_implementation() -> str:
+    return _LOCAL_IMPLEMENTATION
+
+
 def _eager_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    """Eager Python loop over local experts. Reference for numerics."""
+    """Eager Python loop over local experts. Reference for numerics; ids outside
+    ``[0, num_local_experts)`` are sentinels and skipped."""
     out = torch.zeros_like(recv_x)
     num_local = getattr(experts, "num_local_experts", experts.num_experts)
     for e in range(num_local):
@@ -113,6 +148,21 @@ def _eager_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
     return out
 
 
+def resolve_local_implementation(name: str | None = None):
+    """The experts forward registered under ``name`` (default: the configured one)."""
+    name = name or _LOCAL_IMPLEMENTATION
+    if name == "eager":
+        # transformers' "eager" is the class's own forward, unreachable from inside the interface
+        return _eager_local
+    if name == EXPERT_PARALLEL:
+        raise ValueError(
+            "expert_parallel cannot wrap itself as the local implementation"
+        )
+    from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+    return ALL_EXPERTS_FUNCTIONS.get_interface(name, _eager_local)
+
+
 def _maybe_install_decorator_attrs(experts):
     """`@use_experts_implementation` injects has_gate/has_bias/is_transposed.
     For models loaded outside the decorator path (or in tests), patch them in.
@@ -125,85 +175,26 @@ def _maybe_install_decorator_attrs(experts):
         experts.is_transposed = False
 
 
-def _mask_sentinels(recv_topk_idx, recv_topk_weights):
-    """Map ``-1`` remote sentinels to expert 0 / weight 0 for kernels that index by
-    expert id and don't filter (grouped_mm). The zero weight nulls their contribution."""
-    safe_idx = torch.where(
-        recv_topk_idx >= 0, recv_topk_idx, torch.zeros_like(recv_topk_idx)
-    )
-    valid = (recv_topk_idx >= 0).to(recv_topk_weights.dtype)
-    return safe_idx, recv_topk_weights * valid
+def _normalize_sentinels(recv_topk_idx, recv_topk_weights, num_local_experts):
+    """Map the dispatch's ``-1`` remote slots to ``num_local_experts`` with weight 0.
 
-
-def _grouped_mm_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    from transformers.integrations.moe import grouped_mm_experts_forward
-
-    _maybe_install_decorator_attrs(experts)
-    safe_idx, safe_w = _mask_sentinels(recv_topk_idx, recv_topk_weights)
-    return grouped_mm_experts_forward(experts, recv_x, safe_idx, safe_w)
-
-
-def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    # scattermoe skips sentinel rows natively (only valid rows hit the grouped GEMM
-    # + per-row LoRA) -- pass the raw -1-tagged routing, not the masked version.
-    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
-        scattermoe_experts_forward_ep,
-    )
-
-    return scattermoe_experts_forward_ep(
-        experts, recv_x, recv_topk_idx, recv_topk_weights
+    transformers' grouped_mm / sonicmoe / deepgemm drop ids ``>= num_experts`` natively;
+    batched_mm clamps them and relies on the zero weight.
+    """
+    remote = recv_topk_idx < 0
+    return (
+        recv_topk_idx.masked_fill(remote, num_local_experts),
+        recv_topk_weights.masked_fill(remote, 0),
     )
 
 
-def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
-        _get_base_param,
-        _w1_name,
-        is_nvfp4_param,
-        scattermoe_experts_forward_ep,
+def _run_local(experts, local, recv_x, recv_topk_idx, recv_topk_weights):
+    idx, weights = _normalize_sentinels(
+        recv_topk_idx,
+        recv_topk_weights,
+        getattr(experts, "num_local_experts", experts.num_experts),
     )
-
-    w1 = _get_base_param(getattr(experts, _w1_name(experts)))
-    w2 = _get_base_param(experts.down_proj)
-    if is_nvfp4_param(w1) and is_nvfp4_param(w2):
-        return scattermoe_experts_forward_ep(
-            experts, recv_x, recv_topk_idx, recv_topk_weights
-        )
-
-    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
-        sonicmoe_experts_forward_with_lora,
-    )
-
-    # The sonic-moe build treats expert_id == E_local as the EP sentinel (dropped from the
-    # histogram/GEMM and guarded in the router backward); DeepEP tags remote slots -1.
-    E_local = getattr(experts, "num_local_experts", experts.num_experts)
-    safe_idx = torch.where(
-        recv_topk_idx >= 0, recv_topk_idx, torch.full_like(recv_topk_idx, E_local)
-    )
-
-    # The quack autotuner caches per exact tensor shape and the DeepEP recv count changes
-    # every step/layer, so unpadded calls re-trigger a full compile+benchmark sweep per MoE
-    # call. Pad to pow2 buckets with all-sentinel rows (zero-compute, dropped from every GEMM
-    # range) so shapes collapse to a handful of keys tuned once.
-    num_recv = recv_x.size(0)
-    padded = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
-    if padded != num_recv:
-        pad = padded - num_recv
-        recv_x = F.pad(recv_x, (0, 0, 0, pad))
-        safe_idx = F.pad(safe_idx, (0, 0, 0, pad), value=E_local)
-        recv_topk_weights = F.pad(recv_topk_weights, (0, 0, 0, pad))
-    out = sonicmoe_experts_forward_with_lora(
-        experts, recv_x, safe_idx, recv_topk_weights
-    )
-    return out[:num_recv] if padded != num_recv else out
-
-
-_LOCAL_KERNELS = {
-    "eager": _eager_local,
-    "grouped_mm": _grouped_mm_local,
-    "scattermoe": _scattermoe_local,
-    "sonicmoe": _sonicmoe_local,
-}
+    return local(experts, recv_x, idx, weights)
 
 
 class _DeepEPDispatch(torch.autograd.Function):
@@ -350,18 +341,32 @@ _BACKENDS = {"deep_ep": _DeepEPBackend, "torch": _TorchBackend}
 
 
 def _ep_forward(
-    self, hidden_states, top_k_index, top_k_weights, *, kernel_name, backend
+    self,
+    hidden_states,
+    top_k_index,
+    top_k_weights,
+    *,
+    local: str | None = None,
+    backend: str | None = None,
 ):
-    """Shared dispatch -> local-experts -> combine pipeline.
+    """Dispatch -> local experts implementation -> combine.
 
     Inputs come in with **global** routing indices (we do not run
     `transformers.RouterParallel`; see DEEP_EP.md §2.4 for why). Dispatch returns
     local expert ids in `[0, E_local)` with `-1` for slots routed to remote experts;
-    the `-1` sentinels are passed through to the local kernel, which decides whether
-    to skip them (eager/scattermoe), mask them (grouped_mm), or remap them to the
-    kernel's own drop id (sonicmoe: `E_local`).
+    `_run_local` rewrites those to `E_local` / weight 0 before the local implementation
+    (``local``, default: the configured one) sees them. ``backend`` defaults to the one
+    the plugin set.
     """
+    backend = backend or _BACKEND
+    if backend is None:
+        raise RuntimeError(
+            "expert_parallel: no dispatch backend set; the ExpertParallelPlugin sets it "
+            "in pre_model_load (or call experts_fn.set_backend)."
+        )
     ep_backend = _BACKENDS[backend]
+    local_fn = resolve_local_implementation(local)
+    _maybe_install_decorator_attrs(self)
     original_dtype = None
     if ep_backend.cast_bf16 and hidden_states.dtype != torch.bfloat16:
         original_dtype = hidden_states.dtype
@@ -405,12 +410,11 @@ def _ep_forward(
         else None
     )
     if group is not None and dist.get_world_size(group) > 1:
-        local_kernel = _LOCAL_KERNELS[kernel_name]
         combined = torch_dispatch.dispatch_chunked_forward(
             hidden_states,
             topk_idx_i64,
             topk_w_f32,
-            lambda rx, ri, rw: local_kernel(self, rx, ri, rw),
+            lambda rx, ri, rw: _run_local(self, local_fn, rx, ri, rw),
             num_local_experts=E_local,
             group=group,
             chunks=_DISPATCH_CHUNKS,
@@ -423,13 +427,7 @@ def _ep_forward(
             num_experts_global=E_global,
             num_local_experts=E_local,
         )
-
-        # Pass the raw -1-tagged routing through; each local kernel handles sentinels
-        # its own way (eager/scattermoe skip, grouped_mm masks, sonicmoe remaps to E_local).
-        local_out = _LOCAL_KERNELS[kernel_name](
-            self, recv_x, recv_topk_idx, recv_topk_weights
-        )
-
+        local_out = _run_local(self, local_fn, recv_x, recv_topk_idx, recv_topk_weights)
         combined = ep_backend.combine(local_out, handle)
 
     if original_dtype is not None:
@@ -437,99 +435,42 @@ def _ep_forward(
     return combined
 
 
-def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_name):
-    return _ep_forward(
-        self,
-        hidden_states,
-        top_k_index,
-        top_k_weights,
-        kernel_name=kernel_name,
-        backend="deep_ep",
-    )
+def expert_parallel_experts_forward(self, hidden_states, top_k_index, top_k_weights):
+    return _ep_forward(self, hidden_states, top_k_index, top_k_weights)
 
 
-def _torch_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_name):
-    return _ep_forward(
-        self,
-        hidden_states,
-        top_k_index,
-        top_k_weights,
-        kernel_name=kernel_name,
-        backend="torch",
-    )
+REGISTRY = {EXPERT_PARALLEL: expert_parallel_experts_forward}
 
 
-def deep_ep_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-    return _deep_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="eager"
-    )
+def _decorator_experts_interface():
+    """The interface `@use_experts_implementation` binds as its default, which transformers'
+    lazy import can make a different object than `ALL_EXPERTS_FUNCTIONS`."""
+    import inspect
 
+    try:
+        from transformers.integrations import use_experts_implementation
 
-def deep_ep_grouped_mm_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-    return _deep_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="grouped_mm"
-    )
-
-
-def deep_ep_scattermoe_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-    return _deep_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="scattermoe"
-    )
-
-
-def deep_ep_sonicmoe_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-    return _deep_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="sonicmoe"
-    )
-
-
-def torch_ep_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-    return _torch_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="eager"
-    )
-
-
-def torch_ep_grouped_mm_experts_forward(
-    self, hidden_states, top_k_index, top_k_weights
-):
-    return _torch_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="grouped_mm"
-    )
-
-
-def torch_ep_scattermoe_experts_forward(
-    self, hidden_states, top_k_index, top_k_weights
-):
-    return _torch_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="scattermoe"
-    )
-
-
-def torch_ep_sonicmoe_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-    return _torch_ep_forward(
-        self, hidden_states, top_k_index, top_k_weights, kernel_name="sonicmoe"
-    )
-
-
-REGISTRY = {
-    "deep_ep": deep_ep_experts_forward,
-    "deep_ep_grouped_mm": deep_ep_grouped_mm_experts_forward,
-    "deep_ep_scattermoe": deep_ep_scattermoe_experts_forward,
-    "deep_ep_sonicmoe": deep_ep_sonicmoe_experts_forward,
-    "torch_ep_eager": torch_ep_experts_forward,
-    "torch_ep_grouped_mm": torch_ep_grouped_mm_experts_forward,
-    "torch_ep_scattermoe": torch_ep_scattermoe_experts_forward,
-    "torch_ep_sonicmoe": torch_ep_sonicmoe_experts_forward,
-}
+        return (
+            inspect.signature(use_experts_implementation)
+            .parameters["experts_interface"]
+            .default
+        )
+    except (ImportError, KeyError, AttributeError):
+        return None
 
 
 def register_all() -> None:
-    """Register every `REGISTRY` name in `ALL_EXPERTS_FUNCTIONS` and whitelist them."""
+    """Register `expert_parallel` in `ALL_EXPERTS_FUNCTIONS` and whitelist it."""
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
     from transformers.modeling_utils import PreTrainedModel
 
-    for name, fn in REGISTRY.items():
-        ALL_EXPERTS_FUNCTIONS.register(name, fn)
+    interfaces = [ALL_EXPERTS_FUNCTIONS]
+    canon = _decorator_experts_interface()
+    if canon is not None and canon is not ALL_EXPERTS_FUNCTIONS:
+        interfaces.append(canon)
+    for interface in interfaces:
+        for name, fn in REGISTRY.items():
+            interface.register(name, fn)
 
     if not getattr(
         PreTrainedModel.get_correct_experts_implementation, "_deep_ep_patched", False
@@ -543,19 +484,3 @@ def register_all() -> None:
 
         patched._deep_ep_patched = True  # type: ignore[attr-defined]
         PreTrainedModel.get_correct_experts_implementation = patched  # type: ignore[assignment]
-
-
-def kernel_to_registered_name(kernel: str, backend: str = "deep_ep") -> str:
-    """Map `expert_parallel_local_kernel` + resolved backend -> registered name."""
-    if backend == "torch":
-        if kernel not in _LOCAL_KERNELS:
-            raise KeyError(kernel)
-        return f"torch_ep_{kernel}"
-    if backend != "deep_ep":
-        raise ValueError(f"unknown expert_parallel backend {backend!r}")
-    return {
-        "eager": "deep_ep",
-        "grouped_mm": "deep_ep_grouped_mm",
-        "scattermoe": "deep_ep_scattermoe",
-        "sonicmoe": "deep_ep_sonicmoe",
-    }[kernel]

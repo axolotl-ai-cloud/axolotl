@@ -194,8 +194,13 @@ def test_deep_ep_forward_applies_token_capacity():
             mock.patch.object(E, "_get_valid_token_mask", return_value=None),
         ):
             with pytest.raises(RuntimeError, match="stop"):
-                E._deep_ep_forward(
-                    self_mod, torch.zeros(ntok, 16), topk, w, kernel_name="eager"
+                E._ep_forward(
+                    self_mod,
+                    torch.zeros(ntok, 16),
+                    topk,
+                    w,
+                    local="eager",
+                    backend="deep_ep",
                 )
     finally:
         E.set_token_capacity(None)

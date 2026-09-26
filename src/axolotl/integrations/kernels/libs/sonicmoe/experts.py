@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 
 import torch
+import torch.nn.functional as F
 
 from .lora import (
     MoELoRAMaterialize,
@@ -155,7 +156,65 @@ def sonicmoe_experts_forward_with_lora(
     Dense bf16 experts use the fast sonic-moe CUTLASS kernel (LoRA materialized
     into W_eff first). NVFP4 experts, which the opaque CUTLASS kernel cannot
     read, take the grouped reference path (dequant base + fused low-rank LoRA).
+    On an EP-sharded module expert id ``num_experts`` marks a remote slot.
     """
+    if getattr(self, "num_experts_global", self.num_experts) > self.num_experts:
+        return _sonicmoe_ep_forward(self, hidden_states, top_k_index, top_k_weights)
+    return _sonicmoe_forward(self, hidden_states, top_k_index, top_k_weights)
+
+
+def _sonicmoe_ep_forward(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+) -> torch.Tensor:
+    """Pad the received rows to a power-of-two bucket (min 1024) with sentinel rows.
+
+    The quack autotuner caches per exact tensor shape and the EP receive count changes
+    every step/layer, so unpadded calls re-trigger a full compile+benchmark sweep per MoE
+    call. All-sentinel rows are zero-compute (dropped from every GEMM range), so shapes
+    collapse to a handful of keys tuned once.
+    """
+    from ..scattermoe_lora.experts import (
+        _get_base_param,
+        _w1_name,
+        is_nvfp4_param,
+        scattermoe_experts_forward_ep,
+    )
+
+    w1 = getattr(self, _w1_name(self), None)
+    w2 = getattr(self, "down_proj", None)
+    if (
+        w1 is not None
+        and w2 is not None
+        and is_nvfp4_param(_get_base_param(w1))
+        and is_nvfp4_param(_get_base_param(w2))
+    ):
+        return scattermoe_experts_forward_ep(
+            self, hidden_states, top_k_index, top_k_weights
+        )
+
+    num_recv = hidden_states.size(0)
+    padded = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
+    if padded == num_recv:
+        return _sonicmoe_forward(self, hidden_states, top_k_index, top_k_weights)
+    pad = padded - num_recv
+    out = _sonicmoe_forward(
+        self,
+        F.pad(hidden_states, (0, 0, 0, pad)),
+        F.pad(top_k_index, (0, 0, 0, pad), value=self.num_experts),
+        F.pad(top_k_weights, (0, 0, 0, pad)),
+    )
+    return out[:num_recv]
+
+
+def _sonicmoe_forward(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+) -> torch.Tensor:
     from transformers.integrations.sonicmoe import sonicmoe_experts_forward
 
     from .nvfp4 import is_nvfp4_param
@@ -241,7 +300,8 @@ def _sonicmoe_nongated_forward(
     if getattr(self, "num_experts_global", self.num_experts) != self.num_experts:
         raise NotImplementedError(
             "sonicmoe non-gated experts do not support expert parallelism yet; "
-            "set experts_implementation: deep_ep (eager) or expert_parallel_size: 1"
+            "drop use_sonicmoe (EP wraps any other experts_implementation) or set "
+            "expert_parallel_size: 1"
         )
 
     transposed = getattr(self, "is_transposed", False)

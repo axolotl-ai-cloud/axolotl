@@ -5,22 +5,30 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-# deep_ep[_*] / torch_ep_* are EP-plugin composites, passed through when expert_parallel_size > 1.
 _BUILTIN_EXPERTS_IMPLS = {"eager", "batched_mm", "grouped_mm"}
 _KERNEL_EXPERTS_IMPLS = {"scattermoe", "sonicmoe"}
-_EP_EXPERTS_IMPLS = {
-    "deep_ep",
-    "deep_ep_grouped_mm",
-    "deep_ep_scattermoe",
-    "deep_ep_sonicmoe",
-    "torch_ep_eager",
-    "torch_ep_grouped_mm",
-    "torch_ep_scattermoe",
-    "torch_ep_sonicmoe",
-}
-_VALID_EXPERTS_IMPLS = (
-    _BUILTIN_EXPERTS_IMPLS | _KERNEL_EXPERTS_IMPLS | _EP_EXPERTS_IMPLS
-)
+_EP_EXPERTS_IMPLS = {"expert_parallel"}
+
+
+def _valid_experts_impls() -> set[str]:
+    from axolotl.integrations.expert_parallel.plugin import (
+        DEPRECATED_EXPERTS_IMPLEMENTATIONS,
+    )
+
+    return (
+        _BUILTIN_EXPERTS_IMPLS
+        | _KERNEL_EXPERTS_IMPLS
+        | _EP_EXPERTS_IMPLS
+        | set(DEPRECATED_EXPERTS_IMPLEMENTATIONS)
+    )
+
+
+def _registered_experts_impls() -> set[str]:
+    try:
+        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+    except ImportError:
+        return set()
+    return set(ALL_EXPERTS_FUNCTIONS.keys())
 
 
 class KernelsArgs(BaseModel):
@@ -187,6 +195,7 @@ class KernelsArgs(BaseModel):
         regardless of validator ordering). Idempotent: every consumer below calls this first because
         pydantic runs same-mode validators in REVERSE definition order, so the before-validator alone
         would run AFTER its consumers and they'd never see its writes."""
+        data = KernelsArgs._flag_deprecated_kernel_composite(data)
         eb = data.get("expert_backend")
         if eb is None:
             return data
@@ -212,6 +221,27 @@ class KernelsArgs(BaseModel):
             data["use_scattermoe"] = True
         elif want_sonic:
             data["use_sonicmoe"] = True
+        return data
+
+    @staticmethod
+    def _flag_deprecated_kernel_composite(data):
+        """A deprecated ``*_scattermoe`` / ``*_sonicmoe`` EP composite selects its kernel through the
+        ``use_*`` flag, so the kernels plugin registers and configures it."""
+        from axolotl.integrations.expert_parallel.plugin import (
+            DEPRECATED_EXPERTS_IMPLEMENTATIONS,
+            KERNEL_IMPLEMENTATION_FLAGS,
+        )
+
+        local = DEPRECATED_EXPERTS_IMPLEMENTATIONS.get(
+            data.get("experts_implementation")
+        )
+        flag = KERNEL_IMPLEMENTATION_FLAGS.get(local)
+        if (
+            flag
+            and data.get("expert_backend") is None
+            and not any(data.get(f) for f in KERNEL_IMPLEMENTATION_FLAGS.values())
+        ):
+            data[flag] = True
         return data
 
     @model_validator(mode="before")
@@ -328,6 +358,10 @@ class KernelsArgs(BaseModel):
     def check_experts_implementation(cls, data):
         """Auto-select impl from kernel flags; reject mismatched/unknown values."""
         data = cls._canonicalize_expert_backend(data)
+        from axolotl.integrations.expert_parallel.plugin import (
+            NO_BACKWARD_EXPERTS_IMPLEMENTATIONS,
+        )
+
         experts_implementation = data.get("experts_implementation")
         use_scattermoe = bool(data.get("use_scattermoe"))
         use_sonicmoe = bool(data.get("use_sonicmoe"))
@@ -355,10 +389,22 @@ class KernelsArgs(BaseModel):
                 "Automatically setting to 'eager'."
             )
             data["experts_implementation"] = "eager"
-        elif experts_implementation not in _VALID_EXPERTS_IMPLS:
+        elif experts_implementation in NO_BACKWARD_EXPERTS_IMPLEMENTATIONS:
+            raise ValueError(
+                f"`experts_implementation={experts_implementation!r}` has no backward pass in "
+                "transformers (expert weights would silently not train). Use grouped_mm, "
+                "batched_mm, eager, use_scattermoe or use_sonicmoe."
+            )
+        elif (
+            data.get("expert_parallel_size") or 1
+        ) > 1 or experts_implementation in _registered_experts_impls():
+            # under EP the plugin checks the name against ALL_EXPERTS_FUNCTIONS at model load,
+            # after user registrations have run
+            pass
+        elif experts_implementation not in (valid := _valid_experts_impls()):
             LOG.warning(
                 f"`experts_implementation={experts_implementation!r}` is not recognized. "
-                f"Valid options: {sorted(_VALID_EXPERTS_IMPLS)}. "
+                f"Valid options: {sorted(valid)}. "
                 f"Automatically setting to 'eager'."
             )
             data["experts_implementation"] = "eager"

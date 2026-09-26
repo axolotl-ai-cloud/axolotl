@@ -136,7 +136,8 @@ class KernelsPlugin(BasePlugin):
 
         Architecture-agnostic: routing stays in each model's SparseMoEBlock; only the experts
         call is dispatched through the registry. When EP is active the ExpertParallelPlugin owns
-        ``experts_implementation`` (a ``deep_ep_*`` composite), so we don't overwrite it here.
+        ``experts_implementation`` (``expert_parallel``, wrapping this kernel), so we don't
+        overwrite it here.
         """
         ep_active = (getattr(cfg, "expert_parallel_size", 1) or 1) > 1
 

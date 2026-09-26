@@ -196,17 +196,18 @@ See full example configs at [`examples/expert_parallel/`](https://github.com/axo
 
 #### Implementation notes
 
-EP composes with the local-experts kernel you've already configured: ScatterMoE, SonicMoE, grouped_mm, or eager — the same four for either backend.
+EP runs as one experts implementation, `expert_parallel`, that wraps the local one you've already configured: the plugin records it, sets `experts_implementation: expert_parallel`, and calls the local implementation on the rows each rank receives. The local implementation is, in order of precedence:
+
+1. `use_scattermoe: true` -> ScatterMoE (Triton)
+2. `use_sonicmoe: true` -> SonicMoE (bf16 gated experts)
+3. `experts_implementation: <name>` -> any implementation registered in transformers' `ALL_EXPERTS_FUNCTIONS` (`grouped_mm`, `batched_mm`, your own) or `eager` (a Python loop, the numerics reference). transformers' `deepgemm` has no backward pass and is rejected.
+4. unset -> `grouped_mm` (with the kernels plugin loaded, unset means `eager`: its validator pins that default)
+
+The same list applies to either backend. Slots routed to another rank reach the local implementation as expert id `num_experts` with weight 0, the sentinel transformers' kernels already drop, so a newly registered implementation works under EP with no EP-side code as long as it ignores ids `>= num_experts`.
+
+The pre-`expert_parallel` names (`deep_ep`, `deep_ep_grouped_mm`, `deep_ep_scattermoe`, `deep_ep_sonicmoe`, `torch_ep_eager`, `torch_ep_grouped_mm`, `torch_ep_scattermoe`, `torch_ep_sonicmoe`) are deprecated: they still load, with a warning, as the matching local implementation (`*_scattermoe` / `*_sonicmoe` set `use_scattermoe` / `use_sonicmoe`). The backend prefix is ignored, as before; `expert_parallel_backend` picks the dispatch.
 
 EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
-
-| Your existing config                                | Local kernel under `deep_ep` | Local kernel under `torch` |
-|-----------------------------------------------------|-------------------------------|-----------------------------|
-| `use_scattermoe: true`                              | ScatterMoE (Triton)           | ScatterMoE (Triton)         |
-| `use_sonicmoe: true`                                | SonicMoE (bf16 experts)       | SonicMoE (bf16 experts)     |
-| `experts_implementation: grouped_mm` / `batched_mm` | grouped_mm (transformers)     | grouped_mm (transformers)   |
-| `experts_implementation: eager`                     | eager Python loop             | eager Python loop           |
-| (unset)                                             | grouped_mm (default)          | grouped_mm (default)        |
 
 ## Limitations
 

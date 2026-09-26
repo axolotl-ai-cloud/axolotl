@@ -20,21 +20,18 @@ the wrapper, fuse the LoRA), bringing the experts-interface path to parity.
 
 from __future__ import annotations
 
-# Implementations whose experts forward consumes ``module._scattermoe_lora`` (the fused
-# per-row LoRA kernel). ``deep_ep_scattermoe`` / ``torch_ep_scattermoe`` are the EP
-# composites: their ``_scattermoe_local`` stage calls ``scattermoe_experts_forward_ep``,
-# which reads the same attribute — so the
-# fastpath must engage under EP too, else the LoRA falls back to PEFT's parametrize merge
-# (which can't add a full-expert delta onto the EP-sharded weight).
-_SCATTERMOE_IMPLS = frozenset(
-    {"scattermoe", "deep_ep_scattermoe", "torch_ep_scattermoe"}
-)
-
 
 def _is_scattermoe_experts(module) -> bool:
     cfg = getattr(module, "config", None)
     impl = getattr(cfg, "_experts_implementation", None)
-    if impl not in _SCATTERMOE_IMPLS:
+    if impl == "expert_parallel":
+        # PEFT's merge can't add a full-expert delta onto the EP-sharded weight
+        from axolotl.integrations.expert_parallel.experts_fn import (
+            get_local_implementation,
+        )
+
+        impl = get_local_implementation()
+    if impl != "scattermoe":
         return False
     # `num_experts` guards against dense-MLP modules that also carry an `up_proj`.
     return hasattr(module, "gate_up_proj") or (

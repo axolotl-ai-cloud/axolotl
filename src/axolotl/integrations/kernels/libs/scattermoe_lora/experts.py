@@ -571,6 +571,10 @@ def scattermoe_experts_forward(
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
     """ScatterMoE experts forward with fused-LoRA support."""
+    if getattr(self, "num_experts_global", self.num_experts) > self.num_experts:
+        return scattermoe_experts_forward_ep(
+            self, hidden_states, top_k_index, top_k_weights
+        )
     if not scattermoe_supports_layout(self):
         if _is_gptoss_layout(self):
             return _scattermoe_gptoss_forward(
@@ -861,20 +865,21 @@ def scattermoe_experts_forward_ep(
     top_k_index: torch.Tensor,
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
-    """ScatterMoE experts forward for the DeepEP local path, skipping EP sentinels.
+    """ScatterMoE experts forward for an EP-sharded module, skipping EP sentinels.
 
-    After DeepEP dispatch ``top_k_index`` holds local expert ids in ``[0, E_local)``
-    for slots this rank owns and ``-1`` for slots routed to remote ranks. Rather than
-    map sentinels to expert 0 / weight 0 and run the full grouped GEMM over all
-    ``N*K`` rows (compute-and-mask), drop the sentinel rows so only the valid routed
-    rows hit the GEMM + per-row LoRA. Output matches the masked path since sentinel
-    slots carry weight 0.
+    After the EP dispatch ``top_k_index`` holds local expert ids in ``[0, E_local)``
+    for slots this rank owns; any other id (``-1`` or ``>= E_local``) is a slot routed
+    to a remote rank. Rather than map sentinels to expert 0 / weight 0 and run the full
+    grouped GEMM over all ``N*K`` rows (compute-and-mask), drop the sentinel rows so only
+    the valid routed rows hit the GEMM + per-row LoRA. Output matches the masked path
+    since sentinel slots carry weight 0.
 
     Runs both projections fully grouped (the sentinel-compacted routing breaks the
     ``L_scattered == X.rows * k`` fan-out contract of the scattered path), with the
     weighted token-combine done via ``index_add_``.
     """
     _check_supported_layout(self)
+    top_k_index = top_k_index.masked_fill(top_k_index >= self.num_experts, -1)
 
     from ..sonicmoe.nvfp4_lora import merge_aware_enabled
 

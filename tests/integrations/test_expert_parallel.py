@@ -15,13 +15,17 @@ import torch.multiprocessing as mp
 from axolotl.integrations.expert_parallel import (
     ExpertParallelArgs,
     ExpertParallelPlugin,
+    experts_fn,
 )
 from axolotl.integrations.expert_parallel.experts_fn import (
+    EXPERT_PARALLEL,
     REGISTRY,
-    kernel_to_registered_name,
     register_all,
 )
-from axolotl.integrations.expert_parallel.plugin import expert_shard_axis
+from axolotl.integrations.expert_parallel.plugin import (
+    DEPRECATED_EXPERTS_IMPLEMENTATIONS,
+    expert_shard_axis,
+)
 from axolotl.integrations.expert_parallel.shard import (
     _detect_experts_modules,
     _slice_expert_lora_param,
@@ -77,20 +81,22 @@ class TestExpertParallelArgs:
         )
 
 
-class TestKernelInference:
-    """Plugin auto-composes with user's chosen local kernel."""
+class TestLocalImplementationInference:
+    """Plugin records the user's local implementation before wrapping it."""
 
     def _infer(self, **cfg_kwargs):
         from types import SimpleNamespace
 
-        return ExpertParallelPlugin._infer_local_kernel(SimpleNamespace(**cfg_kwargs))
+        return ExpertParallelPlugin._infer_local_implementation(
+            SimpleNamespace(**cfg_kwargs)
+        )
 
     def test_use_scattermoe_picks_scattermoe(self):
         assert self._infer(use_scattermoe=True) == "scattermoe"
 
     def test_experts_implementation_scattermoe_alone_does_NOT_pick_scattermoe(self):
         # use_scattermoe is the source of truth; bare experts_implementation=scattermoe
-        # without the master flag falls through to the default kernel.
+        # without the master flag falls through to the default implementation.
         assert self._infer(experts_implementation="scattermoe") == "grouped_mm"
 
     def test_use_scattermoe_overrides_experts_implementation_eager(self):
@@ -100,36 +106,249 @@ class TestKernelInference:
             == "scattermoe"
         )
 
-    def test_grouped_mm_picks_grouped_mm(self):
-        assert self._infer(experts_implementation="grouped_mm") == "grouped_mm"
-
-    def test_batched_mm_picks_grouped_mm(self):
-        assert self._infer(experts_implementation="batched_mm") == "grouped_mm"
-
-    def test_eager_picks_eager(self):
-        assert self._infer(experts_implementation="eager") == "eager"
-
-    def test_default_picks_grouped_mm(self):
-        assert self._infer() == "grouped_mm"
-
     @pytest.mark.parametrize(
-        "name,expected",
-        [
-            ("deep_ep", "eager"),
-            ("deep_ep_grouped_mm", "grouped_mm"),
-            ("deep_ep_scattermoe", "scattermoe"),
-            ("deep_ep_sonicmoe", "sonicmoe"),
-            ("torch_ep_eager", "eager"),
-            ("torch_ep_grouped_mm", "grouped_mm"),
-            ("torch_ep_scattermoe", "scattermoe"),
-            ("torch_ep_sonicmoe", "sonicmoe"),
-        ],
+        "name", ["grouped_mm", "batched_mm", "deepgemm", "eager", "my_custom"]
     )
-    def test_explicit_composite_keeps_its_local_kernel(self, name, expected):
-        assert self._infer(experts_implementation=name) == expected
+    def test_experts_implementation_passes_through(self, name):
+        assert self._infer(experts_implementation=name) == name
+
+    @pytest.mark.parametrize("name", [None, EXPERT_PARALLEL])
+    def test_default_picks_grouped_mm(self, name):
+        assert self._infer(experts_implementation=name) == "grouped_mm"
 
     def test_use_sonicmoe_picks_sonicmoe(self):
         assert self._infer(use_sonicmoe=True) == "sonicmoe"
+
+
+class TestDeprecatedCompositeNames:
+    @pytest.fixture
+    def warnings(self, monkeypatch):
+        import axolotl.integrations.expert_parallel.plugin as plugin_mod
+
+        seen = []
+        monkeypatch.setattr(plugin_mod.LOG, "warning", seen.append)
+        return seen
+
+    @staticmethod
+    def _migrate(**kw):
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(**{"expert_parallel_backend": "auto", **kw})
+        ExpertParallelPlugin._migrate_deprecated_experts_implementation(cfg)
+        return cfg
+
+    @pytest.mark.parametrize(
+        "name,local,flag",
+        [
+            ("deep_ep", "eager", None),
+            ("deep_ep_grouped_mm", "grouped_mm", None),
+            ("deep_ep_scattermoe", "scattermoe", "use_scattermoe"),
+            ("deep_ep_sonicmoe", "sonicmoe", "use_sonicmoe"),
+            ("torch_ep_eager", "eager", None),
+            ("torch_ep_grouped_mm", "grouped_mm", None),
+            ("torch_ep_scattermoe", "scattermoe", "use_scattermoe"),
+            ("torch_ep_sonicmoe", "sonicmoe", "use_sonicmoe"),
+        ],
+    )
+    def test_maps_to_local_keeping_backend(self, warnings, name, local, flag):
+        assert DEPRECATED_EXPERTS_IMPLEMENTATIONS[name] == local
+        cfg = self._migrate(experts_implementation=name)
+        assert cfg.experts_implementation == local
+        # the prefix never picked the backend, so `auto` keeps resolving by availability
+        assert cfg.expert_parallel_backend == "auto"
+        assert len(warnings) == 1 and "deprecated" in warnings[0]
+        if flag:
+            assert getattr(cfg, flag) is True
+            assert f"{flag}: true" in warnings[0]
+            assert ExpertParallelPlugin._infer_local_implementation(cfg) == local
+        else:
+            assert f"experts_implementation: {local}" in warnings[0]
+            assert ExpertParallelPlugin._infer_local_implementation(cfg) == local
+
+    def test_explicit_backend_kept(self, warnings):
+        cfg = self._migrate(
+            experts_implementation="deep_ep_grouped_mm", expert_parallel_backend="torch"
+        )
+        assert cfg.experts_implementation == "grouped_mm"
+        assert cfg.expert_parallel_backend == "torch"
+        assert len(warnings) == 1
+
+    def test_existing_kernel_flag_wins(self, warnings):
+        cfg = self._migrate(
+            experts_implementation="deep_ep_sonicmoe", use_scattermoe=True
+        )
+        assert not getattr(cfg, "use_sonicmoe", False)
+        assert ExpertParallelPlugin._infer_local_implementation(cfg) == "scattermoe"
+
+    @pytest.mark.parametrize("name", [None, "grouped_mm", EXPERT_PARALLEL])
+    def test_current_names_untouched(self, warnings, name):
+        cfg = self._migrate(experts_implementation=name)
+        assert cfg.experts_implementation == name
+        assert cfg.expert_parallel_backend == "auto"
+        assert not warnings
+
+
+class TestKernelsValidation:
+    @staticmethod
+    def _validated(name, monkeypatch):
+        import axolotl.integrations.kernels.args as kargs
+
+        seen = []
+        monkeypatch.setattr(kargs.LOG, "warning", seen.append)
+        data = kargs.KernelsArgs.check_experts_implementation(
+            {"experts_implementation": name}
+        )
+        return data["experts_implementation"], seen
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            EXPERT_PARALLEL,
+            "batched_mm",
+            *DEPRECATED_EXPERTS_IMPLEMENTATIONS,
+        ],
+    )
+    def test_accepted(self, name, monkeypatch):
+        assert self._validated(name, monkeypatch) == (name, [])
+
+    def test_deepgemm_rejected(self):
+        import axolotl.integrations.kernels.args as kargs
+
+        with pytest.raises(ValueError, match="no backward"):
+            kargs.KernelsArgs.check_experts_implementation(
+                {"experts_implementation": "deepgemm"}
+            )
+        with pytest.raises(ValueError, match="no backward"):
+            ExpertParallelPlugin._check_local_implementation("deepgemm")
+
+    def test_registered_custom_name_accepted(self, monkeypatch):
+        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+        ALL_EXPERTS_FUNCTIONS.register("_test_registered_impl", lambda *a: None)
+        try:
+            assert self._validated("_test_registered_impl", monkeypatch) == (
+                "_test_registered_impl",
+                [],
+            )
+        finally:
+            ALL_EXPERTS_FUNCTIONS._global_mapping.pop("_test_registered_impl", None)
+
+    def test_ep_defers_unknown_name_to_plugin(self, monkeypatch):
+        import axolotl.integrations.kernels.args as kargs
+
+        monkeypatch.setattr(kargs.LOG, "warning", lambda *a: None)
+        data = kargs.KernelsArgs.check_experts_implementation(
+            {"experts_implementation": "registered_later", "expert_parallel_size": 2}
+        )
+        assert data["experts_implementation"] == "registered_later"
+
+    @pytest.mark.parametrize(
+        "name,flag",
+        [
+            ("deep_ep_scattermoe", "use_scattermoe"),
+            ("torch_ep_sonicmoe", "use_sonicmoe"),
+        ],
+    )
+    def test_kernel_composite_sets_flag(self, name, flag, monkeypatch):
+        import axolotl.integrations.kernels.args as kargs
+
+        monkeypatch.setattr(kargs.LOG, "warning", lambda *a: None)
+        data = kargs.KernelsArgs.check_experts_implementation(
+            {"experts_implementation": name}
+        )
+        assert data[flag] is True
+        assert data["experts_implementation"] == name
+
+    def test_unknown_name_rejected(self, monkeypatch):
+        name, seen = self._validated("not_an_impl", monkeypatch)
+        assert name == "eager"
+        assert "not recognized" in seen[0]
+
+    def test_plugin_rejects_unregistered_local(self):
+        with pytest.raises(ValueError, match="not registered"):
+            ExpertParallelPlugin._check_local_implementation("not_an_impl")
+        for name in ("eager", "scattermoe", "sonicmoe", "grouped_mm", "batched_mm"):
+            ExpertParallelPlugin._check_local_implementation(name)
+
+
+class TestKernelFastpathPredicates:
+    @staticmethod
+    def _module(impl):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            config=SimpleNamespace(_experts_implementation=impl),
+            gate_up_proj=object(),
+            num_experts=4,
+        )
+
+    @pytest.fixture(autouse=True)
+    def _restore_local(self):
+        yield
+        experts_fn.set_local_implementation("grouped_mm")
+
+    @pytest.mark.parametrize(
+        "impl,local,scatter,sonic",
+        [
+            (EXPERT_PARALLEL, "scattermoe", True, False),
+            (EXPERT_PARALLEL, "sonicmoe", False, True),
+            (EXPERT_PARALLEL, "grouped_mm", False, False),
+            ("scattermoe", "grouped_mm", True, False),
+            ("sonicmoe", "grouped_mm", False, True),
+            ("grouped_mm", "scattermoe", False, False),
+        ],
+    )
+    def test_engages_on_effective_local(self, impl, local, scatter, sonic):
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts_lora_fastpath import (
+            _is_scattermoe_experts,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.experts_lora_fastpath import (
+            _is_sonicmoe_experts,
+        )
+
+        experts_fn.set_local_implementation(local)
+        assert _is_scattermoe_experts(self._module(impl)) is scatter
+        assert _is_sonicmoe_experts(self._module(impl)) is sonic
+
+
+class TestSonicmoeEPPadding:
+    @pytest.mark.parametrize("num_recv,padded", [(5, 1024), (1024, 1024), (1500, 2048)])
+    def test_pads_to_pow2_with_sentinel_rows(self, monkeypatch, num_recv, padded):
+        from types import SimpleNamespace
+
+        import axolotl.integrations.kernels.libs.sonicmoe.experts as sonic
+
+        seen = {}
+
+        def fake_forward(module, x, idx, w):
+            seen.update(x=x, idx=idx, w=w)
+            return x * 2
+
+        monkeypatch.setattr(sonic, "_sonicmoe_forward", fake_forward)
+        module = SimpleNamespace(num_experts=4, num_experts_global=8)
+        x = torch.randn(num_recv, 8)
+        idx = torch.randint(0, 5, (num_recv, 2))
+        w = torch.rand(num_recv, 2)
+        out = sonic.sonicmoe_experts_forward_with_lora(module, x, idx, w)
+        assert torch.equal(out, x * 2)
+        assert seen["x"].shape[0] == padded
+        assert (seen["idx"][num_recv:] == 4).all()
+        assert (seen["w"][num_recv:] == 0).all()
+
+    def test_not_ep_sharded_is_unpadded(self, monkeypatch):
+        from types import SimpleNamespace
+
+        import axolotl.integrations.kernels.libs.sonicmoe.experts as sonic
+
+        seen = {}
+        monkeypatch.setattr(
+            sonic, "_sonicmoe_forward", lambda m, x, i, w: seen.setdefault("x", x)
+        )
+        x = torch.randn(5, 8)
+        sonic.sonicmoe_experts_forward_with_lora(
+            SimpleNamespace(num_experts=4), x, torch.zeros(5, 2), torch.rand(5, 2)
+        )
+        assert seen["x"] is x
 
 
 # --------------------------------------------------------------------------- #
@@ -138,33 +357,29 @@ class TestKernelInference:
 
 
 class TestRegistration:
-    def test_kernel_name_mapping(self):
-        assert kernel_to_registered_name("eager") == "deep_ep"
-        assert kernel_to_registered_name("grouped_mm") == "deep_ep_grouped_mm"
-        assert kernel_to_registered_name("scattermoe") == "deep_ep_scattermoe"
-        assert kernel_to_registered_name("sonicmoe") == "deep_ep_sonicmoe"
+    def test_single_registered_name(self):
+        assert set(REGISTRY) == {EXPERT_PARALLEL}
 
     def test_register_all_idempotent(self):
         from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
 
         register_all()
         register_all()  # should not error
-        for name in REGISTRY:
-            fn = ALL_EXPERTS_FUNCTIONS.get_interface(name, None)
-            assert fn is not None, f"{name} not registered"
+        assert (
+            ALL_EXPERTS_FUNCTIONS.get_interface(EXPERT_PARALLEL, None)
+            is REGISTRY[EXPERT_PARALLEL]
+        )
 
-    def test_whitelist_patch_accepts_deep_ep_names(self):
+    def test_whitelist_patch_accepts_expert_parallel(self):
         from transformers.modeling_utils import PreTrainedModel
 
         register_all()
         m = PreTrainedModel.__new__(PreTrainedModel)
-
-        class _Cfg:
-            _experts_implementation = "deep_ep_grouped_mm"
-
-        m.config = _Cfg()
-        for name in REGISTRY:
-            assert PreTrainedModel.get_correct_experts_implementation(m, name) == name
+        m.config = type("_C", (), {"_experts_implementation": EXPERT_PARALLEL})()
+        assert (
+            PreTrainedModel.get_correct_experts_implementation(m, EXPERT_PARALLEL)
+            == EXPERT_PARALLEL
+        )
 
     def test_whitelist_patch_rejects_garbage(self):
         from transformers.modeling_utils import PreTrainedModel
@@ -266,23 +481,30 @@ class TestPluginLifecycle:
         defaults.update(kw)
         return SimpleNamespace(**defaults)
 
-    @pytest.mark.skipif(find_spec("deep_ep") is None, reason="deep_ep not installed")
-    def test_pre_model_load_default_picks_grouped_mm(self):
-        cfg = self._ep_cfg()
-        ExpertParallelPlugin().pre_model_load(cfg)
-        assert cfg.experts_implementation == "deep_ep_grouped_mm"
+    @pytest.fixture
+    def _restore_ep_state(self):
+        yield
+        experts_fn.set_backend(None)
+        experts_fn.set_local_implementation("grouped_mm")
 
     @pytest.mark.skipif(find_spec("deep_ep") is None, reason="deep_ep not installed")
-    def test_pre_model_load_use_scattermoe_auto_composes(self):
-        cfg = self._ep_cfg(use_scattermoe=True, experts_implementation="scattermoe")
+    @pytest.mark.parametrize(
+        "extra,local",
+        [
+            ({}, "grouped_mm"),
+            (
+                {"use_scattermoe": True, "experts_implementation": "scattermoe"},
+                "scattermoe",
+            ),
+            ({"experts_implementation": "eager"}, "eager"),
+        ],
+    )
+    def test_pre_model_load_wraps_local(self, _restore_ep_state, extra, local):
+        cfg = self._ep_cfg(**extra)
         ExpertParallelPlugin().pre_model_load(cfg)
-        assert cfg.experts_implementation == "deep_ep_scattermoe"
-
-    @pytest.mark.skipif(find_spec("deep_ep") is None, reason="deep_ep not installed")
-    def test_pre_model_load_overrides_existing_eager(self):
-        cfg = self._ep_cfg(experts_implementation="eager")
-        ExpertParallelPlugin().pre_model_load(cfg)
-        assert cfg.experts_implementation == "deep_ep"
+        assert cfg.experts_implementation == EXPERT_PARALLEL
+        assert experts_fn.get_backend() == "deep_ep"
+        assert experts_fn.get_local_implementation() == local
 
     def test_disabled_by_default(self):
         """expert_parallel_size=1 (default) means EP is off — pre_model_load no-ops."""
@@ -918,13 +1140,6 @@ class TestEpLoraSaveGating:
 # torch all-to-all backend: names, resolution, checkpointing hooks
 # --------------------------------------------------------------------------- #
 
-_TORCH_EP_NAMES = {
-    "eager": "torch_ep_eager",
-    "grouped_mm": "torch_ep_grouped_mm",
-    "scattermoe": "torch_ep_scattermoe",
-    "sonicmoe": "torch_ep_sonicmoe",
-}
-
 
 def _torch_ep_cfg(**kw):
     from types import SimpleNamespace
@@ -963,45 +1178,6 @@ def _fake_find_spec(monkeypatch, deep_ep_installed):
         "find_spec",
         lambda name: object() if (deep_ep_installed and name == "deep_ep") else None,
     )
-
-
-class TestTorchBackendNames:
-    @pytest.mark.parametrize("kernel,name", sorted(_TORCH_EP_NAMES.items()))
-    def test_kernel_name_mapping(self, kernel, name):
-        assert kernel_to_registered_name(kernel, "torch") == name
-        assert name in REGISTRY
-
-    def test_deep_ep_names_unchanged(self):
-        assert kernel_to_registered_name("eager", "deep_ep") == "deep_ep"
-        assert (
-            kernel_to_registered_name("grouped_mm", "deep_ep") == "deep_ep_grouped_mm"
-        )
-
-    def test_unknown_backend_or_kernel_raises(self):
-        with pytest.raises(ValueError):
-            kernel_to_registered_name("eager", "nccl")
-        with pytest.raises(KeyError):
-            kernel_to_registered_name("batched_mm", "torch")
-
-    def test_registered_and_whitelisted(self):
-        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
-        from transformers.modeling_utils import PreTrainedModel
-
-        register_all()
-        m = PreTrainedModel.__new__(PreTrainedModel)
-        m.config = type("_C", (), {"_experts_implementation": "torch_ep_eager"})()
-        for name in _TORCH_EP_NAMES.values():
-            assert ALL_EXPERTS_FUNCTIONS.get_interface(name, None) is REGISTRY[name]
-            assert PreTrainedModel.get_correct_experts_implementation(m, name) == name
-
-    def test_kernels_plugin_accepts_torch_ep_names(self):
-        from axolotl.integrations.kernels.args import _EP_EXPERTS_IMPLS
-        from axolotl.integrations.kernels.libs.scattermoe_lora.experts_lora_fastpath import (
-            _SCATTERMOE_IMPLS,
-        )
-
-        assert set(_TORCH_EP_NAMES.values()) <= _EP_EXPERTS_IMPLS
-        assert "torch_ep_scattermoe" in _SCATTERMOE_IMPLS
 
 
 class TestBackendResolution:
@@ -1046,30 +1222,87 @@ class TestBackendResolution:
         with pytest.raises(ImportError):
             ExpertParallelPlugin._resolve_backend(cfg)
 
+    @pytest.fixture
+    def _restore_ep_state(self):
+        yield
+        experts_fn.set_backend(None)
+        experts_fn.set_local_implementation("grouped_mm")
+
     @pytest.mark.parametrize(
-        "extra,expected",
+        "extra,local",
         [
-            ({}, "torch_ep_grouped_mm"),
-            ({"experts_implementation": "eager"}, "torch_ep_eager"),
-            ({"experts_implementation": "batched_mm"}, "torch_ep_grouped_mm"),
-            ({"experts_implementation": "torch_ep_eager"}, "torch_ep_eager"),
-            ({"experts_implementation": "deep_ep"}, "torch_ep_eager"),
-            ({"use_scattermoe": True}, "torch_ep_scattermoe"),
-            ({"use_sonicmoe": True}, "torch_ep_sonicmoe"),
+            ({}, "grouped_mm"),
+            ({"experts_implementation": "eager"}, "eager"),
+            ({"experts_implementation": "batched_mm"}, "batched_mm"),
+            ({"experts_implementation": "torch_ep_eager"}, "eager"),
+            ({"experts_implementation": "deep_ep"}, "eager"),
+            ({"use_scattermoe": True}, "scattermoe"),
+            ({"use_sonicmoe": True}, "sonicmoe"),
         ],
     )
-    def test_pre_model_load_torch(self, monkeypatch, extra, expected):
+    def test_pre_model_load_torch(self, monkeypatch, _restore_ep_state, extra, local):
         _forbid_find_spec(monkeypatch)
         cfg = _torch_ep_cfg(**extra)
         ExpertParallelPlugin().pre_model_load(cfg)
-        assert cfg.experts_implementation == expected
+        assert cfg.experts_implementation == EXPERT_PARALLEL
+        assert cfg.expert_parallel_backend == "torch"
+        assert experts_fn.get_backend() == "torch"
+        assert experts_fn.get_local_implementation() == local
 
-    def test_pre_model_load_auto_without_deep_ep_uses_torch(self, monkeypatch):
+    def test_pre_model_load_rejects_unregistered_local(self, monkeypatch):
+        _forbid_find_spec(monkeypatch)
+        with pytest.raises(ValueError, match="not registered"):
+            ExpertParallelPlugin().pre_model_load(
+                _torch_ep_cfg(experts_implementation="not_an_impl")
+            )
+
+    def test_pre_model_load_auto_without_deep_ep_uses_torch(
+        self, monkeypatch, _restore_ep_state
+    ):
         _fake_find_spec(monkeypatch, False)
         cfg = _torch_ep_cfg(expert_parallel_backend="auto")
         ExpertParallelPlugin().pre_model_load(cfg)
         assert cfg.expert_parallel_backend == "torch"
-        assert cfg.experts_implementation == "torch_ep_grouped_mm"
+        assert cfg.experts_implementation == EXPERT_PARALLEL
+        assert experts_fn.get_local_implementation() == "grouped_mm"
+
+    @pytest.mark.parametrize("name", ["deep_ep", "deep_ep_grouped_mm"])
+    def test_deprecated_composite_keeps_auto_resolution(
+        self, monkeypatch, _restore_ep_state, name
+    ):
+        # a deep_ep-prefixed name must not force deep_ep on a host without it
+        _fake_find_spec(monkeypatch, False)
+        cfg = _torch_ep_cfg(
+            expert_parallel_backend="auto",
+            experts_implementation=name,
+            expert_parallel_fallback_on_unsupported=False,
+        )
+        ExpertParallelPlugin().pre_model_load(cfg)
+        assert cfg.expert_parallel_backend == "torch"
+        assert experts_fn.get_backend() == "torch"
+        assert (
+            experts_fn.get_local_implementation()
+            == DEPRECATED_EXPERTS_IMPLEMENTATIONS[name]
+        )
+
+    def test_torch_ep_composite_keeps_auto_resolution(
+        self, monkeypatch, _restore_ep_state
+    ):
+        # the validator saw `auto` -> deep_ep, so runtime must not switch to torch
+        _fake_find_spec(monkeypatch, True)
+        cfg = _torch_ep_cfg(
+            expert_parallel_backend="auto", experts_implementation="torch_ep_grouped_mm"
+        )
+        ExpertParallelPlugin().pre_model_load(cfg)
+        assert cfg.expert_parallel_backend == "deep_ep"
+        assert experts_fn.get_local_implementation() == "grouped_mm"
+
+    def test_pre_model_load_rejects_deepgemm(self, monkeypatch):
+        _forbid_find_spec(monkeypatch)
+        with pytest.raises(ValueError, match="no backward"):
+            ExpertParallelPlugin().pre_model_load(
+                _torch_ep_cfg(experts_implementation="deepgemm")
+            )
 
 
 class TestTorchBackendCheckpointHooks:
@@ -1084,6 +1317,7 @@ class TestTorchBackendCheckpointHooks:
         clear_registered_saves()
         set_token_capacity(None)
         set_ep_group(None)
+        experts_fn.set_backend(None)
 
     @staticmethod
     def _policy(op, **kwargs):

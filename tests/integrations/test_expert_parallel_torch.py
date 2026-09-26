@@ -94,6 +94,7 @@ def _ep2_worker(rank, world_size, port, q):
             ("parity", _parity_checks),
             ("sac", _sac_checks),
             ("chunked", _chunked_checks),
+            ("local_impls", _local_impl_checks),
         ):
             try:
                 out[name] = fn(rank, world_size)
@@ -263,7 +264,7 @@ class TestSingleRankPath:
                 torch.randn(1, H),
                 idx,
                 torch.rand(1, 2),
-                kernel_name="eager",
+                local="eager",
                 backend="torch",
             )
 
@@ -461,6 +462,7 @@ def _parity_checks(rank, world_size):
     plugin's 1/ep post-accumulate hook it equals the ep-mean (what DDP produces for the
     reference model).
     """
+    from axolotl.integrations.expert_parallel import experts_fn
     from axolotl.integrations.expert_parallel.experts_fn import (
         _ep_forward,
         register_all,
@@ -479,13 +481,13 @@ def _parity_checks(rank, world_size):
 
             ref = copy.deepcopy(full)
             xr, wr = x.clone().requires_grad_(True), w.clone().requires_grad_(True)
-            yr = _ep_forward(ref, xr, idx, wr, kernel_name=kernel, backend="torch")
+            yr = _ep_forward(ref, xr, idx, wr, local=kernel, backend="torch")
             (yr * gout).sum().backward()
 
             ep = copy.deepcopy(full)
             s = _shard_experts(ep, rank, world_size)
             xe, we = x.clone().requires_grad_(True), w.clone().requires_grad_(True)
-            ye = _ep_forward(ep, xe, idx, we, kernel_name=kernel, backend="torch")
+            ye = _ep_forward(ep, xe, idx, we, local=kernel, backend="torch")
             (ye * gout).sum().backward()
 
             ref_gu, ref_dn = ref.gate_up_proj.grad.clone(), ref.down_proj.grad.clone()
@@ -503,13 +505,15 @@ def _parity_checks(rank, world_size):
             results[f"{scenario}/{kernel}"] = metrics
 
     # full MoE block through transformers' experts dispatch: real router (in-place
-    # normalised topk), `torch_ep_eager` registered name, 1/ep grad-scale hook
+    # normalised topk), `expert_parallel` registered name, 1/ep grad-scale hook
     block = _build_block()
     ref = copy.deepcopy(block)
     ref.experts.config._experts_implementation = "eager"
     ep = copy.deepcopy(block)
     ep.experts.config = copy.copy(ep.experts.config)
-    ep.experts.config._experts_implementation = "torch_ep_eager"
+    ep.experts.config._experts_implementation = "expert_parallel"
+    experts_fn.set_backend("torch")
+    experts_fn.set_local_implementation("eager")
     s = _shard_experts(ep.experts, rank, world_size)
     ExpertParallelPlugin._register_expert_grad_scale(ep, world_size)
 
@@ -525,7 +529,7 @@ def _parity_checks(rank, world_size):
     )
     dist.all_reduce(ref_gu, op=dist.ReduceOp.AVG)
     dist.all_reduce(ref_dn, op=dist.ReduceOp.AVG)
-    results["block/torch_ep_eager"] = {
+    results["block/expert_parallel"] = {
         "fwd": _max_diff(ye, yr),
         "dx": _max_diff(xe.grad, xr.grad),
         "d_router": _max_diff(ep.gate.weight.grad, ref.gate.weight.grad),
@@ -538,11 +542,11 @@ def _parity_checks(rank, world_size):
     x, idx, w = _routing(rank, "rank1_receives_zero")
     gout = torch.randn(T, H, generator=torch.Generator().manual_seed(11 + rank))
     ref = copy.deepcopy(full)
-    yr = _ep_forward(ref, x, idx, w, kernel_name="eager", backend="torch")
+    yr = _ep_forward(ref, x, idx, w, local="eager", backend="torch")
     (yr * gout).sum().backward()
     ep = copy.deepcopy(full)
     s = _shard_experts(ep, rank, world_size)
-    ye = _ep_forward(ep, x, idx, w, kernel_name="eager", backend="torch")
+    ye = _ep_forward(ep, x, idx, w, local="eager", backend="torch")
     ye_requires_grad = ye.requires_grad
     (ye * gout).sum().backward()
     ref_gu, ref_dn = ref.gate_up_proj.grad.clone(), ref.down_proj.grad.clone()
@@ -560,7 +564,7 @@ def _parity_checks(rank, world_size):
     ep16 = copy.deepcopy(full)
     _shard_experts(ep16, rank, world_size)
     y16 = _ep_forward(
-        ep16.to(torch.float64), x.double(), idx, w, kernel_name="eager", backend="torch"
+        ep16.to(torch.float64), x.double(), idx, w, local="eager", backend="torch"
     )
     results["dtype"] = {"dtype_changed": float(y16.dtype != torch.float64)}
     return results
@@ -574,7 +578,7 @@ class TestTorchEPParity:
             "mixed/grouped_mm",
             "rank1_receives_zero/eager",
             "rank1_receives_zero/grouped_mm",
-            "block/torch_ep_eager",
+            "block/expert_parallel",
             "frozen_inputs/eager",
             "dtype",
         ],
@@ -583,6 +587,177 @@ class TestTorchEPParity:
         for rank, res in _section(ep2_results, "parity").items():
             for metric, diff in res[case].items():
                 assert diff <= 1e-5, f"rank {rank} {case} {metric}={diff}"
+
+
+# --------------------------------------------------------------------------- #
+# expert_parallel wraps any registered local implementation
+# --------------------------------------------------------------------------- #
+
+_CUSTOM_IMPL = "test_ep_custom"
+
+
+def _local_impl_checks(rank, world_size):
+    """``{case: {metric: value}}``: each local implementation under EP=2 against the no-EP
+    eager reference on the same rank's tokens, plus what a user-registered implementation
+    (which knows nothing about EP) was handed as routing."""
+    from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+    from axolotl.integrations.expert_parallel import experts_fn
+
+    seen = {"out_of_range": 0, "sentinels": 0, "calls": 0}
+
+    def custom_forward(self, hidden_states, top_k_index, top_k_weights):
+        # only contract: ids in [0, num_experts], where num_experts means "skip this slot"
+        seen["calls"] += 1
+        seen["out_of_range"] += int(
+            ((top_k_index < 0) | (top_k_index > self.num_experts)).sum()
+        )
+        seen["sentinels"] += int((top_k_index == self.num_experts).sum())
+        out = torch.zeros_like(hidden_states)
+        for e in range(self.num_experts):
+            rows, ks = (top_k_index == e).nonzero(as_tuple=True)
+            gate, up = (hidden_states[rows] @ self.gate_up_proj[e].T).chunk(2, dim=-1)
+            y = (self.act_fn(gate) * up) @ self.down_proj[e].T
+            out.index_add_(0, rows, y * top_k_weights[rows, ks].unsqueeze(-1))
+        return out
+
+    ALL_EXPERTS_FUNCTIONS.register(_CUSTOM_IMPL, custom_forward)
+    experts_fn.register_all()
+    experts_fn.set_backend("torch")
+    TD.set_ep_group(dist.group.WORLD)
+    full = _build_experts()
+    results = {}
+
+    def grads_vs_ref(local, chunks=1):
+        x, idx, w = _routing(rank, "mixed")
+        gout = torch.randn(T, H, generator=torch.Generator().manual_seed(21 + rank))
+        ref = copy.deepcopy(full)
+        xr, wr = x.clone().requires_grad_(True), w.clone().requires_grad_(True)
+        yr = experts_fn._ep_forward(ref, xr, idx, wr, local="eager", backend="torch")
+        (yr * gout).sum().backward()
+
+        ep = copy.deepcopy(full)
+        s = _shard_experts(ep, rank, world_size)
+        xe, we = x.clone().requires_grad_(True), w.clone().requires_grad_(True)
+        experts_fn.set_dispatch_chunks(chunks)
+        try:
+            ye = experts_fn._ep_forward(ep, xe, idx, we, local=local, backend="torch")
+        finally:
+            experts_fn.set_dispatch_chunks(1)
+        (ye * gout).sum().backward()
+        ref_gu, ref_dn = ref.gate_up_proj.grad.clone(), ref.down_proj.grad.clone()
+        dist.all_reduce(ref_gu)
+        dist.all_reduce(ref_dn)
+        return {
+            "fwd": _max_diff(ye, yr),
+            "dx": _max_diff(xe.grad, xr.grad),
+            "dw": _max_diff(we.grad, wr.grad),
+            "d_gate_up": _max_diff(ep.gate_up_proj.grad, ref_gu[s]),
+            "d_down": _max_diff(ep.down_proj.grad, ref_dn[s]),
+        }
+
+    for local in ("grouped_mm", "batched_mm", _CUSTOM_IMPL):
+        results[local] = grads_vs_ref(local)
+    results[f"{_CUSTOM_IMPL}/chunks=2"] = grads_vs_ref(_CUSTOM_IMPL, chunks=2)
+
+    # the registered path: config says expert_parallel, the plugin-set local does the math
+    block = _build_block()
+    ref = copy.deepcopy(block)
+    ref.experts.config._experts_implementation = "eager"
+    ep = copy.deepcopy(block)
+    ep.experts.config = copy.copy(ep.experts.config)
+    ep.experts.config._experts_implementation = "expert_parallel"
+    _shard_experts(ep.experts, rank, world_size)
+    experts_fn.set_local_implementation(_CUSTOM_IMPL)
+    try:
+        x = torch.randn(1, T, H, generator=torch.Generator().manual_seed(500 + rank))
+        results[f"block/{_CUSTOM_IMPL}"] = {"fwd": _max_diff(ep(x), ref(x))}
+    finally:
+        experts_fn.set_local_implementation("grouped_mm")
+    results["custom_routing"] = dict(seen)
+    return results
+
+
+class TestLocalImplementations:
+    @pytest.mark.parametrize(
+        "case",
+        [
+            "grouped_mm",
+            "batched_mm",
+            _CUSTOM_IMPL,
+            f"{_CUSTOM_IMPL}/chunks=2",
+            f"block/{_CUSTOM_IMPL}",
+        ],
+    )
+    def test_matches_no_ep_reference(self, ep2_results, case):
+        for rank, res in _section(ep2_results, "local_impls").items():
+            for metric, diff in res[case].items():
+                assert diff <= 1e-5, f"rank {rank} {case} {metric}={diff}"
+
+    def test_custom_impl_sees_only_normalized_sentinels(self, ep2_results):
+        for rank, res in _section(ep2_results, "local_impls").items():
+            seen = res["custom_routing"]
+            assert seen["calls"] > 0, (rank, seen)
+            assert seen["out_of_range"] == 0, (rank, seen)
+            assert seen["sentinels"] > 0, (rank, seen)
+
+
+class TestSentinelNormalization:
+    def test_local_never_sees_negative_ids(self):
+        from axolotl.integrations.expert_parallel import experts_fn
+
+        experts = _build_experts()
+        _shard_experts(experts, rank=0, world_size=2)
+        captured = {}
+
+        def spy(module, x, idx, w):
+            captured["idx"], captured["w"] = idx, w
+            return torch.zeros_like(x)
+
+        idx = torch.tensor([[0, -1], [-1, 3], [2, 1]])
+        w = torch.rand(3, 2)
+        experts_fn._run_local(experts, spy, torch.randn(3, H), idx, w)
+        assert captured["idx"].tolist() == [[0, E_LOCAL], [E_LOCAL, 3], [2, 1]]
+        assert torch.equal(captured["w"], w.masked_fill(idx < 0, 0))
+        assert idx.min() == -1  # caller's routing is not mutated
+
+    def test_resolve_local_implementation(self):
+        from transformers.integrations.moe import (
+            ALL_EXPERTS_FUNCTIONS,
+            batched_mm_experts_forward,
+        )
+
+        from axolotl.integrations.expert_parallel import experts_fn
+
+        assert (
+            experts_fn.resolve_local_implementation("eager") is experts_fn._eager_local
+        )
+        assert (
+            experts_fn.resolve_local_implementation("batched_mm")
+            is batched_mm_experts_forward
+        )
+        with pytest.raises(ValueError, match="cannot wrap itself"):
+            experts_fn.resolve_local_implementation("expert_parallel")
+        assert "not_registered" not in ALL_EXPERTS_FUNCTIONS
+        with pytest.raises(KeyError):
+            experts_fn.resolve_local_implementation("not_registered")
+
+    def test_unset_backend_raises(self):
+        from axolotl.integrations.expert_parallel import experts_fn
+
+        previous = experts_fn.get_backend()
+        experts_fn.set_backend(None)
+        try:
+            with pytest.raises(RuntimeError, match="no dispatch backend"):
+                experts_fn._ep_forward(
+                    _build_experts(),
+                    torch.randn(1, H),
+                    torch.tensor([[0, 1]]),
+                    torch.rand(1, 2),
+                    local="eager",
+                )
+        finally:
+            experts_fn.set_backend(previous)
 
 
 # --------------------------------------------------------------------------- #
@@ -598,7 +773,7 @@ def _sac_checks(rank, world_size):
     from torch.utils.checkpoint import checkpoint
 
     import axolotl.monkeypatch.selective_checkpointing as sac
-    from axolotl.integrations.expert_parallel.experts_fn import register_all
+    from axolotl.integrations.expert_parallel import experts_fn
     from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
 
     watched = {
@@ -619,10 +794,12 @@ def _sac_checks(rank, world_size):
                 self.counts[name] += 1
             return func(*args, **kwargs)
 
-    register_all()
+    experts_fn.register_all()
+    experts_fn.set_backend("torch")
+    experts_fn.set_local_implementation("eager")
     TD.set_ep_group(dist.group.WORLD)
     block = _build_block()
-    block.experts.config._experts_implementation = "torch_ep_eager"
+    block.experts.config._experts_implementation = "expert_parallel"
     _shard_experts(block.experts, rank, world_size)
     x = torch.randn(1, T, H, generator=torch.Generator().manual_seed(300 + rank))
 
@@ -710,9 +887,7 @@ def _chunked_checks(rank, world_size):
             ep = copy.deepcopy(shard)
             xe = x.clone().requires_grad_(grad_inputs)
             we = w.clone().requires_grad_(grad_inputs)
-            y = experts_fn._ep_forward(
-                ep, xe, idx, we, kernel_name=kernel, backend="torch"
-            )
+            y = experts_fn._ep_forward(ep, xe, idx, we, local=kernel, backend="torch")
             gout = torch.randn(
                 y.shape, generator=torch.Generator().manual_seed(17 + rank)
             )
@@ -796,7 +971,7 @@ def _chunked_checks(rank, world_size):
     experts_fn.set_dispatch_chunks(3)
     try:
         experts_fn._ep_forward(
-            copy.deepcopy(shard), x, idx, w, kernel_name="eager", backend="torch"
+            copy.deepcopy(shard), x, idx, w, local="eager", backend="torch"
         )
     finally:
         TD.all_to_all_single_equal = real_equal
@@ -819,8 +994,10 @@ def _chunked_checks(rank, world_size):
             return func(*args, **(kwargs or {}))
 
     experts_fn.register_all()
+    experts_fn.set_backend("torch")
+    experts_fn.set_local_implementation("eager")
     block = _build_block()
-    block.experts.config._experts_implementation = "torch_ep_eager"
+    block.experts.config._experts_implementation = "expert_parallel"
     _shard_experts(block.experts, rank, world_size)
     xb = torch.randn(1, 13, H, generator=torch.Generator().manual_seed(400 + rank))
 
@@ -899,13 +1076,11 @@ class TestTorchEPChunkedDispatch:
 
         experts = _build_experts()
         x, idx, w = _routing(0, "mixed", num_tokens=5)
-        ref = experts_fn._ep_forward(
-            experts, x, idx, w, kernel_name="eager", backend="torch"
-        )
+        ref = experts_fn._ep_forward(experts, x, idx, w, local="eager", backend="torch")
         experts_fn.set_dispatch_chunks(3)
         try:
             got = experts_fn._ep_forward(
-                experts, x, idx, w, kernel_name="eager", backend="torch"
+                experts, x, idx, w, local="eager", backend="torch"
             )
         finally:
             experts_fn.set_dispatch_chunks(1)

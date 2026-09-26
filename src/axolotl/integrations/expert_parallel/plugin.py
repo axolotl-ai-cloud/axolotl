@@ -21,6 +21,27 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+# pre-``expert_parallel`` composite names -> local implementation; the backend prefix is ignored
+# (as it always was), so ``expert_parallel_backend`` alone picks the dispatch
+DEPRECATED_EXPERTS_IMPLEMENTATIONS = {
+    "deep_ep": "eager",
+    "deep_ep_grouped_mm": "grouped_mm",
+    "deep_ep_scattermoe": "scattermoe",
+    "deep_ep_sonicmoe": "sonicmoe",
+    "torch_ep_eager": "eager",
+    "torch_ep_grouped_mm": "grouped_mm",
+    "torch_ep_scattermoe": "scattermoe",
+    "torch_ep_sonicmoe": "sonicmoe",
+}
+
+KERNEL_IMPLEMENTATION_FLAGS = {
+    "scattermoe": "use_scattermoe",
+    "sonicmoe": "use_sonicmoe",
+}
+
+# transformers' deepgemm forward writes into torch.empty outputs with no autograd path
+NO_BACKWARD_EXPERTS_IMPLEMENTATIONS = frozenset({"deepgemm"})
+
 
 def expert_shard_axis(mesh_dim_names) -> str | None:
     """The non-``ep`` mesh axis the routed experts FSDP-shard on under EP composition, or ``None``.
@@ -51,6 +72,7 @@ class ExpertParallelPlugin(BasePlugin):
         if not self._is_ep_enabled(cfg):
             return
 
+        self._migrate_deprecated_experts_implementation(cfg)
         backend = self._resolve_backend(cfg)
         if backend is None:
             return  # already-warned fallback path
@@ -58,18 +80,25 @@ class ExpertParallelPlugin(BasePlugin):
         # Cross-cfg validation that args.py can't do (it only sees its own fields).
         self._validate_mesh_axes(cfg)
 
-        from .experts_fn import kernel_to_registered_name, register_all
+        from .experts_fn import (
+            EXPERT_PARALLEL,
+            register_all,
+            set_backend,
+            set_local_implementation,
+        )
 
         register_all()
 
-        # Upgrade the user's chosen local kernel to its EP-wrapped variant.
-        local_kernel = self._infer_local_kernel(cfg)
-        composite = kernel_to_registered_name(local_kernel, backend)
+        local = self._infer_local_implementation(cfg)
+        self._check_local_implementation(local)
+        self._register_kernel_implementation(local)
+        set_backend(backend)
+        set_local_implementation(local)
         previous = getattr(cfg, "experts_implementation", None)
-        cfg.experts_implementation = composite
+        cfg.experts_implementation = EXPERT_PARALLEL
         LOG.info(
             f"expert_parallel: backend={backend!r}, experts_implementation "
-            f"{previous!r} -> {composite!r} (local kernel: {local_kernel!r})"
+            f"{previous!r} -> {EXPERT_PARALLEL!r} wrapping {local!r}"
         )
 
     def post_model_build(self, cfg, model):
@@ -118,8 +147,9 @@ class ExpertParallelPlugin(BasePlugin):
             set_ep_group(ep_group)
             set_dispatch_chunks(chunks)
             self._register_checkpoint_saves(cfg)
-        from .experts_fn import set_token_capacity
+        from .experts_fn import set_backend, set_token_capacity
 
+        set_backend(backend)
         set_token_capacity(getattr(cfg, "expert_parallel_token_capacity", None))
         # Pure-EP path: register the grad-scale hook now. FSDP+EP defers
         # registration to `fully_shard_experts` (after experts become DTensors).
@@ -286,13 +316,35 @@ class ExpertParallelPlugin(BasePlugin):
         return backend == "torch"
 
     @staticmethod
-    def _infer_local_kernel(cfg) -> str:
-        """Decide which local-experts kernel runs under EP dispatch.
+    def _migrate_deprecated_experts_implementation(cfg) -> None:
+        """Rewrite a pre-``expert_parallel`` composite name to its local implementation.
+
+        A scattermoe/sonicmoe composite also sets its ``use_*`` flag (unless one is already
+        set), which is what selects that kernel now."""
+        name = getattr(cfg, "experts_implementation", None)
+        if name not in DEPRECATED_EXPERTS_IMPLEMENTATIONS:
+            return
+        local = DEPRECATED_EXPERTS_IMPLEMENTATIONS[name]
+        flag = KERNEL_IMPLEMENTATION_FLAGS.get(local)
+        replacement = f"{flag}: true" if flag else f"experts_implementation: {local}"
+        LOG.warning(
+            f"experts_implementation: {name} is deprecated; use {replacement} "
+            "(the expert_parallel plugin wraps it on whichever expert_parallel_backend "
+            "is configured; the name's backend prefix is ignored)."
+        )
+        if flag and not any(
+            getattr(cfg, f, False) for f in KERNEL_IMPLEMENTATION_FLAGS.values()
+        ):
+            setattr(cfg, flag, True)
+        cfg.experts_implementation = local
+
+    @staticmethod
+    def _infer_local_implementation(cfg) -> str:
+        """Decide which experts implementation runs on the dispatched rows.
 
         `use_scattermoe` / `use_sonicmoe` are the master flags from
-        `kernels/args.py` and take precedence; otherwise fall back to
-        `experts_implementation` (`eager` / `grouped_mm` / `batched_mm`, or an
-        explicit `deep_ep_*` / `torch_ep_*` composite, which keeps its local kernel).
+        `kernels/args.py` and take precedence; otherwise `experts_implementation`
+        names any registered implementation, defaulting to `grouped_mm`.
         """
         if getattr(cfg, "use_scattermoe", False):
             return "scattermoe"
@@ -300,18 +352,55 @@ class ExpertParallelPlugin(BasePlugin):
         if getattr(cfg, "use_sonicmoe", False):
             return "sonicmoe"
 
+        from .experts_fn import EXPERT_PARALLEL
+
         ei = getattr(cfg, "experts_implementation", None)
-        if ei == "deep_ep":
-            return "eager"
-        for prefix in ("deep_ep_", "torch_ep_"):
-            if isinstance(ei, str) and ei.startswith(prefix):
-                return ei[len(prefix) :]
-        if ei in ("grouped_mm", "batched_mm"):
+        if ei in ("scattermoe", "sonicmoe"):
+            LOG.warning(
+                f"expert_parallel: experts_implementation: {ei} needs use_{ei}: true "
+                "(the kernels plugin registers and configures it); using grouped_mm."
+            )
             return "grouped_mm"
-        if ei == "eager":
-            return "eager"
-        # default: upstream-shipped fast kernel
-        return "grouped_mm"
+        if ei in (None, EXPERT_PARALLEL):
+            return "grouped_mm"
+        return ei
+
+    @staticmethod
+    def _check_local_implementation(name: str) -> None:
+        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+
+        if name in NO_BACKWARD_EXPERTS_IMPLEMENTATIONS:
+            raise ValueError(
+                f"expert_parallel: experts_implementation {name!r} has no backward pass "
+                "(expert weights would silently not train); pick grouped_mm, batched_mm, "
+                "eager, use_scattermoe or use_sonicmoe."
+            )
+        if name in ("eager", "scattermoe", "sonicmoe") or name in ALL_EXPERTS_FUNCTIONS:
+            return
+        raise ValueError(
+            f"expert_parallel: experts_implementation {name!r} is not registered in "
+            "transformers' ALL_EXPERTS_FUNCTIONS; register it before model load or "
+            "pick one of eager, "
+            f"{', '.join(sorted(ALL_EXPERTS_FUNCTIONS.keys()))}."
+        )
+
+    @staticmethod
+    def _register_kernel_implementation(name: str) -> None:
+        """Register axolotl's scattermoe/sonicmoe forward, whichever plugin runs first;
+        otherwise the name would resolve to nothing (scattermoe) or to transformers'
+        LoRA-unaware sonicmoe."""
+        if name == "scattermoe":
+            from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+                register_scattermoe_experts,
+            )
+
+            register_scattermoe_experts()
+        elif name == "sonicmoe":
+            from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+                register_sonicmoe_experts,
+            )
+
+            register_sonicmoe_experts()
 
     # Cached 2D DeviceMesh when EP composes with FSDP. Set by `_resolve_ep_group`.
     _device_mesh = None

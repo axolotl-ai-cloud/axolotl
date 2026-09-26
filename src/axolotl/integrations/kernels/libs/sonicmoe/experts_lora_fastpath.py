@@ -17,6 +17,12 @@ from __future__ import annotations
 def _is_sonicmoe_experts(module) -> bool:
     cfg = getattr(module, "config", None)
     impl = getattr(cfg, "_experts_implementation", None)
+    if impl == "expert_parallel":
+        from axolotl.integrations.expert_parallel.experts_fn import (
+            get_local_implementation,
+        )
+
+        impl = get_local_implementation()
     if impl != "sonicmoe":
         return False
     # `num_experts` guards against dense-MLP modules that also carry an `up_proj`.

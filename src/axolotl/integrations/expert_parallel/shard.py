@@ -10,7 +10,7 @@
 
 After this runs (in `post_model_build`, before FSDP wraps), each rank's Experts
 modules hold only their local slice of the experts dim. The registered
-`deep_ep_*` forward function then handles dispatch -> local compute -> combine.
+`expert_parallel` forward then handles dispatch -> local compute -> combine.
 """
 
 from __future__ import annotations
