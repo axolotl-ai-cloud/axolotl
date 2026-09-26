@@ -1,5 +1,7 @@
 """Explicit native/FLA loading for pure Mamba language models."""
 
+from collections.abc import Mapping
+
 from axolotl.model_support.base import ModelSupport
 from axolotl.model_support.profile import (
     ModelHookPhase,
@@ -18,9 +20,13 @@ def _loader():
 
 
 def _validate_adapters(context):
-    config = getattr(context.model, "config", None)
+    config = getattr(context.model, "config", None) or context.model_config
     overrides = getattr(context.cfg, "overrides_of_model_config", None) or {}
-    backend = getattr(config, "mamba_backend", overrides.get("mamba_backend"))
+    backend = (
+        config.get("mamba_backend", overrides.get("mamba_backend"))
+        if isinstance(config, Mapping)
+        else getattr(config, "mamba_backend", overrides.get("mamba_backend"))
+    )
     if backend != "fla" or not getattr(context.cfg, "adapter", None):
         return
     if context.cfg.adapter != "lora":

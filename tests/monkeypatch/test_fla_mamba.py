@@ -310,3 +310,49 @@ def test_fla_lora_gradients_packing_and_reload(family, targets, tmp_path):
         assert (
             merged_logits.float() - expected.float()
         ).norm() / expected.float().norm() < 0.02
+
+
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+@pytest.mark.parametrize("dtype_key", ["dtype", "torch_dtype"])
+def test_fla_from_config_loader_options(family, dtype_key, monkeypatch):
+    pytest.importorskip("fla")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    previous = torch.get_default_dtype()
+    model = MambaModelLoader.from_config(
+        _config(family),
+        trust_remote_code=False,
+        attn_implementation="flash_attention_2",
+        experts_implementation="eager",
+        **{dtype_key: torch.bfloat16},
+    )
+    assert model.get_input_embeddings().weight.dtype == torch.bfloat16
+    assert model.config.dtype == torch.bfloat16
+    assert torch.get_default_dtype() == previous
+
+
+@pytest.mark.parametrize("mapping", [False, True])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"adapter": "qlora"},
+        {"adapter": "lora", "lora_target_parameters": ["in_proj.weight"]},
+    ],
+)
+def test_saved_fla_config_validates_before_model_load(mapping, options):
+    from axolotl.model_support import get_model_support
+    from axolotl.model_support.profile import (
+        ModelHookContext,
+        ModelHookPhase,
+        run_model_support_hooks,
+    )
+    from axolotl.utils.dict import DictDefault
+
+    config = _config("mamba")
+    if mapping:
+        config = config.to_dict()
+    with pytest.raises(ValueError, match="FLA Mamba"):
+        run_model_support_hooks(
+            get_model_support("mamba"),
+            ModelHookPhase.CONFIGURE_RUN,
+            ModelHookContext(cfg=DictDefault(options), model_config=config),
+        )
