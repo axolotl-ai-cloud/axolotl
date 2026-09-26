@@ -94,7 +94,7 @@ modal = ["modal==1.3.0.post1"]
 baseten = ["truss==0.18.30"]
 flash-attn = ["flash-attn==2.8.3"]
 ringmaster = [
-    "axolotl-ringmaster>=0.2.1",
+    "axolotl-ringmaster>=0.2.2",
 ]
 deepspeed = [
     "deepspeed>=0.18.6,<0.20.0",
