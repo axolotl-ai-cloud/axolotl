@@ -2,6 +2,7 @@
 
 import json
 import os
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -275,7 +276,21 @@ class TestFSDP2:
         check_lora_b_fully_trained(temp_dir)
 
     @require_torch_2_7_0
-    def test_lora_sft_cpu_ram_efficient_loading_expert_parallel(self, temp_dir):
+    @pytest.mark.parametrize(
+        "ep_backend",
+        [
+            "torch",
+            pytest.param(
+                "deep_ep",
+                marks=pytest.mark.skipif(
+                    find_spec("deep_ep") is None, reason="deep_ep not installed"
+                ),
+            ),
+        ],
+    )
+    def test_lora_sft_cpu_ram_efficient_loading_expert_parallel(
+        self, temp_dir, ep_backend
+    ):
         # ep == world_size builds no device mesh, so nothing else initializes the process
         # group before the load; the loader must do it or non-rank-0 buffers stay on meta
         cfg = DictDefault(
@@ -285,6 +300,7 @@ class TestFSDP2:
                     "axolotl.integrations.expert_parallel.ExpertParallelPlugin",
                 ],
                 "expert_parallel_size": 2,
+                "expert_parallel_backend": ep_backend,
                 "experts_implementation": "grouped_mm",
                 "sequence_len": 1024,
                 "val_set_size": 0.01,
@@ -427,6 +443,7 @@ class TestFSDP2:
                 "axolotl.integrations.expert_parallel.ExpertParallelPlugin",
             ]
             cfg["expert_parallel_size"] = 2
+            cfg["expert_parallel_backend"] = "torch"
 
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:

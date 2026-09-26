@@ -6,10 +6,11 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Expert-Parallel (DeepEP) plugin for axolotl."""
+"""Expert-Parallel plugin for axolotl (DeepEP or torch all-to-all dispatch)."""
 
 from __future__ import annotations
 
+import os
 from importlib.util import find_spec
 
 import torch
@@ -41,7 +42,7 @@ def expert_shard_axis(mesh_dim_names) -> str | None:
 
 
 class ExpertParallelPlugin(BasePlugin):
-    """Plugin that swaps MoE dispatch/combine for DeepEP-fused kernels."""
+    """Plugin that swaps MoE dispatch/combine for expert-parallel token dispatch."""
 
     def get_input_args(self):
         return "axolotl.integrations.expert_parallel.ExpertParallelArgs"
@@ -50,7 +51,8 @@ class ExpertParallelPlugin(BasePlugin):
         if not self._is_ep_enabled(cfg):
             return
 
-        if not self._deep_ep_available(cfg):
+        backend = self._resolve_backend(cfg)
+        if backend is None:
             return  # already-warned fallback path
 
         # Cross-cfg validation that args.py can't do (it only sees its own fields).
@@ -60,40 +62,54 @@ class ExpertParallelPlugin(BasePlugin):
 
         register_all()
 
-        # Upgrade the user's chosen local kernel to its DeepEP-wrapped variant.
+        # Upgrade the user's chosen local kernel to its EP-wrapped variant.
         local_kernel = self._infer_local_kernel(cfg)
-        composite = kernel_to_registered_name(local_kernel)
+        composite = kernel_to_registered_name(local_kernel, backend)
         previous = getattr(cfg, "experts_implementation", None)
         cfg.experts_implementation = composite
-        LOG.debug(
-            f"expert_parallel: experts_implementation {previous!r} -> {composite!r} "
-            f"(local kernel: {local_kernel!r})"
+        LOG.info(
+            f"expert_parallel: backend={backend!r}, experts_implementation "
+            f"{previous!r} -> {composite!r} (local kernel: {local_kernel!r})"
         )
 
     def post_model_build(self, cfg, model):
         if not self._is_ep_enabled(cfg):
             return
-        if not self._deep_ep_available(cfg):
+        backend = self._resolve_backend(cfg)
+        if backend is None:
             return
 
-        from .buffer import configure_buffer
         from .shard import shard_expert_weights
 
         ep_group = self._resolve_ep_group(cfg)
         sharded = shard_expert_weights(model, ep_group)
 
         if sharded == 0:
-            LOG.warning(
-                "expert_parallel_enabled=true but no Experts modules were detected "
-                "for sharding (model uses a non-canonical layout, or single-rank). "
-                "DeepEP dispatch/combine will run as a no-op."
+            message = (
+                "expert_parallel_size > 1 but no Experts modules were detected for "
+                "sharding (the model does not use transformers' canonical 3-D "
+                "gate_up_proj/down_proj experts layout)."
             )
+            if ep_group is not None and dist.get_world_size(ep_group) > 1:
+                raise ValueError(
+                    message + " Expert parallelism cannot run on this model; "
+                    "set expert_parallel_size: 1."
+                )
+            LOG.warning(message + " Expert-parallel dispatch/combine is a no-op.")
 
-        configure_buffer(
-            ep_group=ep_group,
-            num_nvl_bytes=cfg.expert_parallel_num_nvl_bytes,
-            num_rdma_bytes=cfg.expert_parallel_num_rdma_bytes,
-        )
+        if backend == "deep_ep":
+            from .buffer import configure_buffer
+
+            configure_buffer(
+                ep_group=ep_group,
+                num_nvl_bytes=cfg.expert_parallel_num_nvl_bytes,
+                num_rdma_bytes=cfg.expert_parallel_num_rdma_bytes,
+            )
+        else:
+            from .torch_dispatch import set_ep_group
+
+            set_ep_group(ep_group)
+            self._register_checkpoint_saves(cfg)
         from .experts_fn import set_token_capacity
 
         set_token_capacity(getattr(cfg, "expert_parallel_token_capacity", None))
@@ -115,6 +131,8 @@ class ExpertParallelPlugin(BasePlugin):
             return
 
         self._register_padding_dispatch_hook(model)
+        if self._uses_torch_backend(cfg):
+            self._install_required_checkpoint_policy(cfg, model)
 
         # Find the inner module that has the attribute (shard set it on whatever
         # was the top-level model at post_model_build time).
@@ -162,11 +180,11 @@ class ExpertParallelPlugin(BasePlugin):
 
     @staticmethod
     def _register_padding_dispatch_hook(model) -> None:
-        """Feed the batch's real-token mask to the DeepEP dispatch so padding tokens are
+        """Feed the batch's real-token mask to the EP dispatch so padding tokens are
         not routed (they'd otherwise pile onto one expert and break intranode dispatch).
 
         A model-level forward pre-hook reads the 2D ``attention_mask`` (1=real, 0=pad) and
-        stashes a flattened ``[B*S]`` bool mask; ``_deep_ep_forward`` sentinels those rows.
+        stashes a flattened ``[B*S]`` bool mask; ``_ep_forward`` sentinels those rows.
         Under sample packing there is no 2D mask, but the multipack collator pads partial
         packs to ``seq_len`` — those identical pad embeddings still pile onto one expert and
         break DeepEP intranode dispatch — so fall back to ``input_ids != pad_token_id``."""
@@ -210,12 +228,61 @@ class ExpertParallelPlugin(BasePlugin):
         model._ep_padding_hook = True
 
     @staticmethod
+    def _register_checkpoint_saves(cfg) -> None:
+        """Make every selective-checkpointing policy replay the forward's routing.
+
+        The all-to-all split sizes come from ``topk``; a recompute that re-ran it could
+        break near-ties differently on one rank and desync the collectives (a hang), and
+        re-running the split's device->host copy would add a sync per layer.
+        """
+        from axolotl.monkeypatch.selective_checkpointing import (
+            register_mandatory_save,
+            register_preferred_save,
+        )
+
+        register_mandatory_save(ops={"aten::topk"}, cpu_copies=True)
+        if getattr(cfg, "expert_parallel_save_dispatch", True):
+            register_preferred_save(
+                ops={
+                    "axolotl::ep_all_to_all_single",
+                    "axolotl::ep_all_to_all_single_equal",
+                }
+            )
+
+    @staticmethod
+    def _install_required_checkpoint_policy(cfg, model) -> None:
+        """Without ``selective_checkpointing``, still checkpoint through a policy that
+        holds the registered routing saves (and nothing else). FSDP2
+        ``activation_checkpointing`` picks the saves up in its own checkpoint wrapper."""
+        if not getattr(cfg, "gradient_checkpointing", None) or getattr(
+            cfg, "selective_checkpointing", None
+        ):
+            return
+        from axolotl.monkeypatch.selective_checkpointing import (
+            apply_selective_checkpointing,
+        )
+
+        # PeftModel forwards gradient_checkpointing_enable to the base model, so
+        # wrapping the base covers callers holding either
+        get_base_model = getattr(model, "get_base_model", None)
+        base = get_base_model() if callable(get_base_model) else model
+        apply_selective_checkpointing(base, save=[])
+
+    @classmethod
+    def _uses_torch_backend(cls, cfg) -> bool:
+        backend = getattr(cfg, "expert_parallel_backend", None) or "auto"
+        if backend == "auto":
+            backend = cls._resolve_backend(cfg)
+        return backend == "torch"
+
+    @staticmethod
     def _infer_local_kernel(cfg) -> str:
-        """Decide which local-experts kernel runs under DeepEP dispatch.
+        """Decide which local-experts kernel runs under EP dispatch.
 
         `use_scattermoe` / `use_sonicmoe` are the master flags from
         `kernels/args.py` and take precedence; otherwise fall back to
-        `experts_implementation` (`eager` / `grouped_mm` / `batched_mm`).
+        `experts_implementation` (`eager` / `grouped_mm` / `batched_mm`, or an
+        explicit `deep_ep_*` / `torch_ep_*` composite, which keeps its local kernel).
         """
         if getattr(cfg, "use_scattermoe", False):
             return "scattermoe"
@@ -224,6 +291,11 @@ class ExpertParallelPlugin(BasePlugin):
             return "sonicmoe"
 
         ei = getattr(cfg, "experts_implementation", None)
+        if ei == "deep_ep":
+            return "eager"
+        for prefix in ("deep_ep_", "torch_ep_"):
+            if isinstance(ei, str) and ei.startswith(prefix):
+                return ei[len(prefix) :]
         if ei in ("grouped_mm", "batched_mm"):
             return "grouped_mm"
         if ei == "eager":
@@ -267,7 +339,14 @@ class ExpertParallelPlugin(BasePlugin):
         process group that accelerate's parallelism_config built. For pure EP
         (ep_size == world_size, no FSDP), returns `dist.group.WORLD`.
         """
-        if not dist.is_available() or not dist.is_initialized():
+        if not dist.is_available():
+            return None
+        if not dist.is_initialized() and int(os.environ.get("WORLD_SIZE", "1")) > 1:
+            # pure EP builds no mesh, so nothing has created the process group yet
+            from axolotl.utils.distributed import init_distributed_state
+
+            init_distributed_state()
+        if not dist.is_initialized():
             return None
 
         world_size = dist.get_world_size()
@@ -476,6 +555,20 @@ class ExpertParallelPlugin(BasePlugin):
                 f"* tensor_parallel_size ({tp_size}) * context_parallel_size ({cp_size}) "
                 f"= {product}."
             )
+
+    @classmethod
+    def _resolve_backend(cls, cfg) -> str | None:
+        """Resolve ``expert_parallel_backend`` to ``"deep_ep"`` / ``"torch"`` and store it on cfg.
+
+        ``auto`` picks DeepEP when importable, else torch. Returns ``None`` when an explicit
+        ``deep_ep`` is unavailable and the fallback is enabled (EP is then skipped)."""
+        backend = getattr(cfg, "expert_parallel_backend", None) or "auto"
+        if backend == "auto":
+            backend = "deep_ep" if find_spec("deep_ep") is not None else "torch"
+            cfg.expert_parallel_backend = backend
+        if backend == "deep_ep" and not cls._deep_ep_available(cfg):
+            return None
+        return backend
 
     @staticmethod
     def _deep_ep_available(cfg) -> bool:
