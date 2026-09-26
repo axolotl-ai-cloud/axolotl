@@ -12,9 +12,23 @@ model_config:
 sample_packing: true
 ```
 
-This path supports full fine-tuning of the `mamba` and `mamba2` model types.
-Adapter training is rejected because FLA's fused projections bypass adapter modules. It does not replace hybrid
-models' mixers or enable FLA globally. Saved checkpoints retain the backend and
+This path supports full fine-tuning and LoRA on `in_proj` and `out_proj` for the
+`mamba` and `mamba2` model types. For LoRA, set:
+
+```yaml
+adapter: lora
+lora_target_modules:
+  - in_proj
+  - out_proj
+```
+
+`in_proj` adapters run before the fused kernels. When `out_proj` is adapted,
+training uses FLA's decomposed CUDA convolution/scan path so the output projection
+invokes the adapter, including its dropout, rather than reading the base weight
+directly. This can have different performance from full fine-tuning's fused path.
+Other adapter targets and QLoRA are not supported by this integration.
+
+It does not replace hybrid models' mixers or enable FLA globally. Saved checkpoints retain the backend and
 remain loadable through Axolotl's model loader.
 
 Install the `fla` extra and use Torch 2.13 or newer. The wrapper loads the

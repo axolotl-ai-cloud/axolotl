@@ -172,19 +172,141 @@ def test_fla_rejects_triton_convolution(monkeypatch):
         MambaModelLoader(_config("mamba2"))
 
 
-@pytest.mark.parametrize("loaded", [False, True])
-def test_fla_adapter_training_fails_closed(loaded):
-    from types import SimpleNamespace
+@pytest.mark.parametrize("target", ["in_proj", "out_proj", "x_proj"])
+def test_fla_adapter_target_validation(target, monkeypatch):
+    pytest.importorskip("fla")
+    from peft import LoraConfig, get_peft_model
 
     from axolotl.model_support import get_model_support
     from axolotl.utils.dict import DictDefault
 
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    base = MambaModelLoader(_config("mamba"))
     support = get_model_support("mamba")
     cfg = DictDefault(
         adapter="lora", overrides_of_model_config={"mamba_backend": "fla"}
     )
-    with pytest.raises(ValueError, match="fused projections"):
-        if loaded:
-            support.post_model_load(cfg, SimpleNamespace(config=_config("mamba")))
+    support.validate_cfg(cfg)
+    if target == "x_proj":
+        with pytest.raises(ValueError, match="targets must be"):
+            get_peft_model(
+                base, LoraConfig(task_type="CAUSAL_LM", r=2, target_modules=[target])
+            )
+    else:
+        model = get_peft_model(
+            base, LoraConfig(task_type="CAUSAL_LM", r=2, target_modules=[target])
+        )
+        support.post_model_load(cfg, model)
+    from transformers import MambaForCausalLM
+
+    native = MambaForCausalLM(_config("mamba"))
+    with pytest.raises(ValueError, match="incompatible"):
+        get_peft_model(
+            native, LoraConfig(task_type="CAUSAL_LM", r=2, target_modules=["out_proj"])
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="FLA kernels require CUDA")
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+@pytest.mark.parametrize(
+    "targets", [["in_proj"], ["out_proj"], ["in_proj", "out_proj"]]
+)
+def test_fla_lora_gradients_packing_and_reload(family, targets, tmp_path):
+    pytest.importorskip("fla")
+    from peft import LoraConfig, PeftModel, get_peft_model
+
+    torch.manual_seed(42)
+    base = MambaModelLoader(_config(family)).cuda().to(torch.bfloat16)
+    original = copy.deepcopy(base)
+    model = get_peft_model(
+        base,
+        LoraConfig(
+            task_type="CAUSAL_LM", r=4, target_modules=targets, lora_dropout=0.1
+        ),
+    )
+    for module in model.modules():
+        if hasattr(module, "lora_dropout"):
+            module.lora_dropout["default"].p = 0.0
+    for name, parameter in model.named_parameters():
+        if "lora_B" in name:
+            torch.nn.init.normal_(parameter, std=0.05)
+    ids = torch.randint(0, 64, (2, 48), device="cuda")
+    positions = (
+        torch.cat([torch.arange(17), torch.arange(31)]).cuda()[None].expand(2, -1)
+    )
+    model.train()
+    model.gradient_checkpointing_enable(
+        gradient_checkpointing_kwargs={"use_reentrant": False}
+    )
+    actual = model(
+        input_ids=ids, position_ids=positions, labels=ids, num_items_in_batch=92
+    )
+    actual.loss.backward()
+    gradients = {}
+    for name, parameter in model.named_parameters():
+        if parameter.requires_grad:
+            assert parameter.grad is not None, name
+            assert torch.isfinite(parameter.grad).all() and parameter.grad.norm() > 0, (
+                name
+            )
+            gradients[name] = parameter.grad.clone()
         else:
-            support.validate_cfg(cfg)
+            assert parameter.grad is None, name
+    model.zero_grad(set_to_none=True)
+    parts = [
+        model(input_ids=x, labels=x, num_items_in_batch=92)
+        for x in (ids[:, :17], ids[:, 17:])
+    ]
+    sum(x.loss for x in parts).backward()
+    torch.testing.assert_close(
+        actual.logits, torch.cat([x.logits for x in parts], 1), atol=0.02, rtol=0.03
+    )
+    reference_logits = torch.cat([x.logits for x in parts], 1).float()
+    assert (
+        actual.logits.float() - reference_logits
+    ).norm() / reference_logits.norm() < 0.02
+    for name, parameter in model.named_parameters():
+        if name in gradients:
+            torch.testing.assert_close(
+                parameter.grad, gradients[name], atol=0.002, rtol=0.04
+            )
+    model.gradient_checkpointing_disable()
+    if len(targets) == 2:
+        dropouts = [
+            module.lora_dropout["default"]
+            for module in model.modules()
+            if hasattr(module, "lora_dropout")
+        ]
+        for dropout in dropouts:
+            dropout.p = 0.5
+        with torch.no_grad():
+            first = model(input_ids=ids).logits
+            second = model(input_ids=ids).logits
+        assert not torch.equal(first, second)
+        for dropout in dropouts:
+            dropout.p = 0.0
+    model.eval()
+    with torch.no_grad():
+        expected = model(input_ids=ids).logits
+        with model.disable_adapter():
+            disabled = model(input_ids=ids).logits
+        assert (expected - disabled).float().norm() > 0.01
+        prefix = model(input_ids=ids[:, :17], use_cache=True)
+        decoded = model(
+            input_ids=ids[:, 17:18],
+            past_key_values=prefix.past_key_values,
+            use_cache=True,
+        ).logits
+        torch.testing.assert_close(
+            decoded, model(input_ids=ids[:, :18]).logits[:, -1:], atol=0.01, rtol=0.03
+        )
+        model.save_pretrained(tmp_path)
+        restored = PeftModel.from_pretrained(original, tmp_path).eval()
+        torch.testing.assert_close(restored(input_ids=ids).logits, expected)
+        merged = restored.merge_and_unload().eval()
+        merged_logits = merged(input_ids=ids).logits
+        torch.testing.assert_close(merged_logits, expected, atol=0.02, rtol=0.03)
+        assert (
+            merged_logits.float() - expected.float()
+        ).norm() / expected.float().norm() < 0.02

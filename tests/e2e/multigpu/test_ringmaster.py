@@ -132,7 +132,8 @@ def test_fla_cp_four_rank_parity(family, packed):
 @pytest.mark.parametrize("family", ["mamba", "mamba2"])
 @pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
-def test_ringmaster_fla_mamba_fsdp2_parity(family, packed):
+@pytest.mark.parametrize("lora", [False, True], ids=["full", "adapter"])
+def test_ringmaster_fla_mamba_fsdp2_parity(family, packed, lora):
     pytest.importorskip("fla")
     pytest.importorskip("ringmaster.fla_mamba")
     result = subprocess.run(
@@ -148,6 +149,7 @@ def test_ringmaster_fla_mamba_fsdp2_parity(family, packed):
         | {
             "RM_MODEL": family,
             "RM_FLA": "1",
+            "RM_LORA": "1" if lora else "0",
             "RM_HUB": "1",
             "RM_BACKEND": "ulysses",
             "RM_INNER": "sdpa",

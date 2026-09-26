@@ -61,6 +61,16 @@ def _kernel_bindings(family):
             selective_scan_fn="ops.selective_scan_interface",
         )
     else:
+        scan_module = importlib.import_module(
+            f"{ssm.__name__}.ops.triton.ssd_chunk_scan"
+        )
+        scan_kernel = scan_module._chunk_scan_fwd_kernel
+        # Reusing a tuning result across layouts can exceed the GPU's shared memory.
+        scan_kernel.keys = [
+            name
+            for name in scan_kernel.arg_names
+            if not name.endswith("_ptr") and not name.startswith("BLOCK_SIZE_")
+        ]
         names.update(
             mamba_chunk_scan_combined="ops.triton.ssd_combined",
             mamba_split_conv1d_scan_combined="ops.triton.ssd_combined",
@@ -125,6 +135,23 @@ def _block_forward(
     return residual + hidden_states, attentions, cache
 
 
+def _adapter_cuda_forward(
+    self, hidden_states, last_state=None, use_cache=False, attention_mask=None, **kwargs
+):
+    original = self._axolotl_cuda_forward
+    if (
+        self.training
+        and not use_cache
+        and not isinstance(self.out_proj, torch.nn.Linear)
+    ):
+        # FLA's CUDA prefill path invokes out_proj instead of reading its raw weight.
+        output, _, _ = original(
+            hidden_states, last_state, True, attention_mask, **kwargs
+        )
+        return output, None, None
+    return original(hidden_states, last_state, use_cache, attention_mask, **kwargs)
+
+
 def _packed_forward(self, hidden_states, *args, **kwargs):
     original = self._axolotl_fla_forward
     segments = kwargs.pop("_axolotl_segments", None)
@@ -170,12 +197,18 @@ class _FlaCompatibility:
         bindings = _kernel_bindings(family) if torch.cuda.is_available() else {}
         with _construction_kernels(family, bindings):
             super().__init__(_config(config, family))
+        from .adapters import enable_lora_projections
+
+        enable_lora_projections()
         for block in self.backbone.layers:
             block.forward = MethodType(_block_forward, block)
             mixer = block.mixer
             mixer._axolotl_fla_forward = _bind(mixer.forward, mixer, bindings)
-            mixer.cuda_kernels_forward = _bind(
+            mixer._axolotl_cuda_forward = _bind(
                 mixer.cuda_kernels_forward, mixer, bindings
+            )
+            mixer.cuda_kernels_forward = _bind(
+                MethodType(_adapter_cuda_forward, mixer), mixer, bindings
             )
             mixer.forward = MethodType(_packed_forward, mixer)
         self.lm_head.register_forward_pre_hook(
