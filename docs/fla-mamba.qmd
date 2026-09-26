@@ -41,8 +41,8 @@ and recurrent state start independently for each document. Packing and Trainer
 loss normalization belong to Axolotl core. Packed inputs cannot use a generation
 cache; ordinary unsharded generation uses FLA's cache.
 
-Context parallelism additionally requires the companion Ringmaster FLA Mamba
-adapters. Older Ringmaster releases without those adapters are rejected. CP uses
+Context parallelism requires Ringmaster 0.2.2 or newer for its FLA Mamba
+adapters. Older releases without those adapters are rejected. CP uses
 contiguous shards and exchanges convolution halos and recurrent states; packed
 document boundaries remain active across shard boundaries. Cached generation
 is unavailable while CP adapters are installed.
