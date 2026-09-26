@@ -8,6 +8,8 @@ import pytest
 
 from axolotl.utils.gguf import (
     export_gguf,
+    export_lora_gguf,
+    lora_preflight,
     preflight,
     resolve_llama_cpp,
     resolve_quantize_bin,
@@ -31,6 +33,19 @@ def model_dir(tmp_path) -> Path:
         json.dumps({"chat_template": "{{ messages }}"})
     )
     (path / "model.safetensors").write_bytes(b"\0" * 1024)
+
+    return path
+
+
+@pytest.fixture
+def adapter_dir(tmp_path) -> Path:
+    """A minimal PEFT LoRA adapter that passes every preflight check."""
+    path = tmp_path / "adapter"
+    path.mkdir()
+    (path / "adapter_config.json").write_text(
+        json.dumps({"peft_type": "LORA", "base_model_name_or_path": "org/base"})
+    )
+    (path / "adapter_model.safetensors").touch()
 
     return path
 
@@ -78,6 +93,10 @@ class TestResolveLlamaCpp:
         with patch("axolotl.utils.gguf.shutil.which", return_value=None):
             with pytest.raises(ValueError, match="Build llama.cpp first"):
                 resolve_quantize_bin(llama_cpp_dir)
+
+    def test_checks_for_the_script_it_will_run(self, llama_cpp_dir):
+        with pytest.raises(ValueError, match="convert_lora_to_gguf.py missing"):
+            resolve_llama_cpp(llama_cpp_dir, "convert_lora_to_gguf.py")
 
 
 class TestPreflight:
@@ -220,7 +239,130 @@ class TestExportGGUF:
         mock_run.assert_not_called()
 
 
+class TestLoraPreflight:
+    """Tests for the checks that run before converting an adapter."""
+
+    def test_valid_adapter(self, adapter_dir):
+        lora_preflight(adapter_dir)
+
+    def test_missing_adapter_config(self, tmp_path):
+        with pytest.raises(ValueError, match="not a PEFT adapter"):
+            lora_preflight(tmp_path)
+
+    def test_dora(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, use_dora=True)
+        with pytest.raises(ValueError, match="DoRA adapter"):
+            lora_preflight(adapter_dir)
+
+    def test_dora_disabled_is_fine(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, use_dora=False)
+        lora_preflight(adapter_dir)
+
+    def test_modules_to_save(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, modules_to_save=["lm_head"])
+        with pytest.raises(ValueError, match=r"modules_to_save=\['lm_head'\]"):
+            lora_preflight(adapter_dir)
+
+    def test_modules_to_save_null_is_fine(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, modules_to_save=None)
+        lora_preflight(adapter_dir)
+
+
+class TestExportLoraGGUF:
+    """Tests for converting an adapter to a standalone GGUF LoRA."""
+
+    @pytest.fixture
+    def llama_cpp_dir(self, llama_cpp_dir) -> Path:
+        """The same checkout, with the LoRA converter alongside the model one."""
+        (llama_cpp_dir / "convert_lora_to_gguf.py").touch()
+
+        return llama_cpp_dir
+
+    def test_convert(self, adapter_dir, llama_cpp_dir, tmp_path):
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            outputs = export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out" / "run-lora-{ftype}.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        assert outputs == [tmp_path / "out" / "run-lora-f32.gguf"]
+        assert mock_run.call_count == 1
+        cmd = mock_run.call_args.args[0]
+        assert cmd[1] == str(llama_cpp_dir / "convert_lora_to_gguf.py")
+        assert cmd[2:] == [
+            str(adapter_dir),
+            "--outfile",
+            str(outputs[0]),
+            "--outtype",
+            "f32",
+        ]
+
+    def test_base_config_beside_the_adapter_is_passed(
+        self, adapter_dir, llama_cpp_dir, tmp_path
+    ):
+        # Training pre-saves the base model's config into the adapter dir.
+        (adapter_dir / "config.json").write_text("{}")
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        assert mock_run.call_args.args[0][-2:] == ["--base", str(adapter_dir)]
+
+    def test_adapter_without_a_base_config_is_left_to_the_converter(
+        self, adapter_dir, llama_cpp_dir, tmp_path
+    ):
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        assert "--base" not in mock_run.call_args.args[0]
+
+    def test_missing_adapter_dir(self, llama_cpp_dir, tmp_path):
+        with pytest.raises(ValueError, match="Adapter directory does not exist"):
+            export_lora_gguf(
+                tmp_path / "nope",
+                str(tmp_path / "out.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+    def test_checkout_without_the_lora_converter(self, adapter_dir, tmp_path):
+        bare = tmp_path / "bare-llama.cpp"
+        bare.mkdir()
+        (bare / "convert_hf_to_gguf.py").touch()
+        with pytest.raises(ValueError, match="convert_lora_to_gguf.py missing"):
+            export_lora_gguf(
+                adapter_dir, str(tmp_path / "out.gguf"), llama_cpp_dir=bare
+            )
+
+    def test_preflight_runs_before_converting(
+        self, adapter_dir, llama_cpp_dir, tmp_path
+    ):
+        _patch_adapter_config(adapter_dir, use_dora=True)
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            with pytest.raises(ValueError, match="DoRA"):
+                export_lora_gguf(
+                    adapter_dir,
+                    str(tmp_path / "out.gguf"),
+                    llama_cpp_dir=llama_cpp_dir,
+                )
+
+        mock_run.assert_not_called()
+
+
 def _patch_config(model_dir: Path, **updates) -> None:
     config_path = model_dir / "config.json"
+    config = json.loads(config_path.read_text())
+    config_path.write_text(json.dumps({**config, **updates}))
+
+
+def _patch_adapter_config(adapter_dir: Path, **updates) -> None:
+    config_path = adapter_dir / "adapter_config.json"
     config = json.loads(config_path.read_text())
     config_path.write_text(json.dumps({**config, **updates}))

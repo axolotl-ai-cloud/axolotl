@@ -1698,7 +1698,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--export.outtype",),
         "export__outtype",
         None,
-        "Weight type of the GGUF conversion.",
+        "Weight type of the GGUF conversion. Default: f16 for a full model, f32 for a LoRA adapter.",
     ),
     (
         ("--export.quantize",),
@@ -1717,6 +1717,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "export__llama_cpp_dir",
         "str",
         "Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
+    ),
+    (
+        ("--export.lora/--no-export.lora",),
+        "export__lora",
+        None,
+        "Export the adapter as a standalone GGUF LoRA instead of a full model.",
     ),
     (
         ("--reward-model/--no-reward-model",),
