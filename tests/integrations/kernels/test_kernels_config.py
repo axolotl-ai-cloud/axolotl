@@ -247,21 +247,42 @@ def test_nvfp4_merge_aware_fractional_start_step():
     assert a.nvfp4_merge_aware_start_step == 0.1
 
 
-def test_nvfp4_merge_aware_requires_sonicmoe():
-    with pytest.raises(pydantic.ValidationError, match="sonicmoe"):
-        KernelsArgs.model_validate({"adapter": "lora", "nvfp4_merge_aware": True})
+def test_nvfp4_merge_aware_defers_backend_detection():
+    args = KernelsArgs.model_validate({"adapter": "lora", "nvfp4_merge_aware": True})
+    assert args.nvfp4_merge_aware is True
 
 
-def test_nvfp4_merge_aware_requires_adapter():
-    with pytest.raises(pydantic.ValidationError, match="adapter"):
-        KernelsArgs.model_validate({"use_sonicmoe": True, "nvfp4_merge_aware": True})
+def test_nvfp4_merge_aware_without_adapter_warns_and_disables():
+    from unittest.mock import patch
 
-
-def test_nvfp4_merge_aware_start_step_requires_flag():
-    with pytest.raises(pydantic.ValidationError, match="requires nvfp4_merge_aware"):
-        KernelsArgs.model_validate(
-            {"use_sonicmoe": True, "adapter": "lora", "nvfp4_merge_aware_start_step": 5}
+    with patch("axolotl.integrations.kernels.args.LOG.warning") as warning:
+        args = KernelsArgs.model_validate(
+            {"use_sonicmoe": True, "nvfp4_merge_aware": True}
         )
+    assert args.nvfp4_merge_aware is False
+    assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]
+
+
+def test_nvfp4_merge_aware_start_step_allows_automatic_default():
+    args = KernelsArgs.model_validate(
+        {"use_sonicmoe": True, "adapter": "lora", "nvfp4_merge_aware_start_step": 5}
+    )
+    assert args.nvfp4_merge_aware_start_step == 5
+
+
+def test_nvfp4_merge_aware_disabled_ignores_start_with_warning():
+    from unittest.mock import patch
+
+    with patch("axolotl.integrations.kernels.args.LOG.warning") as warning:
+        args = KernelsArgs.model_validate(
+            {
+                "adapter": "lora",
+                "nvfp4_merge_aware": False,
+                "nvfp4_merge_aware_start_step": 5,
+            }
+        )
+    assert args.nvfp4_merge_aware_start_step is None
+    assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]
 
 
 @pytest.mark.parametrize(

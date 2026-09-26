@@ -161,6 +161,9 @@ def sonicmoe_experts_forward_with_lora(
     from .nvfp4 import is_nvfp4_param
 
     has_gate = getattr(self, "has_gate", True)
+    multilora_forward = getattr(self, "_axolotl_multilora_sonic_forward", None)
+    if multilora_forward is not None:
+        return multilora_forward(self, hidden_states, top_k_index, top_k_weights)
     if hidden_states.device.type != "cuda":
         raise ValueError("sonicmoe requires CUDA device")
 
@@ -377,6 +380,10 @@ def register_sonicmoe_experts() -> None:
         patch_paramwrapper_sonicmoe_fastpath()
     except (ImportError, AttributeError):
         pass
+
+    from ..scattermoe_lora.nvfp4_fsdp import patch_nvfp4_fsdp
+
+    patch_nvfp4_fsdp()
 
 
 # Re-export utilities for tests / external callers.

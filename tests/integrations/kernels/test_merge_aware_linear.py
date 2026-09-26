@@ -106,10 +106,13 @@ def test_forward_matches_snapped_oracle():
 
     base = lora.get_base_layer()
     w_eff = (
-        base.weight
-        + (lora.lora_B["default"].weight @ lora.lora_A["default"].weight)
+        base.weight.float()
+        + (
+            lora.lora_B["default"].weight.float()
+            @ lora.lora_A["default"].weight.float()
+        )
         * lora.scaling["default"]
-    )
+    ).to(base.weight.dtype)
     oracle = F.linear(x, fake_quant_nvfp4(w_eff, base._nvfp4_pts))
     assert torch.equal(out, oracle)
     # the snap must actually change the weight (delta is off-grid)
@@ -128,7 +131,9 @@ def test_ste_gradients_match_oracle():
     A_o = lora.lora_A["default"].weight.detach().clone().requires_grad_()
     B_o = lora.lora_B["default"].weight.detach().clone().requires_grad_()
     x_o = x.detach().clone().requires_grad_()
-    w_eff = base.weight + (B_o @ A_o) * lora.scaling["default"]
+    w_eff = (
+        base.weight.float() + (B_o.float() @ A_o.float()) * lora.scaling["default"]
+    ).to(base.weight.dtype)
     w_fq = fake_quant_nvfp4(w_eff.detach(), base._nvfp4_pts) + (w_eff - w_eff.detach())
     F.linear(x_o, w_fq).float().square().sum().backward()
 
@@ -157,10 +162,13 @@ def test_dropout_residual_vanishes_at_eval():
     lora.eval()
     out = lora(x)
     w_eff = (
-        base.weight
-        + (lora.lora_B["default"].weight @ lora.lora_A["default"].weight)
+        base.weight.float()
+        + (
+            lora.lora_B["default"].weight.float()
+            @ lora.lora_A["default"].weight.float()
+        )
         * lora.scaling["default"]
-    )
+    ).to(base.weight.dtype)
     oracle = F.linear(x, fake_quant_nvfp4(w_eff, base._nvfp4_pts))
     assert torch.equal(out, oracle)
 
@@ -322,3 +330,48 @@ def test_fp32_adapter_matches_export_effective_weight(autocast, device):
     assert x.grad is not None
     assert lora.lora_A["default"].weight.grad.dtype == torch.float32
     assert lora.lora_B["default"].weight.grad.dtype == torch.float32
+
+
+@pytest.mark.parametrize("adapter_dtype", [torch.bfloat16, torch.float32])
+def test_adapter_dtype_matches_canonical_writer_effective_weight(adapter_dtype):
+    torch.manual_seed(921)
+    model, lora = _wrapped_model()
+    lora.lora_A["default"].to(adapter_dtype)
+    lora.lora_B["default"].to(adapter_dtype)
+    with torch.no_grad():
+        lora.lora_B["default"].weight.normal_(std=0.03)
+    lora.scaling["default"] = 1.3
+    base = lora.get_base_layer()
+    writer_weight = (
+        base.weight.float()
+        + (
+            lora.lora_B["default"].weight.float()
+            @ lora.lora_A["default"].weight.float()
+        )
+        * lora.scaling["default"]
+    ).to(base.weight.dtype)
+    install_merge_aware_lora_linears(model)
+    set_merge_aware_enabled(True)
+    x = torch.randn(4, IN, dtype=torch.bfloat16)
+
+    torch.testing.assert_close(
+        model(x),
+        F.linear(x, fake_quant_nvfp4(writer_weight, base._nvfp4_pts)),
+        rtol=0,
+        atol=0,
+    )
+
+
+def test_factor_bias_warns_without_installing_incomplete_forward():
+    from unittest.mock import patch
+
+    model, lora = _wrapped_model()
+    lora.lora_B["default"].bias = nn.Parameter(torch.zeros(OUT, dtype=torch.bfloat16))
+    forward = lora.forward
+    with patch(
+        "axolotl.integrations.kernels.merge_aware_linear.LOG.warning"
+    ) as warning:
+        assert install_merge_aware_lora_linears(model) == 0
+    assert lora.forward == forward
+    assert lora._axolotl_merge_aware_unsupported
+    assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]

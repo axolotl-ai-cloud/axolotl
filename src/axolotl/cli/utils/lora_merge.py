@@ -395,6 +395,7 @@ def _build_peft_layer_and_get_delta(
     layer_type: Optional[str] = None,
     lora_alpha_override: Optional[float] = None,
     is_transposed: Optional[bool] = None,
+    canonical_fp32: bool = False,
 ) -> torch.Tensor:
     """
     Use PEFT's own layer classes to compute the LoRA delta weight.
@@ -410,6 +411,9 @@ def _build_peft_layer_and_get_delta(
 
     import torch.nn as nn
 
+    if canonical_fp32:
+        lora_a = lora_a.float()
+        lora_b = lora_b.float()
     r_total = lora_a.shape[0]
     in_features = lora_a.shape[1]
     out_features = lora_b.shape[0]
@@ -434,7 +438,11 @@ def _build_peft_layer_and_get_delta(
         if is_transposed is not None:
             fake.is_transposed = is_transposed
         fake.register_parameter(
-            "weight", nn.Parameter(base_tensor.clone(), requires_grad=False)
+            "weight",
+            nn.Parameter(
+                base_tensor.float().clone() if canonical_fp32 else base_tensor.clone(),
+                requires_grad=False,
+            ),
         )
 
         # ParamWrapper rejects dropout/fan_in_fan_out/lora_bias/use_dora, so
@@ -1045,6 +1053,13 @@ def _resolve_nvfp4_scale_mode(lora_config_dict, override_quantizer: bool = False
         raise ValueError(
             f"adapter_config.json nvfp4_merge_aware must be a dict, got {meta!r}"
         )
+    if meta.get("backend") == "native_torchao":
+        from axolotl.monkeypatch.torchao_nvfp4_merge_metadata import (
+            validate_native_merge_aware_header,
+        )
+
+        validate_native_merge_aware_header(meta)
+        return "reuse"
     try:
         import torchao
     except ImportError as ex:
@@ -1453,6 +1468,7 @@ class _Nvfp4ExpertMergeWriter:
             is_param_wrapper=True,
             is_transposed=target.is_transposed if target else None,
             lora_alpha_override=target.alpha if target else None,
+            canonical_fp32=fresh,
         )
         merged_t = (fused.to(torch.float32) + delta.to(torch.float32)).to(
             torch.bfloat16
@@ -1690,6 +1706,7 @@ def _merge_tensor_with_lora(
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
+    canonical_fp32: bool = False,
 ) -> tuple[torch.Tensor, bool]:
     """
     Helper function to merge a single tensor with its corresponding LoRA weights.
@@ -1777,6 +1794,7 @@ def _merge_tensor_with_lora(
             lora_alpha_override=_resolve_lora_alpha_for_key(
                 key, lora_config_dict, weight_renamings
             ),
+            canonical_fp32=canonical_fp32,
         )
         merged_tensor = (
             (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
@@ -1824,6 +1842,7 @@ def _merge_tensor_with_lora(
                     else _resolve_lora_alpha_for_key(
                         key, lora_config_dict, weight_renamings
                     ),
+                    canonical_fp32=canonical_fp32,
                 )
                 merged = (
                     (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
@@ -2035,6 +2054,7 @@ def _fuse_and_unfuse_with_merge(
     expected_num_experts: Optional[int] = None,
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
     carry: Optional[_FusedExpertCarry] = None,
+    canonical_fp32: bool = False,
 ) -> tuple[Dict[str, torch.Tensor], int, set]:
     """
     For tensors matching WeightConverter patterns (MoE expert weights):
@@ -2237,6 +2257,7 @@ def _fuse_and_unfuse_with_merge(
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
                 param_wrapper_map=param_wrapper_map,
+                canonical_fp32=canonical_fp32,
             )
             merged_count += int(was_merged)
 
@@ -2548,6 +2569,46 @@ def merge_lora_sharded_efficient(
 
         total_tensors += len(shard_tensors)
 
+        from axolotl.cli.utils.native_nvfp4_merge import (
+            has_native_nvfp4_weights,
+            merge_native_nvfp4_shard,
+        )
+
+        native_present = has_native_nvfp4_weights(metadata)
+        native_processed: set[str] = set()
+
+        def merge_native_dense(weight, key, processed=native_processed):
+            result, did_merge = _merge_tensor_with_lora(
+                weight,
+                key,
+                lora_state,
+                scale,
+                lora_config_dict,
+                device,
+                use_dora=use_dora,
+                weight_renamings=weight_renamings,
+                layer_type_map=layer_type_map,
+                param_wrapper_map=param_wrapper_map,
+                canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
+            )
+            if did_merge:
+                processed.add(key)
+            return result, did_merge
+
+        shard_tensors, metadata, native_merged = merge_native_nvfp4_shard(
+            shard_tensors,
+            metadata,
+            merge_native_dense,
+            dequant=dequant,
+            quantization_device=device,
+            merge_aware_metadata=lora_config_dict.get("nvfp4_merge_aware"),
+        )
+        merged_count += native_merged
+        left_quantized = left_quantized or has_native_nvfp4_weights(metadata)
+        block_fp8_dequantized = block_fp8_dequantized or (
+            native_present and dequant and not has_native_nvfp4_weights(metadata)
+        )
+
         # Per-expert unfused NVFP4 experts with a fused adapter: the writer claims those tensors
         # (buffered across shard boundaries) and emits the merged per-expert keys itself, so the
         # dequant/fuse/per-tensor passes below never see them.
@@ -2598,13 +2659,14 @@ def merge_lora_sharded_efficient(
                 param_wrapper_map=param_wrapper_map,
                 expected_num_experts=expected_num_experts,
                 carry=fused_expert_carry,
+                canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
             )
             merged_count += fused_merged
 
         # Step 2: Merge remaining (non-fused) tensors with LoRA
         # Skip keys already processed by fuse/unfuse to avoid double NF4 roundtrip
         for key, tensor in shard_tensors.items():
-            if key in fused_keys:
+            if key in fused_keys or key in native_processed:
                 merged_tensors[key] = tensor.detach().cpu()
                 continue
             # Full-weight override (modules_to_save / resized embed_tokens+lm_head): replace, don't
@@ -2639,6 +2701,7 @@ def merge_lora_sharded_efficient(
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
                 param_wrapper_map=param_wrapper_map,
+                canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
             )
             merged_tensors[key] = merged_tensor
             if was_merged:

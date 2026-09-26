@@ -14,6 +14,7 @@ PEFT unwrapping utilities are also provided to handle the ParamWrapper
 chain that PEFT creates when targeting expert parameters.
 """
 
+import types
 from typing import Optional
 
 import torch
@@ -61,6 +62,50 @@ def get_lora_params_from_wrapper(module) -> tuple:
     return lora_A, lora_B, scaling
 
 
+def _is_dtensor(value) -> bool:
+    return type(value).__name__ == "DTensor"
+
+
+def _install_factor_materialize_mode(owner) -> None:
+    if hasattr(owner, "_axolotl_sonicmoe_materialize_orig_forward"):
+        return
+    original = owner.forward
+
+    def forward(self, *args, **kwargs):
+        if kwargs.pop("_axolotl_materialize_weight", False):
+            return self.weight.clone()
+        return self._axolotl_sonicmoe_materialize_orig_forward(*args, **kwargs)
+
+    owner._axolotl_sonicmoe_materialize_orig_forward = original
+    owner.forward = types.MethodType(forward, owner)
+
+
+def sonicmoe_runtime_lora_factors(lora_A, lora_B, activation_dtype):
+    from .nvfp4_lora import merge_aware_enabled
+
+    if merge_aware_enabled():
+        return lora_A, lora_B
+    return lora_A.to(activation_dtype), lora_B.to(activation_dtype)
+
+
+def materialize_sonicmoe_lora_factors(
+    lora_A, lora_B, *, lora_A_owner=None, lora_B_owner=None
+):
+    """Return full differentiable factors from their FSDP owning modules."""
+    if not (_is_dtensor(lora_A) or _is_dtensor(lora_B)):
+        return lora_A, lora_B
+    if lora_A_owner is None or lora_B_owner is None:
+        raise RuntimeError(
+            "FSDP-sharded SonicMoE LoRA factors need their owning modules"
+        )
+    _install_factor_materialize_mode(lora_A_owner)
+    _install_factor_materialize_mode(lora_B_owner)
+    return (
+        lora_A_owner(_axolotl_materialize_weight=True),
+        lora_B_owner(_axolotl_materialize_weight=True),
+    )
+
+
 def unwrap_experts_lora(experts_module):
     """Walk a PEFT ParamWrapper chain on ``self.experts``.
 
@@ -91,6 +136,13 @@ def unwrap_experts_lora(experts_module):
     for param_name, wrapper in wrappers.items():
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(wrapper)
         if lora_A is not None:
+            adapter_name = wrapper.active_adapters[0]
+            lora_A, lora_B = materialize_sonicmoe_lora_factors(
+                lora_A,
+                lora_B,
+                lora_A_owner=wrapper.lora_A[adapter_name],
+                lora_B_owner=wrapper.lora_B[adapter_name],
+            )
             lora_dict[param_name] = (lora_A, lora_B, scaling)
 
     return base_experts, lora_dict

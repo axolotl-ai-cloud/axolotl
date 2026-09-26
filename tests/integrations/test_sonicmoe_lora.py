@@ -277,3 +277,62 @@ class TestMaterializeExpertLora:
         result = materialize_expert_lora(W, (A, B, 0.5))
         assert result.shape == W.shape
         assert not torch.equal(result, W)
+
+
+def test_materialize_sonicmoe_factors_uses_owning_forward_for_dtensors():
+    from axolotl.integrations.kernels.libs.sonicmoe.lora import (
+        materialize_sonicmoe_lora_factors,
+    )
+
+    class DTensor:
+        def __init__(self, full):
+            self.full = full
+
+        def clone(self):
+            return self.full.clone()
+
+    class Owner(torch.nn.Module):
+        def __init__(self, full):
+            super().__init__()
+            self.weight = DTensor(full)
+            self.calls = 0
+
+        def forward(self):
+            self.calls += 1
+            return self.weight
+
+    expected_A = torch.randn(2, 4)
+    expected_B = torch.randn(4, 2)
+    owner_A, owner_B = Owner(expected_A), Owner(expected_B)
+
+    actual_A, actual_B = materialize_sonicmoe_lora_factors(
+        owner_A.weight,
+        owner_B.weight,
+        lora_A_owner=owner_A,
+        lora_B_owner=owner_B,
+    )
+
+    assert torch.equal(actual_A, expected_A)
+    assert torch.equal(actual_B, expected_B)
+    assert owner_A.calls == owner_B.calls == 0
+
+
+def test_sonicmoe_runtime_factors_keep_fp32_for_merge_aware_forward():
+    from axolotl.integrations.kernels.libs.sonicmoe.lora import (
+        sonicmoe_runtime_lora_factors,
+    )
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+        set_merge_aware_enabled,
+    )
+
+    A = torch.randn(2, 4, dtype=torch.float32)
+    B = torch.randn(4, 2, dtype=torch.float32)
+    try:
+        set_merge_aware_enabled(False)
+        ordinary_A, ordinary_B = sonicmoe_runtime_lora_factors(A, B, torch.bfloat16)
+        assert ordinary_A.dtype == ordinary_B.dtype == torch.bfloat16
+        set_merge_aware_enabled(True)
+        merged_A, merged_B = sonicmoe_runtime_lora_factors(A, B, torch.bfloat16)
+        assert merged_A is A and merged_B is B
+    finally:
+        set_merge_aware_enabled(False)

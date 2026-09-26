@@ -303,6 +303,11 @@ def save_trained_model(
         from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
 
         if save_fsdp2_lora_adapter(model, cfg.output_dir):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                persist_native_metadata_after_save,
+            )
+
+            persist_native_metadata_after_save(model, cfg.output_dir)
             return
 
     if trainer.is_fsdp_enabled or cfg.fsdp_config:
@@ -386,6 +391,18 @@ def save_trained_model(
             trainer.model.save_pretrained(cfg.output_dir)
 
         model.save_pretrained(cfg.output_dir)
+        metadata = getattr(model, "_axolotl_native_nvfp4_metadata", None)
+        if metadata:
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                clear_native_metadata,
+                native_metadata_valid_for_save,
+                write_native_metadata,
+            )
+
+            if native_metadata_valid_for_save(model):
+                write_native_metadata(cfg.output_dir, metadata)
+            else:
+                clear_native_metadata(cfg.output_dir)
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin

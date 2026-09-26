@@ -306,3 +306,96 @@ def test_native_nvfp4_quantizer_allows_only_frozen_adapter_training(tmp_path):
         args=TrainingArguments(output_dir=str(tmp_path), use_cpu=True, report_to=[]),
     )
     assert trainer.model is model
+
+
+@pytest.mark.parametrize("backend", ["plain", "fsdp", "deepspeed"])
+@pytest.mark.parametrize("merge_aware", [True, False])
+def test_dynamic_native_nvfp4_requires_an_input_gradient_path(backend, merge_aware):
+    pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
+    from peft import LoraConfig, get_peft_model
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    from axolotl.integrations.kernels.merge_aware_setup import (
+        configure_native_merge_aware,
+    )
+    from axolotl.monkeypatch.torchao_lora import enable_native_nvfp4_lora_training
+    from axolotl.utils.dict import DictDefault
+    from axolotl.utils.quantization import quantize_model
+    from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+    base = LlamaForCausalLM(
+        LlamaConfig(
+            vocab_size=32,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+        )
+    ).bfloat16()
+    quantize_model(base, TorchAOQuantDType.nvfp4)
+    model = get_peft_model(base, LoraConfig(r=2, target_modules=["q_proj"]))
+    model.hf_quantizer.quantization_config.quant_type = type(
+        "NVFP4DynamicActivationNVFP4WeightConfig", (), {}
+    )()
+    for parameter in model.parameters():
+        if type(parameter).__name__ == "NVFP4Tensor":
+            parameter.act_quant_kwargs = object()
+
+    assert not enable_native_nvfp4_lora_training(model)
+
+    config = DictDefault(adapter="lora", nvfp4_merge_aware=merge_aware)
+    sharded_backend = {"plain": None, "fsdp": "FSDP", "deepspeed": "DeepSpeed"}[backend]
+    configure_native_merge_aware(config, model, sharded_backend=sharded_backend)
+    if sharded_backend:
+        assert (
+            model._axolotl_native_nvfp4_dynamic_input_gradients_requested
+            == sharded_backend
+        )
+    else:
+        assert model._axolotl_native_nvfp4_dynamic_input_gradients
+    if not merge_aware:
+        assert model._axolotl_merge_aware_unsupported
+    assert enable_native_nvfp4_lora_training(model)
+
+
+def test_dynamic_native_nvfp4_opt_out_allows_zero3_input_gradient_path():
+    pytest.importorskip("torchao.prototype.mx_formats.nvfp4_tensor")
+    from peft import LoraConfig, get_peft_model
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    from axolotl.integrations.kernels.merge_aware_setup import (
+        configure_native_merge_aware,
+    )
+    from axolotl.monkeypatch.torchao_lora import enable_native_nvfp4_lora_training
+    from axolotl.utils.dict import DictDefault
+    from axolotl.utils.quantization import quantize_model
+    from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+    base = LlamaForCausalLM(
+        LlamaConfig(
+            vocab_size=32,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+        )
+    ).bfloat16()
+    quantize_model(base, TorchAOQuantDType.nvfp4)
+    model = get_peft_model(base, LoraConfig(r=2, target_modules=["q_proj"]))
+    model.hf_quantizer.quantization_config.quant_type = type(
+        "NVFP4DynamicActivationNVFP4WeightConfig", (), {}
+    )()
+    native = next(p for p in model.parameters() if type(p).__name__ == "NVFP4Tensor")
+    native.act_quant_kwargs = object()
+
+    configure_native_merge_aware(
+        DictDefault(adapter="lora", nvfp4_merge_aware=False), model
+    )
+    assert model._axolotl_merge_aware_unsupported
+    assert enable_native_nvfp4_lora_training(model)
+    model._axolotl_native_nvfp4_dynamic_input_gradients = False
+    assert not enable_native_nvfp4_lora_training(model)
+    model._axolotl_native_nvfp4_zero3_dynamic_allowed = True
+    assert enable_native_nvfp4_lora_training(model)

@@ -99,3 +99,37 @@ def test_on_save_stamps_only_after_start(tmp_path):
         )
     finally:
         set_merge_aware_enabled(False)
+
+
+@pytest.mark.parametrize("remote_fallback", [False, True])
+def test_fallback_clears_stale_metadata_and_stays_invalid(tmp_path, remote_fallback):
+    from unittest.mock import patch
+
+    import torch
+
+    model = torch.nn.Linear(2, 2)
+    model._axolotl_merge_aware_unsupported = not remote_fallback
+    ckpt = tmp_path / "checkpoint-1"
+    ckpt.mkdir()
+    path = ckpt / "adapter_config.json"
+    path.write_text(json.dumps({"r": 4, "nvfp4_merge_aware": {"scale_mode": "fresh"}}))
+    cb = MergeAwareScheduleCallback()
+    cb._enabled = True
+
+    def reduce_flag(flag, op):
+        if remote_fallback:
+            flag.fill_(1)
+
+    with (
+        patch("torch.distributed.is_initialized", return_value=True),
+        patch("torch.distributed.get_backend", return_value="gloo"),
+        patch("torch.distributed.all_reduce", side_effect=reduce_flag) as reduce,
+    ):
+        cb.on_save(SimpleNamespace(output_dir=tmp_path), _state(1), None, model=model)
+    assert not cb.merge_aware_valid
+    assert json.loads(path.read_text()) == {"r": 4}
+    reduce.assert_called_once()
+    model._axolotl_merge_aware_unsupported = False
+    with patch("torch.distributed.is_initialized", return_value=False):
+        cb.on_train_end(None, _state(2), None, model=model)
+    assert not cb.merge_aware_valid

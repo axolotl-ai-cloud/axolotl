@@ -120,12 +120,12 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 | Kernel | Config | GPU | Scope |
 |---|---|---|---|
 | ScatterMoE | `use_kernels: true` + `use_scattermoe: true` | any CUDA (Triton) | LoRA on experts (fused into grouped GEMM); **composes with EP** |
-| SonicMoE | `use_kernels: true` + `use_sonicmoe: true` | Hopper/Blackwell, CUDA 12.9+ | LoRA; NVFP4 W4A4 incl. lossless merge via [`nvfp4_merge_aware`](nvfp4_lora.qmd); **composes with EP** (bf16; NVFP4 + EP raises, use ScatterMoE) |
+| SonicMoE | `use_kernels: true` + `use_sonicmoe: true` | Hopper/Blackwell, CUDA 12.9+ | LoRA; NVFP4 W4A4 incl. lossless merge via [`nvfp4_merge_aware`](nvfp4_lora.qmd). Local EP routing handles received NVFP4 experts; end-to-end DeepEP + FSDP2 remains unqualified. |
 | DSv4 fused kernels | `use_dsv4_kernels: true` | SM90+ | DeepSeek-V4 attention/RoPE/MLP |
 | GLM-DSA kernels | `use_glm_dsa_kernels: true` | SM90+ | GLM-4.7/5.2 sparse-MLA (DSA) attention |
 | Grouped-GEMM backend | `moe_grouped_backend: auto\|marlin\|cutlass\|deepgemm` | capability-selected | fp4 grouped experts |
 
-**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`), as does SonicMoE (`deep_ep_sonicmoe`, bf16 gated experts only; neither the NVFP4 nor the non-gated path supports EP).
+**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`). SonicMoE's local route (`deep_ep_sonicmoe`) handles bf16 gated experts and received native NVFP4 expert batches, including local expert IDs and sentinel slots. This local coverage does not qualify end-to-end DeepEP dispatch/combine with FSDP2; that configuration remains pending supported-hardware validation. The non-gated SonicMoE EP path is likewise unqualified.
 
 **Non-gated (latentmoe) experts:** Nemotron-3 (`nemotron_h`) uses non-gated relu² experts (`up_proj`/`down_proj`, no gate) in `moe_latent_size` width. Both kernels support it: ScatterMoE natively, SonicMoE via a grouped-GEMM path (the fused CUTLASS epilogue lands with the next sonic-moe kernel build). NVFP4 checkpoints (modelopt `MIXED_PRECISION`) keep the routed experts packed NVFP4 and dequantize every other quantized weight to bf16 at load.
 

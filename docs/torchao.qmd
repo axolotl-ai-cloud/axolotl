@@ -26,4 +26,10 @@ pip install --pre torchao-nightly --index-url https://download.pytorch.org/whl/n
 
 ### Native NVFP4 LoRA with DDP
 
-For a serialized, frozen native TorchAO weight-only NVFP4 base with ordinary PEFT LoRA, DDP automatically verifies component layouts and synchronizes the raw NVFP4 components from rank zero before wrapping the model. LoRA adapters continue through ordinary DDP reduction; no configuration flag is required. This path is qualified for two-rank regular weight-only LoRA training, checkpoint resume, and adapter save. Dynamic activation NVFP4 training eligibility remains separately restricted, while this component synchronization also serves verified dynamic callers. Non-DDP distributed backends remain outside this path.
+For a serialized, frozen native TorchAO weight-only NVFP4 base with ordinary PEFT LoRA, DDP automatically verifies component layouts and synchronizes the raw NVFP4 components from rank zero before wrapping the model. LoRA adapters continue through ordinary DDP reduction; no configuration flag is required. This path is qualified for two-rank regular weight-only LoRA training, checkpoint resume, and adapter save. Native dynamic activation NVFP4 is separately qualified for unsharded merge-aware LoRA on SM100+ hardware, including adapter metadata and format-preserving export. That unsharded qualification does not establish dynamic DDP, FSDP, or DeepSpeed merge-aware support. Non-DDP distributed backends remain outside this path.
+
+### Native NVFP4 LoRA with Tensor Parallelism
+
+For static, serialized TorchAO `NVFP4WeightOnlyConfig` checkpoints, ordinary PEFT LoRA is prepared after adapter loading when `tensor_parallel_size` is greater than one. The qualified path is the Llama-style `q_proj`/`o_proj` colwise/rowwise layout on two TP ranks, validated with FP32 and BF16 compute. It preserves the frozen NVFP4 base forward, sums rowwise adapter deltas across the TP mesh, and reduces gradients only for replicated LoRA factors.
+
+Use biasless LoRA factors with `lora_dropout: 0`. DoRA, adapter variants, mixed-batch adapter selection, gathered colwise outputs, dynamic NVFP4 activation quantization, and TP plans outside the supported colwise/rowwise layouts are rejected.

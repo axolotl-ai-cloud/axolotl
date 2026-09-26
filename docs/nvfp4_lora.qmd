@@ -42,13 +42,63 @@ lora_target_parameters:
 
 Full config: [examples/qwen3/30b-a3b-nvfp4-lora.yaml](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml).
 
+## Native TorchAO checkpoints
+
+For native TorchAO NVFP4 dense weights, supported ordinary LoRA projections use
+merge-aware training by default. The static-weight path supports materialized
+adapter factors and the supported input/output tensor-parallel layouts. TP saves
+gather complete adapter factors before writing the PEFT checkpoint. FSDP2 static
+dense LoRA materializes the frozen base and adapter factors through their owning
+module forwards. Two-rank projection tests cover independently sharded base/A/B
+modules, including CPU shard offload, gradients, one optimizer update and merged
+quantized-weight parity. Full two-rank Trainer tests also cover normal loading,
+CPU-RAM-efficient loading, and CPU shard offload: adapter checkpoints resume with
+matching optimizer state and schedules, and format-preserving merged exports
+match the trained model's inference. CPU-offloaded gradients stay on CPU during
+clipping; adapter saves gather temporary copies without gathering the frozen base.
+
+Static native dense LoRA also supports DeepSpeed ZeRO-1/2/3. Merge-aware forwards
+are installed after DeepSpeed attaches its parameter-materialization hooks, and
+adapter checkpoints retain the original quantizer recipe. Two-rank tests cover
+forward and gradient parity, optimizer updates and quantized export; a full
+ZeRO-3 Trainer test covers fresh resume and merged-native inference. Native static
+forwards apply quantization from the first forward; the scheduled warmup below
+applies to the ModelOpt path.
+
+Native dynamic activation quantization supports dense native TorchAO merge-aware
+LoRA on SM100+ hardware, including FSDP2 and DeepSpeed ZeRO-1/2/3. Each adapted
+projection quantizes its effective weight and activation group. Every frozen
+dynamic native linear also receives an input-gradient straight-through estimator,
+including layers outside `lora_target_modules`. Its backward multiplies the output
+gradient by the dequantized base weight; it does not differentiate the activation
+quantizer. FSDP2 installs these forwards after weight loading and sharding, while
+DeepSpeed installs them after engine preparation. ZeRO-3 retains its packed-weight
+backward path.
+
+Set `nvfp4_merge_aware: false` to explicitly select ordinary LoRA. The frozen-base
+input-gradient path remains enabled, but the adapter is no longer trained against
+the quantized effective weight, so merging can lose its learned update. Unsupported
+variants or incomplete coverage emit an `NVFP4 MERGE WARNING` and do not receive a
+merged-NVFP4 parity guarantee. The multi-LoRA plugin owns routed native integration;
+its sharded combinations need separate qualification. Native dynamic TP training
+also needs separate qualification. This is separate from the ModelOpt/SonicMoE
+expert path described below.
+
+The native merge writer preserves TorchAO's quantization recipe and serialized
+weight components. Use a format-preserving merge for deployment of a merge-aware
+adapter; serving its unsnapped adapter alongside the frozen base computes a
+different model. Native adapter metadata records the TorchAO encoder and each
+adapted weight's quantization recipe. A mismatched encoder or recipe produces an
+`NVFP4 MERGE WARNING`; the merger continues using the checkpoint's recipe without
+a parity guarantee.
+
 ## Merging the adapter
 
 Merging LoRA into a 4-bit base is normally lossy: the NVFP4 grid step is 25-50% of a block's max weight, while a typical trained LoRA delta is well under 1% of the weight magnitude. Re-quantizing `base + delta` onto the base grid therefore rounds most of the delta away. `axolotl merge-lora` detects this and warns `NEAR-NO-OP expert merge` when the delta is far below the grid step.
 
 ### Merge-aware training (`nvfp4_merge_aware`)
 
-`nvfp4_merge_aware: true` solves this by making training optimize the merged model directly. The forward pass computes
+For recognized ModelOpt NVFP4 bases with SonicMoE and `adapter: lora` or `adapter: multilora`, merge-aware training is enabled automatically unless explicitly disabled. `nvfp4_merge_aware: true` makes that choice explicit and makes training optimize the merged model directly. The forward pass computes
 
 ```
 out = x @ Q(dequant(base) + scaling * (B @ A))^T
@@ -80,10 +130,10 @@ With `nvfp4_merge_aware`, the **merged checkpoint is the trained model**; the ra
 
 Constraints:
 
-- Requires `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora` (enforced at config validation). ScatterMoE is not supported.
+- The ModelOpt merge-aware path uses `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora`. An unsupported backend or an explicit `nvfp4_merge_aware: false` produces a prominent `NVFP4 MERGE WARNING` and continues with ordinary LoRA. That fallback can lose learned updates when merged into NVFP4.
 - Dense LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`) are opt-in with merge-aware training. Protected projections use their original forward so fake quantization is preserved; other projections can use optimized kernels.
-- DoRA modules are skipped with a warning.
-- Single-node only: under FSDP, ranks that load on the meta device cannot capture the base scale grid.
+- Unsupported projections warn and fall back. If any distributed rank reports a fallback, checkpoints do not carry a merge-aware guarantee; stale merge-aware metadata is removed.
+- FSDP2 reconstruction preserves weight and activation scales, including ranks loaded on the meta device. SonicMoE routes received NVFP4 expert batches through the local EP implementation, preserving local expert IDs and `-1` sentinel slots. Local routing has CPU output/gradient parity coverage; end-to-end DeepEP dispatch with FSDP2 still requires qualification on a supported NVLink setup. EP gradient clipping includes every rank-local expert and counts shared replicas once. With CPU-offloaded shards, only the scalar norm moves to CUDA for NCCL reduction; gradient shards stay on CPU. Unsupported adapter variants or sharded paths without owning-forward support warn and fall back without a merge-aware guarantee.
 - Fake quantization adds work to each protected projection. The opt-in kernel dispatch has not yet been benchmarked on a full NVFP4 training run; measure throughput and memory for your configuration.
 
 On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter's improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.
@@ -122,9 +172,15 @@ activation forward/backward kernels. This optimizes the adapter side; it does no
 replace the NVFP4 base kernel. DoRA, merged/disabled adapters, and multiple active
 PEFT adapters retain PEFT's forward. Expert kernels are unchanged.
 
-Dynamic NVFP4 activation quantization is rejected by the LoRA kernel path because
-torchao's activation conversion does not retain the base input gradient. Use
-weight-only NVFP4 bases for training with these kernels.
+The fused low-rank LoRA kernel path does not implement dynamic NVFP4 activation
+quantization. For supported dense native TorchAO LoRA projections, the native merge-aware
+forward runs the deployed quantized operation and uses a dequantized frozen-weight,
+quantized-activation straight-through surrogate for gradients. The qualified dense path
+includes unsharded runs, FSDP2, and DeepSpeed ZeRO-1/2/3 as described above; FSDP2 installs
+after sharding and DeepSpeed after engine preparation. It does not cover
+`lora_target_parameters` expert adapters, EP/DeepEP composition, or dynamic TP training;
+ordinary-LoRA fallback is available only where the underlying backward is supported.
+These dense-path results do not establish native EP support.
 
 ### Which NVFP4 loading path is supported?
 
@@ -146,5 +202,9 @@ weight-only NVFP4 bases for training with these kernels.
   adapters and is outside the native TorchAO dense LoRA path above.
 
 Externally supplied TorchAO checkpoints with dynamic NVFP4 activation quantization
-are outside these supported dense training paths. No new straight-through
-activation-gradient convention is introduced by the LoRA kernel options.
+are supported for ordinary PEFT LoRA with DeepSpeed ZeRO-3 native components.
+The forward remains TorchAO's quantized NVFP4 operation. For base-input
+backpropagation, Axolotl uses the dequantized frozen weight as a
+straight-through approximation; it is not the exact derivative through activation
+quantization. This convention applies only to the native ZeRO-3 path, not the
+LoRA kernel options.
