@@ -59,7 +59,7 @@ class KimiLinearSupport(ModelSupport):
         family=VANILLA_CAUSAL_LM,
         capabilities={
             "context_parallel": Experimental(
-                "Requires Ringmaster native FLA KDA state passing and contiguous, unpacked shards."
+                "Requires Ringmaster native FLA KDA state passing and contiguous shards."
             ),
         },
         matchers=ModelMatchers(cfg=_matches_kimi_cfg),

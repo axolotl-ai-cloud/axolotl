@@ -88,9 +88,9 @@ class ContextParallelPlugin(BasePlugin):
         from axolotl.utils.schemas.enums import RLType
 
         rl = getattr(cfg, "rl", None)
-        # GRPO/EBFT consume full-sequence logits, so the CP manager must gather the
+        # GRPO/GDPO/EBFT consume full-sequence logits, so the CP manager must gather the
         # sharded outputs back together (SFT computes loss per-shard and skips this).
-        self._gather_outputs = rl in (RLType.GRPO, RLType.EBFT)
+        self._gather_outputs = rl in (RLType.GRPO, RLType.GDPO, RLType.EBFT)
 
         rm_cfg = rm.RingmasterConfig(
             size=cp.size,
@@ -128,6 +128,19 @@ class ContextParallelPlugin(BasePlugin):
                     getattr(model_config.get_text_config(), "model_type", None)
                 )
 
+        if any(
+            getattr(model.config, "mamba_backend", None) == "fla" for model in models
+        ):
+            try:
+                from ringmaster.fla_mamba import fla_mamba_mixers
+            except ImportError as exception:
+                raise ImportError(
+                    "FLA Mamba context parallelism requires Ringmaster with FLA Mamba adapters"
+                ) from exception
+            if not any(fla_mamba_mixers(model) for model in models):
+                raise ValueError(
+                    "FLA Mamba context parallelism found no supported mixers"
+                )
         mixers, kda_mixers, mamba_mixers = recurrent_plan(models, cp.size)
         if (
             (mixers or kda_mixers)

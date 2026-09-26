@@ -119,7 +119,8 @@ def test_sharding_preserves_trainer_denominator(monkeypatch, training):
     assert ctx._local_valid is None
 
 
-def test_recurrent_wiring_visits_reference_model(monkeypatch):
+@pytest.mark.parametrize("rl", [None, "grpo", "gdpo", "ebft"])
+def test_recurrent_wiring_visits_reference_model(monkeypatch, rl):
     import ringmaster as rm
 
     from axolotl.integrations.context_parallel import (
@@ -131,7 +132,7 @@ def test_recurrent_wiring_visits_reference_model(monkeypatch):
     cfg = SimpleNamespace(
         context_parallel=ContextParallelConfig(size=2, backend="ulysses"),
         attn_implementation="sdpa",
-        rl=None,
+        rl=rl,
     )
     models = [
         SimpleNamespace(
@@ -151,7 +152,8 @@ def test_recurrent_wiring_visits_reference_model(monkeypatch):
     monkeypatch.setattr(mamba, "mamba2_mixers", lambda model: [model])
     monkeypatch.setattr(rm, "wire_recurrent_layers", wiring)
     monkeypatch.setattr(plugin, "_install_hooks", Mock())
-    monkeypatch.setattr(adapter, "configure_trainer", Mock(return_value=lambda: None))
+    configure = Mock(return_value=lambda: None)
+    monkeypatch.setattr(adapter, "configure_trainer", configure)
     monkeypatch.setattr(
         rm,
         "setup",
@@ -160,6 +162,7 @@ def test_recurrent_wiring_visits_reference_model(monkeypatch):
         ),
     )
     plugin.post_trainer_create(cfg, trainer)
+    configure.assert_called_once_with(trainer, gather_outputs=rl is not None)
     assert [call.args[0] for call in wiring.call_args_list] == models
     plugin.post_train_unload(cfg)
 

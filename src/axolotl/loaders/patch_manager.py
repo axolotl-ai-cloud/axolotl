@@ -694,6 +694,8 @@ class PatchManager:
 
     def _apply_ssm_packing_patches(self):
         """Thread packed-document boundaries into the pure-SSM Mamba family."""
+        if getattr(self.model_config, "mamba_backend", None) == "fla":
+            return
         patch_name = self._SSM_PACKING_PATCHES.get(self.cfg.model_config_type)
         if patch_name is None:
             return

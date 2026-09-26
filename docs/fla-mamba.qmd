@@ -1,0 +1,39 @@
+---
+title: FLA Mamba and Mamba2
+---
+
+Mamba checkpoints use Transformers by default. To select the FLA implementation
+explicitly, set the backend in the model configuration:
+
+```yaml
+base_model: state-spaces/mamba-130m-hf
+model_config:
+  mamba_backend: fla
+sample_packing: true
+```
+
+This path supports full fine-tuning of the `mamba` and `mamba2` model types.
+Adapter training is rejected because FLA's fused projections bypass adapter modules. It does not replace hybrid
+models' mixers or enable FLA globally. Saved checkpoints retain the backend and
+remain loadable through Axolotl's model loader.
+
+Install the `fla` extra and use Torch 2.13 or newer. The wrapper loads the
+`kernels-community/mamba-ssm` and `kernels-community/causal-conv1d` Hub kernels
+before constructing the mixers. CUDA convolution is required; leave
+`FLA_CONV_BACKEND` unset or set it to `cuda`.
+
+Packing groups documents into batches with bounded right padding. Convolution
+and recurrent state start independently for each document. Packing and Trainer
+loss normalization belong to Axolotl core. Packed inputs cannot use a generation
+cache; ordinary unsharded generation uses FLA's cache.
+
+Context parallelism additionally requires the companion Ringmaster FLA Mamba
+adapters. Older Ringmaster releases without those adapters are rejected. CP uses
+contiguous shards and exchanges convolution halos and recurrent states; packed
+document boundaries remain active across shard boundaries. Cached generation
+is unavailable while CP adapters are installed.
+
+The 32K/64K BF16 microbenchmarks used four layers, hidden size 768, and batch size
+two. They exercised dense forward and backward, excluding compilation and
+optimizer work. Differences from Transformers remained bounded but were not
+bitwise zero; the results do not establish full training equivalence.

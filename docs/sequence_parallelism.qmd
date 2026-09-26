@@ -76,3 +76,9 @@ Distributed checks are marked `slow`: two-GPU FSDP2 loss/gradient parity, four-r
 FLA recurrent-plus-attention forward/backward parity, and CPU USP mesh isolation
 and attention-gradient tests. GPU USP and additional recurrent architectures
 require further coverage.
+
+
+Pure Mamba/Mamba2 checkpoints can explicitly select the [FLA implementation](fla-mamba.qmd).
+Its packing and loss normalization live in Axolotl core; Ringmaster supplies
+packed convolution-halo and recurrent-state exchange. This requires the companion
+FLA Mamba adapters, with CUDA convolution and contiguous CP shards.
