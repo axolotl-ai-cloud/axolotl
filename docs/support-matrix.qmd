@@ -95,10 +95,10 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 |
 | Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, axolotl-ringmaster (Ulysses/Ring/USP) |
-| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2 (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
-| N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
+| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2, CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
+| N-D (HSDP, FSDP+TP+CP, FSDP+EP+CP, HSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
-Blocked combinations: **EP x TP/CP**, **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
+Blocked combinations: **EP x TP**, **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
 
 ## Performance integrations & custom kernels
 
@@ -157,7 +157,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Sample packing (multipack) | `sample_packing: true` | block-diagonal attention + position reset; needs a varlen backend; ⚪ not with RLHF or multimodal |
 | Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not `trust_remote_code` |
 | Tiled MLP | `tiled_mlp: true` | shards MLP to cut memory |
-| Ring attention | via `context_parallel_size` | long-context CP |
+| Ulysses / Ring / USP (ringmaster) | via `context_parallel_size` | long-context CP; `auto` prefers Ulysses |
 | Activation offloading | `activation_offloading:` | requires gradient checkpointing; ⚪ CUDA only (no CPU-only training) |
 
 ## Model architectures
@@ -255,7 +255,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | ✕ | ✕ | Note |
 |---|---|---|
 | DeepSpeed | FSDP | pick one |
-| EP | TP / CP | raises `NotImplementedError` |
+| EP | TP | raises `NotImplementedError` |
 | DDP | TP / CP | use FSDP2 instead |
 | QAT | any adapter, or 4/8-bit | full-model only |
 | Sample packing | any `rl:`, multimodal | RLHF & MM packing not supported |
@@ -296,7 +296,7 @@ Not in a tagged release yet:
 - **Full fine-tune of NVFP4** (fp4 base FFT, "a separate, larger effort")
 - Multimodal + sample packing
 - LoRA kernels + RLHF
-- EP + TP/CP
+- EP + TP
 - Multiple DPO loss types (RPO)
 - Sample packing across multiple streaming datasets
 

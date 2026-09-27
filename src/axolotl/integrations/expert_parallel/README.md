@@ -215,10 +215,11 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
 
 - Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.
 - `num_experts` must be divisible by `expert_parallel_size`.
-- Supported mesh axes: EP, EP × dp_shard, **EP × cp**, EP × cp × dp_shard (experts shard on `ep`,
-  the sequence on `cp`, non-expert weights on `dp_shard`). EP × **TP** is not yet supported and
-  raises `NotImplementedError`. EP × CP requires the model's attention to be context-parallel-aware
-  on the `cp` axis (e.g. GLM-5.2 DSA via the kernels plugin); stock attention uses accelerate CP.
+- Supported mesh axes: EP, EP × dp_shard, EP × cp, EP × cp × dp_shard, and each with
+  `dp_replicate` as an outer HSDP dim (experts shard on `ep`, the sequence on `cp`, dense weights
+  on every non-`ep` axis, expert slices on `dp_shard × cp`). EP × **TP** is not supported and
+  raises `NotImplementedError`. Stock attention runs CP through ringmaster (Ulysses preferred);
+  GLM-5.2 DSA via the kernels plugin brings its own `cp`-aware attention.
 - transformers' own expert/tensor parallelism (`distributed_config` with `enable_expert_parallel`,
   `tp_plan`, `tp_size` via `model_kwargs`) is rejected: the plugin shards the experts itself and
   routes tokens with its own backends, not transformers' RouterParallel plan.
