@@ -21,7 +21,7 @@ for i in 1 2 3; do
   sleep 15
 done
 
-python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
 
 # Only run two tests at a time to avoid OOM on GPU (with coverage collection)
 pytest -v --durations=10 -n2 --maxfail=3 \

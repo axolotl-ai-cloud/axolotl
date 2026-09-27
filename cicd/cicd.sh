@@ -22,7 +22,7 @@ done
 # hf download "microsoft/Phi-3.5-mini-instruct"
 # hf download "microsoft/Phi-3-medium-128k-instruct"
 
-python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
 
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 -m "not slow and not nf4_distributed" \
