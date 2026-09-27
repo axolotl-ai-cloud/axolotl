@@ -114,6 +114,43 @@ See our example configs [here](https://github.com/axolotl-ai-cloud/axolotl/tree/
 6.  HSDP + EP on 2 nodes of 4 GPUs:
     - Set `dp_replicate_size: 2`, `expert_parallel_size: 2`, `dp_shard_size: 2`.
 
+Minimal MoE configs for the two EP compositions (4 and 8 GPUs; everything else is an ordinary FSDP2 config):
+
+```yaml
+# EP x CP on 4 GPUs: experts sharded 2 ways, each sequence split across 2 GPUs
+base_model: Qwen/Qwen3-30B-A3B
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+expert_parallel_size: 2
+context_parallel_size: 2
+fsdp_version: 2
+fsdp_config:
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  cpu_ram_efficient_loading: true
+attn_implementation: flash_attention_2
+sample_packing: false
+```
+
+```yaml
+# HSDP x EP on 2 nodes x 4 GPUs: replicate across nodes, EP x FSDP inside each node
+base_model: Qwen/Qwen3-30B-A3B
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+dp_replicate_size: 2
+expert_parallel_size: 2
+dp_shard_size: 2
+fsdp_version: 2
+fsdp_config:
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  cpu_ram_efficient_loading: true
+```
+
+`expert_parallel_backend` defaults to `auto` (DeepEP when installed, else the torch all-to-all backend); LoRA on the experts works with `lora_target_parameters` in either layout. A fresh LoRA adapter is drawn per module from `seed`, so the init (and a one-step gradient check) is identical whether or not the experts are sharded.
+
 ## Support Matrix
 
 This matrix describes how different parallelism methods can be combined in Axolotl.
