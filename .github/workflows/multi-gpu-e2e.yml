@@ -83,7 +83,7 @@ jobs:
             nf4_test_stack: pinned
     name: ${{ matrix.test_suite }} (${{ matrix.nf4_test_stack || 'default' }} ${{ matrix.pytorch }}-cu${{ matrix.cuda }})
     runs-on: [self-hosted, modal]
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

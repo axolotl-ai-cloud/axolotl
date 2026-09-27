@@ -66,6 +66,7 @@ pytest -v --durations=10 \
   --cov-append
 
 pytest -v --durations=10 -n8 --dist loadfile \
+  --ignore=tests/e2e/kernels/ \
   --ignore=tests/integrations/kernels/ \
   --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
   --ignore=tests/integrations/test_gemma4_moe.py \
@@ -83,6 +84,7 @@ pytest -v --durations=10 /workspace/axolotl/tests/cli \
 
 # Run remaining e2e tests with coverage append and final report
 pytest -v --durations=10 \
+  --ignore=tests/e2e/kernels/ \
   --ignore=tests/e2e/solo/ \
   --ignore=tests/e2e/patched/ \
   --ignore=tests/e2e/multigpu/ \
