@@ -1165,8 +1165,17 @@ class ModelLoader:
         skip_move_to_device = False
 
         if self.cfg.tensor_parallel_size > 1:
-            self.model_kwargs["tp_size"] = self.cfg.tensor_parallel_size
-            self.model_kwargs["tp_plan"] = "auto"
+            from transformers.distributed import DistributedConfig
+
+            # transformers requires tp_size * fsdp_size == world_size; the data axes (dp_shard,
+            # dp_replicate, cp) all count as its "fsdp" size, and TP is still applied on our mesh's
+            # `tp` dim only.
+            world_size = int(os.environ.get("WORLD_SIZE", 1))
+            self.model_kwargs["distributed_config"] = DistributedConfig(
+                tp_size=self.cfg.tensor_parallel_size,
+                tp_plan="auto",
+                fsdp_size=max(1, world_size // self.cfg.tensor_parallel_size),
+            )
             self.model_kwargs["device_mesh"] = self.device_mesh
             if "device_map" in self.model_kwargs:
                 del self.model_kwargs["device_map"]  # not compatible with `tp_plan`
