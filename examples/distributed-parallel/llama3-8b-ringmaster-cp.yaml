@@ -1,5 +1,5 @@
 # Long-context fine-tuning with ringmaster context parallelism (Ulysses/Ring/USP).
-# Wraps HF-kernels Flash-Attention; requires torch >= 2.11. Launch on 8 GPUs:
+# Wraps HF-kernels Flash-Attention; requires torch >= 2.13. Launch on 8 GPUs:
 #   axolotl train examples/distributed-parallel/llama3-8b-ringmaster-cp.yaml
 base_model: NousResearch/Meta-Llama-3.1-8B
 

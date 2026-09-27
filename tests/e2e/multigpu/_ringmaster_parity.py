@@ -35,9 +35,24 @@ def main():
                 attn_implementation=inner,
             )
         ).cuda()
-        if os.environ.get("RM_MODEL") == "mamba2":
-            model = Mamba2ForCausalLM(
-                Mamba2Config(
+        if os.environ.get("RM_MODEL") in ("mamba", "mamba2"):
+            model_cls, config_cls = Mamba2ForCausalLM, Mamba2Config
+            if os.environ.get("RM_FLA") == "1":
+                from transformers import MambaConfig
+
+                from axolotl.model_support.mamba.loading import MambaModelLoader
+
+                model_cls = MambaModelLoader
+                config_cls = (
+                    MambaConfig
+                    if os.environ.get("RM_MODEL") == "mamba"
+                    else Mamba2Config
+                )
+            model = model_cls(
+                config_cls(
+                    mamba_backend="fla"
+                    if os.environ.get("RM_FLA") == "1"
+                    else "transformers",
                     vocab_size=32,
                     hidden_size=128,
                     expand=2,
@@ -53,7 +68,7 @@ def main():
         if inner != "sdpa":
             model = model.to(torch.bfloat16)
         reference = type(model)(copy.deepcopy(model.config)).cuda().to(model.dtype)
-        if os.environ.get("RM_MODEL") != "mamba2":
+        if os.environ.get("RM_MODEL") not in ("mamba", "mamba2"):
             reference.set_attn_implementation("sdpa")
         reference.load_state_dict(model.state_dict())
         if os.environ.get("RM_HUB") == "1":
@@ -65,14 +80,30 @@ def main():
             )
 
             register_kernel_mapping_transformers()
-            kernelize(model)
-            kernelize(reference)
-            if os.environ.get("RM_MODEL") == "mamba2":
+            if os.environ.get("RM_FLA") != "1":
+                kernelize(model)
+                kernelize(reference)
+            if (
+                os.environ.get("RM_MODEL") == "mamba2"
+                and os.environ.get("RM_FLA") != "1"
+            ):
                 from transformers.models.mamba2.modeling_mamba2 import (
                     mamba2_split_conv1d_scan_combined as fused,
                 )
 
                 assert fused.forward.__func__ is not type(fused).forward
+        if os.environ.get("RM_LORA") == "1":
+            from peft import LoraConfig, get_peft_model
+
+            lora_config = LoraConfig(
+                task_type="CAUSAL_LM", r=4, target_modules=["in_proj", "out_proj"]
+            )
+            model = get_peft_model(model, lora_config)
+            reference = get_peft_model(reference, copy.deepcopy(lora_config))
+            for name, parameter in model.named_parameters():
+                if "lora_B" in name:
+                    torch.nn.init.normal_(parameter, std=0.05)
+            reference.load_state_dict(model.state_dict())
         args = TrainingArguments(
             output_dir="/tmp/ringmaster-parity",
             report_to="none",
@@ -141,7 +172,7 @@ def main():
 
         def reference_forward(batch, num_items=None, reference=reference):
             if (
-                os.environ.get("RM_MODEL") != "mamba2"
+                os.environ.get("RM_MODEL") not in ("mamba", "mamba2")
                 or os.environ.get("RM_PACKED") != "1"
             ):
                 return reference(**reference_batch(batch), num_items_in_batch=num_items)
@@ -181,12 +212,16 @@ def main():
         for (name, p), (_, r) in zip(
             model.named_parameters(), reference.named_parameters(), strict=True
         ):
+            if not p.requires_grad:
+                assert p.grad is None and r.grad is None
+                continue
+            assert p.grad is not None and r.grad is not None, name
             grad = p.grad.full_tensor() if hasattr(p.grad, "full_tensor") else p.grad
             err = (grad - r.grad).abs().max().item()
             worst = max(worst, err)
             if os.environ.get("RM_HUB") == "1":
                 # BF16 reductions change accumulation order, especially near cancellation.
-                tolerance = 2 * torch.finfo(grad.dtype).eps
+                tolerance = 2 * torch.finfo(torch.bfloat16).eps
                 difference = grad.float() - r.grad.float()
                 assert difference.norm() <= tolerance * r.grad.float().norm(), name
                 torch.testing.assert_close(

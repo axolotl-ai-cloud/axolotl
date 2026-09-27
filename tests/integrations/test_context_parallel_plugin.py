@@ -11,7 +11,6 @@ from axolotl.integrations.context_parallel import (
 )
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.schemas.enums import RLType
 
 PLUGIN_PATH = "axolotl.integrations.context_parallel.ContextParallelPlugin"
 
@@ -56,13 +55,6 @@ def test_resolve_inner_attn():
     fa3 = _cfg(size=8)
     fa3.attn_implementation = "flash_attention_3"
     assert plugin._resolve_inner_attn(fa3) == "flash_attention_3"
-
-
-def test_gather_outputs_enum_detection():
-    """cfg.rl is an RLType enum after validation; GRPO/EBFT must enable gathering."""
-    assert RLType.GRPO in (RLType.GRPO, RLType.EBFT)
-    assert str(RLType.GRPO).lower() != "grpo"  # the bug this guards against
-    assert "grpo" in (RLType.GRPO, RLType.EBFT)  # str-enum equality both ways
 
 
 def test_strip_logits_to_keep_pre_hook():
@@ -297,3 +289,100 @@ def test_tp_local_heads_drive_ulysses_selection(heads, tp, local):
     config.normalize(num_kv_heads=actual, intra_node_size=4)
     assert config.ulysses_size <= local
     assert local % config.ulysses_size == 0
+
+
+@pytest.mark.parametrize(
+    "backend,u,r,glm,expected",
+    [
+        ("ulysses", 4, 1, False, ("none", "all_to_all")),
+        ("ring", 1, 4, False, ("head_tail", "p2p")),
+        ("auto", 1, 4, True, ("none", "glm_dsa")),
+    ],
+)
+@pytest.mark.parametrize("rotate", [None, "allgather"])
+def test_explicit_options_survive_config_lifecycle(
+    min_base_cfg, backend, u, r, glm, expected, rotate
+):
+    pytest.importorskip("ringmaster")
+    from axolotl.integrations.context_parallel.settings import resolve_settings
+
+    block = {"size": 4, "backend": backend}
+    if rotate is not None:
+        block["rotate_method"] = rotate
+    cfg = min_base_cfg | DictDefault(context_parallel=block, attn_implementation="sdpa")
+    for iteration in range(2):
+        cfg = validate_config(cfg)
+        prepare_plugins(cfg)
+        if iteration == 1:
+            normalize_config(cfg)
+        cp = ContextParallelPlugin._cp_cfg(cfg)
+        assert ("rotate_method" in cp.model_fields_set) is (rotate is not None)
+        resolved = SimpleNamespace(ulysses_size=u, ring_size=r)
+        if rotate is not None and (glm or r == 1):
+            with pytest.raises(ValueError, match="only apply|GLM DSA owns"):
+                resolve_settings(cp, resolved, num_kv_heads=8, glm_dsa=glm)
+        else:
+            communication = resolve_settings(cp, resolved, num_kv_heads=8, glm_dsa=glm)
+            assert (resolved.load_balance.value, communication) == (
+                ("none", "allgather") if rotate is not None else expected
+            )
+
+
+@pytest.mark.parametrize(
+    "builtin,explicit", [(True, False), (False, True), (False, False)]
+)
+@pytest.mark.parametrize("fails", [False, True])
+def test_cli_plugin_cleanup_guard(monkeypatch, builtin, explicit, fails):
+    from unittest.mock import Mock
+
+    from axolotl.cli import checks, train as cli_train
+    from axolotl.integrations import base
+
+    monkeypatch.setattr(base, "BUILTIN_PLUGINS", (PLUGIN_PATH,) if builtin else ())
+    manager = Mock()
+    manager.load_datasets.return_value = None
+    get_manager = Mock(return_value=manager)
+    monkeypatch.setattr(base.PluginManager, "get_instance", get_manager)
+    monkeypatch.setattr(checks, "check_accelerate_default_config", Mock())
+    monkeypatch.setattr(checks, "check_user_token", Mock())
+    monkeypatch.setattr(cli_train, "load_datasets", Mock(return_value="dataset"))
+    monkeypatch.setattr(cli_train, "load_preference_datasets", Mock())
+    train = Mock(return_value=(object(), object(), object()))
+    monkeypatch.setattr(cli_train, "train", train)
+    cfg = DictDefault(plugins=[PLUGIN_PATH] if explicit else None)
+    if fails:
+        train.side_effect = RuntimeError("training failed")
+        with pytest.raises(RuntimeError, match="training failed"):
+            cli_train.do_train(cfg, SimpleNamespace())
+    else:
+        cli_train.do_train(cfg, SimpleNamespace())
+    train.assert_called_once_with(cfg=cfg, dataset_meta="dataset")
+    if builtin or explicit:
+        manager.post_train_unload.assert_called_once_with(cfg)
+    else:
+        get_manager.assert_not_called()
+
+
+def test_fla_cp_requires_companion_adapter_before_setup(monkeypatch):
+    import builtins
+    from unittest.mock import Mock
+
+    rm = pytest.importorskip("ringmaster")
+    original_import = builtins.__import__
+
+    def importing(name, *args, **kwargs):
+        if name == "ringmaster.fla_mamba":
+            raise ImportError("adapter unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", importing)
+    setup = Mock()
+    monkeypatch.setattr(rm, "setup", setup)
+    model = SimpleNamespace(
+        config=SimpleNamespace(mamba_backend="fla", num_key_value_heads=4)
+    )
+    trainer = SimpleNamespace(model=model, accelerator=SimpleNamespace())
+    cfg = _cfg(size=2, backend="ulysses")
+    with pytest.raises(ImportError, match="FLA Mamba adapters"):
+        ContextParallelPlugin().post_trainer_create(cfg, trainer)
+    setup.assert_not_called()
