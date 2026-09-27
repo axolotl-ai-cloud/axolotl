@@ -104,10 +104,9 @@ def test_native_setup_respects_opt_out_and_backend_limits(backend, requested):
         warning.assert_not_called()
 
 
-@pytest.mark.parametrize("adapter", ["lora", "multilora"])
 @pytest.mark.parametrize("already_unsupported", [False, True])
 def test_native_setup_keeps_support_status_when_no_merge_aware_forward_is_available(
-    adapter, already_unsupported
+    already_unsupported,
 ):
     from types import SimpleNamespace
 
@@ -126,9 +125,35 @@ def test_native_setup_keeps_support_status_when_no_merge_aware_forward_is_availa
         ),
         patch("axolotl.integrations.kernels.merge_aware_setup.LOG.info") as info,
     ):
-        configure_native_merge_aware(DictDefault(adapter=adapter), model)
+        configure_native_merge_aware(DictDefault(adapter="lora"), model)
     assert model._axolotl_merge_aware_unsupported is already_unsupported
     assert "leaving merge-aware support status unchanged" in info.call_args.args[0]
+
+
+@pytest.mark.parametrize("already_unsupported", [False, True])
+def test_native_multilora_without_owner_warns_instead_of_installing(
+    already_unsupported,
+):
+    from types import SimpleNamespace
+
+    from axolotl.integrations.kernels.merge_aware_setup import (
+        configure_native_merge_aware,
+    )
+
+    model = SimpleNamespace(
+        parameters=lambda: iter([type("NVFP4Tensor", (), {})()]),
+        _axolotl_merge_aware_unsupported=already_unsupported,
+    )
+    with (
+        patch(
+            "axolotl.monkeypatch.torchao_nvfp4_merge.install_native_nvfp4_merge_aware_lora_linears"
+        ) as install,
+        patch("axolotl.integrations.kernels.merge_aware_setup.LOG.warning") as warning,
+    ):
+        configure_native_merge_aware(DictDefault(adapter="multilora"), model)
+    install.assert_not_called()
+    assert model._axolotl_merge_aware_unsupported
+    assert "multi-LoRA is not qualified" in warning.call_args.args[1]
 
 
 @pytest.mark.parametrize("requested", [True, False])

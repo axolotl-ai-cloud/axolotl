@@ -224,7 +224,7 @@ def test_ep_merge_aware_dynamic_activation_falls_back_before_native_forward(
     import axolotl.integrations.kernels.libs.scattermoe_lora.experts as expert_module
 
     weight = SimpleNamespace(act_quant_kwargs=object())
-    experts = SimpleNamespace(gate_up_proj=weight, down_proj=weight)
+    experts = SimpleNamespace(gate_up_proj=weight, down_proj=weight, act_fn=F.silu)
     monkeypatch.setattr(
         expert_module,
         "_ep_local_peft_lora",
