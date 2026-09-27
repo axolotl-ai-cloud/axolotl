@@ -2205,12 +2205,39 @@ class DistributedValidationMixin:
 
     @model_validator(mode="after")
     def check_tensor_parallel_optimizer(self):
-        if self.tensor_parallel_size > 1:
+        if (self.tensor_parallel_size or 1) > 1:
             if self.optimizer in ["paged_adamw_8bit", "adamw_8bit", "adamw_bnb_8bit"]:
                 raise ValueError(
                     "tensor_parallel_size is not supported with paged_adamw_8bit, adamw_8bit, and adamw_bnb_8bit optimizers"
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_cpu_ram_efficient_loading(self):
+        # transformers' TP load places each rank's own shard, so the rank-0-only load that
+        # cpu_ram_efficient_loading broadcasts from would leave every other rank with zeros
+        if (
+            (self.tensor_parallel_size or 1) > 1
+            and self.fsdp_config
+            and self.fsdp_config.cpu_ram_efficient_loading
+        ):
+            LOG.warning(
+                "fsdp_config.cpu_ram_efficient_loading is disabled with tensor_parallel_size > 1; "
+                "each rank loads its own tensor-parallel shard directly"
+            )
+            self.fsdp_config.cpu_ram_efficient_loading = False
+        return self
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_expert_parallel(self):
+        if (self.tensor_parallel_size or 1) > 1 and (
+            getattr(self, "expert_parallel_size", 1) or 1
+        ) > 1:
+            raise ValueError(
+                "tensor_parallel_size > 1 cannot be combined with expert_parallel_size > 1; "
+                "shard the experts with expert_parallel_size and the rest with dp_shard_size"
+            )
         return self
 
 
@@ -2358,6 +2385,7 @@ class ValidationMixin(
     PretrainingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
+    DistributedValidationMixin,
     EBFTValidationMixin,
     GRPOVllmValidationMixin,
 ):

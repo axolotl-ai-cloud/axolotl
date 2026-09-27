@@ -80,6 +80,18 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
+def check_tensor_parallel_adapter_support(native_nvfp4_prepared: bool) -> None:
+    """Adapters under TP exist only for native NVFP4 bases (``torchao_tp_lora``); on a bf16
+    base PEFT sizes the LoRA factors from the already-sharded weight, so every rank trains
+    a different shard-local adapter and the save writes one shard."""
+    if native_nvfp4_prepared:
+        return
+    raise ValueError(
+        "tensor_parallel_size > 1 with an adapter (lora/qlora) is only supported for "
+        "native NVFP4 base models; use FSDP (dp_shard_size) or context_parallel_size instead"
+    )
+
+
 def _is_native_nvfp4_quantization_config(config) -> bool:
     quant_type = getattr(config, "quant_type", None)
     if type(quant_type).__name__ == "NVFP4WeightOnlyConfig":
@@ -678,10 +690,12 @@ class ModelLoader:
                         prepare_native_nvfp4_tp_lora,
                     )
 
-                    prepare_native_nvfp4_tp_lora(
+                    prepared = prepare_native_nvfp4_tp_lora(
                         self.model,
                         merge_aware=self.cfg.get("nvfp4_merge_aware") is not False,
                     )
+                    if self.cfg.adapter:
+                        check_tensor_parallel_adapter_support(prepared)
                 elif not self.cfg.merge_lora:
                     from axolotl.integrations.kernels.merge_aware_setup import (
                         configure_native_merge_aware,
