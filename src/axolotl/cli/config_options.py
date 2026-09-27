@@ -2165,6 +2165,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Offload saved tensors to pinned CPU memory (side-stream copies with backward prefetch) instead of keeping them on GPU.",
     ),
     (
+        ("--selective-checkpointing.save-modules",),
+        "selective_checkpointing__save_modules",
+        None,
+        "Module names whose base matmul outputs are saved (module scope). Each entry matches model.named_modules() of the model before the adapter is applied: exact name, a trailing dotted suffix (e.g. 'down_proj', 'self_attn.o_proj'), or a glob when it contains *, ? or [. A PEFT-wrapped match resolves to its base_layer, so LoRA A/B matmuls are not saved. Incompatible with the fused LoRA kernels covering those modules.",
+    ),
+    (
+        ("--selective-checkpointing.save-matmul-min-k",),
+        "selective_checkpointing__save_matmul_min_k",
+        "int",
+        "Save every matmul whose contraction dim K (a linear's in_features) is >= this value. Also matches MoE expert projections (aten::_grouped_mm) and bnb 4-bit gemms. A layer's last projection (e.g. down_proj feeding only a residual add) is never replayed by recompute, so saving it costs memory for no speedup. Incompatible with the fused LoRA kernels.",
+    ),
+    (
         ("--activation-offloading",),
         None,
         None,
