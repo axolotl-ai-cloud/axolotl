@@ -139,7 +139,9 @@ class DistributedParallelMixin(Trainer):
             )
         return get_grad_norm_local_shards_(parameters)
 
-    def _save_model_native(self, output_dir: str | None = None, _internal_call: bool = False):
+    def _save_model_native(
+        self, output_dir: str | None = None, _internal_call: bool = False
+    ):
         from axolotl.monkeypatch.torchao_deepspeed import (
             native_nvfp4_zero3_peft_state_dict,
         )
@@ -208,7 +210,23 @@ class DistributedParallelMixin(Trainer):
             for _n, m in _detect_experts_modules(self.model)
         )
 
+    def _tp_size(self) -> int:
+        cfg = getattr(self, "axolotl_cfg", None)
+        return int(getattr(cfg, "tensor_parallel_size", 1) or 1)
+
     def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
+        if self._tp_size() > 1 and not self._ep_full_param_experts():
+            result = self._save_model_native(output_dir, _internal_call)
+            if not self.args.should_save:
+                # transformers gathers TP DTensors and barriers inside save_pretrained, so the
+                # non-writing ranks must call it too; under FSDP the state dict was already
+                # gathered by every rank, so they only need to join the barrier
+                self.accelerator.unwrap_model(self.model).save_pretrained(
+                    output_dir or self.args.output_dir,
+                    state_dict={} if self.is_fsdp_enabled else None,
+                    is_main_process=False,
+                )
+            return result
         if not self._ep_full_param_experts():
             return self._save_model_native(output_dir, _internal_call)
 

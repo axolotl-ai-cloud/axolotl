@@ -386,6 +386,9 @@ def save_trained_model(
                 os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
             except FileNotFoundError:
                 pass
+    elif (cfg.tensor_parallel_size or 1) > 1 and not cfg.adapter:
+        # every TP rank must join the DTensor gather inside save_pretrained; only rank 0 writes
+        model.save_pretrained(cfg.output_dir, is_main_process=cfg.local_rank == 0)
     elif cfg.local_rank == 0:
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
             trainer.model.save_pretrained(cfg.output_dir)

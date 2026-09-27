@@ -391,6 +391,21 @@ class AxolotlTrainer(
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
     @override
+    def _get_num_items_in_batch(self, batch_samples, device):
+        count = super()._get_num_items_in_batch(batch_samples, device)
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if (
+            count is None
+            or pc is None
+            or getattr(pc, "tp_size", 1) <= 1
+            or self.args.average_tokens_across_devices
+        ):
+            return count
+        # transformers divides the count by tp_size expecting a gradient all-reduce over the
+        # TP ranks; here TP ranks never reduce with each other (FSDP shards on the data axes
+        # only), so each rank must see the true token count
+        return count * pc.tp_size
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):

@@ -311,6 +311,17 @@ class ModelLoader:
             self._apply_post_lora_load_setup(skip_move_to_device)
             self.patch_manager.apply_post_model_load_patches(self.model)
             PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+            if (
+                self.cfg.tensor_parallel_size > 1
+                and self.device_mesh is not None
+                and not self.is_fsdp_enabled
+                and not self.cfg.adapter
+            ):
+                from axolotl.monkeypatch.accelerate.tp import (
+                    replicate_plain_params_for_tp,
+                )
+
+                replicate_plain_params_for_tp(self.model, self.device_mesh["tp"])
         quantizer = getattr(self.model, "hf_quantizer", None)
         if (
             self.cfg.adapter in ("lora", "qlora")
@@ -1188,6 +1199,10 @@ class ModelLoader:
             self.model_kwargs["device_mesh"] = self.device_mesh
             if "device_map" in self.model_kwargs:
                 del self.model_kwargs["device_map"]  # not compatible with `tp_plan`
+            # the TP load places shards by mesh coordinate while later index-less "cuda"
+            # allocations follow the current device, which nothing else sets before training
+            if torch.cuda.is_available():
+                torch.cuda.set_device(int(os.environ.get("LOCAL_RANK", 0)))
 
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
