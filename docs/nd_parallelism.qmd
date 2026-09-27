@@ -31,6 +31,7 @@ Also known as "horizontal model parallelism," as described in the [Megatron-LM p
 
 - How it works: For a linear layer `Y = XA`, the weight matrix `A` is split column-wise (`A = [A_1, A_2]`). The computation becomes `Y_1 = XA_1` and `Y_2 = XA_2`, which can happen in parallel on different GPUs. The final output `Y` is simply the concatenation of `Y_1` and `Y_2`. Check [this comment](https://github.com/huggingface/transformers/issues/10321#issuecomment-783543530) for more detailed info.
 - Requirement: TP involves frequent, small communications within a forward/backward pass. It requires a very fast interconnect between GPUs (e.g., NVLink) and is typically not recommended across different nodes.
+- Limits: full-parameter training, or LoRA on a native NVFP4 base (the `torchao_tp_lora` path). Adapters on a bf16 base are rejected at model load because PEFT sizes the LoRA factors from the already TP-sharded base weight, so each rank would train a different shard-local adapter. `fsdp_config.cpu_ram_efficient_loading` is turned off under TP (each rank loads its own shard directly; a rank-0-only load would leave the other ranks with zeros). Every TP rank takes part in the final `save_pretrained`, and the logged `grad_norm` is the global norm.
 
 ### Context Parallelism (CP) {#sec-cp}
 
@@ -159,17 +160,17 @@ This matrix describes how different parallelism methods can be combined in Axolo
 | --- | :---: | :---: |:---:|:---:|:---:|---|
 | **FSDP** (ZeRO-3) | 1 | >1 | 1 | 1 | 1 | ✅ Fully supported. Shards model across all GPUs. |
 | **HSDP** | >1 | >1 | 1 | 1 | 1 | ✅ Fully supported. FSDP intra-node, DDP inter-node. |
-| **FSDP + TP** | 1 | >1 | >1 | 1 | 1 | ⚠️ **2D Parallelism**. Shards the model across a `dp_shard` group, and TP-splits layers within the `tp` group. Currently fails at model load with accelerate 1.15 + transformers 5.17 (accelerate's FSDP2 TP path imports a class transformers renamed); pure TP still works. |
-| **HSDP + TP** | >1 | >1 | >1 | 1 | 1 | ⚠️ **3D Parallelism**. Same accelerate/transformers blocker as FSDP + TP. |
+| **FSDP + TP** | 1 | >1 | >1 | 1 | 1 | ✅ **2D Parallelism**. Shards the model across a `dp_shard` group, and TP-splits layers within the `tp` group. Verified on dense and MoE (grouped_mm) models against FSDP-only; full-parameter, or LoRA on native NVFP4 bases. |
+| **HSDP + TP** | >1 | >1 | >1 | 1 | 1 | ⚠️ **3D Parallelism**. Same code path as FSDP + TP; not yet verified for parity. |
 | **FSDP + CP** | 1 | >1 | 1 | >1 | 1 | ✅ **2D Parallelism**. Combines FSDP with context parallelism; gradients verified identical to plain FSDP at the same data-parallel degree (Ulysses, 8 GPUs). |
 | **HSDP + CP** | >1 | >1 | 1 | >1 | 1 | ✅ **3D Parallelism**. Verified with FSDP + CP; needs `dp_shard_size > 1`. |
-| **FSDP + TP + CP**| 1 | >1 | >1| >1| 1 | ⚠️ **3D Parallelism**. Same accelerate/transformers blocker as FSDP + TP. |
+| **FSDP + TP + CP**| 1 | >1 | >1| >1| 1 | ⚠️ **3D Parallelism**. Same code path as FSDP + TP; not yet verified for parity. |
 | **EP** | 1 | 1 | 1 | 1 | =world | ✅ Supported (MoE only). Shards experts across all ranks; dense weights FSDP-sharded across the world. |
 | **FSDP + EP** | 1 | >1 | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE). EP shards experts on the `ep` axis; FSDP shards non-experts on `dp_shard`. |
 | **EP + CP** | 1 | 1 | 1 | >1 | >1 | ✅ **2D Parallelism** (MoE, long context). Experts on `ep`, sequences on `cp`; expert slices FSDP-shard across `cp`. |
 | **FSDP + EP + CP** | 1 | >1 | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE). Expert slices shard across `dp_shard × cp`. |
 | **HSDP + EP** | >1 | >1 | 1 | 1 | >1 | ✅ **3D Parallelism** (MoE, multi-node). `dp_replicate` replicates the whole EP × FSDP layout. |
-| EP + TP | 1 | * | >1 | * | >1 | ❌ Not supported; raises `NotImplementedError`. |
+| EP + TP | 1 | * | >1 | * | >1 | ❌ Not supported; rejected at config validation. |
 | DDP + TP/CP | >1 | 1 | >1 | >1 | 1 | ❌ **Not Supported**. The `ParallelismConfig` explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (`dp_shard_size > 1`). |
 | Just TP / CP | 1 | 1 | >1 | >1 | 1 | ✅ Supported. Useful for inference or when the model fits on one GPU but context is too long. |
 
