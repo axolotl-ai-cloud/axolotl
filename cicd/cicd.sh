@@ -22,6 +22,8 @@ done
 # hf download "microsoft/Phi-3.5-mini-instruct"
 # hf download "microsoft/Phi-3-medium-128k-instruct"
 
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 -m "not slow and not nf4_distributed" \
   --ignore=tests/e2e/ \
@@ -66,6 +68,7 @@ pytest -v --durations=10 \
   --cov-append
 
 pytest -v --durations=10 -n8 --dist loadfile \
+  --ignore=tests/e2e/kernels/ \
   --ignore=tests/integrations/kernels/ \
   --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
   --ignore=tests/integrations/test_gemma4_moe.py \
@@ -83,6 +86,7 @@ pytest -v --durations=10 /workspace/axolotl/tests/cli \
 
 # Run remaining e2e tests with coverage append and final report
 pytest -v --durations=10 \
+  --ignore=tests/e2e/kernels/ \
   --ignore=tests/e2e/solo/ \
   --ignore=tests/e2e/patched/ \
   --ignore=tests/e2e/multigpu/ \

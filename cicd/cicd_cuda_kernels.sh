@@ -18,6 +18,7 @@ for i in 1 2 3; do
 done
 
 pytest -v --durations=10 \
+  /workspace/axolotl/tests/e2e/kernels/ \
   /workspace/axolotl/tests/integrations/kernels/ \
   /workspace/axolotl/tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
   /workspace/axolotl/tests/integrations/test_gemma4_moe.py \

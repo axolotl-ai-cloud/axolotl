@@ -140,6 +140,7 @@ opentelemetry = [
     "opentelemetry-exporter-prometheus",
     "prometheus-client",
 ]
+kernels-curated = ["kernels[curated]"]
 
 [dependency-groups]
 dev = [
