@@ -122,10 +122,11 @@ This matrix describes how different parallelism methods can be combined in Axolo
 | --- | :---: | :---: |:---:|:---:|:---:|---|
 | **FSDP** (ZeRO-3) | 1 | >1 | 1 | 1 | 1 | ✅ Fully supported. Shards model across all GPUs. |
 | **HSDP** | >1 | >1 | 1 | 1 | 1 | ✅ Fully supported. FSDP intra-node, DDP inter-node. |
-| **FSDP + TP** | 1 | >1 | >1 | 1 | 1 | ✅ **2D Parallelism**. Shards the model across a `dp_shard` group, and TP-splits layers within the `tp` group. |
-| **HSDP + TP** | >1 | >1 | >1 | 1 | 1 | ✅ **3D Parallelism**. A powerful but complex combination. |
-| **FSDP + CP** | 1 | >1 | 1 | >1 | 1 | ✅ **2D Parallelism**. Combines FSDP with context parallelism. |
-| **FSDP + TP + CP**| 1 | >1 | >1| >1| 1 | ✅ **3D Parallelism**. Another advanced combination. |
+| **FSDP + TP** | 1 | >1 | >1 | 1 | 1 | ⚠️ **2D Parallelism**. Shards the model across a `dp_shard` group, and TP-splits layers within the `tp` group. Currently fails at model load with accelerate 1.15 + transformers 5.17 (accelerate's FSDP2 TP path imports a class transformers renamed); pure TP still works. |
+| **HSDP + TP** | >1 | >1 | >1 | 1 | 1 | ⚠️ **3D Parallelism**. Same accelerate/transformers blocker as FSDP + TP. |
+| **FSDP + CP** | 1 | >1 | 1 | >1 | 1 | ✅ **2D Parallelism**. Combines FSDP with context parallelism; gradients verified identical to plain FSDP at the same data-parallel degree (Ulysses, 8 GPUs). |
+| **HSDP + CP** | >1 | >1 | 1 | >1 | 1 | ✅ **3D Parallelism**. Verified with FSDP + CP; needs `dp_shard_size > 1`. |
+| **FSDP + TP + CP**| 1 | >1 | >1| >1| 1 | ⚠️ **3D Parallelism**. Same accelerate/transformers blocker as FSDP + TP. |
 | **EP** | 1 | 1 | 1 | 1 | =world | ✅ Supported (MoE only). Shards experts across all ranks; dense weights FSDP-sharded across the world. |
 | **FSDP + EP** | 1 | >1 | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE). EP shards experts on the `ep` axis; FSDP shards non-experts on `dp_shard`. |
 | **EP + CP** | 1 | 1 | 1 | >1 | >1 | ✅ **2D Parallelism** (MoE, long context). Experts on `ep`, sequences on `cp`; expert slices FSDP-shard across `cp`. |
@@ -134,6 +135,10 @@ This matrix describes how different parallelism methods can be combined in Axolo
 | EP + TP | 1 | * | >1 | * | >1 | ❌ Not supported; raises `NotImplementedError`. |
 | DDP + TP/CP | >1 | 1 | >1 | >1 | 1 | ❌ **Not Supported**. The `ParallelismConfig` explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (`dp_shard_size > 1`). |
 | Just TP / CP | 1 | 1 | >1 | >1 | 1 | ✅ Supported. Useful for inference or when the model fits on one GPU but context is too long. |
+
+::: {.callout-note}
+Axolotl normalizes the loss per rank (`average_tokens_across_devices` is off), so without CP each rank's tokens are averaged separately and the ranks are then averaged. Under CP the count is the global one for the CP group, so the same batch is token-weighted slightly differently than an FSDP-only run with the same data-parallel degree. Both are valid mean losses; they only coincide when every rank holds the same number of supervised tokens.
+:::
 
 - `tp_size` refers to `tensor_parallel_size`
 - `cp_size` refers to `context_parallel_size`

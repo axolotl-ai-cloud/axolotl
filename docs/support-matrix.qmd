@@ -96,9 +96,9 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 |
 | Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, axolotl-ringmaster (Ulysses/Ring/USP) |
 | Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2, CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
-| N-D (HSDP, FSDP+TP+CP, FSDP+EP+CP, HSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
+| N-D (HSDP, FSDP+CP, HSDP+CP, FSDP+EP+CP, HSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
-Blocked combinations: **EP x TP**, **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
+Blocked combinations: **EP x TP**, **FSDP2 x TP** (accelerate 1.15 / transformers 5.17 mismatch, pure TP works), **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
 
 ## Performance integrations & custom kernels
 
