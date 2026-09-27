@@ -414,6 +414,66 @@ def test_saved_fla_config_validates_before_model_load(mapping, options):
 
 
 @pytest.mark.parametrize("family", ["mamba", "mamba2"])
+@pytest.mark.parametrize("mapping", [False, True])
+@pytest.mark.parametrize(
+    "source",
+    [
+        "qlora",
+        "load_in_4bit",
+        "load_in_8bit",
+        "gptq",
+        "model_quantization_config",
+        "checkpoint",
+        "override",
+        "loaded",
+    ],
+)
+def test_fla_rejects_quantized_weights(family, mapping, source):
+    from types import SimpleNamespace
+
+    from axolotl.model_support import get_model_support
+    from axolotl.model_support.profile import (
+        ModelHookContext,
+        ModelHookPhase,
+        run_model_support_hooks,
+    )
+    from axolotl.utils.dict import DictDefault
+
+    config = _config(family)
+    options = {"adapter": "lora"}
+    model = None
+    quantization = {"quant_method": "bitsandbytes", "load_in_4bit": True}
+    if source == "checkpoint":
+        config.quantization_config = quantization
+        options = {}
+    elif source == "override":
+        options = {"overrides_of_model_config": {"quantization_config": quantization}}
+    elif source == "loaded":
+        model = SimpleNamespace(config=config, is_quantized=True)
+    elif source == "qlora":
+        options["adapter"] = "qlora"
+    else:
+        options[source] = (
+            "Mxfp4Config" if source == "model_quantization_config" else True
+        )
+    if mapping:
+        config = config.to_dict()
+    phase = ModelHookPhase.AFTER_ADAPTER_LOAD if model else ModelHookPhase.CONFIGURE_RUN
+    context = ModelHookContext(
+        cfg=DictDefault(options), model_config=config, model=model
+    )
+    with pytest.raises(ValueError, match="FLA Mamba does not support QLoRA"):
+        run_model_support_hooks(get_model_support(family), phase, context)
+    if model:
+        model.config.mamba_backend = "transformers"
+    elif mapping:
+        config["mamba_backend"] = "transformers"
+    else:
+        config.mamba_backend = "transformers"
+    run_model_support_hooks(get_model_support(family), phase, context)
+
+
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
 @pytest.mark.parametrize("with_labels", [False, True])
 @pytest.mark.parametrize("selection", [0, 2, torch.tensor([0, 3])])
 def test_fla_logits_selection_and_output_order(

@@ -29,7 +29,11 @@ directly. This can have different performance from full fine-tuning's fused path
 Mamba2 with multiple state groups also uses the decomposed path to preserve
 Transformers' normalization across the full intermediate dimension. Previously
 saved full-FLA Mamba2 checkpoints retain their original grouped normalization.
-Other adapter targets and QLoRA are not supported by this integration.
+Other adapter targets and quantized model weights (including QLoRA and 8-bit
+LoRA) are not supported. Validation rejects quantized loading and quantization
+metadata in saved checkpoints. Use an unquantized checkpoint for this backend;
+there is no automatic QLoRA fallback to Transformers because its fused paths
+also access projection weights directly.
 
 ModelSupport registers config-selected replacements for the pure Mamba mixers.
 Transformers retains the outer model, parameter initialization, checkpoint keys,

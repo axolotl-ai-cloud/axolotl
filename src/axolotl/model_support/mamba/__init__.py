@@ -31,7 +31,34 @@ def _validate_adapters(context):
         if isinstance(config, Mapping)
         else getattr(config, "mamba_backend", overrides.get("mamba_backend"))
     )
-    if backend != "fla" or not getattr(context.cfg, "adapter", None):
+    if backend != "fla":
+        return
+    quantization = (
+        config.get("quantization_config")
+        if isinstance(config, Mapping)
+        else getattr(config, "quantization_config", None)
+    )
+    if (
+        getattr(context.cfg, "adapter", None) == "qlora"
+        or any(
+            getattr(context.cfg, name, None)
+            for name in (
+                "load_in_4bit",
+                "load_in_8bit",
+                "gptq",
+                "model_quantization_config",
+            )
+        )
+        or quantization
+        or overrides.get("quantization_config")
+        or getattr(context.model, "is_quantized", False)
+    ):
+        raise ValueError(
+            "FLA Mamba does not support QLoRA or quantized model weights. "
+            "Use an unquantized checkpoint with full fine-tuning or adapter: lora, "
+            "and disable quantized loading."
+        )
+    if not getattr(context.cfg, "adapter", None):
         return
     if context.cfg.adapter != "lora":
         raise ValueError("FLA Mamba currently supports LoRA or full fine-tuning")
