@@ -337,7 +337,10 @@ class _TorchBackend:
         return torch_dispatch.combine(local_out, handle)
 
 
-_BACKENDS = {"deep_ep": _DeepEPBackend, "torch": _TorchBackend}
+_BACKENDS: dict[str, type[_DeepEPBackend] | type[_TorchBackend]] = {
+    "deep_ep": _DeepEPBackend,
+    "torch": _TorchBackend,
+}
 
 
 def _ep_forward(

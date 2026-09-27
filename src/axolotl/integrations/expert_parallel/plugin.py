@@ -387,7 +387,7 @@ class ExpertParallelPlugin(BasePlugin):
             return "grouped_mm"
         if ei in (None, EXPERT_PARALLEL):
             return "grouped_mm"
-        return ei
+        return str(ei)
 
     @staticmethod
     def _check_local_implementation(name: str) -> None:

@@ -202,6 +202,11 @@ def all_to_all_single_async(
     Returns an ``AsyncCollectiveTensor`` so compute enqueued before that use overlaps the
     collective. Dispatches as ``_c10d_functional::all_to_all_single`` / ``wait_tensor``.
     """
+    if not x.is_floating_point():
+        # the autograd variant rejects integer tensors (expert ids)
+        return funcol.all_to_all_single(
+            x.contiguous(), output_splits, input_splits, group
+        )
     return funcol.all_to_all_single_autograd(
         x.contiguous(), output_splits, input_splits, group
     )
@@ -324,7 +329,11 @@ def _anchor_backward(local_out: torch.Tensor, handle: TorchEPHandle) -> torch.Te
     ):
         # A rank that received no rows must still join every backward all-to-all of this
         # layer (combine, recv_x, recv_w), else the peers' backward collectives hang.
-        anchors = [t.sum() for t in (handle.recv_x, handle.recv_w) if t.requires_grad]
+        anchors = [
+            t.sum()
+            for t in (handle.recv_x, handle.recv_w)
+            if t is not None and t.requires_grad
+        ]
         if anchors:
             local_out = local_out + (sum(anchors) * 0).to(local_out.dtype)
         elif not local_out.requires_grad:
@@ -443,11 +452,16 @@ def dispatch_chunked_forward(
         # Triton/CuTe kernel that is its first reader bypasses the deferred wait
         handle.recv_x = funcol.wait_tensor(handle.recv_x)
         handle.recv_w = funcol.wait_tensor(handle.recv_w)
-        recv_idx = funcol.wait_tensor(recv_idx)
+        with torch.no_grad():
+            recv_idx = funcol.wait_tensor(recv_idx)
         local_out = local_kernel(handle.recv_x, recv_idx, handle.recv_w)
         in_flight[i] = (issue_combine(local_out, handle), handle)
         if i >= 1:
-            parts[i - 1] = finalize(*in_flight[i - 1])
+            prev = in_flight[i - 1]
+            assert prev is not None
+            parts[i - 1] = finalize(*prev)
             in_flight[i - 1] = None
-    parts[-1] = finalize(*in_flight[-1])
+    last = in_flight[-1]
+    assert last is not None
+    parts[-1] = finalize(*last)
     return torch.cat(parts, dim=0)
