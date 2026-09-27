@@ -66,10 +66,9 @@ def _lora_tp_plan(model, module_name):
     from axolotl.monkeypatch.torchao_tp import _native_nvfp4_tp_plan
 
     base_model = model.get_base_model() if hasattr(model, "get_base_model") else model
-    marker = "model.layers."
-    position = module_name.find(marker)
-    layer_name = module_name[position:] if position >= 0 else module_name
-    return _native_nvfp4_tp_plan(base_model, layer_name)
+    if base_model is not model:
+        module_name = module_name.removeprefix("base_model.model.")
+    return _native_nvfp4_tp_plan(base_model, module_name)
 
 
 def _tp_lora_layout(weight, plan) -> str:

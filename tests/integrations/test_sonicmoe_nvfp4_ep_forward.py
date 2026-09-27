@@ -3,8 +3,11 @@
 
 """CPU coverage for merge-aware NVFP4 expert-parallel local forwards."""
 
+import functools
+
 import pytest
 import torch
+import torch.nn.functional as F
 
 from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
     grouped_moe_merge_aware_ep_forward,
@@ -233,6 +236,105 @@ def test_ep_merge_aware_dynamic_activation_falls_back_before_native_forward(
 
     assert output is None
     assert reason == "dynamic activation quantization"
+
+
+def test_ep_merge_aware_rejects_unknown_or_invalid_nongated_activation(monkeypatch):
+    from types import SimpleNamespace
+
+    import axolotl.integrations.kernels.libs.scattermoe_lora.experts as expert_module
+
+    monkeypatch.setattr(
+        expert_module,
+        "_ep_local_peft_lora",
+        lambda _: ((object(), object(), 1.0), None),
+    )
+    unknown = SimpleNamespace(act_fn=lambda value: value)
+    output, reason = expert_module._ep_merge_aware_forward(unknown, None, None, None)
+    assert output is None
+    assert reason == "unknown expert activation"
+
+    nongated = SimpleNamespace(act_fn=F.silu, has_gate=False)
+    output, reason = expert_module._ep_merge_aware_forward(nongated, None, None, None)
+    assert output is None
+    assert "non-gated experts support only" in reason
+
+
+def test_ep_merge_aware_validates_epilogue_and_preserves_clamped_silu(monkeypatch):
+    from types import SimpleNamespace
+
+    import axolotl.integrations.kernels.libs.scattermoe_lora.experts as expert_module
+    import axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora as nvfp4_lora
+
+    weight = SimpleNamespace(act_quant_kwargs=None)
+    lora = (object(), object(), 0.5)
+    monkeypatch.setattr(expert_module, "_ep_local_peft_lora", lambda _: (lora, None))
+    monkeypatch.setattr(expert_module, "is_nvfp4_param", lambda _: True)
+    calls = []
+    monkeypatch.setattr(
+        nvfp4_lora,
+        "grouped_moe_merge_aware_ep_forward",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or object(),
+    )
+
+    invalid = SimpleNamespace(
+        gate_up_proj=weight,
+        down_proj=weight,
+        act_fn=F.silu,
+        _apply_gate=lambda value: value,
+    )
+    output, reason = expert_module._ep_merge_aware_forward(invalid, None, None, None)
+    assert output is None
+    assert "wrong expert math" in reason
+
+    limit = 1.5
+    valid = SimpleNamespace(
+        gate_up_proj=weight,
+        down_proj=weight,
+        act_fn=F.silu,
+        limit=limit,
+        num_experts=1,
+        _apply_gate=lambda value: (
+            F.silu(value[..., : value.shape[-1] // 2].clamp(max=limit))
+            * value[..., value.shape[-1] // 2 :].clamp(min=-limit, max=limit)
+        ),
+    )
+    output, reason = expert_module._ep_merge_aware_forward(valid, None, None, None)
+    assert reason is None
+    assert output is not None
+    assert calls[-1][1]["act"] == "silu"
+    assert calls[-1][1]["limit"] == limit
+
+    geglu = SimpleNamespace(
+        gate_up_proj=weight,
+        down_proj=weight,
+        act_fn=functools.partial(F.gelu, approximate="tanh"),
+        num_experts=1,
+        _apply_gate=lambda value: (
+            F.gelu(value[..., : value.shape[-1] // 2], approximate="tanh")
+            * value[..., value.shape[-1] // 2 :]
+        ),
+    )
+    output, reason = expert_module._ep_merge_aware_forward(geglu, None, None, None)
+    assert reason is None
+    assert output is not None
+    assert calls[-1][1]["act"] == "gelu_tanh"
+    assert calls[-1][1]["limit"] is None
+
+    def relu2(value):
+        return F.relu(value).square()
+
+    nongated = SimpleNamespace(
+        up_proj=weight,
+        down_proj=weight,
+        act_fn=relu2,
+        has_gate=False,
+        num_experts=1,
+    )
+    output, reason = expert_module._ep_merge_aware_forward(nongated, None, None, None)
+    assert reason is None
+    assert output is not None
+    assert calls[-1][1]["act"] == "relu2"
+    assert calls[-1][1]["gated"] is False
 
 
 def test_ep_merge_aware_sharded_factor_access_falls_back(monkeypatch):

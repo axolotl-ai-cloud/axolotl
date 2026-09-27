@@ -288,14 +288,24 @@ def test_fsdp_recipe_receiver_never_reads_meta_weights(monkeypatch):
     assert model._axolotl_native_nvfp4_metadata == metadata
 
 
-def test_fsdp_recipe_failure_is_broadcast_without_a_guarantee(monkeypatch):
+@pytest.mark.parametrize(
+    ("error_type", "expected"),
+    [
+        (RuntimeError, "RuntimeError: unreadable recipe"),
+        (AttributeError, "AttributeError: unreadable recipe"),
+        (KeyError, "KeyError: 'unreadable recipe'"),
+    ],
+)
+def test_fsdp_recipe_failure_is_broadcast_without_a_guarantee(
+    monkeypatch, error_type, expected
+):
     model = _model()
     monkeypatch.setattr(persistence.torch.distributed, "is_initialized", lambda: True)
     monkeypatch.setattr(persistence.torch.distributed, "get_rank", lambda: 0)
     messages = []
 
     def fail_capture(*_args, **_kwargs):
-        raise RuntimeError("unreadable recipe")
+        raise error_type("unreadable recipe")
 
     def broadcast(payload, src):
         assert src == 0
@@ -306,7 +316,7 @@ def test_fsdp_recipe_failure_is_broadcast_without_a_guarantee(monkeypatch):
         persistence.torch.distributed, "broadcast_object_list", broadcast
     )
     persistence.prepare_sharded_native_metadata(model)
-    assert messages == [{"error": "unreadable recipe"}]
+    assert messages == [{"error": expected}]
     assert model._axolotl_native_nvfp4_metadata is None
     assert not model._axolotl_native_nvfp4_metadata_valid
 

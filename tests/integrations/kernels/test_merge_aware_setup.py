@@ -105,24 +105,30 @@ def test_native_setup_respects_opt_out_and_backend_limits(backend, requested):
 
 
 @pytest.mark.parametrize("adapter", ["lora", "multilora"])
-def test_native_setup_warns_when_no_merge_aware_forward_is_available(adapter):
+@pytest.mark.parametrize("already_unsupported", [False, True])
+def test_native_setup_keeps_support_status_when_no_merge_aware_forward_is_available(
+    adapter, already_unsupported
+):
     from types import SimpleNamespace
 
     from axolotl.integrations.kernels.merge_aware_setup import (
         configure_native_merge_aware,
     )
 
-    model = SimpleNamespace(parameters=lambda: iter([type("NVFP4Tensor", (), {})()]))
+    model = SimpleNamespace(
+        parameters=lambda: iter([type("NVFP4Tensor", (), {})()]),
+        _axolotl_merge_aware_unsupported=already_unsupported,
+    )
     with (
         patch(
             "axolotl.monkeypatch.torchao_nvfp4_merge.install_native_nvfp4_merge_aware_lora_linears",
             return_value=0,
         ),
-        patch("axolotl.integrations.kernels.merge_aware_setup.LOG.warning") as warning,
+        patch("axolotl.integrations.kernels.merge_aware_setup.LOG.info") as info,
     ):
         configure_native_merge_aware(DictDefault(adapter=adapter), model)
-    assert model._axolotl_merge_aware_unsupported
-    assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]
+    assert model._axolotl_merge_aware_unsupported is already_unsupported
+    assert "leaving merge-aware support status unchanged" in info.call_args.args[0]
 
 
 @pytest.mark.parametrize("requested", [True, False])
@@ -286,3 +292,26 @@ def test_native_multilora_never_installs_generic_dynamic_ste(
         getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients_requested", None)
         is None
     )
+
+
+@pytest.mark.parametrize("already_unsupported", [False, True])
+def test_fsdp_native_setup_keeps_support_status_when_no_projection_installs(
+    monkeypatch, already_unsupported
+):
+    from types import SimpleNamespace
+
+    import axolotl.monkeypatch.accelerate.fsdp2 as fsdp2
+    import axolotl.monkeypatch.torchao_nvfp4_fsdp_lora as fsdp_lora
+
+    model = SimpleNamespace(_axolotl_merge_aware_unsupported=already_unsupported)
+    monkeypatch.setattr(
+        fsdp_lora,
+        "install_fsdp_native_nvfp4_merge_aware_lora_linears",
+        lambda _: 0,
+    )
+    with patch("axolotl.monkeypatch.accelerate.fsdp2.LOG.info") as info:
+        assert (
+            fsdp2._install_requested_native_nvfp4_merge_aware_lora_linears(model) == 0
+        )
+    assert model._axolotl_merge_aware_unsupported is already_unsupported
+    assert "leaving merge-aware support status unchanged" in info.call_args.args[0]

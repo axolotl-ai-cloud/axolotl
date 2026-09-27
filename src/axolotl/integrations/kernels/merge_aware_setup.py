@@ -117,8 +117,7 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
             "Enabled native NVFP4 merge-aware training on %d projections", installed
         )
     else:
-        model._axolotl_merge_aware_unsupported = True
-        LOG.warning(
-            "NVFP4 MERGE WARNING: no supported native merge-aware LoRA projections "
-            "were installed. Continuing without a merged-NVFP4 parity guarantee."
+        LOG.info(
+            "No supported native merge-aware LoRA projections were installed; "
+            "leaving merge-aware support status unchanged."
         )

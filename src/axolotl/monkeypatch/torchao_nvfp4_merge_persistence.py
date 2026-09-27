@@ -110,8 +110,8 @@ def prepare_sharded_native_metadata(model):
                 if weights
                 else None
             }
-        except (RuntimeError, TypeError, ValueError) as error:
-            payload[0] = {"error": str(error)}
+        except Exception as error:
+            payload[0] = {"error": f"{type(error).__name__}: {error}"}
     if distributed:
         torch.distributed.broadcast_object_list(payload, src=0)
     result = payload[0]

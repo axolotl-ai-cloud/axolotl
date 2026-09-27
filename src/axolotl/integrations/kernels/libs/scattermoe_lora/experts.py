@@ -211,6 +211,30 @@ def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
     if gup is None and down is None:
         return None, None
 
+    act = _detect_act_type(self, default=None)
+    gated = getattr(self, "has_gate", True)
+    if act is None:
+        return None, "unknown expert activation"
+    if not gated:
+        if act not in ("relu2", "relu_squared"):
+            return (
+                None,
+                f"non-gated experts support only the relu² activation; got {act!r}",
+            )
+    else:
+        from ..sonicmoe.epilogue import check_epilogue
+
+        try:
+            check_epilogue(
+                self,
+                act,
+                concat=getattr(self, "is_concatenated", True),
+                limit=getattr(self, "limit", None),
+                path="merge-aware EP",
+            )
+        except ValueError as error:
+            return None, str(error)
+
     w1 = _get_base_param(getattr(self, _w1_name(self)))
     w2 = _get_base_param(self.down_proj)
     if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
@@ -239,12 +263,12 @@ def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
             lora1,
             lora2,
             self.num_experts,
-            act=_detect_act_type(self),
+            act=act,
             concat=getattr(self, "is_concatenated", True),
             scaling1=scaling1,
             scaling2=scaling2,
             limit=getattr(self, "limit", None),
-            gated=getattr(self, "has_gate", True),
+            gated=gated,
         ),
         None,
     )
@@ -382,16 +406,16 @@ def _prepare_weights_and_lora(
     )
 
 
-def _detect_act_type(module) -> str:
+def _detect_act_type(module, *, default="silu") -> str | None:
     """Detect gated-activation type from an experts module's act_fn.
 
     Returns 'gelu_tanh' for Gemma4-style GeGLU (gelu_pytorch_tanh * up),
     'silu' for DSV4-style clamped SwiGLU (silu(clamp(gate)) * clamp(up)).
-    Falls back to 'silu' for any unrecognized activation.
+    ``default`` is returned for an unrecognized activation.
     """
     act_fn = getattr(module, "act_fn", None)
     if act_fn is None:
-        return "silu"
+        return default
     fn_name = (
         getattr(act_fn, "__name__", "") or getattr(type(act_fn), "__name__", "") or ""
     )
@@ -399,6 +423,8 @@ def _detect_act_type(module) -> str:
         return "relu2"
     if "gelu" in fn_name.lower():
         return "gelu_tanh"
+    if "silu" in fn_name.lower() or "swish" in fn_name.lower():
+        return "silu"
     try:
         if isinstance(act_fn, functools.partial) and act_fn.func is F.gelu:
             return "gelu_tanh"
@@ -413,7 +439,7 @@ def _detect_act_type(module) -> str:
             return "gelu_tanh"
     except Exception:
         pass
-    return "silu"
+    return default
 
 
 def scattermoe_supports_layout(self) -> bool:

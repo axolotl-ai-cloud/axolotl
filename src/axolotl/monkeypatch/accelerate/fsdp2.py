@@ -486,6 +486,20 @@ def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool
     return not staged_nf4 or is_main_process
 
 
+def _install_requested_native_nvfp4_merge_aware_lora_linears(model) -> int:
+    from axolotl.monkeypatch.torchao_nvfp4_fsdp_lora import (
+        install_fsdp_native_nvfp4_merge_aware_lora_linears,
+    )
+
+    installed = install_fsdp_native_nvfp4_merge_aware_lora_linears(model)
+    if not installed:
+        LOG.info(
+            "No FSDP2-safe native merge-aware LoRA projections were installed; "
+            "leaving merge-aware support status unchanged."
+        )
+    return installed
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -803,16 +817,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model.tie_weights()
 
     if getattr(model, "_axolotl_native_nvfp4_merge_aware_requested", False):
-        from axolotl.monkeypatch.torchao_nvfp4_fsdp_lora import (
-            install_fsdp_native_nvfp4_merge_aware_lora_linears,
-        )
-
-        if not install_fsdp_native_nvfp4_merge_aware_lora_linears(model):
-            model._axolotl_merge_aware_unsupported = True
-            LOG.warning(
-                "NVFP4 MERGE WARNING: no FSDP2-safe native merge-aware LoRA projections "
-                "were installed; continuing without merged-NVFP4 parity guarantee."
-            )
+        _install_requested_native_nvfp4_merge_aware_lora_linears(model)
 
     if (
         getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients_requested", None)

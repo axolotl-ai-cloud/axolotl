@@ -171,21 +171,38 @@ def test_prepare_rejects_gathered_colwise_plan(monkeypatch):
         torchao_tp_lora.prepare_native_nvfp4_tp_lora(model)
 
 
-def test_tp_plan_resolver_normalizes_peft_module_prefix():
-    base_model = SimpleNamespace(tp_plan={"model.layers.*.self_attn.q_proj": "colwise"})
+@pytest.mark.parametrize(
+    ("module_name", "expected"),
+    [
+        ("base_model.model.model.layers.0.self_attn.q_proj", "colwise"),
+        ("base_model.model.language_model.layers.0.self_attn.q_proj", "colwise"),
+        ("base_model.model.transformer.h.0.attn.c_attn", "rowwise"),
+        ("base_model.model.model.layers.0.self_attn.v_proj", None),
+    ],
+)
+def test_tp_plan_resolver_normalizes_peft_module_prefix(module_name, expected):
+    base_model = SimpleNamespace(
+        tp_plan={
+            "model.layers.*.self_attn.q_proj": "colwise",
+            "language_model.layers.*.self_attn.q_proj": "colwise",
+            "transformer.h.*.attn.c_attn": "rowwise",
+        }
+    )
     model = SimpleNamespace(get_base_model=lambda: base_model)
+
+    assert torchao_tp_lora._lora_tp_plan(model, module_name) == expected
+
+
+def test_tp_plan_resolver_preserves_model_layers_in_base_model_path():
+    model = SimpleNamespace(
+        tp_plan={"base_model.model.encoder.model.layers.*.self_attn.q_proj": "colwise"}
+    )
 
     assert (
         torchao_tp_lora._lora_tp_plan(
-            model, "base_model.model.model.layers.0.self_attn.q_proj"
+            model, "base_model.model.encoder.model.layers.0.self_attn.q_proj"
         )
         == "colwise"
-    )
-    assert (
-        torchao_tp_lora._lora_tp_plan(
-            model, "base_model.model.model.layers.0.self_attn.v_proj"
-        )
-        is None
     )
 
 
