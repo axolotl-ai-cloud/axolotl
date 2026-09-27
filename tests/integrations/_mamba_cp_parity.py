@@ -8,7 +8,8 @@ import torch
 import torch.distributed as dist
 from ringmaster.mamba import mamba2_mixers, wire_mamba2
 from transformers.models.mamba2.configuration_mamba2 import Mamba2Config
-from transformers.models.mamba2.modeling_mamba2 import Mamba2Mixer
+
+from tests.monkeypatch._mamba_model import MambaModelLoader
 
 
 def main():
@@ -26,7 +27,8 @@ def main():
             num_hidden_layers=1,
             chunk_size=8,
         )
-        model = Mamba2Mixer(config, 0).float()
+        model = MambaModelLoader(config).backbone.layers[0].mixer.float()
+        original_forward = model.forward
         reference = copy.deepcopy(model)
         x = torch.randn(2, 64, 16)
         target_x = x.clone().requires_grad_()
@@ -67,7 +69,7 @@ def main():
                 param.grad, ref.grad, atol=2e-4, rtol=2e-3, msg=name
             )
         restore()
-        assert "forward" not in vars(model)
+        assert model.forward == original_forward
         print(f"PASS Mamba CP={world} rank={rank} forward/backward", flush=True)
     finally:
         dist.destroy_process_group()

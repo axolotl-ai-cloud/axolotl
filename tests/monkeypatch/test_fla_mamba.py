@@ -162,18 +162,67 @@ def test_model_support_keeps_native_default(family):
     assert type(model).__module__.startswith("transformers.models.")
 
 
+@pytest.mark.parametrize("packing", [False, True])
+def test_native_mamba2_cp_kernel_wiring(packing, monkeypatch):
+    ringmaster = pytest.importorskip("ringmaster.mamba")
+    from ringmaster.strategies.state_passing import recurrent_plan
+    from transformers.models.mamba2 import modeling_mamba2 as native
+
+    from axolotl.monkeypatch.models.mamba import modeling as packing_patches
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(native.Mamba2Mixer, "forward", native.Mamba2Mixer.forward)
+    if packing:
+        packing_patches._patch_mixer(
+            native, native.Mamba2Mixer, packing_patches._FAMILIES["mamba2"], "mamba2"
+        )
+    config = _config("mamba2")
+    del config.mamba_backend
+    model = MambaModelLoader(config)
+    mixer = model.backbone.layers[0].mixer
+    assert recurrent_plan([model], 2)[2] == [mixer]
+    ids = torch.randint(0, config.vocab_size, (1, 7))
+    expected = model(input_ids=ids).logits
+    calls = []
+    original_scan = native.mamba2_chunk_scan
+
+    def scan(*args, **kwargs):
+        calls.append(True)
+        return original_scan(*args, **kwargs)
+
+    monkeypatch.setattr(
+        ringmaster, "_bindings", lambda raw, group: {"mamba2_chunk_scan": scan}
+    )
+    original_forward = mixer.forward
+    restore = ringmaster.wire_mamba2([mixer], object())
+    try:
+        torch.testing.assert_close(model(input_ids=ids).logits, expected)
+        assert calls == [True]
+        assert native.mamba2_chunk_scan is original_scan
+    finally:
+        restore()
+    assert mixer.forward == original_forward
+    calls.clear()
+    torch.testing.assert_close(model(input_ids=ids).logits, expected)
+    assert not calls
+
+
 def test_invalid_backend_fails_before_fla_loading():
+    from axolotl.model_support.mamba.modeling import MambaMixer
+
     config = _config("mamba")
     config.mamba_backend = "invalid"
     with pytest.raises(ValueError, match="mamba_backend"):
-        MambaModelLoader(config)
+        MambaMixer(config, 0)
 
 
 def test_fla_rejects_triton_convolution(monkeypatch):
+    from axolotl.model_support.mamba.modeling import Mamba2Mixer
+
     pytest.importorskip("fla")
     monkeypatch.setenv("FLA_CONV_BACKEND", "triton")
     with pytest.raises(ValueError, match="FLA_CONV_BACKEND=cuda"):
-        MambaModelLoader(_config("mamba2"))
+        Mamba2Mixer(_config("mamba2"), 0)
 
 
 @pytest.mark.parametrize("target", ["in_proj", "out_proj", "x_proj"])
@@ -599,7 +648,6 @@ def test_native_unpatched_mixer_rejects_packed_boundaries(family, monkeypatch):
         return hidden_states
 
     monkeypatch.setattr(native, "forward", forward)
-    monkeypatch.setattr(replacement, "forward", modeling._MambaBackend.forward)
     mixer = replacement(config, 0)
     inputs = torch.randn(1, 5, config.hidden_size)
     with pytest.raises(ValueError, match="require the packing patches"):
