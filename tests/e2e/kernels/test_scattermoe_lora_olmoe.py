@@ -961,6 +961,18 @@ class TestKernelizeIntegration:
             }
         )
 
+    def test_local_repository_reuses_canonical_layer(self):
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            HFScatterMoEGatedMLP,
+        )
+
+        LocalLayerRepository, *_ = self._get_kernelize_imports()
+        repo = make_local_layer_repository(
+            LocalLayerRepository, self._get_repo_path(), "HFScatterMoEGatedMLP"
+        )
+        assert repo.load() is HFScatterMoEGatedMLP
+        assert repo.load() is HFScatterMoEGatedMLP
+
     def test_base_forward_via_kernelize(self):
         """Kernelized OlmoeSparseMoeBlock (no LoRA) matches per-expert reference."""
         (
