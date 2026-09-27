@@ -236,16 +236,18 @@ def patch_clip_grad_norm_for_ep():
 
     def patched_clip_grad_norm_(self, parameters, max_norm, norm_type=2):
         pc = getattr(self, "parallelism_config", None)
-        # Pure EP under FSDP2 also mixes meshes: dense params on the flat world mesh, trainable
-        # experts on a per-rank mesh (and plain-tensor frozen experts under LoRA).
-        if (
-            pc is not None
-            and getattr(pc, "ep_enabled", False)
-            and (
-                getattr(pc, "dp_shard_enabled", False)
-                or getattr(pc, "cp_enabled", False)
-                or getattr(self, "is_fsdp2", False)
-            )
+        # Pure EP builds no ParallelismConfig (only the env var), yet it still mixes meshes:
+        # dense params on the flat world mesh, trainable experts on a per-rank mesh whose
+        # `full_tensor()` sees one rank's experts, so the stock clip gets a per-rank norm.
+        ep_enabled = (
+            getattr(pc, "ep_enabled", False)
+            if pc is not None
+            else int(os.environ.get("PARALLELISM_CONFIG_EP_SIZE", "1") or 1) > 1
+        )
+        if ep_enabled and (
+            getattr(pc, "dp_shard_enabled", False)
+            or getattr(pc, "cp_enabled", False)
+            or getattr(self, "is_fsdp2", False)
         ):
             self.unscale_gradients()
             params = list(parameters)
