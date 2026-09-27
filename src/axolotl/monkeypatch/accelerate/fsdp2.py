@@ -320,11 +320,12 @@ def fsdp2_load_full_state_dict(
         ):
             # The routed-expert LoRA adapter lives on the expert mesh (a per-rank mesh under pure EP,
             # the dp_shard/cp subgroup under composition) and holds only THIS ep-group's E_local
-            # experts. full_sd normally carries rank-0's adapter at that same local shape (PEFT sized
-            # it from the already-sliced weight; the init is random, so rank-0's values serve every
-            # ep-group): broadcast it and shard locally. A GLOBAL (all-experts) adapter is instead
-            # broadcast whole, then cut to THIS rank's ep-experts + dp_shard slice; that ep slice is
-            # expert-aware (lora_B's experts are not contiguous in its flat r*E dim).
+            # experts. full_sd normally carries the adapter at that same local shape, drawn on every
+            # rank from the seed for ITS experts (reinit_lora_from_seed), so shard each rank's own
+            # copy: broadcasting rank 0's would hand every ep-group rank 0's experts. A GLOBAL
+            # (all-experts) adapter is instead broadcast whole, then cut to THIS rank's ep-experts
+            # + dp_shard slice; that ep slice is expert-aware (lora_B's experts are not contiguous
+            # in its flat r*E dim).
             from torch.distributed.tensor import DTensor, distribute_tensor
 
             from axolotl.integrations.expert_parallel.shard import (
@@ -341,15 +342,7 @@ def fsdp2_load_full_state_dict(
                 )
             dist.broadcast(is_local, src=0)
             if is_local.item():
-                if _accelerator.is_main_process:
-                    g = full_tensor.to(dev)
-                else:
-                    g = torch.empty(
-                        sharded_meta_param.size(),
-                        device=dev,
-                        dtype=sharded_meta_param.dtype,
-                    )
-                dist.broadcast(g, src=0)
+                g = full_sd[param_name].to(dev, dtype=sharded_meta_param.dtype)
                 sharded_param = distribute_tensor(
                     g, mesh, placements, src_data_rank=None
                 )

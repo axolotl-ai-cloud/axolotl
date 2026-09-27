@@ -1109,6 +1109,61 @@ class TestEpLoraSaveGating:
 
         return _Model()
 
+    def test_seeded_expert_lora_init_is_layout_independent(self):
+        """The EP-sharded adapter must hold exactly the rows of the global draw for its experts."""
+        import torch.nn as nn
+        from peft import LoraConfig
+        from peft.tuners.lora.layer import ParamWrapper
+
+        from axolotl.loaders.adapter import reinit_lora_from_seed
+
+        e_global, ep_size, r, hidden, inter = 8, 2, 4, 16, 12
+
+        class Experts(nn.Module):
+            def __init__(self, e):
+                super().__init__()
+                self.gate_up_proj = nn.Parameter(torch.zeros(e, hidden, 2 * inter))
+
+            def forward(self, x):
+                return x
+
+        class Holder(nn.Module):
+            def __init__(self, e):
+                super().__init__()
+                self.experts = Experts(e)
+
+        def wrap(e):
+            m = Holder(e)
+            m.experts = ParamWrapper(
+                m.experts,
+                "default",
+                parameter_name="gate_up_proj",
+                config=LoraConfig(r=r, lora_alpha=8, lora_dropout=0.0),
+                r=r,
+                lora_alpha=8,
+            )
+            return m
+
+        full = wrap(e_global)
+        reinit_lora_from_seed(full, 7)
+        a_full = full.experts.lora_A["default"].weight.detach().clone()
+        assert a_full.shape[0] == e_global * r
+        assert a_full.abs().sum() > 0
+
+        e_local = e_global // ep_size
+        for ep_rank in range(ep_size):
+            local = wrap(e_local)
+            local.experts.get_base_layer().num_experts_global = e_global
+            local.experts.get_base_layer().local_expert_offset = ep_rank * e_local
+            reinit_lora_from_seed(local, 7)
+            a_local = local.experts.lora_A["default"].weight.detach()
+            expect = a_full[ep_rank * e_local * r : (ep_rank + 1) * e_local * r]
+            assert torch.equal(a_local, expect)
+
+        other = wrap(e_global)
+        reinit_lora_from_seed(other, 8)
+        assert not torch.equal(other.experts.lora_A["default"].weight, a_full)
+
     def test_already_local_adapter_is_flagged_not_sliced(self):
         """PEFT sizes the adapter from the already EP-sliced weight (adapters load after
         post_model_build), so a local-sized adapter must only be flagged; re-slicing it as if

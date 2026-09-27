@@ -443,11 +443,8 @@ class TestFSDP2:
                 cfg["dp_shard_size"] = 1
             if adapter:
                 cfg["adapter"] = adapter
-                # clipping couples every update to the lora_A draw; a wide random lora_A
-                # projection narrows the per-tensor noise of the statistical comparison
-                cfg["max_grad_norm"] = 1e6
-                cfg["lora_r"] = 64
-                cfg["lora_alpha"] = 128
+                cfg["lora_r"] = 8
+                cfg["lora_alpha"] = 16
                 cfg["lora_dropout"] = 0.0
                 cfg["lora_target_modules"] = ["q_proj", "k_proj", "v_proj", "o_proj"]
                 cfg["lora_target_parameters"] = [
@@ -503,19 +500,24 @@ class TestFSDP2:
         assert ratios, "no parameter moved in one SGD step"
         experts = {k: r for k, r in ratios.items() if "experts" in k}
         assert experts, "no expert parameter moved"
-        # Full-param arms are bit-for-bit comparable. LoRA arms draw lora_A from an RNG stream
-        # whose consumption depends on the layout (EP sizes the expert adapter locally), so their
-        # one-step lora_B updates only agree statistically; the bugs this guards against (2x
-        # expert grad scale, adapters sharded across ep ranks, missing experts) sit at 2x, 0 or inf.
-        lo, hi = (0.6, 1.6) if adapter else (0.85, 1.15)
+        # The expert LoRA init is drawn per module from the seed over the global expert
+        # count, so the LoRA arms are as directly comparable as the full-param ones.
         for key, ratio in ratios.items():
-            assert lo < ratio < hi, (
+            assert 0.85 < ratio < 1.15, (
                 f"{key}: EP update norm is {ratio:.3f}x the FSDP update norm"
             )
-        if adapter:
-            for name, group in (("experts", experts), ("dense", ratios)):
-                med = sorted(group.values())[len(group) // 2]
-                assert 0.9 < med < 1.1, f"{name} median update-norm ratio {med:.3f}"
+        # clipping fixes the total update norm at lr * max_grad_norm, so a wrong global grad
+        # norm (a per-rank expert norm) scales every tensor and hides in the per-key band
+        total_noep = sum(
+            (noep[k].float() - init[k].float()).norm() ** 2 for k in ratios
+        ).sqrt()
+        total_ep = sum(
+            (ep[k].float() - init[k].float()).norm() ** 2 for k in ratios
+        ).sqrt()
+        total_ratio = (total_ep / total_noep).item()
+        assert 0.995 < total_ratio < 1.005, (
+            f"EP total update norm is {total_ratio:.4f}x the FSDP total update norm"
+        )
 
     @require_torch_2_7_0
     @pytest.mark.parametrize(

@@ -297,6 +297,55 @@ def _patch_peft_param_wrapper_dropout():
     ParamWrapper._axolotl_dropout_patched = True
 
 
+def reinit_lora_from_seed(model: torch.nn.Module, seed: int | None) -> int:
+    """Re-draw every fresh ``lora_A`` from a generator seeded by the module name.
+
+    PEFT draws the adapters from the process RNG in module order, so a value depends on
+    everything drawn before it: the rank, the parallel layout (expert parallelism sizes the
+    expert adapter locally, shifting the stream for every later module) and the model's
+    module order. Seeding per module makes the init a function of the seed alone. Expert
+    (``target_parameters``) adapters are drawn over the GLOBAL expert count and sliced to
+    this rank's experts. Returns the number of adapters re-initialised.
+    """
+    import hashlib
+    import math
+
+    from peft.tuners.lora.layer import LoraLayer, ParamWrapper
+
+    base_seed = int(seed) if seed is not None else 0
+    n = 0
+    for name, module in model.named_modules():
+        if not isinstance(module, LoraLayer) or not getattr(module, "lora_A", None):
+            continue
+        is_expert = isinstance(module, ParamWrapper) and module.num_experts > 1
+        if is_expert:
+            base = module.get_base_layer()
+            e_global = getattr(base, "num_experts_global", None) or module.num_experts
+            offset = getattr(base, "local_expert_offset", 0) or 0
+        for adapter_name, linear in module.lora_A.items():
+            weight = getattr(linear, "weight", None)
+            if weight is None or weight.is_meta or weight.dim() != 2:
+                continue
+            digest = hashlib.sha256(f"{name}.{adapter_name}".encode()).digest()
+            gen = torch.Generator().manual_seed(
+                (base_seed + int.from_bytes(digest[:4], "little")) % (2**63 - 1)
+            )
+            if is_expert:
+                r = module.r[adapter_name]
+                full = torch.empty(e_global * r, weight.shape[1], dtype=torch.float32)
+                torch.nn.init.kaiming_uniform_(full, a=math.sqrt(5), generator=gen)
+                local = full[offset * r : (offset + module.num_experts) * r]
+            else:
+                local = torch.empty(weight.shape, dtype=torch.float32)
+                torch.nn.init.kaiming_uniform_(local, a=math.sqrt(5), generator=gen)
+            with torch.no_grad():
+                weight.copy_(local.to(device=weight.device, dtype=weight.dtype))
+            n += 1
+    if n:
+        LOG.debug(f"Re-initialised {n} LoRA adapter(s) from seed {base_seed}.")
+    return n
+
+
 def read_saved_adapter_config(
     lora_model_dir: str | Path, from_hub: bool = False
 ) -> dict | None:

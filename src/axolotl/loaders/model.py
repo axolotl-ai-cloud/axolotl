@@ -296,6 +296,15 @@ class ModelLoader:
             lora_config = self._load_adapters()
             PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
             self._materialize_trainable_meta_params()
+            # after materialization so every rank (not just rank 0) holds its own draw
+            if (
+                lora_config is not None
+                and not self.cfg.lora_model_dir
+                and getattr(lora_config, "init_lora_weights", None) is True
+            ):
+                from axolotl.loaders.adapter import reinit_lora_from_seed
+
+                reinit_lora_from_seed(self.model, self.cfg.seed)
 
         with nf4_phase("NF4 post-adapter configuration", enabled=staged_nf4):
             # Apply remaining patches and finalize
