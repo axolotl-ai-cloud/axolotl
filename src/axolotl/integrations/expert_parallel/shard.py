@@ -53,16 +53,14 @@ def _replace_with_slice(module, attr_name: str, start: int, end: int) -> None:
     # `old` goes out of scope on return.
 
 
-def _scatter_expert_from_rank0(module, attr_name, e_local, dp_size):
+def _scatter_expert_from_rank0(module, attr_name, e_local, ep_rank_of):
     """Populate ``module.{attr_name}`` with THIS rank's real ``[e_local]`` expert slice by scattering
     GLOBAL rank-0's full expert tensor over the WORLD group. Under cpu_ram_efficient_loading only global
     rank 0 materializes real weights, so it is the single source (sourcing from an ep-subgroup's rank-0
-    would crash on the meta ranks). Each rank ``r`` receives its ep-group's slice
-    ``full[(r//dp_size)*e_local : ((r//dp_size)+1)*e_local]`` — the ``dp_size`` ranks within an ep-group
-    get the SAME ep slice (the dp axis FSDP-shards it across them later). ``dp_size == 1`` is pure EP
-    (each rank its own [e_local]); ``dp_size > 1`` is EP×dp_shard / EP×cp composition. Handles torchao
-    NVFP4Tensor (qdata/scale/per_tensor_scale) and plain tensors; runs on GPU (NCCL), result moved to
-    the param's original device."""
+    would crash on the meta ranks). Global rank ``r`` receives the slice of ep-rank ``ep_rank_of[r]``
+    — the ranks sharing an ep-rank (dp_shard / cp / dp_replicate peers) get the SAME slice, which FSDP
+    shards across them later. Handles torchao NVFP4Tensor (qdata/scale/per_tensor_scale) and plain
+    tensors; runs on GPU (NCCL), result moved to the param's original device."""
     import torch.distributed as dist
 
     old = getattr(module, attr_name)
@@ -80,7 +78,7 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, dp_size):
         chunks = None
         if is_src:
             chunks = [
-                full_comp[(r // dp_size) * e_local : (r // dp_size + 1) * e_local]
+                full_comp[ep_rank_of[r] * e_local : (ep_rank_of[r] + 1) * e_local]
                 .contiguous()
                 .to(dev)
                 for r in range(world)
@@ -183,6 +181,8 @@ def shard_expert_weights(model, ep_group) -> int:
         return 0
 
     ep_rank = dist.get_rank(ep_group)
+    ep_rank_of = [None] * dist.get_world_size()
+    dist.all_gather_object(ep_rank_of, ep_rank)
     sharded = 0
     e_local_counts: set[int] = set()
     ignore_names: list[str] = []
@@ -202,12 +202,11 @@ def shard_expert_weights(model, ep_group) -> int:
         # Scatter global rank-0's REAL experts to every rank's ep-group slice. Under
         # cpu_ram_efficient_loading only global rank 0 has data; plain-slicing (the old path) kept
         # only rank 0's own ep-group's slice and zeroed the rest, so ep-groups 1..N had dead experts.
-        # dp_size>1 (EP×dp_shard / EP×cp) gives the dp ranks within an ep-group the same ep slice; the
-        # FSDP dp-axis shards it across them afterwards. See _scatter_expert_from_rank0.
-        dp_size = dist.get_world_size() // ep_size
+        # Which slice a global rank needs depends on the mesh order (ep is not outermost under
+        # HSDP), so every rank reports its own ep-rank instead of assuming rank // dp_size.
         with torch.no_grad():
-            _scatter_expert_from_rank0(module, "gate_up_proj", E_local, dp_size)
-            _scatter_expert_from_rank0(module, "down_proj", E_local, dp_size)
+            _scatter_expert_from_rank0(module, "gate_up_proj", E_local, ep_rank_of)
+            _scatter_expert_from_rank0(module, "down_proj", E_local, ep_rank_of)
             for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
                 bias = getattr(module, bias_name, None)
                 if (
@@ -215,7 +214,7 @@ def shard_expert_weights(model, ep_group) -> int:
                     and bias.dim() >= 1
                     and bias.shape[0] == E
                 ):
-                    _scatter_expert_from_rank0(module, bias_name, E_local, dp_size)
+                    _scatter_expert_from_rank0(module, bias_name, E_local, ep_rank_of)
 
         # Stash metadata the registered fn needs.
         module.local_expert_offset = start
@@ -351,15 +350,15 @@ def shard_expert_lora(model, ep_size: int) -> int:
     """Slice PEFT ``target_parameters`` expert LoRA to each rank's local experts.
 
     PEFT sizes the LoRA for a 3D ``experts.{gate_up,down}_proj`` from the parameter's
-    own dim-0 (the *global* expert count) at adapter-application time, before EP's
-    weight slice takes effect on the parameter PEFT wrapped. Left alone, the fused
-    EP kernel (``num_experts = E_local``) and the FSDP2 parametrize merge both see a
-    full-expert LoRA against a local-expert weight -> shape mismatch. This realigns
-    the LoRA with the EP-sharded weights (same ``[offset:offset+E_local]`` slice) and
-    registers the ``1/ep_size`` expert grad-scale on the new params. Idempotent.
+    own dim-0 at adapter-application time. When the adapter was applied after the EP
+    weight slice it is already local (``E_local`` experts) and is only flagged; a
+    global-sized one (adapter applied before the slice) is cut to the same
+    ``[offset:offset+E_local]`` slice as the weights. Either way the wrapper is marked
+    ``_ep_lora_sharded`` so the save path all-gathers it back to ``E_global``, and the
+    ``1/ep_size`` expert grad-scale is registered on plain (non-FSDP) params. Idempotent.
 
     Run AFTER PEFT applies the adapter and BEFORE FSDP wraps. Returns the count of
-    LoRA params sliced.
+    LoRA params handled.
     """
     if ep_size <= 1:
         return 0
@@ -391,14 +390,16 @@ def shard_expert_lora(model, ep_size: int) -> int:
             (getattr(wrapper, "lora_B", {}), 1),
         ):
             for ad in list(adapters.keys()):
-                _slice_expert_lora_param(adapters[ad], dim, e_global, start, end)
+                r = getattr(wrapper, "r", {}).get(ad)
+                if r is None or adapters[ad].weight.shape[dim] != e_local * r:
+                    _slice_expert_lora_param(adapters[ad], dim, e_global, start, end)
                 adapters[ad].weight.register_post_accumulate_grad_hook(_scale_hook)
                 n += 1
         wrapper._ep_lora_sharded = True
 
     if n:
         LOG.info(
-            f"Sharded {n} expert-LoRA param(s) to local experts "
+            f"Aligned {n} expert-LoRA param(s) with the local experts "
             f"(ep_size={ep_size}, grad-scale=1/{ep_size})."
         )
     return n
@@ -545,10 +546,8 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
     gathered = 0
     for wname, wrapper in expert_wrappers:
-        # Only EP×dp_shard/cp composition physically slices the adapter to E_local (shard_expert_lora
-        # sets _ep_lora_sharded), so it must be EP-all-gathered back to E_global. Pure EP keeps the
-        # adapter GLOBAL (E_global, forward-sliced at runtime) — gathering it would replicate every
-        # expert ep_size times into an oversized adapter, so write the FSDP-gathered tensor as-is.
+        # shard_expert_lora flags adapters holding only this ep-group's E_local experts; those are
+        # EP-all-gathered back to E_global. An unflagged (global) adapter is written as-is.
         ep_sharded = getattr(wrapper, "_ep_lora_sharded", False)
         for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):

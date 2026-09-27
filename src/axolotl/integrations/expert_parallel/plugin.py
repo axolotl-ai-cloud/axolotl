@@ -43,6 +43,28 @@ KERNEL_IMPLEMENTATION_FLAGS = {
 NO_BACKWARD_EXPERTS_IMPLEMENTATIONS = frozenset({"deepgemm"})
 
 
+def expert_fsdp_mesh(mesh):
+    """The mesh the routed experts FSDP-shard on under EP composition, or ``None``.
+
+    Every non-``ep`` data axis (``dp_shard`` and ``cp``) is flattened into one shard
+    dim: cp ranks hold different halves of the same sequences, so their expert grads must
+    be reduced exactly like dp_shard's. ``dp_replicate`` stays a separate outer dim (HSDP).
+    """
+    names = tuple(getattr(mesh, "mesh_dim_names", None) or ())
+    if expert_shard_axis(names) is None:
+        return None
+    axes = [a for a in ("dp_shard", "cp") if a in names]
+    if len(axes) == 1:
+        shard_name = axes[0]
+    else:
+        shard_name = "ep_shard"
+        if shard_name not in (mesh._get_root_mesh().mesh_dim_names or ()):
+            mesh[tuple(axes)]._flatten(shard_name)
+    if "dp_replicate" in names:
+        return mesh[("dp_replicate", shard_name)]
+    return mesh[shard_name]
+
+
 def expert_shard_axis(mesh_dim_names) -> str | None:
     """The non-``ep`` mesh axis the routed experts FSDP-shard on under EP composition, or ``None``.
 
@@ -453,6 +475,7 @@ class ExpertParallelPlugin(BasePlugin):
         world_size = dist.get_world_size()
         ep_size = getattr(cfg, "expert_parallel_size", 1) or 1
         dp_shard_size = getattr(cfg, "dp_shard_size", None) or 1
+        dp_replicate_size = getattr(cfg, "dp_replicate_size", None) or 1
         tp_size = getattr(cfg, "tensor_parallel_size", None) or 1
         cp_size = getattr(cfg, "context_parallel_size", None) or 1
 
@@ -460,7 +483,7 @@ class ExpertParallelPlugin(BasePlugin):
             return dist.group.WORLD
 
         # Validate the world_size = product check.
-        product = ep_size * dp_shard_size * tp_size * cp_size
+        product = ep_size * dp_replicate_size * dp_shard_size * tp_size * cp_size
         if product != world_size:
             raise ValueError(
                 f"expert_parallel_size ({ep_size}) * dp_shard_size ({dp_shard_size}) "
@@ -478,7 +501,7 @@ class ExpertParallelPlugin(BasePlugin):
         # on `ep` (tokens move via all-to-all); the sequence shards on `cp` (DSA attention gathers
         # the compressed KV on that axis); non-expert weights shard on `dp_shard`. TP is still
         # unsupported in composition.
-        if dp_shard_size > 1 or cp_size > 1:
+        if dp_shard_size > 1 or cp_size > 1 or dp_replicate_size > 1:
             if tp_size > 1:
                 raise NotImplementedError(
                     "EP × TP composition not yet supported. Got "
@@ -492,7 +515,10 @@ class ExpertParallelPlugin(BasePlugin):
                 # Fallback mesh from the >1 axes (ep outermost). Orthogonality of the ep/cp/dp
                 # groups is what matters; accelerate's mesh is preferred when present so the ep
                 # group matches the one used for the experts' FSDP exclusion.
-                axes = [("ep", ep_size)]
+                axes = []
+                if dp_replicate_size > 1:
+                    axes.append(("dp_replicate", dp_replicate_size))
+                axes.append(("ep", ep_size))
                 if cp_size > 1:
                     axes.append(("cp", cp_size))
                 if dp_shard_size > 1:
@@ -536,7 +562,9 @@ class ExpertParallelPlugin(BasePlugin):
 
     @staticmethod
     def fully_shard_experts(model, dp_shard_mesh, fsdp2_kwargs):
-        """Pre-wrap each Experts module with FSDP on the `dp_shard` axis.
+        """Pre-wrap each Experts module (or the expert-LoRA ParamWrapper enclosing it) with
+        FSDP on `dp_shard_mesh`: the non-ep data axes under composition, a per-rank size-1
+        mesh under pure EP.
 
         Called from the patched `fsdp2_prepare_model` BEFORE the outer auto-wrap
         so experts become FSDPModules and the auto-wrap walker skips them.
@@ -567,19 +595,16 @@ class ExpertParallelPlugin(BasePlugin):
         # cannot do this: FSDP assigns sharded grads directly, so such hooks never fire.
         divide_factor = float(ep_size * dp_shard_mesh.size())
 
-        wrapped = []
-        for _name, module in _detect_experts_modules(model):
-            fully_shard(module, **kwargs)
-            wrapped.append(module)
-
         # `target_parameters` expert LoRA lives on the ParamWrapper chain wrapping the experts
         # module (which `_detect_experts_modules` skips). Left to the outer decoder-layer auto-wrap
         # it shards on the FULL ep×dp mesh — i.e. ACROSS the ep axis — corrupting the per-ep-rank
         # expert slice (grads averaged over ranks owning different experts; save reconstructs the
-        # wrong shape). Wrap the OUTERMOST expert ParamWrapper as its own FSDP unit on dp_shard:
-        # its forward IS the fused-LoRA fastpath, so FSDP unshards the adapter (incl. the nested
-        # inner wrapper's, which is not a separate unit) to plain tensors right before the kernel
-        # reads them — sharded on the same axis as the weights, but gathered during use.
+        # wrong shape). Wrap the OUTERMOST expert ParamWrapper as its own FSDP unit on dp_shard so
+        # FSDP unshards the adapter (incl. the nested inner wrapper's) to plain tensors right
+        # before it is read. The experts module underneath must NOT be a separate unit: PEFT
+        # registers its parametrization (baddbmm of W with the adapter) eagerly in the wrapper's
+        # forward, before the experts forward would unshard W, so a nested unit leaves W a sharded
+        # DTensor against plain adapter factors.
         all_pws = [m for _n, m in model.named_modules() if _is_param_wrapper(m)]
         inner = {getattr(pw, "base_layer", None) for pw in all_pws}
         outer_expert_pws = [
@@ -589,6 +614,14 @@ class ExpertParallelPlugin(BasePlugin):
             and _real_experts_base(pw) is not None
             and getattr(_real_experts_base(pw), "num_local_experts", None) is not None
         ]
+        lora_wrapped_experts = {_real_experts_base(pw) for pw in outer_expert_pws}
+
+        wrapped = []
+        for _name, module in _detect_experts_modules(model):
+            if module in lora_wrapped_experts:
+                continue
+            fully_shard(module, **kwargs)
+            wrapped.append(module)
         for pw in outer_expert_pws:
             fully_shard(pw, **kwargs)
             wrapped.append(pw)
@@ -597,7 +630,7 @@ class ExpertParallelPlugin(BasePlugin):
             # A non-default factor makes FSDP reduce with NCCL PREMUL_SUM, which returns zeros
             # for bf16 (measured on H100, torch 2.13); plain SUM + a separate divide is exact.
             # A size-1 group never reduces and divides once itself: forcing SUM there divides twice.
-            if dp_shard_mesh.size() > 1:
+            if dp_shard_mesh.size(-1) > 1:
                 module.set_force_sum_reduction_for_comms(True)
             module.set_gradient_divide_factor(divide_factor)
 
@@ -697,10 +730,11 @@ class ExpertParallelPlugin(BasePlugin):
         if world_size <= 1:
             return  # single-rank context; mesh shapes are meaningless
         dp_shard_size = getattr(cfg, "dp_shard_size", None) or 1
+        dp_replicate_size = getattr(cfg, "dp_replicate_size", None) or 1
         tp_size = getattr(cfg, "tensor_parallel_size", None) or 1
         cp_size = getattr(cfg, "context_parallel_size", None) or 1
 
-        product = ep_size * dp_shard_size * tp_size * cp_size
+        product = ep_size * dp_replicate_size * dp_shard_size * tp_size * cp_size
         if product != world_size:
             raise ValueError(
                 f"expert_parallel: world_size ({world_size}) must equal "

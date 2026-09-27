@@ -6,6 +6,7 @@ from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
+import torch
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
@@ -373,7 +374,8 @@ class TestFSDP2:
         check_lora_b_fully_trained(temp_dir)
 
     @require_torch_2_7_0
-    def test_fft_sft_expert_parallel_gradient_parity(self, temp_dir):
+    @pytest.mark.parametrize("adapter", [None, "lora"], ids=["fft", "lora"])
+    def test_fft_sft_expert_parallel_gradient_parity(self, temp_dir, adapter):
         """One SGD step with FSDP alone and with FSDP + pure EP must apply the same update.
 
         SGD makes the saved weight delta the (clipped) gradient itself, so a wrong expert
@@ -384,9 +386,11 @@ class TestFSDP2:
         from huggingface_hub import snapshot_download
         from safetensors.torch import load_file
 
-        def load_safetensors(directory):
+        pattern = "adapter_model*.safetensors" if adapter else "model*.safetensors"
+
+        def load_safetensors(directory, glob=pattern):
             state_dict = {}
-            for file in sorted(Path(directory).glob("*.safetensors")):
+            for file in sorted(Path(directory).glob(glob)):
                 state_dict.update(load_file(file))
             return state_dict
 
@@ -437,6 +441,22 @@ class TestFSDP2:
                 cfg["expert_parallel_size"] = 2
                 cfg["expert_parallel_backend"] = "torch"
                 cfg["dp_shard_size"] = 1
+            if adapter:
+                cfg["adapter"] = adapter
+                # clipping couples every update to the lora_A draw; a wide random lora_A
+                # projection narrows the per-tensor noise of the statistical comparison
+                cfg["max_grad_norm"] = 1e6
+                cfg["lora_r"] = 64
+                cfg["lora_alpha"] = 128
+                cfg["lora_dropout"] = 0.0
+                cfg["lora_target_modules"] = ["q_proj", "k_proj", "v_proj", "o_proj"]
+                cfg["lora_target_parameters"] = [
+                    "mlp.experts.gate_up_proj",
+                    "mlp.experts.down_proj",
+                ]
+                cfg["lora_mlp_kernel"] = False
+                cfg["lora_qkv_kernel"] = False
+                cfg["lora_o_kernel"] = False
             out_dir.mkdir(parents=True, exist_ok=True)
             with open(out_dir / "config.yaml", "w", encoding="utf-8") as fout:
                 fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
@@ -453,14 +473,19 @@ class TestFSDP2:
             )
             return load_safetensors(out_dir)
 
-        # compare in the on-disk key format the trainer saves (Mixtral's legacy layout)
-        init = load_safetensors(
-            snapshot_download(
-                "axolotl-ai-co/tiny-mixtral-30m", allow_patterns=["*.safetensors"]
-            )
-        )
         noep = run("noep", expert_parallel=False)
         ep = run("ep2", expert_parallel=True)
+        if adapter:
+            # lora_B starts at zero, so the adapter itself is the one-step update
+            init = {k: torch.zeros_like(v) for k, v in noep.items()}
+        else:
+            # compare in the on-disk key format the trainer saves (Mixtral's legacy layout)
+            init = load_safetensors(
+                snapshot_download(
+                    "axolotl-ai-co/tiny-mixtral-30m", allow_patterns=["*.safetensors"]
+                ),
+                glob="*.safetensors",
+            )
 
         assert set(ep) == set(noep), (
             "EP checkpoint keys differ from the FSDP checkpoint"
@@ -478,10 +503,19 @@ class TestFSDP2:
         assert ratios, "no parameter moved in one SGD step"
         experts = {k: r for k, r in ratios.items() if "experts" in k}
         assert experts, "no expert parameter moved"
+        # Full-param arms are bit-for-bit comparable. LoRA arms draw lora_A from an RNG stream
+        # whose consumption depends on the layout (EP sizes the expert adapter locally), so their
+        # one-step lora_B updates only agree statistically; the bugs this guards against (2x
+        # expert grad scale, adapters sharded across ep ranks, missing experts) sit at 2x, 0 or inf.
+        lo, hi = (0.6, 1.6) if adapter else (0.85, 1.15)
         for key, ratio in ratios.items():
-            assert 0.85 < ratio < 1.15, (
+            assert lo < ratio < hi, (
                 f"{key}: EP update norm is {ratio:.3f}x the FSDP update norm"
             )
+        if adapter:
+            for name, group in (("experts", experts), ("dense", ratios)):
+                med = sorted(group.values())[len(group) // 2]
+                assert 0.9 < med < 1.1, f"{name} median update-norm ratio {med:.3f}"
 
     @require_torch_2_7_0
     @pytest.mark.parametrize(

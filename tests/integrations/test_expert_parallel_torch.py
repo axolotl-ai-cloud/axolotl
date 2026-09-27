@@ -1205,7 +1205,7 @@ class TestEpClipGradNormPatchGate:
         monkeypatch.setattr(
             pc_mod,
             "_ep_aware_clip_grad_norm",
-            lambda p, m, norm_type=2.0: calls.append("ep_aware"),
+            lambda p, m, norm_type=2.0, replicate=1: calls.append("ep_aware"),
         )
         pc_mod.patch_clip_grad_norm_for_ep()
         param = torch.nn.Parameter(torch.ones(3))
@@ -1217,19 +1217,25 @@ class TestEpClipGradNormPatchGate:
 
 
 def _composed_fsdp_worker(rank, world_size, port, q):
-    """EP x dp_shard on a (2, 2) CPU mesh: expert grads must be the mean over all 4 ranks'
-    losses, exactly like a dense param, even though FSDP only reduces over the 2 dp ranks."""
+    """EP x dp_shard on a (2, 2) CPU mesh, or EP x dp_replicate x dp_shard on (2, 2, 2):
+    expert grads must be the mean over every rank's loss, exactly like a dense param, even
+    though FSDP only reduces over the dp ranks."""
     try:
         _init_gloo(rank, world_size, port)
         from torch.distributed.device_mesh import init_device_mesh
 
-        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+        from axolotl.integrations.expert_parallel.plugin import (
+            ExpertParallelPlugin,
+            expert_fsdp_mesh,
+        )
 
-        mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("ep", "dp_shard"))
+        layout = os.environ["EP_TEST_LAYOUT"].split(",")
+        mesh = init_device_mesh("cpu", (2,) * len(layout), mesh_dim_names=tuple(layout))
+        expert_mesh = expert_fsdp_mesh(mesh)
         model = _tiny_ep_experts_model(0.5)
         experts = model.model.layers[0].mlp.experts
         ExpertParallelPlugin.fully_shard_experts(
-            model, mesh["dp_shard"], {"reshard_after_forward": True}
+            model, expert_mesh, {"reshard_after_forward": True}
         )
         group = experts._get_fsdp_state()._fsdp_param_groups[0]
         x = torch.full((3, 4), float(rank + 1))
@@ -1237,15 +1243,17 @@ def _composed_fsdp_worker(rank, world_size, port, q):
         loss = experts(x).sum()
         loss.backward()
         grad = experts.gate_up_proj.grad.full_tensor()[0]
-        # ranks in this ep group: (ep_rank * 2, ep_rank * 2 + 1); expected = sum of their
-        # per-rank grads / (ep * dp) = mean over the world
-        ep_rank = rank // 2
-        expected = (
-            sum(
-                torch.full((4, 4), 3.0 * (rr + 1))
-                for rr in (2 * ep_rank, 2 * ep_rank + 1)
-            )
-            / 4.0
+        # expected = sum of the per-rank grads of every rank sharing this rank's ep
+        # coordinate / world = the mean over the world
+        ep_axis = layout.index("ep")
+        my_ep = mesh.get_coordinate()[ep_axis]
+        members = [
+            rr
+            for rr in range(world_size)
+            if (mesh.mesh == rr).nonzero()[0][ep_axis].item() == my_ep
+        ]
+        expected = sum(torch.full((4, 4), 3.0 * (rr + 1)) for rr in members) / float(
+            world_size
         )
         q.put(
             (
@@ -1266,10 +1274,16 @@ def _composed_fsdp_worker(rank, world_size, port, q):
 
 
 class TestComposedExpertShardingGradScale:
-    def test_expert_grads_are_world_mean(self):
-        res = _run_spawned(_composed_fsdp_worker, world_size=4)
-        for rank in range(4):
+    @pytest.mark.parametrize(
+        "layout",
+        ["ep,dp_shard", "ep,cp", "dp_replicate,ep,dp_shard", "ep,dp_shard,cp"],
+    )
+    def test_expert_grads_are_world_mean(self, monkeypatch, layout):
+        world_size = 2 ** len(layout.split(","))
+        monkeypatch.setenv("EP_TEST_LAYOUT", layout)
+        res = _run_spawned(_composed_fsdp_worker, world_size=world_size, timeout=300)
+        for rank in range(world_size):
             assert isinstance(res[rank], dict), res[rank]
-            assert res[rank]["divide_factor"] == 4.0
+            assert res[rank]["divide_factor"] == float(world_size)
             assert res[rank]["force_sum"] is True
             assert res[rank]["grad_ok"], res[rank]

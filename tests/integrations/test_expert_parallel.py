@@ -1109,6 +1109,25 @@ class TestEpLoraSaveGating:
 
         return _Model()
 
+    def test_already_local_adapter_is_flagged_not_sliced(self):
+        """PEFT sizes the adapter from the already EP-sliced weight (adapters load after
+        post_model_build), so a local-sized adapter must only be flagged; re-slicing it as if
+        global would halve it."""
+        from axolotl.integrations.expert_parallel.shard import shard_expert_lora
+
+        e_global, ep_size, r = 8, 2, 2
+        e_local = e_global // ep_size
+        m = self._make_wrapper_model(e_local, 1, r)
+        m.wrapper.base_layer.num_experts_global = e_global
+        m.wrapper.r = {"default": r}
+        a_before = m.wrapper.lora_A["default"].weight.detach().clone()
+        n = shard_expert_lora(m, ep_size)
+        assert n == 2
+        assert m.wrapper._ep_lora_sharded is True
+        assert m.wrapper.lora_A["default"].weight.shape[0] == e_local * r
+        assert m.wrapper.lora_B["default"].weight.shape[1] == r * e_local
+        assert torch.equal(m.wrapper.lora_A["default"].weight, a_before)
+
     def test_composition_slice_sets_flag(self):
         from axolotl.integrations.expert_parallel.shard import shard_expert_lora
 

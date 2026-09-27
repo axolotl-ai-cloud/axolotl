@@ -3,7 +3,7 @@
 Two extensions:
 - Allow pure CP standalone via `ACCELERATE_ALLOW_CP_STANDALONE`.
 - Add Expert Parallel (`ep`) as a first-class mesh axis inside the
-  data-parallel group. Mesh order is `(ep, dp_replicate, dp_shard, cp, sp, tp)`
+  data-parallel group. Mesh order is `(dp_replicate, ep, dp_shard, cp, sp, tp)`
   so the dp axes stay contiguous (required for `_flatten("dp")`).
 
 See `expert_parallel/README.md` for the full integration story.
@@ -46,10 +46,10 @@ def _patched_dp_dim_names(self):
     """DP axes (different ranks see different data). EP is included — each
     EP rank pulls its own batch."""
     dims = []
-    if self.ep_enabled:
-        dims += ["ep"]
     if self.dp_replicate_enabled:
         dims += ["dp_replicate"]
+    if self.ep_enabled:
+        dims += ["ep"]
     if self.dp_shard_enabled:
         dims += ["dp_shard"]
     return dims
@@ -84,10 +84,12 @@ def _patched_non_dp_dim_names(self):
 
 def _patched_get_mesh(self):
     """Build (dim_names, shape) for `init_device_mesh`. Order keeps the dp
-    block (ep, dp_replicate, dp_shard) contiguous so `_flatten("dp")` works.
+    block (dp_replicate, ep, dp_shard) contiguous so `_flatten("dp")` works, and
+    puts `dp_replicate` outermost so `(dp_replicate, dp_shard_cp)` slices in
+    ascending order when `dp_shard_cp` flattens `(ep, dp_shard, cp)`.
     """
     mesh_dims = {p: self._sizes[p] for p in self.active_mesh_dims}
-    mesh_order = ["ep", "dp_replicate", "dp_shard", "cp", "sp", "tp"]
+    mesh_order = ["dp_replicate", "ep", "dp_shard", "cp", "sp", "tp"]
     sorted_items = sorted(mesh_dims.items(), key=lambda x: mesh_order.index(x[0]))
     return tuple(zip(*sorted_items, strict=True))
 
