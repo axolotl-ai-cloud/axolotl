@@ -24,7 +24,7 @@ class TrainDatasetMeta:
     """Dataclass with fields for training and validation datasets and metadata."""
 
     train_dataset: Dataset
-    eval_dataset: Dataset | None = None
+    eval_dataset: Dataset | dict[str, Dataset] | None = None
     total_num_steps: int | None = None
 
 

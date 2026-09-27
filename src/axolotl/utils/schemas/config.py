@@ -382,6 +382,12 @@ class AxolotlInputConfig(
             "description": "A list of one or more datasets to eval the model with. You can use either test_datasets, or val_set_size, but not both."
         },
     )
+    eval_per_test_dataset: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "If true, evaluate each dataset in `test_datasets` separately instead of merging them, and log metrics per dataset, e.g. `eval_alpaca_0_loss`. Each name is the base name of the dataset path (plus its `name`, if set) and its index in `test_datasets`. Not supported with `rl`, `do_bench_eval`, `do_causal_lm_eval` or `eval_table_size`. With `load_best_model_at_end` or `early_stopping_patience`, set `metric_for_best_model` to one of the per-dataset metrics."
+        },
+    )
     shuffle_merged_datasets: bool | None = Field(
         default=True,
         json_schema_extra={

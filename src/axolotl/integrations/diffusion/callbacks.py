@@ -46,8 +46,14 @@ class DiffusionGenerationCallback(TrainerCallback):
             # Use eval dataloader if available, otherwise use train dataloader
             dataloader = None
             try:
-                if getattr(self.trainer, "eval_dataset", None) is not None:
-                    dataloader = self.trainer.get_eval_dataloader()
+                eval_dataset = getattr(self.trainer, "eval_dataset", None)
+                if eval_dataset is not None:
+                    # with per-test-dataset eval, sample from the first eval dataset
+                    dataloader = (
+                        self.trainer.get_eval_dataloader(next(iter(eval_dataset)))
+                        if isinstance(eval_dataset, dict)
+                        else self.trainer.get_eval_dataloader()
+                    )
             except Exception:
                 dataloader = None
             if dataloader is None:

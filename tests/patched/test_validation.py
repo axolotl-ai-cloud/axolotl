@@ -2160,3 +2160,77 @@ class TestSyntheticDatasetValidation(BaseValidation):
 
         new_cfg = validate_config(cfg)
         assert new_cfg.datasets[0]["path"] == "mhenrichsen/alpaca_2k_test"
+
+
+class TestEvalPerTestDatasetValidation(BaseValidation):
+    """
+    Tests for `eval_per_test_dataset` config validation
+    """
+
+    @staticmethod
+    def _make_cfg(minimal_cfg, **kwargs):
+        return DictDefault(
+            {
+                **minimal_cfg,
+                "test_datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                        "split": "train",
+                    }
+                ],
+                "eval_per_test_dataset": True,
+                **kwargs,
+            }
+        )
+
+    def test_valid_with_test_datasets(self, minimal_cfg):
+        new_cfg = validate_config(self._make_cfg(minimal_cfg))
+        assert new_cfg.eval_per_test_dataset is True
+
+    def test_requires_test_datasets(self, minimal_cfg):
+        cfg = self._make_cfg(minimal_cfg, test_datasets=None, val_set_size=0.1)
+        with pytest.raises(ValueError, match=r"requires `test_datasets`"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize(
+        "unsupported",
+        [
+            {"do_causal_lm_eval": True},
+            {"do_bench_eval": True},
+            {"eval_table_size": 5},
+        ],
+    )
+    def test_unsupported_eval_callbacks(self, minimal_cfg, unsupported):
+        cfg = self._make_cfg(minimal_cfg, **unsupported)
+        with pytest.raises(ValueError, match=r"not supported with \['"):
+            validate_config(cfg)
+
+    def test_unsupported_with_rl(self, minimal_cfg):
+        cfg = self._make_cfg(minimal_cfg, rl="dpo")
+        with pytest.raises(ValueError, match=r"not supported with `rl`"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize(
+        "best_model",
+        [
+            {"load_best_model_at_end": True},
+            {"load_best_model_at_end": True, "metric_for_best_model": "eval_loss"},
+            {"early_stopping_patience": 2, "save_steps": 10, "eval_steps": 5},
+        ],
+    )
+    def test_best_model_needs_per_dataset_metric(self, minimal_cfg, best_model):
+        cfg = self._make_cfg(minimal_cfg, **best_model)
+        with pytest.raises(
+            ValueError, match=r"metric_for_best_model: eval_alpaca_2k_test_0_loss"
+        ):
+            validate_config(cfg)
+
+    def test_best_model_with_per_dataset_metric(self, minimal_cfg):
+        cfg = self._make_cfg(
+            minimal_cfg,
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_alpaca_2k_test_0_loss",
+        )
+        new_cfg = validate_config(cfg)
+        assert new_cfg.metric_for_best_model == "eval_alpaca_2k_test_0_loss"

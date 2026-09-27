@@ -90,3 +90,40 @@ def test_callback_uses_correct_dataloader(monkeypatch, use_eval):
     else:
         assert trainer.requested[0] == "train"
         assert captured["dataloader"] is trainer._train_loader
+
+
+class DictEvalDummyTrainer(DummyTrainer):
+    """Trainer double with a per-test-dataset eval dict."""
+
+    def __init__(self):
+        super().__init__(use_eval=True)
+        self.eval_dataset = {"alpaca_0": object(), "gsm8k_1": object()}
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        self.requested.append(f"eval:{eval_dataset}")
+        return self._eval_loader
+
+
+def test_callback_uses_first_eval_dataset_from_dict(monkeypatch):
+    trainer = DictEvalDummyTrainer()
+    callback = DiffusionGenerationCallback(trainer)
+
+    captured = {}
+
+    def fake_generate_samples(**kwargs):
+        captured["dataloader"] = kwargs.get("dataloader")
+        return []
+
+    monkeypatch.setattr(
+        "axolotl.integrations.diffusion.callbacks.generate_samples",
+        fake_generate_samples,
+    )
+
+    callback.on_step_end(
+        args=SimpleNamespace(),
+        state=SimpleNamespace(global_step=1),
+        control=SimpleNamespace(),
+    )
+
+    assert trainer.requested == ["eval:alpaca_0"]
+    assert captured["dataloader"] is trainer._eval_loader

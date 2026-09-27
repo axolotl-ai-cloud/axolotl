@@ -146,6 +146,38 @@ class TestHFCausalTrainerBuilder:
         optim = trainer.create_optimizer()
         assert isinstance(optim, Muon)
 
+    def test_per_test_dataset_eval(self, sft_cfg, model, tokenizer):
+        def _lm_dataset(num_rows, offset):
+            rows = [
+                [offset + i, offset + i + 1, offset + i + 2] for i in range(num_rows)
+            ]
+            return Dataset.from_dict(
+                {
+                    "input_ids": rows,
+                    "attention_mask": [[1] * 3] * num_rows,
+                    "labels": rows,
+                }
+            )
+
+        eval_datasets = {
+            "alpaca_0": _lm_dataset(4, 100),
+            "gsm8k_1": _lm_dataset(2, 200),
+        }
+        builder = HFCausalTrainerBuilder(sft_cfg, model, tokenizer)
+        builder.train_dataset = _lm_dataset(4, 300)
+        builder.eval_dataset = eval_datasets
+
+        trainer = builder.build(100)
+
+        assert trainer.eval_dataset is eval_datasets
+        assert trainer.args.eval_strategy == "steps"
+
+        metrics = trainer.evaluate()
+        for name in eval_datasets:
+            assert f"eval_{name}_loss" in metrics
+            assert f"eval_{name}_ppl" in metrics
+        assert "eval_loss" not in metrics
+
     def test_polora_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
         cfg["optimizer"] = "polora"
