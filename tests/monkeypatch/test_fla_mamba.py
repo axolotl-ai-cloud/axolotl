@@ -579,3 +579,80 @@ def test_legacy_fla_mamba2_norm_survives_native_checkpoint_roundtrip(
     assert restored_config.fla_mamba_legacy_norm
     restored = MambaModelLoader.from_pretrained(tmp_path, config=restored_config)
     torch.testing.assert_close(restored(input_ids=ids).logits, before)
+
+
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+def test_native_unpatched_mixer_rejects_packed_boundaries(family, monkeypatch):
+    from axolotl.model_support.mamba import modeling
+    from axolotl.monkeypatch.models.mamba.modeling import PackedSegments
+
+    config = _config(family)
+    config.mamba_backend = "transformers"
+    native = (
+        modeling.NativeMambaMixer if family == "mamba" else modeling.NativeMamba2Mixer
+    )
+    replacement = modeling.MambaMixer if family == "mamba" else modeling.Mamba2Mixer
+    calls = []
+
+    def forward(self, hidden_states, **kwargs):
+        calls.append(kwargs)
+        return hidden_states
+
+    monkeypatch.setattr(native, "forward", forward)
+    monkeypatch.setattr(replacement, "forward", modeling._MambaBackend.forward)
+    mixer = replacement(config, 0)
+    inputs = torch.randn(1, 5, config.hidden_size)
+    with pytest.raises(ValueError, match="require the packing patches"):
+        mixer(inputs, segments=PackedSegments(torch.tensor([[0, 0, 1, 1, 1]])))
+    assert not calls
+    mixer(inputs, segments=PackedSegments(torch.zeros(1, 5, dtype=torch.int32)))
+    assert "segments" not in calls[-1]
+
+
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+def test_fla_offloaded_child_weights_are_loaded_for_raw_access(family, monkeypatch):
+    pytest.importorskip("fla")
+    from accelerate import cpu_offload
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    model = MambaModelLoader(_config(family))
+    mixer = model.backbone.layers[0].mixer
+    names = (
+        ("conv1d", "x_proj", "dt_proj", "out_proj")
+        if family == "mamba"
+        else ("conv1d", "norm", "out_proj")
+    )
+    expected = sum(getattr(mixer, name).weight.detach().sum() for name in names)
+
+    def raw_weights(hidden_states, **kwargs):
+        weights = [getattr(mixer, name).weight for name in names]
+        assert all(weight.device.type == "cpu" for weight in weights)
+        return hidden_states + sum(weight.sum() for weight in weights), None, None
+
+    monkeypatch.setattr(mixer.fla_mixer, "forward", raw_weights)
+    cpu_offload(mixer, execution_device=torch.device("cpu"))
+    inputs = torch.zeros(1, 5, model.config.hidden_size)
+    with torch.no_grad():
+        for _ in range(2):
+            assert all(getattr(mixer, name).weight.is_meta for name in names)
+            torch.testing.assert_close(mixer(inputs), inputs + expected)
+            assert all(getattr(mixer, name).weight.is_meta for name in names)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="FLA kernels require CUDA")
+@pytest.mark.parametrize("family", ["mamba", "mamba2"])
+def test_fla_cpu_offload_cuda_parity(family):
+    pytest.importorskip("fla")
+    from accelerate import cpu_offload
+
+    model = MambaModelLoader(_config(family)).cuda().to(torch.bfloat16).eval()
+    ids = torch.randint(0, model.config.vocab_size, (1, 17), device="cuda")
+    with torch.no_grad():
+        expected = model(input_ids=ids).logits
+        cpu_offload(
+            model.cpu(),
+            execution_device=torch.device("cuda", torch.cuda.current_device()),
+        )
+        for _ in range(2):
+            torch.testing.assert_close(model(input_ids=ids).logits, expected)

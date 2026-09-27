@@ -47,6 +47,10 @@ loss normalization belong to Axolotl core. Packed inputs cannot use a generation
 cache; ordinary unsharded generation uses Transformers' `cache_params` interface with
 single-token cached decoding.
 
+Packed training requires serial forward/backward calls on each model instance.
+Overlapping or interleaved calls can overwrite the document boundaries retained
+for gradient checkpointing.
+
 Context parallelism requires Ringmaster 0.2.2 or newer for its FLA Mamba
 adapters. Older releases without those adapters are rejected. CP uses
 contiguous shards and exchanges convolution halos and recurrent states; packed
