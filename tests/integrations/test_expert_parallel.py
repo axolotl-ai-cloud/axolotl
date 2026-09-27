@@ -1411,8 +1411,13 @@ class TestTorchBackendCheckpointHooks:
 
         assert self._policy(torch.ops.aten.topk.default) == CheckpointPolicy.MUST_SAVE
         assert (
-            self._policy(torch.ops.aten._to_copy.default, device=torch.device("cpu"))
+            self._policy(torch.ops.axolotl.ep_to_host.default)
             == CheckpointPolicy.MUST_SAVE
+        )
+        # a shared `_to_copy` key would replay FSDP's forward-only casts into its slot
+        assert (
+            self._policy(torch.ops.aten._to_copy.default, device=torch.device("cpu"))
+            is None
         )
         assert self._policy(torch.ops.aten.mm.default) is None
         expected = CheckpointPolicy.PREFER_SAVE if save_dispatch else None

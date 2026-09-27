@@ -73,11 +73,20 @@ def _a2a_equal_impl(x: torch.Tensor, group_name: str) -> torch.Tensor:
     return out
 
 
+def _to_host_impl(x: torch.Tensor) -> torch.Tensor:
+    return x.to("cpu", copy=True)
+
+
 _a2a_op = register_kernel_op("ep_all_to_all_single")(_a2a_impl)
 _a2a_equal_op = register_kernel_op("ep_all_to_all_single_equal")(_a2a_equal_impl)
+# SAC replays saves by (op, position); an ``aten::_to_copy`` key is shared with FSDP's
+# mixed-precision casts, which only appear in the forward, so the host copy is its own op
+_to_host_op = register_kernel_op("ep_to_host")(_to_host_impl)
 
 OPS_REGISTERED = not (
-    isinstance(_a2a_op, _UnregisteredOp) or isinstance(_a2a_equal_op, _UnregisteredOp)
+    isinstance(_a2a_op, _UnregisteredOp)
+    or isinstance(_a2a_equal_op, _UnregisteredOp)
+    or isinstance(_to_host_op, _UnregisteredOp)
 )
 
 
@@ -90,6 +99,10 @@ if OPS_REGISTERED:
     @_a2a_equal_op.register_fake
     def _a2a_equal_fake(x, group_name):
         return x.new_empty(x.shape)
+
+    @_to_host_op.register_fake
+    def _to_host_fake(x):
+        return x.new_empty(x.shape, device="cpu")
 
     def _a2a_setup_context(ctx, inputs, output):
         _, output_splits, input_splits, group_name = inputs
@@ -169,6 +182,13 @@ def all_to_all_single_equal(x: torch.Tensor, group: dist.ProcessGroup) -> torch.
     if OPS_REGISTERED:
         return _a2a_equal_op(x, group.group_name)
     return _A2AEqualFallback.apply(x, group.group_name)
+
+
+def to_host(x: torch.Tensor) -> torch.Tensor:
+    """Device->host copy of the split counts, dispatched as ``axolotl::ep_to_host``."""
+    if OPS_REGISTERED:
+        return _to_host_op(x)
+    return x.to("cpu", copy=True)
 
 
 def all_to_all_single_async(
@@ -271,7 +291,7 @@ def dispatch(
             topk_idx, num_ranks, num_local_experts
         )
         recv_counts = all_to_all_single_equal(send_counts, group)
-        splits = torch.stack((send_counts, recv_counts)).cpu()
+        splits = to_host(torch.stack((send_counts, recv_counts)))
     send_splits, recv_splits = splits[0], splits[1]
 
     send_token_idx, _send_rank, send_idx, send_w = build_send_layout(
@@ -368,7 +388,7 @@ def dispatch_chunked_forward(
         send_counts = torch.stack([is_in_rank[s:e].sum(dim=0) for s, e in bounds])
         # the equal all-to-all splits dim 0 by destination rank, so exchange [P, C]
         recv_counts = all_to_all_single_equal(send_counts.t().contiguous(), group).t()
-        splits = torch.stack((send_counts, recv_counts)).cpu()
+        splits = to_host(torch.stack((send_counts, recv_counts)))
 
     def issue_dispatch(i):
         s, e = bounds[i]

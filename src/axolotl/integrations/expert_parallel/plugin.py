@@ -302,7 +302,7 @@ class ExpertParallelPlugin(BasePlugin):
             register_preferred_save,
         )
 
-        register_mandatory_save(ops={"aten::topk"}, cpu_copies=True)
+        register_mandatory_save(ops={"aten::topk", "axolotl::ep_to_host"})
         if getattr(cfg, "expert_parallel_save_dispatch", False):
             register_preferred_save(
                 ops={

@@ -33,6 +33,16 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+# FSDP2 opens extra profiler ranges when a nested unit is first entered during recompute
+# (it becomes that pass's forward root), so these ops can never match the forward's count
+SAC_IGNORED_OPS.update(
+    {
+        torch.ops.profiler._record_function_enter_new.default,
+        torch.ops.profiler._record_function_exit.default,
+        torch.ops.profiler._record_function_exit._RecordFunction,
+    }
+)
+
 ATTENTION_GROUP = "attention"
 
 # PyTorch releases before 2.14 reject this keyword.

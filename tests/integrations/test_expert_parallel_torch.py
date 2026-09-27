@@ -778,6 +778,7 @@ def _sac_checks(rank, world_size):
 
     watched = {
         "aten::topk",
+        "axolotl::ep_to_host",
         "axolotl::ep_all_to_all_single",
         "axolotl::ep_all_to_all_single_equal",
     }
@@ -841,10 +842,11 @@ class TestTorchEPSelectiveCheckpointing:
             unsaved = res["save_dispatch=False"]
             for label, r in res.items():
                 assert r["grad_diff"] <= 1e-6, (rank, label, r)
-                # routing runs once, in forward only (on CPU `.cpu()` of the split
-                # counts is a no-op, so the host-copy save is covered by the policy tests)
+                # routing and the split host copy run once, in forward only
                 assert r["fwd"].get("aten::topk") == 1, (rank, label, r)
                 assert "aten::topk" not in r["bwd"], (rank, label, r)
+                assert r["fwd"].get("axolotl::ep_to_host") == 1, (rank, label, r)
+                assert "axolotl::ep_to_host" not in r["bwd"], (rank, label, r)
             # saved: backward issues only the three gradient all-to-alls (combine, recv_w,
             # recv_x); unsaved: recompute re-issues the forward's collectives first
             assert saved["bwd"].get("axolotl::ep_all_to_all_single") == 3, (rank, saved)
@@ -955,19 +957,19 @@ def _chunked_checks(rank, world_size):
 
     # one count exchange and one device->host copy per forward, whatever the chunk count
     counts = collections.Counter()
-    real_equal, real_cpu = TD.all_to_all_single_equal, torch.Tensor.cpu
+    real_equal, real_to_host = TD.all_to_all_single_equal, TD.to_host
 
     def counting_equal(*args, **kwargs):
         counts["equal_a2a"] += 1
         return real_equal(*args, **kwargs)
 
-    def counting_cpu(self, *args, **kwargs):
+    def counting_to_host(*args, **kwargs):
         counts["cpu"] += 1
-        return real_cpu(self, *args, **kwargs)
+        return real_to_host(*args, **kwargs)
 
     x, idx, w = _routing(rank, "mixed", num_tokens=13)
     TD.all_to_all_single_equal = counting_equal
-    torch.Tensor.cpu = counting_cpu
+    TD.to_host = counting_to_host
     experts_fn.set_dispatch_chunks(3)
     try:
         experts_fn._ep_forward(
@@ -975,7 +977,7 @@ def _chunked_checks(rank, world_size):
         )
     finally:
         TD.all_to_all_single_equal = real_equal
-        torch.Tensor.cpu = real_cpu
+        TD.to_host = real_to_host
         experts_fn.set_dispatch_chunks(1)
     results["sync_counts"] = dict(counts)
 
