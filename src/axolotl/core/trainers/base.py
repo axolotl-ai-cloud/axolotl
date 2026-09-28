@@ -753,11 +753,17 @@ class AxolotlTrainer(
                 logs["ppl"] = round(math.exp(logs["loss"]), metric_ndigits)
             except OverflowError:
                 logs["ppl"] = float("inf")
-        if "eval_loss" in logs:
-            try:
-                logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), metric_ndigits)
-            except OverflowError:
-                logs["eval_ppl"] = float("inf")
+        eval_prefixes = ["eval"]
+        if isinstance(self.eval_dataset, dict):
+            eval_prefixes += [f"eval_{name}" for name in self.eval_dataset]
+        for prefix in eval_prefixes:
+            if f"{prefix}_loss" in logs:
+                try:
+                    logs[f"{prefix}_ppl"] = round(
+                        math.exp(logs[f"{prefix}_loss"]), metric_ndigits
+                    )
+                except OverflowError:
+                    logs[f"{prefix}_ppl"] = float("inf")
 
         if is_main_process():
             # Add memory usage

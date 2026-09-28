@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import re
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator
@@ -150,6 +151,34 @@ def datasets_with_name_generator(
                 )
         else:
             yield config
+
+
+def get_test_dataset_names(dataset_configs: list) -> list[str]:
+    """Build a unique, readable name for each `test_datasets` entry.
+
+    Each name is the base name of the dataset path (or of its first data file), plus
+    the dataset config `name` when it is a single string, suffixed with the entry's
+    index so names are always unique, e.g. `alpaca_0` or `gsm8k_main_1`. The Trainer
+    logs per-dataset metrics under these names, e.g. `eval_alpaca_0_loss`.
+
+    Args:
+        dataset_configs: The `test_datasets` configuration list.
+
+    Returns:
+        One name per dataset config, in the same order.
+    """
+    names = []
+    for idx, config in enumerate(dataset_configs):
+        data_files = _get_hash_field(config, "data_files")
+        if isinstance(data_files, list):
+            data_files = data_files[0] if data_files else None
+        path = _get_hash_field(config, "path")
+        parts = [Path(str(data_files or path or "test").rstrip("/")).stem]
+        if isinstance(subset := _get_hash_field(config, "name"), str):
+            parts.append(subset)
+        parts.append(str(idx))
+        names.append(re.sub(r"[^0-9A-Za-z_-]+", "_", "_".join(parts)).strip("_"))
+    return names
 
 
 def load_dataset_with_config(

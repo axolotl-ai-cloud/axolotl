@@ -175,6 +175,39 @@ class DatasetValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_eval_per_test_dataset(cls, data):
+        if not data.get("eval_per_test_dataset"):
+            return data
+        if not data.get("test_datasets"):
+            raise ValueError("`eval_per_test_dataset` requires `test_datasets`")
+        if data.get("rl"):
+            raise ValueError("`eval_per_test_dataset` is not supported with `rl`")
+        unsupported = [
+            key
+            for key in ("do_bench_eval", "do_causal_lm_eval", "eval_table_size")
+            if data.get(key)
+        ]
+        if unsupported:
+            raise ValueError(
+                f"`eval_per_test_dataset` is not supported with {unsupported}"
+            )
+        if (
+            data.get("load_best_model_at_end")
+            or data.get("early_stopping_patience")
+            or data.get("save_strategy") == "best"
+        ) and data.get("metric_for_best_model") in (None, "loss", "eval_loss"):
+            from axolotl.utils.data.shared import get_test_dataset_names
+
+            name = get_test_dataset_names(data["test_datasets"])[0]
+            raise ValueError(
+                "`eval_per_test_dataset` reports no combined eval loss, so set "
+                "`metric_for_best_model` to one test dataset's metric, e.g. "
+                f"`metric_for_best_model: eval_{name}_loss`"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_eval_packing(cls, data):
         # TODO also should check test_datasets and val_set_size as we can skip
         # if there are no eval datasets/splits
