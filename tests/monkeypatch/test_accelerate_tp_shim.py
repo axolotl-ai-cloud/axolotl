@@ -135,7 +135,7 @@ def test_num_items_in_batch_is_not_divided_by_tp_size(monkeypatch):
 
     from axolotl.core.trainers.base import AxolotlTrainer
 
-    # transformers already divided the true count (10) by tp_size; patch the class
+    # transformers already floored the true count (10) by tp*cp; patch the class
     # `super()` resolves to (the session may hold more than one Trainer class object)
     base = next(
         c for c in AxolotlTrainer.__mro__[1:] if "_get_num_items_in_batch" in vars(c)
@@ -149,12 +149,16 @@ def test_num_items_in_batch_is_not_divided_by_tp_size(monkeypatch):
 
     def trainer(tp_size, average):
         t = AxolotlTrainer.__new__(AxolotlTrainer)
+        t._loss_shifts_labels = False
         t.accelerator = SimpleNamespace(
-            parallelism_config=SimpleNamespace(tp_size=tp_size)
+            parallelism_config=SimpleNamespace(
+                tp_size=tp_size, non_data_parallel_size=tp_size
+            )
         )
         t.args = SimpleNamespace(average_tokens_across_devices=average)
         return t
 
-    assert int(trainer(2, False)._get_num_items_in_batch([], "cpu")) == 10
-    assert int(trainer(1, False)._get_num_items_in_batch([], "cpu")) == 5
-    assert int(trainer(2, True)._get_num_items_in_batch([], "cpu")) == 5
+    batches = [{"labels": torch.full((1, 10), 1)}]
+    assert int(trainer(2, False)._get_num_items_in_batch(batches, "cpu")) == 10
+    assert int(trainer(1, False)._get_num_items_in_batch(batches, "cpu")) == 5
+    assert int(trainer(2, True)._get_num_items_in_batch(batches, "cpu")) == 5
