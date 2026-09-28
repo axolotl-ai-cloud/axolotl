@@ -2,7 +2,8 @@
 
 Dense experts materialize expert LoRA via ``MoELoRAMaterialize`` and hand the result
 to upstream's ``sonicmoe_experts_forward`` through a facade. NVFP4 experts (which the
-CUTLASS kernel cannot read) take the grouped dequant path in ``nvfp4_lora`` instead.
+CUTLASS kernel cannot read) take the grouped dequant path in ``nvfp4_lora`` instead, and
+non-gated relu² experts (nemotron_h) the grouped MLP in ``nongated``.
 """
 
 from __future__ import annotations
@@ -43,34 +44,36 @@ def _resolve_weights_and_lora(experts_module):
     Handles both PEFT layouts: module-level wrap (walked via ``unwrap_experts_lora``)
     and per-parameter ``ParamWrapper``. No layout permute applied.
     """
+    w1_attr = "gate_up_proj" if hasattr(experts_module, "gate_up_proj") else "up_proj"
+
     # The ParamWrapper fastpath (experts_lora_fastpath) resolves the LoRA tuples itself and
     # hands them over before calling the raw base module.
     fastpath_lora = getattr(experts_module, "_sonicmoe_lora", None)
     if fastpath_lora is not None:
-        w1 = experts_module.gate_up_proj
+        w1 = getattr(experts_module, w1_attr)
         w2 = experts_module.down_proj
-        b1 = getattr(experts_module, "gate_up_proj_bias", None)
+        b1 = getattr(experts_module, w1_attr + "_bias", None)
         b2 = getattr(experts_module, "down_proj_bias", None)
         return (
             w1,
             b1,
             w2,
             b2,
-            fastpath_lora.get("gate_up_proj"),
+            fastpath_lora.get(w1_attr),
             fastpath_lora.get("down_proj"),
         )
 
     if has_lora(experts_module):
         base_experts, lora_dict = unwrap_experts_lora(experts_module)
-        w1 = base_experts.gate_up_proj
+        w1 = getattr(base_experts, w1_attr)
         w2 = base_experts.down_proj
-        b1 = getattr(base_experts, "gate_up_proj_bias", None)
+        b1 = getattr(base_experts, w1_attr + "_bias", None)
         b2 = getattr(base_experts, "down_proj_bias", None)
-        return w1, b1, w2, b2, lora_dict.get("gate_up_proj"), lora_dict.get("down_proj")
+        return w1, b1, w2, b2, lora_dict.get(w1_attr), lora_dict.get("down_proj")
 
-    w1, lora_w1 = _maybe_unwrap_param_wrapper(experts_module.gate_up_proj)
+    w1, lora_w1 = _maybe_unwrap_param_wrapper(getattr(experts_module, w1_attr))
     w2, lora_w2 = _maybe_unwrap_param_wrapper(experts_module.down_proj)
-    b1 = getattr(experts_module, "gate_up_proj_bias", None)
+    b1 = getattr(experts_module, w1_attr + "_bias", None)
     b2 = getattr(experts_module, "down_proj_bias", None)
     return w1, b1, w2, b2, lora_w1, lora_w2
 
@@ -115,14 +118,17 @@ class _LoRAExpertsFacade:
         "num_experts",
     )
 
-    def __init__(self, experts_module, w1, b1, w2, b2):
-        from .epilogue import check_epilogue
+    def __init__(self, experts_module, w1, b1, w2, b2, act: str | None = None):
         from .nvfp4 import resolve_gated_activation
 
-        act = resolve_gated_activation(experts_module.config)
         concat = getattr(experts_module, "is_concatenated", True)
-        # The fused kernel has no clamp, so the dense path can only ever compute limit=None.
-        check_epilogue(experts_module, act, concat=concat, limit=None, path="dense")
+        # An explicit ``act`` means rewritten non-gated weights: no ``_apply_gate`` to probe.
+        if act is None:
+            from .epilogue import check_epilogue
+
+            act = resolve_gated_activation(experts_module.config)
+            # The fused kernel has no clamp, so the dense path can only ever compute limit=None.
+            check_epilogue(experts_module, act, concat=concat, limit=None, path="dense")
 
         self.has_gate = True
         self.gate_up_proj = w1
@@ -154,8 +160,7 @@ def sonicmoe_experts_forward_with_lora(
 
     from .nvfp4 import is_nvfp4_param
 
-    if not getattr(self, "has_gate", True):
-        raise ValueError("sonicmoe requires gated experts (has_gate=True)")
+    has_gate = getattr(self, "has_gate", True)
     if hidden_states.device.type != "cuda":
         raise ValueError("sonicmoe requires CUDA device")
 
@@ -193,11 +198,69 @@ def sonicmoe_experts_forward_with_lora(
     if lora_w2 is not None:
         w2 = MoELoRAMaterialize.apply(w2, *lora_w2)
 
+    if not has_gate:
+        return _sonicmoe_nongated_forward(
+            self, hidden_states, top_k_index, top_k_weights, w1, b1, w2, b2
+        )
+
     return sonicmoe_experts_forward(
         _LoRAExpertsFacade(self, w1, b1, w2, b2),
         hidden_states,
         top_k_index,
         top_k_weights,
+    )
+
+
+def _sonicmoe_nongated_forward(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    w1: torch.Tensor,
+    b1,
+    w2: torch.Tensor,
+    b2,
+) -> torch.Tensor:
+    """Non-gated relu² experts (nemotron_h); ``w1``/``w2`` already carry any LoRA delta."""
+    from .nvfp4 import resolve_gated_activation
+
+    act_name = resolve_gated_activation(self.config)
+    if act_name not in ("relu2", "relu_squared"):
+        raise NotImplementedError(
+            f"sonicmoe non-gated experts support only the relu² activation "
+            f"(nemotron_h); got {act_name!r}"
+        )
+    if b1 is not None or b2 is not None:
+        raise NotImplementedError("sonicmoe non-gated experts do not support bias")
+
+    # EP sentinel rows sort past the last segment end here, so their output rows are never
+    # written and the combine would fold uninitialized memory into real tokens.
+    if getattr(self, "num_experts_global", self.num_experts) != self.num_experts:
+        raise NotImplementedError(
+            "sonicmoe non-gated experts do not support expert parallelism yet; "
+            "set experts_implementation: deep_ep (eager) or expert_parallel_size: 1"
+        )
+
+    transposed = getattr(self, "is_transposed", False)
+    if os.environ.get("AXOLOTL_SONICMOE_NONGATED_FUSED") == "1":
+        # relu²(h) == h · relu(h), so the duplicated up projection through the REGLU epilogue
+        # is exact and autograd sums both halves' grads back into it. Needs a build allowing reglu.
+        from transformers.integrations.sonicmoe import sonicmoe_experts_forward
+
+        w1 = torch.cat([w1, w1], dim=2 if transposed else 1)
+        return sonicmoe_experts_forward(
+            _LoRAExpertsFacade(self, w1, None, w2, None, act="relu"),
+            hidden_states,
+            top_k_index,
+            top_k_weights,
+        )
+
+    from .nongated import sonicmoe_nongated_forward
+
+    if transposed:
+        w1, w2 = w1.transpose(-2, -1), w2.transpose(-2, -1)
+    return sonicmoe_nongated_forward(
+        hidden_states, top_k_index, top_k_weights, w1, w2, self.num_experts
     )
 
 
@@ -263,8 +326,16 @@ def _sonicmoe_nvfp4_forward(
     act = resolve_gated_activation(self.config)
     limit = getattr(self, "limit", None)
     concat = getattr(self, "is_concatenated", True)
-    # `gated_activation` honors `limit`, so this path additionally accepts clamped SwiGLU.
-    check_epilogue(self, act, concat=concat, limit=limit, path="NVFP4 grouped")
+    if not getattr(self, "has_gate", True):
+        # `_apply_gate` is not the contract for non-gated experts, so check `act` directly.
+        if act not in ("relu2", "relu_squared"):
+            raise NotImplementedError(
+                f"sonicmoe non-gated NVFP4 experts support only the relu² activation "
+                f"(nemotron_h); got {act!r}"
+            )
+    else:
+        # `gated_activation` honors `limit`, so this path additionally accepts clamped SwiGLU.
+        check_epilogue(self, act, concat=concat, limit=limit, path="NVFP4 grouped")
 
     lora1 = (lora_w1[0], lora_w1[1]) if lora_w1 is not None else None
     lora2 = (lora_w2[0], lora_w2[1]) if lora_w2 is not None else None
@@ -288,6 +359,7 @@ def _sonicmoe_nvfp4_forward(
         concat=concat,
         scaling1=scaling1,
         scaling2=scaling2,
+        gated=getattr(self, "has_gate", True),
     )
 
 

@@ -26,8 +26,17 @@ class TestQGaLoreValidation:
             fsdp_version=1,
             fsdp_config={"reshard_after_forward": True},
         )
-        with pytest.raises(ValueError, match="requires FSDP2"):
+        with pytest.raises(ValueError, match="fsdp_version: 1 is no longer supported"):
             validate_config(cfg)
+
+    def test_fsdp2_accepted(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            optimizer="q_galore_adamw8bit",
+            bf16=True,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        cfg = validate_config(cfg)
+        assert cfg.fsdp_version == 2
 
     def test_defaults_filled(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(

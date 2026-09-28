@@ -90,7 +90,7 @@ def _quantize_nvfp4_ws2(W: torch.Tensor, pt_e: torch.Tensor):
         scale_e4m3.contiguous(),
         block_size=16,
         orig_dtype=torch.bfloat16,
-        per_tensor_scale=pt_e.contiguous(),
+        per_tensor_scale=pt_e.reshape(E, 1, 1).contiguous(),
     )
 
 
