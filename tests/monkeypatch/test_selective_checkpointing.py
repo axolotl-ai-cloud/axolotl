@@ -1394,3 +1394,95 @@ class TestMandatorySaveRecompute:
         assert (fwd, bwd) == (1, 0)
         for got, want in zip(grads, ref, strict=True):
             torch.testing.assert_close(got, want, rtol=0, atol=0)
+
+
+def _flex_attention_or_none():
+    try:
+        from torch.nn.attention.flex_attention import flex_attention
+    except ImportError:
+        return None
+    return flex_attention
+
+
+def flex_attention_case(device: str):
+    """Reference forward/backward of a flex_attention block plus a fresh copy of it.
+
+    flex_attention has no CPU backward, so on CPU q/k/v are leaves without grad and
+    the gradient flows through the output scale only; the HOP still dispatches under
+    every SAC mode in the forward and again in the recompute.
+    """
+    flex_attention = _flex_attention_or_none()
+    if flex_attention is None:
+        pytest.skip("flex_attention unavailable")
+    grad_qkv = device != "cpu"
+
+    def make_inputs():
+        gen = torch.Generator(device="cpu").manual_seed(3)
+        qkv = torch.randn(3, 1, 2, 8, 16, dtype=torch.float32, generator=gen)
+        w_out = torch.randn(16, dtype=torch.float32, generator=gen)
+        tensors = [t.to(device).detach().clone() for t in qkv] + [w_out.to(device)]
+        for t in tensors[:3]:
+            t.requires_grad_(grad_qkv)
+        tensors[3].requires_grad_(True)
+        return tensors
+
+    def block(q, k, v, w_out):
+        return (flex_attention(q, k, v) * w_out).sum()
+
+    return block, make_inputs
+
+
+class TestHigherOrderOps:
+    """SAC's own dispatch modes must pass higher-order ops through whole, the way
+    torch's caching modes do, or flex_attention raises on the first region."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self):
+        selective_checkpointing.clear_registered_saves()
+        yield
+        selective_checkpointing.clear_registered_saves()
+
+    @pytest.mark.parametrize("device", DEVICES)
+    @pytest.mark.parametrize("mandatory_save", [False, True])
+    def test_flex_attention_grads_match_baseline(
+        self, device, mandatory_save, monkeypatch
+    ):
+        block, make_inputs = flex_attention_case(device)
+        baseline = make_inputs()
+        block(*baseline).backward()
+
+        if mandatory_save:
+            selective_checkpointing.register_mandatory_save(ops={"aten::mul"})
+        seen: dict[str, list[str]] = {"forward": [], "recompute": []}
+        for cls, key in (
+            (selective_checkpointing._MandatorySaveCloner, "forward"),
+            (selective_checkpointing._RecomputeObserver, "recompute"),
+        ):
+            orig = cls.__torch_dispatch__
+
+            def spy(self, func, types, args=(), kwargs=None, _orig=orig, _key=key):
+                seen[_key].append(selective_checkpointing._op_name(func))
+                return _orig(self, func, types, args, kwargs)
+
+            monkeypatch.setattr(cls, "__torch_dispatch__", spy)
+
+        state = SacPolicyState()
+        context_fn = build_sac_context_fn(["attention"], state=state)
+        inputs = make_inputs()
+        checkpoint(
+            block, *inputs, use_reentrant=False, context_fn=context_fn
+        ).backward()
+
+        for t0, t1 in zip(baseline, inputs, strict=True):
+            if t0.requires_grad:
+                torch.testing.assert_close(t0.grad, t1.grad)
+        assert "flex_attention" in seen["recompute"]
+        assert ("flex_attention" in seen["forward"]) is mandatory_save
+
+    def test_modes_opt_into_higher_order_ops(self):
+        for cls in (
+            selective_checkpointing._MandatorySaveCloner,
+            selective_checkpointing._RecomputeObserver,
+        ):
+            assert cls.supports_higher_order_operators is True
+            assert cls.ignore_compile_internals() is True

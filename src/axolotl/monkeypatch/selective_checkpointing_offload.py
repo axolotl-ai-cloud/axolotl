@@ -261,6 +261,12 @@ class SacOffloadEngine:
 
 
 class _OffloadCachingMode(TorchDispatchMode):
+    supports_higher_order_operators = True
+
+    @classmethod
+    def ignore_compile_internals(cls):
+        return True
+
     def __init__(self, policy_fn, storage, engine, region_id):
         self.policy_fn = policy_fn
         self.storage = storage
@@ -300,6 +306,12 @@ class _OffloadCachingMode(TorchDispatchMode):
 
 
 class _OffloadCachedMode(TorchDispatchMode):
+    supports_higher_order_operators = True
+
+    @classmethod
+    def ignore_compile_internals(cls):
+        return True
+
     def __init__(self, policy_fn, storage, engine, region_id):
         self.policy_fn = policy_fn
         self.storage = storage

@@ -5,10 +5,13 @@ import torch
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
+import axolotl.monkeypatch.selective_checkpointing as selective_checkpointing
 from axolotl.monkeypatch.selective_checkpointing_offload import (
     SacOffloadEngine,
     build_sac_offload_context_fn,
 )
+
+from tests.monkeypatch.test_selective_checkpointing import flex_attention_case
 
 requires_cuda = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="requires CUDA"
@@ -163,3 +166,31 @@ class TestSacOffloadFunctional:
         assert engine.stats.restored_tensors == 2 * restored
         # unread refs are released when their region's recompute ends
         assert not engine._regions
+
+
+class TestOffloadHigherOrderOps:
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self):
+        selective_checkpointing.clear_registered_saves()
+        yield
+        selective_checkpointing.clear_registered_saves()
+
+    @pytest.mark.parametrize(
+        "device", ["cpu", pytest.param("cuda", marks=requires_cuda)]
+    )
+    def test_flex_attention_grads_match_baseline(self, device):
+        block, make_inputs = flex_attention_case(device)
+        baseline = make_inputs()
+        block(*baseline).backward()
+
+        selective_checkpointing.register_mandatory_save(ops={"aten::mul"})
+        engine = SacOffloadEngine(min_offload_bytes=1)
+        context_fn = build_sac_offload_context_fn(["attention"], engine=engine)
+        inputs = make_inputs()
+        checkpoint(
+            block, *inputs, use_reentrant=False, context_fn=context_fn
+        ).backward()
+
+        for t0, t1 in zip(baseline, inputs, strict=True):
+            if t0.requires_grad:
+                torch.testing.assert_close(t0.grad, t1.grad)

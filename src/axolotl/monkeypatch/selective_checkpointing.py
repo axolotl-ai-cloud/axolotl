@@ -213,6 +213,13 @@ class _MandatorySaveCloner(TorchDispatchMode):
     otherwise trip SAC's cache-mutation guard (or, with offload, replay the
     post-mutation values and skew the router gradient)."""
 
+    # like torch's own SAC modes: HOPs pass through whole, dynamo keeps compiling
+    supports_higher_order_operators = True
+
+    @classmethod
+    def ignore_compile_internals(cls):
+        return True
+
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = {} if kwargs is None else kwargs
         out = func(*args, **kwargs)
@@ -248,6 +255,12 @@ class _RecomputeObserver(TorchDispatchMode):
     torch >= 2.13's cached dispatch mode no longer consults the policy during
     recompute, which is where replay counts and the dead-save diagnostic come from.
     """
+
+    supports_higher_order_operators = True
+
+    @classmethod
+    def ignore_compile_internals(cls):
+        return True
 
     def __init__(self, policy_fn) -> None:
         super().__init__()
