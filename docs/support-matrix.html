@@ -1363,7 +1363,7 @@ Note
 <td>SonicMoE</td>
 <td><code>use_kernels: true</code> + <code>use_sonicmoe: true</code></td>
 <td>Hopper/Blackwell, CUDA 12.9+</td>
-<td>LoRA; NVFP4 W4A4 incl.&nbsp;lossless merge via <a href="../docs/nvfp4_lora.html"><code>nvfp4_merge_aware</code></a>; <strong>composes with EP</strong> (bf16; NVFP4 + EP raises, use ScatterMoE)</td>
+<td>LoRA; NVFP4 W4A4 incl.&nbsp;lossless merge via <a href="../docs/nvfp4_lora.html"><code>nvfp4_merge_aware</code></a>. Local EP routing handles received NVFP4 experts; end-to-end DeepEP + FSDP2 remains unqualified.</td>
 </tr>
 <tr class="odd">
 <td>DSv4 fused kernels</td>
@@ -1385,7 +1385,7 @@ Note
 </tr>
 </tbody>
 </table>
-<p><strong>With Expert Parallel:</strong> ScatterMoE composes with EP (registered as <code>deep_ep_scattermoe</code>), as does SonicMoE (<code>deep_ep_sonicmoe</code>, bf16 gated experts only; neither the NVFP4 nor the non-gated path supports EP).</p>
+<p><strong>With Expert Parallel:</strong> ScatterMoE composes with EP (registered as <code>deep_ep_scattermoe</code>). SonicMoE’s local route (<code>deep_ep_sonicmoe</code>) handles bf16 gated experts and received native NVFP4 expert batches, including local expert IDs and sentinel slots. This local coverage does not qualify end-to-end DeepEP dispatch/combine with FSDP2; that configuration remains pending supported-hardware validation. The non-gated SonicMoE EP path is likewise unqualified.</p>
 <p><strong>Non-gated (latentmoe) experts:</strong> Nemotron-3 (<code>nemotron_h</code>) uses non-gated relu² experts (<code>up_proj</code>/<code>down_proj</code>, no gate) in <code>moe_latent_size</code> width. Both kernels support it: ScatterMoE natively, SonicMoE via a grouped-GEMM path (the fused CUTLASS epilogue lands with the next sonic-moe kernel build). NVFP4 checkpoints (modelopt <code>MIXED_PRECISION</code>) keep the routed experts packed NVFP4 and dequantize every other quantized weight to bf16 at load.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
