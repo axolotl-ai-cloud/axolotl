@@ -118,15 +118,20 @@ def _is_expert_weight_converter(conv) -> bool:
 
 
 def _resolve_repo_file(repo: str, filename: str) -> str:
-    """Resolve a checkpoint file path from a local snapshot dir or the HF hub.
+    """Resolve a checkpoint file path from a local snapshot dir, the HF cache, or the HF hub.
 
     A local snapshot dir (offline/air-gapped axolotl usage) would fail ``hf_hub_download``
-    with an ``HFValidationError``, so read straight from disk in that case.
+    with an ``HFValidationError``, so read straight from disk in that case. An already-cached
+    hub file is returned without a network round trip (hub requests are rate limited, and
+    ``HF_HUB_OFFLINE`` runs have no network at all).
     """
     if os.path.isdir(repo):
         return os.path.join(repo, filename)
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download, try_to_load_from_cache
 
+    cached = try_to_load_from_cache(repo, filename)
+    if isinstance(cached, str):
+        return cached
     return hf_hub_download(repo, filename)
 
 

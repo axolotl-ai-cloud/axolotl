@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from datasets import Dataset
@@ -66,8 +66,8 @@ class TestHFRLTrainerBuilder:
         # Optimizer settings
         assert training_arguments.learning_rate == 0.00005
         assert training_arguments.weight_decay == 0.01
-        assert training_arguments.adam_beta1 == 0.998
-        assert training_arguments.adam_beta2 == 0.9
+        assert training_arguments.adam_beta1 == 0.91
+        assert training_arguments.adam_beta2 == 0.99
         assert training_arguments.adam_epsilon == 0.00001
         assert training_arguments.max_grad_norm == 1.0
 
@@ -140,7 +140,9 @@ def rand_reward_func(prompts, completions) -> list[float]:
         try:
             builder = HFRLTrainerBuilder(grpo_cfg, model, tokenizer)
             training_arguments, _ = builder._build_training_arguments(100)
-            builder.train_dataset = MagicMock()
+            builder.train_dataset = Dataset.from_dict(
+                {"prompt": [[{"role": "user", "content": "Question?"}]] * 8}
+            )
 
             self._test_common_training_arguments(training_arguments, rl=grpo_cfg.rl)
             # GRPO specific
@@ -265,7 +267,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             assert optimizer_cls is MuonOptimizerFactory
             assert optimizer_kwargs["lr"] == 0.00005
             assert optimizer_kwargs["weight_decay"] == 0.01
-            assert optimizer_kwargs["betas"] == (0.998, 0.9)
+            assert optimizer_kwargs["betas"] == (0.91, 0.99)
             assert optimizer_kwargs["eps"] == 0.00001
 
             # Ensure optimizer is created with correct class

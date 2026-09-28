@@ -658,3 +658,18 @@ def test_fake_quant_triton_bitwise_vs_reference():
         ref3 = fake_quant_nvfp4(w2)
         got3 = fake_quant_nvfp4_triton(w2.clone())
         assert torch.equal(got3, ref3), f"single-level mismatch ({dtype})"
+
+        boundaries = (
+            torch.tensor(
+                [0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0, 6.0] * 2,
+                device=dev,
+                dtype=dtype,
+            ).view(1, 16)
+            * 0.029296875
+        )
+        expected = fake_quant_nvfp4(boundaries)
+        for inplace in (False, True):
+            actual = fake_quant_nvfp4_triton(boundaries.clone(), inplace=inplace)
+            assert torch.equal(actual, expected), (
+                f"single-level ties mismatch ({dtype})"
+            )

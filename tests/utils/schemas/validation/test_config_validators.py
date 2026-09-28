@@ -7,6 +7,7 @@ Covers:
   - lora_target_modules with invalid regex patterns is rejected
   - GRPO: generation batch size must be divisible by num_generations,
     num_generations >= 2, and effective_gbs >= num_generations * world_size
+  - context_parallel_size > 1 requires kernel-backed attention
 """
 
 import pytest
@@ -252,3 +253,207 @@ class TestGRPOBatchSizeValidator:
         }
         out = self._check(data)
         assert out["gradient_accumulation_steps"] == 8
+
+
+class TestBatchSizeFieldsValidator:
+    """``micro_batch_size`` and ``gradient_accumulation_steps`` both default to
+    1, so a config that sets only one of them (or neither) is still fully
+    specified and must not be rejected by ``check_batch_size_fields``.
+
+    ``check_batch_size_fields`` runs in ``mode="before"`` (before field defaults
+    are applied), so these guard against a regression where relying on the
+    documented defaults raised "At least two of ... must be set".
+    """
+
+    @staticmethod
+    def _base():
+        """``min_base_cfg`` sets both batch fields explicitly, which is exactly
+        the case that already worked; build a config without them instead."""
+        return DictDefault(
+            base_model="HuggingFaceTB/SmolLM2-135M",
+            learning_rate=1e-3,
+            datasets=[
+                {
+                    "path": "mhenrichsen/alpaca_2k_test",
+                    "type": "alpaca",
+                },
+            ],
+        )
+
+    def test_only_gradient_accumulation_steps_passes(self):
+        cfg = self._base() | DictDefault(gradient_accumulation_steps=4)
+        validated = validate_config(cfg)
+        assert validated.gradient_accumulation_steps == 4
+        assert validated.micro_batch_size == 1
+
+    def test_only_micro_batch_size_passes(self):
+        cfg = self._base() | DictDefault(micro_batch_size=4)
+        validated = validate_config(cfg)
+        assert validated.micro_batch_size == 4
+        assert validated.gradient_accumulation_steps == 1
+
+    def test_neither_set_relies_on_defaults(self):
+        validated = validate_config(self._base())
+        assert validated.micro_batch_size == 1
+        assert validated.gradient_accumulation_steps == 1
+
+
+class TestContextParallelAttnImplValidator:
+    """CP requires a kernel-backed attention implementation."""
+
+    @pytest.mark.parametrize(
+        "impl",
+        [
+            "flash_attention_2",
+            "flash_attention_3",
+            "flash_attention_4",
+            "kernels-community/flash-attn2",
+            "kernels-community/flash-attn3",
+            "sdpa",
+            "flex_attention",
+        ],
+    )
+    def test_kernel_backends_allowed(self, min_base_cfg, impl, monkeypatch):
+        monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+        cfg = min_base_cfg | DictDefault(
+            context_parallel_size=2,
+            attn_implementation=impl,
+        )
+        validated = validate_config(cfg)
+        assert validated.context_parallel_size == 2
+        assert validated.attn_implementation == impl
+
+    def test_eager_rejected(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            context_parallel_size=2,
+            attn_implementation="eager",
+        )
+        with pytest.raises(ValueError, match="kernel-backed attention"):
+            validate_config(cfg)
+
+
+class TestStagedNF4ConstraintTable:
+    """check_staged_nf4 raises from a table, so an empty or messageless table would pass silently."""
+
+    def test_every_constraint_carries_a_message(self):
+        from axolotl.utils.schemas.validation import STAGED_NF4_CONSTRAINTS
+
+        assert STAGED_NF4_CONSTRAINTS
+        for predicate, message in STAGED_NF4_CONSTRAINTS:
+            assert callable(predicate)
+            assert isinstance(message, str) and message
+
+
+class TestValueDependentInitOnExpertTargets:
+    """PEFT's value-dependent inits read base_layer.weight, which fused experts lack;
+    the failure must surface at validation, not after the model has loaded."""
+
+    @pytest.mark.parametrize("init", ["pissa", "olora", "loftq", "corda", "eva"])
+    def test_value_dependent_init_with_target_parameters_is_rejected(
+        self, min_base_cfg, init
+    ):
+        cfg = min_base_cfg | DictDefault(
+            adapter="lora",
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_parameters=["mlp.experts.gate_up_proj"],
+            peft_init_lora_weights=init,
+        )
+        with pytest.raises(ValueError, match="lora_target_parameters"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("init", [None, True, "gaussian"])
+    def test_default_init_with_target_parameters_passes(self, min_base_cfg, init):
+        cfg = min_base_cfg | DictDefault(
+            adapter="lora",
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_parameters=["mlp.experts.gate_up_proj"],
+        )
+        if init is not None:
+            cfg["peft_init_lora_weights"] = init
+        validate_config(cfg)
+
+
+class TestBnbBlocksizeValidator:
+    """bitsandbytes 4-bit loading always quantizes at blocksize 64, so a different
+    request must fail rather than silently train at 64 and merge at the requested size."""
+
+    def _cfg(self, min_base_cfg, **kwargs):
+        return min_base_cfg | DictDefault(
+            adapter="qlora",
+            load_in_4bit=True,
+            lora_r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            lora_target_linear=True,
+            **kwargs,
+        )
+
+    def test_non_default_blocksize_rejected(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, bnb_config_kwargs={"blocksize": 128})
+        with pytest.raises(ValueError, match="blocksize"):
+            validate_config(cfg)
+
+    def test_default_blocksize_passes(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, bnb_config_kwargs={"blocksize": 64})
+        validate_config(cfg)
+
+    def test_unset_blocksize_passes(self, min_base_cfg):
+        validate_config(self._cfg(min_base_cfg))
+
+    def test_blocksize_without_4bit_ignored(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(bnb_config_kwargs={"blocksize": 128})
+        validate_config(cfg)
+
+
+class TestFlashAttnAvailabilityMessage:
+    """The error names the hub failure transformers swallows, and a hub lookup
+    that succeeds on retry overrides transformers' cached verdict."""
+
+    def test_hub_failure_reason_is_reported(self, min_base_cfg, monkeypatch):
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+        )
+
+        def failing_get_kernel(*_, **__):
+            raise RuntimeError("HTTP 429 Too Many Requests")
+
+        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
+            validate_config(cfg)
+
+    def test_successful_lookup_overrides_transformers_verdict(
+        self, min_base_cfg, monkeypatch
+    ):
+        """transformers' probe swallows transient hub errors as "unavailable"."""
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        cleared = []
+
+        def unavailable(**_):
+            return False
+
+        unavailable.cache_clear = lambda: cleared.append(True)
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", unavailable
+        )
+        monkeypatch.setattr(kernels, "get_kernel", lambda *_, **__: object())
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+
+        validated = validate_config(cfg)
+
+        assert validated.attn_implementation == "flash_attention_2"
+        assert cleared == [True]

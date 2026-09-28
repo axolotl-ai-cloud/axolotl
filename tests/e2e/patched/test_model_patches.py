@@ -10,7 +10,9 @@ from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import with_temp_dir
+from ..utils import requires_flash_attn, with_temp_dir
+
+pytestmark = requires_flash_attn
 
 
 class TestModelPatches(unittest.TestCase):

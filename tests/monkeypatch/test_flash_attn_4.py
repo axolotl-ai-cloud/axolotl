@@ -7,6 +7,7 @@ import pytest
 
 import axolotl.monkeypatch.attention.flash_attn_4 as fa4
 from axolotl.loaders.model import ModelLoader
+from axolotl.utils.dict import DictDefault
 
 
 class TestQuackVersionGate:
@@ -98,9 +99,10 @@ class TestConfigureFa4:
 
 class TestResolveFlashAttention4:
     @staticmethod
-    def _loader():
+    def _loader(**cfg):
         loader = ModelLoader.__new__(ModelLoader)
         loader.model_config = object()
+        loader.cfg = DictDefault(cfg)
         return loader
 
     @pytest.mark.parametrize("impl", ["sdpa", "eager", "xformers"])
@@ -141,3 +143,36 @@ class TestResolveFlashAttention4:
             == "flash_attention_2"
         )
         configure.assert_not_called()
+
+    @pytest.mark.parametrize("impl", ["flash_attention_2", "flash_attention_3"])
+    def test_no_upgrade_under_context_parallelism(self, monkeypatch, impl):
+        monkeypatch.setattr(
+            fa4, "fa4_usable", MagicMock(side_effect=AssertionError("must not check"))
+        )
+        configure = MagicMock()
+        monkeypatch.setattr(fa4, "configure_fa4", configure)
+        loader = self._loader(context_parallel_size=2)
+        assert loader._resolve_flash_attention_4(impl) == impl
+        configure.assert_not_called()
+
+    def test_explicit_fa4_still_configured_under_context_parallelism(self, monkeypatch):
+        monkeypatch.setattr(
+            fa4, "fa4_usable", MagicMock(side_effect=AssertionError("must not check"))
+        )
+        configure = MagicMock()
+        monkeypatch.setattr(fa4, "configure_fa4", configure)
+        loader = self._loader(context_parallel_size=2)
+        assert (
+            loader._resolve_flash_attention_4("flash_attention_4")
+            == "flash_attention_4"
+        )
+        configure.assert_called_once()
+
+    def test_upgrade_still_applies_at_context_parallel_size_one(self, monkeypatch):
+        monkeypatch.setattr(fa4, "fa4_usable", lambda _mc: True)
+        monkeypatch.setattr(fa4, "configure_fa4", MagicMock())
+        loader = self._loader(context_parallel_size=1)
+        assert (
+            loader._resolve_flash_attention_4("flash_attention_2")
+            == "flash_attention_4"
+        )

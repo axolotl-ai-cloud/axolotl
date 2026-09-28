@@ -65,7 +65,16 @@ pytest tests/e2e/test_lora_llama.py          # LoRA smoke test
 pytest tests/e2e/multigpu/                    # needs >= 2 GPUs
 ```
 
-Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`). `cicd/cicd.sh` and `cicd/multigpu.sh` list CI's exact run order.
+Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`).
+`cicd/cicd.sh`, `cicd/cicd_cuda_kernels.sh`, and `cicd/multigpu.sh` list CI's exact
+run order. Put single-GPU kernel correctness and numerical parity tests under
+`tests/e2e/kernels/` or `tests/integrations/kernels/` so they run in the dedicated
+kernel lane. LoRA kernel patching runs in its own process there; the slow FLA
+Mamba CUDA tests are selected explicitly. Model training smoke tests stay in the
+general lane, including the lightweight FLA/TileLang installation smoke test.
+Both single-GPU lanes resume interrupted cache downloads with a shared 15-minute
+download budget, then extract the completed archive without clearing the shared
+Hub cache.
 
 ## How to Contribute
 
@@ -96,6 +105,24 @@ You can skip certain CI checks by including specific keywords in your commit mes
 #### GPU End-to-End Tests
 
 GPU-heavy CI (the `docker-e2e-tests` and multi-GPU e2e workflows) is opt-in on pull requests: it only runs once a maintainer applies the `run-gpu-tests` label. Labeling starts the GPU suites immediately without re-running the CPU checks, and subsequent pushes to a labeled PR re-run them automatically. Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
+
+CPU NF4 tests marked `nf4_distributed` run in a dedicated job with its own timeout,
+across the same PyTorch versions as the main CPU matrix. The source, sdist, nightly,
+and single-GPU general suites exclude this marker while keeping the quick NF4 tests.
+Run the dedicated subset locally with:
+
+```bash
+pytest --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py -m nf4_distributed
+```
+
+The multi-GPU workflow also runs a separate NF4 suite on three H100s. It selects
+all CUDA tests in `tests/monkeypatch/test_nf4_loading.py` with `-m slow -k cuda`,
+including dense/MoE shape matrices, loading and checkpoint resume, disk caches,
+CPU offload, and tensors exceeding the bitsandbytes int32 limit. Tests run serially;
+the job fails if any are skipped. PR and scheduled runs cover the repository pins. The
+nightly workflow runs the same suite with its nightly Hugging Face dependencies. See
+`cicd/nf4.sh`.
+
 
 ## Style Guidelines
 

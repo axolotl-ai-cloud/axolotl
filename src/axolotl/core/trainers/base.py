@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import inspect
 import json
 import math
 import os
@@ -58,8 +59,36 @@ from axolotl.utils.distributed import (
 )
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
+
+
+def model_loss_accepts_num_items_in_batch(model) -> bool:
+    """Whether ``model``'s loss function consumes ``num_items_in_batch``.
+
+    The kwarg is a parameter of ``loss_function``, not of ``forward()``, which only
+    receives it through ``**kwargs``, so inspecting ``forward()`` never finds it.
+    PEFT wrappers are unwrapped via ``get_base_model()`` rather than by walking
+    ``.base_model``, which is a property on every ``PreTrainedModel`` and would
+    descend from e.g. ``LlamaForCausalLM`` into the ``LlamaModel`` that computes no
+    loss at all.
+    """
+    if hasattr(model, "get_base_model"):
+        model = model.get_base_model()
+
+    loss_fn = getattr(model, "loss_function", None)
+    if loss_fn is None:
+        return True
+
+    try:
+        params = inspect.signature(loss_fn).parameters
+    except (TypeError, ValueError):
+        # Un-introspectable callable: leave the transformers default alone.
+        return True
+
+    return "num_items_in_batch" in params
+
 
 REDUCTION_FNS = {
     "mean": torch.mean,
@@ -109,25 +138,14 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
 
-        # Gemma4 (and similar multimodal models) declare **kwargs in forward() for
-        # extra inputs like mm_token_type_ids.  HF Trainer interprets VAR_KEYWORD as
-        # "the model handles num_items_in_batch internally" and skips the loss ÷
-        # gradient_accumulation_steps normalisation, which inflates the *logged* loss
-        # (the gradient itself is still correct). Override to False when the model
-        # doesn't actually consume num_items_in_batch.
+        # Gemma4-style models declare **kwargs in forward(), which HF Trainer reads as
+        # "handles num_items_in_batch internally". Only override when the loss really
+        # does not take it: a wrong False mis-normalises the loss under gradient
+        # accumulation and moves the gradient, not just the logged value.
         if self.model_accepts_loss_kwargs:
             model_to_check = self.accelerator.unwrap_model(self.model)
-            if hasattr(model_to_check, "base_model"):  # PEFT wrapper
-                model_to_check = model_to_check.base_model
-            if hasattr(model_to_check, "model"):
-                model_to_check = model_to_check.model
-            fwd = getattr(model_to_check, "forward", None)
-            if fwd is not None:
-                import inspect
-
-                params = inspect.signature(fwd).parameters
-                if "num_items_in_batch" not in params:
-                    self.model_accepts_loss_kwargs = False
+            if not model_loss_accepts_num_items_in_batch(model_to_check):
+                self.model_accepts_loss_kwargs = False
 
         self.train_data_collator = self.data_collator
         self._tkps_prev_trainable: float | None = None
@@ -680,23 +698,29 @@ class AxolotlTrainer(
         super().create_accelerator_and_postprocess()
 
     def additional_accelerator_args(
-        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
+        self,
+        fp8: bool = False,
+        fp8_recipe: str = DEFAULT_FP8_RECIPE,
+        enable_fsdp_float8_all_gather: bool = False,
+        **kwargs,
     ) -> dict[str, Any]:
-        ret_kwargs = {}
+        ret_kwargs: dict[str, Any] = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
-            from torchao.float8 import Float8LinearConfig
 
-            # By default, Float8LinearConfig is instantiated using the "tensorwise"
-            # scaling strategy. See more details here:
-            # https://github.com/pytorch/ao/tree/main/torchao/float8.
-            config = Float8LinearConfig(
+            from axolotl.core.fp8 import build_fp8_linear_config
+
+            config = build_fp8_linear_config(
+                fp8_recipe=fp8_recipe,
                 enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
-                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
             )
 
+            # Trainer already set kwargs_handlers; overwriting drops every ddp_* setting.
+            handlers = list(kwargs.get("kwargs_handlers") or [])
+            handlers.append(AORecipeKwargs(config=config))  # type: ignore
+
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
+            ret_kwargs["kwargs_handlers"] = handlers
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
@@ -802,9 +826,7 @@ class AxolotlTrainer(
     def _is_fsdp2_checkpoint_save_enabled(self) -> bool:
         cfg = getattr(self, "axolotl_cfg", None)
         cfg_fsdp2 = bool(
-            cfg
-            and str(getattr(cfg, "fsdp_version", "")) == "2"
-            and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
+            cfg and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
         )
         return bool(getattr(self, "is_fsdp_enabled", False) or cfg_fsdp2)
 

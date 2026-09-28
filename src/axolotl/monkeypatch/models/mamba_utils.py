@@ -8,6 +8,10 @@ import functools
 import torch
 import torch.distributed as dist
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 
 def get_seq_idx(position_ids: torch.Tensor) -> torch.Tensor:
     """Convert position_ids [B, T] → seq_idx [B, T] int32 for mamba-ssm kernels.
@@ -187,6 +191,81 @@ def mamba2_cp_correction(
     return corrected_out, corrected_h_final
 
 
+def mamba2_seq_idx_kernels_available() -> bool:
+    """True when the installed Mamba2 kernels honour ``seq_idx``.
+
+    transformers resolves ``mamba-ssm`` / ``causal-conv1d`` ahead of its own
+    torch fallbacks, and those fallbacks drop unknown kwargs — so without the
+    real kernels ``seq_idx`` is silently ignored and SSM state leaks across
+    packed samples.
+    """
+    import importlib
+    import inspect
+
+    try:
+        conv_fn = importlib.import_module("causal_conv1d").causal_conv1d_fn
+        scan_fn = importlib.import_module(
+            "mamba_ssm.ops.triton.ssd_combined"
+        ).mamba_chunk_scan_combined
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False
+
+    return all(
+        "seq_idx" in inspect.signature(fn).parameters for fn in (conv_fn, scan_fn)
+    )
+
+
+def assert_mamba2_scan_honours_seq_idx(target_module) -> None:
+    """Probe the resolved chunk-scan once, and raise if it drops ``seq_idx``.
+
+    Which implementation ends up behind ``mamba2_chunk_scan`` is only settled
+    once the model is built (pip package, Hub kernel, or the torch fallback),
+    and the fallback drops unknown kwargs silently — training would then mix
+    SSM state across packed samples. The probe is skipped when it cannot run
+    (no CUDA device, or a kernel that rejects the probe shapes).
+    """
+    if getattr(target_module, "_axolotl_seq_idx_probed", False):
+        return
+    target_module._axolotl_seq_idx_probed = True
+
+    scan = getattr(target_module, "mamba2_chunk_scan", None) or getattr(
+        target_module, "mamba_chunk_scan_combined", None
+    )
+    if scan is None or not torch.cuda.is_available():
+        return
+
+    num_heads, head_dim, state_size, chunk_size = 2, 64, 16, 64
+    seq_len = 2 * chunk_size
+    kwargs = {"dtype": torch.bfloat16, "device": "cuda"}
+    generator = torch.Generator(device="cuda").manual_seed(0)
+    hidden = torch.randn(1, seq_len, num_heads, head_dim, generator=generator, **kwargs)
+    dt = torch.rand(1, seq_len, num_heads, generator=generator, **kwargs)
+    A = -torch.rand(num_heads, generator=generator, device="cuda")
+    B = torch.randn(1, seq_len, 1, state_size, generator=generator, **kwargs)
+    C = torch.randn(1, seq_len, 1, state_size, generator=generator, **kwargs)
+    seq_idx = torch.zeros(1, seq_len, dtype=torch.int32, device="cuda")
+    seq_idx[:, chunk_size:] = 1
+
+    try:
+        with torch.no_grad():
+            without = scan(hidden, dt, A, B, C, chunk_size=chunk_size)
+            with_seq_idx = scan(
+                hidden, dt, A, B, C, chunk_size=chunk_size, seq_idx=seq_idx
+            )
+    except Exception as exception:  # pylint: disable=broad-exception-caught
+        LOG.warning(
+            "Could not probe the Mamba2 scan for seq_idx support: %s", exception
+        )
+        return
+
+    if torch.equal(without, with_seq_idx):
+        raise RuntimeError(
+            "The Mamba2 chunk scan in use ignores seq_idx, so sample packing "
+            "would mix SSM state across packed samples. Install the kernels "
+            "(`pip install mamba-ssm causal-conv1d`) or disable sample_packing."
+        )
+
+
 def ensure_mamba_kernels_loaded(target_module):
     """Eagerly resolve mamba-ssm and causal-conv1d globals on *target_module*.
 
@@ -260,14 +339,25 @@ def wrap_mamba_scan_for_cp(target_module):
 
     ensure_mamba_kernels_loaded(target_module)
 
-    if getattr(target_module, "mamba_chunk_scan_combined", None) is None:
+    # transformers >= 5.15 renamed the module-level scan to ``mamba2_chunk_scan``
+    # (a kernel wrapper that falls back to a torch implementation).
+    scan_attr = next(
+        (
+            attr
+            for attr in ("mamba_chunk_scan_combined", "mamba2_chunk_scan")
+            if getattr(target_module, attr, None) is not None
+        ),
+        None,
+    )
+    if scan_attr is None:
         return
 
-    original_scan = target_module.mamba_chunk_scan_combined
+    original_scan = getattr(target_module, scan_attr)
 
     @functools.wraps(original_scan)
     def _cp_scan_wrapper(*args, **kwargs):
         cp_active = is_cp_active()
+        caller_wants_states = kwargs.get("return_final_states", False)
 
         if cp_active:
             kwargs["return_final_states"] = True
@@ -279,7 +369,7 @@ def wrap_mamba_scan_for_cp(target_module):
 
         scan_output, ssm_state = result
         if ssm_state is None:
-            return result
+            return result if caller_wants_states else scan_output
 
         h_prev = ring_shift_ssm_state(ssm_state)
 
@@ -325,7 +415,98 @@ def wrap_mamba_scan_for_cp(target_module):
         )
         scan_output = scan_flat.view(scan_output.shape)
 
-        return scan_output, ssm_state
+        return (scan_output, ssm_state) if caller_wants_states else scan_output
 
-    target_module.mamba_chunk_scan_combined = _cp_scan_wrapper
+    setattr(target_module, scan_attr, _cp_scan_wrapper)
     target_module._cp_scan_wrapped = True
+
+
+def patch_model_forward_seq_idx(model_cls) -> None:
+    """Inject ``seq_idx`` (from ``position_ids``) into ``model_cls.forward`` kwargs.
+
+    For architectures whose mixers already accept ``seq_idx`` through ``**kwargs``
+    but whose model forward never derives it, this is the only piece missing for
+    sample packing.
+    """
+    if getattr(model_cls.forward, "_axolotl_seq_idx_patch", False):
+        return
+
+    original_forward = model_cls.forward
+
+    @functools.wraps(original_forward)
+    def patched_forward(self, *args, **kwargs):
+        position_ids = kwargs.get("position_ids")
+        if position_ids is None and len(args) > 2:
+            position_ids = args[2]
+
+        past_key_values = kwargs.get("past_key_values")
+        if past_key_values is None and len(args) > 3:
+            past_key_values = args[3]
+
+        is_decoding = (
+            past_key_values is not None
+            and hasattr(past_key_values, "has_previous_state")
+            and past_key_values.has_previous_state
+        )
+
+        if position_ids is not None and not is_decoding and "seq_idx" not in kwargs:
+            kwargs["seq_idx"] = get_seq_idx(position_ids)
+
+        return original_forward(self, *args, **kwargs)
+
+    patched_forward._axolotl_seq_idx_patch = True
+    model_cls.forward = patched_forward
+
+
+def kernel_accepts(fn, name: str) -> bool | None:
+    """Whether a hub-wrapped kernel's live implementation takes ``name``.
+
+    transformers resolves the pip kernel at import time and filters kwargs to
+    its signature, so a torch fallback (which takes ``**kwargs``) drops
+    ``seq_idx`` without a word. Once kernelize has swapped in a Hub kernel, its
+    own signature is checked instead; the Hub layers declare ``**kwargs`` and pop
+    the name inside, so their source is searched. Returns None when nothing can
+    be told.
+    """
+    import inspect
+
+    try:
+        # kernels >= 0.16 turns a hub-decorated function into an nn.Module whose
+        # forward closes over the transformers wrapper
+        if not inspect.isroutine(fn) and hasattr(fn, "forward"):
+            forward = fn.forward
+            try:
+                fn = inspect.getclosurevars(forward).nonlocals["func"]
+            except (TypeError, KeyError):
+                params = inspect.signature(forward).parameters
+                if name in params:
+                    return True
+                if not any(p.kind is p.VAR_KEYWORD for p in params.values()):
+                    return False
+                try:
+                    return True if name in inspect.getsource(forward) else None
+                except (OSError, TypeError):
+                    return None
+        implementation = inspect.getclosurevars(fn).nonlocals["implementation"]
+        return name in inspect.signature(implementation).parameters
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
+
+def require_seq_idx_kernels(mod, names, model_type: str, kernels_enabled: bool) -> None:
+    """Raise unless every kernel in ``names`` honours ``seq_idx`` (or Hub kernels will)."""
+    if kernels_enabled:
+        return
+    dropped = [
+        name
+        for name in names
+        if getattr(mod, name, None) is not None
+        and kernel_accepts(getattr(mod, name), "seq_idx") is False
+    ]
+    if dropped:
+        raise RuntimeError(
+            f"{model_type} sample packing requires kernels that take seq_idx, but "
+            f"{', '.join(dropped)} resolved to the transformers torch fallback, which "
+            "silently mixes state across packed samples. Install them (`pip install "
+            "mamba-ssm causal-conv1d`) or set `use_kernels: true`."
+        )

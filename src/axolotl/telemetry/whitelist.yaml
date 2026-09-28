@@ -1,6 +1,7 @@
 organizations:
   - "axolotl-ai-co"
   - "meta-llama"
+  - "meta-models"
   - "huggingface"
   - "nvidia"
   - "facebook"
@@ -22,6 +23,7 @@ organizations:
   - "arcee-ai"
   - "swiss-ai"
   - "CohereForAI"
+  - "CohereLabs"
   - "deepcogito"
   - "THUDM"
   - "ai21labs"
@@ -38,3 +40,4 @@ organizations:
   - "internlm"
   - "katanemo"
   - "XiaomiMiMo"
+  - "inclusionAI"
