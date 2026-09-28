@@ -7,7 +7,12 @@ from __future__ import annotations
 
 import torch
 
-__all__ = ["fla_ops_available", "fla_ops_build_error"]
+__all__ = [
+    "call_self_attn_disabled",
+    "fla_ops_available",
+    "fla_ops_build_error",
+    "init_fla_compiled_ops",
+]
 
 _OPS_BUILT = False
 _OPS_BUILD_ERROR: str | None = None
@@ -279,3 +284,19 @@ def fla_ops_available() -> bool:
 def fla_ops_build_error() -> str | None:
     """The cached exception from a failed op build, or None."""
     return _OPS_BUILD_ERROR
+
+
+def init_fla_compiled_ops(enabled: bool = True) -> bool:
+    return fla_ops_available() if enabled else False
+
+
+def _call_self_attn(attn_module, **kwargs):
+    return attn_module(**kwargs)
+
+
+try:
+    import torch._dynamo as _dynamo
+
+    call_self_attn_disabled = _dynamo.disable(_call_self_attn)
+except Exception:  # pragma: no cover
+    call_self_attn_disabled = _call_self_attn

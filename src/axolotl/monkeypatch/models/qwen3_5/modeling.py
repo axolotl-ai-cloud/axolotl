@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from transformers.integrations.accelerate import force_accelerate_hooks
 
 from axolotl.monkeypatch.lora_kernels import LINEAR_ATTN_IN_PROJS
-from axolotl.monkeypatch.models.fla_compiled_loop import (
+from axolotl.monkeypatch.models.gated_delta_net_ops import (
     call_self_attn_disabled as _call_self_attn_disabled,
     init_fla_compiled_ops as _init_fla_compiled_ops,
 )
