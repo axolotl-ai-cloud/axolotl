@@ -804,18 +804,18 @@ def _sac_checks(rank, world_size):
     _shard_experts(block.experts, rank, world_size)
     x = torch.randn(1, T, H, generator=torch.Generator().manual_seed(300 + rank))
 
-    def run(context_fn):
+    def run(context_fn, module=block):
         xi = x.clone().requires_grad_(True)
-        block.zero_grad(set_to_none=True)
+        module.zero_grad(set_to_none=True)
         fwd, bwd = _Count(), _Count()
         with fwd:
             if context_fn is None:
-                y = block(xi)
+                y = module(xi)
             else:
-                y = checkpoint(block, xi, use_reentrant=False, context_fn=context_fn)
+                y = checkpoint(module, xi, use_reentrant=False, context_fn=context_fn)
         with bwd:
             (y.float() ** 2).sum().backward()
-        grads = [xi.grad] + [p.grad for p in block.parameters()]
+        grads = [xi.grad] + [p.grad for p in module.parameters()]
         return dict(fwd.counts), dict(bwd.counts), grads
 
     _, _, ref = run(None)
@@ -831,6 +831,39 @@ def _sac_checks(rank, world_size):
             "bwd": bwd,
             "grad_diff": max(_max_diff(a, b) for a, b in zip(grads, ref, strict=True)),
         }
+
+    class _Indexer(torch.nn.Module):
+        """An attention-side top-k outside the MoE block, under no_grad like GLM-DSA's."""
+
+        def forward(self, h):
+            with torch.no_grad():
+                idx = h.topk(2, dim=-1).indices
+            return h + h.gather(-1, idx).sum(-1, keepdim=True)
+
+    class _Layer(torch.nn.Module):
+        def __init__(self, moe):
+            super().__init__()
+            self.indexer = _Indexer()
+            self.mlp = moe
+
+        def forward(self, h):
+            return self.mlp(self.indexer(h))
+
+    layer = _Layer(block)
+    _, _, ref_layer = run(None, layer)
+    sac.clear_registered_saves()
+    ExpertParallelPlugin._register_checkpoint_saves(
+        SimpleNamespace(expert_parallel_save_dispatch=False), layer
+    )
+    assert "aten::topk" not in sac._MANDATORY_SAVES.ops
+    fwd, bwd, grads = run(sac.build_sac_context_fn(save=[]), layer)
+    out["scoped"] = {
+        "fwd": fwd,
+        "bwd": bwd,
+        "grad_diff": max(
+            _max_diff(a, b) for a, b in zip(grads, ref_layer, strict=True)
+        ),
+    }
     sac.clear_registered_saves()
     return out
 
@@ -841,6 +874,8 @@ class TestTorchEPSelectiveCheckpointing:
             saved = res["save_dispatch=True"]
             unsaved = res["save_dispatch=False"]
             for label, r in res.items():
+                if label == "scoped":
+                    continue
                 assert r["grad_diff"] <= 1e-6, (rank, label, r)
                 # routing and the split host copy run once, in forward only
                 assert r["fwd"].get("aten::topk") == 1, (rank, label, r)
@@ -858,6 +893,15 @@ class TestTorchEPSelectiveCheckpointing:
                 rank,
                 unsaved,
             )
+
+    def test_topk_save_scoped_to_moe_block(self, ep2_results):
+        for rank, res in _section(ep2_results, "sac").items():
+            r = res["scoped"]
+            assert r["grad_diff"] <= 1e-6, (rank, r)
+            # forward: indexer + router; recompute re-runs only the indexer's
+            assert r["fwd"].get("aten::topk") == 2, (rank, r)
+            assert r["bwd"].get("aten::topk") == 1, (rank, r)
+            assert "axolotl::ep_to_host" not in r["bwd"], (rank, r)
 
 
 # --------------------------------------------------------------------------- #
