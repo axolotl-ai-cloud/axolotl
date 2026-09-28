@@ -19,6 +19,8 @@ import torch.distributed as dist
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
+from .args import reject_replicate_without_shard_axis
+
 LOG = get_logger(__name__)
 
 # pre-``expert_parallel`` composite names -> local implementation; the backend prefix is ignored
@@ -486,10 +488,11 @@ class ExpertParallelPlugin(BasePlugin):
         product = ep_size * dp_replicate_size * dp_shard_size * tp_size * cp_size
         if product != world_size:
             raise ValueError(
-                f"expert_parallel_size ({ep_size}) * dp_shard_size ({dp_shard_size}) "
-                f"* tensor_parallel_size ({tp_size}) * context_parallel_size ({cp_size}) "
-                f"= {product}, but world_size = {world_size}. The product must equal "
-                f"the world size for orthogonal mesh axes to be valid."
+                f"expert_parallel_size ({ep_size}) * dp_replicate_size ({dp_replicate_size}) "
+                f"* dp_shard_size ({dp_shard_size}) * tensor_parallel_size ({tp_size}) "
+                f"* context_parallel_size ({cp_size}) = {product}, but world_size = "
+                f"{world_size}. The product must equal the world size for orthogonal mesh "
+                f"axes to be valid."
             )
 
         if ep_size == world_size:
@@ -500,8 +503,12 @@ class ExpertParallelPlugin(BasePlugin):
         # hasn't (e.g., topology unit tests that drive `_resolve_ep_group` directly). Experts shard
         # on `ep` (tokens move via all-to-all); the sequence shards on `cp` (DSA attention gathers
         # the compressed KV on that axis); non-expert weights shard on `dp_shard`. TP is still
-        # unsupported in composition.
-        if dp_shard_size > 1 or cp_size > 1 or dp_replicate_size > 1:
+        # unsupported in composition. A bare (dp_replicate, ep) mesh is rejected: the experts
+        # need a dp_shard or cp axis inside each replica to reduce over.
+        reject_replicate_without_shard_axis(
+            ep_size, dp_replicate_size, dp_shard_size, cp_size
+        )
+        if dp_shard_size > 1 or cp_size > 1:
             if tp_size > 1:
                 raise NotImplementedError(
                     "EP × TP composition not yet supported. Got "
@@ -541,7 +548,8 @@ class ExpertParallelPlugin(BasePlugin):
             f"expert_parallel_size ({ep_size}) < world_size ({world_size}) "
             "without dp_shard_size/context_parallel_size > 1 to fill the remaining axes is not "
             "supported. Set dp_shard_size and/or context_parallel_size such that "
-            "ep × cp × dp_shard == world_size, or set expert_parallel_size = world_size for pure EP."
+            "dp_replicate × ep × cp × dp_shard == world_size (dp_replicate needs one of the two "
+            "shard axes), or set expert_parallel_size = world_size for pure EP."
         )
 
     @staticmethod
@@ -724,23 +732,27 @@ class ExpertParallelPlugin(BasePlugin):
         if ep_size <= 1:
             return
 
+        dp_shard_size = getattr(cfg, "dp_shard_size", None) or 1
+        dp_replicate_size = getattr(cfg, "dp_replicate_size", None) or 1
+        tp_size = getattr(cfg, "tensor_parallel_size", None) or 1
+        cp_size = getattr(cfg, "context_parallel_size", None) or 1
+        reject_replicate_without_shard_axis(
+            ep_size, dp_replicate_size, dp_shard_size, cp_size
+        )
+
         if not (dist.is_available() and dist.is_initialized()):
             return  # validated at process-group time
         world_size = dist.get_world_size()
         if world_size <= 1:
             return  # single-rank context; mesh shapes are meaningless
-        dp_shard_size = getattr(cfg, "dp_shard_size", None) or 1
-        dp_replicate_size = getattr(cfg, "dp_replicate_size", None) or 1
-        tp_size = getattr(cfg, "tensor_parallel_size", None) or 1
-        cp_size = getattr(cfg, "context_parallel_size", None) or 1
 
         product = ep_size * dp_replicate_size * dp_shard_size * tp_size * cp_size
         if product != world_size:
             raise ValueError(
                 f"expert_parallel: world_size ({world_size}) must equal "
-                f"expert_parallel_size ({ep_size}) * dp_shard_size ({dp_shard_size}) "
-                f"* tensor_parallel_size ({tp_size}) * context_parallel_size ({cp_size}) "
-                f"= {product}."
+                f"expert_parallel_size ({ep_size}) * dp_replicate_size ({dp_replicate_size}) "
+                f"* dp_shard_size ({dp_shard_size}) * tensor_parallel_size ({tp_size}) "
+                f"* context_parallel_size ({cp_size}) = {product}."
             )
 
     @classmethod

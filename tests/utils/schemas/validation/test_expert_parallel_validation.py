@@ -15,6 +15,8 @@ def _validate(min_base_cfg, **kw):
         "plugins": [EP_PLUGIN],
         "expert_parallel_size": 2,
         "gradient_checkpointing": True,
+        "fsdp_version": 2,
+        "fsdp_config": {"state_dict_type": "FULL_STATE_DICT"},
     }
     cfg = DictDefault({**base, **kw}) | min_base_cfg
     prepare_plugins(cfg)

@@ -95,7 +95,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 (full-parameter; adapters only on native NVFP4 bases) |
 | Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, axolotl-ringmaster (Ulysses/Ring/USP) |
-| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2, CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
+| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | Requires FSDP2 + `state_dict_type: FULL_STATE_DICT`; CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
 | N-D (HSDP, FSDP+CP, HSDP+CP, FSDP+EP+CP, HSDP+EP, HSDP+EP+CP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
 Blocked combinations: **EP x TP**, **LoRA/QLoRA x TP** (except native NVFP4 bases), **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
@@ -239,7 +239,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | Feature | Requires |
 |---|---|
 | QLoRA | `load_in_4bit: true` |
-| Expert Parallel | FSDP2 + `deep_ep` backend (Ampere/Hopper, NVLink) or `torch` backend (any NCCL/gloo fabric) |
+| Expert Parallel | FSDP2 (`fsdp_version: 2` + `fsdp_config`, not DDP/DeepSpeed) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; `deep_ep` backend (Ampere/Hopper, NVLink) or `torch` backend (any NCCL/gloo fabric) |
 | Context/Sequence parallel | Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention |
 | SonicMoE | Hopper/Blackwell + CUDA 12.9 (else auto-falls back to ScatterMoE) |
 | FP8 attention | SM90+ and PyTorch >= 2.11 |
@@ -256,6 +256,8 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 |---|---|---|
 | DeepSpeed | FSDP | pick one |
 | EP | TP | rejected at config validation |
+| EP | DDP / DeepSpeed / `SHARDED_STATE_DICT` | rejected at config validation; EP needs FSDP2 and a full state dict (a sharded one keeps only EP group 0's experts) |
+| EP | HSDP without `dp_shard_size` or `context_parallel_size` > 1 | rejected at config validation; the experts need a shard axis inside each replica |
 | LoRA / QLoRA | TP | rejected at model load unless the base is native NVFP4 (`torchao_tp_lora`); a bf16 adapter would be shard-local |
 | DDP | TP / CP | use FSDP2 instead |
 | QAT | any adapter, or 4/8-bit | full-model only |

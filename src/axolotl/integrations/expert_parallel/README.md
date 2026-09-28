@@ -171,11 +171,18 @@ python -c "import deep_ep; print(deep_ep.Buffer)"
 
 ## Usage
 
+EP requires FSDP2 (`fsdp_version: 2` with an `fsdp_config` block) and `fsdp_config.state_dict_type: FULL_STATE_DICT`; config validation rejects EP under DDP, DeepSpeed, or a sharded state dict. The dense weights FSDP-shard, the experts are wrapped on the non-`ep` axes, and the full state dict gathers every EP group's experts before rank 0 writes. `SHARDED_STATE_DICT` (accelerate's FSDP2 default when unset) would keep only EP group 0's experts, because every group's expert shard has the same name, shape and offset and DCP deduplicates them.
+
 ```yaml
 plugins:
   - axolotl.integrations.expert_parallel.ExpertParallelPlugin
 
 expert_parallel_size: 2  # 1 = disabled (default); > 1 = enabled
+fsdp_version: 2
+fsdp_config:
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
 ```
 
 For composition with FSDP at 4+ GPUs, set both `expert_parallel_size` and `dp_shard_size`. The product must equal `world_size`:
@@ -215,10 +222,24 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
 
 - Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.
 - `num_experts` must be divisible by `expert_parallel_size`.
-- Supported mesh axes: EP, EP × dp_shard, EP × cp, EP × cp × dp_shard, and each with
-  `dp_replicate` as an outer HSDP dim (experts shard on `ep`, the sequence on `cp`, dense weights
-  on every non-`ep` axis, expert slices on `dp_shard × cp`). EP × **TP** is not supported and
-  raises `NotImplementedError`. Stock attention runs CP through ringmaster (Ulysses preferred);
+- EP requires FSDP2 with `fsdp_config.state_dict_type: FULL_STATE_DICT` (see [Usage](#usage));
+  DDP, DeepSpeed and `SHARDED_STATE_DICT` are rejected at config validation.
+- Supported mesh axes (`dp_replicate × ep × cp × dp_shard == world_size`):
+
+  | Layout | `dp_replicate` | `ep` | `cp` | `dp_shard` | Status |
+  |---|:---:|:---:|:---:|:---:|---|
+  | EP | 1 | =world | 1 | 1 | ✅ experts whole per rank, dense weights sharded over the world |
+  | EP × dp_shard | 1 | >1 | 1 | >1 | ✅ |
+  | EP × cp | 1 | >1 | >1 | 1 | ✅ expert slices shard over `cp` |
+  | EP × cp × dp_shard | 1 | >1 | >1 | >1 | ✅ expert slices shard over `dp_shard × cp` |
+  | HSDP × EP × dp_shard | >1 | >1 | 1 | >1 | ✅ `dp_replicate` outermost |
+  | HSDP × EP × cp | >1 | >1 | >1 | 1 | ✅ `dp_replicate` outermost |
+  | HSDP × EP × cp × dp_shard | >1 | >1 | >1 | >1 | ✅ |
+  | HSDP × EP (no `dp_shard`, no `cp`) | >1 | >1 | 1 | 1 | ❌ rejected at config validation: the experts have no axis inside each replica to reduce over |
+  | EP × TP | * | >1 | * | * | ❌ rejected at config validation (`ValueError`) |
+
+  Experts shard on `ep`, the sequence on `cp`, dense weights on every non-`ep` axis, expert
+  slices on `dp_shard × cp`. Stock attention runs CP through ringmaster (Ulysses preferred);
   GLM-5.2 DSA via the kernels plugin brings its own `cp`-aware attention.
 - transformers' own expert/tensor parallelism (`distributed_config` with `enable_expert_parallel`,
   `tp_plan`, `tp_size` via `model_kwargs`) is rejected: the plugin shards the experts itself and

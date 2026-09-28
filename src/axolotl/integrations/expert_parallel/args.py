@@ -78,3 +78,67 @@ class ExpertParallelArgs(BaseModel):
             )
 
         return self
+
+    @model_validator(mode="after")
+    def _validate_topology(self):
+        # only the merged input config carries the fsdp/mesh fields; standalone args skip
+        if (
+            self.expert_parallel_size <= 1
+            or "fsdp_config" not in type(self).model_fields
+        ):
+            return self
+        validate_expert_parallel_topology(self)
+        return self
+
+
+def validate_expert_parallel_topology(cfg) -> None:
+    """Reject EP layouts the sharding, clipping and save paths do not handle."""
+    ep_size = getattr(cfg, "expert_parallel_size", 1) or 1
+    if ep_size <= 1:
+        return
+
+    fsdp_config = getattr(cfg, "fsdp_config", None)
+    fsdp_version = getattr(cfg, "fsdp_version", None) or (
+        getattr(fsdp_config, "fsdp_version", None) if fsdp_config else None
+    )
+    if not fsdp_config or fsdp_version != 2:
+        raise ValueError(
+            f"expert_parallel_size ({ep_size}) > 1 requires FSDP2: set fsdp_version: 2 "
+            "and an fsdp_config block. Under DDP the expert LoRA sync, gradient clipping, "
+            "gradient-accumulation scaling and checkpoint save are all wrong for sharded experts."
+        )
+
+    for key in ("state_dict_type", "final_state_dict_type"):
+        value = getattr(fsdp_config, key, None)
+        if key == "state_dict_type" and value is None:
+            raise ValueError(
+                f"expert_parallel_size ({ep_size}) > 1 requires fsdp_config.state_dict_type: "
+                "FULL_STATE_DICT. accelerate defaults FSDP2 to SHARDED_STATE_DICT, whose "
+                "checkpoints keep only EP group 0's experts (every group's expert shard has the "
+                "same name, shape and offset, so DCP deduplicates them)."
+            )
+        if value is not None and value != "FULL_STATE_DICT":
+            raise ValueError(
+                f"expert_parallel_size ({ep_size}) > 1 requires fsdp_config.{key}: "
+                f"FULL_STATE_DICT, got {value!r}. {value} checkpoints keep only EP group 0's "
+                "experts; the full state dict gathers every EP group's experts before rank 0 writes."
+            )
+
+    reject_replicate_without_shard_axis(
+        ep_size,
+        getattr(cfg, "dp_replicate_size", None) or 1,
+        getattr(cfg, "dp_shard_size", None) or 1,
+        getattr(cfg, "context_parallel_size", None) or 1,
+    )
+
+
+def reject_replicate_without_shard_axis(
+    ep_size: int, dp_replicate_size: int, dp_shard_size: int, cp_size: int
+) -> None:
+    if ep_size > 1 and dp_replicate_size > 1 and dp_shard_size <= 1 and cp_size <= 1:
+        raise ValueError(
+            f"expert_parallel_size ({ep_size}) with dp_replicate_size ({dp_replicate_size}) "
+            "needs a shard axis inside each replica: set dp_shard_size > 1 or "
+            "context_parallel_size > 1. A (dp_replicate, ep) mesh gives the experts no group "
+            "to reduce over, so replicas would drift apart."
+        )
