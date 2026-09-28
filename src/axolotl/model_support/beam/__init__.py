@@ -8,9 +8,33 @@ a different objective.
 """
 
 from axolotl.model_support.base import Experimental, ModelSupport, Unsupported
-from axolotl.model_support.profile import ModelProfile
+from axolotl.model_support.profile import (
+    ModelHookContext,
+    ModelHookPhase,
+    ModelHooks,
+    ModelProfile,
+)
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import VANILLA_CAUSAL_LM
+
+
+def _register_cce_patch(_context: ModelHookContext) -> None:
+    """Point cut_cross_entropy's registry at the patch in this package.
+
+    Runs before the CCE plugin's pre_model_load, which resolves PATCH_FNS by
+    string import, so the entry only has to exist by then.
+    """
+    try:
+        from cut_cross_entropy.transformers.patch import PATCH_FNS
+    except ImportError:
+        return
+
+    spec = ("axolotl.model_support.beam.cut_cross_entropy", "patch_beam")
+    PATCH_FNS.setdefault("beam", spec)
+    PATCH_FNS.setdefault(
+        "reflection",
+        ("axolotl.model_support.beam.cut_cross_entropy", "patch_reflection"),
+    )
 
 
 @register_model_support
@@ -47,4 +71,7 @@ class BeamSupport(ModelSupport):
                 "attn_implementation: flash_attention_2 until this is measured."
             ),
         },
+        hooks=ModelHooks(
+            by_phase={ModelHookPhase.BEFORE_MODEL_BUILD: (_register_cce_patch,)}
+        ),
     )

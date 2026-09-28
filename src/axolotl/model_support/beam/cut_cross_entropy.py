@@ -1,4 +1,4 @@
-"""Beam (reflection) CCE patch. Adapted from the gemma3 patch in this package."""
+"""Beam (reflection) CCE patch. Adapted from cut_cross_entropy's gemma3 patch."""
 
 # Copyright 2024 Axolotl AI. All rights reserved.
 #
