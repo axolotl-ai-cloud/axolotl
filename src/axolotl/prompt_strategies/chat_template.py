@@ -62,22 +62,9 @@ def _align_ids(src: list[int], dst: list[int]) -> list[int] | None:
 _TEMPLATE_ROLE_WORDS = frozenset(
     {"user", "assistant", "system", "tool", "human", "gpt", "function"}
 )
-
-
-def _unambiguous_content_start(full_text: str, content: str, cursor: int) -> int | None:
-    """Return the start of ``content`` after ``cursor`` when that match is unique.
-
-    Returns None when the string is missing, appears more than once, or is itself
-    a template role word. Callers then keep the per-turn locator for that turn.
-    """
-    if content.strip().lower() in _TEMPLATE_ROLE_WORDS:
-        return None
-    found = full_text.find(content, cursor)
-    if found < 0:
-        return None
-    if full_text.find(content, found + 1) >= 0:
-        return None
-    return found
+# Keys that do not change the rendered text. Anything else (tool_calls,
+# reasoning_content, tool_call_id, …) stays on the per-turn locator.
+_FAST_TURN_KEYS = frozenset({"role", "content", "training", "training_detail"})
 
 
 class ChatTemplatePrompter(Prompter):
@@ -950,17 +937,18 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     ) -> dict[int, tuple[int, int]] | None:
         """Map every string turn onto ``input_ids`` with one render.
 
-        A turn is included only when its content occurs once, in order, and is
-        not a template role word. Other turns are omitted so the caller keeps
-        ``find_turn`` for them, including a leading Mistral system turn.
-        When ``locator`` is missing, the plain-text tokenization must still be
-        a subsequence of ``input_ids``. Returns None when that alignment fails.
+        Only role/content turns are included, and only when that content occurs
+        once, in order, and is not a template role word. Other turns are omitted
+        so the caller keeps ``find_turn``. Returns None when alignment fails or
+        a role/content turn's text is missing from the render, so a dropped
+        turn cannot be matched onto a later message.
         """
         if not input_ids or any(
             not isinstance(turn.get("content"), str) for turn in turns
         ):
             return None
 
+        src_to_dst: list[int] | None
         if locator is not None:
             full_text, token_starts, token_ends = locator
             src_to_dst = list(range(len(input_ids)))
@@ -983,7 +971,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             token_starts = [start for start, _ in offsets]
             token_ends = [end for _, end in offsets]
 
-        if len(token_starts) != len(src_to_dst):
+        if src_to_dst is None or len(token_starts) != len(src_to_dst):
             return None
 
         cursor = 0
@@ -995,11 +983,17 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             # find_turn refuses to train a leading Mistral system turn.
             if index == 0 and turn.get("role") == "system" and mistral_tokenizer:
                 continue
-            content = turn.get("content") or ""
-            if content == "":
+            if set(turn) - _FAST_TURN_KEYS:
                 continue
-            found = _unambiguous_content_start(full_text, content, cursor)
-            if found is None:
+            content = turn.get("content") or ""
+            if not isinstance(content, str) or content == "":
+                continue
+            if content.strip().lower() in _TEMPLATE_ROLE_WORDS:
+                continue
+            found = full_text.find(content, cursor)
+            if found < 0:
+                return None
+            if full_text.find(content, found + 1) >= 0:
                 continue
             char_start = found
             char_end = found + len(content)
