@@ -63,16 +63,15 @@ def test_fsdp2_checkpoint_save_uses_axolotl_cfg_when_trainer_flag_unset():
         axolotl_cfg=SimpleNamespace(
             fsdp_version=2,
             fsdp_config={"state_dict_type": "SHARDED_STATE_DICT"},
-            fsdp=None,
         ),
     )
     assert AxolotlTrainer._is_fsdp2_checkpoint_save_enabled(stub)
 
 
-def test_fsdp2_checkpoint_save_ignores_non_fsdp2_cfg():
+def test_fsdp2_checkpoint_save_ignores_cfg_without_fsdp_config():
     stub = SimpleNamespace(
         is_fsdp_enabled=False,
-        axolotl_cfg=SimpleNamespace(fsdp_version=1, fsdp_config={}, fsdp=None),
+        axolotl_cfg=SimpleNamespace(fsdp_config=None),
     )
     assert not AxolotlTrainer._is_fsdp2_checkpoint_save_enabled(stub)
 

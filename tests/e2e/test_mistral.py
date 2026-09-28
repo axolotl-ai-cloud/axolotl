@@ -1,5 +1,5 @@
 """
-E2E tests for lora llama
+E2E tests for Mistral full fine-tuning and LoRA
 """
 
 import unittest
@@ -23,7 +23,7 @@ pytestmark = requires_flash_attn
 
 class TestMistral(unittest.TestCase):
     """
-    Test case for Llama models using LoRA
+    Test case for Mistral training
     """
 
     @with_temp_dir
@@ -33,6 +33,8 @@ class TestMistral(unittest.TestCase):
                 "base_model": "axolotl-ai-co/tiny-mistral-25m",
                 "flash_attention": True,
                 "sequence_len": 1024,
+                "seed": 42,
+                "dataset_prepared_path": temp_dir + "/prepared",
                 "load_in_8bit": True,
                 "adapter": "lora",
                 "lora_r": 32,
@@ -80,6 +82,16 @@ class TestMistral(unittest.TestCase):
             max_initial=4.5,
             max_final=4.3,
         )
+        # Shuffled training windows differ in difficulty; evaluate the same samples.
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            tag="eval/loss",
+            initial_window=1,
+            final_window=1,
+            max_loss_ratio=0.99,
+            max_initial=4.5,
+            max_final=4.3,
+        )
 
     @with_temp_dir
     def test_ft(self, temp_dir):
@@ -88,6 +100,8 @@ class TestMistral(unittest.TestCase):
                 "base_model": "axolotl-ai-co/tiny-mistral-25m",
                 "flash_attention": True,
                 "sequence_len": 1024,
+                "seed": 42,
+                "dataset_prepared_path": temp_dir + "/prepared",
                 "val_set_size": 0.02,
                 "special_tokens": {
                     "unk_token": "<unk>",
@@ -130,6 +144,16 @@ class TestMistral(unittest.TestCase):
             temp_dir + "/runs",
             initial_window=5,
             final_window=5,
+            max_initial=4.5,
+            max_final=4.3,
+        )
+        # Shuffled training windows differ in difficulty; evaluate the same samples.
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            tag="eval/loss",
+            initial_window=1,
+            final_window=1,
+            max_loss_ratio=0.99,
             max_initial=4.5,
             max_final=4.3,
         )

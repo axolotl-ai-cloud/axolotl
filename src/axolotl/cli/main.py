@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import axolotl
 from axolotl.cli.args import (
     EvaluateCliArgs,
+    ExportCliArgs,
     PreprocessCliArgs,
     QuantizeCliArgs,
     TrainerCliArgs,
@@ -358,6 +359,17 @@ def quantize(config: str, **cli_args: QuantizeCliArgs):
     from axolotl.cli.quantize import do_quantize
 
     do_quantize(config, cli_args)
+
+
+@cli.command()
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@add_options_from_dataclass(ExportCliArgs)
+@filter_none_kwargs
+def export(config: str, **cli_args: ExportCliArgs):
+    """Export a trained model to a deployment format (GGUF)."""
+    from axolotl.cli.export import do_export
+
+    do_export(config, cli_args)
 
 
 @cli.command()
