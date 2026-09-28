@@ -65,7 +65,16 @@ pytest tests/e2e/test_lora_llama.py          # LoRA smoke test
 pytest tests/e2e/multigpu/                    # needs >= 2 GPUs
 ```
 
-Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`). `cicd/cicd.sh` and `cicd/multigpu.sh` list CI's exact run order.
+Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`).
+`cicd/cicd.sh`, `cicd/cicd_cuda_kernels.sh`, and `cicd/multigpu.sh` list CI's exact
+run order. Put single-GPU kernel correctness and numerical parity tests under
+`tests/e2e/kernels/` or `tests/integrations/kernels/` so they run in the dedicated
+kernel lane. LoRA kernel patching runs in its own process there; the slow FLA
+Mamba CUDA tests are selected explicitly. Model training smoke tests stay in the
+general lane, including the lightweight FLA/TileLang installation smoke test.
+Both single-GPU lanes resume interrupted cache downloads with a shared 15-minute
+download budget, then extract the completed archive without clearing the shared
+Hub cache.
 
 ## How to Contribute
 

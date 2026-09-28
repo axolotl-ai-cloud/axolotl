@@ -1,4 +1,4 @@
-"""Explicit native/FLA loading for pure Mamba language models."""
+"""Config-selected mixer backends for pure Mamba language models."""
 
 from collections.abc import Mapping
 
@@ -7,16 +7,20 @@ from axolotl.model_support.profile import (
     ModelHookPhase,
     ModelHooks,
     ModelProfile,
-    ModelStrategyOverrides,
+    ModelRegistrationOverrides,
 )
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import VANILLA_CAUSAL_LM
 
 
-def _loader():
-    from .loading import MambaModelLoader
+def _patch_mappings():
+    from axolotl.monkeypatch.models.mamba.modeling import patch_mamba_boundaries
 
-    return MambaModelLoader
+    from .modeling import Mamba2Mixer, MambaMixer
+
+    patch_mamba_boundaries("mamba")
+    patch_mamba_boundaries("mamba2")
+    return {"^MambaMixer$": MambaMixer, "^Mamba2Mixer$": Mamba2Mixer}
 
 
 def _validate_adapters(context):
@@ -27,7 +31,34 @@ def _validate_adapters(context):
         if isinstance(config, Mapping)
         else getattr(config, "mamba_backend", overrides.get("mamba_backend"))
     )
-    if backend != "fla" or not getattr(context.cfg, "adapter", None):
+    if backend != "fla":
+        return
+    quantization = (
+        config.get("quantization_config")
+        if isinstance(config, Mapping)
+        else getattr(config, "quantization_config", None)
+    )
+    if (
+        getattr(context.cfg, "adapter", None) == "qlora"
+        or any(
+            getattr(context.cfg, name, None)
+            for name in (
+                "load_in_4bit",
+                "load_in_8bit",
+                "gptq",
+                "model_quantization_config",
+            )
+        )
+        or quantization
+        or overrides.get("quantization_config")
+        or getattr(context.model, "is_quantized", False)
+    ):
+        raise ValueError(
+            "FLA Mamba does not support QLoRA or quantized model weights. "
+            "Use an unquantized checkpoint with full fine-tuning or adapter: lora, "
+            "and disable quantized loading."
+        )
+    if not getattr(context.cfg, "adapter", None):
         return
     if context.cfg.adapter != "lora":
         raise ValueError("FLA Mamba currently supports LoRA or full fine-tuning")
@@ -59,7 +90,7 @@ class MambaSupport(ModelSupport):
     model_types = ("mamba", "mamba2")
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
-        strategies=ModelStrategyOverrides(auto_model_cls=_loader),
+        registrations=ModelRegistrationOverrides(patch_mappings=_patch_mappings),
         hooks=ModelHooks(
             by_phase={
                 ModelHookPhase.CONFIGURE_RUN: (_validate_adapters,),

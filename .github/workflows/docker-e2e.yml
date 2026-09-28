@@ -15,6 +15,7 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
       - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/prepare_hf_cache.sh"
       - "cicd/Dockerfile-uv.jinja"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
@@ -24,6 +25,7 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
       - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/prepare_hf_cache.sh"
       - "cicd/Dockerfile-uv.jinja"
   workflow_dispatch:
 

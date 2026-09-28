@@ -1565,6 +1565,12 @@ class SystemValidationMixin:
             checker = is_flash_attn_3_available
         else:
             checker = is_flash_attn_2_available
+            # TODO: remove when transformers 5.18.0 is released
+            from transformers.integrations.hub_kernels import (
+                _FLASH_ATTN_KERNEL_VERSION_MAPPING,  # pylint: disable=protected-access
+            )
+
+            _FLASH_ATTN_KERNEL_VERSION_MAPPING[2] = 3
         with allow_all_hub_kernels():
             available = checker(kernels_fallback_ok=True)
         reason = None

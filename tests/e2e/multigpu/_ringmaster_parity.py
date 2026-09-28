@@ -40,7 +40,7 @@ def main():
             if os.environ.get("RM_FLA") == "1":
                 from transformers import MambaConfig
 
-                from axolotl.model_support.mamba.loading import MambaModelLoader
+                from tests.monkeypatch._mamba_model import MambaModelLoader
 
                 model_cls = MambaModelLoader
                 config_cls = (
@@ -67,7 +67,15 @@ def main():
             ).cuda()
         if inner != "sdpa":
             model = model.to(torch.bfloat16)
-        reference = type(model)(copy.deepcopy(model.config)).cuda().to(model.dtype)
+        reference = (
+            (
+                MambaModelLoader(copy.deepcopy(model.config))
+                if os.environ.get("RM_FLA") == "1"
+                else type(model)(copy.deepcopy(model.config))
+            )
+            .cuda()
+            .to(model.dtype)
+        )
         if os.environ.get("RM_MODEL") not in ("mamba", "mamba2"):
             reference.set_attn_implementation("sdpa")
         reference.load_state_dict(model.state_dict())
