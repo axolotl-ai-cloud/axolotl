@@ -381,13 +381,6 @@ def _ep_forward(
     topk_idx_i64 = top_k_index.to(torch.int64)
     topk_w_f32 = top_k_weights.to(torch.float32)
 
-    # Cap tokens-per-expert before building the dispatch layout — an overloaded expert deadlocks
-    # DeepEP's intranode combine (the GLM router concentrates with depth).
-    if _TOKEN_CAPACITY is not None:
-        topk_idx_i64, topk_w_f32 = _apply_expert_capacity(
-            topk_idx_i64, topk_w_f32, _TOKEN_CAPACITY
-        )
-
     # Drop padding tokens from the dispatch. Under non-packed training with
     # `pad_to_sequence_len`, padding rows carry identical embeddings, so the router
     # sends them all to the same one or two experts — a routing imbalance DeepEP's
@@ -406,6 +399,14 @@ def _ep_forward(
                 f"EP padding sentinel: {int(valid.sum())}/{valid.numel()} real tokens dispatched"
             )
         topk_idx_i64 = topk_idx_i64.masked_fill(~valid.view(-1, 1), -1)
+
+    # Cap tokens-per-expert before building the dispatch layout — an overloaded expert deadlocks
+    # DeepEP's intranode combine (the GLM router concentrates with depth). Runs after the padding
+    # sentinel so identical pad rows can't occupy an expert's capacity and evict real tokens.
+    if _TOKEN_CAPACITY is not None:
+        topk_idx_i64, topk_w_f32 = _apply_expert_capacity(
+            topk_idx_i64, topk_w_f32, _TOKEN_CAPACITY
+        )
 
     group = (
         _TorchBackend.group(E_global, E_local)
