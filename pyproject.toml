@@ -7,29 +7,28 @@ name = "axolotl"
 dynamic = ["version"]
 description = "LLM Trainer"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 # license = "Apache-2.0"
 
 dependencies = [
     # Core ML stack
-    "torch>=2.11.0,<=2.12.1",
+    "torch>=2.13.0,<=2.14.0",
     "packaging==26.0",
-    "huggingface_hub==1.17.0",
-    "peft==0.20.0",
-    "tokenizers==0.22.2",
-    "transformers==5.14.1",
-    "accelerate==1.13.0",
+    "huggingface_hub==1.18.0",
+    "peft==0.21.0",
+    "tokenizers==0.23.1",
+    "transformers==5.17.0",
+    "accelerate==1.15.0",
     "datasets==4.8.4",
-    "trl==1.8.0",
+    "trl==1.13.0",
     "hf_xet==1.4.3",
-    "kernels==0.15.2",
+    "kernels>=0.16.0,<0.17.0",
     "trackio==0.19.0",
     "typing-extensions==4.15.0",
     "optimum==1.16.2",
     "hf_transfer",
     "sentencepiece",
     "gradio==6.10.0",
-    "modal==1.3.0.post1",
     "pydantic==2.12.5",
     "addict",
     "fire",
@@ -78,7 +77,7 @@ dependencies = [
     "mistral-common==1.11.5",
 
     # Platform-specific (Linux only)
-    "bitsandbytes==0.50.0 ; sys_platform != 'darwin'",
+    "bitsandbytes==0.50.2 ; sys_platform != 'darwin'",
     # >=3.7: 3.7 fixes the FP4 tl.dot_scaled square-operand (tile==head_dim) scale
     # mis-binding on sm_120 — required for correct+fast NVFP4 attention at head_dim
     # 128 (Qwen3-VL). Older Triton still works but falls back to a slower D=128 tile,
@@ -86,15 +85,18 @@ dependencies = [
     # the NVFP4 extra raises this to >=3.7 where the fast path actually matters.
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.33.post2 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
-    "liger-kernel==0.8.0 ; sys_platform != 'darwin'",
-    "torchao==0.17.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
+    "liger-kernel==0.8.1 ; sys_platform != 'darwin'",
+    "torchao==0.18.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
 
     # Architecture-specific
-    "fla-core==0.4.1 ; platform_machine != 'aarch64'",
-    "flash-linear-attention==0.4.1 ; platform_machine != 'aarch64'",
+    "fla-core==0.5.2 ; platform_machine != 'aarch64'",
+    "flash-linear-attention==0.5.2 ; platform_machine != 'aarch64'",
 ]
 
 [project.optional-dependencies]
+fla = ["flash-linear-attention[tilelang]==0.5.2", "tilelang==0.1.14"]
+modal = ["modal==1.3.0.post1"]
+baseten = ["truss==0.18.30"]
 flash-attn = ["flash-attn==2.8.3"]
 # NVFP4 base-GEMM training kernels. mslk's real build (1.0.0+cu130) lives only on
 # the cu130 wheel index (PyPI ships an empty 0.0.0 stub), so it is pinned to that
@@ -104,12 +106,11 @@ flash-attn = ["flash-attn==2.8.3"]
 # already present; scripts/install_nvfp4.sh provisions those (and the cu130 torchao
 # build). For uv users who already have cu130 torch: `uv pip install -e ".[nvfp4,flash-attn]"`.
 nvfp4 = ["mslk>=1.0.0", "triton>=3.7.0 ; sys_platform != 'darwin'"]
-ring-flash-attn = [
-    "flash-attn==2.8.3",
-    "ring-flash-attn>=0.1.7",
+ringmaster = [
+    "axolotl-ringmaster>=0.2.2",
 ]
 deepspeed = [
-    "deepspeed>=0.18.6,<0.19.0",
+    "deepspeed>=0.18.6,<0.20.0",
     "deepspeed-kernels",
 ]
 mamba-ssm = [
@@ -140,7 +141,7 @@ ray = [
     "ray[train]>=2.52.1",
 ]
 vllm = [
-    "vllm>=0.15.0",
+    "vllm>=0.17.0",
 ]
 llmcompressor = [
     "llmcompressor>=0.10.0",
@@ -152,6 +153,7 @@ opentelemetry = [
     "opentelemetry-exporter-prometheus",
     "prometheus-client",
 ]
+kernels-curated = ["kernels[curated]"]
 
 [dependency-groups]
 dev = [
@@ -178,6 +180,11 @@ test = [
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
 
+[project.entry-points."axolotl.cloud_providers"]
+nebius = "axolotl.integrations.nebius.cloud:NebiusCloud"
+modal = "axolotl.integrations.modal.cloud:ModalCloud"
+baseten = "axolotl.integrations.baseten.cloud:BasetenCloud"
+
 [project.urls]
 Homepage = "https://axolotl.ai/"
 Documentation = "https://docs.axolotl.ai/"
@@ -193,6 +200,8 @@ axolotl = [
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
 ]
 
+"axolotl.integrations.baseten" = ["template/*.sh", "template/*.py"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -201,7 +210,7 @@ version = { file = "VERSION" }
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "B", "I"]
@@ -251,6 +260,8 @@ norecursedirs = [
 ]
 markers = [
     "slow: marks tests as slow",
+    "nf4_distributed: CPU multi-process NF4 loading, sharding, and resume tests",
+    "distributed_cpu: CPU multi-process (gloo) tests unrelated to NF4 loading",
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
     "integration: marks tests as integration tests (real model modeling paths)",
 ]
@@ -265,10 +276,6 @@ conflicts = [
     [
         { package = "axolotl" },
         { extra = "flash-attn" },
-    ],
-    [
-        { package = "axolotl" },
-        { extra = "ring-flash-attn" },
     ],
     [
         { package = "axolotl" },

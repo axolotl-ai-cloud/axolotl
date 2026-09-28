@@ -221,7 +221,9 @@ def _make_batched_sync_weights(original_sync_weights):
         # Check if we're in a non-PEFT, non-FSDP, non-ZeRO scenario where batching helps
         accelerator = self.accelerator
         model = self.model
-        is_fsdp_enabled = self.is_fsdp_enabled
+        # TRL >=1.6 moved the FSDP flag onto the distributed helper (_dist.is_fsdp);
+        # VLLMGeneration no longer exposes is_fsdp_enabled directly.
+        is_fsdp_enabled = self._dist.is_fsdp
 
         deepspeed_plugin = accelerator.state.deepspeed_plugin
         zero_stage_3 = deepspeed_plugin is not None and deepspeed_plugin.zero_stage == 3

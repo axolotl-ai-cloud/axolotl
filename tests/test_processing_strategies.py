@@ -8,6 +8,10 @@ import pytest
 import torch
 from pydantic import ValidationError
 
+from axolotl.model_support.cohere_compass.processing import (
+    CohereCompassProcessingStrategy,
+)
+from axolotl.model_support.muse_glimmer.processing import MuseGlimmerProcessingStrategy
 from axolotl.model_support.paddleocr_vl.processing import PaddleOCRVLProcessingStrategy
 from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
@@ -720,6 +724,66 @@ def test_paddleocr_vl_user_boundary_matches_text_only_turns():
     # User content (" hello", " there", "\n") and assistant ("hi", eos) train;
     # bos and both role markers stay masked.
     assert labels == [-100, -100, -100, 23013, 883, 23, -100, -100, -100, 2488, 2]
+
+
+# Real ids from CohereLabs/North-Micro-Vision-Instruct.
+_COMPASS_VOCAB = {
+    "<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>": [255000, 255004],
+    "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>": [255000, 255002],
+    "<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>": [255000, 255003],
+    "<|END_OF_TURN_TOKEN|>": [255001],
+    "<|IMAGE_PAD|>": [255031],
+}
+_COMPASS_EOT = 255001
+# <bos> [system] sys <eot> [user] <vision_start> <img> <img> <vision_end> ask <eot>
+# [chatbot] ans1 ans2 <eot> <pad> <pad>
+_COMPASS_SEQ = [2, 255000, 255004, 700, 255001]
+_COMPASS_SEQ += [255000, 255002, 255028, 255031, 255031, 255029, 701, 255001]
+_COMPASS_SEQ += [255000, 255003, 702, 703, 255001, 0, 0]
+
+
+def _cohere_compass_fake_processor():
+    proc = _Processor(_Tokenizer(_COMPASS_VOCAB, pad_id=0, eos_id=_COMPASS_EOT))
+    proc.image_token = "<|IMAGE_PAD|>"
+    proc.vision_start_token_id = 255028
+    proc.vision_end_token_id = 255029
+    return proc
+
+
+def test_cohere_compass_masks_system_user_and_image_tokens():
+    strategy = CohereCompassProcessingStrategy(_cohere_compass_fake_processor())
+    labels = strategy.process_labels(torch.tensor([_COMPASS_SEQ])).tolist()[0]
+    # Only the chatbot turn's content plus its <|END_OF_TURN_TOKEN|> trains.
+    assert labels == [-100] * 15 + [702, 703, 255001, -100, -100]
+
+
+def test_cohere_compass_trains_user_turn_when_requested():
+    strategy = CohereCompassProcessingStrategy(
+        _cohere_compass_fake_processor(), roles_to_train=["user", "assistant"]
+    )
+    labels = strategy.process_labels(torch.tensor([_COMPASS_SEQ])).tolist()[0]
+    # User content trains, but the image span stays masked even inside a trained turn.
+    assert labels[7:13] == [-100, -100, -100, -100, 701, 255001]
+    assert labels[1:5] == [-100, -100, -100, -100]  # system turn still masked
+
+
+def test_cohere_compass_role_boundaries_cover_all_three_roles():
+    strategy = CohereCompassProcessingStrategy(_cohere_compass_fake_processor())
+    assert {b.role for b in strategy.role_boundaries} == {"system", "user", "assistant"}
+    assistant = next(b for b in strategy.role_boundaries if b.role == "assistant")
+    assert assistant.start_tokens == [255000, 255003]
+    assert assistant.end_tokens == [_COMPASS_EOT]
+
+
+def test_dispatch_cohere_compass():
+    pytest.importorskip("transformers.models.cohere_compass")
+    from transformers.models.cohere_compass import CohereCompassProcessor
+
+    proc = MagicMock(spec=CohereCompassProcessor)
+    proc.tokenizer = _Tokenizer(_COMPASS_VOCAB, pad_id=0, eos_id=_COMPASS_EOT)
+    proc.image_token = "<|IMAGE_PAD|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, CohereCompassProcessingStrategy)
 
 
 def test_dispatch_paddleocr_vl():
@@ -1682,3 +1746,155 @@ def test_call_unknown_key_raises_value_error():
 
     with pytest.raises(ValueError):
         strategy([{"random_col": _openai_messages()}])
+
+
+# --------------------------------------------------------------------------- #
+# Muse Glimmer
+#
+# Token ids captured from the real meta-models/Muse-Glimmer-30B tokenizer. The
+# Harmony template writes assistant turns as "<|start|>assistant to=user<|message|>",
+# but add_generation_prompt emits only "<|start|>assistant" and the model produces
+# the recipient itself, so the marker stops there and " to=user<|message|>" has to
+# land inside the trained span.
+# --------------------------------------------------------------------------- #
+
+_MG_VOCAB = {
+    "<|start|>system<|message|>": [200022, 15651, 200023],
+    "<|start|>user<|message|>": [200022, 1556, 200023],
+    "<|start|>tool": [200022, 21188],
+    "<|start|>assistant": [200022, 140680],
+    "<|start|>": [200022],
+    "<|eot|>": [200008],
+    "<|eom|>": [200007],
+    "<|patch|>": [200092],
+}
+_MG_EOT = 200008
+_MG_EOM = 200007
+
+
+def _muse_glimmer_fake_processor():
+    proc = _Processor(_Tokenizer(_MG_VOCAB, pad_id=200018, eos_id=200001))
+    proc.image_token = "<|patch|>"
+    proc.image_token_id = 200092
+    proc.image_start_token_id = 200080
+    proc.image_end_token_id = 200081
+    proc.video_token_id = 200091
+    return proc
+
+
+def test_muse_glimmer_trains_recipient_prefix_and_masks_prompt():
+    """The recipient (" to=user<|message|>") must train: inference resumes from a
+    bare "<|start|>assistant", so the model has to generate it."""
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    seq = [200022, 15651, 200023, 100, 200008]  # system
+    seq += [200022, 1556, 200023, 101, 200008]  # user
+    seq += [200022, 140680, 328, 76976, 200023, 102, 200008]  # assistant to=user
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == [-100] * 12 + [328, 76976, 200023, 102, _MG_EOT]
+
+
+def test_muse_glimmer_reasoning_block_trains_as_its_own_span():
+    """A to=self reasoning block closes with <|eom|>, not <|eot|>. Ending the span
+    on <|start|> terminates it correctly and re-matches the following content turn."""
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    seq = [200022, 1556, 200023, 101, 200008]  # user
+    seq += [200022, 140680, 328, 19669, 200023, 103, _MG_EOM]  # assistant to=self
+    seq += [200022, 140680, 328, 76976, 200023, 102, 200008]  # assistant to=user
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == (
+        [-100] * 7
+        + [328, 19669, 200023, 103, _MG_EOM]
+        + [-100, -100]
+        + [328, 76976, 200023, 102, _MG_EOT]
+    )
+
+
+def test_muse_glimmer_eom_terminated_turn_does_not_leak_tool_output():
+    """An assistant turn with a non-"user" recipient closes with <|eom|>, whatever
+    follows it. Ending the span on <|eot|> would run straight through the <|eom|>
+    and train on the tool output that comes next."""
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    # assistant to=get_weather ... <|eom|>
+    seq = [200022, 140680, 328, 9999, 200023, 104, _MG_EOM]
+    # tool get_weather<|message|><tool_output ...><|eot|>
+    seq += [200022, 21188, 9999, 200023, 105, 200008]
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == [-100, -100, 328, 9999, 200023, 104, _MG_EOM] + [-100] * 6
+
+
+@pytest.mark.parametrize(
+    "train_on_eos, user_eot, first_eom, last_eot",
+    [
+        ("turn", -100, _MG_EOM, _MG_EOT),
+        ("all", _MG_EOT, _MG_EOM, _MG_EOT),
+        ("last", -100, -100, _MG_EOT),
+        ("none", -100, -100, -100),
+    ],
+)
+def test_muse_glimmer_train_on_eos_gates_assistant_terminators(
+    train_on_eos, user_eot, first_eom, last_eot
+):
+    """The assistant span ends on the next <|start|>, so its terminator sits in the span
+    body where the shared scanner cannot gate it. The strategy re-applies train_on_eos."""
+    strategy = MuseGlimmerProcessingStrategy(
+        _muse_glimmer_fake_processor(), train_on_eos=train_on_eos
+    )
+    seq = [200022, 1556, 200023, 101, _MG_EOT]  # user
+    seq += [200022, 140680, 328, 19669, 200023, 103, _MG_EOM]  # assistant to=self
+    seq += [200022, 140680, 328, 76976, 200023, 102, _MG_EOT]  # assistant to=user
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == (
+        [-100] * 4
+        + [user_eot]
+        + [-100, -100]
+        + [328, 19669, 200023, 103, first_eom]
+        + [-100, -100]
+        + [328, 76976, 200023, 102, last_eot]
+    )
+
+
+def test_muse_glimmer_media_tokens_masked_even_on_trainable_turns():
+    strategy = MuseGlimmerProcessingStrategy(
+        _muse_glimmer_fake_processor(), roles_to_train=["user", "assistant"]
+    )
+    # user turn wrapping two patches in <|image_start|> / <|image_end|>
+    seq = [200022, 1556, 200023, 200080, 200092, 200092, 200081, 101, 200008]
+
+    labels = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert labels == [-100] * 7 + [101, _MG_EOT]
+
+
+def test_muse_glimmer_declares_all_four_roles():
+    strategy = MuseGlimmerProcessingStrategy(_muse_glimmer_fake_processor())
+    assert {b.role for b in strategy.role_boundaries} == {
+        "system",
+        "user",
+        "tool",
+        "assistant",
+    }
+    assistant = next(b for b in strategy.role_boundaries if b.role == "assistant")
+    # Must stop at "<|start|>assistant"; including the recipient would drop it from loss.
+    assert assistant.start_tokens == [200022, 140680]
+    # Ends on <|start|> rather than <|eot|>, so an <|eom|>-terminated turn cannot run on.
+    assert assistant.end_tokens == [200022]
+    assert assistant.include_end is False
+
+
+def test_dispatch_muse_glimmer():
+    pytest.importorskip("transformers.models.muse_glimmer")
+    from transformers.models.muse_glimmer import MuseGlimmerProcessor
+
+    proc = MagicMock(spec=MuseGlimmerProcessor)
+    proc.tokenizer = _Tokenizer(_MG_VOCAB, pad_id=200018, eos_id=200001)
+    proc.image_token = "<|patch|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, MuseGlimmerProcessingStrategy)
+
+
+def test_dispatch_muse_glimmer_chat_template_key():
+    s = _dispatch(_muse_glimmer_fake_processor(), "muse_glimmer")
+    assert isinstance(s, MuseGlimmerProcessingStrategy)

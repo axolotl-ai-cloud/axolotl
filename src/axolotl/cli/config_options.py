@@ -685,6 +685,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use bitsandbytes 4 bit",
     ),
     (
+        ("--nf4-backend",),
+        None,
+        None,
+        "NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
+    ),
+    (
         ("--adapter",),
         None,
         None,
@@ -811,6 +817,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to tie adapter weights for tied model weights. See https://github.com/huggingface/peft/issues/2864",
     ),
     (
+        ("--lora-fp32-gradients/--no-lora-fp32-gradients",),
+        None,
+        None,
+        "Accumulate LoRA gradients in FP32. Keeps LoRA parameters in FP32 on single-device/DDP/FSDP2; DeepSpeed uses native FP32 gradient buffers. Fused reductions follow parameter precision. Frozen base weights are not promoted.",
+    ),
+    (
         ("--peft-autocast-adapter-dtype/--no-peft-autocast-adapter-dtype",),
         None,
         None,
@@ -820,7 +832,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--qlora-sharded-model-loading/--no-qlora-sharded-model-loading",),
         None,
         None,
-        "load qlora model in sharded format for FSDP using answer.ai technique.",
+        "Load QLoRA weights in sharded format for FSDP. Defaults to true for FSDP2 QLoRA with load_in_4bit and cpu_ram_efficient_loading, and false otherwise.",
     ),
     (
         ("--lora-on-cpu/--no-lora-on-cpu",),
@@ -1165,10 +1177,10 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Sync steps for the reference model.",
     ),
     (
-        ("--trl.scale-rewards/--no-trl.scale-rewards",),
+        ("--trl.scale-rewards",),
         "trl__scale_rewards",
         None,
-        "Whether to scale rewards by their standard deviation.",
+        "How to scale rewards by their standard deviation. One of 'group' (per prompt-group, GRPO default), 'batch' (whole batch), or 'none'. Booleans are accepted for back-compat (True->'group', False->'none').",
     ),
     (
         ("--trl.temperature",),
@@ -1247,6 +1259,60 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "trl__mask_truncated_completions",
         None,
         "Whether to exclude truncated completions from loss calculation.",
+    ),
+    (
+        ("--trl.entropy-coef",),
+        "trl__entropy_coef",
+        "float",
+        "Static entropy regularization coefficient for GRPO, adding an entropy bonus to encourage exploration.",
+    ),
+    (
+        ("--trl.use-adaptive-entropy/--no-trl.use-adaptive-entropy",),
+        "trl__use_adaptive_entropy",
+        None,
+        "Enable adaptive entropy regularization (Skywork-OR1 style), adjusting entropy_coef toward entropy_target.",
+    ),
+    (
+        ("--trl.entropy-target",),
+        "trl__entropy_target",
+        "float",
+        "Target entropy when use_adaptive_entropy is enabled.",
+    ),
+    (
+        ("--trl.entropy-coef-delta",),
+        "trl__entropy_coef_delta",
+        "float",
+        "Step size for adjusting entropy_coef toward entropy_target.",
+    ),
+    (
+        ("--trl.entropy-coef-min",),
+        "trl__entropy_coef_min",
+        "float",
+        "Lower bound for the adaptive entropy_coef.",
+    ),
+    (
+        ("--trl.entropy-coef-max",),
+        "trl__entropy_coef_max",
+        "float",
+        "Upper bound for the adaptive entropy_coef.",
+    ),
+    (
+        ("--trl.vllm-importance-sampling-clip-min",),
+        "trl__vllm_importance_sampling_clip_min",
+        "float",
+        "Lower clip bound for the vLLM/training importance-sampling ratio.",
+    ),
+    (
+        ("--trl.vllm-importance-sampling-clip-max",),
+        "trl__vllm_importance_sampling_clip_max",
+        "float",
+        "Upper clip bound for the vLLM/training importance-sampling ratio.",
+    ),
+    (
+        ("--trl.log-multimodal/--no-trl.log-multimodal",),
+        "trl__log_multimodal",
+        None,
+        "Whether to log multimodal content (images, videos) alongside completions. Disable to reduce log size.",
     ),
     (
         ("--trl.vllm-enable-sleep-mode/--no-trl.vllm-enable-sleep-mode",),
@@ -1623,6 +1689,36 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "The number of elements in each group for per-group fake quantization",
     ),
     (
+        ("--export.format",),
+        "export__format",
+        None,
+        "Deployment format to export to.",
+    ),
+    (
+        ("--export.outtype",),
+        "export__outtype",
+        None,
+        "Weight type of the GGUF conversion.",
+    ),
+    (
+        ("--export.quantize",),
+        "export__quantize",
+        None,
+        "llama.cpp quant types to additionally emit, e.g. ['Q4_K_M', 'Q8_0'].",
+    ),
+    (
+        ("--export.outfile",),
+        "export__outfile",
+        "str",
+        "Output path; `{ftype}` is replaced by each weight type. Default: {output_dir}/gguf/{run}-{ftype}.gguf",
+    ),
+    (
+        ("--export.llama-cpp-dir",),
+        "export__llama_cpp_dir",
+        "str",
+        "Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
+    ),
+    (
         ("--reward-model/--no-reward-model",),
         None,
         None,
@@ -1989,6 +2085,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Enable FP8 mixed precision training using TorchAO. Best used in combination with torch.compile.",
     ),
     (
+        ("--fp8-config.recipe",),
+        "fp8_config__recipe",
+        None,
+        "TorchAO FP8 scaling recipe: 'tensorwise' (default), 'rowwise', or 'rowwise_with_gw_hp'.",
+    ),
+    (
         ("--fp8-enable-fsdp-float8-all-gather/--no-fp8-enable-fsdp-float8-all-gather",),
         None,
         None,
@@ -2324,13 +2426,19 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fused-attn-kernel/--no-fused-attn-kernel",),
         None,
         None,
-        "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) with a single fused RMSNorm+RoPE Triton kernel launch. Currently implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE full-attention layers; Gemma 4 always uses the fused path. Disabled (None/False) falls back to the eager transformers implementation. Compile-safe via torch.library.triton_op \u2014 traces under torch.compile(fullgraph=True). Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. Combining with torch_compile=true is a clear win on sm_120 (+9% extra) but currently regresses on sm_86 due to Inductor autotune biases \u2014 flip them on independently and benchmark.",
+        "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) with a single fused RMSNorm+RoPE Triton kernel launch. Currently implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE full-attention layers; Gemma 4 always uses the fused path. GLM-4.7-Flash (glm4_moe_lite) fuses partial RoPE and MLA Q/K/V assembly instead; latent RMSNorms remain separate and cached decoding uses the original path. Disabled (None/False) falls back to the eager transformers implementation. Compile-safe via torch.library.triton_op \u2014 traces under torch.compile(fullgraph=True). Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. Combining with torch_compile=true is a clear win on sm_120 (+9% extra) but currently regresses on sm_86 due to Inductor autotune biases \u2014 flip them on independently and benchmark.",
     ),
     (
         ("--experts-implementation",),
         None,
         None,
         "Which experts implementation to use for MoE models,",
+    ),
+    (
+        ("--ple-cpu-offload/--no-ple-cpu-offload",),
+        None,
+        None,
+        "Keep parameters the model declares in `_no_placement_params` in host RAM instead of VRAM (e.g. Qwen3.8-Flash-Next's 51.2B n-gram PLE embedding, 95.4 GiB in bf16, which its forward already gathers on whatever device the weight lives on). Each token reads only a handful of rows, so the per-step transfer is tens of MB. Requires qlora with load_in_4bit or lora with load_in_8bit, and enough host RAM to hold the table.",
     ),
     (
         ("--quantize-moe-experts/--no-quantize-moe-experts",),
@@ -2447,12 +2555,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to use deepcompile for faster training with deepspeed",
     ),
     (
-        ("--fsdp",),
-        None,
-        None,
-        "FSDP configuration",
-    ),
-    (
         ("--fsdp-config.fsdp-version",),
         "fsdp_config__fsdp_version",
         "int",
@@ -2473,12 +2575,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Offload parameters to CPU to reduce GPU memory usage",
     ),
     (
-        ("--fsdp-config.sync-module-states/--no-fsdp-config.sync-module-states",),
-        "fsdp_config__sync_module_states",
-        None,
-        "Synchronize module states across all processes",
-    ),
-    (
         (
             "--fsdp-config.cpu-ram-efficient-loading/--no-fsdp-config.cpu-ram-efficient-loading",
         ),
@@ -2493,12 +2589,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "fsdp_config__cpu_offload_pin_memory",
         None,
         "Disabling this enables swap memory usage for resource-constrained setups when offload_params is enabled.",
-    ),
-    (
-        ("--fsdp-config.use-orig-params/--no-fsdp-config.use-orig-params",),
-        "fsdp_config__use_orig_params",
-        None,
-        "Use original parameters instead of flattened parameters",
     ),
     (
         ("--fsdp-config.state-dict-type",),
@@ -2552,7 +2642,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fp32-norms/--no-fp32-norms",),
         None,
         None,
-        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_version: 2.",
+        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_config.",
     ),
     (
         ("--fp32-norm-classes",),

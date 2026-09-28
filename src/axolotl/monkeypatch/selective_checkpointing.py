@@ -8,11 +8,13 @@ dispatcher-visible.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable
 
 import torch
 from torch.utils.checkpoint import (
     CheckpointPolicy,
+    checkpoint as _torch_checkpoint,
     create_selective_checkpoint_contexts,
 )
 
@@ -21,6 +23,11 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 ATTENTION_GROUP = "attention"
+
+# PyTorch releases before 2.14 reject this keyword.
+_SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS = (
+    "respect_saved_tensors_hooks" in inspect.signature(_torch_checkpoint).parameters
+)
 
 _ATEN_ATTENTION_PACKETS = (
     "_scaled_dot_product_flash_attention",
@@ -320,6 +327,10 @@ def apply_selective_checkpointing(
         gc_kwargs = dict(gradient_checkpointing_kwargs or {})
         gc_kwargs["use_reentrant"] = False
         gc_kwargs["context_fn"] = context_fn
+        if _SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS:
+            gc_kwargs.setdefault("respect_saved_tensors_hooks", False)
+        else:
+            gc_kwargs.pop("respect_saved_tensors_hooks", None)
         return orig_enable(gradient_checkpointing_kwargs=gc_kwargs, **kwargs)
 
     enable_with_sac._axolotl_sac = True

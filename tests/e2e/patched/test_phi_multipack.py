@@ -12,8 +12,11 @@ from axolotl.utils.dict import DictDefault
 from ..utils import (
     check_model_output_exists,
     check_tensorboard_loss_decreased,
+    requires_flash_attn,
     with_temp_dir,
 )
+
+pytestmark = requires_flash_attn
 
 
 class TestPhiMultipack(unittest.TestCase):
