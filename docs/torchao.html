@@ -634,6 +634,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -911,6 +917,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
    
   <ul>
   <li><a href="#installation" id="toc-installation" class="nav-link active" data-scroll-target="#installation">Installation</a></li>
+  <li><a href="#native-nvfp4-lora-with-ddp" id="toc-native-nvfp4-lora-with-ddp" class="nav-link" data-scroll-target="#native-nvfp4-lora-with-ddp">Native NVFP4 LoRA with DDP</a></li>
   </ul>
 </nav>
     </div>
@@ -961,6 +968,10 @@ Tip
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install torchao <span class="at">--extra-index-url</span> https://download.pytorch.org/whl/cu121 <span class="co"># full options are cpu/cu118/cu121/cu124</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Nightly release</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">--pre</span> torchao-nightly <span class="at">--index-url</span> https://download.pytorch.org/whl/nightly/cu121 <span class="co"># full options are cpu/cu118/cu121/cu124</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="native-nvfp4-lora-with-ddp" class="level3">
+<h3 class="anchored" data-anchor-id="native-nvfp4-lora-with-ddp">Native NVFP4 LoRA with DDP</h3>
+<p>For a serialized, frozen native TorchAO weight-only NVFP4 base with ordinary PEFT LoRA, DDP automatically verifies component layouts and synchronizes the raw NVFP4 components from rank zero before wrapping the model. LoRA adapters continue through ordinary DDP reduction; no configuration flag is required. This path is qualified for two-rank regular weight-only LoRA training, checkpoint resume, and adapter save. Dynamic activation NVFP4 training eligibility remains separately restricted, while this component synchronization also serves verified dynamic callers. Non-DDP distributed backends remain outside this path.</p>
 
 
 </section>

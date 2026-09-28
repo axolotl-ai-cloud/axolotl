@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.ctx_managers.sequence_parallel – Axolotl</title>
+<title>integrations.context_parallel.plugin – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -909,16 +915,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.ctx_managers.sequence_parallel" id="toc-axolotl.utils.ctx_managers.sequence_parallel" class="nav-link active" data-scroll-target="#axolotl.utils.ctx_managers.sequence_parallel">utils.ctx_managers.sequence_parallel</a>
+  <li><a href="#axolotl.integrations.context_parallel.plugin" id="toc-axolotl.integrations.context_parallel.plugin" class="nav-link active" data-scroll-target="#axolotl.integrations.context_parallel.plugin">integrations.context_parallel.plugin</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad" id="toc-axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad" class="nav-link" data-scroll-target="#axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad">AllGatherWithGrad</a></li>
-  <li><a href="#axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager" id="toc-axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager" class="nav-link" data-scroll-target="#axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager">SequenceParallelContextManager</a></li>
-  </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism" id="toc-axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism" class="nav-link" data-scroll-target="#axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism">apply_sequence_parallelism</a></li>
+  <li><a href="#axolotl.integrations.context_parallel.plugin.ContextParallelPlugin" id="toc-axolotl.integrations.context_parallel.plugin.ContextParallelPlugin" class="nav-link" data-scroll-target="#axolotl.integrations.context_parallel.plugin.ContextParallelPlugin">ContextParallelPlugin</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -930,10 +931,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.utils.ctx_managers.sequence_parallel" class="level1">
-<h1>utils.ctx_managers.sequence_parallel</h1>
-<p><code>utils.ctx_managers.sequence_parallel</code></p>
-<p>Module for Axolotl trainer sequence parallelism manager and utilities</p>
+<section id="axolotl.integrations.context_parallel.plugin" class="level1">
+<h1>integrations.context_parallel.plugin</h1>
+<p><code>integrations.context_parallel.plugin</code></p>
+<p>Context-parallel plugin backed by the standalone <code>ringmaster</code> package.</p>
+<p>Switches attention to a ringmaster wrapper and installs batch-sharding hooks
+while preserving Trainer’s accumulation-window loss normalization.</p>
+<p>Setup runs in <code>post_trainer_create</code> because the accelerate device mesh (the
+<code>cp</code> dim FSDP2 reduces gradients over) only exists once the trainer’s
+Accelerator has been constructed.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -945,359 +951,17 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad">AllGatherWithGrad</a></td>
-<td>Custom autograd function for all-gather to preserve gradients.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager">SequenceParallelContextManager</a></td>
-<td>Context manager for sequence parallelism operations.</td>
+<td><a href="#axolotl.integrations.context_parallel.plugin.ContextParallelPlugin">ContextParallelPlugin</a></td>
+<td>Long-context attention (Ulysses/Ring/USP) via ringmaster.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad">AllGatherWithGrad</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.AllGatherWithGrad()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Custom autograd function for all-gather to preserve gradients.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad.backward">backward</a></td>
-<td>Backward pass for all-gather operation.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad.forward">forward</a></td>
-<td>Forward pass of all-gather of data with sequence dimension.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad.backward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad.backward">backward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.AllGatherWithGrad.backward(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    grad_output,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Backward pass for all-gather operation.</p>
-<p>Extracts the gradient slice corresponding to this rank’s original input
-from the full gradient tensor.</p>
-<section id="parameters" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 25%">
-<col style="width: 56%">
-<col style="width: 8%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td>torch.autograd.function.FunctionCtx</td>
-<td><code>torch.autograd</code> function context.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>grad_output</td>
-<td>torch.Tensor</td>
-<td>Gradient from subsequent layers with respect to the concatenated output tensor.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 4%">
-<col style="width: 16%">
-<col style="width: 79%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>tuple[torch.Tensor, None]</td>
-<td>Tuple containing the gradient slice for this rank’s input tensor and <code>None</code> for the process group parameter which doesn’t require gradients.</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad.forward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.AllGatherWithGrad.forward">forward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.AllGatherWithGrad.forward(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    input_tensor,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    group,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Forward pass of all-gather of data with sequence dimension.</p>
-<section id="parameters-1" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 12%">
-<col style="width: 32%">
-<col style="width: 44%">
-<col style="width: 10%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td>torch.autograd.function.FunctionCtx</td>
-<td><code>torch.autograd</code> function context.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>input_tensor</td>
-<td>torch.Tensor</td>
-<td>Tensor from model output with sequence dimension.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>group</td>
-<td>dist.ProcessGroup</td>
-<td><code>torch.distributed</code> process group.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-1" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 5%">
-<col style="width: 9%">
-<col style="width: 84%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Tensor from gathering the <code>input_tensor</code> from across the process group and concatenating along the sequence dimension.</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-</section>
-</section>
-<section id="axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.SequenceParallelContextManager">SequenceParallelContextManager</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.SequenceParallelContextManager(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    models,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    context_parallel_size,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    heads_k_stride,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    gather_outputs,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    device_mesh<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Context manager for sequence parallelism operations.</p>
-<p>This class provides a context that will automatically apply sequence parallelism
-during model forward passes using a pre-forward hook, and gather outputs from
-across the sequence parallelism group using a post-forward hook.</p>
-<section id="parameters-2" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 17%">
-<col style="width: 11%">
-<col style="width: 64%">
-<col style="width: 7%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>models</td>
-<td>list[nn.Module]</td>
-<td>List of models to apply sequence parallelism to pre- and post- forward hooks.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>context_parallel_size</td>
-<td>int</td>
-<td>Number of processes to split sequences over.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>gradient_accumulation_steps</td>
-<td>int</td>
-<td>Number of steps to accumulate gradients over.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>ring_attn_func</td>
-<td>RingAttnFunc</td>
-<td>Which ring attention function to use. Currently unused.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>heads_k_stride</td>
-<td>int | None</td>
-<td>Sequence parallelism K head stride size. Passed through to <code>varlen_llama3</code> <code>ring_flash_attn</code> implementation.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>gather_outputs</td>
-<td>bool</td>
-<td>Whether to gather outputs after model forward pass across the sequence parallel group.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism">apply_sequence_parallelism</a></td>
-<td>Apply sequence parallelism slicing to a batch.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.ctx_managers.sequence_parallel.apply_sequence_parallelism">apply_sequence_parallelism</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.ctx_managers.sequence_parallel.apply_sequence_parallelism(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    batch,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    local_rank,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    local_world_size,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    gradient_accumulation_steps,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Apply sequence parallelism slicing to a batch.</p>
-<p>Special handling is implemented for integer logits_to_keep, which indicates
-to only keep the last N tokens in the sequence during generation.</p>
-<section id="parameters-3" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 19%">
-<col style="width: 17%">
-<col style="width: 55%">
-<col style="width: 7%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>batch</td>
-<td>dict[str, torch.Tensor]</td>
-<td>Batch dictionary (e.g., input_ids, attention_mask, etc.).</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>local_rank</td>
-<td>int</td>
-<td>Local rank in the sequence parallel group.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>local_world_size</td>
-<td>int</td>
-<td>World size of the sequence parallel group.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>gradient_accumulation_steps</td>
-<td>int</td>
-<td>Number of steps to accumulate gradients over.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>ring_attn_func</td>
-<td>RingAttnFunc</td>
-<td>Which ring attention function to use. Currently unused, but related to above TODO.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-2" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-2">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 4%">
-<col style="width: 24%">
-<col style="width: 71%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>tuple[dict[str, torch.Tensor], int, int]</td>
-<td>tuple of: - Batch dictionary with sliced tensors. - The original sequence length before padding. - The number of padding tokens added.</td>
-</tr>
-</tbody>
-</table>
+<section id="axolotl.integrations.context_parallel.plugin.ContextParallelPlugin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.context_parallel.plugin.ContextParallelPlugin">ContextParallelPlugin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.context_parallel.plugin.ContextParallelPlugin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Long-context attention (Ulysses/Ring/USP) via ringmaster.</p>
 
 
-</section>
 </section>
 </section>
 </section>

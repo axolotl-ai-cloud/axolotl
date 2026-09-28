@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Launch Axolotl training directly on Nebius Serverless Jobs">
+<meta name="description" content="Fine-tune a model on Nebius GPUs with Axolotl, save the outputs and resume training">
 
 <title>Nebius Serverless Jobs – Axolotl</title>
 <style>
@@ -634,6 +634,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -910,18 +916,17 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#tested-configuration" id="toc-tested-configuration" class="nav-link active" data-scroll-target="#tested-configuration">Tested configuration</a></li>
-  <li><a href="#prerequisites" id="toc-prerequisites" class="nav-link" data-scroll-target="#prerequisites">Prerequisites</a></li>
-  <li><a href="#launch-training" id="toc-launch-training" class="nav-link" data-scroll-target="#launch-training">Launch training</a>
-  <ul class="collapse">
-  <li><a href="#runtime-images-and-local-forks" id="toc-runtime-images-and-local-forks" class="nav-link" data-scroll-target="#runtime-images-and-local-forks">Runtime images and local forks</a></li>
-  </ul></li>
-  <li><a href="#dataset-inputs-and-secrets" id="toc-dataset-inputs-and-secrets" class="nav-link" data-scroll-target="#dataset-inputs-and-secrets">Dataset inputs and secrets</a></li>
-  <li><a href="#outputs-and-checkpoints" id="toc-outputs-and-checkpoints" class="nav-link" data-scroll-target="#outputs-and-checkpoints">Outputs and checkpoints</a></li>
-  <li><a href="#resume-explicitly" id="toc-resume-explicitly" class="nav-link" data-scroll-target="#resume-explicitly">Resume explicitly</a></li>
-  <li><a href="#status-cancellation-and-cleanup" id="toc-status-cancellation-and-cleanup" class="nav-link" data-scroll-target="#status-cancellation-and-cleanup">Status, cancellation and cleanup</a></li>
-  <li><a href="#optional-serving-handoff" id="toc-optional-serving-handoff" class="nav-link" data-scroll-target="#optional-serving-handoff">Optional serving handoff</a></li>
+  <li><a href="#prerequisites" id="toc-prerequisites" class="nav-link active" data-scroll-target="#prerequisites">Setup</a></li>
+  <li><a href="#launch-training" id="toc-launch-training" class="nav-link" data-scroll-target="#launch-training">Launch training</a></li>
+  <li><a href="#status-cancellation-and-cleanup" id="toc-status-cancellation-and-cleanup" class="nav-link" data-scroll-target="#status-cancellation-and-cleanup">Logs and cancellation</a></li>
+  <li><a href="#outputs-and-checkpoints" id="toc-outputs-and-checkpoints" class="nav-link" data-scroll-target="#outputs-and-checkpoints">Download outputs</a></li>
+  <li><a href="#resume-explicitly" id="toc-resume-explicitly" class="nav-link" data-scroll-target="#resume-explicitly">Resume training</a></li>
+  <li><a href="#dataset-inputs-and-secrets" id="toc-dataset-inputs-and-secrets" class="nav-link" data-scroll-target="#dataset-inputs-and-secrets">Datasets and secrets</a></li>
+  <li><a href="#runtime-images-and-local-forks" id="toc-runtime-images-and-local-forks" class="nav-link" data-scroll-target="#runtime-images-and-local-forks">Custom images</a></li>
+  <li><a href="#troubleshooting" id="toc-troubleshooting" class="nav-link" data-scroll-target="#troubleshooting">Troubleshooting</a></li>
   <li><a href="#configuration-reference" id="toc-configuration-reference" class="nav-link" data-scroll-target="#configuration-reference">Configuration reference</a></li>
+  <li><a href="#tested-configuration" id="toc-tested-configuration" class="nav-link" data-scroll-target="#tested-configuration">Tested configuration</a></li>
+  <li><a href="#optional-serving-handoff" id="toc-optional-serving-handoff" class="nav-link" data-scroll-target="#optional-serving-handoff">Further reading</a></li>
   </ul>
 </nav>
     </div>
@@ -935,7 +940,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 <div>
   <div class="description">
-    Launch Axolotl training directly on Nebius Serverless Jobs
+    Fine-tune a model on Nebius GPUs with Axolotl, save the outputs and resume training
   </div>
 </div>
 
@@ -952,266 +957,207 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </header>
 
 
-<p>Run an Axolotl training configuration with Nebius Serverless Jobs through the
-existing <code>--cloud</code> option. The provider uses the installed Nebius CLI to package
-the configuration, launch a container, stream logs and follow the job to completion.
-It does not require SkyPilot. For SkyPilot-managed clusters, including distributed
-training, see the <a href="../docs/skypilot.html">SkyPilot guide</a>.</p>
-<div class="callout callout-style-default callout-warning callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Warning
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>This provider is experimental. The single-GPU validation below covers one runtime
-and storage configuration. Validate your selected image, region and training
-configuration with a short run before starting a long job.</p>
-</div>
-</div>
-<section id="tested-configuration" class="level2">
-<h2 class="anchored" data-anchor-id="tested-configuration">Tested configuration</h2>
-<p>On September 11, 2026, validation in <code>eu-north1</code> used Nebius CLI <code>0.12.265</code>,
-<code>gpu-h100-sxm</code> / <code>1gpu-16vcpu-200gb</code>, and this pinned Linux amd64 image:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The container reported Python 3.12.13, Torch 2.12.1+cu130, CUDA 13.0,
-Transformers 5.16.1 and PEFT 0.20.0; the host NVIDIA driver was 580.173.02.
-The public model was <code>NousResearch/Llama-3.2-1B</code>, pinned for validation with:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> a9745ffc3556f145a830ac0c203509ba860582a3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The 30-step LoRA example completed. Its exported files passed independent S3
-size/hash checks, and all 64 adapter tensors matched after loading with that
-base revision; inference produced finite outputs. A separate job was cancelled
-after checkpoint 10 was published and verified through S3. A fresh job restored
-optimizer, scheduler and RNG state, started at step 11, and completed at step 30.
-The resumed exports also passed independent size/hash checks. The cancelled
-job’s VM and boot disk were removed while its checkpoint remained readable.</p>
-<p>A separate <code>cpu-d3</code> / <code>2vcpu-8gb</code> probe with a 3600-second timeout entered
-<code>FAILED</code> with <code>TimeoutExceeded</code> about one hour after job creation (including
-provisioning and image startup), rather than one hour of training time. Allow
-for that overhead when choosing the timeout.</p>
-<p>These observations establish the tested save/readback/resume path, not a general
-storage durability guarantee or bit-identical training across runs. Publication
-uses ordinary file close through the mount; there is no explicit object-storage
-flush barrier or atomic directory transaction.</p>
-</section>
+<p><a href="https://docs.nebius.com/serverless/jobs/manage">Nebius Serverless Jobs</a> runs
+Axolotl training on a fresh GPU VM. Choose your GPU in a cloud YAML, pass your
+training config to <code>axolotl train --cloud</code>, and the Nebius CLI launches the job
+and streams its logs. Checkpoints and final weights are exported to object storage.</p>
+<p>This experimental integration supports single-node training. The example below
+runs a 30-step LoRA fine-tune on one H100 with a public model and dataset.
+For multi-node training or SkyPilot-managed clusters, see the <a href="../docs/skypilot.html">SkyPilot guide</a>.</p>
 <section id="prerequisites" class="level2">
-<h2 class="anchored" data-anchor-id="prerequisites">Prerequisites</h2>
-<ul>
-<li>An Axolotl installation containing the Nebius cloud provider.</li>
-<li>An installed, authenticated <a href="https://docs.nebius.com/cli/install">Nebius CLI</a>
-that supports <code>nebius ai job run</code> (the interface was checked with 0.12.265).
-Run <code>nebius auth login</code> and select your project in the CLI profile.</li>
-<li>Project permissions, quota and a subnet suitable for the selected GPU platform
-and preset. See <a href="https://docs.nebius.com/serverless/jobs/manage">Jobs prerequisites</a>.</li>
-<li>A <a href="../docs/docker.html">plain Axolotl container image</a> compatible with the GPU driver.
-Use an explicit image and pin a validated digest for repeatable runs. Cloud
-images that start Jupyter or tmux are unnecessary.</li>
-</ul>
-<p>The Nebius CLI credentials stay on your machine. The provider does not copy your
-working directory, <code>.env</code>, cloud YAML or local credential files into the job.</p>
+<h2 class="anchored" data-anchor-id="prerequisites">Setup</h2>
+<p>Install <a href="../docs/installation.html">Axolotl</a> with the Nebius provider and the
+<a href="https://docs.nebius.com/cli/install">Nebius CLI</a> on the machine you submit from.
+Authenticate and check that your CLI includes <code>ai job run</code> (tested with 0.12.265):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> auth login</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job run <span class="at">--help</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Your Nebius project needs GPU quota, available capacity and a subnet for the
+selected GPU. See the <a href="https://docs.nebius.com/serverless/jobs/manage">Jobs prerequisites</a>.
+Training runs in the remote container; local Nebius credentials are not uploaded.</p>
 </section>
 <section id="launch-training" class="level2">
 <h2 class="anchored" data-anchor-id="launch-training">Launch training</h2>
-<p>Copy <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/cloud/nebius.yaml"><code>examples/cloud/nebius.yaml</code></a>
-and select the image, platform and preset available in your project:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> nebius</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">platform</span><span class="kw">:</span><span class="at"> gpu-h100-sxm</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">preset</span><span class="kw">:</span><span class="at"> 1gpu-16vcpu-200gb</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">3600</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">output</span><span class="kw">:</span><span class="at"> auto</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>timeout</code> is an integer number of seconds, from 3600 to 604800. <code>platform</code> and
-<code>preset</code> are required, along with either <code>image</code> or <code>image_build</code>. <code>output: auto</code> uses the CLI’s managed project bucket;
-you can also specify an existing bucket ID/name or an S3 URI supported by
-<code>nebius ai job run --output</code>.</p>
-<section id="runtime-images-and-local-forks" class="level3">
-<h3 class="anchored" data-anchor-id="runtime-images-and-local-forks">Runtime images and local forks</h3>
-<p>Nebius is registered through <code>axolotl.cloud_providers</code> and implements the shared
-<code>CloudLauncher</code> API. Its schemas, job bootstrap, checkpoint export, and recovery
-logic live in <code>axolotl.integrations.nebius</code>.</p>
-<p>Use <code>image</code> for an existing Axolotl runtime. To deploy your local fork and plugins,
-replace <code>image</code> with a tagged build:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-axolotl-fork</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">platform</span><span class="kw">:</span><span class="at"> linux/amd64</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The context is relative to the cloud YAML. Docker builds and pushes the image
-before job submission, using your local Docker registry credentials. The
-Dockerfile must install your fork and plugins; the launcher does not implicitly
-copy the working directory. The tag must identify a registry image the Nebius job
-can pull. Local push credentials are not uploaded or configured as remote pull
-credentials. The shared builder accepts OCI registry references, including ECR;
-remote registry access must be configured separately for the selected platform.</p>
-<p>A build requires a tag and <code>linux/amd64</code>. For <code>show_context</code> or <code>dry_run</code>, use a
-prebuilt <code>image</code>; build configurations are rejected so previews do not build or
-push artifacts. See the <a href="../docs/custom_integrations.html#selecting-or-building-the-runtime-image">shared image configuration</a>.</p>
-<p>Start with the small LoRA example:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/nebius-serverless/lora-1b.yml <span class="dt">\</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--cloud</span> examples/cloud/nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Or use your existing training configuration:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Training option overrides are applied to the uploaded YAML. The launcher and its
-arguments are forwarded to the remote Axolotl command, for example
-<code>--launcher python</code>. This is a single-node integration; multi-node rendezvous and
-cluster scheduling are not provided. The initial example uses one GPU.</p>
-<p>For a local preview, set <code>show_context: true</code> in the cloud YAML and run the same
-command. This invokes <code>job run --show-context</code> and submits nothing. Set
-<code>dry_run: true</code> instead for the CLI’s server-side request validation without
-creating a Job. With CLI 0.12.265, a managed-output dry run was rejected with
-<code>unsupported volume source type "nebius"</code>; use <code>show_context</code> for a local preview
-on that release. Remove either setting to execute training; they are mutually
-exclusive.</p>
-<p>Only the resolved training YAML, launcher settings and small bootstrap modules
-are packaged in a temporary directory. The Nebius CLI enforces its 64 KiB
-compressed context limit. Models, datasets, local Python modules and local config
-includes are not uploaded. Put dependencies in the image and data on Hub or a
-mounted volume. Relative local paths will not refer to files on your workstation.</p>
-</section>
-</section>
-<section id="dataset-inputs-and-secrets" class="level2">
-<h2 class="anchored" data-anchor-id="dataset-inputs-and-secrets">Dataset inputs and secrets</h2>
-<p>A public Hub dataset in your Axolotl YAML works with the ordinary dataset loader.
-For a private dataset in Nebius storage, attach its bucket read-only:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Cloud configuration</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_INPUT_BUCKET</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /data</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Training configuration</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /data/train.jsonl</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Volumes use Nebius resource IDs/names and absolute container mount paths. The
-mode defaults to <code>ro</code>. Overlapping mounts, including anything covering <code>/outputs</code>,
-are rejected. The provider does not provision custom volumes or IAM credentials.</p>
-<p>For gated models or private Hub datasets, inject a token through a Nebius secret:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Cloud configuration; values are secret references, never token values.</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">env_secret</span><span class="kw">:</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_TOKEN</span><span class="kw">:</span><span class="at"> mbsec-YOUR_SECRET_ID</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Create a payload entry named <code>HF_TOKEN</code> in that secret. CLI 0.12.265 was tested
-with <code>ENV_NAME=SECRET_ID</code>: the environment variable name selects the payload key.
-Its <code>job run --help</code> advertises <code>secret-id/key</code>, but that form was rejected by the
-service in testing. A disposable probe verified runtime injection with a plain
-secret ID; gated Hugging Face access was not part of that test. Unlike the Modal
-provider, this configuration does not read secrets from your local environment.
-Ordinary nonsecret variables use an <code>env</code> mapping:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_HOME</span><span class="kw">:</span><span class="at"> /tmp/huggingface</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Do not embed tokens in training YAML. Direct S3 dataset access requires separate
-S3-compatible credentials and endpoint configuration; a Nebius control-plane
-login is not an AWS profile. See the <a href="../docs/dataset_loading.html">dataset loading guide</a>
-and <a href="https://docs.nebius.com/object-storage/interfaces/aws-cli">Nebius storage access</a>.</p>
-</section>
-<section id="outputs-and-checkpoints" class="level2">
-<h2 class="anchored" data-anchor-id="outputs-and-checkpoints">Outputs and checkpoints</h2>
-<p>The CLI mounts output storage and exposes <code>NEBIUS_OUTPUT_DIR</code>. The training
-configuration’s <code>output_dir</code> selects the export destination underneath that mount;
-absolute paths must start with <code>/outputs</code>. Training itself writes to a temporary
-directory on the container’s local disk. For example:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> training</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_total_limit</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Each submission gets a new name, <code>axolotl-&lt;unique-id&gt;</code>. With the documented CLI
-layout, the output location is <code>runs/&lt;job-name&gt;/training/</code> inside the selected
-bucket. Use the CLI’s printed storage hints to confirm the actual location.
-The provider refuses to train into an existing nonempty output directory.</p>
-<p>Axolotl serializes its ordinary checkpoints and final model/adapter on local disk.
-After each Trainer save, a callback streams the closed checkpoint files to output
-storage without copying POSIX metadata or renaming directories. Direct
-<code>safetensors</code> serialization into the bucket mount can fail with
-<code>Operation not permitted</code>; the local staging directory avoids that operation.
-Budget enough local disk for model caches, retained checkpoints and a staged
-resume checkpoint; use <code>disk_size</code> in the cloud YAML when needed.</p>
-<p>Each completed checkpoint export ends with <code>nebius-checkpoint.json</code>, listing file
-sizes and SHA-256 hashes. A failed copy does not produce this manifest. Saves wait
-for the copy before training continues. <code>save_total_limit</code> controls local retention
-only: exported checkpoints remain in the bucket until you remove them.</p>
-<p>The bootstrap requires both normal Trainer completion and a zero process exit
-before exporting the final files and writing <code>nebius-result.json</code>. This distinguishes
-normal completion from Axolotl’s weights-only SIGINT path, which may exit with code
-zero. The result manifest lists final files and their hashes, with the final step
-under <code>training.global_step</code>. It is not a model-quality check.</p>
-<p>Check that final adapter weights, <code>adapter_config.json</code> and tokenizer files can be
-downloaded and loaded with the same base model. Use the standard S3 interface:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> <span class="at">--endpoint-url</span> https://storage.REGION.nebius.cloud <span class="dt">\</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  s3 cp s3://BUCKET/runs/JOB_NAME/training/ ./downloaded-training/ <span class="at">--recursive</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>This requires the separate S3 credential setup described above. Job completion
-and file presence do not prove that an interrupted checkpoint is complete.
-The manifest is written last, but this is not a transactional directory save or
-a guarantee that the mount has flushed all data to remote storage. Resume verifies
-every listed file after copying it back to local disk. Automatic recovery after
-preemption is not implemented.</p>
-</section>
-<section id="resume-explicitly" class="level2">
-<h2 class="anchored" data-anchor-id="resume-explicitly">Resume explicitly</h2>
-<p>Attach the bucket containing a previous checkpoint at another, read-only path:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Cloud configuration</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_OUTPUT_BUCKET</span></span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /previous</span></span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Select a complete checkpoint in the training YAML:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resume_from_checkpoint</span><span class="kw">:</span><span class="at"> /previous/runs/PREVIOUS_JOB_NAME/training/checkpoint-10</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Submit a new Job with the same model/tokenizer revisions, dataset order, adapter
-configuration and training schedule. Output goes to the new Job’s own prefix.
-The bootstrap requires <code>nebius-checkpoint.json</code>, stages every listed file on local
-disk, and verifies file sizes and SHA-256 hashes before starting Axolotl. It then
-checks for readable Trainer state, optimizer/scheduler and RNG state, and weights.
-Checkpoints from earlier direct-to-mount runs without a manifest are rejected.
-These checks do not validate model/config compatibility. Test a short resumed run;
-if a checkpoint is incomplete, select an earlier complete checkpoint explicitly.</p>
-<p>Automatic selection of the newest directory is rejected. Starting from adapter
-weights alone is continued adapter training, not restoration of optimizer and
-scheduler state. Distributed/sharded checkpoint layouts require additional
-validation and are outside the initial resume support.</p>
+<p>Create <code>nebius.yaml</code> to describe where the job runs. Replace <code>project-YOUR_PROJECT_ID</code>
+with your project ID and choose a platform/preset available there:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> nebius</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">parent_id</span><span class="kw">:</span><span class="at"> project-YOUR_PROJECT_ID</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">platform</span><span class="kw">:</span><span class="at"> gpu-h100-sxm</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">preset</span><span class="kw">:</span><span class="at"> 1gpu-16vcpu-200gb</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">3600</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="fu">output</span><span class="kw">:</span><span class="at"> auto</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This image was validated on H100; see <a href="#tested-configuration">tested configuration</a>
+for its runtime versions. Add <code>subnet_id</code> if you need a specific subnet, or <code>profile</code>
+to use a different CLI profile. The timeout is in seconds and includes provisioning
+and image startup. <code>output: auto</code> selects the CLI’s managed project bucket.</p>
+<p>Download the <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/nebius-serverless/lora-1b.yml">example training config</a>
+as <code>train.yml</code>, then launch it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/nebius-serverless/lora-1b.yml <span class="at">-o</span> train.yml</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The training config selects the model, dataset and LoRA settings; <code>nebius.yaml</code>
+selects the cloud resources. You can replace <code>train.yml</code> with your own Axolotl
+config. Training overrides and <code>--launcher</code> options are forwarded to the remote run.</p>
+<p>The CLI prints the job ID, job name and output location, then follows training
+until it ends. Keep these values to inspect the job or retrieve its outputs.
+<strong>Ctrl+C stops following logs; it does not cancel the remote job.</strong></p>
+<p>Only the training config, launcher settings and bootstrap files are uploaded.
+Local datasets, Python modules and config includes are not copied. Use Hub data or
+<a href="#dataset-inputs-and-secrets">mounted storage</a>, and include dependencies in the image.</p>
 </section>
 <section id="status-cancellation-and-cleanup" class="level2">
-<h2 class="anchored" data-anchor-id="status-cancellation-and-cleanup">Status, cancellation and cleanup</h2>
-<p>The Nebius CLI streams training logs to stdout and writes job identity/progress to
-stderr. It blocks until a terminal outcome. A nonzero CLI result is raised as an
-error, and the provider never automatically resubmits a failed or ambiguous launch.
-On failure, it makes one read-only lookup by the unique job name, using the same
-CLI profile/project, with a 15-second limit. A confirmed terminal
-<code>NotEnoughResources</code> error identifies the requested platform/preset and suggests
-retrying later. Other terminal failures point to job logs. If the job completed,
-it recommends checking outputs; if it is active or its state cannot be confirmed,
-it warns against submitting a duplicate and provides a status-check command.
-Lookup errors do not replace the original CLI exit code. Preview failures do not
-query job status. Keep the Job ID and name printed at submission.</p>
-<p><strong>Ctrl+C stops following the Job; it does not cancel remote training.</strong> Query or
-cancel using the Nebius CLI and the same profile/project:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get JOB_ID <span class="at">--format</span> json</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job logs JOB_ID <span class="at">--follow</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job cancel JOB_ID</span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job delete JOB_ID</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>If the submission response was lost, use <code>nebius ai job get-by-name --help</code> or
-<code>nebius ai job list</code> to resolve the unique name before considering another launch.
-CLI code 6 can mean cancellation or interrupted following; query remote status.</p>
-<p>Jobs report <code>COMPLETED</code>, <code>FAILED</code>, <code>ERROR</code> or <code>CANCELLED</code>. Inspect status details for
-workload errors, timeouts and unavailable resources. The provider does not restart
-Jobs, choose replacement GPUs or promise immediate capacity. See
-<a href="https://docs.nebius.com/serverless/lifecycle">Nebius lifecycle</a>.</p>
-<p>Nebius manages VM/boot-disk cleanup. Retained buckets and mounted volumes remain
-and should be removed only when their data is no longer needed. Verify cleanup
-through supported Job/console observations; a successful training process is not
-proof that teardown has finished. Avoid a sleep-on-failure wrapper for normal runs.</p>
+<h2 class="anchored" data-anchor-id="status-cancellation-and-cleanup">Logs and cancellation</h2>
+<p>Replace <code>JOB_ID</code> with the ID printed at launch. Use the same CLI profile as submission:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get JOB_ID <span class="at">--format</span> json</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job logs JOB_ID <span class="at">--follow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>To stop training:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job cancel JOB_ID</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Nebius manages VM and boot-disk cleanup. Output buckets and mounted data remain
+until you remove them. Confirm compute cleanup through the Nebius Console or API;
+a terminal job state alone does not prove deletion has finished. See the
+<a href="https://docs.nebius.com/serverless/lifecycle">Nebius job lifecycle</a>.</p>
 </section>
-<section id="optional-serving-handoff" class="level2">
-<h2 class="anchored" data-anchor-id="optional-serving-handoff">Optional serving handoff</h2>
-<p>Download and validate the adapter with the exact base model/tokenizer. You may
-then prepare a separate authenticated Nebius Endpoint using an appropriate serving
-runtime, such as vLLM with that base model and adapter. This provider does not
-create Endpoints, merge adapters, publish to Hub, autoscale or scale to zero.
-See <a href="https://docs.nebius.com/serverless/endpoints/manage">Nebius Endpoints</a>.</p>
+<section id="outputs-and-checkpoints" class="level2">
+<h2 class="anchored" data-anchor-id="outputs-and-checkpoints">Download outputs</h2>
+<p>The example sets <code>output_dir: training</code>. Each submission has its own output prefix,
+usually <code>runs/JOB_NAME/training/</code> in the selected bucket. Use the location printed
+by the CLI to find the actual bucket and prefix.</p>
+<p>After <a href="https://docs.nebius.com/object-storage/interfaces/aws-cli">configuring S3 credentials and the AWS CLI</a>,
+download the outputs:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> <span class="at">--endpoint-url</span> https://storage.REGION.nebius.cloud <span class="dt">\</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  s3 cp s3://BUCKET/runs/JOB_NAME/training/ ./downloaded-training/ <span class="at">--recursive</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Replace <code>REGION</code>, <code>BUCKET</code> and <code>JOB_NAME</code> with your output location. S3 credentials
+are separate from your Nebius CLI login. For LoRA, load the downloaded adapter
+with the same base model and tokenizer revisions used for training.</p>
+<p>Completed checkpoint exports include <code>nebius-checkpoint.json</code>; a normally completed
+run exports its final weights and <code>nebius-result.json</code>. These manifests list file
+sizes and SHA-256 hashes. A checkpoint directory without a complete, valid manifest
+cannot be used for resume.</p>
+<p>Checkpoints are saved on the VM’s local disk before being copied to the bucket.
+<code>save_total_limit</code> controls local retention only; exported checkpoints remain until
+you delete them. Size <code>disk_size</code> for model caches, local checkpoints and any restored
+checkpoint. Export failures stop training rather than continue without that checkpoint.</p>
+</section>
+<section id="resume-explicitly" class="level2">
+<h2 class="anchored" data-anchor-id="resume-explicitly">Resume training</h2>
+<p>To resume a checkpoint in a new Job, add the previous output bucket to <code>nebius.yaml</code>
+at a separate read-only mount:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_OUTPUT_BUCKET</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /previous</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Update <code>train.yml</code> with the chosen checkpoint path:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resume_from_checkpoint</span><span class="kw">:</span><span class="at"> /previous/runs/PREVIOUS_JOB_NAME/training/checkpoint-10</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Keep the same model/tokenizer revisions, dataset order, adapter settings and training
+schedule, then submit again:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The new Job writes to its own output prefix. Before training, it copies the checkpoint
+to local disk, verifies the manifest’s sizes/hashes and checks for weights, Trainer,
+optimizer, scheduler and RNG state. These checks do not establish compatibility
+with a different model or training config.</p>
+<p>Automatic checkpoint selection and recovery after preemption are not supported.
+Choose an earlier complete checkpoint if verification fails. Adapter weights alone
+are insufficient to restore training state; distributed/sharded checkpoints are
+outside the current resume support.</p>
+</section>
+<section id="dataset-inputs-and-secrets" class="level2">
+<h2 class="anchored" data-anchor-id="dataset-inputs-and-secrets">Datasets and secrets</h2>
+<p>Public Hub datasets work with the ordinary Axolotl dataset loader. For files in a
+Nebius bucket, add a mount to <code>nebius.yaml</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_INPUT_BUCKET</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /data</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Reference the mounted path in <code>train.yml</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /data/train.jsonl</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Mounts must use absolute container paths and cannot overlap each other or <code>/outputs</code>.
+The provider uses existing volumes; it does not create custom volumes or their IAM credentials.</p>
+<p>For gated models or private Hub datasets, create a Nebius secret with a payload
+entry named <code>HF_TOKEN</code>, then reference its ID in <code>nebius.yaml</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env_secret</span><span class="kw">:</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_TOKEN</span><span class="kw">:</span><span class="at"> mbsec-YOUR_SECRET_ID</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Use the secret ID, not the token value. With CLI 0.12.265, the environment variable
+name selects the payload key; the advertised <code>secret-id/key</code> form was rejected in
+validation. Local environment variables are not automatically passed to the job.
+Nonsecret variables can be set through <code>env</code>, for example:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_HOME</span><span class="kw">:</span><span class="at"> /tmp/huggingface</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>See the <a href="../docs/dataset_loading.html">dataset loading guide</a> for other formats. Direct S3
+dataset access requires its own credentials and endpoint configuration.</p>
+</section>
+<section id="runtime-images-and-local-forks" class="level2">
+<h2 class="anchored" data-anchor-id="runtime-images-and-local-forks">Custom images</h2>
+<p>Use a <a href="../docs/docker.html">plain Axolotl image</a> compatible with your GPU driver and pin its
+digest for repeatable runs. To include a local fork or plugins, replace <code>image</code> in
+<code>nebius.yaml</code> with a build configuration:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-axolotl-fork</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">platform</span><span class="kw">:</span><span class="at"> linux/amd64</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The context is relative to the cloud YAML. Docker builds and pushes the tagged image
+before submission; the Dockerfile must install your fork and plugins. Configure
+registry access so Nebius can pull the image: your local Docker push credentials
+are not uploaded as remote pull credentials. Builds require a tag and <code>linux/amd64</code>.
+See <a href="../docs/custom_integrations.html#selecting-or-building-the-runtime-image">shared image configuration</a>.</p>
+</section>
+<section id="troubleshooting" class="level2">
+<h2 class="anchored" data-anchor-id="troubleshooting">Troubleshooting</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Symptom</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>NotEnoughResources</code></td>
+<td>The requested GPU could not be provisioned. Check capacity for your platform/preset and retry after confirming the previous Job is terminal.</td>
+</tr>
+<tr class="even">
+<td><code>TimeoutExceeded</code></td>
+<td>Increase <code>timeout</code> in the cloud YAML; allow for provisioning and image startup as well as training.</td>
+</tr>
+<tr class="odd">
+<td>Local data or modules are missing</td>
+<td>Mount the data or include dependencies in the image; the working directory is not uploaded.</td>
+</tr>
+<tr class="even">
+<td>Checkpoint verification fails</td>
+<td>Select an earlier complete checkpoint with its manifest and full training state.</td>
+</tr>
+<tr class="odd">
+<td>CLI exits or log following is interrupted</td>
+<td>Query the job state before resubmitting. The remote job may still be running.</td>
+</tr>
+</tbody>
+</table>
+<p>For a local packaging preview, add <code>show_context: true</code> to <code>nebius.yaml</code> and run the
+same launch command. Remove it to submit training. <code>dry_run: true</code> instead requests
+server-side validation; the two options are mutually exclusive and require a prebuilt
+<code>image</code>. On CLI 0.12.265, managed-output dry runs failed with
+<code>unsupported volume source type "nebius"</code>; use <code>show_context</code> on that release.
+The CLI limits the compressed upload context to 64 KiB.</p>
+<p>On a CLI failure, Axolotl attempts one read-only status lookup and reports guidance
+for the returned state. It never automatically resubmits or cancels the job.
+If you lost the job ID, look it up by the name printed at launch:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get-by-name <span class="dt">\</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--name</span> JOB_NAME <span class="dt">\</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--parent-id</span> project-YOUR_PROJECT_ID <span class="dt">\</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--format</span> json</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Use the <code>parent_id</code> from <code>nebius.yaml</code> and read the job ID from <code>metadata.id</code>.
+If the cloud YAML sets <code>profile</code>, also pass <code>--profile PROFILE_NAME</code> with that
+value. Otherwise, use the same active CLI profile as submission. If you omitted
+<code>parent_id</code>, use the project selected by that profile at launch.</p>
 </section>
 <section id="configuration-reference" class="level2">
 <h2 class="anchored" data-anchor-id="configuration-reference">Configuration reference</h2>
@@ -1245,7 +1191,7 @@ See <a href="https://docs.nebius.com/serverless/endpoints/manage">Nebius Endpoin
 </tr>
 <tr class="odd">
 <td><code>disk_size</code></td>
-<td>Optional container disk size, such as <code>250Gi</code></td>
+<td>Optional VM disk size, such as <code>250Gi</code></td>
 </tr>
 <tr class="even">
 <td><code>timeout</code></td>
@@ -1253,7 +1199,7 @@ See <a href="https://docs.nebius.com/serverless/endpoints/manage">Nebius Endpoin
 </tr>
 <tr class="odd">
 <td><code>output</code></td>
-<td>Managed output bucket selection; defaults to <code>auto</code></td>
+<td>Output bucket ID/name, supported S3 URI, or <code>auto</code> (default)</td>
 </tr>
 <tr class="even">
 <td><code>volumes</code></td>
@@ -1277,8 +1223,47 @@ See <a href="https://docs.nebius.com/serverless/endpoints/manage">Nebius Endpoin
 </tr>
 </tbody>
 </table>
-<p>Unknown cloud keys are rejected. Separate remote preprocessing and lm-eval are
-not implemented for Nebius; preprocessing takes place within the training Job.</p>
+<p>Unknown cloud keys are rejected. Dataset preprocessing runs inside the training
+Job; separate remote preprocessing and lm-eval are not supported.</p>
+</section>
+<section id="tested-configuration" class="level2">
+<h2 class="anchored" data-anchor-id="tested-configuration">Tested configuration</h2>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Runtime and validation scope — September 11, 2026
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The pinned image above was tested on H100 in <code>eu-north1</code> with
+<code>gpu-h100-sxm</code> / <code>1gpu-16vcpu-200gb</code> and Nebius CLI 0.12.265. It reported Python
+3.12.13, Torch 2.12.1+cu130, CUDA 13.0, Transformers 5.16.1 and PEFT 0.20.0;
+the host driver was 580.173.02. The base model was <code>NousResearch/Llama-3.2-1B</code>,
+with this revision pinned for validation:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> a9745ffc3556f145a830ac0c203509ba860582a3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The 30-step LoRA run, independent export size/hash checks, adapter loading and
+fresh-Job resume with optimizer/scheduler/RNG restoration passed. A separate CPU
+probe verified a one-hour timeout including provisioning and image startup.</p>
+<p>These observations cover one configuration. File close and a manifest written
+last do not establish a remote-flush barrier or an atomic directory transaction.
+Resume checks file integrity; bit-identical training across runs is not guaranteed.</p>
+</div>
+</div>
+</div>
+</section>
+<section id="optional-serving-handoff" class="level2">
+<h2 class="anchored" data-anchor-id="optional-serving-handoff">Further reading</h2>
+<ul>
+<li><a href="https://docs.nebius.com/serverless/jobs/manage">Nebius Jobs</a></li>
+<li><a href="https://docs.nebius.com/object-storage/interfaces/aws-cli">Nebius storage access</a></li>
+<li><a href="https://docs.nebius.com/serverless/endpoints/manage">Nebius Endpoints</a> — a separate serving workflow; this provider does not deploy endpoints or merge adapters.</li>
+<li><a href="../docs/skypilot.html">SkyPilot</a> — cloud clusters and multi-node training.</li>
+</ul>
 
 
 </section>

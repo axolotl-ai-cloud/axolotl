@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -928,7 +934,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.monkeypatch.models.falcon_h1.modeling" class="level1">
 <h1>monkeypatch.models.falcon_h1.modeling</h1>
 <p><code>monkeypatch.models.falcon_h1.modeling</code></p>
-<p>Sample-packing and context-parallelism patch for Falcon-H1 (parallel Mamba2/Attention hybrid).</p>
+<p>Sample-packing patch for Falcon-H1 (parallel Mamba2/Attention hybrid).</p>
 <p>Threads seq_idx (derived from position_ids) into the Mamba2 SSM kernels so
 packed-sequence boundaries reset SSM state. Upstream hard-codes seq_idx=None,
 which leaks hidden state across boundaries.</p>

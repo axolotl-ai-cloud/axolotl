@@ -634,6 +634,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -910,17 +916,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#when-to-use-sequence-parallelism" id="toc-when-to-use-sequence-parallelism" class="nav-link active" data-scroll-target="#when-to-use-sequence-parallelism">When to Use Sequence Parallelism</a></li>
-  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
-  <li><a href="#implementation-details" id="toc-implementation-details" class="nav-link" data-scroll-target="#implementation-details">Implementation Details</a></li>
-  <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
-  <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a>
-  <ul class="collapse">
-  <li><a href="#mambassm-hybrid-models" id="toc-mambassm-hybrid-models" class="nav-link" data-scroll-target="#mambassm-hybrid-models">Mamba/SSM Hybrid Models</a></li>
-  </ul></li>
-  <li><a href="#example" id="toc-example" class="nav-link" data-scroll-target="#example">Example</a></li>
-  <li><a href="#sample-packing-with-sequence-parallelism" id="toc-sample-packing-with-sequence-parallelism" class="nav-link" data-scroll-target="#sample-packing-with-sequence-parallelism">Sample Packing with Sequence Parallelism</a></li>
-  <li><a href="#effect-on-batch-size" id="toc-effect-on-batch-size" class="nav-link" data-scroll-target="#effect-on-batch-size">Effect on Batch Size</a></li>
+  <li><a href="#configuration" id="toc-configuration" class="nav-link active" data-scroll-target="#configuration">Configuration</a></li>
+  <li><a href="#requirements-and-limitations" id="toc-requirements-and-limitations" class="nav-link" data-scroll-target="#requirements-and-limitations">Requirements and limitations</a></li>
+  <li><a href="#effect-on-batch-size" id="toc-effect-on-batch-size" class="nav-link" data-scroll-target="#effect-on-batch-size">Effect on batch size</a></li>
+  <li><a href="#validation" id="toc-validation" class="nav-link" data-scroll-target="#validation">Validation</a></li>
   </ul>
 </nav>
     </div>
@@ -951,156 +950,73 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </header>
 
 
-<p>Sequence parallelism is a technique that splits sequences across multiple GPUs,
-allowing you to train with very long sequences that wouldn’t fit on a single GPU. Each
-GPU processes a different portion of the sequence, and the results are aggregated
-through a ring communication pattern.</p>
-<section id="when-to-use-sequence-parallelism" class="level2">
-<h2 class="anchored" data-anchor-id="when-to-use-sequence-parallelism">When to Use Sequence Parallelism</h2>
-<p>Use sequence parallelism when:</p>
-<ul>
-<li>You need to train with sequence lengths that don’t fit into a single GPU’s memory</li>
-<li>You have multiple GPUs available</li>
-<li>You’re experiencing OOM (Out Of Memory) errors with long sequences</li>
-</ul>
-</section>
+<p>Context parallelism splits each sequence across a group of GPUs to reduce the
+activation memory needed for long-context training. Axolotl uses Ringmaster for
+Ulysses, Ring, and their combination (USP), while Accelerate owns the device mesh
+and FSDP2 gradient reduction.</p>
 <section id="configuration" class="level2">
 <h2 class="anchored" data-anchor-id="configuration">Configuration</h2>
-<p>To enable sequence parallelism, add the following to your configuration file:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to a divisor (&gt; 1) of the number of GPUs available</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">  # Split sequences across 4 GPUs</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">heads_k_stride</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3" or "batch_ring". Defaults to</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">ring_attn_func</span><span class="kw">:</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The <code>context_parallel_size</code> should be a divisor of the total number of GPUs. For example:</p>
+<p>Install <code>pip install 'axolotl[ringmaster]'</code> and use torch &gt;= 2.13. The integration
+targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.2.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> flash_attention_2</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Context parallelism is built in; no <code>plugins:</code> entry is needed. The CP degree
+must divide the total GPU count. For explicit strategy settings:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">size</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">backend</span><span class="kw">:</span><span class="at"> auto</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">load_balance</span><span class="kw">:</span><span class="at"> auto</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>backend</code> accepts <code>auto</code>, <code>ulysses</code>, <code>ring</code>, or <code>usp</code>. Automatic selection uses
+KV-head count and topology. Explicit <code>ulysses_size</code> and <code>ring_size</code> must multiply
+to <code>size</code>, and the Ulysses degree must divide the KV-head count.</p>
+<p><code>load_balance: auto</code> selects head-tail balancing for eligible pure Ring and
+contiguous shards otherwise. Explicit <code>head_tail</code> and <code>distflash</code> require pure
+Ring and own their P2P communication schedule. With <code>load_balance: none</code>,
+<code>rotate_method</code> selects Ring KV movement. Incompatible explicit choices fail
+during setup instead of being silently ignored.</p>
+</section>
+<section id="requirements-and-limitations" class="level2">
+<h2 class="anchored" data-anchor-id="requirements-and-limitations">Requirements and limitations</h2>
 <ul>
-<li>With 8 GPUs, valid values would be 2, 4, or 8</li>
-<li>With 4 GPUs, valid values would be 2 or 4</li>
+<li>Ulysses supports SDPA and Flash Attention. Ring/USP training requires Flash
+Attention; Ringmaster’s <code>torch_native</code> Ring implementation is forward-only.</li>
+<li>Sample packing and batch flattening are supported with CP; automatic load balancing selects contiguous shards for packed inputs. GLM DSA kernels remain incompatible with packed CP.</li>
+<li>SFT requires the model’s causal LM loss with loss-kwargs support. Custom loss
+functions and label smoothing are not supported.</li>
+<li>GRPO/GDPO/EBFT use output gathering to retain full-sequence logits.</li>
+<li>GDN and KDA recurrent models require <code>pip install 'axolotl[fla,ringmaster]'</code>,
+a single batch row after flattening (<code>micro_batch_size: 1</code> or <code>batch_flattening: true</code>), contiguous shards, and disabled KV caching. Setup checks
+for importable native FLA CP kernels, including when CP is greater than two.
+Both UV Docker images include FLA and TileLang.</li>
 </ul>
-</section>
-<section id="implementation-details" class="level2">
-<h2 class="anchored" data-anchor-id="implementation-details">Implementation Details</h2>
-<p>When sequence parallelism is enabled:</p>
-<ol type="1">
-<li>Each sequence is divided into equal chunks across the GPUs in a sequence parallel group</li>
-<li>The data collator handles the chunking of input_ids, attention_mask, labels, and position_ids</li>
-<li>Position IDs are adjusted to maintain proper relative positions</li>
-<li>The trainer uses special ring communication patterns for attention operations</li>
-</ol>
-</section>
-<section id="requirements" class="level2">
-<h2 class="anchored" data-anchor-id="requirements">Requirements</h2>
-<p>To use sequence parallelism, you need:</p>
-<ul>
-<li>Multiple GPUs (at least 2)</li>
-<li>The <code>ring-flash-attn</code> package. Install with:
-<ul>
-<li><code>pip install axolotl[ring-flash-attn]</code> (preferred)</li>
-<li><code>pip install ring-flash-attn&gt;=0.1.4</code></li>
-</ul></li>
-</ul>
-</section>
-<section id="limitations" class="level2">
-<h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
-<ul>
-<li>Flash attention must be enabled for this to work (<code>attn_implementation: flash_attention_2</code> in config YAML)</li>
-<li>May have a small performance overhead due to communication between GPUs</li>
-</ul>
-<section id="mambassm-hybrid-models" class="level3">
-<h3 class="anchored" data-anchor-id="mambassm-hybrid-models">Mamba/SSM Hybrid Models</h3>
-<p>Context parallelism is supported for hybrid models that combine attention and Mamba2 SSM
-layers. These models require special handling because:</p>
-<ul>
-<li><strong>Attention layers</strong> work correctly via ring flash attention (same as pure-attention models).</li>
-<li><strong>SSM (Mamba2) layers</strong> are recurrent and need cross-rank hidden-state propagation.</li>
-</ul>
-<p>Axolotl handles both aspects:</p>
-<ol type="1">
-<li><p><strong>Sample packing boundaries</strong> (<code>seq_idx</code>): When multiple sequences are packed into one
-row, the SSM kernels need <code>seq_idx</code> to reset state at boundaries. Under CP, chunks may
-start mid-sample, so <code>seq_idx</code> is derived from <code>position_ids</code> using a CP-safe cumsum
-normalization (see <code>mamba_utils.get_seq_idx</code>).</p></li>
-<li><p><strong>Cross-rank SSM state passing</strong>: After each SSM scan, the final hidden state is sent to
-the next rank via P2P communication (<code>ring_shift_ssm_state</code>), and an additive correction
-is applied to account for the missing initial state (<code>mamba2_cp_correction</code>). This uses
-the linearity property of SSMs to avoid a second forward pass.</p></li>
-</ol>
-<section id="supported-architectures" class="level4">
-<h4 class="anchored" data-anchor-id="supported-architectures">Supported Architectures</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Model family</th>
-<th><code>model_config_type</code></th>
-<th>Architecture notes</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Nemotron-H</td>
-<td><code>nemotron_h</code></td>
-<td>Mamba2 / Attention / MoE hybrid; block type selected per layer</td>
-</tr>
-<tr class="even">
-<td>Falcon-H1</td>
-<td><code>falcon_h1</code></td>
-<td>Mamba2 and Attention run <strong>in parallel</strong> in every layer</td>
-</tr>
-<tr class="odd">
-<td>Granite MoE Hybrid</td>
-<td><code>granitemoehybrid</code></td>
-<td>Mamba2 / Attention / MoE hybrid</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-</section>
-<section id="example" class="level2">
-<h2 class="anchored" data-anchor-id="example">Example</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> meta-llama/Llama-3-8B-Instruct</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">8192</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">context_parallel_size: 4  # Split each sequence into 4 parts, one per GPU</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; strides across the key dimension. Larger values use more memory but should make training faster.</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">heads_k_stride: 1</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Optional; one of "varlen_llama3" or "batch_ring". Defaults to</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># "varlen_llama3" when `sample_packing: true`, and "batch_ring" otherwise.</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co">ring_attn_func:</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="co">...</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>This will train the Llama 3 8B model with 8K context length, with each sequence split
-into 2 subsequences of length 4096 across 2 GPUs.</p>
-</section>
-<section id="sample-packing-with-sequence-parallelism" class="level2">
-<h2 class="anchored" data-anchor-id="sample-packing-with-sequence-parallelism">Sample Packing with Sequence Parallelism</h2>
-<p>Sequence parallelism is compatible with Axolotl’s sample packing functionality. When using both features together:</p>
-<ol type="1">
-<li>Samples are first packed together</li>
-<li>The packed sequences are then divided across GPUs in the sequence parallel group</li>
-<li>Position IDs are automatically adjusted to maintain proper relative positions</li>
-</ol>
+<p>Ringmaster detects compatible attention and recurrent layers without requiring
+an architecture allowlist entry. ModelSupport descriptors can mark
+<code>context_parallel</code> as verified, experimental, or unsupported. Missing capability
+metadata uses generic handling; it does not imply tested accuracy for every
+architecture. Kernel and configuration prerequisites still apply.</p>
+<p>The plugin shards input IDs, labels, masks, and positions using model hooks.
+Accelerate replicates each batch within its CP group. Trainer’s supervised-token
+count is preserved across the full accumulation window, including unequal
+microbatches and partial final windows.</p>
 </section>
 <section id="effect-on-batch-size" class="level2">
-<h2 class="anchored" data-anchor-id="effect-on-batch-size">Effect on Batch Size</h2>
-<p>When using sequence parallelism, your effective global batch size is <strong>divided</strong> by the <code>context_parallel_size</code>. This happens because:</p>
-<ul>
-<li>Each group of <code>context_parallel_size</code> GPUs works on the same batch (just different parts of each sequence)</li>
-<li>The number of batches processed per step decreases</li>
-</ul>
-<p>For example:
-- With 8 GPUs and no sequence parallelism: 8 different batches processed per step
-- With 8 GPUs and <code>context_parallel_size=4</code>: Only 2 different batches processed per step (each split across 4 GPUs)
-- If your per-GPU <code>micro_batch_size</code> is 2, the global batch size decreases from 16 to 4</p>
+<h2 class="anchored" data-anchor-id="effect-on-batch-size">Effect on batch size</h2>
+<p>Each CP group processes one batch distributed across its GPUs. With eight GPUs
+and CP=4, there are two independent data-parallel groups. A microbatch size of two
+therefore processes four distinct sequences per step before gradient accumulation.</p>
+</section>
+<section id="validation" class="level2">
+<h2 class="anchored" data-anchor-id="validation">Validation</h2>
+<p>The regular e2e suite includes an optional small FLA/TileLang kernel smoke test.
+Distributed checks are marked <code>slow</code>: two-GPU FSDP2 loss/gradient parity, four-rank
+FLA recurrent-plus-attention forward/backward parity, and CPU USP mesh isolation
+and attention-gradient tests. GPU USP and additional recurrent architectures
+require further coverage.</p>
+<p>Pure Mamba/Mamba2 checkpoints can explicitly select the <a href="../docs/fla-mamba.html">FLA implementation</a>.
+Its packing and loss normalization live in Axolotl core; Ringmaster supplies
+packed convolution-halo and recurrent-state exchange. This requires the companion
+FLA Mamba adapters, with CUDA convolution and contiguous CP shards.</p>
 
 
 </section>

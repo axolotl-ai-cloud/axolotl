@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -928,7 +934,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.monkeypatch.models.granitemoehybrid.modeling" class="level1">
 <h1>monkeypatch.models.granitemoehybrid.modeling</h1>
 <p><code>monkeypatch.models.granitemoehybrid.modeling</code></p>
-<p>Sample-packing and context-parallelism patch for Granite MoE Hybrid (Mamba2/Attention/MoE).</p>
+<p>Sample-packing patch for Granite MoE Hybrid (Mamba2/Attention/MoE).</p>
 <p>Upstream GraniteMoeHybridMambaLayer already accepts seq_idx on
 forward/cuda_kernels_forward, and GraniteMoeHybridDecoderLayer passes **kwargs
 through to the mixer. However, the decoder layer does not receive position_ids
@@ -937,7 +943,7 @@ directly — it arrives at the model level.</p>
 1. Injects seq_idx computation into GraniteMoeHybridModel.forward so it flows
 through kwargs -&gt; decoder_layer -&gt; mamba mixer automatically.
 2. Forces the slow path when CP is active (the fused path doesn’t return SSM
-state). CP correction is handled by <code>wrap_mamba_scan_for_cp</code>.</p>
+state).</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">

@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -914,9 +920,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group" id="toc-axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group" class="nav-link" data-scroll-target="#axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group">get_ring_attn_group</a></li>
-  <li><a href="#axolotl.monkeypatch.ring_attn.patch.register_ring_attn_from_device_mesh" id="toc-axolotl.monkeypatch.ring_attn.patch.register_ring_attn_from_device_mesh" class="nav-link" data-scroll-target="#axolotl.monkeypatch.ring_attn.patch.register_ring_attn_from_device_mesh">register_ring_attn_from_device_mesh</a></li>
   <li><a href="#axolotl.monkeypatch.ring_attn.patch.set_ring_attn_group" id="toc-axolotl.monkeypatch.ring_attn.patch.set_ring_attn_group" class="nav-link" data-scroll-target="#axolotl.monkeypatch.ring_attn.patch.set_ring_attn_group">set_ring_attn_group</a></li>
-  <li><a href="#axolotl.monkeypatch.ring_attn.patch.update_ring_attn_params" id="toc-axolotl.monkeypatch.ring_attn.patch.update_ring_attn_params" class="nav-link" data-scroll-target="#axolotl.monkeypatch.ring_attn.patch.update_ring_attn_params">update_ring_attn_params</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -931,12 +935,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.monkeypatch.ring_attn.patch" class="level1">
 <h1>monkeypatch.ring_attn.patch</h1>
 <p><code>monkeypatch.ring_attn.patch</code></p>
-<p>Ring attention group registration and flash attention patching.</p>
-<p>Make use of the <code>ring-flash-attn</code> (https://github.com/zhuzilin/ring-flash-attention)
-package, specifically the <code>hf_adapter.substitute_hf_flash_attn</code> function to patch in
-their sequence parallel version of Flash Attention 2.</p>
-<p>We also provide some patches for accelerate functions to prepare the dataloader for
-sequence parallelism training.</p>
+<p>Context-parallel group registry.</p>
+<p>Tracks the process group used for context parallelism so the rest of axolotl
+(GRPO trainer, mamba/SSM CP correction, <code>is_cp_active</code>) can find it. The
+ringmaster ContextParallelPlugin sets this group; the actual ring/ulysses
+attention is owned by ringmaster (the legacy <code>ring_flash_attn</code> kernel path has
+been removed).</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -949,121 +953,25 @@ sequence parallelism training.</p>
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group">get_ring_attn_group</a></td>
-<td>Getter for ring attention group on this rank.</td>
+<td>Getter for the context-parallel group on this rank.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.monkeypatch.ring_attn.patch.register_ring_attn_from_device_mesh">register_ring_attn_from_device_mesh</a></td>
-<td>Create ring attention group using DeviceMesh and substitute flash attn with ring flash attn.</td>
-</tr>
-<tr class="odd">
 <td><a href="#axolotl.monkeypatch.ring_attn.patch.set_ring_attn_group">set_ring_attn_group</a></td>
-<td>Setter for ring attention group on this rank.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.monkeypatch.ring_attn.patch.update_ring_attn_params">update_ring_attn_params</a></td>
-<td>Calculate the cumulative sequence lengths for the current forward pass and pass the</td>
+<td>Setter for the context-parallel group on this rank.</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.ring_attn.patch.get_ring_attn_group">get_ring_attn_group</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.ring_attn.patch.get_ring_attn_group()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Getter for ring attention group on this rank.</p>
-</section>
-<section id="axolotl.monkeypatch.ring_attn.patch.register_ring_attn_from_device_mesh" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.ring_attn.patch.register_ring_attn_from_device_mesh">register_ring_attn_from_device_mesh</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.ring_attn.patch.register_ring_attn_from_device_mesh(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    device_mesh,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    context_parallel_dim,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    heads_k_stride,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Create ring attention group using DeviceMesh and substitute flash attn with ring flash attn.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 10%">
-<col style="width: 73%">
-<col style="width: 5%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>device_mesh</td>
-<td>DeviceMesh</td>
-<td>DeviceMesh object containing the parallelism topology.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>context_parallel_dim</td>
-<td>tuple[str, …]</td>
-<td>Name of the sequence parallel dimension in the device mesh.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>heads_k_stride</td>
-<td>int | None</td>
-<td>Sequence parallelism K head stride size. Passed through to <code>varlen_llama3</code> <code>ring_flash_attn</code> implementation.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>ring_attn_func</td>
-<td>RingAttnFunc | None</td>
-<td><code>ring_flash_attn</code> ring attention implemention. If sample packing is enabled, it must be a <code>varlen</code> function; otherwise, it must be a <code>batch</code> function.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
+<p>Getter for the context-parallel group on this rank.</p>
 </section>
 <section id="axolotl.monkeypatch.ring_attn.patch.set_ring_attn_group" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.ring_attn.patch.set_ring_attn_group">set_ring_attn_group</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.ring_attn.patch.set_ring_attn_group(ring_attn_group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Setter for ring attention group on this rank.</p>
-</section>
-<section id="axolotl.monkeypatch.ring_attn.patch.update_ring_attn_params" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.ring_attn.patch.update_ring_attn_params">update_ring_attn_params</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.ring_attn.patch.update_ring_attn_params(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Calculate the cumulative sequence lengths for the current forward pass and pass the
-value to the substituted <code>ring_flash_attn</code>.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 13%">
-<col style="width: 20%">
-<col style="width: 55%">
-<col style="width: 11%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>position_ids</td>
-<td>torch.Tensor | None</td>
-<td>Optional tensor of position IDs (for sample packed data).</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.ring_attn.patch.set_ring_attn_group(ring_attn_group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Setter for the context-parallel group on this rank.</p>
 
 
-</section>
 </section>
 </section>
 </section>

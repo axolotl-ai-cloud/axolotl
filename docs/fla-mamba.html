@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>cli.merge_sharded_fsdp_weights – Axolotl</title>
+<title>FLA Mamba and Mamba2 – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -64,23 +64,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -119,7 +119,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -129,9 +129,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -147,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">FLA Mamba and Mamba2</li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -161,7 +161,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -176,31 +176,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Support Matrix</span></a>
   </div>
 </li>
@@ -215,91 +215,91 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Muse Glimmer</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">North Micro Vision Instruct</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Shieldstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Kimi Linear</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/plano.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/plano.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Plano Orchestrator</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MiMo</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">InternVL 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PaddleOCR-VL</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Trinity</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Arcee AFM</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
@@ -314,19 +314,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Vision</span></a>
   </div>
 </li>
@@ -343,19 +343,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Vision</span></a>
   </div>
 </li>
@@ -363,157 +363,157 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 3.1/3.2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Voxtral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Devstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral 7B</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3.8 Flash Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.7-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.6V</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Apertus</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GPT-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Seed-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/phi.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/phi.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Phi</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SmolVLM 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Granite 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Liquid Foundation Models 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Hunyuan</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Jamba</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Orpheus</span></a>
   </div>
 </li>
@@ -521,25 +521,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Telemetry</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -547,7 +547,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -556,37 +556,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -603,55 +603,55 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/skypilot.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/skypilot.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SkyPilot</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Hugging Face Jobs</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -668,97 +668,97 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ebft.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">EBFT Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">vLLM Serving for GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/export.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Exporting to GGUF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">1.58-bit Finetuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -775,43 +775,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Streaming Datasets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/attention.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/attention.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Attention</span></a>
   </div>
 </li>
@@ -828,43 +828,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FSDP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MoE Expert Quantization</span></a>
   </div>
 </li>
@@ -881,25 +881,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/training_stability.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Training Stability &amp; Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -910,194 +910,82 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc" class="toc-active">
-    <h2 id="toc-title">On this page</h2>
-   
-  <ul>
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights" id="toc-axolotl.cli.merge_sharded_fsdp_weights" class="nav-link active" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights">cli.merge_sharded_fsdp_weights</a>
-  <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner" id="toc-axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner" class="nav-link" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner">BFloat16CastPlanner</a></li>
-  </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights.do_cli" id="toc-axolotl.cli.merge_sharded_fsdp_weights.do_cli" class="nav-link" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights.do_cli">do_cli</a></li>
-  <li><a href="#axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights" id="toc-axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights" class="nav-link" data-scroll-target="#axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights">merge_fsdp_weights</a></li>
-  </ul></li>
-  </ul></li>
-  </ul>
-</nav>
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
+        
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">FLA Mamba and Mamba2</h1>
+</div>
 
 
 
+<div class="quarto-title-meta">
 
-<section id="axolotl.cli.merge_sharded_fsdp_weights" class="level1">
-<h1>cli.merge_sharded_fsdp_weights</h1>
-<p><code>cli.merge_sharded_fsdp_weights</code></p>
-<p>CLI to merge sharded FSDP model checkpoints into a single combined checkpoint.</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner">BFloat16CastPlanner</a></td>
-<td>A custom planner to cast tensors to bfloat16 on the fly during loading.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.merge_sharded_fsdp_weights.BFloat16CastPlanner">BFloat16CastPlanner</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.merge_sharded_fsdp_weights.BFloat16CastPlanner()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>A custom planner to cast tensors to bfloat16 on the fly during loading.</p>
-</section>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.cli.merge_sharded_fsdp_weights.do_cli">do_cli</a></td>
-<td>Parses <code>axolotl</code> config, CLI args, and calls <code>merge_fsdp_weights</code>.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights">merge_fsdp_weights</a></td>
-<td>Merge the weights from sharded FSDP model checkpoints into a single combined checkpoint. Should be used if</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.cli.merge_sharded_fsdp_weights.do_cli" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.merge_sharded_fsdp_weights.do_cli">do_cli</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.merge_sharded_fsdp_weights.do_cli(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Parses <code>axolotl</code> config, CLI args, and calls <code>merge_fsdp_weights</code>.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 7%">
-<col style="width: 18%">
-<col style="width: 55%">
-<col style="width: 18%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>config</td>
-<td>Union[Path, str]</td>
-<td>Path to <code>axolotl</code> config YAML file.</td>
-<td><code>Path('examples/')</code></td>
-</tr>
-<tr class="even">
-<td>kwargs</td>
-<td></td>
-<td>Additional keyword arguments to override config file values.</td>
-<td><code>{}</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.merge_sharded_fsdp_weights.merge_fsdp_weights">merge_fsdp_weights</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.merge_sharded_fsdp_weights.merge_fsdp_weights(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    checkpoint_dir,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    output_path,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    remove_checkpoint_dir<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Merge the weights from sharded FSDP model checkpoints into a single combined checkpoint. Should be used if
-<code>SHARDED_STATE_DICT</code> was used for the model. Weights will be saved to <code>{output_path}/model.safetensors</code>.</p>
-<p>Note: this is a CPU-bound process.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 14%">
-<col style="width: 25%">
-<col style="width: 53%">
-<col style="width: 7%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>checkpoint_dir</td>
-<td><code>str</code></td>
-<td>The directory containing the FSDP checkpoints (can be either the model or optimizer).</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>output_path</td>
-<td><code>str</code></td>
-<td>The path to save the merged checkpoint.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>remove_checkpoint_dir</td>
-<td><code>bool</code>, <em>optional</em>, defaults to <code>False</code></td>
-<td>Whether to remove the checkpoint directory after merging.</td>
-<td><code>False</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="raises" class="level4 doc-section doc-section-raises">
-<h4 class="doc-section doc-section-raises anchored" data-anchor-id="raises">Raises</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 13%">
-<col style="width: 76%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>ValueError</td>
-<td>If torch version &lt; 2.3.0, or if <code>checkpoint_dir</code> does not exist.</td>
-</tr>
-</tbody>
-</table>
+    
+  
+    
+  </div>
+  
 
 
-</section>
-</section>
-</section>
-</section>
+</header>
+
+
+<p>Mamba checkpoints use Transformers by default. To select the FLA implementation
+explicitly, set the backend in the model configuration:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> state-spaces/mamba-130m-hf</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">model_config</span><span class="kw">:</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mamba_backend</span><span class="kw">:</span><span class="at"> fla</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This path supports full fine-tuning and LoRA on <code>in_proj</code> and <code>out_proj</code> for the
+<code>mamba</code> and <code>mamba2</code> model types. For LoRA, set:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> in_proj</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> out_proj</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>in_proj</code> adapters run before the fused kernels. When <code>out_proj</code> is adapted,
+training uses FLA’s decomposed CUDA convolution/scan path so the output projection
+invokes the adapter, including its dropout, rather than reading the base weight
+directly. This can have different performance from full fine-tuning’s fused path.
+Mamba2 with multiple state groups also uses the decomposed path to preserve
+Transformers’ normalization across the full intermediate dimension. Previously
+saved full-FLA Mamba2 checkpoints retain their original grouped normalization.
+Other adapter targets and quantized model weights (including QLoRA and 8-bit
+LoRA) are not supported. Validation rejects quantized loading and quantization
+metadata in saved checkpoints. Use an unquantized checkpoint for this backend;
+there is no automatic QLoRA fallback to Transformers because its fused paths
+also access projection weights directly.</p>
+<p>ModelSupport registers config-selected replacements for the pure Mamba mixers.
+Transformers retains the outer model, parameter initialization, checkpoint keys,
+loss, and generation interfaces. Hybrid models are not patched. Saved checkpoints
+retain the backend and remain loadable through Axolotl’s model loader.</p>
+<p>Install the <code>fla</code> extra and use Torch 2.13 or newer. The wrapper loads the
+<code>kernels-community/mamba-ssm</code> and <code>kernels-community/causal-conv1d</code> Hub kernels
+when preparing CUDA computation. CUDA convolution is required; leave
+<code>FLA_CONV_BACKEND</code> unset or set it to <code>cuda</code>.</p>
+<p>Packing groups documents into batches with bounded right padding. Convolution
+and recurrent state start independently for each document. Packing and Trainer
+loss normalization belong to Axolotl core. Packed inputs cannot use a generation
+cache; ordinary unsharded generation uses Transformers’ <code>cache_params</code> interface with
+single-token cached decoding.</p>
+<p>Packed training requires serial forward/backward calls on each model instance.
+Overlapping or interleaved calls can overwrite the document boundaries retained
+for gradient checkpointing.</p>
+<p>Context parallelism requires Ringmaster 0.2.2 or newer for its FLA Mamba
+adapters. Older releases without those adapters are rejected. CP uses
+contiguous shards and exchanges convolution halos and recurrent states; packed
+document boundaries remain active across shard boundaries. Cached generation
+is unavailable while CP adapters are installed.</p>
+<p>The 32K/64K BF16 microbenchmarks used four layers, hidden size 768, and batch size
+two. They exercised dense forward and backward, excluding compilation and
+optimizer work. Differences from Transformers remained bounded but were not
+bitwise zero; the results do not establish full training equivalence.</p>
+
+
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

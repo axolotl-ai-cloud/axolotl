@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -1042,8 +1048,10 @@ the distributed group if ring_flash_attn is installed.</p>
 <p>Whether a hub-wrapped kernel’s live implementation takes <code>name</code>.</p>
 <p>transformers resolves the pip kernel at import time and filters kwargs to
 its signature, so a torch fallback (which takes <code>**kwargs</code>) drops
-<code>seq_idx</code> without a word. Returns None when the wrapper cannot be
-introspected (e.g.&nbsp;already replaced by a Hub kernel).</p>
+<code>seq_idx</code> without a word. Once kernelize has swapped in a Hub kernel, its
+own signature is checked instead; the Hub layers declare <code>**kwargs</code> and pop
+the name inside, so their source is searched. Returns None when nothing can
+be told.</p>
 </section>
 <section id="axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.mamba2_cp_correction">mamba2_cp_correction</h3>

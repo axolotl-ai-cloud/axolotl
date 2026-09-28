@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -918,6 +924,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.models.mamba.modeling.build_segment_plan" id="toc-axolotl.monkeypatch.models.mamba.modeling.build_segment_plan" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba.modeling.build_segment_plan">build_segment_plan</a></li>
+  <li><a href="#axolotl.monkeypatch.models.mamba.modeling.packed_causal_conv" id="toc-axolotl.monkeypatch.models.mamba.modeling.packed_causal_conv" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba.modeling.packed_causal_conv">packed_causal_conv</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan" id="toc-axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan">packed_selective_scan</a></li>
   </ul></li>
   </ul></li>
@@ -939,10 +946,11 @@ them into <code>seq_idx</code> and stashes the boundaries on every block, which 
 to its mixer as a kwarg. The mixers forward kwargs into their kernels, so Mamba2
 needs nothing more than a live kernel that takes <code>seq_idx</code>.</p>
 <p>Mamba1’s selective scan has no such argument, so a packed row is scattered into
-right-padded per-document batches for the scan alone (the conv resets through
-<code>seq_idx</code>) and gathered back: exact for real tokens, padding costs only the
-scan. Its fused training kernel bakes in the whole row, so it is disabled for
-packed batches and the forward continues on the unfused branch.</p>
+right-padded per-document batches for the causal conv and the scan and gathered
+back: exact for real tokens, padding costs only those two ops. A conv kernel that
+takes <code>seq_idx</code> is used as is; the torch fallback goes per document too, so no
+kernel is required. Its fused training kernel bakes in the whole row, so it is
+disabled for packed batches and the forward continues on the unfused branch.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -997,6 +1005,10 @@ packed batches and the forward continues on the unfused branch.</p>
 <td>Group documents by length so no group pads beyond <code>pad_factor</code> of its tokens.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.monkeypatch.models.mamba.modeling.packed_causal_conv">packed_causal_conv</a></td>
+<td>Run a causal conv on each packed document separately; returns <code>[B, C, T]</code>.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan">packed_selective_scan</a></td>
 <td>Run <code>scan_fn</code> on each packed document separately; returns <code>[B, D, T]</code>.</td>
 </tr>
@@ -1010,21 +1022,34 @@ packed batches and the forward continues on the unfused branch.</p>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Group documents by length so no group pads beyond <code>pad_factor</code> of its tokens.</p>
 </section>
+<section id="axolotl.monkeypatch.models.mamba.modeling.packed_causal_conv" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba.modeling.packed_causal_conv">packed_causal_conv</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba.modeling.packed_causal_conv(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    conv_fn,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    segments,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    x,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>args,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Run a causal conv on each packed document separately; returns <code>[B, C, T]</code>.</p>
+<p>Right padding never reaches earlier positions of a causal conv, so the
+per-document outputs are exact.</p>
+</section>
 <section id="axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba.modeling.packed_selective_scan">packed_selective_scan</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba.modeling.packed_selective_scan(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    scan_fn,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    segments,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    u,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    delta,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    A,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    B,</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    C,</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    D,</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    z,</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    delta_bias,</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba.modeling.packed_selective_scan(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    scan_fn,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    segments,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    u,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    delta,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    A,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    B,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    C,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    D,</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    z,</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    delta_bias,</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Run <code>scan_fn</code> on each packed document separately; returns <code>[B, D, T]</code>.</p>
 
 

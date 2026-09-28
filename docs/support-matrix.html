@@ -599,6 +599,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -1276,7 +1282,7 @@ Note
 <tr class="even">
 <td>Context/Sequence Parallel (CP)</td>
 <td><code>context_parallel_size:</code></td>
-<td>FSDP2, ring-flash-attn</td>
+<td>FSDP2, axolotl-ringmaster (Ulysses/Ring/USP)</td>
 </tr>
 <tr class="odd">
 <td>Expert Parallel (EP) 🟡</td>
@@ -1761,7 +1767,7 @@ Warning
 </tr>
 <tr class="odd">
 <td>Context/Sequence parallel</td>
-<td>flash attention (FA2/FA3)</td>
+<td>Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention</td>
 </tr>
 <tr class="even">
 <td>SonicMoE</td>

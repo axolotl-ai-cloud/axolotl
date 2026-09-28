@@ -598,6 +598,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -881,7 +887,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#trainers" id="toc-trainers" class="nav-link" data-scroll-target="#trainers">Trainers</a></li>
   <li><a href="#model-loading" id="toc-model-loading" class="nav-link" data-scroll-target="#model-loading">Model Loading</a></li>
   <li><a href="#mixins" id="toc-mixins" class="nav-link" data-scroll-target="#mixins">Mixins</a></li>
-  <li><a href="#context-managers" id="toc-context-managers" class="nav-link" data-scroll-target="#context-managers">Context Managers</a></li>
   <li><a href="#prompt-strategies" id="toc-prompt-strategies" class="nav-link" data-scroll-target="#prompt-strategies">Prompt Strategies</a></li>
   <li><a href="#kernels" id="toc-kernels" class="nav-link" data-scroll-target="#kernels">Kernels</a></li>
   <li><a href="#monkey-patches" id="toc-monkey-patches" class="nav-link" data-scroll-target="#monkey-patches">Monkey Patches</a></li>
@@ -1265,18 +1270,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tbody>
 </table>
 </section>
-<section id="context-managers" class="level2">
-<h2 class="anchored" data-anchor-id="context-managers">Context Managers</h2>
-<p>Context managers for altering trainer behaviors</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/utils.ctx_managers.sequence_parallel.html#axolotl.utils.ctx_managers.sequence_parallel">utils.ctx_managers.sequence_parallel</a></td>
-<td>Module for Axolotl trainer sequence parallelism manager and utilities</td>
-</tr>
-</tbody>
-</table>
-</section>
 <section id="prompt-strategies" class="level2">
 <h2 class="anchored" data-anchor-id="prompt-strategies">Prompt Strategies</h2>
 <p>Prompt formatting strategies</p>
@@ -1604,7 +1597,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/monkeypatch.models.falcon_h1.modeling.html#axolotl.monkeypatch.models.falcon_h1.modeling">monkeypatch.models.falcon_h1.modeling</a></td>
-<td>Sample-packing and context-parallelism patch for Falcon-H1 (parallel Mamba2/Attention hybrid).</td>
+<td>Sample-packing patch for Falcon-H1 (parallel Mamba2/Attention hybrid).</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/monkeypatch.models.gemma4_unified.fused_attn.html#axolotl.monkeypatch.models.gemma4_unified.fused_attn">monkeypatch.models.gemma4_unified.fused_attn</a></td>
@@ -1612,7 +1605,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/monkeypatch.models.granitemoehybrid.modeling.html#axolotl.monkeypatch.models.granitemoehybrid.modeling">monkeypatch.models.granitemoehybrid.modeling</a></td>
-<td>Sample-packing and context-parallelism patch for Granite MoE Hybrid (Mamba2/Attention/MoE).</td>
+<td>Sample-packing patch for Granite MoE Hybrid (Mamba2/Attention/MoE).</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/model_support.base.html#axolotl.model_support.base">model_support.base</a></td>
@@ -1660,7 +1653,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/monkeypatch.models.nemotron_h.modeling.html#axolotl.monkeypatch.models.nemotron_h.modeling">monkeypatch.models.nemotron_h.modeling</a></td>
-<td>Sample-packing and context-parallelism patch for NemotronH (Mamba2/Attention/MoE hybrid).</td>
+<td>Sample-packing patch for NemotronH (Mamba2/Attention/MoE hybrid).</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/monkeypatch.models.pixtral.modeling_flash_attention_utils.html#axolotl.monkeypatch.models.pixtral.modeling_flash_attention_utils">monkeypatch.models.pixtral.modeling_flash_attention_utils</a></td>
@@ -1703,42 +1696,38 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Patch prepare_model_for_kbit_training to not upcast everything</td>
 </tr>
 <tr class="odd">
-<td><a href="../../docs/api/monkeypatch.ring_attn.adapters.batch.html#axolotl.monkeypatch.ring_attn.adapters.batch">monkeypatch.ring_attn.adapters.batch</a></td>
-<td>HuggingFace flash attention adapter for basic ring attention (batch API).</td>
+<td><a href="../../docs/api/monkeypatch.ring_attn.patch.html#axolotl.monkeypatch.ring_attn.patch">monkeypatch.ring_attn.patch</a></td>
+<td>Context-parallel group registry.</td>
 </tr>
 <tr class="even">
-<td><a href="../../docs/api/monkeypatch.ring_attn.patch.html#axolotl.monkeypatch.ring_attn.patch">monkeypatch.ring_attn.patch</a></td>
-<td>Ring attention group registration and flash attention patching.</td>
-</tr>
-<tr class="odd">
 <td><a href="../../docs/api/monkeypatch.tiled_mlp.base.html#axolotl.monkeypatch.tiled_mlp.base">monkeypatch.tiled_mlp.base</a></td>
 <td>TiledMLP support for DDP, FSDP, and single GPU</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/monkeypatch.tiled_mlp.patch.html#axolotl.monkeypatch.tiled_mlp.patch">monkeypatch.tiled_mlp.patch</a></td>
 <td>Monkeypatch for Tiled MLP implementation</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/monkeypatch.trainer.lr.html#axolotl.monkeypatch.trainer.lr">monkeypatch.trainer.lr</a></td>
 <td>monkeypatch for Trainer _get_learning_rate method</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/monkeypatch.trainer.trl.html#axolotl.monkeypatch.trainer.trl">monkeypatch.trainer.trl</a></td>
 <td>Monkeypatch for TRL trainer FSDP preparation.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/monkeypatch.trainer.trl_vllm.html#axolotl.monkeypatch.trainer.trl_vllm">monkeypatch.trainer.trl_vllm</a></td>
 <td>Monkeypatches for TRL’s vLLM integration and trainer utils.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/monkeypatch.trainer.utils.html#axolotl.monkeypatch.trainer.utils">monkeypatch.trainer.utils</a></td>
 <td></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/monkeypatch.transformers.trainer_loss_calc.html#axolotl.monkeypatch.transformers.trainer_loss_calc">monkeypatch.transformers.trainer_loss_calc</a></td>
 <td>Module for patching transformers Trainer loss calculation to use nanmean.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/monkeypatch.xformers_.html#axolotl.monkeypatch.xformers_">monkeypatch.xformers_</a></td>
 <td>Fused MLP layer for incrementally improved training efficiency</td>
 </tr>
@@ -1985,6 +1974,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="even">
 <td><a href="../../docs/api/integrations.config.html#axolotl.integrations.config">integrations.config</a></td>
 <td>Module to handle merging the plugins’ input arguments with the base configurations.</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/integrations.context_parallel.args.html#axolotl.integrations.context_parallel.args">integrations.context_parallel.args</a></td>
+<td>Pydantic args for the ringmaster context-parallel plugin.</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/integrations.context_parallel.plugin.html#axolotl.integrations.context_parallel.plugin">integrations.context_parallel.plugin</a></td>
+<td>Context-parallel plugin backed by the standalone <code>ringmaster</code> package.</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/integrations.cut_cross_entropy.html#axolotl.integrations.cut_cross_entropy">integrations.cut_cross_entropy</a></td>

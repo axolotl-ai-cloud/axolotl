@@ -633,6 +633,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/hf-jobs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
@@ -977,8 +983,8 @@ aliases where they exist. Tags follow the same format for both names.</p>
 <section id="supported-variants" class="level2">
 <h2 class="anchored" data-anchor-id="supported-variants">Supported variants</h2>
 <p>Current Axolotl runtime images target Python 3.12 on CUDA 13.0 with PyTorch
-2.11.0 and 2.12.1+. The floating <code>main-latest</code> tags point at the Python 3.12 /
-CUDA 13.0 / PyTorch 2.12.1 build. Bare release tags, such as <code>0.16.1</code>, point
+2.13.0 and 2.14.0+. The floating <code>main-latest</code> tags point at the Python 3.12 /
+CUDA 13.0 / PyTorch 2.13.0 build. Bare release tags, such as <code>0.16.1</code>, point
 at the same latest matrix entry for that release.</p>
 <p>Base images may include additional uv-based tags for build compatibility, and
 older tags may remain available on Docker Hub for reproducibility. New runtime
@@ -1015,8 +1021,8 @@ It includes python, torch, git, git-lfs, awscli, pydantic, and more.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">main-base-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Tags examples:</p>
 <ul>
-<li><code>main-base-py3.12-cu130-2.11.0</code></li>
-<li><code>main-base-py3.12-cu130-2.12.1</code></li>
+<li><code>main-base-py3.12-cu130-2.13.0</code></li>
+<li><code>main-base-py3.12-cu130-2.14.0</code></li>
 </ul>
 </section>
 </section>
@@ -1075,13 +1081,13 @@ Tip
 </div>
 <p>Tags examples:</p>
 <ul>
-<li><code>main-py3.12-cu130-2.11.0</code></li>
-<li><code>main-py3.12-cu130-2.12.1</code></li>
+<li><code>main-py3.12-cu130-2.13.0</code></li>
+<li><code>main-py3.12-cu130-2.14.0</code></li>
 <li><code>main-latest</code></li>
-<li><code>main-20260315-py3.12-cu130-2.12.1</code></li>
-<li><code>0.16.1</code></li>
-<li><code>0.16.1-py3.12-cu130-2.12.1</code></li>
-<li><code>0.16.1-latest</code></li>
+<li><code>main-20260924-py3.12-cu130-2.13.0</code></li>
+<li><code>0.18.0</code></li>
+<li><code>0.18.0-py3.12-cu130-2.13.0</code></li>
+<li><code>0.18.0-latest</code></li>
 </ul>
 </section>
 </section>

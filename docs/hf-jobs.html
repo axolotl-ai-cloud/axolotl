@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="description" content="How to run Axolotl training on Hugging Face Jobs">
 
-<title>monkeypatch.ring_attn.adapters.batch – Axolotl</title>
+<title>Hugging Face Jobs – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -64,23 +65,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../../">
-<link href="../../favicon.jpg" rel="icon" type="image/jpeg">
-<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../../site_libs/quarto-html/popper.min.js"></script>
-<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -119,7 +120,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </script>
 
 
-<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../styles.css">
 </head>
 
 <body class="nav-sidebar docked nav-fixed quarto-light">
@@ -129,9 +130,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <nav class="navbar navbar-expand " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
-    <img src="../../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
     </a>
   </div>
         <div class="quarto-navbar-tools tools-wide tools-end">
@@ -147,7 +148,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/hf-jobs.html">Hugging Face Jobs</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -161,7 +162,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Home</span></a>
   </div>
 </li>
@@ -176,31 +177,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quickstart</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/installation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/inference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Inference and Merging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/support-matrix.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Support Matrix</span></a>
   </div>
 </li>
@@ -215,91 +216,91 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/muse-glimmer.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Muse Glimmer</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/cohere-north-micro-vision-instruct.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">North Micro Vision Instruct</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/shieldstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Shieldstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Kimi Linear</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/plano.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/plano.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Plano Orchestrator</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MiMo</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">InternVL 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/paddleocr-vl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PaddleOCR-VL</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">OLMo 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Trinity</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Arcee AFM</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Medium 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 4</span></a>
   </div>
 </li>
@@ -314,19 +315,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral 3 Vision</span></a>
   </div>
 </li>
@@ -343,19 +344,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Thinking</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Magistral Vision</span></a>
   </div>
 </li>
@@ -363,157 +364,157 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ministral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral Small 3.1/3.2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Voxtral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Devstral</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mistral 7B</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Llama 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.8-flash-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3.8 Flash Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.5.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3.5</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3 Next</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Qwen 3</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm47-flash.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.7-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm46v.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.6V</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/glm45.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GLM-4.5-Air</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Apertus</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GPT-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Seed-OSS</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/phi.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/phi.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Phi</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SmolVLM 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Granite 4</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Liquid Foundation Models 2</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Hunyuan</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Jamba</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Orpheus</span></a>
   </div>
 </li>
@@ -521,25 +522,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/cli.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Command Line Interface (CLI)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Telemetry</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Config Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/api" class="sidebar-item-text sidebar-link">
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
@@ -547,7 +548,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Formats</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -556,37 +557,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Pre-training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Instruction Tuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Conversation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Stepwise Supervised Format</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
   </div>
 </li>
@@ -603,49 +604,55 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Docker</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi Node</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ray Train</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/skypilot.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/skypilot.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">SkyPilot</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/hf-jobs.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Hugging Face Jobs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/nebius-serverless.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Nebius Serverless Jobs</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mac.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mac M-series</span></a>
   </div>
 </li>
@@ -662,97 +669,97 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">RLHF (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/ebft.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">EBFT Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">vLLM Serving for GRPO Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Learning Rate Groups</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">LoRA Optimizations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Loading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/qat.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization Aware Training (QAT)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/quantize.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Quantization with torchao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/export.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/export.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Exporting to GGUF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nvfp4_lora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NVFP4 MoE LoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/1_58bit_finetuning.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">1.58-bit Finetuning</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -769,43 +776,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Batch size vs Gradient accumulation</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Dataset Preprocessing</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/streaming.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Streaming Datasets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/multipack.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multipack (Sample Packing)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Mixed Precision Training</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizers</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/attention.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/attention.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Attention</span></a>
   </div>
 </li>
@@ -822,43 +829,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FSDP + QLoRA</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Custom Integrations</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sequence Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">MoE Expert Quantization</span></a>
   </div>
 </li>
@@ -875,25 +882,25 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">FAQ</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/training_stability.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Training Stability &amp; Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/debugging.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/nccl.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">NCCL</span></a>
   </div>
 </li>
@@ -909,161 +916,230 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.monkeypatch.ring_attn.adapters.batch" id="toc-axolotl.monkeypatch.ring_attn.adapters.batch" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.ring_attn.adapters.batch">monkeypatch.ring_attn.adapters.batch</a>
+  <li><a href="#setup" id="toc-setup" class="nav-link active" data-scroll-target="#setup">Setup</a></li>
+  <li><a href="#a-first-run-on-one-gpu" id="toc-a-first-run-on-one-gpu" class="nav-link" data-scroll-target="#a-first-run-on-one-gpu">A first run on one GPU</a></li>
+  <li><a href="#follow-the-run" id="toc-follow-the-run" class="nav-link" data-scroll-target="#follow-the-run">Follow the run</a></li>
+  <li><a href="#choosing-the-image-tag" id="toc-choosing-the-image-tag" class="nav-link" data-scroll-target="#choosing-the-image-tag">Choosing the image tag</a></li>
+  <li><a href="#where-the-config-lives" id="toc-where-the-config-lives" class="nav-link" data-scroll-target="#where-the-config-lives">Where the config lives</a>
   <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.monkeypatch.ring_attn.adapters.batch.create_flash_attn_forward_varlen_llama3" id="toc-axolotl.monkeypatch.ring_attn.adapters.batch.create_flash_attn_forward_varlen_llama3" class="nav-link" data-scroll-target="#axolotl.monkeypatch.ring_attn.adapters.batch.create_flash_attn_forward_varlen_llama3">create_flash_attn_forward_varlen_llama3</a></li>
-  <li><a href="#axolotl.monkeypatch.ring_attn.adapters.batch.substitute_hf_flash_attn" id="toc-axolotl.monkeypatch.ring_attn.adapters.batch.substitute_hf_flash_attn" class="nav-link" data-scroll-target="#axolotl.monkeypatch.ring_attn.adapters.batch.substitute_hf_flash_attn">substitute_hf_flash_attn</a></li>
+  <li><a href="#storage-bucket" id="toc-storage-bucket" class="nav-link" data-scroll-target="#storage-bucket">Storage Bucket</a></li>
+  <li><a href="#output-model-repo" id="toc-output-model-repo" class="nav-link" data-scroll-target="#output-model-repo">Output model repo</a></li>
   </ul></li>
-  </ul></li>
+  <li><a href="#save-checkpoints-to-a-bucket" id="toc-save-checkpoints-to-a-bucket" class="nav-link" data-scroll-target="#save-checkpoints-to-a-bucket">Save checkpoints to a bucket</a></li>
+  <li><a href="#multiple-gpus" id="toc-multiple-gpus" class="nav-link" data-scroll-target="#multiple-gpus">Multiple GPUs</a></li>
+  <li><a href="#large-datasets" id="toc-large-datasets" class="nav-link" data-scroll-target="#large-datasets">Large datasets</a></li>
+  <li><a href="#train-merge-and-upload-in-one-job" id="toc-train-merge-and-upload-in-one-job" class="nav-link" data-scroll-target="#train-merge-and-upload-in-one-job">Train, merge and upload in one Job</a></li>
+  <li><a href="#further-reading" id="toc-further-reading" class="nav-link" data-scroll-target="#further-reading">Further reading</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/docker.html">Deployments</a></li><li class="breadcrumb-item"><a href="../docs/hf-jobs.html">Hugging Face Jobs</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Hugging Face Jobs</h1>
+</div>
+
+<div>
+  <div class="description">
+    How to run Axolotl training on Hugging Face Jobs
+  </div>
+</div>
 
 
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
 
 
-<section id="axolotl.monkeypatch.ring_attn.adapters.batch" class="level1">
-<h1>monkeypatch.ring_attn.adapters.batch</h1>
-<p><code>monkeypatch.ring_attn.adapters.batch</code></p>
-<p>HuggingFace flash attention adapter for basic ring attention (batch API).</p>
-<p>Inspired by
-https://github.com/zhuzilin/ring-flash-attention/blob/ce9fd3935ca0e5f0592bb0826cbed18ec69da729/ring_flash_attn/adapters/hf_adapter.py.
-Our implementation closely follows the structure of that module, but we’ve minified it
-somewhat to support only the latest versions of transformers.</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.monkeypatch.ring_attn.adapters.batch.create_flash_attn_forward_varlen_llama3">create_flash_attn_forward_varlen_llama3</a></td>
-<td>Create a ring flash attention forward function compatible with HuggingFace’s</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.monkeypatch.ring_attn.adapters.batch.substitute_hf_flash_attn">substitute_hf_flash_attn</a></td>
-<td>Substitute HuggingFace’s flash attention implementation with ring-based implementation.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.monkeypatch.ring_attn.adapters.batch.create_flash_attn_forward_varlen_llama3" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.ring_attn.adapters.batch.create_flash_attn_forward_varlen_llama3">create_flash_attn_forward_varlen_llama3</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.ring_attn.adapters.batch.create_flash_attn_forward_varlen_llama3(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    process_group,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Create a ring flash attention forward function compatible with HuggingFace’s
-interface.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
+</header>
+
+
+<p><a href="https://huggingface.co/docs/hub/jobs-overview">Hugging Face Jobs</a> is a compute service: it runs your workload on Hugging Face hardware, from a CPU to several H200s, and bills by the minute while the workload runs. A Job can be a Python script whose dependencies <code>uv</code> installs, or a command in any Docker image. When the command ends, the Job stops and the billing stops with it.</p>
+<p>For Axolotl, the simplest route is its Docker image, which already contains Axolotl, PyTorch and CUDA. You give Jobs the image, a GPU flavor and an <code>axolotl train</code> command. The Job trains from your config, pushes the model to the Hub and stops. There is no machine to set up or shut down.</p>
+<p>This guide covers:</p>
+<ul>
+<li>a first training run on one GPU, and how to follow it;</li>
+<li>choosing and changing the image tag;</li>
+<li>three ways to give the Job your config, and when to use each;</li>
+<li>saving checkpoints, using several GPUs, streaming large datasets, and merging a LoRA adapter in the same Job.</li>
+</ul>
+<section id="setup" class="level2">
+<h2 class="anchored" data-anchor-id="setup">Setup</h2>
+<p>Jobs need a Hugging Face account with <a href="https://huggingface.co/settings/billing">pre-paid credits</a>. Install the <code>hf</code> CLI and log in with a token that has write access:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-U</span> huggingface_hub</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> auth login</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>See the <a href="https://huggingface.co/docs/hub/jobs-quickstart">Jobs quickstart</a> for other install options and for running Jobs under an organization. <code>hf jobs hardware</code> lists each GPU flavor with its memory and hourly price.</p>
+<p>If a coding agent launches your runs, <code>hf skills add</code> installs a skill that teaches it the <code>hf</code> commands, including <code>hf jobs</code>. Everything on this page is a single command, so an agent can launch a run, follow its logs and check the result.</p>
+</section>
+<section id="a-first-run-on-one-gpu" class="level2">
+<h2 class="anchored" data-anchor-id="a-first-run-on-one-gpu">A first run on one GPU</h2>
+<p>Download an example config into a local <code>configs</code> folder. Take it from the same release as the image you run, so the config and the Axolotl version match:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">mkdir</span> <span class="at">-p</span> configs</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-L</span> <span class="at">-o</span> configs/train.yml <span class="dt">\</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/v0.19.0/examples/gemma4/e2b-vision-lora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This config trains a LoRA adapter for <a href="https://huggingface.co/google/gemma-4-E2B-it">Gemma 4 E2B</a> on 100 image-and-text conversations. It already stops after <code>max_steps: 10</code>, which makes it a good trial run. Open <code>configs/train.yml</code> and add a Hub repo for the result:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_model_id</span><span class="kw">:</span><span class="at"> your-username/gemma4-e2b-lora</span><span class="co">  # where the adapter is pushed</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">hub_strategy</span><span class="kw">:</span><span class="at"> end</span><span class="co">                            # push once, at the end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Then launch it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs run <span class="at">--flavor</span> a10g-large <span class="at">--timeout</span> 1h <span class="at">-s</span> HF_TOKEN <span class="dt">\</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--name</span> gemma4-e2b-trial <span class="dt">\</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> ./configs:/configs <span class="dt">\</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 <span class="at">--</span> <span class="dt">\</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  axolotl train /configs/train.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Each part of the command does one thing:</p>
+<ul>
+<li><code>--flavor a10g-large</code> picks the hardware, here one A10G GPU with 24 GB of memory. <code>hf jobs hardware</code> lists the others.</li>
+<li><code>--timeout 1h</code> sets the maximum run time. The default is 30 minutes, which is short for training. When a Job times out, everything on its disk is lost, so set the timeout comfortably above the expected run time.</li>
+<li><code>-s HF_TOKEN</code> passes your local token to the Job as a secret. Axolotl needs it to push to <code>hub_model_id</code> and to download gated models. When <code>hub_model_id</code> is set, Axolotl pushes to a private repo.</li>
+<li><code>--name gemma4-e2b-trial</code> labels the Job, so you can find it again later with <code>hf jobs ps -a --name gemma4-e2b-trial</code> (<code>-a</code> includes finished Jobs). Names do not have to be unique.</li>
+<li><code>-v ./configs:/configs</code> uploads the <code>configs</code> folder to a private <code>jobs-artifacts</code> bucket in your account and mounts it read-only in the container. The YAML on your disk is the YAML the run uses. Edit it and launch again; only changed files are uploaded.</li>
+<li>Everything after <code>--</code> is the command to run inside the image.</li>
+</ul>
+</section>
+<section id="follow-the-run" class="level2">
+<h2 class="anchored" data-anchor-id="follow-the-run">Follow the run</h2>
+<p>The command prints the Job ID and a link to the Job’s page on the Hub, then streams the logs to your terminal until the run ends. It exits with an error if the Job did not complete. Expect the first few minutes to be spent pulling the image, which is about 17 GB. The trial run then takes about two minutes of training.</p>
+<p>The Job runs on Hugging Face hardware, not on your machine. Ctrl+C stops only the log stream; the Job keeps running until it finishes or you cancel it. For longer runs, add <code>-d</code> (detach) to get the Job ID back straight away, then use these commands:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs logs <span class="at">-f</span> <span class="op">&lt;</span>job_id<span class="op">&gt;</span>   <span class="co"># follow the logs</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs stats <span class="op">&lt;</span>job_id<span class="op">&gt;</span>     <span class="co"># CPU, memory and GPU use while it runs</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs inspect <span class="op">&lt;</span>job_id<span class="op">&gt;</span>   <span class="co"># status and error message</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs wait <span class="op">&lt;</span>job_id<span class="op">&gt;</span>      <span class="co"># block until it ends; non-zero exit if it failed</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs cancel <span class="op">&lt;</span>job_id<span class="op">&gt;</span>    <span class="co"># stop it</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>hf jobs stats</code> is a quick check that the run uses the GPU. If GPU use stays low while CPU use is high, the run is often waiting on data loading: try raising <code>dataloader_num_workers</code> or <code>micro_batch_size</code> in the YAML. <code>hf jobs logs -f</code> returns when the log stream ends, whether the run succeeded or not, so use <code>hf jobs inspect</code> or <code>hf jobs wait</code> for the final status. The Job’s page on the Hub shows the same status and logs in the browser.</p>
+<p>Any top-level config key can also be passed as a flag after the config path, with underscores written as dashes, for example <code>axolotl train /configs/train.yml --max-steps 5</code>. Flags override the file without changing it, which is handy for a quick change. For a change you want to keep, edit the YAML, so the file stays a record of what ran.</p>
+<p>When the trial run works, remove <code>max_steps</code> for the full run, point <code>datasets</code> at your own data, and raise <code>--timeout</code> to match.</p>
+</section>
+<section id="choosing-the-image-tag" class="level2">
+<h2 class="anchored" data-anchor-id="choosing-the-image-tag">Choosing the image tag</h2>
+<p>The command pins a release tag, so a rerun months later gets the same Axolotl, PyTorch and CUDA. Release tags have the form <code>{version}-py{python_version}-cu{cuda_version}-{pytorch_version}</code>.</p>
+<p>To move to a newer release, pick a tag from <a href="https://hub.docker.com/r/axolotlai/axolotl/tags">Docker Hub</a>, replace the image name in the command, and download the example configs from the matching release (<code>v{version}</code> in the URL). <code>axolotlai/axolotl:main-latest</code> follows the main branch. It is useful for trying new features, but it can change between two runs.</p>
+<p>When you change the tag, check what the image contains. For example, the <code>0.19.0</code> tag has no <code>flash-attn</code>. The Gemma 4 example already uses <code>attn_implementation: sdpa</code>, but a config that sets <code>flash_attention_2</code> needs changing to <code>sdpa</code> to run on that tag.</p>
+</section>
+<section id="where-the-config-lives" class="level2">
+<h2 class="anchored" data-anchor-id="where-the-config-lives">Where the config lives</h2>
+<p>The first run synced the config from a local folder. There are two other places to keep it, both on the Hub. They differ in where the config lives and whether each version is kept:</p>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 13%">
-<col style="width: 15%">
-<col style="width: 61%">
-<col style="width: 9%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
 </colgroup>
 <thead>
 <tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
+<th>Route</th>
+<th>Config lives in</th>
+<th>Versions kept</th>
+<th>Use it when</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td>process_group</td>
-<td>dist.ProcessGroup</td>
-<td>A PyTorch distributed process group.</td>
-<td><em>required</em></td>
+<td>Local folder (<code>-v ./configs:/configs</code>)</td>
+<td>Your disk</td>
+<td>Only if your folder is in git</td>
+<td>You edit and launch from one machine. Start here.</td>
 </tr>
 <tr class="even">
-<td>ring_attn_func</td>
-<td>RingAttnFunc</td>
-<td>Function from <code>ring_flash_attention</code> to replace HF flash attention with.</td>
-<td><em>required</em></td>
+<td>Storage Bucket</td>
+<td>A bucket on the Hub</td>
+<td>No</td>
+<td>Several people or machines launch the same configs, or you want configs next to checkpoints.</td>
 </tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 5%">
-<col style="width: 7%">
-<col style="width: 87%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
 <tr class="odd">
-<td></td>
-<td>Callable</td>
-<td>A function that implements the ring flash attention forward pass with the signature expected by HuggingFace Transformers.</td>
+<td>Output model repo</td>
+<td>The model repo the run pushes to</td>
+<td>Yes, in the repo’s git history</td>
+<td>You want every trained model to carry the config that produced it.</td>
 </tr>
 </tbody>
 </table>
+<p>All three run the same <code>axolotl train</code> command; only the source of the YAML changes.</p>
+<section id="storage-bucket" class="level3">
+<h3 class="anchored" data-anchor-id="storage-bucket">Storage Bucket</h3>
+<p>A <a href="https://huggingface.co/docs/hub/storage-buckets">Storage Bucket</a> is file storage on the Hub. Upload the configs once, then mount the bucket in every Job:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> buckets create your-username/axolotl-runs <span class="at">--private</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> buckets sync ./configs hf://buckets/your-username/axolotl-runs/configs</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs run <span class="at">--flavor</span> a10g-large <span class="at">--timeout</span> 1h <span class="at">-s</span> HF_TOKEN <span class="dt">\</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> hf://buckets/your-username/axolotl-runs:/runs <span class="dt">\</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 <span class="at">--</span> <span class="dt">\</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  axolotl train /runs/configs/train.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Anyone with access to the bucket can launch the same config. A bucket is mounted read-write, so the same mount can also hold checkpoints (see the next section). A bucket keeps only the latest copy of each file: if you change a config, the previous version is gone.</p>
+</section>
+<section id="output-model-repo" class="level3">
+<h3 class="anchored" data-anchor-id="output-model-repo">Output model repo</h3>
+<p>A model repo on the Hub is a git repository. If the config lives in the repo the run pushes to, the repo’s history records each config next to the weights it trained: a commit that changes the YAML, then a commit with the new weights. You can compare two runs’ configs, go back to an earlier one, and anyone who opens the model can see how it was trained.</p>
+<p>Create the repo, upload the config, and mount the repo:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> repos create your-username/gemma4-e2b-lora <span class="at">--private</span> <span class="at">--exist-ok</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> upload your-username/gemma4-e2b-lora ./configs/train.yml train.yml</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs run <span class="at">--flavor</span> a10g-large <span class="at">--timeout</span> 1h <span class="at">-s</span> HF_TOKEN <span class="dt">\</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> hf://your-username/gemma4-e2b-lora:/configs <span class="dt">\</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 <span class="at">--</span> <span class="dt">\</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  axolotl train /configs/train.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Set <code>hub_model_id</code> in the YAML to the same repo. Model repos are mounted read-only, and Axolotl pushes the weights at the end of the run through the Hub API. For the next run, edit the YAML, upload it again, and launch the same command.</p>
+<p>This route pairs well with a bucket for checkpoints: checkpoints change during the run and do not need a history, while the config and final weights do.</p>
 </section>
 </section>
-<section id="axolotl.monkeypatch.ring_attn.adapters.batch.substitute_hf_flash_attn" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.ring_attn.adapters.batch.substitute_hf_flash_attn">substitute_hf_flash_attn</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.ring_attn.adapters.batch.substitute_hf_flash_attn(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    process_group,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    ring_attn_func,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Substitute HuggingFace’s flash attention implementation with ring-based implementation.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 13%">
-<col style="width: 15%">
-<col style="width: 61%">
-<col style="width: 9%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>process_group</td>
-<td>dist.ProcessGroup</td>
-<td>PyTorch distributed process group for communication.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>ring_attn_func</td>
-<td>RingAttnFunc</td>
-<td>Function from <code>ring_flash_attention</code> to replace HF flash attention with.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
+<section id="save-checkpoints-to-a-bucket" class="level2">
+<h2 class="anchored" data-anchor-id="save-checkpoints-to-a-bucket">Save checkpoints to a bucket</h2>
+<p>A Job’s disk is discarded when the Job ends. For long runs, mount a bucket and point <code>output_dir</code> at it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs run <span class="at">--flavor</span> a10g-large <span class="at">--timeout</span> 4h <span class="at">-s</span> HF_TOKEN <span class="dt">\</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> ./configs:/configs <span class="dt">\</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> hf://buckets/your-username/axolotl-runs:/runs <span class="dt">\</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 <span class="at">--</span> <span class="dt">\</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  axolotl train /configs/train.yml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>with <code>output_dir: /runs/outputs/run-01</code> in the YAML. Checkpoints are written to the bucket as they are saved, so a timeout or a crash does not lose them. Download them afterwards with <code>hf buckets sync hf://buckets/your-username/axolotl-runs/outputs ./outputs</code>.</p>
+</section>
+<section id="multiple-gpus" class="level2">
+<h2 class="anchored" data-anchor-id="multiple-gpus">Multiple GPUs</h2>
+<p>To use more GPUs, change the flavor and nothing else. On <code>a10g-largex4</code>, <code>axolotl train</code> starts one process per GPU and trains with DDP. DeepSpeed and FSDP2 are set in the YAML as usual. The DeepSpeed configs are not in the image, so fetch them inside the Job before training:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs run <span class="at">--flavor</span> a10g-largex4 <span class="at">--timeout</span> 1h <span class="at">-s</span> HF_TOKEN <span class="dt">\</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> ./configs:/configs <span class="dt">\</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 <span class="at">--</span> <span class="dt">\</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  bash <span class="at">-c</span> <span class="st">'axolotl fetch deepspeed_configs &amp;&amp; axolotl train /configs/train.yml'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>with <code>deepspeed: deepspeed_configs/zero2.json</code> in the YAML.</p>
+</section>
+<section id="large-datasets" class="level2">
+<h2 class="anchored" data-anchor-id="large-datasets">Large datasets</h2>
+<p>A Hub dataset larger than the Job’s disk can be streamed instead of downloaded. For continued pretraining:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">pretraining_dataset</span><span class="kw">:</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> HuggingFaceFW/fineweb-edu</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> sample-10BT</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> pretrain</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">text_column</span><span class="kw">:</span><span class="at"> text</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="fu">streaming</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="fu">max_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">200</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Set <code>streaming: true</code> explicitly. With <code>max_steps</code>, the run stops after that many steps, however large the dataset is.</p>
+</section>
+<section id="train-merge-and-upload-in-one-job" class="level2">
+<h2 class="anchored" data-anchor-id="train-merge-and-upload-in-one-job">Train, merge and upload in one Job</h2>
+<p>For a LoRA run, you can push a merged model instead of the adapter by chaining the commands in one Job. The image includes the <code>hf</code> CLI. With the first-run config, whose <code>output_dir</code> is <code>./outputs/gemma4-e2b-vision-lora</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> jobs run <span class="at">--flavor</span> a10g-large <span class="at">--timeout</span> 1h <span class="at">-s</span> HF_TOKEN <span class="dt">\</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> ./configs:/configs <span class="dt">\</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 <span class="at">--</span> bash <span class="at">-c</span> <span class="st">'</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="st">    axolotl train /configs/train.yml &amp;&amp;</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="st">    axolotl merge-lora /configs/train.yml &amp;&amp;</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="st">    hf upload your-username/gemma4-e2b-merged ./outputs/gemma4-e2b-vision-lora/merged . --private'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>merge-lora</code> reads the adapter from <code>output_dir</code> and writes the merged model, with its tokenizer or processor files, to <code>&lt;output_dir&gt;/merged</code>. The <code>&amp;&amp;</code> stops the chain if a step fails, so a failed training run does not upload anything.</p>
+</section>
+<section id="further-reading" class="level2">
+<h2 class="anchored" data-anchor-id="further-reading">Further reading</h2>
+<ul>
+<li><a href="https://huggingface.co/docs/hub/jobs-overview">Hugging Face Jobs</a></li>
+<li><a href="https://huggingface.co/docs/hub/jobs-training">Train models on Jobs</a></li>
+<li><a href="https://huggingface.co/docs/hub/jobs-configuration#volumes">Volumes</a></li>
+<li><a href="https://huggingface.co/docs/hub/jobs-pricing">Pricing</a></li>
+</ul>
 
 
-</section>
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->
