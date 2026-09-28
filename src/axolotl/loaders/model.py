@@ -80,16 +80,44 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
-def check_tensor_parallel_adapter_support(native_nvfp4_prepared: bool) -> None:
+def check_tensor_parallel_adapter_support(native_nvfp4_prepared) -> None:
     """Adapters under TP exist only for native NVFP4 bases (``torchao_tp_lora``); on a bf16
     base PEFT sizes the LoRA factors from the already-sharded weight, so every rank trains
-    a different shard-local adapter and the save writes one shard."""
+    a different shard-local adapter and the save writes one shard.
+
+    Takes the result of ``prepare_native_nvfp4_tp_lora`` (or a bool for the all-or-nothing
+    case). A partially quantized checkpoint whose unquantized modules are still in the
+    ``tp_plan`` is rejected too: those LoRA modules would get plain PEFT on a TP-sharded base.
+    """
+    skipped = tuple(getattr(native_nvfp4_prepared, "skipped", ()))
+    if skipped:
+        shown = ", ".join(skipped[:5]) + (", ..." if len(skipped) > 5 else "")
+        raise ValueError(
+            "tensor_parallel_size > 1 with an adapter (lora/qlora) requires every LoRA "
+            "target to sit on a native NVFP4 weight; these targets are TP-sharded but not "
+            f"NVFP4 (e.g. modules_to_not_convert): {shown}. Drop them from "
+            "lora_target_modules or use FSDP (dp_shard_size) / context_parallel_size instead"
+        )
     if native_nvfp4_prepared:
         return
     raise ValueError(
         "tensor_parallel_size > 1 with an adapter (lora/qlora) is only supported for "
         "native NVFP4 base models; use FSDP (dp_shard_size) or context_parallel_size instead"
     )
+
+
+def check_tensor_parallel_rl_adapter_support(cfg) -> None:
+    """DPO/IPO/KTO hand TRL the peft config and TRL wraps the already TP-sharded model, after
+    the loader could install ``torchao_tp_lora``, so even an NVFP4 base ends up shard-local."""
+    if not cfg.adapter or (cfg.tensor_parallel_size or 1) <= 1:
+        return
+    if cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO] and not cfg.merge_lora:
+        raise ValueError(
+            f"tensor_parallel_size > 1 with an adapter is not supported for rl: {cfg.rl}; "
+            "the trainer applies PEFT to the TP-sharded model itself, so every rank would "
+            "train a shard-local adapter. Use FSDP (dp_shard_size) or "
+            "context_parallel_size instead"
+        )
 
 
 def _is_native_nvfp4_quantization_config(config) -> bool:
@@ -309,14 +337,7 @@ class ModelLoader:
             PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
             self._materialize_trainable_meta_params()
             # after materialization so every rank (not just rank 0) holds its own draw
-            if (
-                lora_config is not None
-                and not self.cfg.lora_model_dir
-                and getattr(lora_config, "init_lora_weights", None) is True
-            ):
-                from axolotl.loaders.adapter import reinit_lora_from_seed
-
-                reinit_lora_from_seed(self.model, self.cfg.seed)
+            self._reinit_expert_parallel_lora(lora_config)
 
         with nf4_phase("NF4 post-adapter configuration", enabled=staged_nf4):
             # Apply remaining patches and finalize
@@ -662,10 +683,35 @@ class ModelLoader:
         with _nf4_shape_stand_ins() if staged else nullcontext():
             return self._build_adapters()
 
+    def _reinit_expert_parallel_lora(self, lora_config: PeftConfig | None) -> None:
+        """Expert parallelism sizes the expert adapter locally, which shifts PEFT's RNG stream
+        for every later module, so each rank's fresh draw is re-done per module from the seed."""
+        if (
+            lora_config is None
+            or (self.cfg.expert_parallel_size or 1) <= 1
+            or self.cfg.lora_model_dir
+            or getattr(lora_config, "init_lora_weights", None) is not True
+        ):
+            return
+        from axolotl.loaders.adapter import reinit_lora_from_seed
+
+        reinit_lora_from_seed(self.model, self._lora_init_seed())
+
+    def _lora_init_seed(self) -> int:
+        """Nothing seeds torch before model load, so an unseeded run's ``torch.initial_seed()``
+        differs per process; every rank must draw the same adapter for its experts."""
+        if self.cfg.seed is not None:
+            return int(self.cfg.seed)
+        seed = [torch.initial_seed()]
+        if dist.is_available() and dist.is_initialized():
+            dist.broadcast_object_list(seed, src=0)
+        return int(seed[0])
+
     def _build_adapters(self) -> PeftConfig | None:
         """Build the adapter, or only its config for a reference model."""
         lora_config = None
         if not self.reference_model or self.cfg.lora_model_dir:
+            check_tensor_parallel_rl_adapter_support(self.cfg)
             # If we're not loading the reference model, then we're loading the model
             # for training. Then, the DPO trainer doesn't want the PEFT model loaded
             # over it, it just wants the LoRA / PEFT config.

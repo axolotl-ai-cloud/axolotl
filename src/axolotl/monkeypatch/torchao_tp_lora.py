@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import types
 import weakref
+from dataclasses import dataclass
 
 import torch
 import torch.distributed as dist
@@ -60,6 +61,31 @@ def _is_native_nvfp4_dtensor(weight) -> bool:
         isinstance(weight, DTensor)
         and type(weight.to_local()).__name__ == "NVFP4Tensor"
     )
+
+
+def _is_tp_dtensor(weight) -> bool:
+    try:
+        from torch.distributed.tensor import DTensor
+    except ImportError:
+        return False
+    if not isinstance(weight, DTensor):
+        return False
+    mesh_dim_names = getattr(weight.device_mesh, "mesh_dim_names", None)
+    if mesh_dim_names:
+        return "tp" in mesh_dim_names
+    return getattr(weight.device_mesh, "ndim", 1) == 1
+
+
+@dataclass(frozen=True)
+class NativeNvfp4TpLoraResult:
+    """``prepared`` got the TP-correct forward; ``skipped`` are LoRA modules whose base weight
+    is TP-sharded but not native NVFP4, so plain PEFT would train them shard-locally."""
+
+    prepared: tuple[str, ...] = ()
+    skipped: tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.prepared)
 
 
 def _lora_tp_plan(model, module_name):
@@ -261,13 +287,20 @@ def _ordinary_lora_tp_forward(module, layout: str, process_group):
     return types.MethodType(forward, module)
 
 
-def prepare_native_nvfp4_tp_lora(model, *, merge_aware: bool = True) -> bool:
+def prepare_native_nvfp4_tp_lora(
+    model, *, merge_aware: bool = True
+) -> NativeNvfp4TpLoraResult:
     """Install TP-correct ordinary or static merge-aware native NVFP4 LoRA."""
     candidates = []
+    skipped = []
     for module_name, module in model.named_modules():
         base = getattr(module, "base_layer", None)
         weight = getattr(base, "weight", None)
-        if not _is_native_nvfp4_dtensor(weight) or not hasattr(module, "lora_A"):
+        if not hasattr(module, "lora_A"):
+            continue
+        if not _is_native_nvfp4_dtensor(weight):
+            if _is_tp_dtensor(weight):
+                skipped.append(module_name)
             continue
         plan = _lora_tp_plan(model, module_name)
         if plan not in ("colwise", "rowwise"):
@@ -283,6 +316,7 @@ def prepare_native_nvfp4_tp_lora(model, *, merge_aware: bool = True) -> bool:
             _warn_fallback(module, "merge-aware forward disabled by configuration")
         candidates.append(
             (
+                module_name,
                 module,
                 layout,
                 _tp_group(weight.device_mesh),
@@ -290,7 +324,7 @@ def prepare_native_nvfp4_tp_lora(model, *, merge_aware: bool = True) -> bool:
             )
         )
 
-    for module, layout, process_group, use_merge_aware in candidates:
+    for _, module, layout, process_group, use_merge_aware in candidates:
         replicated_factors = module.lora_A if layout == "colwise" else module.lora_B
         hooked = getattr(module, "_axolotl_native_nvfp4_tp_lora_hooked_factors", None)
         if not isinstance(hooked, weakref.WeakValueDictionary):
@@ -307,7 +341,9 @@ def prepare_native_nvfp4_tp_lora(model, *, merge_aware: bool = True) -> bool:
                 else _ordinary_lora_tp_forward(module, layout, process_group)
             )
             module._axolotl_native_nvfp4_tp_lora_prepared = True
-    return bool(candidates)
+    return NativeNvfp4TpLoraResult(
+        prepared=tuple(name for name, *_ in candidates), skipped=tuple(skipped)
+    )
 
 
 def _all_gather_factor(
