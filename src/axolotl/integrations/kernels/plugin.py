@@ -99,6 +99,9 @@ def _base_is_nvfp4_modelopt(cfg) -> bool:
     from axolotl.integrations.kernels.adapters.glm_moe_dsa import (
         is_glm_moe_dsa_nvfp4_modelopt,
     )
+    from axolotl.integrations.kernels.adapters.nemotron_h import (
+        is_nemotron_h_nvfp4_modelopt,
+    )
     from axolotl.integrations.kernels.adapters.nvfp4_moe import is_moe_nvfp4_modelopt
     from axolotl.integrations.kernels.adapters.qwen3_moe import (
         is_qwen3_moe_nvfp4_modelopt,
@@ -108,6 +111,7 @@ def _base_is_nvfp4_modelopt(cfg) -> bool:
         is_qwen3_moe_nvfp4_modelopt(cfg)
         or is_gemma4_nvfp4_modelopt(cfg)
         or is_glm_moe_dsa_nvfp4_modelopt(cfg)
+        or is_nemotron_h_nvfp4_modelopt(cfg)
         or is_moe_nvfp4_modelopt(cfg)
     )
 
@@ -173,7 +177,6 @@ class KernelsPlugin(BasePlugin):
                 register_sonicmoe_experts,
             )
 
-            # register_sonicmoe_experts() redirects the sonic-moe hub kernel to our build.
             register_sonicmoe_experts()
             if not ep_active:
                 cfg.experts_implementation = "sonicmoe"
@@ -231,6 +234,12 @@ class KernelsPlugin(BasePlugin):
             adapter.pre_lora_load(cfg, model)
 
     def post_model_load(self, cfg, model):
+        if cfg.use_sonicmoe:
+            from axolotl.integrations.kernels.libs.sonicmoe.epilogue import (
+                check_model_epilogues,
+            )
+
+            check_model_epilogues(model)
         for adapter in self._adapters(cfg):
             adapter.post_model_load(cfg, model)
 

@@ -13,8 +13,11 @@ from ..utils import (
     check_model_output_exists,
     check_tensorboard_loss_decreased,
     require_torch_2_6_0,
+    requires_flash_attn,
     with_temp_dir,
 )
+
+pytestmark = requires_flash_attn
 
 
 class TestMistral(unittest.TestCase):

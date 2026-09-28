@@ -5,9 +5,7 @@ monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interatio
 import contextlib
 import copy
 import functools
-import gc
 import os
-import sys
 
 import torch
 import torch.distributed as dist
@@ -345,114 +343,6 @@ def fsdp2_load_full_state_dict(
     return model
 
 
-def get_state_dict(self, model, unwrap=True):
-    """
-    Returns the state dictionary of a model sent through [`Accelerator.prepare`] potentially without full
-    precision.
-
-    Args:
-        model (`torch.nn.Module`):
-            A PyTorch model sent through [`Accelerator.prepare`]
-        unwrap (`bool`, *optional*, defaults to `True`):
-            Whether to return the original underlying state_dict of `model` or to return the wrapped state_dict
-
-    Returns:
-        `dict`: The state dictionary of the model potentially without full precision.
-
-    Example:
-
-    ```python
-    >>> import torch
-    >>> from accelerate import Accelerator
-
-    >>> accelerator = Accelerator()
-    >>> net = torch.nn.Linear(2, 2)
-    >>> net = accelerator.prepare(net)
-    >>> state_dict = accelerator.get_state_dict(net)
-    ```
-    """
-    from accelerate import DistributedType
-    from accelerate.utils import compare_versions
-
-    if self.distributed_type == DistributedType.DEEPSPEED:
-        zero3_sharding = self.deepspeed_config["zero_optimization"]["stage"] == 3
-        tp_sharding = (
-            self.deepspeed_config.get("tensor_parallel", {}).get("autotp_size", 0) > 1
-        )
-        if zero3_sharding or tp_sharding:
-            if model.zero_gather_16bit_weights_on_model_save():
-                if tp_sharding and not compare_versions("deepspeed", ">=", "0.16.4"):
-                    raise ImportError(
-                        "Deepspeed TP requires deepspeed >= 0.16.4, Please update DeepSpeed via `pip install deepspeed -U`."
-                    )
-                state_dict = (
-                    model._consolidated_16bit_state_dict()
-                    if tp_sharding
-                    else model._zero3_consolidated_16bit_state_dict()
-                )
-            else:
-                raise ValueError(
-                    "Cannot get 16bit model weights because `stage3_gather_16bit_weights_on_model_save` in DeepSpeed config is False. "
-                    "To save the model weights in 16bit, set `stage3_gather_16bit_weights_on_model_save` to True in DeepSpeed config file or "
-                    "set `zero3_save_16bit_model` to True when using `accelerate config`. "
-                    "To save the full checkpoint, run `model.save_checkpoint(save_dir)` and use `zero_to_fp32.py` to recover weights."
-                )
-        else:
-            from deepspeed.checkpoint.utils import clone_tensors_for_torch_save
-
-            state_dict = clone_tensors_for_torch_save(
-                self.unwrap_model(model).state_dict()
-            )
-    elif self.is_fsdp2:
-        # https://github.com/pytorch/torchtune/blob/main/torchtune/training/_distributed.py#L465
-        from torch.distributed.tensor import DTensor
-
-        state_dict = {}
-        sharded_state_dict = model.state_dict()
-        is_rank_zero = torch.distributed.get_rank() == 0
-        for param_name, param in sharded_state_dict.items():
-            if param.is_cpu:
-                param = param.to(torch.device("cuda"))
-
-            if isinstance(param, DTensor):
-                param = param.full_tensor()
-
-            if is_rank_zero:
-                state_dict[param_name] = param.cpu()
-            # Drop the GPU-resident gathered tensor before the next iteration
-            # allocates the next one; otherwise the caching allocator holds
-            # both reservations and we accumulate ~model-size of VRAM.
-            del param
-            torch.distributed.barrier()
-
-        # Release the sharded view and force the allocator to give back the
-        # gather buffers.
-        del sharded_state_dict
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    elif self.distributed_type == DistributedType.FSDP:
-        from torch.distributed.fsdp import (
-            FullStateDictConfig,
-            FullyShardedDataParallel as FSDP,
-            StateDictType,
-        )
-
-        full_state_dict_config = FullStateDictConfig(
-            offload_to_cpu=True, rank0_only=True
-        )
-        with FSDP.state_dict_type(
-            model, StateDictType.FULL_STATE_DICT, full_state_dict_config
-        ):
-            state_dict = model.state_dict()
-    else:
-        if unwrap:
-            model = self.unwrap_model(model)
-        state_dict = model.state_dict()
-
-    return state_dict
-
-
 def patch_peft_param_wrapper_for_fsdp2():
     """Patch PEFT's _LoraParameterProxy.forward for FSDP2 DTensor compatibility.
 
@@ -536,6 +426,11 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     return log_bias_dtype_mismatch
 
 
+def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool:
+    """Staged NF4 holds the real weights on rank zero only; a peer's state dict would materialize meta."""
+    return not staged_nf4 or is_main_process
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -566,7 +461,23 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     fsdp2_plugin = accelerator.state.fsdp_plugin
 
-    original_sd = model.state_dict()
+    from axolotl.monkeypatch.accelerate.fsdp2_quantized import model_has_nvfp4_params
+
+    if model_has_nvfp4_params(model):
+        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
+            normalize_dense_nvfp4_scales,
+            patch_nvfp4_fsdp,
+        )
+
+        normalize_dense_nvfp4_scales(model)
+        patch_nvfp4_fsdp()
+
+    staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
+    original_sd = (
+        model.state_dict()
+        if _builds_original_state_dict(staged_nf4, accelerator.is_main_process)
+        else {}
+    )
 
     from torch.distributed.fsdp.wrap import (
         size_based_auto_wrap_policy,
@@ -622,6 +533,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             else None
         ),
     }
+    if getattr(model, "_axolotl_lora_fp32_gradients", False):
+        from axolotl.utils.lora_precision import lora_fsdp2_precision_policy
+
+        fsdp2_kwargs["mp_policy"] = lora_fsdp2_precision_policy(
+            fsdp2_kwargs["mp_policy"]
+        )
     model_has_params4bit = False
     for _, param in model.named_parameters():
         # this is a temporary fix whereby loading models with bnb params cannot be moved from
@@ -712,6 +629,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 "param(s) from the FSDP wrap (kept as plain per-rank slices)."
             )
 
+    nf4_unwrapped_children = set()
+    if staged_nf4 and is_peft_model:
+        for module in model.modules():
+            if isinstance(module, ParamWrapper):
+                # ParamWrapper reads adapter weights directly, without invoking their forward hooks.
+                nf4_unwrapped_children.update(list(module.modules())[1:])
+
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -735,6 +659,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         nonfloat_param_guard,
         shard_fp32_modules,
     )
+    from axolotl.monkeypatch.fsdp2_qlora import apply_init_dtype_attrs_patch
 
     # Apply the quantized dtype/cast/sharding policy ONLY for float-logical torchao subclasses
     # (NVFP4Tensor/Float8Tensor/MXTensor) — the pre-quantized checkpoint case this path is for.
@@ -743,12 +668,19 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     # packed, which includes bnb Params4bit) and stays gated on that.
     _quantized = model_has_float_logical_quantized_params(model)
     _needs_nonfloat_guard = model_has_nonfloat_params(model)
+    if _needs_nonfloat_guard:
+        # PatchManager applies this for fsdp2 + 4/8-bit configs; direct callers of
+        # this function (tests, probes) would otherwise see FSDP2 cast packed bytes
+        apply_init_dtype_attrs_patch()
     _guard = (
         nonfloat_param_guard(model)
         if _needs_nonfloat_guard
         else contextlib.nullcontext()
     )
-    with _guard:
+    from axolotl.utils.nf4_loading import nf4_phase
+
+    phase = nf4_phase("NF4 FSDP2 wrapping") if staged_nf4 else contextlib.nullcontext()
+    with _guard, phase:
         if _quantized:
             # keep-fp32 modules (registered by model adapters, e.g. DSV4 mHC) get their own
             # fp32 shard group; remaining plain fp32 (PEFT LoRA) is cast to the compute dtype.
@@ -757,6 +689,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
         if auto_wrap_policy is not None:
             for module in get_module_children_bottom_up(model)[:-1]:
+                if module in nf4_unwrapped_children:
+                    continue
+                if staged_nf4 and isinstance(
+                    module,
+                    (nn.ModuleList, nn.ModuleDict, nn.ParameterList, nn.ParameterDict),
+                ):
+                    continue
                 if is_peft_model and isinstance(module, LoraLayer):
                     module_log_bias_mismatch = _process_lora_module_for_fsdp(
                         module, fsdp2_kwargs
@@ -773,9 +712,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        fsdp2_load_full_state_dict(
-            accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
-        )
+        load_state = fsdp2_load_full_state_dict
+        if staged_nf4:
+            from axolotl.monkeypatch.accelerate.fsdp2_nf4 import load_staged_nf4_state
+
+            load_state = load_staged_nf4_state
+        load_state(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
@@ -899,7 +841,11 @@ def patch_move_missing_keys_meta_for_fsdp():
     Caller MUST restrict this to frozen-base (adapter) runs: leaving base params on meta on
     non-rank-0 deadlocks the FSDP2 optimizer-state all-gather at checkpoint save for a FULL
     fine-tune (rank-0 real DTensors vs non-rank-0 meta). LoRA/qLoRA carry no base optimizer state,
-    so the gather never touches these params."""
+    so the gather never touches these params.
+
+    Trainable params created after the load (the adapters) must NOT stay on meta on non-rank-0 —
+    accelerate keys its FSDP2 optimizer param remap on ``data_ptr()``, which is 0 for every meta
+    tensor; see ``axolotl.loaders.utils.materialize_trainable_meta_params``."""
     from transformers import PreTrainedModel
     from transformers.integrations import (
         is_deepspeed_zero3_enabled,
@@ -971,9 +917,3 @@ def patch_accelerate_fsdp2():
     import accelerate
 
     accelerate.accelerator.fsdp2_prepare_model = fsdp2_prepare_model
-    accelerate.Accelerator.get_state_dict = get_state_dict
-    setattr(
-        sys.modules["accelerate"],
-        "Accelerator.get_state_dict",
-        get_state_dict,
-    )

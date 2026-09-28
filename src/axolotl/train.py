@@ -31,9 +31,9 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
-from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except, freeze_mm_modules
@@ -108,6 +108,8 @@ def setup_model_and_tokenizer(
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
+        # unfreezing can promote base params the loader left on meta (non-rank-0) to trainable
+        materialize_trainable_meta_params(model)
         if any(
             any(embed in param for embed in ["lm_head", "embed_tokens"])
             for param in cfg.unfrozen_parameters
@@ -210,23 +212,6 @@ def execute_training(
                 )
             )
 
-        if cfg.context_parallel_size > 1:
-            models = [trainer.model]
-            if hasattr(trainer, "ref_model") and trainer.ref_model:
-                models.append(trainer.ref_model)
-
-            stack.enter_context(
-                SequenceParallelContextManager(
-                    models=models,
-                    context_parallel_size=cfg.context_parallel_size,
-                    gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-                    ring_attn_func=cfg.ring_attn_func,
-                    heads_k_stride=cfg.heads_k_stride,
-                    gather_outputs=cfg.rl in {RLType.GRPO, RLType.EBFT},
-                    device_mesh=trainer.accelerator.torch_device_mesh,
-                )
-            )
-
         # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
@@ -314,11 +299,7 @@ def save_trained_model(
 
     # FSDP2 (no EP) LoRA: the DCP sharded save fails ("Failed to validate global plan") on the
     # frozen NVFP4 base DTensors, so gather just the adapter and write it directly.
-    if (
-        cfg.adapter
-        and (trainer.is_fsdp_enabled or cfg.fsdp_config)
-        and str(cfg.fsdp_version) == "2"
-    ):
+    if cfg.adapter and (trainer.is_fsdp_enabled or cfg.fsdp_config):
         from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
 
         if save_fsdp2_lora_adapter(model, cfg.output_dir):
@@ -374,7 +355,7 @@ def save_trained_model(
                 config = json.load(config_file_io, object_pairs_hook=OrderedDict)
                 if config.get("architectures"):
                     config["architectures"] = [
-                        name.lstrip("FSDP") for name in config["architectures"]
+                        name.removeprefix("FSDP") for name in config["architectures"]
                     ]
             # write the updated model config back
             with open(

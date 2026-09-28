@@ -156,6 +156,13 @@ def download_smollm2_135m_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_smollm2_135m_bnb_nf4_model():
+    snapshot_download_w_retry(
+        "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16", repo_type="model"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_instruct_model():
     # download the model
     snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M-Instruct", repo_type="model")
@@ -384,6 +391,45 @@ def download_llama3_8b_instruct_model_fixture():
         "NousResearch/Meta-Llama-3-8B-Instruct",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
+    )
+
+
+# Not autouse: the weights are 56GB, so only the tests that ask for it pay the fetch.
+@pytest.fixture(scope="session")
+def download_muse_glimmer_tokenizer_fixture():
+    # tokenizer + the Harmony chat template only, never the weights
+    snapshot_download_w_retry(
+        "meta-models/Muse-Glimmer-30B",
+        repo_type="model",
+        allow_patterns=["*token*", "config.json", "chat_template.jinja"],
+    )
+
+
+# mistral-common tokenizers live in tekken.json, which `*token*` does not match
+@pytest.fixture(scope="session")
+def download_magistral_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Magistral-Small-2506",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
+    )
+
+
+@pytest.fixture(scope="session")
+def download_devstral_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Devstral-Small-2505",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
+    )
+
+
+@pytest.fixture(scope="session")
+def download_devstral_1_1_tokenizer_fixture():
+    snapshot_download_w_retry(
+        "mistralai/Devstral-Small-2507",
+        repo_type="model",
+        allow_patterns=["tekken.json"],
     )
 
 

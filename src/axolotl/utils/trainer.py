@@ -9,7 +9,6 @@ from functools import partial
 from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import torch
@@ -243,7 +242,7 @@ def filter_sequences_by_length(
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
+    drop_attn_mask = cfg.model_config_type in ["gemma3"]
     if drop_attn_mask:
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
@@ -271,12 +270,19 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # If it's a list, we assume we're dealing with a batch
         if isinstance(labels[0], int):
             # Single example: return a single bool
-            return np.any(labels != -100)
+            return any(v != -100 for v in labels)
 
-        # Batched: 'labels' is a list of lists
-        # Return a list of booleans, one per sub-list
-        results = [np.any(row_labels != -100) for row_labels in labels]
+        results = [any(v != -100 for v in row_labels) for row_labels in labels]
         return results
+
+    def raise_if_empty(dataset):
+        if len(dataset) == 0:
+            raise ValueError(
+                "The dataset has no samples left after dropping samples with no "
+                "trainable tokens. Every sample had all of its labels masked to "
+                "-100, so there is nothing to train on. Check `train_on_inputs`, "
+                "`roles_to_train`, and your prompt strategy / chat template."
+            )
 
     try:
         prior_len = len(train_dataset)
@@ -300,9 +306,8 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
     if prior_len:
         dropped = prior_len - len(train_dataset)
         if dropped:
-            LOG.warning(
-                f"Dropped {dropped} samples with no trainable tokens from train dataset"
-            )
+            LOG.warning(f"Dropped {dropped} samples with no trainable tokens")
+        raise_if_empty(train_dataset)
 
     if eval_dataset:
         try:
@@ -321,6 +326,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 LOG.warning(
                     f"Dropped {dropped} samples with no trainable tokens from eval dataset"
                 )
+            raise_if_empty(eval_dataset)
 
     if cfg.group_by_length:
         train_dataset = train_dataset.map(
@@ -419,11 +425,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_num_tokens = total_num_tokens
 
-    skip_estimates = cfg.model_config_type == "mamba"
-
     if (
-        not skip_estimates
-        and not cfg.total_supervised_tokens
+        not cfg.total_supervised_tokens
         and not cfg.skip_prepare_dataset
         and not cfg.reward_model
     ):
@@ -441,7 +444,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
 
-    if not skip_estimates and cfg.sample_packing:
+    if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 
@@ -542,6 +545,20 @@ def setup_deepspeed_env(cfg, stage=None):
             "Distributed State already initialized before Deepspeed setup"
         )
 
+    if cfg.lora_fp32_gradients:
+        from axolotl.monkeypatch.deepspeed_utils import (
+            patch_zero_gradient_accumulation_dtype,
+        )
+        from axolotl.utils.lora_precision import configure_deepspeed_lora_precision
+
+        if isinstance(cfg.deepspeed, dict):
+            ds_config = dict(cfg.deepspeed)
+        else:
+            with open(cfg.deepspeed, encoding="utf-8") as stream:
+                ds_config = json.load(stream)
+        cfg.deepspeed = DictDefault(configure_deepspeed_lora_precision(ds_config))
+        patch_zero_gradient_accumulation_dtype()
+
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     if isinstance(cfg.deepspeed, DictDefault):
         with NamedTemporaryFile(
@@ -591,19 +608,13 @@ def setup_deepspeed_env(cfg, stage=None):
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
 
-    # TODO @SalmanMohammadi remove FSDP1 args in 0.12
-    if str(cfg.fsdp_version) == "2":
-        os.environ["FSDP_VERSION"] = "2"
+    os.environ["FSDP_VERSION"] = "2"
     if cfg.fsdp_config.activation_checkpointing:
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
     if cfg.fsdp_config.offload_params:
         os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
-    if cfg.fsdp_config.sync_module_states:
-        os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
     if cfg.fsdp_config.cpu_ram_efficient_loading:
         os.environ["FSDP_CPU_RAM_EFFICIENT_LOADING"] = "true"
-    if cfg.fsdp_config.use_orig_params:
-        os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
     if cfg.fsdp_config.state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.state_dict_type
     if cfg.fsdp_config.cpu_offload_pin_memory is not None:
@@ -637,9 +648,6 @@ def setup_parallelism_envs(cfg):
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
         os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
-        from axolotl.monkeypatch.accelerate.parallelism_config import patch_prepare_cp
-
-        patch_prepare_cp()
     # Expert Parallel patch must apply before the first `Accelerator()`
     # call so `ep_size` lands in the mesh.
     if cfg.expert_parallel_size and cfg.expert_parallel_size > 1:
@@ -656,6 +664,9 @@ def setup_parallelism_envs(cfg):
 
 
 def prepare_optim_env(cfg):
+    if cfg.ddp_timeout:
+        os.environ.setdefault("AXOLOTL_NCCL_TIMEOUT", str(cfg.ddp_timeout))
+
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
             LOG.warning("P2P support not detected, setting `NCCL_P2P_DISABLE=1`")

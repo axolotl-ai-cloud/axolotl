@@ -11,6 +11,35 @@ class DistributedParallelMixin(Trainer):
     Mixin for correctly saving fsdp
     """
 
+    def _wrap_model(self, model, *args, **kwargs):
+        cfg = getattr(self, "axolotl_cfg", None)
+        parallel = self.accelerator.parallelism_config
+        distributed_type = self.accelerator.distributed_type
+        pure_ddp = (
+            getattr(distributed_type, "name", distributed_type) == "MULTI_GPU"
+            and not any(
+                (getattr(cfg, key, 1) or 1) > 1
+                for key in (
+                    "tensor_parallel_size",
+                    "context_parallel_size",
+                    "expert_parallel_size",
+                )
+            )
+            and not any(
+                getattr(parallel, key, False)
+                for key in ("tp_enabled", "cp_enabled", "dp_shard_enabled")
+            )
+        )
+        if pure_ddp and not getattr(model, "_axolotl_native_nvfp4_ddp_prepared", False):
+            from torch.nn.parallel import DistributedDataParallel
+
+            if not isinstance(model, DistributedDataParallel):
+                from axolotl.monkeypatch.torchao_ddp import prepare_native_nvfp4_ddp
+
+                if prepare_native_nvfp4_ddp(model, self.accelerator.device):
+                    model._axolotl_native_nvfp4_ddp_prepared = True
+        return super()._wrap_model(model, *args, **kwargs)
+
     def _save(self, output_dir: str | None = None, state_dict=None):
         if (
             state_dict is None

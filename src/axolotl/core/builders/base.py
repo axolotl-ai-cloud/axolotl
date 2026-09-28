@@ -356,6 +356,10 @@ class TrainerBuilderBase(abc.ABC):
 
                     optimizer_cls = SinkGDOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "polora":
+                from axolotl.utils.optimizers.polora import PoloraOptimizerFactory
+
+                optimizer_cls = PoloraOptimizerFactory
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
@@ -372,6 +376,11 @@ class TrainerBuilderBase(abc.ABC):
 
                 optimizer_cls = ADOPT
                 adam_kwargs["decouple"] = True
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "adamc":
+                from axolotl.utils.optimizers.adamc import AdamC
+
+                optimizer_cls = AdamC
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "came_pytorch":
                 from came_pytorch import CAME
@@ -681,9 +690,9 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.reward_model or self.cfg.rl:
             training_args_kwargs["max_length"] = self.cfg.sequence_len
 
-        if self.cfg.fsdp_config or self.cfg.fsdp:
+        if self.cfg.fsdp_config:
             training_args_kwargs["fsdp_config"] = self.cfg.fsdp_config
-            training_args_kwargs["fsdp"] = self.cfg.fsdp if self.cfg.fsdp else True
+            training_args_kwargs["fsdp"] = True
 
         self._configure_reporting(training_args_kwargs)
         self._configure_hub_parameters(training_args_kwargs)

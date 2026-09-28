@@ -14,7 +14,14 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists, most_recent_subdir, require_torch_2_6_0
+from ..utils import (
+    check_model_output_exists,
+    most_recent_subdir,
+    require_torch_2_6_0,
+    requires_flash_attn,
+)
+
+pytestmark = requires_flash_attn
 
 
 class TestResumeLlama:
