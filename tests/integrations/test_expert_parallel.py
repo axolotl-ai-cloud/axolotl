@@ -1543,9 +1543,10 @@ class TestTorchBackendCheckpointHooks:
             torch.ops.axolotl.ep_all_to_all_single.default,
             torch.ops.axolotl.ep_all_to_all_single_equal.default,
             torch.ops._c10d_functional.all_to_all_single.default,
-            torch.ops._c10d_functional.wait_tensor.default,
         ):
             assert self._policy(op) == expected
+        # the wait aliases the collective's storage, so it is never saved on its own
+        assert self._policy(torch.ops._c10d_functional.wait_tensor.default) is None
 
     @pytest.mark.parametrize("chunks", [1, 3])
     def test_post_model_build_sets_dispatch_chunks(self, monkeypatch, chunks):

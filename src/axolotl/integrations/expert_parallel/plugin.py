@@ -331,12 +331,12 @@ class ExpertParallelPlugin(BasePlugin):
         else:
             register_mandatory_save(ops={"aten::topk"})
         if getattr(cfg, "expert_parallel_save_dispatch", False):
+            # wait_tensor aliases the collective's storage; a replayed wait is a no-op
             register_preferred_save(
                 ops={
                     "axolotl::ep_all_to_all_single",
                     "axolotl::ep_all_to_all_single_equal",
                     "_c10d_functional::all_to_all_single",
-                    "_c10d_functional::wait_tensor",
                 }
             )
 

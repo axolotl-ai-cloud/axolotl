@@ -1,7 +1,11 @@
 """Tests for phase-2 SAC CPU offload."""
 
+import contextlib
+
 import pytest
 import torch
+import torch.distributed as dist
+import torch.distributed._functional_collectives as funcol
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
@@ -194,3 +198,118 @@ class TestOffloadHigherOrderOps:
         for t0, t1 in zip(baseline, inputs, strict=True):
             if t0.requires_grad:
                 torch.testing.assert_close(t0.grad, t1.grad)
+
+
+class _FakeEvent:
+    def query(self):
+        return True
+
+
+class _FakeStream:
+    def wait_stream(self, other):
+        pass
+
+    def wait_event(self, event):
+        pass
+
+    def record_event(self):
+        return _FakeEvent()
+
+
+class _CpuOffloadEngine(SacOffloadEngine):
+    """The engine's bookkeeping over CPU tensors, with no-op streams and events."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.s1 = _FakeStream()
+        self._compute = _FakeStream()
+
+    @property
+    def compute_stream(self):
+        return self._compute
+
+    def should_offload(self, tensor):
+        return tensor.element_size() * tensor.nelement() >= self.min_offload_bytes
+
+    def _empty_pinned_like(self, tensor):
+        return torch.empty_like(tensor), self._buffer_key(tensor)
+
+
+class TestOffloadDeferredCollectives:
+    """Functional-collective outputs are copied out only once their wait has run."""
+
+    @pytest.fixture
+    def group(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        monkeypatch.setattr(torch.cuda, "stream", lambda s: contextlib.nullcontext())
+        monkeypatch.setattr(torch.Tensor, "record_stream", lambda self, stream: None)
+        selective_checkpointing.clear_registered_saves()
+        selective_checkpointing.register_preferred_save(
+            ops={"_c10d_functional::all_to_all_single"}
+        )
+        dist.init_process_group(
+            "gloo", init_method=f"file://{tmp_path / 'pg'}", rank=0, world_size=1
+        )
+        yield dist.group.WORLD
+        dist.destroy_process_group()
+        selective_checkpointing.clear_registered_saves()
+
+    @staticmethod
+    def _snapshot(engine):
+        return engine.stats.offloaded_tensors, len(engine._deferred)
+
+    def test_copy_waits_for_the_consumer(self, group):
+        engine = _CpuOffloadEngine(min_offload_bytes=1)
+        context_fn = build_sac_offload_context_fn([], engine=engine)
+        n = 8
+        observed = []
+
+        def block(x):
+            y = funcol.all_to_all_single_autograd(x, [n], [n], group)
+            observed.append(self._snapshot(engine))
+            v = y.t()
+            observed.append(self._snapshot(engine))
+            z = v * v
+            observed.append(self._snapshot(engine))
+            w = funcol.wait_tensor(y)
+            observed.append(self._snapshot(engine))
+            return (z.t() + w).sum()
+
+        x0 = torch.randn(n, 4, requires_grad=True)
+        block(x0).backward()
+        observed.clear()
+
+        x1 = x0.detach().clone().requires_grad_(True)
+        out = checkpoint(block, x1, use_reentrant=False, context_fn=context_fn)
+        # a view re-wraps the async output without waiting; the first real consumer
+        # waits inside the subclass, which is when the copy is issued
+        assert observed[:4] == [(0, 1), (0, 1), (1, 0), (1, 0)]
+        # the explicit wait aliases the same storage and is not packed again
+        assert engine.stats.offloaded_tensors == 1
+        out.backward()
+        assert engine.stats.restored_tensors == 1
+        assert not engine._regions
+        torch.testing.assert_close(x1.grad, x0.grad)
+
+    def test_unconsumed_output_is_flushed_at_region_end(self, group):
+        engine = _CpuOffloadEngine(min_offload_bytes=1)
+        context_fn = build_sac_offload_context_fn([], engine=engine)
+        n = 8
+        observed = []
+
+        def block(x):
+            funcol.all_to_all_single_autograd(x, [n], [n], group)
+            observed.append(self._snapshot(engine))
+            return (x * x).sum()
+
+        x = torch.randn(n, 4, requires_grad=True)
+        out = checkpoint(block, x, use_reentrant=False, context_fn=context_fn)
+        assert observed[0] == (0, 1)
+        assert self._snapshot(engine) == (1, 0)
+        (ref,) = engine._regions[0]
+        assert ref.pending is None
+        torch.testing.assert_close(ref.cpu_tensor, x.detach())
+        out.backward()
+        assert engine.stats.restored_tensors == 1
+        assert not engine._regions
+        torch.testing.assert_close(x.grad, 2 * x.detach())
