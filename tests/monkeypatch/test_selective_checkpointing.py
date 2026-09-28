@@ -1320,6 +1320,122 @@ class TestRegisteredSaves:
         assert callable(_activation_checkpoint_wrapper_fn().keywords["context_fn"])
 
 
+class _TopkModule(torch.nn.Module):
+    """Records what the registry says about ``topk`` while its own forward runs."""
+
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(8, 6))
+        self.policies: list = []
+
+    def forward(self, x):
+        scores = torch.softmax(x @ self.weight, dim=-1)
+        self.policies.append(
+            selective_checkpointing.registered_save_policy(
+                torch.ops.aten.topk.default, {}
+            )
+        )
+        vals, idx = torch.topk(scores, 2, dim=-1)
+        return (torch.gather(scores, 1, idx) * vals).sum(-1, keepdim=True) * x
+
+
+class _TwoTopkLayer(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.router = _TopkModule()
+        self.indexer = _TopkModule()
+
+    def forward(self, x):
+        return self.indexer(self.router(x)).sum()
+
+
+class TestScopedRegisteredSaves:
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self):
+        selective_checkpointing.clear_registered_saves()
+        yield
+        selective_checkpointing.clear_registered_saves()
+
+    @staticmethod
+    def _run(layer, context_fn):
+        from torch.utils._python_dispatch import TorchDispatchMode
+
+        class _CountTopk(TorchDispatchMode):
+            def __init__(self):
+                super().__init__()
+                self.count = 0
+
+            def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+                if func is torch.ops.aten.topk.default:
+                    self.count += 1
+                return func(*args, **(kwargs or {}))
+
+        layer.zero_grad(set_to_none=True)
+        x = torch.randn(16, 8, generator=torch.Generator().manual_seed(0))
+        x.requires_grad_(True)
+        fwd, bwd = _CountTopk(), _CountTopk()
+        with fwd:
+            if context_fn is None:
+                loss = layer(x)
+            else:
+                loss = checkpoint(layer, x, use_reentrant=False, context_fn=context_fn)
+        with bwd:
+            loss.backward()
+        return fwd.count, bwd.count, [x.grad] + [p.grad for p in layer.parameters()]
+
+    def test_scoped_topk_saved_only_inside_module(self):
+        torch.manual_seed(0)
+        layer = _TwoTopkLayer()
+        _, _, ref = self._run(layer, None)
+        assert layer.router.policies == [None] and layer.indexer.policies == [None]
+
+        selective_checkpointing.register_mandatory_save(
+            ops={"aten::topk"}, within=[layer.router]
+        )
+        assert selective_checkpointing.has_registered_saves()
+        assert (
+            selective_checkpointing.registered_save_policy(
+                torch.ops.aten.topk.default, {}
+            )
+            is None
+        )
+        layer.router.policies.clear()
+        layer.indexer.policies.clear()
+        fwd, bwd, grads = self._run(layer, build_sac_context_fn([]))
+        # forward: both; recompute: only the unscoped indexer's
+        assert (fwd, bwd) == (2, 1)
+        assert layer.router.policies[0] == CheckpointPolicy.MUST_SAVE
+        assert layer.indexer.policies[0] is None
+        for got, want in zip(grads, ref, strict=True):
+            torch.testing.assert_close(got, want, rtol=0, atol=0)
+
+    def test_scope_depth_survives_nested_and_failed_forward(self):
+        layer = _TwoTopkLayer()
+        selective_checkpointing.register_mandatory_save(
+            ops={"aten::topk"}, within=[layer]
+        )
+        scope = selective_checkpointing._MANDATORY_SAVES.scoped[0]
+        layer(torch.randn(4, 8))
+        assert scope.depth == 0
+        assert layer.router.policies == [CheckpointPolicy.MUST_SAVE]
+        with pytest.raises(RuntimeError):
+            layer(torch.randn(4, 5))
+        assert scope.depth == 0
+
+    def test_clear_removes_scope_hooks(self):
+        layer = _TwoTopkLayer()
+        selective_checkpointing.register_mandatory_save(
+            ops={"aten::topk"}, within=[layer.router]
+        )
+        assert layer.router._forward_pre_hooks and layer.router._forward_hooks
+        selective_checkpointing.clear_registered_saves()
+        assert not layer.router._forward_pre_hooks
+        assert not layer.router._forward_hooks
+        assert not selective_checkpointing.has_registered_saves()
+        layer(torch.randn(4, 8))
+        assert layer.router.policies == [None]
+
+
 class TestMandatorySaveRecompute:
     """A router that normalises its ``topk`` values in place (Qwen3-MoE, Mixtral) under
     a policy that must save ``topk``: backward must not re-run it and grads must match."""

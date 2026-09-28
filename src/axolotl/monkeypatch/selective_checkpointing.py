@@ -117,9 +117,10 @@ class _SaveRegistry:
     ops: set[str] = field(default_factory=set)
     namespaces: set[str] = field(default_factory=set)
     cpu_copies: bool = False
+    scoped: list[_ModuleScope] = field(default_factory=list)
 
     def __bool__(self) -> bool:
-        return bool(self.ops or self.namespaces or self.cpu_copies)
+        return bool(self.ops or self.namespaces or self.cpu_copies or self.scoped)
 
     def matches(self, op: Any, name: str, kwargs: dict) -> bool:
         if name in self.ops or name.split(".", 1)[0] in self.ops:
@@ -130,7 +131,50 @@ class _SaveRegistry:
                 namespace = name.split("::", 1)[0] if "::" in name else None
             if namespace in self.namespaces:
                 return True
-        return self.cpu_copies and _is_cpu_copy(name, kwargs)
+        if self.cpu_copies and _is_cpu_copy(name, kwargs):
+            return True
+        return any(
+            scope.depth > 0 and scope.saves.matches(op, name, kwargs)
+            for scope in self.scoped
+        )
+
+    def clear(self) -> None:
+        self.ops.clear()
+        self.namespaces.clear()
+        self.cpu_copies = False
+        for scope in self.scoped:
+            scope.remove()
+        self.scoped.clear()
+
+
+class _ModuleScope:
+    """Saves that only apply while one of the hooked modules is running its forward.
+
+    Forward and recompute never overlap, and the hooks fire again when a checkpointed
+    region re-runs the module, so one depth counter serves both passes.
+    """
+
+    def __init__(self, saves: _SaveRegistry, modules: Iterable[torch.nn.Module]):
+        self.saves = saves
+        self.depth = 0
+        self.handles: list[Any] = []
+        for module in modules:
+            self.handles.append(module.register_forward_pre_hook(self._enter))
+            self.handles.append(
+                module.register_forward_hook(self._exit, always_call=True)
+            )
+
+    def _enter(self, _module, _args) -> None:
+        self.depth += 1
+
+    def _exit(self, _module, _args, _output) -> None:
+        self.depth = max(self.depth - 1, 0)
+
+    def remove(self) -> None:
+        for handle in self.handles:
+            handle.remove()
+        self.handles.clear()
+        self.depth = 0
 
 
 def _is_cpu_copy(name: str, kwargs: dict) -> bool:
@@ -153,6 +197,7 @@ def register_mandatory_save(
     ops: Iterable[str] = (),
     namespaces: Iterable[str] = (),
     cpu_copies: bool = False,
+    within: Iterable[torch.nn.Module] | None = None,
 ) -> None:
     """Force-save ops in every SAC policy, ahead of the user's ``save`` list.
 
@@ -162,7 +207,16 @@ def register_mandatory_save(
     names (``"aten::topk"``, overload optional), ``namespaces`` match every op in
     them, and ``cpu_copies`` matches ``aten::_to_copy`` onto a CPU device.
     Registrations are process-global and additive.
+
+    With ``within``, the saves apply only while one of those modules is executing
+    its forward, so the same op elsewhere in the layer is recomputed as usual. The
+    modules must run inside the checkpointed regions (a module enclosing them is in
+    scope for the forward but never for the recompute).
     """
+    if within is not None:
+        saves = _SaveRegistry(set(ops), set(namespaces), cpu_copies)
+        _MANDATORY_SAVES.scoped.append(_ModuleScope(saves, within))
+        return
     _MANDATORY_SAVES.ops.update(ops)
     _MANDATORY_SAVES.namespaces.update(namespaces)
     _MANDATORY_SAVES.cpu_copies |= cpu_copies
@@ -179,9 +233,7 @@ def register_preferred_save(
 
 def clear_registered_saves() -> None:
     for registry in (_MANDATORY_SAVES, _PREFERRED_SAVES):
-        registry.ops.clear()
-        registry.namespaces.clear()
-        registry.cpu_copies = False
+        registry.clear()
 
 
 def has_registered_saves() -> bool:

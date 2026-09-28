@@ -6,6 +6,8 @@ import socket
 import time
 from datetime import timedelta
 from importlib.util import find_spec
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -413,6 +415,121 @@ class TestExpertModuleDetection:
         m.down_proj = m.weight
         found = list(_detect_experts_modules(m))
         assert len(found) == 0
+
+
+class _FakeExperts(torch.nn.Module):
+    def __init__(self, num_experts=4, hidden=8):
+        super().__init__()
+        self.gate_up_proj = torch.nn.Parameter(
+            torch.randn(num_experts, 2 * hidden, hidden)
+        )
+        self.down_proj = torch.nn.Parameter(torch.randn(num_experts, hidden, hidden))
+
+    def forward(self, x):
+        return x
+
+
+class _TopkRecorder(torch.nn.Module):
+    """Asks the registry about ``topk`` from inside its own forward."""
+
+    def __init__(self):
+        super().__init__()
+        self.seen: list = []
+
+    def forward(self, x):
+        import axolotl.monkeypatch.selective_checkpointing as sac
+
+        self.seen.append(sac.registered_save_policy(torch.ops.aten.topk.default, {}))
+        return x
+
+
+class _FakeMoeBlock(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.gate = _TopkRecorder()
+        self.experts = _FakeExperts()
+
+    def forward(self, x):
+        return self.experts(self.gate(x))
+
+
+class _FakeLayer(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.self_attn = _TopkRecorder()
+        self.mlp = _FakeMoeBlock()
+
+    def forward(self, x):
+        return self.mlp(self.self_attn(x))
+
+
+class TestCheckpointSaveScoping:
+    @pytest.fixture(autouse=True)
+    def _clean_registry(self):
+        import axolotl.monkeypatch.selective_checkpointing as sac
+
+        sac.clear_registered_saves()
+        yield
+        sac.clear_registered_saves()
+
+    @staticmethod
+    def _model(n_layers=2):
+        model = torch.nn.Module()
+        model.layers = torch.nn.ModuleList([_FakeLayer() for _ in range(n_layers)])
+        model.forward = lambda x: [layer(x) for layer in model.layers][-1]
+        return model
+
+    def test_topk_scoped_to_moe_block(self):
+        from torch.utils.checkpoint import CheckpointPolicy
+
+        import axolotl.monkeypatch.selective_checkpointing as sac
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+        model = self._model()
+        blocks = ExpertParallelPlugin._routing_blocks(model)
+        assert blocks == [layer.mlp for layer in model.layers]
+
+        ExpertParallelPlugin._register_checkpoint_saves(
+            SimpleNamespace(expert_parallel_save_dispatch=False), model
+        )
+        assert "aten::topk" not in sac._MANDATORY_SAVES.ops
+        assert "axolotl::ep_to_host" in sac._MANDATORY_SAVES.ops
+        model.forward(torch.zeros(2, 8))
+        for layer in model.layers:
+            assert layer.self_attn.seen == [None]
+            assert layer.mlp.gate.seen == [CheckpointPolicy.MUST_SAVE]
+
+    def test_falls_back_to_global_without_a_block(self):
+        import axolotl.monkeypatch.selective_checkpointing as sac
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+        model = torch.nn.Module()
+        model.experts = _FakeExperts()
+        assert ExpertParallelPlugin._routing_blocks(model) == []
+        for m in (model, None):
+            sac.clear_registered_saves()
+            ExpertParallelPlugin._register_checkpoint_saves(
+                SimpleNamespace(expert_parallel_save_dispatch=False), m
+            )
+            assert "aten::topk" in sac._MANDATORY_SAVES.ops
+            assert not sac._MANDATORY_SAVES.scoped
+
+    def test_routing_block_skips_peft_param_wrapper(self):
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+        class _Wrapper(torch.nn.Module):
+            def __init__(self, base):
+                super().__init__()
+                self.base_layer = base
+
+        model = self._model(1)
+        block = model.layers[0].mlp
+        block.experts = _Wrapper(block.experts)
+        with patch(
+            "axolotl.integrations.expert_parallel.shard._is_param_wrapper",
+            lambda m: isinstance(m, _Wrapper),
+        ):
+            assert ExpertParallelPlugin._routing_blocks(model) == [block]
 
 
 # --------------------------------------------------------------------------- #

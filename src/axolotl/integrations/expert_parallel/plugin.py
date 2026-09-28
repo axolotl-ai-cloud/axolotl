@@ -172,7 +172,7 @@ class ExpertParallelPlugin(BasePlugin):
 
             set_ep_group(ep_group)
             set_dispatch_chunks(chunks)
-            self._register_checkpoint_saves(cfg)
+            self._register_checkpoint_saves(cfg, model)
         from .experts_fn import set_backend, set_token_capacity
 
         set_backend(backend)
@@ -292,19 +292,44 @@ class ExpertParallelPlugin(BasePlugin):
         model._ep_padding_hook = True
 
     @staticmethod
-    def _register_checkpoint_saves(cfg) -> None:
+    def _routing_blocks(model) -> list[torch.nn.Module]:
+        """The module directly holding each Experts module: the MoE block whose forward
+        runs the router. Empty when any Experts module has no such block (or it is the
+        model itself, which runs outside the checkpointed layers)."""
+        from .shard import _detect_experts_modules, _is_param_wrapper
+
+        by_name = dict(model.named_modules())
+        blocks: dict[int, torch.nn.Module] = {}
+        for name, _module in _detect_experts_modules(model):
+            parent_name = name.rpartition(".")[0]
+            while parent_name and _is_param_wrapper(by_name[parent_name]):
+                parent_name = parent_name.rpartition(".")[0]
+            if not parent_name:
+                return []
+            blocks.setdefault(id(by_name[parent_name]), by_name[parent_name])
+        return list(blocks.values())
+
+    @classmethod
+    def _register_checkpoint_saves(cls, cfg, model=None) -> None:
         """Make every selective-checkpointing policy replay the forward's routing.
 
         The all-to-all split sizes come from ``topk``; a recompute that re-ran it could
         break near-ties differently on one rank and desync the collectives (a hang), and
-        re-running the split's device->host copy would add a sync per layer.
+        re-running the split's device->host copy would add a sync per layer. The
+        ``topk`` save is scoped to the MoE blocks so a ``topk`` elsewhere in the layer
+        (an attention indexer's) is recomputed rather than held to backward.
         """
         from axolotl.monkeypatch.selective_checkpointing import (
             register_mandatory_save,
             register_preferred_save,
         )
 
-        register_mandatory_save(ops={"aten::topk", "axolotl::ep_to_host"})
+        register_mandatory_save(ops={"axolotl::ep_to_host"})
+        routing_blocks = cls._routing_blocks(model) if model is not None else []
+        if routing_blocks:
+            register_mandatory_save(ops={"aten::topk"}, within=routing_blocks)
+        else:
+            register_mandatory_save(ops={"aten::topk"})
         if getattr(cfg, "expert_parallel_save_dispatch", False):
             register_preferred_save(
                 ops={
