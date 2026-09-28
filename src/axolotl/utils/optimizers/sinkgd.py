@@ -521,7 +521,7 @@ class SinkGDMD(SinkGD):
         )
 
 
-def _sinkgd_param_groups(opt_model, weight_decay):
+def _sinkgd_param_groups(opt_model, weight_decay, lr=None, loraplus_lr_ratio=None):
     """Split params: 2D/3D weight matrices -> SR-Sinkhorn; everything else -> AdamW.
 
     Routing is by tensor rank, not module type, so fused MoE experts (transformers
@@ -530,6 +530,8 @@ def _sinkgd_param_groups(opt_model, weight_decay):
     fallback group (embeddings, head, norms, biases) uses no weight decay.
     """
     sinkgd_params = []
+    sinkgd_lora_a_params = []
+    sinkgd_lora_b_params = []
     adamw_params = []
     for name, param in opt_model.named_parameters():
         if not param.requires_grad:
@@ -543,6 +545,10 @@ def _sinkgd_param_groups(opt_model, weight_decay):
             )
         ):
             adamw_params.append(param)
+        elif loraplus_lr_ratio is not None and "lora_A" in name:
+            sinkgd_lora_a_params.append(param)
+        elif loraplus_lr_ratio is not None and "lora_B" in name:
+            sinkgd_lora_b_params.append(param)
         else:
             sinkgd_params.append(param)
 
@@ -550,6 +556,24 @@ def _sinkgd_param_groups(opt_model, weight_decay):
     if sinkgd_params:
         param_groups.append(
             {"params": sinkgd_params, "use_sinkgd": True, "weight_decay": weight_decay}
+        )
+    if sinkgd_lora_a_params:
+        param_groups.append(
+            {
+                "params": sinkgd_lora_a_params,
+                "use_sinkgd": True,
+                "weight_decay": weight_decay,
+                "lr": lr,
+            }
+        )
+    if sinkgd_lora_b_params:
+        param_groups.append(
+            {
+                "params": sinkgd_lora_b_params,
+                "use_sinkgd": True,
+                "weight_decay": weight_decay,
+                "lr": lr * loraplus_lr_ratio,
+            }
         )
     if adamw_params:
         param_groups.append(
@@ -613,9 +637,15 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
         )  # ignored by the single-device variant
         md_sphere = _as_bool(optimizer_kwargs.pop("sinkgd_md_sphere", False))
         cls = SinkGDMD if md_sphere else SinkGD
+        loraplus_lr_ratio = getattr(training_args, "loraplus_lr_ratio", None)
 
         return cls(
-            _sinkgd_param_groups(opt_model, weight_decay),
+            _sinkgd_param_groups(
+                opt_model,
+                weight_decay,
+                lr=lr,
+                loraplus_lr_ratio=loraplus_lr_ratio,
+            ),
             lr=lr,
             betas=betas,
             eps=eps,
