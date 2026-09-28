@@ -1,8 +1,6 @@
 """accelerate's FSDP2 x TP path imports ``ReplicateParallel`` from transformers, which 5.17
 removed; the shim must let a module holding replicated DTensor params run on plain inputs."""
 
-import os
-
 import pytest
 import torch
 import torch.distributed as dist
@@ -11,10 +9,12 @@ from axolotl.monkeypatch.accelerate.tp import patch_accelerate_prepare_tp
 
 
 @pytest.fixture
-def one_rank_mesh():
-    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-    os.environ.setdefault("MASTER_PORT", "29873")
-    dist.init_process_group("gloo", rank=0, world_size=1)
+def one_rank_mesh(tmp_path, monkeypatch):
+    for key, value in {"RANK": "0", "WORLD_SIZE": "1", "LOCAL_RANK": "0"}.items():
+        monkeypatch.setenv(key, value)
+    dist.init_process_group(
+        "gloo", init_method=f"file://{tmp_path / 'rendezvous'}", rank=0, world_size=1
+    )
     from torch.distributed.device_mesh import init_device_mesh
 
     try:
