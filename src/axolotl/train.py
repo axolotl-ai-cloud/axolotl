@@ -29,7 +29,6 @@ from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
     fix_untrained_tokens,
 )
-from axolotl.core.trainers.mixins.distributed_parallel import tp_save_joins_all_ranks
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
 from axolotl.loaders.utils import materialize_trainable_meta_params
@@ -387,11 +386,7 @@ def save_trained_model(
                 os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
             except FileNotFoundError:
                 pass
-    elif (
-        (cfg.tensor_parallel_size or 1) > 1
-        and not cfg.adapter
-        and tp_save_joins_all_ranks(trainer.accelerator, trainer.is_fsdp_enabled)
-    ):
+    elif (cfg.tensor_parallel_size or 1) > 1 and not cfg.adapter:
         # every TP rank must join the DTensor gather inside save_pretrained; only rank 0 writes
         model.save_pretrained(cfg.output_dir, is_main_process=cfg.local_rank == 0)
     elif cfg.local_rank == 0:
