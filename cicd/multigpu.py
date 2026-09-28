@@ -58,7 +58,8 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 2))
-GPU_CONFIG = f"H100:{N_GPUS}"
+GPU_TYPE = os.environ.get("GPU_TYPE", "H100")
+GPU_CONFIG = f"{GPU_TYPE}:{N_GPUS}"
 
 
 def run_cmd(cmd: str, run_folder: str):
@@ -74,12 +75,20 @@ def run_cmd(cmd: str, run_folder: str):
     gpu=GPU_CONFIG,
     timeout=120 * 60,
     cpu=16.0,
-    memory=32768 if os.environ.get("MULTIGPU_TEST_SUITE") == "nf4" else 131072 * N_GPUS,
+    memory=(
+        32768
+        if os.environ.get("MULTIGPU_TEST_SUITE") in {"nf4", "nvfp4"}
+        else 131072 * N_GPUS
+    ),
     volumes=VOLUME_CONFIG,
 )
 def cicd_pytest():
     suite = os.environ.get("MULTIGPU_TEST_SUITE", "multigpu")
-    scripts = {"multigpu": "./cicd/multigpu.sh", "nf4": "bash ./cicd/nf4.sh"}
+    scripts = {
+        "multigpu": "./cicd/multigpu.sh",
+        "nf4": "bash ./cicd/nf4.sh",
+        "nvfp4": "bash ./cicd/nvfp4.sh",
+    }
     run_cmd(scripts[suite], "/workspace/axolotl")
 
 
