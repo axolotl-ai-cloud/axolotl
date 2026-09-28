@@ -35,6 +35,7 @@ from torchao.optim.quant_utils import _fp32_to_bf16_sr
 from torchao.optim.subclass_8bit import OptimState8bit
 
 from axolotl.integrations.base import BaseOptimizerFactory
+from axolotl.utils.optimizers.loraplus import apply_loraplus_lr_groups
 from axolotl.utils.optimizers.sinkgd_triton import fused_available, fused_sinkgd_step
 
 
@@ -529,11 +530,10 @@ def _sinkgd_param_groups(opt_model, weight_decay, lr=None, loraplus_lr_ratio=Non
     ``nn.Linear`` modules) are picked up and normalized per-expert. The AdamW
     fallback group (embeddings, head, norms, biases) uses no weight decay.
     """
+    named_params = list(opt_model.named_parameters())
     sinkgd_params = []
-    sinkgd_lora_a_params = []
-    sinkgd_lora_b_params = []
     adamw_params = []
-    for name, param in opt_model.named_parameters():
+    for name, param in named_params:
         if not param.requires_grad:
             continue
         if (
@@ -545,10 +545,6 @@ def _sinkgd_param_groups(opt_model, weight_decay, lr=None, loraplus_lr_ratio=Non
             )
         ):
             adamw_params.append(param)
-        elif loraplus_lr_ratio is not None and "lora_A" in name:
-            sinkgd_lora_a_params.append(param)
-        elif loraplus_lr_ratio is not None and "lora_B" in name:
-            sinkgd_lora_b_params.append(param)
         else:
             sinkgd_params.append(param)
 
@@ -557,29 +553,17 @@ def _sinkgd_param_groups(opt_model, weight_decay, lr=None, loraplus_lr_ratio=Non
         param_groups.append(
             {"params": sinkgd_params, "use_sinkgd": True, "weight_decay": weight_decay}
         )
-    if sinkgd_lora_a_params:
-        param_groups.append(
-            {
-                "params": sinkgd_lora_a_params,
-                "use_sinkgd": True,
-                "weight_decay": weight_decay,
-                "lr": lr,
-            }
-        )
-    if sinkgd_lora_b_params:
-        param_groups.append(
-            {
-                "params": sinkgd_lora_b_params,
-                "use_sinkgd": True,
-                "weight_decay": weight_decay,
-                "lr": lr * loraplus_lr_ratio,
-            }
-        )
     if adamw_params:
         param_groups.append(
             {"params": adamw_params, "use_sinkgd": False, "weight_decay": 0.0}
         )
-    return param_groups
+    return apply_loraplus_lr_groups(
+        param_groups,
+        named_params,
+        default_lr=lr,
+        loraplus_lr_ratio=loraplus_lr_ratio,
+        eligible=lambda _name, _param, group: group.get("use_sinkgd", False),
+    )
 
 
 def _as_bool(v) -> bool:

@@ -184,7 +184,8 @@ On a single device, `loraplus_lr_ratio` groups SinkGD-routed 2D LoRA factors so
 `lora_A` uses `learning_rate` and `lora_B` uses `learning_rate * loraplus_lr_ratio`.
 `sinkgd_lr_scale` still multiplies each group's learning rate, unchanged. This does not
 add LoRA+ handling for distributed SinkGD or LoRA factors routed to the embedding/LM-head
-AdamW fallback.
+AdamW fallback. The shared grouping preserves the optimizer group's metadata and starting
+learning rate, so schedulers keep the B:A learning-rate ratio.
 
 #### Width transfer (`sinkgd_base_width`) and spectral normalization
 

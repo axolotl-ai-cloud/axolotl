@@ -10,6 +10,7 @@ from axolotl.utils.optimizers.sinkgd import (
     SinkGDMD,
     SinkGDOptimizerFactory,
     _pop_sinkgd_extra_kwargs,
+    _sinkgd_param_groups,
     _specnorm_gram_cols,
     _specnorm_gram_rows,
     single_param_sinkgd_specnorm,
@@ -86,6 +87,16 @@ def test_sinkgd_factory_without_loraplus_keeps_default_grouping():
     assert groups[id(model.lora_B.weight)]["lr"] == pytest.approx(1e-3)
     assert groups[id(model.weight)]["use_sinkgd"]
     assert not groups[id(model.bias)]["use_sinkgd"]
+
+
+def test_sinkgd_param_groups_support_legacy_two_arg_call():
+    model = _LoRAPlusModel()
+
+    groups = _sinkgd_param_groups(model, weight_decay=0.1)
+
+    params = {id(param) for group in groups for param in group["params"]}
+    assert len(groups) == 2
+    assert params == {id(param) for param in model.parameters() if param.requires_grad}
 
 
 def test_sr_sinkhorn_2d_fixed_point():
