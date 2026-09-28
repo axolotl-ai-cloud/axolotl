@@ -16,12 +16,27 @@ from accelerate import DistributedType
 
 
 def _patched_post_init(self):
-    _ORIG_POST_INIT(self)
-
     if not hasattr(self, "ep_size") or self.ep_size is None:
         self.ep_size = int(os.environ.get("PARALLELISM_CONFIG_EP_SIZE", "1") or 1)
     if self.ep_size < 1:
         raise ValueError(f"ep_size must be at least 1, got {self.ep_size}")
+
+    try:
+        _ORIG_POST_INIT(self)
+    except ValueError as exc:
+        # accelerate reads dp_shard == 1 as DDP and refuses to compose it with CP under
+        # dp_replicate; with EP the dense weights still FSDP-shard over (ep, cp), so the
+        # layout is HSDP whose shard group is ep x cp. That check is the last statement
+        # before `_sizes` is assigned, so finish the original init here.
+        if "pure data parallelism" not in str(exc) or self.ep_size <= 1:
+            raise
+        self._sizes = {
+            "dp_replicate": self.dp_replicate_size,
+            "dp_shard": self.dp_shard_size,
+            "tp": self.tp_size,
+            "cp": self.cp_size,
+            "sp": self.sp_size,
+        }
 
     # Register so `_set_size`, `_validate_accelerator`, `_get_mesh` see it.
     self._sizes["ep"] = self.ep_size

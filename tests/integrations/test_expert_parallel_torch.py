@@ -1300,3 +1300,29 @@ class TestComposedExpertShardingGradScale:
             assert res[rank]["divide_factor"] == float(world_size)
             assert res[rank]["force_sum"] is True
             assert res[rank]["grad_ok"], res[rank]
+
+
+class TestHsdpEpCpParallelismConfig:
+    """dp_replicate x ep x cp with dp_shard == 1 is HSDP whose shard group is ep x cp."""
+
+    def _config(self, monkeypatch, ep_size):
+        from accelerate.parallelism_config import ParallelismConfig
+
+        from axolotl.monkeypatch.accelerate.parallelism_config import (
+            patch_parallelism_config,
+        )
+
+        patch_parallelism_config()
+        monkeypatch.setenv("PARALLELISM_CONFIG_EP_SIZE", str(ep_size))
+        return ParallelismConfig(dp_replicate_size=2, dp_shard_size=1, cp_size=2)
+
+    def test_accepted_with_ep(self, monkeypatch):
+        pc = self._config(monkeypatch, 2)
+        assert pc._sizes["ep"] == 2
+        assert pc.dp_shard_cp_dim_names == ["ep", "cp"]
+        assert pc.fsdp_dim_names == ["dp_replicate", "dp_shard_cp"]
+        assert pc.total_size == 8
+
+    def test_still_rejected_without_ep(self, monkeypatch):
+        with pytest.raises(ValueError, match="pure data parallelism"):
+            self._config(monkeypatch, 1)

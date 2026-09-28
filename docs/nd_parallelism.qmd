@@ -170,6 +170,7 @@ This matrix describes how different parallelism methods can be combined in Axolo
 | **EP + CP** | 1 | 1 | 1 | >1 | >1 | ✅ **2D Parallelism** (MoE, long context). Experts on `ep`, sequences on `cp`; expert slices FSDP-shard across `cp`. |
 | **FSDP + EP + CP** | 1 | >1 | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE). Expert slices shard across `dp_shard × cp`. |
 | **HSDP + EP** | >1 | >1 | 1 | 1 | >1 | ✅ **3D Parallelism** (MoE, multi-node). `dp_replicate` replicates the whole EP × FSDP layout. |
+| **HSDP + EP + CP** | >1 | 1 | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE, multi-node, long context). `dp_replicate` outermost; the dense weights FSDP-shard over `ep × cp` and the expert slices over `cp`, so no `dp_shard` axis is needed (accelerate's own DDP + CP rejection is lifted when `ep` supplies the shard group). |
 | EP + TP | 1 | * | >1 | * | >1 | ❌ Not supported; rejected at config validation. |
 | DDP + TP/CP | >1 | 1 | >1 | >1 | 1 | ❌ **Not Supported**. The `ParallelismConfig` explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (`dp_shard_size > 1`). |
 | Just TP / CP | 1 | 1 | >1 | >1 | 1 | ✅ Supported. Useful for inference or when the model fits on one GPU but context is too long. |
