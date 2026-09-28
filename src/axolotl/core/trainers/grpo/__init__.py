@@ -6,7 +6,7 @@ import os
 from typing import Any
 
 from huggingface_hub import snapshot_download
-from requests import HTTPError
+from huggingface_hub.errors import HfHubHTTPError
 from trl.trainer.grpo_trainer import RewardFunc
 
 from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
@@ -311,7 +311,7 @@ class GRPOStrategy:
                 snapshot_download(reward_func_fqn, repo_type="model")
                 LOG.info(pretrained_log_msg)
                 return reward_func_fqn
-            except HTTPError:
+            except HfHubHTTPError:
                 raise ValueError(
                     f"Reward function {reward_func_fqn} not found."
                 ) from exc
