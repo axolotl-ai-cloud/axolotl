@@ -127,7 +127,7 @@ axolotl fetch deepspeed_configs  # OPTIONAL
 
 #### NVFP4 4-bit training (Blackwell, optional)
 
-Native FP4 training (RTX 50xx / RTX PRO 6000 / B200) needs a cu130 torch build (≥2.11) plus the `nvfp4` extra (`mslk` FP4 kernels + `triton>=3.7`):
+Native FP4 training (RTX 50xx / RTX PRO 6000 / B200) needs a cu130 torch build (≥2.13) plus the `nvfp4` extra (`mslk` FP4 kernels + `triton>=3.7`):
 
 ```bash
 # cu130 torch, then the mslk FP4 kernels (from the cu130 wheel index), then the nvfp4 extra

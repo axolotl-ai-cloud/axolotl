@@ -42,6 +42,22 @@ class NVFP4Plugin(BasePlugin):
                 "nvfp4_training requires bf16 — the NVFP4 quantizer does not "
                 "support fp16. Set bf16: true instead of fp16."
             )
+        if cfg.qat or cfg.quantization:
+            raise ValueError(
+                "nvfp4_training is incompatible with torchao `qat` / `quantization` "
+                "blocks: the FP4-GEMM swap already quantizes weights and activations "
+                "in the forward, so a torchao fake-quant or PTQ pass on the same "
+                "Linear modules would double-quantize. Drop `qat`/`quantization`; "
+                "use nvfp4_training.save_packed for an FP4 export."
+            )
+        if cfg.nvfp4_merge_aware:
+            raise ValueError(
+                "nvfp4_training is incompatible with nvfp4_merge_aware: merge-aware "
+                "training belongs to the kernels plugin's NVFP4 MoE LoRA path "
+                "(pre-quantized NVFP4 checkpoints + SonicMoE experts), which is a "
+                "separate quantization path from the dense FP4-GEMM swap. Enable "
+                "one or the other."
+            )
 
     def pre_model_load(self, cfg):
         """Config validation + requirements check + dynamo tuning before the

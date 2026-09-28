@@ -149,12 +149,17 @@ if [[ "$INSTALL_AXOLOTL" == "1" ]]; then
   PIP install wheel setuptools ninja packaging psutil
   MAX_JOBS="${MAX_JOBS:-16}" \
     PIP install -e "${REPO_ROOT}[nvfp4,flash-attn]" --no-build-isolation
-  # torchao is pinned ==0.17.0; pull the cu130 build (matches the validated env) so the
-  # NVFP4Tensor prototype mx_formats path lines up with the cu130 torch.
+  # Re-pull torchao at Axolotl's pinned version from the cu130 index so the
+  # NVFP4Tensor prototype mx_formats path lines up with the cu130 torch (the
+  # generic PyPI wheel the editable install resolved is CPU/cu12x-built).
+  TORCHAO_PIN="$(grep -oE 'torchao==[0-9.]+' "${REPO_ROOT}/pyproject.toml" | head -n1)"
+  if [[ -z "$TORCHAO_PIN" ]]; then
+    echo "ERROR: could not read the torchao pin from ${REPO_ROOT}/pyproject.toml" >&2; exit 1
+  fi
   if [[ "$TOOL" == "uv" ]] && command -v uv >/dev/null 2>&1; then
-    PIP install --reinstall torchao==0.17.0 --index-url "$TORCH_INDEX"
+    PIP install --reinstall "$TORCHAO_PIN" --index-url "$TORCH_INDEX"
   else
-    PIP install --force-reinstall torchao==0.17.0 --index-url "$TORCH_INDEX"
+    PIP install --force-reinstall "$TORCHAO_PIN" --index-url "$TORCH_INDEX"
   fi
 fi
 

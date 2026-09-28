@@ -318,6 +318,22 @@ def test_pre_model_load_rejects_fp16():
         NVFP4Plugin().pre_model_load(_enabled_cfg(fp16=True))
 
 
+def test_pre_model_load_rejects_torchao_qat_and_ptq():
+    with pytest.raises(ValueError, match="double-quantize"):
+        NVFP4Plugin().pre_model_load(_enabled_cfg(qat={"weight_dtype": "nvfp4"}))
+    with pytest.raises(ValueError, match="double-quantize"):
+        NVFP4Plugin().pre_model_load(
+            _enabled_cfg(quantization={"activation_dtype": "nvfp4"})
+        )
+    with pytest.raises(ValueError, match="double-quantize"):
+        NVFP4Plugin().pre_model_load(_enabled_cfg(qat={"weight_dtype": "int8"}))
+
+
+def test_pre_model_load_rejects_nvfp4_merge_aware():
+    with pytest.raises(ValueError, match="nvfp4_merge_aware"):
+        NVFP4Plugin().pre_model_load(_enabled_cfg(nvfp4_merge_aware=True))
+
+
 def test_validate_cfg_clean_config_passes():
     NVFP4Plugin._validate_cfg(_enabled_cfg())
 

@@ -9,7 +9,7 @@ toc-depth: 4
 
 ## Overview
 
-NVFP4-GEMM training runs the matrix multiplications inside `nn.Linear` layers for 4-bit floating point (NVFP4) low-precision training, not the "fake-quant" simulation of the [QAT/PTQ](qat.qmd) `quantization:` block.
+NVFP4-GEMM training runs the matrix multiplications inside `nn.Linear` layers for 4-bit floating point (NVFP4) low-precision training, not the "fake-quant" simulation of the [QAT/PTQ](qat.qmd) `quantization:` block. It is also distinct from [NVFP4 MoE LoRA](nvfp4_lora.qmd), which trains adapters on checkpoints that are *already* NVFP4-quantized through the kernels plugin's expert kernels; this plugin quantizes a bf16 dense model on the fly.
 
 NVFP4 training can provide **~1.5–1.7× over bf16** on 9B / VL-8B (compiled, sample-packed) at ~8–11% lower peak memory, with convergence tracking bf16.
 
@@ -33,8 +33,8 @@ NVFP4 needs 5th-generation FP4 tensor cores, which exist only on Blackwell:
 
 Software:
 
-- A **cu130 `torch` (≥ 2.11)** whose bundled **Triton ≥ 3.7** exposes `tl.dot_scaled` (validated on torch 2.12.0+cu130 / triton 3.7.0).
-- `torchao` cu130 build (validated on 0.17.0+cu130)..
+- A **cu130 `torch` (≥ 2.13, Axolotl's floor)** whose bundled **Triton ≥ 3.7** exposes `tl.dot_scaled`.
+- `torchao` cu130 build at the version pinned in `pyproject.toml` (`scripts/install_nvfp4.sh` reads the pin and reinstalls it from the cu130 index).
 - `mslk` — [Meta/PyTorch's FP4 quant Triton kernels](https://github.com/pytorch/MSLK), from the PyTorch wheel index. Match it to your torch (stable mslk with stable torch; only use the nightly index).
 
 If any requirement is missing, Axolotl raises a validation error at config-check time rather than failing mid-run.
@@ -254,6 +254,7 @@ The `nvfp4_training:` block (schema: `src/axolotl/integrations/nvfp4/args.py`, `
 - **Do not combine `load_in_4bit`/`load_in_8bit` with NVFP4** — NVFP4-QLoRA is the 4-bit storage path; the plugin rejects the combination with a clear error before the model loads.
 - **fp16 is rejected** with a clear error before the model loads — the NVFP4 quantizer requires bf16/fp32. Use `bf16: true`.
 - **No DeepSpeed.** There is no ZeRO path for the FP4-GEMM swap; the plugin rejects `deepspeed` with a clear error before the model loads. Use DDP, FSDP2, or single-GPU. (Tensor/context parallelism are not validated.)
+- **Not combinable with the torchao paths.** `nvfp4_training` quantizes weights and activations inside the FP4-GEMM forward, so a torchao `qat:` or `quantization:` block on the same modules would double-quantize; both are rejected (use `save_packed` for an FP4 export). `nvfp4_merge_aware` is also rejected: it belongs to the kernels plugin's [NVFP4 MoE LoRA](nvfp4_lora.qmd) path, which trains adapters on *pre-quantized* NVFP4 checkpoints through SonicMoE/ScatterMoE expert kernels, whereas this plugin quantizes a bf16 dense model on the fly. Pick one path per run.
 
 ### Multi-GPU
 

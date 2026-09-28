@@ -52,7 +52,8 @@ def nvfp4_supported() -> tuple[bool, str]:
     except ImportError as exc:
         return (
             False,
-            f"NVFP4 training requires torchao (pinned: torchao==0.17.0) ({exc})",
+            "NVFP4 training requires torchao's NVFP4Tensor prototype (torchao >= "
+            f"0.17; install the version pinned in pyproject.toml) ({exc})",
         )
     from packaging import version as _v
 
