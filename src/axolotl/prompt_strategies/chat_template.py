@@ -57,16 +57,6 @@ def _align_ids(src: list[int], dst: list[int]) -> list[int] | None:
     return mapping
 
 
-# Role names that chat templates write next to the message body. A turn whose
-# whole content is one of these collides with that markup.
-_TEMPLATE_ROLE_WORDS = frozenset(
-    {"user", "assistant", "system", "tool", "human", "gpt", "function"}
-)
-# Keys that do not change the rendered text. Anything else (tool_calls,
-# reasoning_content, tool_call_id, …) stays on the per-turn locator.
-_FAST_TURN_KEYS = frozenset({"role", "content", "training", "training_detail"})
-
-
 class ChatTemplatePrompter(Prompter):
     """Prompter for HF chat templates"""
 
@@ -547,12 +537,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         locator = self._build_turn_locator(turns, tools, input_ids)
-        # One string scan for every turn. The per-turn locator still re-renders
-        # the whole conversation twice per trainable turn, and a failed locator
-        # re-tokenizes a growing prefix twice per turn.
-        content_spans = self._locate_turns_from_content(
-            turns, tools, input_ids, locator=locator
-        )
 
         last_eos_idx = -1
         last_eot_idx = -1
@@ -600,21 +584,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             # (excluding reasoning_content + template separator tokens).
             use_content_only = bool(has_any_detail and has_reasoning)
 
-            cached_span = (
-                content_spans.get(index) if content_spans is not None else None
+            turn_start_idx, turn_end_idx = self.find_turn(
+                turns=turns,
+                turn_idx=index,
+                tools=tools,
+                content_only=use_content_only,
+                locator=locator,
             )
-            # A reasoning turn's trained span includes reasoning_content. The
-            # cached span is the content field only, so keep the per-turn locator.
-            if cached_span is not None and not has_reasoning:
-                turn_start_idx, turn_end_idx = cached_span
-            else:
-                turn_start_idx, turn_end_idx = self.find_turn(
-                    turns=turns,
-                    turn_idx=index,
-                    tools=tools,
-                    content_only=use_content_only,
-                    locator=locator,
-                )
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
@@ -750,11 +726,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def _build_turn_locator(
         self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
-    ) -> tuple[str, list[int], list[int]] | None:
+    ) -> tuple[str, list[int], list[int], list[int]] | None:
         """Render and tokenize the conversation once so turns can be located in char space.
 
-        Returns ``(rendered_text, token_starts, token_ends)``, or ``None`` when the
-        render can't be trusted to line up with ``input_ids``.
+        Returns ``(rendered_text, token_starts, token_ends, src_to_dst)``.
+        ``src_to_dst`` maps each rendered token onto ``input_ids``. Exact matches
+        are the identity. Extra tokens in ``input_ids`` are skipped. Returns None
+        when the render cannot be aligned, and ``find_turn`` keeps the per-turn
+        re-tokenization.
         """
         if not getattr(self.tokenizer, "is_fast", False):
             self._log_fallback_once("tokenizer is not a fast tokenizer")
@@ -768,13 +747,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         encoded = self.tokenizer(
             full_text, add_special_tokens=False, return_offsets_mapping=True
         )
-        # Spans index into input_ids, so the render must re-tokenize to it exactly.
-        if list(encoded["input_ids"]) != list(input_ids):
+        enc_ids = list(encoded["input_ids"])
+        offsets = encoded.get("offset_mapping")
+        if not enc_ids or not offsets or len(offsets) != len(enc_ids):
+            self._log_fallback_once("render has no character offsets")
+            return None
+        src_to_dst = _align_ids(enc_ids, list(input_ids))
+        if src_to_dst is None:
             self._log_fallback_once("re-tokenized render does not match input_ids")
             return None
 
-        offsets = encoded["offset_mapping"]
-        return full_text, [s for s, _ in offsets], [e for _, e in offsets]
+        return (
+            full_text,
+            [start for start, _ in offsets],
+            [end for _, end in offsets],
+            src_to_dst,
+        )
 
     # Block compares keep the diff scan in C; a per-char Python loop would cost more
     # than the tokenization it saves.
@@ -813,7 +801,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         content_only: bool,
         reasoning_only: bool,
         tools: list[dict] | None,
-        locator: tuple[str, list[int], list[int]],
+        locator: tuple[str, list[int], list[int], list[int]],
     ) -> tuple[int, int] | None:
         """Locate a turn by diffing the real render against placeholder renders.
 
@@ -824,7 +812,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         Returns ``None`` to fall back to the token diff, ``(-1, -1)`` when the field
         is absent from the render, otherwise the token span.
         """
-        full_text, token_starts, token_ends = locator
+        full_text, token_starts, token_ends, src_to_dst = locator
 
         spans = []
         for sentinel in self._SENTINELS:
@@ -851,8 +839,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         end_idx = bisect_left(token_starts, char_end)
         if start_idx >= len(token_ends) or end_idx > len(token_ends):
             return None
-
-        return start_idx, end_idx
+        if start_idx >= end_idx:
+            return start_idx, end_idx
+        mapped = src_to_dst[start_idx:end_idx]
+        if mapped[-1] - mapped[0] + 1 != len(mapped):
+            return None
+        return mapped[0], mapped[-1] + 1
 
     def _find_turn_from_tokens(
         self,
@@ -928,91 +920,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             dummy_turn[thinking_key] = turn[thinking_key]
         return dummy_turn
 
-    def _locate_turns_from_content(
-        self,
-        turns: list[dict],
-        tools: list[dict] | None,
-        input_ids: list[int],
-        locator: tuple[str, list[int], list[int]] | None = None,
-    ) -> dict[int, tuple[int, int]] | None:
-        """Map every string turn onto ``input_ids`` with one render.
-
-        Only role/content turns are included, and only when that content occurs
-        once, in order, and is not a template role word. Other turns are omitted
-        so the caller keeps ``find_turn``. Returns None when alignment fails or
-        a role/content turn's text is missing from the render, so a dropped
-        turn cannot be matched onto a later message.
-        """
-        if not input_ids or any(
-            not isinstance(turn.get("content"), str) for turn in turns
-        ):
-            return None
-
-        src_to_dst: list[int] | None
-        if locator is not None:
-            full_text, token_starts, token_ends = locator
-            src_to_dst = list(range(len(input_ids)))
-        else:
-            if not getattr(self.tokenizer, "is_fast", False):
-                return None
-            full_text = self.prompter.build_prompt_text(turns, tools=tools)  # type: ignore
-            if not full_text:
-                return None
-            encoded = self.tokenizer(
-                full_text, add_special_tokens=False, return_offsets_mapping=True
-            )
-            enc_ids = list(encoded["input_ids"])
-            offsets = encoded.get("offset_mapping")
-            if not enc_ids or not offsets or len(offsets) != len(enc_ids):
-                return None
-            src_to_dst = _align_ids(enc_ids, list(input_ids))
-            if src_to_dst is None:
-                return None
-            token_starts = [start for start, _ in offsets]
-            token_ends = [end for _, end in offsets]
-
-        if src_to_dst is None or len(token_starts) != len(src_to_dst):
-            return None
-
-        cursor = 0
-        spans: dict[int, tuple[int, int]] = {}
-        mistral_tokenizer = (
-            "mistral" in getattr(self.tokenizer, "name_or_path", "").lower()
-        )
-        for index, turn in enumerate(turns):
-            # find_turn refuses to train a leading Mistral system turn.
-            if index == 0 and turn.get("role") == "system" and mistral_tokenizer:
-                continue
-            if set(turn) - _FAST_TURN_KEYS:
-                continue
-            content = turn.get("content") or ""
-            if not isinstance(content, str) or content == "":
-                continue
-            if content.strip().lower() in _TEMPLATE_ROLE_WORDS:
-                continue
-            found = full_text.find(content, cursor)
-            if found < 0:
-                return None
-            if full_text.find(content, found + 1) >= 0:
-                continue
-            char_start = found
-            char_end = found + len(content)
-            cursor = char_end
-            start_idx = bisect_right(token_ends, char_start)
-            end_idx = bisect_left(token_starts, char_end)
-            if start_idx >= end_idx or end_idx > len(src_to_dst):
-                continue
-            mapped = src_to_dst[start_idx:end_idx]
-            if mapped[-1] - mapped[0] + 1 != len(mapped):
-                continue
-            spans[index] = (mapped[0], mapped[-1] + 1)
-
-        seen = self.__dict__.setdefault("_logged_linear_locate", set())
-        if "ok" not in seen:
-            seen.add("ok")
-            LOG.info("chat_template: locating turns from one rendered string")
-        return spans
-
     def find_turn(
         self,
         turns: list[dict],
@@ -1020,7 +927,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         tools: list[dict] | None = None,
         content_only: bool = False,
         reasoning_only: bool = False,
-        locator: tuple[str, list[int], list[int]] | None = None,
+        locator: tuple[str, list[int], list[int], list[int]] | None = None,
     ):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
