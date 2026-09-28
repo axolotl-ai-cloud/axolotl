@@ -46,6 +46,15 @@ jobs:
         run: |
           curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
+  nf4-distributed:
+    name: NF4 distributed CPU (nightly)
+    uses: ./.github/workflows/nf4-cpu.yml
+    with:
+      nightly: true
+      pytorch_versions: '["2.13.0"]'
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
@@ -53,8 +62,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.12"]
-        pytorch_version: ["2.12.1", "2.13.0", "2.14.0"]
+        python_version: ["3.12", "3.14"]
+        pytorch_version: ["2.13.0", "2.14.0"]
     timeout-minutes: 20
 
     steps:
@@ -121,7 +130,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile \
+          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed" \
             --ignore=tests/e2e/ \
             --ignore=tests/integrations/kernels/ \
             --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
@@ -151,14 +160,14 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
+            pytorch: 2.13.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.12.1
+            python_version: "3.14"
+            pytorch: 2.14.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -170,7 +179,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -204,10 +213,18 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.1
+            pytorch: 2.14.0
             num_gpus: 2
             axolotl_extras:
             nightly_build: "true"
+            test_suite: multigpu
+          - cuda: 130
+            python_version: "3.12"
+            pytorch: 2.14.0
+            num_gpus: 3
+            nightly_build: "true"
+            test_suite: nf4
+            nf4_test_stack: nightly
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -216,7 +233,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -229,6 +246,8 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "MULTIGPU_TEST_SUITE=${{ matrix.test_suite }}" >> $GITHUB_ENV
+          echo "NF4_TEST_STACK=${{ matrix.nf4_test_stack }}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
@@ -250,14 +269,14 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
+            pytorch: 2.13.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.12.1
+            python_version: "3.14"
+            pytorch: 2.14.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -269,7 +288,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip

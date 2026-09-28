@@ -2,8 +2,6 @@
 Utilities for quantization including QAT and PTQ using torchao.
 """
 
-import functools
-
 import torch
 from packaging import version
 from torchao.core.config import AOBaseConfig
@@ -38,6 +36,15 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
         from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 
         quantization_config_to_str[NVFP4WeightOnlyConfig] = "nvfp4"
+    except (ImportError, RuntimeError):
+        pass
+
+    try:
+        from torchao.prototype.mx_formats import NVFP4DynamicActivationNVFP4WeightConfig
+
+        quantization_config_to_str[NVFP4DynamicActivationNVFP4WeightConfig] = (
+            "nvfp4-dynamic"
+        )
     except (ImportError, RuntimeError):
         pass
 
@@ -125,6 +132,16 @@ def get_quantization_config(
 
         if group_size is not None and group_size != 16:
             raise ValueError("NVFP4 quantization must use a group_size of 16")
+        if activation_dtype == TorchAOQuantDType.nvfp4:
+            from torchao.prototype.mx_formats import (
+                NVFP4DynamicActivationNVFP4WeightConfig,
+            )
+
+            return NVFP4DynamicActivationNVFP4WeightConfig(use_triton_kernel=False)
+        if activation_dtype is not None:
+            raise ValueError(
+                "NVFP4 weights support only NVFP4 or unquantized activations"
+            )
         return NVFP4WeightOnlyConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
@@ -169,37 +186,6 @@ def _attach_torchao_quantizer(
     model.config.quantization_config = ao_config
     quantizer = TorchAoHfQuantizer(ao_config)
     model.hf_quantizer = quantizer
-
-
-def patch_transformers_skip_quantized_init():
-    """Stop ``from_pretrained`` from re-initializing already-loaded quantized weights.
-
-    transformers re-runs ``_init_weights`` on every module, skipping only tensors
-    flagged ``_is_hf_initialized``. Quantized weights lose the flag because reading
-    them returns a fresh tensor: ``.float()`` on a torchao subclass (which then
-    raises on ``normal_``), or the dequant behind a parametrization (NF4, load-time
-    MoE quant), which silently redraws every expert stack.
-    """
-    from torchao.utils import TorchAOBaseTensor
-    from transformers import PreTrainedModel
-
-    if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
-        return
-
-    original = PreTrainedModel._initialize_weights
-
-    @functools.wraps(original)
-    def _initialize_weights(self, module, *args, **kwargs):
-        if getattr(module, "parametrizations", None) or any(
-            isinstance(param, TorchAOBaseTensor)
-            for param in module.parameters(recurse=False)
-        ):
-            module._is_hf_initialized = True
-            return None
-        return original(self, module, *args, **kwargs)
-
-    _initialize_weights._axolotl_torchao_patched = True
-    PreTrainedModel._initialize_weights = _initialize_weights
 
 
 def quantize_model(
@@ -254,6 +240,10 @@ def quantize_model(
         model._is_mx_quantized = True
         # MX checkpoints reload via plain from_pretrained (no HF quantizer), so guard
         # transformers' weight re-init against the MXTensor weights it will encounter.
+        from axolotl.monkeypatch.quantized_init import (
+            patch_transformers_skip_quantized_init,
+        )
+
         patch_transformers_skip_quantized_init()
     else:
         _attach_torchao_quantizer(

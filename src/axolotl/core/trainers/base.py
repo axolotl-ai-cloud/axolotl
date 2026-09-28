@@ -826,9 +826,7 @@ class AxolotlTrainer(
     def _is_fsdp2_checkpoint_save_enabled(self) -> bool:
         cfg = getattr(self, "axolotl_cfg", None)
         cfg_fsdp2 = bool(
-            cfg
-            and str(getattr(cfg, "fsdp_version", "")) == "2"
-            and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
+            cfg and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
         )
         return bool(getattr(self, "is_fsdp_enabled", False) or cfg_fsdp2)
 

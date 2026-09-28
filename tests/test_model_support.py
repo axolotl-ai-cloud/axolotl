@@ -486,15 +486,16 @@ class TestBailingHybridSupport:
 
         assert resolved is BailingMoeV3Config
 
-    def test_context_parallel_is_rejected(self):
-        """Ring attention severs the KDA recurrence: each rank would restart it from
-        zero with no state exchange, and the loss curve would not show it."""
-        with pytest.raises(ValueError, match="context_parallel_size"):
-            run_model_support_hooks(
-                get_model_support("bailing_hybrid"),
-                ModelHookPhase.CONFIGURE_RUN,
-                ModelHookContext(cfg=DictDefault(context_parallel_size=2)),
-            )
+    def test_context_parallel_uses_capability_validation(self):
+        from axolotl.model_support.base import Experimental
+
+        support = get_model_support("bailing_hybrid")
+        assert isinstance(support.capabilities["context_parallel"], Experimental)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.CONFIGURE_RUN,
+            ModelHookContext(cfg=DictDefault(context_parallel_size=4)),
+        )
 
     @pytest.mark.parametrize("context_parallel_size", [None, 1])
     def test_single_rank_is_allowed(self, context_parallel_size):

@@ -26,3 +26,11 @@ timeout: 86400
 # Preprocess specific configurations
 memory_preprocess: 32
 timeout_preprocess: 14400
+
+# Use a prebuilt image containing your fork and plugins:
+# image: registry.example.com/team/axolotl:my-fork
+
+# Or build a local source context (paths are relative to this YAML):
+# image_build:
+#   context: ../my-training-source
+#   dockerfile: Dockerfile

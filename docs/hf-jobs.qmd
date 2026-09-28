@@ -1,0 +1,205 @@
+---
+title: Hugging Face Jobs
+description: How to run Axolotl training on Hugging Face Jobs
+---
+
+[Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview) is a compute service: it runs your workload on Hugging Face hardware, from a CPU to several H200s, and bills by the minute while the workload runs. A Job can be a Python script whose dependencies `uv` installs, or a command in any Docker image. When the command ends, the Job stops and the billing stops with it.
+
+For Axolotl, the simplest route is its Docker image, which already contains Axolotl, PyTorch and CUDA. You give Jobs the image, a GPU flavor and an `axolotl train` command. The Job trains from your config, pushes the model to the Hub and stops. There is no machine to set up or shut down.
+
+This guide covers:
+
+- a first training run on one GPU, and how to follow it;
+- choosing and changing the image tag;
+- three ways to give the Job your config, and when to use each;
+- saving checkpoints, using several GPUs, streaming large datasets, and merging a LoRA adapter in the same Job.
+
+## Setup
+
+Jobs need a Hugging Face account with [pre-paid credits](https://huggingface.co/settings/billing). Install the `hf` CLI and log in with a token that has write access:
+
+```bash
+pip install -U huggingface_hub
+hf auth login
+```
+
+See the [Jobs quickstart](https://huggingface.co/docs/hub/jobs-quickstart) for other install options and for running Jobs under an organization. `hf jobs hardware` lists each GPU flavor with its memory and hourly price.
+
+If a coding agent launches your runs, `hf skills add` installs a skill that teaches it the `hf` commands, including `hf jobs`. Everything on this page is a single command, so an agent can launch a run, follow its logs and check the result.
+
+## A first run on one GPU
+
+Download an example config into a local `configs` folder. Take it from the same release as the image you run, so the config and the Axolotl version match:
+
+```bash
+mkdir -p configs
+curl -L -o configs/train.yml \
+  https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/v0.19.0/examples/gemma4/e2b-vision-lora.yaml
+```
+
+This config trains a LoRA adapter for [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it) on 100 image-and-text conversations. It already stops after `max_steps: 10`, which makes it a good trial run. Open `configs/train.yml` and add a Hub repo for the result:
+
+```yaml
+hub_model_id: your-username/gemma4-e2b-lora  # where the adapter is pushed
+hub_strategy: end                            # push once, at the end
+```
+
+Then launch it:
+
+```bash
+hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
+  --name gemma4-e2b-trial \
+  -v ./configs:/configs \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
+  axolotl train /configs/train.yml
+```
+
+Each part of the command does one thing:
+
+- `--flavor a10g-large` picks the hardware, here one A10G GPU with 24 GB of memory. `hf jobs hardware` lists the others.
+- `--timeout 1h` sets the maximum run time. The default is 30 minutes, which is short for training. When a Job times out, everything on its disk is lost, so set the timeout comfortably above the expected run time.
+- `-s HF_TOKEN` passes your local token to the Job as a secret. Axolotl needs it to push to `hub_model_id` and to download gated models. When `hub_model_id` is set, Axolotl pushes to a private repo.
+- `--name gemma4-e2b-trial` labels the Job, so you can find it again later with `hf jobs ps -a --name gemma4-e2b-trial` (`-a` includes finished Jobs). Names do not have to be unique.
+- `-v ./configs:/configs` uploads the `configs` folder to a private `jobs-artifacts` bucket in your account and mounts it read-only in the container. The YAML on your disk is the YAML the run uses. Edit it and launch again; only changed files are uploaded.
+- Everything after `--` is the command to run inside the image.
+
+## Follow the run
+
+The command prints the Job ID and a link to the Job's page on the Hub, then streams the logs to your terminal until the run ends. It exits with an error if the Job did not complete. Expect the first few minutes to be spent pulling the image, which is about 17 GB. The trial run then takes about two minutes of training.
+
+The Job runs on Hugging Face hardware, not on your machine. Ctrl+C stops only the log stream; the Job keeps running until it finishes or you cancel it. For longer runs, add `-d` (detach) to get the Job ID back straight away, then use these commands:
+
+```bash
+hf jobs logs -f <job_id>   # follow the logs
+hf jobs stats <job_id>     # CPU, memory and GPU use while it runs
+hf jobs inspect <job_id>   # status and error message
+hf jobs wait <job_id>      # block until it ends; non-zero exit if it failed
+hf jobs cancel <job_id>    # stop it
+```
+
+`hf jobs stats` is a quick check that the run uses the GPU. If GPU use stays low while CPU use is high, the run is often waiting on data loading: try raising `dataloader_num_workers` or `micro_batch_size` in the YAML. `hf jobs logs -f` returns when the log stream ends, whether the run succeeded or not, so use `hf jobs inspect` or `hf jobs wait` for the final status. The Job's page on the Hub shows the same status and logs in the browser.
+
+Any top-level config key can also be passed as a flag after the config path, with underscores written as dashes, for example `axolotl train /configs/train.yml --max-steps 5`. Flags override the file without changing it, which is handy for a quick change. For a change you want to keep, edit the YAML, so the file stays a record of what ran.
+
+When the trial run works, remove `max_steps` for the full run, point `datasets` at your own data, and raise `--timeout` to match.
+
+## Choosing the image tag
+
+The command pins a release tag, so a rerun months later gets the same Axolotl, PyTorch and CUDA. Release tags have the form `{version}-py{python_version}-cu{cuda_version}-{pytorch_version}`.
+
+To move to a newer release, pick a tag from [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl/tags), replace the image name in the command, and download the example configs from the matching release (`v{version}` in the URL). `axolotlai/axolotl:main-latest` follows the main branch. It is useful for trying new features, but it can change between two runs.
+
+When you change the tag, check what the image contains. For example, the `0.19.0` tag has no `flash-attn`. The Gemma 4 example already uses `attn_implementation: sdpa`, but a config that sets `flash_attention_2` needs changing to `sdpa` to run on that tag.
+
+## Where the config lives
+
+The first run synced the config from a local folder. There are two other places to keep it, both on the Hub. They differ in where the config lives and whether each version is kept:
+
+| Route | Config lives in | Versions kept | Use it when |
+|---|---|---|---|
+| Local folder (`-v ./configs:/configs`) | Your disk | Only if your folder is in git | You edit and launch from one machine. Start here. |
+| Storage Bucket | A bucket on the Hub | No | Several people or machines launch the same configs, or you want configs next to checkpoints. |
+| Output model repo | The model repo the run pushes to | Yes, in the repo's git history | You want every trained model to carry the config that produced it. |
+
+All three run the same `axolotl train` command; only the source of the YAML changes.
+
+### Storage Bucket
+
+A [Storage Bucket](https://huggingface.co/docs/hub/storage-buckets) is file storage on the Hub. Upload the configs once, then mount the bucket in every Job:
+
+```bash
+hf buckets create your-username/axolotl-runs --private
+hf buckets sync ./configs hf://buckets/your-username/axolotl-runs/configs
+
+hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
+  -v hf://buckets/your-username/axolotl-runs:/runs \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
+  axolotl train /runs/configs/train.yml
+```
+
+Anyone with access to the bucket can launch the same config. A bucket is mounted read-write, so the same mount can also hold checkpoints (see the next section). A bucket keeps only the latest copy of each file: if you change a config, the previous version is gone.
+
+### Output model repo
+
+A model repo on the Hub is a git repository. If the config lives in the repo the run pushes to, the repo's history records each config next to the weights it trained: a commit that changes the YAML, then a commit with the new weights. You can compare two runs' configs, go back to an earlier one, and anyone who opens the model can see how it was trained.
+
+Create the repo, upload the config, and mount the repo:
+
+```bash
+hf repos create your-username/gemma4-e2b-lora --private --exist-ok
+hf upload your-username/gemma4-e2b-lora ./configs/train.yml train.yml
+
+hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
+  -v hf://your-username/gemma4-e2b-lora:/configs \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
+  axolotl train /configs/train.yml
+```
+
+Set `hub_model_id` in the YAML to the same repo. Model repos are mounted read-only, and Axolotl pushes the weights at the end of the run through the Hub API. For the next run, edit the YAML, upload it again, and launch the same command.
+
+This route pairs well with a bucket for checkpoints: checkpoints change during the run and do not need a history, while the config and final weights do.
+
+## Save checkpoints to a bucket
+
+A Job's disk is discarded when the Job ends. For long runs, mount a bucket and point `output_dir` at it:
+
+```bash
+hf jobs run --flavor a10g-large --timeout 4h -s HF_TOKEN \
+  -v ./configs:/configs \
+  -v hf://buckets/your-username/axolotl-runs:/runs \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
+  axolotl train /configs/train.yml
+```
+
+with `output_dir: /runs/outputs/run-01` in the YAML. Checkpoints are written to the bucket as they are saved, so a timeout or a crash does not lose them. Download them afterwards with `hf buckets sync hf://buckets/your-username/axolotl-runs/outputs ./outputs`.
+
+## Multiple GPUs
+
+To use more GPUs, change the flavor and nothing else. On `a10g-largex4`, `axolotl train` starts one process per GPU and trains with DDP. DeepSpeed and FSDP2 are set in the YAML as usual. The DeepSpeed configs are not in the image, so fetch them inside the Job before training:
+
+```bash
+hf jobs run --flavor a10g-largex4 --timeout 1h -s HF_TOKEN \
+  -v ./configs:/configs \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- \
+  bash -c 'axolotl fetch deepspeed_configs && axolotl train /configs/train.yml'
+```
+
+with `deepspeed: deepspeed_configs/zero2.json` in the YAML.
+
+## Large datasets
+
+A Hub dataset larger than the Job's disk can be streamed instead of downloaded. For continued pretraining:
+
+```yaml
+pretraining_dataset:
+  - path: HuggingFaceFW/fineweb-edu
+    name: sample-10BT
+    type: pretrain
+    text_column: text
+streaming: true
+max_steps: 200
+```
+
+Set `streaming: true` explicitly. With `max_steps`, the run stops after that many steps, however large the dataset is.
+
+## Train, merge and upload in one Job
+
+For a LoRA run, you can push a merged model instead of the adapter by chaining the commands in one Job. The image includes the `hf` CLI. With the first-run config, whose `output_dir` is `./outputs/gemma4-e2b-vision-lora`:
+
+```bash
+hf jobs run --flavor a10g-large --timeout 1h -s HF_TOKEN \
+  -v ./configs:/configs \
+  axolotlai/axolotl:0.19.0-py3.12-cu130-2.13.0 -- bash -c '
+    axolotl train /configs/train.yml &&
+    axolotl merge-lora /configs/train.yml &&
+    hf upload your-username/gemma4-e2b-merged ./outputs/gemma4-e2b-vision-lora/merged . --private'
+```
+
+`merge-lora` reads the adapter from `output_dir` and writes the merged model, with its tokenizer or processor files, to `<output_dir>/merged`. The `&&` stops the chain if a step fails, so a failed training run does not upload anything.
+
+## Further reading
+
+- [Hugging Face Jobs](https://huggingface.co/docs/hub/jobs-overview)
+- [Train models on Jobs](https://huggingface.co/docs/hub/jobs-training)
+- [Volumes](https://huggingface.co/docs/hub/jobs-configuration#volumes)
+- [Pricing](https://huggingface.co/docs/hub/jobs-pricing)

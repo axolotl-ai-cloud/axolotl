@@ -71,7 +71,6 @@ quartodoc:
         - core.trainers.base
         - core.trainers.constants
         - core.trainers.trl
-        - core.trainers.mamba
         - core.trainers.dpo.args
         - core.trainers.dpo.trainer
         - core.trainers.ebft
@@ -109,10 +108,6 @@ quartodoc:
         - core.trainers.mixins.packing
         - core.trainers.mixins.rng_state_loader
         - core.trainers.mixins.scheduler
-    - title: Context Managers
-      desc: Context managers for altering trainer behaviors
-      contents:
-        - utils.ctx_managers.sequence_parallel
     - title: Prompt Strategies
       desc: Prompt formatting strategies
       contents:
@@ -208,7 +203,9 @@ quartodoc:
         - model_support.registry
         - model_support.remote_code
         - monkeypatch.models.llama4.modeling
+        - monkeypatch.models.mamba.modeling
         - monkeypatch.models.mamba_utils
+        - monkeypatch.models.recurrent_support
         - monkeypatch.models.mistral3.mistral_common_tokenizer
         - monkeypatch.models.nemotron_h.modeling
         - monkeypatch.models.pixtral.modeling_flash_attention_utils
@@ -221,7 +218,6 @@ quartodoc:
         - monkeypatch.models.qwen3_vl.fused_attn
         - monkeypatch.models.voxtral.modeling
         - monkeypatch.peft.utils
-        - monkeypatch.ring_attn.adapters.batch
         - monkeypatch.ring_attn.patch
         - monkeypatch.tiled_mlp.base
         - monkeypatch.tiled_mlp.patch
@@ -295,6 +291,8 @@ quartodoc:
       contents:
         - integrations.base
         - integrations.config
+        - integrations.context_parallel.args
+        - integrations.context_parallel.plugin
         - integrations.cut_cross_entropy
         - integrations.cut_cross_entropy.args
         - integrations.densemixer.args
@@ -367,18 +365,12 @@ quartodoc:
         - common.architectures
         - common.const
         - common.datasets
-    - title: Models
-      desc: Custom model implementations
-      contents:
-        - models.mamba.configuration_mamba
-        - models.mamba.modeling_mamba
     - title: Data Processing
       desc: Data processing utilities
       contents:
         - utils.collators.core
         - utils.collators.batching
         - utils.collators.dpo
-        - utils.collators.mamba
         - utils.collators.mm_chat
         - utils.samplers.multipack
         - utils.samplers.utils
@@ -518,6 +510,8 @@ website:
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
             - docs/skypilot.qmd
+            - docs/hf-jobs.qmd
+            - docs/nebius-serverless.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 

@@ -1,0 +1,302 @@
+---
+title: Nebius Serverless Jobs
+description: Fine-tune a model on Nebius GPUs with Axolotl, save the outputs and resume training
+---
+
+[Nebius Serverless Jobs](https://docs.nebius.com/serverless/jobs/manage) runs
+Axolotl training on a fresh GPU VM. Choose your GPU in a cloud YAML, pass your
+training config to `axolotl train --cloud`, and the Nebius CLI launches the job
+and streams its logs. Checkpoints and final weights are exported to object storage.
+
+This experimental integration supports single-node training. The example below
+runs a 30-step LoRA fine-tune on one H100 with a public model and dataset.
+For multi-node training or SkyPilot-managed clusters, see the [SkyPilot guide](skypilot.qmd).
+
+## Setup {#prerequisites}
+
+Install [Axolotl](installation.qmd) with the Nebius provider and the
+[Nebius CLI](https://docs.nebius.com/cli/install) on the machine you submit from.
+Authenticate and check that your CLI includes `ai job run` (tested with 0.12.265):
+
+```bash
+nebius auth login
+nebius ai job run --help
+```
+
+Your Nebius project needs GPU quota, available capacity and a subnet for the
+selected GPU. See the [Jobs prerequisites](https://docs.nebius.com/serverless/jobs/manage).
+Training runs in the remote container; local Nebius credentials are not uploaded.
+
+## Launch training
+
+Create `nebius.yaml` to describe where the job runs. Replace `project-YOUR_PROJECT_ID`
+with your project ID and choose a platform/preset available there:
+
+```yaml
+provider: nebius
+parent_id: project-YOUR_PROJECT_ID
+image: axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab
+platform: gpu-h100-sxm
+preset: 1gpu-16vcpu-200gb
+timeout: 3600
+output: auto
+```
+
+This image was validated on H100; see [tested configuration](#tested-configuration)
+for its runtime versions. Add `subnet_id` if you need a specific subnet, or `profile`
+to use a different CLI profile. The timeout is in seconds and includes provisioning
+and image startup. `output: auto` selects the CLI's managed project bucket.
+
+Download the [example training config](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/nebius-serverless/lora-1b.yml)
+as `train.yml`, then launch it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/nebius-serverless/lora-1b.yml -o train.yml
+axolotl train train.yml --cloud nebius.yaml
+```
+
+The training config selects the model, dataset and LoRA settings; `nebius.yaml`
+selects the cloud resources. You can replace `train.yml` with your own Axolotl
+config. Training overrides and `--launcher` options are forwarded to the remote run.
+
+The CLI prints the job ID, job name and output location, then follows training
+until it ends. Keep these values to inspect the job or retrieve its outputs.
+**Ctrl+C stops following logs; it does not cancel the remote job.**
+
+Only the training config, launcher settings and bootstrap files are uploaded.
+Local datasets, Python modules and config includes are not copied. Use Hub data or
+[mounted storage](#dataset-inputs-and-secrets), and include dependencies in the image.
+
+## Logs and cancellation {#status-cancellation-and-cleanup}
+
+Replace `JOB_ID` with the ID printed at launch. Use the same CLI profile as submission:
+
+```bash
+nebius ai job get JOB_ID --format json
+nebius ai job logs JOB_ID --follow
+```
+
+To stop training:
+
+```bash
+nebius ai job cancel JOB_ID
+```
+
+Nebius manages VM and boot-disk cleanup. Output buckets and mounted data remain
+until you remove them. Confirm compute cleanup through the Nebius Console or API;
+a terminal job state alone does not prove deletion has finished. See the
+[Nebius job lifecycle](https://docs.nebius.com/serverless/lifecycle).
+
+## Download outputs {#outputs-and-checkpoints}
+
+The example sets `output_dir: training`. Each submission has its own output prefix,
+usually `runs/JOB_NAME/training/` in the selected bucket. Use the location printed
+by the CLI to find the actual bucket and prefix.
+
+After [configuring S3 credentials and the AWS CLI](https://docs.nebius.com/object-storage/interfaces/aws-cli),
+download the outputs:
+
+```bash
+aws --endpoint-url https://storage.REGION.nebius.cloud \
+  s3 cp s3://BUCKET/runs/JOB_NAME/training/ ./downloaded-training/ --recursive
+```
+
+Replace `REGION`, `BUCKET` and `JOB_NAME` with your output location. S3 credentials
+are separate from your Nebius CLI login. For LoRA, load the downloaded adapter
+with the same base model and tokenizer revisions used for training.
+
+Completed checkpoint exports include `nebius-checkpoint.json`; a normally completed
+run exports its final weights and `nebius-result.json`. These manifests list file
+sizes and SHA-256 hashes. A checkpoint directory without a complete, valid manifest
+cannot be used for resume.
+
+Checkpoints are saved on the VM's local disk before being copied to the bucket.
+`save_total_limit` controls local retention only; exported checkpoints remain until
+you delete them. Size `disk_size` for model caches, local checkpoints and any restored
+checkpoint. Export failures stop training rather than continue without that checkpoint.
+
+## Resume training {#resume-explicitly}
+
+To resume a checkpoint in a new Job, add the previous output bucket to `nebius.yaml`
+at a separate read-only mount:
+
+```yaml
+volumes:
+  - source: storagebucket-YOUR_OUTPUT_BUCKET
+    mount: /previous
+    mode: ro
+```
+
+Update `train.yml` with the chosen checkpoint path:
+
+```yaml
+resume_from_checkpoint: /previous/runs/PREVIOUS_JOB_NAME/training/checkpoint-10
+auto_resume_from_checkpoints: false
+save_only_model: false
+```
+
+Keep the same model/tokenizer revisions, dataset order, adapter settings and training
+schedule, then submit again:
+
+```bash
+axolotl train train.yml --cloud nebius.yaml
+```
+
+The new Job writes to its own output prefix. Before training, it copies the checkpoint
+to local disk, verifies the manifest's sizes/hashes and checks for weights, Trainer,
+optimizer, scheduler and RNG state. These checks do not establish compatibility
+with a different model or training config.
+
+Automatic checkpoint selection and recovery after preemption are not supported.
+Choose an earlier complete checkpoint if verification fails. Adapter weights alone
+are insufficient to restore training state; distributed/sharded checkpoints are
+outside the current resume support.
+
+## Datasets and secrets {#dataset-inputs-and-secrets}
+
+Public Hub datasets work with the ordinary Axolotl dataset loader. For files in a
+Nebius bucket, add a mount to `nebius.yaml`:
+
+```yaml
+volumes:
+  - source: storagebucket-YOUR_INPUT_BUCKET
+    mount: /data
+    mode: ro
+```
+
+Reference the mounted path in `train.yml`:
+
+```yaml
+datasets:
+  - path: /data/train.jsonl
+    ds_type: json
+    type: alpaca
+```
+
+Mounts must use absolute container paths and cannot overlap each other or `/outputs`.
+The provider uses existing volumes; it does not create custom volumes or their IAM credentials.
+
+For gated models or private Hub datasets, create a Nebius secret with a payload
+entry named `HF_TOKEN`, then reference its ID in `nebius.yaml`:
+
+```yaml
+env_secret:
+  HF_TOKEN: mbsec-YOUR_SECRET_ID
+```
+
+Use the secret ID, not the token value. With CLI 0.12.265, the environment variable
+name selects the payload key; the advertised `secret-id/key` form was rejected in
+validation. Local environment variables are not automatically passed to the job.
+Nonsecret variables can be set through `env`, for example:
+
+```yaml
+env:
+  HF_HOME: /tmp/huggingface
+```
+
+See the [dataset loading guide](dataset_loading.qmd) for other formats. Direct S3
+dataset access requires its own credentials and endpoint configuration.
+
+## Custom images {#runtime-images-and-local-forks}
+
+Use a [plain Axolotl image](docker.qmd) compatible with your GPU driver and pin its
+digest for repeatable runs. To include a local fork or plugins, replace `image` in
+`nebius.yaml` with a build configuration:
+
+```yaml
+image_build:
+  context: ../my-axolotl-fork
+  dockerfile: Dockerfile
+  tag: registry.example.com/team/axolotl:my-fork
+  platform: linux/amd64
+```
+
+The context is relative to the cloud YAML. Docker builds and pushes the tagged image
+before submission; the Dockerfile must install your fork and plugins. Configure
+registry access so Nebius can pull the image: your local Docker push credentials
+are not uploaded as remote pull credentials. Builds require a tag and `linux/amd64`.
+See [shared image configuration](custom_integrations.qmd#selecting-or-building-the-runtime-image).
+
+## Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| `NotEnoughResources` | The requested GPU could not be provisioned. Check capacity for your platform/preset and retry after confirming the previous Job is terminal. |
+| `TimeoutExceeded` | Increase `timeout` in the cloud YAML; allow for provisioning and image startup as well as training. |
+| Local data or modules are missing | Mount the data or include dependencies in the image; the working directory is not uploaded. |
+| Checkpoint verification fails | Select an earlier complete checkpoint with its manifest and full training state. |
+| CLI exits or log following is interrupted | Query the job state before resubmitting. The remote job may still be running. |
+
+For a local packaging preview, add `show_context: true` to `nebius.yaml` and run the
+same launch command. Remove it to submit training. `dry_run: true` instead requests
+server-side validation; the two options are mutually exclusive and require a prebuilt
+`image`. On CLI 0.12.265, managed-output dry runs failed with
+`unsupported volume source type "nebius"`; use `show_context` on that release.
+The CLI limits the compressed upload context to 64 KiB.
+
+On a CLI failure, Axolotl attempts one read-only status lookup and reports guidance
+for the returned state. It never automatically resubmits or cancels the job.
+If you lost the job ID, look it up by the name printed at launch:
+
+```bash
+nebius ai job get-by-name \
+  --name JOB_NAME \
+  --parent-id project-YOUR_PROJECT_ID \
+  --format json
+```
+
+Use the `parent_id` from `nebius.yaml` and read the job ID from `metadata.id`.
+If the cloud YAML sets `profile`, also pass `--profile PROFILE_NAME` with that
+value. Otherwise, use the same active CLI profile as submission. If you omitted
+`parent_id`, use the project selected by that profile at launch.
+
+## Configuration reference
+
+| Cloud key | Meaning |
+|---|---|
+| `provider` | `nebius` |
+| `image` / `image_build` | Prebuilt runtime or tagged local Docker build (choose one) |
+| `platform`, `preset` | Required explicit GPU resource choice |
+| `profile`, `parent_id`, `subnet_id` | Optional CLI profile/project/subnet selection |
+| `disk_size` | Optional VM disk size, such as `250Gi` |
+| `timeout` | Seconds; defaults to 86400, allowed range 3600–604800 |
+| `output` | Output bucket ID/name, supported S3 URI, or `auto` (default) |
+| `volumes` | List of `source`, `mount`, and optional `mode` (`ro` or `rw`) |
+| `env` | Mapping of nonsecret environment variables to string values |
+| `env_secret` | Mapping of environment variables to Nebius secret references |
+| `show_context` | Local packaging preview; no submission |
+| `dry_run` | Server-side request validation; no Job creation |
+
+Unknown cloud keys are rejected. Dataset preprocessing runs inside the training
+Job; separate remote preprocessing and lm-eval are not supported.
+
+## Tested configuration
+
+::: {.callout-note collapse="true"}
+### Runtime and validation scope — September 11, 2026
+
+The pinned image above was tested on H100 in `eu-north1` with
+`gpu-h100-sxm` / `1gpu-16vcpu-200gb` and Nebius CLI 0.12.265. It reported Python
+3.12.13, Torch 2.12.1+cu130, CUDA 13.0, Transformers 5.16.1 and PEFT 0.20.0;
+the host driver was 580.173.02. The base model was `NousResearch/Llama-3.2-1B`,
+with this revision pinned for validation:
+
+```yaml
+revision_of_model: a9745ffc3556f145a830ac0c203509ba860582a3
+```
+
+The 30-step LoRA run, independent export size/hash checks, adapter loading and
+fresh-Job resume with optimizer/scheduler/RNG restoration passed. A separate CPU
+probe verified a one-hour timeout including provisioning and image startup.
+
+These observations cover one configuration. File close and a manifest written
+last do not establish a remote-flush barrier or an atomic directory transaction.
+Resume checks file integrity; bit-identical training across runs is not guaranteed.
+:::
+
+## Further reading {#optional-serving-handoff}
+
+- [Nebius Jobs](https://docs.nebius.com/serverless/jobs/manage)
+- [Nebius storage access](https://docs.nebius.com/object-storage/interfaces/aws-cli)
+- [Nebius Endpoints](https://docs.nebius.com/serverless/endpoints/manage) — a separate serving workflow; this provider does not deploy endpoints or merge adapters.
+- [SkyPilot](skypilot.qmd) — cloud clusters and multi-node training.
