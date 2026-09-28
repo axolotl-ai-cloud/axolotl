@@ -6,6 +6,15 @@ from accelerate import PartialState
 from transformers import Trainer
 
 
+def tp_save_joins_all_ranks(accelerator, is_fsdp_enabled: bool) -> bool:
+    """Whether every TP rank must enter ``save_pretrained`` for the gather + barrier."""
+    if not is_fsdp_enabled:
+        return True
+    plugin = getattr(getattr(accelerator, "state", None), "fsdp_plugin", None)
+    # under a sharded state dict rank 0 never calls _save, so the other ranks must not barrier
+    return "FULL_STATE_DICT" in str(getattr(plugin, "state_dict_type", ""))
+
+
 class DistributedParallelMixin(Trainer):
     """
     Mixin for correctly saving fsdp
@@ -215,7 +224,11 @@ class DistributedParallelMixin(Trainer):
         return int(getattr(cfg, "tensor_parallel_size", 1) or 1)
 
     def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
-        if self._tp_size() > 1 and not self._ep_full_param_experts():
+        if (
+            self._tp_size() > 1
+            and not self._ep_full_param_experts()
+            and tp_save_joins_all_ranks(self.accelerator, self.is_fsdp_enabled)
+        ):
             result = self._save_model_native(output_dir, _internal_call)
             if not self.args.should_save:
                 # transformers gathers TP DTensors and barriers inside save_pretrained, so the
