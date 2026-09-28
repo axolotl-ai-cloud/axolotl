@@ -23,9 +23,9 @@ df_template = template_env.get_template(dockerfile)
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
     "AXOLOTL_ARGS": os.environ.get("AXOLOTL_ARGS", ""),
-    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.6.0"),
-    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.11-cu126-2.6.0"),
-    "CUDA": os.environ.get("CUDA", "126"),
+    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.13.0"),
+    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.12-cu130-2.13.0"),
+    "CUDA": os.environ.get("CUDA", "130"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
     "NIGHTLY_BUILD": os.environ.get("NIGHTLY_BUILD", ""),
