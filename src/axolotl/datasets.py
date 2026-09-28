@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from datasets import Dataset, IterableDataset, concatenate_datasets
 
+from axolotl.utils.data.work_queue import tokenize_with_work_queue
 from axolotl.utils.logging import get_logger
 
 from .prompt_tokenizers import PromptTokenizingStrategy
@@ -51,15 +52,6 @@ class TokenizedPromptDataset(Dataset):
         )
 
     def process(self, dataset):
-        features = dataset.features.keys()
-
-        map_kwargs = {}
-        if self.prompt_tokenizer.supports_batched:
-            map_kwargs["batched"] = True
-            map_kwargs["batch_size"] = self.batch_size or 1_000
-        if self.writer_batch_size:
-            map_kwargs["writer_batch_size"] = self.writer_batch_size
-
         if (
             hasattr(self.prompt_tokenizer, "filter_rows")
             and self.prompt_tokenizer.filter_rows
@@ -69,6 +61,15 @@ class TokenizedPromptDataset(Dataset):
                 num_proc=self.process_count,
                 desc="Strategy Filtering Rows",
             )
+
+        features = dataset.features.keys()
+
+        map_kwargs = {}
+        if self.prompt_tokenizer.supports_batched:
+            map_kwargs["batched"] = True
+            map_kwargs["batch_size"] = self.batch_size or 1_000
+        if self.writer_batch_size:
+            map_kwargs["writer_batch_size"] = self.writer_batch_size
 
         def _tokenize(part):
             return part.map(
@@ -84,7 +85,8 @@ class TokenizedPromptDataset(Dataset):
         if split_indices is not None:
             # Media rows emit processor columns (pixel_values, ...) that text rows
             # don't, and the Arrow writer locks its schema on the first batch it
-            # sees; tokenize each modality separately and restore the row order.
+            # sees, and the work queue rejects a column set that varies across
+            # chunks; tokenize each modality separately and restore the row order.
             with_media, without_media = split_indices
             tokenize_prompt = self.prompt_tokenizer.tokenize_prompt
 
@@ -159,6 +161,17 @@ class TokenizedPromptDataset(Dataset):
             return merged.select(restore).flatten_indices(
                 keep_in_memory=bool(self.keep_in_memory),
                 writer_batch_size=self.writer_batch_size or 1_000,
+            )
+
+        num_proc = min(self.process_count or 1, len(dataset))
+        if num_proc > 1:
+            return tokenize_with_work_queue(
+                self.prompt_tokenizer,
+                dataset,
+                num_proc=num_proc,
+                keep_in_memory=self.keep_in_memory,
+                batch_size=self.batch_size,
+                writer_batch_size=self.writer_batch_size,
             )
 
         return _tokenize(dataset)

@@ -243,7 +243,7 @@ def filter_sequences_by_length(
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
+    drop_attn_mask = cfg.model_config_type in ["gemma3"]
     if drop_attn_mask:
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
@@ -435,11 +435,8 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_num_tokens = total_num_tokens
 
-    skip_estimates = cfg.model_config_type == "mamba"
-
     if (
-        not skip_estimates
-        and not cfg.total_supervised_tokens
+        not cfg.total_supervised_tokens
         and not cfg.skip_prepare_dataset
         and not cfg.reward_model
     ):
@@ -457,7 +454,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
 
-    if not skip_estimates and cfg.sample_packing:
+    if cfg.sample_packing:
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 
@@ -558,6 +555,20 @@ def setup_deepspeed_env(cfg, stage=None):
             "Distributed State already initialized before Deepspeed setup"
         )
 
+    if cfg.lora_fp32_gradients:
+        from axolotl.monkeypatch.deepspeed_utils import (
+            patch_zero_gradient_accumulation_dtype,
+        )
+        from axolotl.utils.lora_precision import configure_deepspeed_lora_precision
+
+        if isinstance(cfg.deepspeed, dict):
+            ds_config = dict(cfg.deepspeed)
+        else:
+            with open(cfg.deepspeed, encoding="utf-8") as stream:
+                ds_config = json.load(stream)
+        cfg.deepspeed = DictDefault(configure_deepspeed_lora_precision(ds_config))
+        patch_zero_gradient_accumulation_dtype()
+
     os.environ["ACCELERATE_USE_DEEPSPEED"] = "true"
     if isinstance(cfg.deepspeed, DictDefault):
         with NamedTemporaryFile(
@@ -607,19 +618,13 @@ def setup_deepspeed_env(cfg, stage=None):
 def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
 
-    # TODO @SalmanMohammadi remove FSDP1 args in 0.12
-    if str(cfg.fsdp_version) == "2":
-        os.environ["FSDP_VERSION"] = "2"
+    os.environ["FSDP_VERSION"] = "2"
     if cfg.fsdp_config.activation_checkpointing:
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
     if cfg.fsdp_config.offload_params:
         os.environ["FSDP_OFFLOAD_PARAMS"] = "true"
-    if cfg.fsdp_config.sync_module_states:
-        os.environ["FSDP_SYNC_MODULE_STATES"] = "true"
     if cfg.fsdp_config.cpu_ram_efficient_loading:
         os.environ["FSDP_CPU_RAM_EFFICIENT_LOADING"] = "true"
-    if cfg.fsdp_config.use_orig_params:
-        os.environ["FSDP_USE_ORIG_PARAMS"] = "true"
     if cfg.fsdp_config.state_dict_type:
         os.environ["FSDP_STATE_DICT_TYPE"] = cfg.fsdp_config.state_dict_type
     if cfg.fsdp_config.cpu_offload_pin_memory is not None:
@@ -653,9 +658,6 @@ def setup_parallelism_envs(cfg):
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
         os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
-        from axolotl.monkeypatch.accelerate.parallelism_config import patch_prepare_cp
-
-        patch_prepare_cp()
     # Expert Parallel patch must apply before the first `Accelerator()`
     # call so `ep_size` lands in the mesh.
     if cfg.expert_parallel_size and cfg.expert_parallel_size > 1:

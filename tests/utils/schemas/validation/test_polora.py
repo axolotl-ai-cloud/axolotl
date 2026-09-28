@@ -57,7 +57,7 @@ class TestPoloraValidation:
             fsdp_version=1,
             fsdp_config={"reshard_after_forward": True},
         )
-        with pytest.raises(ValueError, match="requires FSDP2"):
+        with pytest.raises(ValueError, match="fsdp_version: 1 is no longer supported"):
             validate_config(cfg)
 
     @pytest.mark.parametrize(

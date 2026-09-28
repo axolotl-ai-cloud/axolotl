@@ -42,6 +42,74 @@ from axolotl.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _slice_multimodal_kwargs(data: dict, start: int, end: int) -> dict:
+    """Slice full-batch multimodal fields in ``data`` down to sample range
+    ``[start, end)``.
+
+    ``pixel_values``/``image_grid_thw``/``pixel_attention_mask``/
+    ``spatial_shapes``/``image_position_ids`` are indexed by image/tile
+    count, not sample count, so a naive ``data[key][start:end]`` pulls the
+    wrong rows whenever ``start > 0`` — mirrors the cumulative-offset
+    branches in ``AsyncGRPOTrainer._get_per_token_logps_and_entropies``,
+    which otherwise treats ``start=0`` as relative to whatever slice it's
+    handed.
+    """
+    kwargs: dict = {}
+    num_images = data.get("num_images")
+    num_tiles = data.get("num_tiles")
+    pixel_values = data.get("pixel_values")
+
+    if num_images is not None and pixel_values is not None and "image_grid_thw" in data:
+        image_grid_thw = data["image_grid_thw"]
+        rows_per_image = image_grid_thw.prod(dim=-1)
+        rows_per_sample = torch.split(rows_per_image, num_images)
+        rows_per_sample = torch.stack([s.sum() for s in rows_per_sample])
+        cum_rows = torch.cat(
+            [
+                torch.tensor([0], device=rows_per_sample.device),
+                rows_per_sample.cumsum(0),
+            ]
+        )
+        row_start, row_end = cum_rows[start].item(), cum_rows[end].item()
+        kwargs["pixel_values"] = pixel_values[row_start:row_end]
+        cum_imgs = torch.tensor([0] + num_images).cumsum(0)
+        img_start, img_end = cum_imgs[start], cum_imgs[end]
+        kwargs["image_grid_thw"] = image_grid_thw[img_start:img_end]
+        kwargs["num_images"] = num_images[start:end]
+    elif (
+        num_images is not None
+        and pixel_values is not None
+        and "image_position_ids" in data
+    ):
+        cum_imgs = torch.tensor([0] + num_images).cumsum(0)
+        img_start, img_end = cum_imgs[start], cum_imgs[end]
+        kwargs["pixel_values"] = pixel_values[img_start:img_end]
+        kwargs["image_position_ids"] = data["image_position_ids"][img_start:img_end]
+        kwargs["num_images"] = num_images[start:end]
+    elif (
+        num_tiles is not None and pixel_values is not None and "spatial_shapes" in data
+    ):
+        cum_tiles = torch.tensor([0] + num_tiles).cumsum(0)
+        tile_start, tile_end = cum_tiles[start], cum_tiles[end]
+        kwargs["pixel_values"] = pixel_values[tile_start:tile_end]
+        if "pixel_attention_mask" in data:
+            kwargs["pixel_attention_mask"] = data["pixel_attention_mask"][
+                tile_start:tile_end
+            ]
+        kwargs["spatial_shapes"] = data["spatial_shapes"][tile_start:tile_end]
+        kwargs["num_tiles"] = num_tiles[start:end]
+    elif pixel_values is not None:
+        kwargs["pixel_values"] = pixel_values[start:end]
+        if "pixel_attention_mask" in data:
+            kwargs["pixel_attention_mask"] = data["pixel_attention_mask"][start:end]
+
+    for fk in ("image_sizes", "token_type_ids", "mm_token_type_ids"):
+        if fk in data:
+            kwargs[fk] = data[fk][start:end]
+
+    return kwargs
+
+
 # ---------------------------------------------------------------------------
 # Extended config
 # ---------------------------------------------------------------------------
@@ -575,18 +643,10 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                                 dim=1,
                             )
                             r_logits_to_keep = data["completion_ids"].size(1)
-                            r_fwd_kwargs = {}
-                            for fk in (
-                                "pixel_values",
-                                "image_grid_thw",
-                                "pixel_attention_mask",
-                                "image_sizes",
-                                "token_type_ids",
-                                "mm_token_type_ids",
-                            ):
-                                if fk in data:
-                                    r_fwd_kwargs[fk] = data[fk]
-                            r_logps, _ = self._get_per_token_logps_and_entropies(
+                            r_fwd_kwargs = _slice_multimodal_kwargs(
+                                data, r_start, r_end
+                            )
+                            r_logps, _, _ = self._get_per_token_logps_and_entropies(
                                 self.model,
                                 r_ids,
                                 r_mask,

@@ -25,6 +25,7 @@ class RuntimeMetrics:
     # Memory metrics
     peak_cpu_memory: int = 0
     peak_gpu_memory: dict[int, int] = field(init=False)
+    gpu_peak_memory_source: dict[int, str] = field(default_factory=dict)
 
     # Progress metrics
     total_steps: int = 0
@@ -101,9 +102,12 @@ class RuntimeMetrics:
 
         # Add GPU memory metrics if available
         if self.peak_gpu_memory:
-            gpu_metrics: dict[str, int] = {}
+            gpu_metrics: dict[str, Any] = {}
             for gpu_id, memory in self.peak_gpu_memory.items():
                 gpu_metrics[f"gpu_{gpu_id}_peak_memory_bytes"] = memory
+                gpu_metrics[f"gpu_{gpu_id}_peak_memory_source"] = (
+                    self.gpu_peak_memory_source.get(gpu_id, "sampled")
+                )
             metrics["gpu_memory"] = gpu_metrics  # type: ignore
 
         return metrics
@@ -138,46 +142,36 @@ class RuntimeMetricsTracker:
         # Periodically update memory metrics
         if step % self.update_interval == 0:
             self.update_memory_metrics()
+        else:
+            # Trainer logging resets allocator peaks after on_step_end.
+            self.update_gpu_memory_metrics()
+
+    def _get_memory_backend(self):
+        """Select the same accelerator for current and peak allocation queries."""
+        for name in ("cuda", "hip"):
+            backend = getattr(torch, name, None)
+            if backend is not None and backend.is_available():
+                return backend
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return torch.mps
+        for name in ("xpu", "npu"):
+            backend = getattr(torch, name, None)
+            if backend is not None and backend.is_available():
+                return backend
+        return None
 
     def _get_allocated_memory(self) -> dict[int, int]:
-        """
-        Helper function for getting accelerator-agnostic allocated memory.
-
-        Returns:
-            A dictionary mapping device IDs to allocated memory in bytes
-        """
-        memory_used: dict[int, int] = {}
-
-        # NVIDIA GPUs
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                memory_used[i] = torch.cuda.memory_allocated(i)
-
-        # AMD GPUs
-        elif hasattr(torch, "hip") and torch.hip.is_available():
-            for i in range(torch.hip.device_count()):
-                if hasattr(torch.hip, "memory_allocated"):
-                    memory_used[i] = torch.hip.memory_allocated(i)
-
-        # Apple Silicon
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            # MPS doesn't have per-device memory stats since there's only one device
-            if hasattr(torch.mps, "current_allocated_memory"):
-                memory_used[0] = torch.mps.current_allocated_memory()
-
-        # Intel GPUs
-        elif hasattr(torch, "xpu") and torch.xpu.is_available():
-            for i in range(torch.xpu.device_count()):
-                if hasattr(torch.xpu, "memory_allocated"):
-                    memory_used[i] = torch.xpu.memory_allocated(i)
-
-        # NPUs
-        elif hasattr(torch, "npu") and torch.npu.is_available():
-            for i in range(torch.npu.device_count()):
-                if hasattr(torch.npu, "memory_allocated"):
-                    memory_used[i] = torch.npu.memory_allocated(i)
-
-        return memory_used
+        """Get current allocations by accelerator device ID."""
+        backend = self._get_memory_backend()
+        if backend is None:
+            return {}
+        if backend is getattr(torch, "mps", None):
+            if hasattr(backend, "current_allocated_memory"):
+                return {0: backend.current_allocated_memory()}
+            return {}
+        if not hasattr(backend, "memory_allocated"):
+            return {}
+        return {i: backend.memory_allocated(i) for i in range(backend.device_count())}
 
     def update_memory_metrics(self):
         """Update peak memory usage metrics."""
@@ -185,16 +179,26 @@ class RuntimeMetricsTracker:
         cpu_memory = self._process.memory_info().rss
         self.metrics.peak_cpu_memory = max(self.metrics.peak_cpu_memory, cpu_memory)
 
-        # GPU memory (if available)
+        self.update_gpu_memory_metrics()
+
+    def update_gpu_memory_metrics(self):
+        """Accumulate allocator high-water marks, falling back to samples."""
         memory_used = self._get_allocated_memory()
+        backend = self._get_memory_backend()
+        peak_memory = getattr(backend, "max_memory_allocated", None)
         for i, memory in memory_used.items():
+            if peak_memory is not None:
+                memory = max(memory, peak_memory(i))
+            self.metrics.gpu_peak_memory_source[i] = (
+                "allocator_high_water_mark" if peak_memory is not None else "sampled"
+            )
             self.metrics.peak_gpu_memory[i] = max(
                 self.metrics.peak_gpu_memory.get(i, 0), memory
             )
 
     def get_memory_metrics(self) -> dict[str, Any]:
         """Get the current memory metrics as a dictionary."""
-        memory_metrics = {
+        memory_metrics: dict[str, Any] = {
             "cpu_memory_bytes": self._process.memory_info().rss,
             "peak_cpu_memory_bytes": self.metrics.peak_cpu_memory,
         }
@@ -205,6 +209,9 @@ class RuntimeMetricsTracker:
             memory_metrics[f"gpu_{i}_memory_bytes"] = memory
             memory_metrics[f"gpu_{i}_peak_memory_bytes"] = (
                 self.metrics.peak_gpu_memory.get(i, 0)
+            )
+            memory_metrics[f"gpu_{i}_peak_memory_source"] = (
+                self.metrics.gpu_peak_memory_source.get(i, "sampled")
             )
 
         return memory_metrics

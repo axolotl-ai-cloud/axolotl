@@ -286,6 +286,20 @@ class TestCrossBatchMixedModality:
         has_media = [tds[i]["pixel_values"] is not None for i in range(4)]
         assert has_media == [True, False, True, False]
 
+    def test_multiproc_routes_mixed_rows_through_split(self):
+        # the multiprocess work queue rejects a column set that varies across chunks
+        ds = Dataset.from_dict(
+            {
+                "messages": [["a"], ["b"], ["c"], ["d"]],
+                "images": [["img"], [], ["img"], []],
+            }
+        )
+        tds = TokenizedPromptDataset(
+            self.make_strategy(), ds, process_count=2, batch_size=1
+        )
+        has_media = [tds[i]["pixel_values"] is not None for i in range(4)]
+        assert has_media == [True, False, True, False]
+
     def test_homogeneous_dataset_skips_split(self):
         ds = Dataset.from_dict(
             {"messages": [["a"], ["b"]], "images": [["img"], ["img"]]}
