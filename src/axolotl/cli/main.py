@@ -83,8 +83,9 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
 
     if cloud:
         from axolotl.cli.cloud import do_cli_preprocess
+        from axolotl.cli.config import check_remote_config
 
-        do_cli_preprocess(cloud_config=cloud, config=config)
+        do_cli_preprocess(cloud_config=cloud, config=check_remote_config(config))
     else:
         from axolotl.cli.preprocess import do_cli
 
@@ -136,6 +137,12 @@ def train(
 
     # Handle Ray launcher override
     _launcher = None if kwargs.get("use_ray") else launcher
+
+    if sweep or cloud:
+        from axolotl.cli.config import check_remote_config
+
+        # Sweep and cloud read the config in-process, before load_cfg would fetch it.
+        config = str(check_remote_config(config))
 
     # Process each configuration
     for cfg_file, is_group in generate_config_files(config, sweep):
