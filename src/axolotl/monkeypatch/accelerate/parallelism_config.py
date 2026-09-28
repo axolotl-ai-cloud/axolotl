@@ -198,54 +198,23 @@ def patch_parallelism_config():
     patch_clip_grad_norm_for_ep()
 
 
-def _ep_aware_clip_grad_norm(parameters, max_norm, norm_type=2.0):
-    """`clip_grad_norm_` for params sharded across different DeviceMeshes.
+def _ep_aware_clip_grad_norm(
+    parameters,
+    max_norm,
+    norm_type=2.0,
+    *,
+    ep_local_parameters=frozenset(),
+    global_mesh=None,
+):
+    """Clip EP/FSDP gradients by one ownership-filtered global norm."""
+    from axolotl.utils.gradient_clipping import clip_grad_norm_ep_local_shards_
 
-    Stock `torch.nn.utils.clip_grad_norm_` stacks per-param norms, which
-    DTensor rejects across meshes (experts on `dp_shard` vs non-experts on
-    `dp_shard_cp`). Instead, compute the local p-norm contribution per rank,
-    all-reduce the sum across the world, take the p-th root, and apply the
-    clip coefficient. Supports any finite p ≥ 1 plus `inf`.
-    """
-    import math
-
-    import torch
-    import torch.distributed as dist
-    from torch.distributed.tensor import DTensor
-
-    if isinstance(parameters, torch.Tensor):
-        parameters = [parameters]
-    grads = [p.grad for p in parameters if p.grad is not None]
-    if not grads:
-        return torch.tensor(0.0)
-
-    norm_type = float(norm_type)
-    device = grads[0].device
-    if isinstance(grads[0], DTensor):
-        device = grads[0].to_local().device
-
-    is_inf = math.isinf(norm_type)
-    local_acc = torch.zeros((), device=device, dtype=torch.float32)
-    for g in grads:
-        local = g.to_local() if isinstance(g, DTensor) else g
-        local_f32 = local.detach().to(torch.float32)
-        if is_inf:
-            local_acc = torch.maximum(local_acc, local_f32.abs().max())
-        else:
-            local_acc = local_acc + local_f32.abs().pow(norm_type).sum()
-
-    if dist.is_available() and dist.is_initialized():
-        op = dist.ReduceOp.MAX if is_inf else dist.ReduceOp.SUM
-        dist.all_reduce(local_acc, op=op)
-
-    total_norm = local_acc if is_inf else local_acc.pow(1.0 / norm_type)
-    clip_coef = (float(max_norm) / (total_norm + 1e-6)).clamp(max=1.0)
-    for g in grads:
-        local = g.to_local() if isinstance(g, DTensor) else g
-        local.detach().mul_(clip_coef.to(local.dtype))
-
-    return total_norm.to(
-        grads[0].dtype if grads[0].is_floating_point() else torch.float32
+    return clip_grad_norm_ep_local_shards_(
+        parameters,
+        max_norm,
+        norm_type=norm_type,
+        ep_local_parameters=set(ep_local_parameters),
+        global_mesh=global_mesh,
     )
 
 
@@ -274,7 +243,22 @@ def patch_clip_grad_norm_for_ep():
         ):
             self.unscale_gradients()
             params = list(parameters)
-            return _ep_aware_clip_grad_norm(params, max_norm, norm_type=norm_type)
+            from axolotl.utils.gradient_clipping import ep_local_parameter_ids
+
+            ep_local = set()
+            for model in getattr(self, "_models", ()):
+                ep_local.update(ep_local_parameter_ids(model))
+            return _ep_aware_clip_grad_norm(
+                params,
+                max_norm,
+                norm_type=norm_type,
+                ep_local_parameters=ep_local,
+                global_mesh=getattr(
+                    self,
+                    "torch_device_mesh",
+                    getattr(getattr(self, "state", None), "device_mesh", None),
+                ),
+            )
         return orig(self, parameters, max_norm, norm_type=norm_type)
 
     Accelerator.clip_grad_norm_ = patched_clip_grad_norm_

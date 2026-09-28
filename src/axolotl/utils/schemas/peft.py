@@ -57,6 +57,13 @@ class LoraConfig(BaseModel):
             "description": "If you already have a lora model trained that you want to load, put that here. This means after training, if you want to test the model, you should set this to the value of `output_dir`. Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`."
         },
     )
+    nvfp4_merge_aware: bool | None = Field(
+        default=None,
+        description=(
+            "Train supported NVFP4 LoRA targets against their merged quantized weights. "
+            "Defaults to enabled for supported backends; false opts out with a warning."
+        ),
+    )
     lora_r: int | None = None
     lora_alpha: int | None = None
     lora_fan_in_fan_out: bool | None = None

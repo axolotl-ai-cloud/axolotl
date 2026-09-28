@@ -80,6 +80,22 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
+def _is_native_nvfp4_quantization_config(config) -> bool:
+    quant_type = getattr(config, "quant_type", None)
+    if type(quant_type).__name__ == "NVFP4WeightOnlyConfig":
+        return True
+    if not isinstance(config, dict):
+        return False
+    pending = [config]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            if value.get("_type") == "NVFP4WeightOnlyConfig":
+                return True
+            pending.extend(value.values())
+    return False
+
+
 def _nf4_shape_stand_in(original):
     def forward(self, data, *args, **kwargs):
         if args or kwargs:
@@ -261,6 +277,8 @@ class ModelLoader:
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
 
         skip_move_to_device = self._build_model()
+        if getattr(self, "_native_nvfp4_zero3_loading", False):
+            self.model._axolotl_native_nvfp4_zero3_dynamic_allowed = True
         from axolotl.utils.nf4_loading import nf4_phase
 
         staged_nf4 = getattr(self.model, "_axolotl_staged_nf4", False)
@@ -633,6 +651,31 @@ class ModelLoader:
                 self.model, lora_config = load_adapter(
                     self.model, self.cfg, self.cfg.adapter
                 )
+                if (self.cfg.tensor_parallel_size or 1) > 1:
+                    from axolotl.monkeypatch.torchao_tp_lora import (
+                        prepare_native_nvfp4_tp_lora,
+                    )
+
+                    prepare_native_nvfp4_tp_lora(
+                        self.model,
+                        merge_aware=self.cfg.get("nvfp4_merge_aware") is not False,
+                    )
+                elif not self.cfg.merge_lora:
+                    from axolotl.integrations.kernels.merge_aware_setup import (
+                        configure_native_merge_aware,
+                    )
+
+                    configure_native_merge_aware(
+                        self.cfg,
+                        self.model,
+                        sharded_backend=(
+                            "FSDP"
+                            if self.is_fsdp_enabled
+                            else "DeepSpeed"
+                            if self.cfg.deepspeed
+                            else None
+                        ),
+                    )
 
         return lora_config
 
@@ -1079,6 +1122,19 @@ class ModelLoader:
             "trust_remote_code": self.cfg.trust_remote_code or False,
             **self.model_kwargs,
         }
+        quantization_config = self.model_kwargs.get(
+            "quantization_config",
+            getattr(self.model_config, "quantization_config", None),
+        )
+        if (
+            self.cfg.tensor_parallel_size or 1
+        ) > 1 and _is_native_nvfp4_quantization_config(quantization_config):
+            from axolotl.monkeypatch.torchao_tp import (
+                native_nvfp4_tp_checkpoint_loading,
+            )
+
+            with native_nvfp4_tp_checkpoint_loading(self.device_mesh):
+                return loader.from_pretrained(self.base_model, **kwargs)
         return loader.from_pretrained(self.base_model, **kwargs)
 
     def _build_model(self) -> bool:
@@ -1169,8 +1225,9 @@ class ModelLoader:
             )
             skip_move_to_device = True
         else:
-            # Please don't remove underscore binding without reading the fn docstring
+            # Transformers stores only a weakref, so keep this local through from_pretrained.
             _ = self._configure_zero3_memory_efficient_loading()
+            self._native_nvfp4_zero3_loading = _ is not None
 
             if (
                 self.model_type

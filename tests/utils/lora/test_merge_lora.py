@@ -2647,12 +2647,11 @@ class TestQuantizedBaseMerge:
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
         from axolotl.cli.utils.lora_merge import (
-            _build_peft_layer_and_get_delta,
             _find_param_wrapper_lora,
             _Nvfp4ExpertMergeWriter,
         )
-        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
-            fake_quant_nvfp4,
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+            _merge_aware_wfq,
         )
 
         torch.manual_seed(3)
@@ -2746,11 +2745,7 @@ class TestQuantizedBaseMerge:
                 tensor_shape=tuple(base_f.shape),
             )
             assert lora_a is not None
-            delta = _build_peft_layer_and_get_delta(
-                lora_a, lora_b, cfg, base_f, is_param_wrapper=True
-            )
-            w_eff = (base_f.float() + delta.float()).to(torch.bfloat16)
-            train_view = fake_quant_nvfp4(w_eff, pts_fused.reshape(-1))
+            train_view = _merge_aware_wfq(base_f, lora_a, lora_b, alpha / r, pts_fused)
 
             # every projection must carry the fused-max pts, so the next load
             # fuses exactly (no ratio fold, no warning)
@@ -3558,3 +3553,98 @@ class TestPrequantizedBnbBaseMerge:
         ).cuda()
         logits = model(input_ids=torch.tensor([[1, 2, 3, 4]], device="cuda")).logits
         assert torch.isfinite(logits).all()
+
+
+def test_merge_aware_bf16_writer_widens_standard_and_paramwrapper_factors():
+    torch.manual_seed(915)
+    rank, scaling = 4, 1.25
+    base = torch.randn(128, 64, dtype=torch.bfloat16)
+    a = torch.randn(rank, 64, dtype=torch.bfloat16)
+    b = torch.randn(128, rank, dtype=torch.bfloat16)
+    expected = (b.float() @ a.float()) * scaling
+    delta = _build_peft_layer_and_get_delta(
+        a,
+        b,
+        {"r": rank, "lora_alpha": rank * scaling},
+        base,
+        canonical_fp32=True,
+    )
+    assert torch.equal(delta, expected)
+
+    merged, did_merge = _merge_tensor_with_lora(
+        base,
+        "proj.weight",
+        {
+            "base_model.model.proj.lora_A.weight": a,
+            "base_model.model.proj.lora_B.weight": b,
+        },
+        scaling,
+        {"r": rank, "lora_alpha": rank * scaling},
+        "cpu",
+        canonical_fp32=True,
+    )
+    assert did_merge
+    assert torch.equal(merged, (base.float() + expected.float()).to(base.dtype))
+
+    experts = 2
+    expert_base = torch.randn(experts, 128, 64, dtype=torch.bfloat16)
+    expert_a = torch.randn(experts * rank, 64, dtype=torch.bfloat16)
+    expert_b = torch.randn(128, experts * rank, dtype=torch.bfloat16)
+    expected_expert = (
+        torch.bmm(
+            expert_b.reshape(128, rank, experts).permute(2, 0, 1).float(),
+            expert_a.reshape(experts, rank, 64).float(),
+        )
+        * scaling
+    )
+    delta_expert = _build_peft_layer_and_get_delta(
+        expert_a,
+        expert_b,
+        {"r": rank, "lora_alpha": rank * scaling},
+        expert_base,
+        is_param_wrapper=True,
+        canonical_fp32=True,
+    )
+    assert torch.equal(delta_expert, expected_expert)
+
+    param_base = torch.randn(128, 64, dtype=torch.bfloat16)
+    param_delta = _build_peft_layer_and_get_delta(
+        a,
+        b,
+        {"r": rank, "lora_alpha": rank * scaling},
+        param_base,
+        is_param_wrapper=True,
+        canonical_fp32=True,
+    )
+    assert param_delta.shape == param_base.shape
+    assert torch.equal(param_delta, expected)
+
+    square = 64
+    square_base = torch.randn(experts, square, square, dtype=torch.bfloat16)
+    square_a = torch.randn(experts * rank, square, dtype=torch.bfloat16)
+    square_b = torch.randn(square, experts * rank, dtype=torch.bfloat16)
+    square_a_by_expert = square_a.reshape(experts, rank, square).float()
+    square_b_by_expert = square_b.reshape(square, rank, experts).float()
+    for is_transposed, expected_square in (
+        (
+            False,
+            torch.einsum("ore,eri->eoi", square_b_by_expert, square_a_by_expert)
+            * scaling,
+        ),
+        (
+            True,
+            torch.einsum("ore,eri->eio", square_b_by_expert, square_a_by_expert)
+            * scaling,
+        ),
+    ):
+        square_delta = _build_peft_layer_and_get_delta(
+            square_a,
+            square_b,
+            {"r": rank, "lora_alpha": rank * scaling},
+            square_base,
+            is_param_wrapper=True,
+            is_transposed=is_transposed,
+            canonical_fp32=True,
+        )
+        assert square_delta.shape == square_base.shape
+        assert torch.equal(square_delta, expected_square)

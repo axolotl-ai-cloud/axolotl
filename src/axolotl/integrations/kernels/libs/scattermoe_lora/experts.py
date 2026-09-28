@@ -5,6 +5,7 @@ ScatterMoE Triton call via ``parallel_linear_lora``.
 """
 
 import functools
+import warnings
 
 import torch
 import torch.nn.functional as F
@@ -103,6 +104,174 @@ def _ep_local_expert_lora(lora_A, lora_B, experts):
         out, rank * e_local
     )
     return a, b, e_local, rank
+
+
+def _ep_adapter_unsupported_reason(experts):
+    """Return the first PEFT option the static EP merge path cannot reproduce."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None
+
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            continue
+        adapters = [
+            adapter
+            for adapter in getattr(param, "active_adapters", ())
+            if adapter in getattr(param, "lora_A", {})
+        ]
+        if len(adapters) > 1:
+            return "multiple active adapters"
+        if not adapters:
+            continue
+        if any(
+            getattr(dropout, "p", 0.0) != 0.0
+            for dropout in getattr(param, "lora_dropout", {}).values()
+        ):
+            return "LoRA dropout"
+        if any(getattr(param, "lora_bias", {}).values()):
+            return "LoRA bias"
+        if getattr(param, "lora_variant", None):
+            return "LoRA variant"
+        if any(getattr(param, "use_dora", {}).values()):
+            return "DoRA"
+    return None
+
+
+def _ep_factor_access_reason(experts):
+    """Reject raw factor reads that escaped their enclosing FSDP forward."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None
+
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            continue
+        lora_A, lora_B, _ = get_lora_params_from_wrapper(param)
+        if lora_A is None or lora_B is None:
+            continue
+        if type(lora_A).__name__ == "DTensor" or type(lora_B).__name__ == "DTensor":
+            return "FSDP-sharded LoRA factors outside their materialized forward"
+    return None
+
+
+def _ep_local_peft_lora(experts):
+    """Return this rank's PEFT-layout LoRA factors for both expert projections."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None, None
+
+    factors = []
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            factors.append(None)
+            continue
+        lora_A, lora_B, scaling = get_lora_params_from_wrapper(param)
+        if lora_A is None or lora_B is None:
+            factors.append(None)
+            continue
+        local_A, local_B, _, _ = _ep_local_expert_lora(lora_A, lora_B, experts)
+        factors.append((local_A, local_B, scaling))
+    return factors[0], factors[1]
+
+
+def _warn_merge_aware_ep_unsupported(experts, reason: str) -> None:
+    if getattr(experts, "_axolotl_merge_aware_ep_warning_emitted", False):
+        return
+    experts._axolotl_merge_aware_ep_warning_emitted = True
+    experts._axolotl_merge_aware_unsupported = True
+    warnings.warn(
+        "NVFP4 MERGE WARNING: expert-parallel merge-aware LoRA is unavailable "
+        f"for this experts module ({reason}). Continuing with ordinary LoRA; "
+        "merged NVFP4 deployment parity is not guaranteed.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
+    """Run merge-aware NVFP4 LoRA over local DeepEP experts, or report why it cannot."""
+    if reason := _ep_adapter_unsupported_reason(self):
+        return None, reason
+    if reason := _ep_factor_access_reason(self):
+        return None, reason
+    gup, down = _ep_local_peft_lora(self)
+    if gup is None and down is None:
+        return None, None
+
+    act = _detect_act_type(self, default=None)
+    gated = getattr(self, "has_gate", True)
+    if act is None:
+        return None, "unknown expert activation"
+    if not gated:
+        if act not in ("relu2", "relu_squared"):
+            return (
+                None,
+                f"non-gated experts support only the relu² activation; got {act!r}",
+            )
+    else:
+        from ..sonicmoe.epilogue import check_epilogue
+
+        try:
+            check_epilogue(
+                self,
+                act,
+                concat=getattr(self, "is_concatenated", True),
+                limit=getattr(self, "limit", None),
+                path="merge-aware EP",
+            )
+        except ValueError as error:
+            return None, str(error)
+
+    w1 = _get_base_param(getattr(self, _w1_name(self)))
+    w2 = _get_base_param(self.down_proj)
+    if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
+        return None, "both expert projections need native NVFP4 base weights"
+    if (
+        getattr(w1, "act_quant_kwargs", None) is not None
+        or getattr(w2, "act_quant_kwargs", None) is not None
+    ):
+        return None, "dynamic activation quantization"
+
+    from ..sonicmoe.nvfp4_lora import grouped_moe_merge_aware_ep_forward
+
+    lora1 = None if gup is None else gup[:2]
+    lora2 = None if down is None else down[:2]
+    scaling1 = 1.0 if gup is None else gup[2]
+    scaling2 = 1.0 if down is None else down[2]
+    return (
+        grouped_moe_merge_aware_ep_forward(
+            hidden_states,
+            top_k_index,
+            top_k_weights,
+            w1,
+            getattr(self, _w1_name(self) + "_bias", None),
+            w2,
+            getattr(self, "down_proj_bias", None),
+            lora1,
+            lora2,
+            self.num_experts,
+            act=act,
+            concat=getattr(self, "is_concatenated", True),
+            scaling1=scaling1,
+            scaling2=scaling2,
+            limit=getattr(self, "limit", None),
+            gated=gated,
+        ),
+        None,
+    )
 
 
 def _get_base_param(param):
@@ -237,16 +406,16 @@ def _prepare_weights_and_lora(
     )
 
 
-def _detect_act_type(module) -> str:
+def _detect_act_type(module, *, default="silu") -> str | None:
     """Detect gated-activation type from an experts module's act_fn.
 
     Returns 'gelu_tanh' for Gemma4-style GeGLU (gelu_pytorch_tanh * up),
     'silu' for DSV4-style clamped SwiGLU (silu(clamp(gate)) * clamp(up)).
-    Falls back to 'silu' for any unrecognized activation.
+    ``default`` is returned for an unrecognized activation.
     """
     act_fn = getattr(module, "act_fn", None)
     if act_fn is None:
-        return "silu"
+        return default
     fn_name = (
         getattr(act_fn, "__name__", "") or getattr(type(act_fn), "__name__", "") or ""
     )
@@ -254,6 +423,8 @@ def _detect_act_type(module) -> str:
         return "relu2"
     if "gelu" in fn_name.lower():
         return "gelu_tanh"
+    if "silu" in fn_name.lower() or "swish" in fn_name.lower():
+        return "silu"
     try:
         if isinstance(act_fn, functools.partial) and act_fn.func is F.gelu:
             return "gelu_tanh"
@@ -268,7 +439,7 @@ def _detect_act_type(module) -> str:
             return "gelu_tanh"
     except Exception:
         pass
-    return "silu"
+    return default
 
 
 def scattermoe_supports_layout(self) -> bool:
@@ -704,6 +875,17 @@ def scattermoe_experts_forward_ep(
     weighted token-combine done via ``index_add_``.
     """
     _check_supported_layout(self)
+
+    from ..sonicmoe.nvfp4_lora import merge_aware_enabled
+
+    if merge_aware_enabled():
+        merge_aware_output, unsupported_reason = _ep_merge_aware_forward(
+            self, hidden_states, top_k_index, top_k_weights
+        )
+        if merge_aware_output is not None:
+            return merge_aware_output
+        if unsupported_reason is not None:
+            _warn_merge_aware_ep_unsupported(self, unsupported_reason)
 
     # Prefer the grouped NVFP4 GEMM (the same backend the non-EP forward uses) over the triton
     # scatter2scatter LoRA kernel: it's faster AND has no Triton autotune, so there's no per-rank

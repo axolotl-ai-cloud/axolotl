@@ -233,3 +233,134 @@ def test_distributed_mixin_skips_non_ddp(monkeypatch):
     model = torch.nn.Linear(1, 1)
     assert _mixin_trainer("NO")._wrap_model(model) is model
     assert not called
+
+
+def test_native_nvfp4_deepspeed_filters_only_tagged_frozen_parameters():
+    import types
+
+    from axolotl.monkeypatch.torchao_deepspeed import (
+        _install_native_nvfp4_broadcast_filter,
+    )
+
+    native = type("NVFP4Tensor", (types.SimpleNamespace,), {})(requires_grad=False)
+    adapter = types.SimpleNamespace(requires_grad=True)
+    remove_duplicate_calls = []
+
+    class Model:
+        _axolotl_native_nvfp4_deepspeed_names = {"base.weight"}
+
+        def named_parameters(self, remove_duplicate=True):
+            remove_duplicate_calls.append(remove_duplicate)
+            return iter((("base.weight", native), ("adapter.weight", adapter)))
+
+    class Engine:
+        def __init__(self):
+            self.module = Model()
+            self.broadcast = []
+
+        def _broadcast_model(self):
+            self.broadcast.extend(name for name, _ in self.module.named_parameters())
+
+    _install_native_nvfp4_broadcast_filter(Engine)
+    engine = Engine()
+    engine._broadcast_model()
+    assert engine.broadcast == ["adapter.weight"]
+    assert remove_duplicate_calls[:2] == [False, True]
+    assert list(engine.module.named_parameters()) == [
+        ("base.weight", native),
+        ("adapter.weight", adapter),
+    ]
+
+
+def test_native_nvfp4_deepspeed_preserves_unmarked_engine_broadcast():
+    from axolotl.monkeypatch.torchao_deepspeed import (
+        _install_native_nvfp4_broadcast_filter,
+    )
+
+    class Engine:
+        def __init__(self):
+            self.module = object()
+            self.called = 0
+
+        def _broadcast_model(self):
+            self.called += 1
+
+    _install_native_nvfp4_broadcast_filter(Engine)
+    engine = Engine()
+    engine._broadcast_model()
+    assert engine.called == 1
+
+
+def test_distributed_mixin_dispatches_deepspeed_zero12_only(monkeypatch):
+    import types
+
+    from transformers import Trainer
+
+    from axolotl.core.trainers.mixins.distributed_parallel import (
+        DistributedParallelMixin,
+    )
+
+    called = []
+    monkeypatch.setattr(Trainer, "_wrap_model", lambda _, model, *args, **kwargs: model)
+    monkeypatch.setattr(
+        "axolotl.monkeypatch.torchao_deepspeed.prepare_native_nvfp4_deepspeed",
+        lambda *args: called.append(args) or True,
+    )
+
+    class TestTrainer(DistributedParallelMixin):
+        pass
+
+    trainer = object.__new__(TestTrainer)
+    trainer.accelerator = types.SimpleNamespace(
+        distributed_type=types.SimpleNamespace(name="DEEPSPEED"),
+        parallelism_config=types.SimpleNamespace(
+            tp_enabled=False, cp_enabled=False, dp_shard_enabled=False
+        ),
+        device=torch.device("cpu"),
+        state=types.SimpleNamespace(
+            deepspeed_plugin=types.SimpleNamespace(
+                deepspeed_config={"zero_optimization": {"stage": 2}}
+            )
+        ),
+    )
+    trainer.axolotl_cfg = types.SimpleNamespace(
+        tensor_parallel_size=1, context_parallel_size=1, expert_parallel_size=1
+    )
+    model = torch.nn.Linear(1, 1)
+    assert trainer._wrap_model(model) is model
+    assert called == [(model, torch.device("cpu"), 2)]
+    assert model._axolotl_native_nvfp4_deepspeed_prepared
+
+
+def test_native_nvfp4_ddp_broadcasts_activation_scale(tmp_path, monkeypatch):
+    model = _model(tmp_path)
+    native = next(
+        parameter
+        for parameter in model.parameters()
+        if type(parameter).__name__ == "NVFP4Tensor"
+    )
+    native.act_per_tensor_scale = torch.tensor(0.25)
+    scale = native.act_per_tensor_scale
+    broadcasts = _collectives(monkeypatch, lambda value: value)
+    prepare_native_nvfp4_ddp(model, torch.device("cpu"))
+    assert any(value.data_ptr() == scale.data_ptr() for value, _ in broadcasts)
+    assert native.act_per_tensor_scale is scale
+
+
+@pytest.mark.parametrize("offset", [-3, -2, -1])
+def test_native_nvfp4_ddp_rejects_different_quantization_recipe(
+    tmp_path, monkeypatch, offset
+):
+    model = _model(tmp_path)
+
+    def remote(value):
+        layout, errors = copy.deepcopy(value)
+        entry = list(layout[0])
+        entry[offset] = "different recipe"
+        layout[0] = tuple(entry)
+        return layout, errors
+
+    broadcasts = _collectives(monkeypatch, remote)
+    with pytest.raises(ValueError, match="identical component layouts"):
+        prepare_native_nvfp4_ddp(model, torch.device("cpu"))
+    assert not broadcasts

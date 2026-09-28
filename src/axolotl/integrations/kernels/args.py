@@ -92,22 +92,26 @@ class KernelsArgs(BaseModel):
     def check_nvfp4_merge_aware(cls, data):
         data = cls._canonicalize_expert_backend(data)
         start = data.get("nvfp4_merge_aware_start_step")
-        if not data.get("nvfp4_merge_aware"):
-            if start is not None:
-                raise ValueError(
-                    "nvfp4_merge_aware_start_step requires nvfp4_merge_aware: true"
-                )
+        if data.get("nvfp4_merge_aware") is False and start is not None:
+            LOG.warning(
+                "NVFP4 MERGE WARNING: ignoring nvfp4_merge_aware_start_step because "
+                "merge-aware training is explicitly disabled. NVFP4 merging may "
+                "round away the learned adapter update."
+            )
+            data["nvfp4_merge_aware_start_step"] = None
             return data
-        if not data.get("use_sonicmoe"):
-            raise ValueError(
-                "nvfp4_merge_aware requires the sonicmoe expert backend "
-                "(expert_backend: sonicmoe)"
+        if data.get("nvfp4_merge_aware") and data.get("adapter") not in (
+            "lora",
+            "multilora",
+        ):
+            LOG.warning(
+                "NVFP4 MERGE WARNING: merge-aware training requires a LoRA adapter; "
+                "disabling nvfp4_merge_aware for this configuration."
             )
-        if data.get("adapter") not in ("lora", "multilora"):
-            raise ValueError(
-                "nvfp4_merge_aware requires a LoRA adapter (adapter: lora or multilora); it snaps "
-                "the LoRA delta to the NVFP4 grid of the frozen base"
-            )
+            data["nvfp4_merge_aware"] = False
+            data["nvfp4_merge_aware_start_step"] = None
+            return data
+        # Backend support is resolved after detecting the checkpoint's quantization format.
         if start is not None:
             bad = ValueError(
                 "nvfp4_merge_aware_start_step must be an int >= 0 (absolute step) or "
