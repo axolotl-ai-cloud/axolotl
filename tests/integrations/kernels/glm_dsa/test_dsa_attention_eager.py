@@ -15,8 +15,6 @@ is verified.
 import pytest
 import torch
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
-
 pytest.importorskip(
     "transformers.models.glm_moe_dsa.modeling_glm_moe_dsa",
     reason="glm_moe_dsa required",
@@ -29,15 +27,11 @@ from transformers.models.glm_moe_dsa.modeling_glm_moe_dsa import (  # noqa: E402
     GlmMoeDsaRotaryEmbedding,
 )
 
-from axolotl.integrations.kernels.libs.glm_dsa.patch import (  # noqa: E402
-    patch_glm_moe_dsa_attention,
-)
-
 DEV = "cuda"
 DT = torch.bfloat16
 
 
-def _build(index_topk, seed=0):
+def _build(index_topk, seed=0, device=DEV, dtype=DT):
     torch.manual_seed(seed)
     cfg = GlmMoeDsaConfig(
         hidden_size=512,
@@ -54,34 +48,66 @@ def _build(index_topk, seed=0):
         num_hidden_layers=1,
     )
     cfg._attn_implementation = "eager"
-    attn = GlmMoeDsaAttention(cfg, layer_idx=0).to(DEV, DT).eval()
-    rope = GlmMoeDsaRotaryEmbedding(cfg).to(DEV)
+    attn = GlmMoeDsaAttention(cfg, layer_idx=0).to(device, dtype).eval()
+    rope = GlmMoeDsaRotaryEmbedding(cfg).to(device)
     return cfg, attn, rope
 
 
+def _causal_masks(seq_len, device, dtype):
+    allowed = torch.ones(seq_len, seq_len, device=device, dtype=torch.bool).tril()
+    allowed = allowed[None, None]
+    additive = torch.zeros_like(allowed, dtype=dtype).masked_fill(
+        ~allowed, torch.finfo(dtype).min
+    )
+    return allowed, additive
+
+
+@pytest.mark.parametrize("index_topk", [4, 32], ids=["sparse", "dense"])
+def test_hf_eager_additive_matches_sdpa_boolean(index_topk):
+    cfg, attn, rope = _build(index_topk, device="cpu", dtype=torch.float32)
+    hidden = torch.randn(1, 16, cfg.hidden_size)
+    position_ids = torch.arange(16).unsqueeze(0)
+    allowed, additive = _causal_masks(16, "cpu", hidden.dtype)
+    with torch.no_grad():
+        pe = rope(hidden, position_ids)
+        eager = attn(hidden, pe, additive, position_ids=position_ids)[0]
+        cfg._attn_implementation = "sdpa"
+        sdpa = attn(hidden, pe, allowed, position_ids=position_ids)[0]
+    torch.testing.assert_close(eager, sdpa, atol=1e-6, rtol=1e-5)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.parametrize("mask_dtype", [torch.bool, torch.bfloat16])
 @pytest.mark.parametrize("S,index_topk", [(64, 16), (48, 128)], ids=["sparse", "dense"])
 @pytest.mark.parametrize(
     "use_fused_indexer", [False, True], ids=["eager_idx", "fused_idx"]
 )
-def test_dsa_attention_matches_hf_eager(S, index_topk, use_fused_indexer):
+def test_dsa_attention_matches_hf_eager(S, index_topk, use_fused_indexer, mask_dtype):
+    from axolotl.integrations.kernels.libs.glm_dsa.patch import (
+        patch_glm_moe_dsa_attention,
+    )
+
     cfg, attn, rope = _build(index_topk)
     B = 1
     hidden = torch.randn(B, S, cfg.hidden_size, device=DEV, dtype=DT)
     position_ids = torch.arange(S, device=DEV).unsqueeze(0)
     cos, sin = rope(hidden, position_ids)
     pe = (cos, sin)
+    allowed, additive = _causal_masks(S, DEV, DT)
+    attention_mask = allowed if mask_dtype == torch.bool else additive
 
     import torch.nn as nn
 
     with torch.no_grad():
-        out_eager = attn(hidden, pe, None, position_ids=position_ids)[0]
+        # HF eager adds the mask to logits; only the kernel accepts both formats.
+        out_eager = attn(hidden, pe, additive, position_ids=position_ids)[0]
         wrapper = nn.Module()
         wrapper.add_module("a", attn)
         assert (
             patch_glm_moe_dsa_attention(wrapper, use_fused_indexer=use_fused_indexer)
             == 1
         )
-        out_kernel = attn(hidden, pe, None, position_ids=position_ids)[0]
+        out_kernel = attn(hidden, pe, attention_mask, position_ids=position_ids)[0]
 
     assert torch.isfinite(out_kernel).all()
     err = (out_eager.float() - out_kernel.float()).abs().max().item()

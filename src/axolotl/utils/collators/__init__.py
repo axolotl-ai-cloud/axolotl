@@ -1,4 +1,4 @@
-"""Shared axolotl collators for multipacking, mamba, multimodal."""
+"""Shared axolotl collators for multipacking, multimodal."""
 
 from .batching import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -7,7 +7,6 @@ from .batching import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from .dpo import AxolotlDPODataCollatorWithPadding
-from .mamba import MambaDataCollator
 
 __all__ = [
     "DataCollatorForSeq2Seq",
@@ -15,5 +14,4 @@ __all__ = [
     "V2BatchSamplerDataCollatorForSeq2Seq",
     "PretrainingBatchSamplerDataCollatorForSeq2Seq",
     "AxolotlDPODataCollatorWithPadding",
-    "MambaDataCollator",
 ]

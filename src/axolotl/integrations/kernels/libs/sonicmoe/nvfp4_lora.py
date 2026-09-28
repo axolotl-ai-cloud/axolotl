@@ -533,8 +533,11 @@ def grouped_expert_mlp_lora(
     ma_pts1: Optional[torch.Tensor] = None,
     merge_aware2: bool = False,
     ma_pts2: Optional[torch.Tensor] = None,
+    gated: bool = True,
 ) -> torch.Tensor:
-    """Chain up-LoRA -> gated activation -> down-LoRA over grouped tokens.
+    """Chain up-LoRA -> activation -> down-LoRA over grouped tokens.
+
+    ``gated=False``: ``w1`` is up-only ``[E, I, H]``.
 
     ``lora1`` / ``lora2`` are ``(lora_A, lora_B)`` tuples or ``None`` (``None``
     means plain base grouped GEMM, no low-rank path). ``b1`` / ``b2`` are
@@ -552,6 +555,7 @@ def grouped_expert_mlp_lora(
         and b1 is None
         and limit is None
         and concat
+        and gated
         and act in ("silu", "swiglu")
         and _fused_up_act_enabled()
     ):
@@ -579,7 +583,7 @@ def grouped_expert_mlp_lora(
         if b1 is not None:
             h = _add_expert_bias(h, expert_offsets, b1)
 
-        a = gated_activation(h, act, concat=concat, limit=limit)
+        a = gated_activation(h, act, concat=concat, limit=limit, gated=gated)
 
     if lora2 is not None:
         A2, B2 = lora2
@@ -744,6 +748,7 @@ def grouped_moe_reference_forward(
     scaling1: float,
     scaling2: float,
     limit: Optional[float] = None,
+    gated: bool = True,
 ) -> torch.Tensor:
     """End-to-end NVFP4 MoE forward: route -> grouped gated MLP -> combine.
 
@@ -805,6 +810,7 @@ def grouped_moe_reference_forward(
         ma_pts1=ma_pts1,
         merge_aware2=ma2,
         ma_pts2=ma_pts2,
+        gated=gated,
     )
     return combine_expert_outputs(
         y_grouped, gather_token_idx, weights_grouped, hidden_states.shape[0]

@@ -85,9 +85,11 @@ def trainer_control():
 
 # pylint: disable=unused-argument
 @pytest.fixture
-def callback(mock_telemetry_manager, mock_runtime_metrics_tracker):
+def callback(mock_telemetry_manager, mock_runtime_metrics_tracker, trainer_state):
     """Create a TelemetryCallback instance with mocked dependencies"""
-    return TelemetryCallback()
+    callback = TelemetryCallback()
+    callback.on_log(None, trainer_state, None, logs=trainer_state.log_history[-1])
+    return callback
 
 
 class TestTelemetryCallback:
@@ -132,16 +134,79 @@ class TestTelemetryCallback:
         call_args = mock_telemetry_manager.send_event.call_args[1]
 
         assert call_args["event_type"] == "train-end"
-        assert "loss" in call_args["properties"]
-        assert call_args["properties"]["loss"] == 2.5
-        assert "learning_rate" in call_args["properties"]
-        assert call_args["properties"]["learning_rate"] == 5e-5
+        latest = call_args["properties"]["latest_step"]
+        assert latest["loss"] == 2.5
+        assert latest["learning_rate"] == 5e-5
+        assert latest["metric_steps"] == {"loss": 10, "learning_rate": 10}
 
         # Check that metrics from RuntimeMetricsTracker are included
         assert "total_steps" in call_args["properties"]
         assert call_args["properties"]["total_steps"] == 100
         assert "peak_cpu_memory_bytes" in call_args["properties"]
         assert call_args["properties"]["peak_cpu_memory_bytes"] == 1024
+
+    @pytest.mark.parametrize(
+        "trailing_logs",
+        [
+            [{"eval_loss": 1.7}],
+            [{"train_loss": 2.1, "train_runtime": 120.0}],
+            [{"eval_loss": 1.7}, {"train_loss": 2.1, "train_runtime": 120.0}],
+        ],
+    )
+    def test_on_train_end_after_non_training_logs(
+        self,
+        callback,
+        mock_telemetry_manager,
+        training_args,
+        trainer_state,
+        trainer_control,
+        trailing_logs,
+    ):
+        """Final summary and evaluation logs must not erase training metrics."""
+        expected = {
+            "loss": 2.5,
+            "ppl": 12.2,
+            "learning_rate": 5e-5,
+            "grad_norm": 1.2,
+            "tokens/total": 1024,
+            "tokens/trainable": 512,
+            "tokens/train_per_sec_per_gpu": 100,
+        }
+        trainer_state.log_history = [expected.copy(), *trailing_logs]
+        callback.on_log(None, trainer_state, None, logs=expected)
+        for log in trailing_logs:
+            callback.on_log(None, trainer_state, None, logs=log)
+
+        callback.on_train_end(training_args, trainer_state, trainer_control)
+
+        properties = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert {key: properties["latest_step"][key] for key in expected} == expected
+        assert properties["aggregate"] == (
+            {"train_loss": 2.1} if "train_loss" in trailing_logs[-1] else {}
+        )
+
+    def test_latest_metrics_across_partial_logs(self, callback, trainer_state):
+        """Use the latest value of each metric, including genuine zeros."""
+        trainer_state.log_history = [
+            {"loss": 3.0, "learning_rate": 5e-5, "tokens/total": 1024},
+            {"loss": 2.5, "learning_rate": 0.0},
+            {"tokens/total": 2048},
+            {"eval_loss": 1.7},
+        ]
+
+        for step, log in enumerate(trainer_state.log_history, start=1):
+            trainer_state.global_step = step
+            callback.on_log(None, trainer_state, None, logs=log)
+        assert callback.latest_metrics == {
+            "loss": 2.5,
+            "learning_rate": 0.0,
+            "tokens/total": 2048,
+        }
+        assert callback.metric_steps == {
+            "loss": 2,
+            "learning_rate": 2,
+            "tokens/total": 3,
+        }
 
     def test_on_epoch_begin(
         self,
@@ -357,6 +422,8 @@ class TestTelemetryCallback:
         # Configure state and callback
         trainer_state.global_step = current_step
         trainer_state.log_history = []
+        callback.latest_metrics = {}
+        callback.metric_steps = {}
         callback.start_time = start_time
 
         # Mock time.time() to return consistent values
@@ -367,7 +434,106 @@ class TestTelemetryCallback:
         # Should still send telemetry
         mock_telemetry_manager.send_event.assert_called_once()
 
-        # Properties should have default values for missing log data
+        # Missing log data should not produce numeric values
         props = mock_telemetry_manager.send_event.call_args[1]["properties"]
-        assert props["loss"] == 0
-        assert props["learning_rate"] == 0
+        assert "loss" not in props
+        assert "learning_rate" not in props
+
+    def test_resume_progress(
+        self, callback, trainer_state, mock_telemetry_manager, mock_time
+    ):
+        """Resume throughput counts only new steps and keeps restored epochs."""
+        trainer_state.global_step = 1000
+        trainer_state.epoch = 2.5
+        callback.on_train_begin(None, trainer_state, None)
+        callback.on_epoch_begin(None, trainer_state, None)
+        mock_time.time.return_value = 1010.0
+        trainer_state.global_step = 1001
+        callback.on_step_end(None, trainer_state, None)
+        props = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert props["steps_per_second"] == 0.1
+        assert props["step"] == 1001
+        assert props["start_step"] == 1000
+        assert props["epoch"] == 2
+        assert "loss" not in props
+        assert callback.tracker.metrics.start_time == 1000.0
+
+    def test_progress_metric_provenance(
+        self, callback, trainer_state, mock_telemetry_manager
+    ):
+        """Progress before logging never labels an older loss as current."""
+        trainer_state.global_step = 0
+        callback.on_train_begin(None, trainer_state, None)
+        trainer_state.global_step = 1
+        callback.on_step_end(None, trainer_state, None)
+        props = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert "loss" not in props
+        callback.on_log(None, trainer_state, None, logs={"loss": 2.5})
+        trainer_state.global_step = 101
+        callback.on_step_end(None, trainer_state, None)
+        props = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert props["step"] == 101
+        assert props["loss"] == 2.5
+        assert props["metric_steps"] == {"loss": 1}
+
+    def test_nonfinite_metrics(self, callback, trainer_state):
+        """Keep diagnostic non-finite values until transport serialization."""
+        import math
+
+        callback.on_log(
+            None,
+            trainer_state,
+            None,
+            logs={"loss": float("inf"), "grad_norm": float("nan")},
+        )
+        assert callback.latest_metrics["loss"] == float("inf")
+        assert math.isnan(callback.latest_metrics["grad_norm"])
+
+    def test_resume_without_steps(
+        self, callback, trainer_state, mock_telemetry_manager
+    ):
+        """A previous run's summary is not a new aggregate."""
+        trainer_state.log_history = [{"train_loss": 2.1, "step": 10}]
+        callback.on_train_begin(None, trainer_state, None)
+        callback.on_train_end(None, trainer_state, None)
+        props = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert props["aggregate"] == {}
+        assert props["latest_step"] == {"metric_steps": {}}
+        assert props["total_steps"] == 0
+
+    def test_summary_does_not_replace_latest_loss(
+        self, callback, trainer_state, mock_telemetry_manager
+    ):
+        """Keep aggregate and latest logged loss independent through completion."""
+        callback.on_train_begin(None, trainer_state, None)
+        trainer_state.global_step = 20
+        callback.on_log(None, trainer_state, None, logs={"loss": 0.0})
+        callback.on_log(None, trainer_state, None, logs={"train_loss": 1.8})
+        callback.on_train_end(None, trainer_state, None)
+        props = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert props["aggregate"] == {"train_loss": 1.8}
+        assert props["latest_step"] == {"loss": 0.0, "metric_steps": {"loss": 20}}
+        callback.on_train_begin(None, trainer_state, None)
+        assert callback.aggregate_metrics == {}
+        assert callback.latest_metrics == {}
+        assert callback.metric_steps == {}
+
+    def test_train_end_refreshes_memory(
+        self, callback, trainer_state, mock_telemetry_manager
+    ):
+        """The final event includes peaks observed after the last progress event."""
+
+        def refresh():
+            callback.tracker.metrics.to_dict.return_value = {
+                "gpu_memory": {"gpu_0_peak_memory_bytes": 900}
+            }
+
+        callback.tracker.update_memory_metrics.side_effect = refresh
+        callback.on_train_end(None, trainer_state, None)
+        props = mock_telemetry_manager.send_event.call_args.kwargs["properties"]
+        assert props["gpu_memory"]["gpu_0_peak_memory_bytes"] == 900
+
+    def test_evaluation_collects_memory(self, callback, trainer_state):
+        """Evaluation peaks are read before final evaluation logging."""
+        callback.on_prediction_step(None, trainer_state, None)
+        callback.tracker.update_gpu_memory_metrics.assert_called_once()

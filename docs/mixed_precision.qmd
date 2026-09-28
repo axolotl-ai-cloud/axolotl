@@ -58,9 +58,8 @@ bf16: full  # Equivalent to bf16_full_eval in the HF trainer
 
 Some models declare RMSNorm/LayerNorm layers as fp32 for training
 stability — the variance computation in RMSNorm is numerically poor in
-bf16, and the learned gain γ quantizes harshly. With FSDP1 this fights
-the flat-param dtype uniformity constraint; with FSDP2 each norm can have
-its own `MixedPrecisionPolicy`. Enable with:
+bf16, and the learned gain γ quantizes harshly. Under FSDP2 each norm can
+have its own `MixedPrecisionPolicy`. Enable with:
 
 ```{.yaml}
 fsdp_version: 2

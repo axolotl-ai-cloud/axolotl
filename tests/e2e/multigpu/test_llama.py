@@ -354,18 +354,14 @@ class TestMultiGPULlama:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
+                "fsdp_version": 2,
                 "fsdp_config": {
-                    "fsdp_offload_params": False,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": False,
-                    "fsdp_cpu_ram_efficient_loading": False,
-                    "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "FULL_STATE_DICT",
-                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "offload_params": False,
+                    "cpu_ram_efficient_loading": False,
+                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                    "state_dict_type": "FULL_STATE_DICT",
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
                 "seed": 42,
@@ -399,7 +395,6 @@ class TestMultiGPULlama:
         "fsdp_state_dict_type",
         [
             "FULL_STATE_DICT",
-            # "SHARDED_STATE_DICT",  # not supported since intermediate checkpoints fail with fsdp1
         ],
     )
     def test_fsdp_packed(self, temp_dir, fsdp_state_dict_type):
@@ -432,18 +427,14 @@ class TestMultiGPULlama:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
+                "fsdp_version": 2,
                 "fsdp_config": {
-                    "fsdp_offload_params": False,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": False,
-                    "fsdp_cpu_ram_efficient_loading": False,
-                    "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": fsdp_state_dict_type,
-                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "offload_params": False,
+                    "cpu_ram_efficient_loading": False,
+                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                    "state_dict_type": fsdp_state_dict_type,
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
                 "save_first_step": False,
@@ -510,18 +501,14 @@ class TestMultiGPULlama:
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_8bit",
                 "lr_scheduler": "cosine",
-                "fsdp": [
-                    "auto_wrap",
-                ],
+                "fsdp_version": 2,
                 "fsdp_config": {
-                    "fsdp_version": 2,
-                    # "fsdp_forward_prefetch": True,  # not yet implemented in accelerate
-                    "fsdp_offload_params": False,
-                    "fsdp_cpu_ram_efficient_loading": False,
-                    "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "SHARDED_STATE_DICT",
-                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
-                    "fsdp_reshard_after_forward": fsdp_reshard_after_forward,
+                    "offload_params": False,
+                    "cpu_ram_efficient_loading": False,
+                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                    "state_dict_type": "SHARDED_STATE_DICT",
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "reshard_after_forward": fsdp_reshard_after_forward,
                 },
                 "use_tensorboard": True,
                 "save_first_step": False,
@@ -553,8 +540,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
-    @requires_flash_attn
-    def test_fsdp_qlora_prequant_packed(self, temp_dir):
+    def test_fsdp2_qlora_prequant_packed(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
@@ -565,10 +551,6 @@ class TestMultiGPULlama:
                 "lora_alpha": 16,
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
-                # "lora_modules_to_save": [
-                #     "embed_tokens",
-                #     "lm_head",
-                # ],
                 "sample_packing": True,
                 "eval_sample_packing": False,
                 "pad_to_sequence_len": True,
@@ -588,29 +570,19 @@ class TestMultiGPULlama:
                 "max_steps": 2,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 2,
-                # "gradient_checkpointing": True,
                 "output_dir": temp_dir,
                 "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
-                "fsdp": [
-                    "full_shard",
-                    "auto_wrap",
-                ],
+                "fsdp_version": 2,
                 "fsdp_config": {
-                    # pinned to FSDP1: accelerate's fsdp2_load_full_state_dict
-                    # cannot resolve prequantized bnb quant-state keys
-                    # (e.g. `...weight.absmax`)
-                    "fsdp_version": 1,
-                    "fsdp_offload_params": False,
-                    "fsdp_sync_module_states": True,
-                    "fsdp_use_orig_params": False,
-                    "fsdp_cpu_ram_efficient_loading": True,
-                    "fsdp_transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
-                    "fsdp_state_dict_type": "FULL_STATE_DICT",
-                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "offload_params": False,
+                    "cpu_ram_efficient_loading": True,
+                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                    "state_dict_type": "FULL_STATE_DICT",
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
                 },
                 "use_tensorboard": True,
                 "save_first_step": False,

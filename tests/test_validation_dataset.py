@@ -357,12 +357,14 @@ class TestOptimizerValidation(BaseValidation):
                     }
                 ],
                 "optimizer": "muon",
-                "fsdp": ["full_shard"],
                 "fsdp_config": {
-                    "fsdp_auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                    "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+                    "reshard_after_forward": True,
                 },
             }
         )
 
-        with pytest.raises(ValueError, match=r".*only compatible with FSDP2.*"):
-            validate_config(cfg)
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.optimizer == "muon"
+        assert validated_cfg.fsdp_version == 2

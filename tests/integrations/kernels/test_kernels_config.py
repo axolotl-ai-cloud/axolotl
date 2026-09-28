@@ -158,7 +158,16 @@ def test_moe_dequant_chunk_size_non_integer_rejected(bad):
         KernelsArgs.model_validate({"moe_dequant_chunk_size": bad})
 
 
-def test_warn_unclaimed_nonexpert_quantization_fires(caplog):
+@pytest.fixture
+def kernel_caplog(caplog, monkeypatch):
+    import logging
+
+    logger = logging.getLogger("axolotl.integrations.kernels.plugin")
+    monkeypatch.setattr(logger, "handlers", [*logger.handlers, caplog.handler])
+    return caplog
+
+
+def test_warn_unclaimed_nonexpert_quantization_fires(kernel_caplog):
     # A non-expert quant policy set with no adapter that consumes it -> warn (no silent no-op).
     import logging
 
@@ -166,14 +175,15 @@ def test_warn_unclaimed_nonexpert_quantization_fires(caplog):
     from axolotl.integrations.kernels.plugin import KernelsPlugin
 
     cfg = {"nonexpert_quantization": "nf4"}
-    with caplog.at_level(logging.WARNING):
+    with kernel_caplog.at_level(logging.WARNING):
         KernelsPlugin._warn_unclaimed_nonexpert_quantization(cfg, [ModelAdapter()])
     assert any(
-        "no active model adapter consumes it" in r.message for r in caplog.records
+        "no active model adapter consumes it" in r.message
+        for r in kernel_caplog.records
     )
 
 
-def test_warn_unclaimed_nonexpert_quantization_silent_when_consumed(caplog):
+def test_warn_unclaimed_nonexpert_quantization_silent_when_consumed(kernel_caplog):
     import logging
 
     from axolotl.integrations.kernels.adapters import ModelAdapter
@@ -186,25 +196,29 @@ def test_warn_unclaimed_nonexpert_quantization_silent_when_consumed(caplog):
             return True
 
     cfg = {"nonexpert_quantization": "nf4"}
-    with caplog.at_level(logging.WARNING):
+    with kernel_caplog.at_level(logging.WARNING):
         KernelsPlugin._warn_unclaimed_nonexpert_quantization(cfg, [_Consumer()])
     assert not any(
-        "no active model adapter consumes it" in r.message for r in caplog.records
+        "no active model adapter consumes it" in r.message
+        for r in kernel_caplog.records
     )
 
 
 @pytest.mark.parametrize("policy", [None, "none", "bf16"])
-def test_warn_unclaimed_nonexpert_quantization_skips_noop_policies(policy, caplog):
+def test_warn_unclaimed_nonexpert_quantization_skips_noop_policies(
+    policy, kernel_caplog
+):
     import logging
 
     from axolotl.integrations.kernels.adapters import ModelAdapter
     from axolotl.integrations.kernels.plugin import KernelsPlugin
 
     cfg = {} if policy is None else {"nonexpert_quantization": policy}
-    with caplog.at_level(logging.WARNING):
+    with kernel_caplog.at_level(logging.WARNING):
         KernelsPlugin._warn_unclaimed_nonexpert_quantization(cfg, [ModelAdapter()])
     assert not any(
-        "no active model adapter consumes it" in r.message for r in caplog.records
+        "no active model adapter consumes it" in r.message
+        for r in kernel_caplog.records
     )
 
 
@@ -253,17 +267,16 @@ def test_nvfp4_merge_aware_start_step_requires_flag():
 @pytest.mark.parametrize(
     "kernel", ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
 )
-def test_nvfp4_merge_aware_rejects_fused_lora_kernels(kernel):
-    # fused kernels bypass lora.Linear.forward, silently skipping the fake-quant
-    with pytest.raises(pydantic.ValidationError, match="incompatible"):
-        KernelsArgs.model_validate(
-            {
-                "use_sonicmoe": True,
-                "adapter": "lora",
-                "nvfp4_merge_aware": True,
-                kernel: True,
-            }
-        )
+def test_nvfp4_merge_aware_accepts_explicit_lora_kernels(kernel):
+    args = KernelsArgs.model_validate(
+        {
+            "use_sonicmoe": True,
+            "adapter": "lora",
+            "nvfp4_merge_aware": True,
+            kernel: True,
+        }
+    )
+    assert args.nvfp4_merge_aware is True
 
 
 def test_nvfp4_merge_aware_skips_lora_kernel_auto_enable():
@@ -303,3 +316,10 @@ def test_nvfp4_merge_aware_start_step_invalid(bad):
                 "nvfp4_merge_aware_start_step": bad,
             }
         )
+
+
+def test_nvfp4_merge_aware_accepts_multilora_plugin():
+    args = KernelsArgs.model_validate(
+        {"adapter": "multilora", "use_sonicmoe": True, "nvfp4_merge_aware": True}
+    )
+    assert args.nvfp4_merge_aware
