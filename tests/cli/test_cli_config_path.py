@@ -45,9 +45,7 @@ class TestConfigPath:
             patch("requests.get") as mock_get,
             pytest.raises(UsageError, match="does not exist"),
         ):
-            self.param_type.convert(
-                "http://nonexistent.invalid/config.yml", None, None
-            )
+            self.param_type.convert("http://nonexistent.invalid/config.yml", None, None)
         mock_get.assert_not_called()
 
 
@@ -62,7 +60,8 @@ class TestTrainConfigUrl:
             patch("requests.get") as mock_get,
         ):
             result = cli_runner.invoke(
-                cli, ["train", CONFIG_URL, "--launcher", "python"],
+                cli,
+                ["train", CONFIG_URL, "--launcher", "python"],
                 catch_exceptions=False,
             )
         assert result.exit_code == 0
