@@ -1,5 +1,6 @@
 from functools import partial
 
+import pytest
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
@@ -53,3 +54,38 @@ def test_checkpoint_offload_ignores_unmarked_saved_tensors():
     assert offload.stats.saved_tensors_seen > 0
     assert offload.stats.marked_tensors == 0
     assert offload.stats.offloaded_tensors == 0
+
+
+@pytest.mark.parametrize(
+    "make_view",
+    [
+        pytest.param(lambda base: base[2:], id="offset-dense"),
+        pytest.param(lambda base: base[:, 2:], id="offset-gapped-stride"),
+    ],
+)
+def test_checkpoint_offload_restores_view_with_storage_offset(make_view):
+    # _pack_tensor skips non-accelerator tensors, so an end-to-end run no-ops on CPU
+    offload = CheckpointHiddenStatesOffload(
+        use_streams=False, min_offload_size=0, use_pin_memory=False
+    )
+    if not torch.cuda.is_available():
+        # _current_stream() routes any non-cpu accelerator (mps included) to torch.cuda
+        offload.accelerator_type = "cpu"
+    source = make_view(torch.randn(6, 8))
+    assert source.storage_offset() > 0
+
+    cpu_tensor, buffer_key = offload._empty_cpu_like(source)
+    cpu_tensor.copy_(source)
+    offload._tracker[1] = (
+        cpu_tensor,
+        source.device,
+        source.size(),
+        source.stride(),
+        buffer_key,
+    )
+
+    restored = offload._restore_tensor(1)
+
+    assert restored.storage_offset() == 0
+    assert restored.stride() == source.stride()
+    assert torch.equal(restored, source)

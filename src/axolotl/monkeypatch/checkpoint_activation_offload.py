@@ -92,7 +92,6 @@ class CheckpointHiddenStatesOffload(saved_tensors_hooks):
             tuple[
                 torch.Tensor,
                 torch.device,
-                int,
                 torch.Size,
                 tuple[int, ...],
                 _BufferKey,
@@ -111,7 +110,6 @@ class CheckpointHiddenStatesOffload(saved_tensors_hooks):
             self.accelerator_type = "cuda"
         else:
             self.accelerator_type = "cpu"
-        self.s0 = self._current_stream()
         self.s1 = self._new_stream() if use_streams else None
 
         super().__init__(self._pack_tensor, self._unpack_tensor)
@@ -124,6 +122,11 @@ class CheckpointHiddenStatesOffload(saved_tensors_hooks):
         if self.accelerator_type == "npu":
             return torch.npu.current_stream()
         return torch.cuda.current_stream()
+
+    @property
+    def s0(self):
+        # resolved per use: the compute stream may differ from the construction-time one
+        return self._current_stream()
 
     def _new_stream(self):
         if self.accelerator_type == "cpu":
@@ -246,7 +249,6 @@ class CheckpointHiddenStatesOffload(saved_tensors_hooks):
         self._tracker[tensor_id] = (
             cpu_tensor,
             tensor.device,
-            tensor.storage_offset(),
             tensor.size(),
             tensor.stride(),
             buffer_key,
@@ -268,22 +270,15 @@ class CheckpointHiddenStatesOffload(saved_tensors_hooks):
             self.stats.restored_bytes += self._num_bytes(tensor)
             return tensor
 
-        cpu_tensor, device, storage_offset, shape, stride, buffer_key = (
-            self._tracker.pop(tensor_id)
-        )
+        cpu_tensor, device, shape, stride, buffer_key = self._tracker.pop(tensor_id)
         stream = self.s1 if self.use_streams else self.s0
         with self._stream_context(stream):
-            gpu_tensor = cpu_tensor.to(device, non_blocking=self.use_streams)
-            if (
-                gpu_tensor.storage_offset() != storage_offset
-                or gpu_tensor.stride() != stride
-            ):
-                gpu_tensor = torch.as_strided(
-                    gpu_tensor,
-                    size=shape,
-                    stride=stride,
-                    storage_offset=storage_offset,
-                )
+            # restore into fresh offset-0 storage; reapplying the source
+            # storage_offset would index past the pool buffer's storage
+            gpu_tensor = torch.empty_strided(
+                shape, stride, dtype=cpu_tensor.dtype, device=device
+            )
+            gpu_tensor.copy_(cpu_tensor, non_blocking=self.use_streams)
         if self.use_streams:
             event = self.s1.record_event()
             self.s0.wait_event(event)
