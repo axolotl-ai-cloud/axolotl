@@ -124,8 +124,11 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `hunyuan_v1_moe`  |    Yes    |   Yes    |  -  |  -  |
 | `gemma4_text`     |    Yes    |   Yes    | Yes |  -  |
 | `gpt_oss`         |    Yes    |   No     |  -  |  -  |
+| `nemotron_h`      |    Yes    |   Yes¹   | Yes | Yes¹ |
 
 NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its own fused-kernel path), so it is not a row above.
+
+¹ `nemotron_h` covers Nemotron-3 latentmoe: **non-gated** relu² experts (`up_proj`/`down_proj`, no gate), operating in `moe_latent_size` when set (tokens arrive pre-projected by the block's `fc1/fc2_latent_proj`). ScatterMoE handles that layout natively; SonicMoE routes it through a `torch._grouped_mm` MLP because the current sonic-moe op layer only allows gated epilogues, and `AXOLOTL_SONICMOE_NONGATED_FUSED=1` switches to the exact REGLU rewrite (`relu²(h) == h·relu(h)`) once a build relaxes that assert. Nemotron-3 NVFP4 checkpoints (modelopt `MIXED_PRECISION`) keep the routed experts packed NVFP4 and dequantize every other quantized linear to bf16 at load; quantization there is per layer, not per module name, so one converter per suffix picks its branch from the keys each layer ships.
 
 `gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a clamped sigmoid-GLU activation. The ScatterMoE forward handles the transposed/interleaved/biased layout and that epilogue via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM).
 

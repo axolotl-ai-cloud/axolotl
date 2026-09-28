@@ -12,6 +12,13 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+_KERNEL_IMPL_ENV = "LIGER_KERNEL_IMPL"
+# env value before this plugin's last owned write, and what it last wrote — lets
+# a config that omits liger_kernel_impl undo a previous config's mutation (e.g.
+# one rejected by validation after register() already ran)
+_env_before_write: str | None = None
+_last_written: str | None = None
+
 LIGER_FLAGS = (
     "liger_rope",
     "liger_rms_norm",
@@ -32,7 +39,82 @@ class LigerPlugin(BasePlugin):
     def get_input_args(self):
         return "axolotl.integrations.liger.LigerArgs"
 
+    def register(self, cfg):
+        # earliest hook: pre-model-load patches (fused-attn kernels) import liger
+        # before pre_model_load runs, which would fix the backend too soon.
+        # cfg is the unparsed dict — invalid values fall through untouched so
+        # schema validation raises the proper error instead of an env mutation
+        from axolotl.integrations.liger.args import LIGER_KERNEL_IMPLS
+
+        if cfg.get("liger_kernel_impl") in LIGER_KERNEL_IMPLS:
+            self._set_kernel_impl(cfg["liger_kernel_impl"])
+        elif cfg.get("liger_kernel_impl") is None:
+            self._restore_kernel_impl()
+
+    @staticmethod
+    def _set_kernel_impl(impl: str):
+        import os
+
+        # liger reads LIGER_KERNEL_IMPL exactly once, at the first import of
+        # liger_kernel.ops — setting it after that import is silently inert
+        if "liger_kernel.ops" in sys.modules:
+            # the env var is mutable after import, so compare against the backend
+            # liger actually loaded, not the current env value
+            loaded = LigerPlugin._loaded_kernel_impl()
+            if loaded != impl:
+                raise ValueError(
+                    f"liger_kernel_impl: '{impl}' cannot take effect: liger_kernel.ops "
+                    f"was already imported with backend {loaded or 'default'!r}. Another "
+                    "component imported liger before the Liger plugin ran; set the "
+                    "LIGER_KERNEL_IMPL env var before launching instead."
+                )
+            return
+        global _env_before_write, _last_written
+        current = os.environ.get(_KERNEL_IMPL_ENV)
+        if _last_written is None or current != _last_written:
+            # first write, or a foreign overwrite happened: that value is the new restore point
+            _env_before_write = current
+        os.environ[_KERNEL_IMPL_ENV] = impl
+        _last_written = impl
+        LOG.info(f"Set LIGER_KERNEL_IMPL={impl} for liger kernel backend selection")
+
+    def on_config_validation_error(self, cfg):
+        self._restore_kernel_impl()
+
+    @staticmethod
+    def _loaded_kernel_impl() -> str | None:
+        # the applied impl's ops module is imported by _replace_with_impl_ops;
+        # its presence in sys.modules identifies the backend liger loaded with
+        from liger_kernel.ops.backends.registry import IMPL_REGISTRY
+
+        for name, info in IMPL_REGISTRY.items():
+            if info.module_path in sys.modules:
+                return name
+        return None
+
+    @staticmethod
+    def _restore_kernel_impl():
+        import os
+
+        global _env_before_write, _last_written
+        if _last_written is None or "liger_kernel.ops" in sys.modules:
+            return
+        if os.environ.get(_KERNEL_IMPL_ENV) != _last_written:
+            # foreign overwrite: relinquish ownership, never erase another component's value
+            _env_before_write = None
+            _last_written = None
+            return
+        if _env_before_write is None:
+            os.environ.pop(_KERNEL_IMPL_ENV, None)
+        else:
+            os.environ[_KERNEL_IMPL_ENV] = _env_before_write
+        _env_before_write = None
+        _last_written = None
+
     def pre_model_load(self, cfg):
+        if cfg.liger_kernel_impl:
+            self._set_kernel_impl(cfg.liger_kernel_impl)
+
         if any(getattr(cfg, flag, False) for flag in LIGER_FLAGS):
             check_capability(
                 get_model_support(cfg.model_config_type),
@@ -76,7 +158,12 @@ class LigerPlugin(BasePlugin):
                 "Cannot have both `liger_cross_entropy` and `liger_fused_linear_cross_entropy` set."
             )
 
-        if cfg.liger_use_token_scaling:
+        patch_fused_linear_cross_entropy = (
+            cfg.liger_fused_linear_cross_entropy
+            and getattr(cfg, "adapter", None) != "multilora"
+        )
+
+        if cfg.liger_use_token_scaling and getattr(cfg, "adapter", None) != "multilora":
             # Patch FLCE to set token_scaling=True for function and class API
             from liger_kernel.transformers import functional
             from liger_kernel.transformers.fused_linear_cross_entropy import (
@@ -132,9 +219,7 @@ class LigerPlugin(BasePlugin):
             if "cross_entropy" in liger_fn_sig.parameters:
                 kwargs["cross_entropy"] = cfg.liger_cross_entropy
             if "fused_linear_cross_entropy" in liger_fn_sig.parameters:
-                kwargs["fused_linear_cross_entropy"] = (
-                    cfg.liger_fused_linear_cross_entropy
-                )
+                kwargs["fused_linear_cross_entropy"] = patch_fused_linear_cross_entropy
             if "rms_norm" in liger_fn_sig.parameters:
                 kwargs["rms_norm"] = cfg.liger_rms_norm
             if "layer_norm" in liger_fn_sig.parameters:
@@ -145,6 +230,28 @@ class LigerPlugin(BasePlugin):
                 kwargs["swiglu"] = cfg.liger_glu_activation
             LOG.info(f"Applying LIGER to {cfg.model_config_type} with kwargs: {kwargs}")
             apply_liger_fn(**kwargs)
+        elif cfg.model_config_type == "glm4_moe_lite":
+            from .models.glm4_moe_lite import apply_liger_glm4_moe_lite
+
+            apply_liger_glm4_moe_lite(
+                rope=cfg.liger_rope,
+                rms_norm=cfg.liger_rms_norm,
+                glu_activation=cfg.liger_glu_activation,
+            )
+            if cfg.liger_cross_entropy:
+                from transformers.loss.loss_utils import nn as loss_nn
+
+                loss_nn.functional.cross_entropy = liger_cross_entropy
+            if cfg.liger_fused_linear_cross_entropy:
+                from .models.base import patch_lce_forward
+
+                patch_lce_forward(cfg.model_config_type)
+            LOG.info(
+                "Applied GLM-4 MoE Lite Liger kernels: rope=%s, rms_norm=%s, glu=%s",
+                cfg.liger_rope,
+                cfg.liger_rms_norm,
+                cfg.liger_glu_activation,
+            )
         elif cfg.model_config_type in ("mistral3", "ministral3"):
             # liger 0.8.0 has no mistral3/ministral3 entry, and its `ministral`
             # fn targets modeling_ministral, a module this arch does not use.
@@ -160,7 +267,7 @@ class LigerPlugin(BasePlugin):
                 from transformers.loss.loss_utils import nn
 
                 nn.functional.cross_entropy = liger_cross_entropy
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not implemented for the "
                     "Mistral3 multimodal wrapper. Skipping; use the "
@@ -183,7 +290,7 @@ class LigerPlugin(BasePlugin):
                 from transformers.loss.loss_utils import nn
 
                 nn.functional.cross_entropy = liger_cross_entropy
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 modeling_jamba.JambaForCausalLM.forward = jamba_lce_forward
         elif cfg.model_config_type == "deepseek_v2":
             from accelerate import init_empty_weights
@@ -211,7 +318,7 @@ class LigerPlugin(BasePlugin):
                 # We do not patch `nn.functional.cross_entropy` for DeepseekV2 as it still uses
                 # nn.CrossEntropyLoss in the forward method.
                 modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
         elif cfg.model_config_type == "qwen3_5":
             from axolotl.integrations.liger.models.qwen3_5 import (
@@ -220,7 +327,7 @@ class LigerPlugin(BasePlugin):
 
             apply_liger_kernel_to_qwen3_5(
                 cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                fused_linear_cross_entropy=patch_fused_linear_cross_entropy,
                 glu_activation=cfg.liger_glu_activation,
                 rms_norm=cfg.liger_rms_norm,
                 rms_norm_gated=getattr(cfg, "liger_rms_norm_gated", False),
@@ -233,7 +340,7 @@ class LigerPlugin(BasePlugin):
 
             apply_liger_kernel_to_qwen3_5_moe(
                 cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                fused_linear_cross_entropy=patch_fused_linear_cross_entropy,
                 glu_activation=cfg.liger_glu_activation,
                 rms_norm=cfg.liger_rms_norm,
                 rms_norm_gated=getattr(cfg, "liger_rms_norm_gated", False),
@@ -245,60 +352,9 @@ class LigerPlugin(BasePlugin):
             apply_liger_kernel_to_granite(
                 rope=cfg.liger_rope,
                 cross_entropy=cfg.liger_cross_entropy,
-                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                fused_linear_cross_entropy=patch_fused_linear_cross_entropy,
                 rms_norm=cfg.liger_rms_norm,
                 swiglu=cfg.liger_glu_activation,
-            )
-        elif cfg.model_config_type == "gemma4":
-            # multimodal gemma4 only; gemma4_text uses liger 0.8.0 native dispatch (incl. FLCE)
-            from liger_kernel.transformers.geglu import LigerGEGLUMLP
-            from transformers.models.gemma4 import modeling_gemma4
-
-            if cfg.liger_rms_norm:
-                _OrigGemma4RMSNorm = modeling_gemma4.Gemma4RMSNorm
-
-                class _LigerGemma4RMSNorm(LigerRMSNorm):
-                    """LigerRMSNorm for Gemma4: offset=0, in_place=False (grad-ckpt safe), with_scale support."""
-
-                    def __new__(cls, dim, eps=1e-6, with_scale=True):
-                        if not with_scale:
-                            return _OrigGemma4RMSNorm(dim, eps, with_scale=False)
-                        return super().__new__(cls)
-
-                    def __init__(self, dim, eps=1e-6, with_scale=True):
-                        if not with_scale:
-                            return
-                        # offset=0.0 (standard), in_place=False (gradient checkpointing safe)
-                        super().__init__(
-                            dim, eps, offset=0.0, casting_mode="llama", in_place=False
-                        )
-
-                modeling_gemma4.Gemma4RMSNorm = _LigerGemma4RMSNorm
-            if cfg.liger_glu_activation:
-
-                class _LigerGemma4MLP(LigerGEGLUMLP):
-                    def __init__(self, config, layer_idx=None):
-                        super().__init__(config)
-
-                modeling_gemma4.Gemma4TextMLP = _LigerGemma4MLP
-            if cfg.liger_rope:
-                LOG.warning(
-                    "Liger RoPE is not compatible with Gemma4 (separate q/k application). Skipping."
-                )
-            if cfg.liger_layer_norm:
-                modeling_gemma4.nn.LayerNorm = LigerLayerNorm
-            if cfg.liger_cross_entropy:
-                modeling_gemma4.nn.CrossEntropyLoss = LigerCrossEntropyLoss
-            if cfg.liger_fused_linear_cross_entropy:
-                LOG.warning(
-                    "Liger fused linear cross entropy for multimodal gemma4 is not in "
-                    "liger-kernel 0.8.0 (added upstream in PR #1203, post-0.8.0). Skipping; "
-                    "the gemma4_text language model gets FLCE via liger's native path."
-                )
-            LOG.info(
-                f"Applied Liger kernels for gemma4: "
-                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
-                f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm}"
             )
         elif cfg.model_config_type in ("gemma4_unified", "gemma4_unified_text"):
             # gemma4_unified mirrors gemma4's Liger compatibility: offset=0,
@@ -344,7 +400,7 @@ class LigerPlugin(BasePlugin):
                 modeling_gemma4_unified.nn.LayerNorm = LigerLayerNorm
             if cfg.liger_cross_entropy:
                 modeling_gemma4_unified.nn.CrossEntropyLoss = LigerCrossEntropyLoss
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not compatible with "
                     "Gemma4Unified. Skipping."
@@ -377,7 +433,7 @@ class LigerPlugin(BasePlugin):
                 from transformers.loss.loss_utils import nn as loss_nn
 
                 loss_nn.functional.cross_entropy = liger_cross_entropy
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not implemented for "
                     "CohereCompass. Use cut_cross_entropy instead. Skipping."
@@ -443,7 +499,7 @@ class LigerPlugin(BasePlugin):
                     "MuseGlimmer computes its loss through self.loss_function, not "
                     "nn.CrossEntropyLoss, so the Liger swap would be a no-op. Skipping."
                 )
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 LOG.warning(
                     "Liger fused linear cross entropy is not compatible with MuseGlimmer: "
                     "logits are scaled by output_multiplier and tanh-softcapped after "
@@ -454,7 +510,7 @@ class LigerPlugin(BasePlugin):
                 f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
                 f"rope={cfg.liger_rope}, layer_norm={cfg.liger_layer_norm} (vision tower)"
             )
-        elif cfg.liger_fused_linear_cross_entropy:
+        elif patch_fused_linear_cross_entropy:
             try:
                 from .models.base import patch_lce_forward
 

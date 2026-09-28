@@ -281,35 +281,6 @@ def patch_clip_grad_norm_for_ep():
     Accelerator._AXOLOTL_EP_CLIP_PATCHED = True
 
 
-def patch_prepare_cp():
-    import contextlib
-
-    from accelerate import Accelerator
-    from transformers import Trainer
-
-    def patched_prepare_cp(self, *args):
-        if self.parallelism_config.cp_backend == "deepspeed":
-            return args
-
-        @contextlib.contextmanager
-        def _noop_cp_context(
-            buffers=None, buffer_seq_dims=None, no_restore_buffers=None
-        ):
-            yield
-
-        self._cp_context = _noop_cp_context
-        return args
-
-    def _noop_prepare_context_parallel_inputs(self, model, inputs):
-        return contextlib.nullcontext, inputs
-
-    # prevent double CP partition
-    Accelerator._prepare_cp = patched_prepare_cp
-
-    # remove unneeded calculation upstream
-    Trainer._prepare_context_parallel_inputs = _noop_prepare_context_parallel_inputs
-
-
 def _patched_prepare_data_loader_factory(orig_fn):
     """Wrap `accelerate.data_loader.prepare_data_loader` to count the EP axis
     as a data-parallel dimension.

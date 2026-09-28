@@ -3,26 +3,17 @@ set -e
 
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
-set -o pipefail
-for i in 1 2 3; do
-  if curl --silent --show-error --fail -L \
-    https://axolotl-ci.b-cdn.net/hf-cache.tar.zst \
-    | tar -xpf - -C "${HF_HOME}/hub/" --use-compress-program unzstd --strip-components=1; then
-    echo "HF cache extracted successfully"
-    break
-  fi
-  echo "Attempt $i failed, cleaning up and retrying in 15s..."
-  rm -rf "${HF_HOME}/hub/"*
-  sleep 15
-done
+bash ./cicd/prepare_hf_cache.sh
 # hf download "NousResearch/Meta-Llama-3-8B"
 # hf download "NousResearch/Meta-Llama-3-8B-Instruct"
 # hf download "microsoft/Phi-4-reasoning"
 # hf download "microsoft/Phi-3.5-mini-instruct"
 # hf download "microsoft/Phi-3-medium-128k-instruct"
 
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+
 # Run unit tests with initial coverage report
-pytest -v --durations=10 -n8 \
+pytest -v --durations=10 -n8 -m "not slow and not nf4_distributed" \
   --ignore=tests/e2e/ \
   --ignore=tests/integrations/ \
   --ignore=tests/patched/ \
@@ -30,15 +21,8 @@ pytest -v --durations=10 -n8 \
   /workspace/axolotl/tests/ \
   --cov=axolotl
 
-# Run lora kernels tests with coverage append
-pytest -v --durations=10 \
-  /workspace/axolotl/tests/e2e/patched/lora_kernels \
-  --cov=axolotl \
-  --cov-append
-
-# Run patched tests excluding lora kernels with coverage append
+# Run patched training tests with coverage append
 pytest --full-trace -vvv --durations=10 \
-  --ignore=tests/e2e/patched/lora_kernels \
   /workspace/axolotl/tests/e2e/patched \
   --cov=axolotl \
   --cov-append
@@ -65,6 +49,7 @@ pytest -v --durations=10 \
   --cov-append
 
 pytest -v --durations=10 -n8 --dist loadfile \
+  --ignore=tests/e2e/kernels/ \
   --ignore=tests/integrations/kernels/ \
   --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
   --ignore=tests/integrations/test_gemma4_moe.py \
@@ -82,6 +67,7 @@ pytest -v --durations=10 /workspace/axolotl/tests/cli \
 
 # Run remaining e2e tests with coverage append and final report
 pytest -v --durations=10 \
+  --ignore=tests/e2e/kernels/ \
   --ignore=tests/e2e/solo/ \
   --ignore=tests/e2e/patched/ \
   --ignore=tests/e2e/multigpu/ \

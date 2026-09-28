@@ -42,10 +42,12 @@ def _merge_aware_lora_linear_forward(self, x, *args, **kwargs):
     lora_a = self.lora_A[adapter].weight
     lora_b = self.lora_B[adapter].weight
     scaling = self.scaling[adapter]
-    # delta in the base dtype, matching the merge writer's PEFT get_delta_weight
-    w_eff = w + (lora_b @ lora_a).to(w.dtype) * scaling
+    # Match the writer's adapter-precision delta and single final base-dtype cast.
+    with torch.autocast(device_type=x.device.type, enabled=False):
+        delta = (lora_b @ lora_a) * scaling
+        w_eff = (w.float() + delta.float()).to(w.dtype)
     pts = base._nvfp4_pts.to(device=w_eff.device)
-    w_fq = w_eff + (fake_quant_nvfp4_dispatch(w_eff.detach(), pts) - w_eff.detach())
+    w_fq = fake_quant_nvfp4_dispatch(w_eff.detach(), pts) + (w_eff - w_eff.detach())
     bias = None if base.bias is None else base.bias.to(x.dtype)
     result = F.linear(x, w_fq.to(x.dtype), bias)
     dropout = self.lora_dropout[adapter]
