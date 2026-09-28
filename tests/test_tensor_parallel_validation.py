@@ -184,7 +184,7 @@ class TestTensorParallelValidation:
 
 
 class TestExpertParallelLoraReinit:
-    """The per-module seeded re-draw exists for expert parallelism; other runs keep PEFT's init."""
+    """The per-module seeded re-draw runs for every layout so a seed's init is layout-invariant."""
 
     @staticmethod
     def _spy(monkeypatch):
@@ -198,35 +198,36 @@ class TestExpertParallelLoraReinit:
         )
         return calls
 
-    def test_skipped_without_expert_parallelism(self, monkeypatch):
+    def test_runs_without_expert_parallelism(self, monkeypatch):
         calls = self._spy(monkeypatch)
-        for cfg in ({}, {"expert_parallel_size": 1}, {"expert_parallel_size": None}):
-            loader = _loader(seed=42, **cfg)
-            loader._reinit_expert_parallel_lora(SimpleNamespace(init_lora_weights=True))
-        assert calls == []
+        loaders = [
+            _loader(seed=42, **cfg)
+            for cfg in ({}, {"expert_parallel_size": 1}, {"expert_parallel_size": None})
+        ]
+        for loader in loaders:
+            loader._reinit_lora_from_seed(SimpleNamespace(init_lora_weights=True))
+        assert calls == [(loader.model, 42) for loader in loaders]
 
     def test_runs_under_expert_parallelism_with_the_config_seed(self, monkeypatch):
         calls = self._spy(monkeypatch)
         loader = _loader(seed=42, expert_parallel_size=2)
-        loader._reinit_expert_parallel_lora(SimpleNamespace(init_lora_weights=True))
+        loader._reinit_lora_from_seed(SimpleNamespace(init_lora_weights=True))
         assert calls == [(loader.model, 42)]
 
     def test_unseeded_run_uses_the_process_seed_not_zero(self, monkeypatch):
         calls = self._spy(monkeypatch)
         loader = _loader(seed=None, expert_parallel_size=2)
-        loader._reinit_expert_parallel_lora(SimpleNamespace(init_lora_weights=True))
+        loader._reinit_lora_from_seed(SimpleNamespace(init_lora_weights=True))
         assert calls == [(loader.model, torch.initial_seed())]
         assert calls[0][1] != 0
 
     def test_skipped_for_loaded_or_value_dependent_adapters(self, monkeypatch):
         calls = self._spy(monkeypatch)
         loader = _loader(seed=1, expert_parallel_size=2, lora_model_dir="/adapter")
-        loader._reinit_expert_parallel_lora(SimpleNamespace(init_lora_weights=True))
+        loader._reinit_lora_from_seed(SimpleNamespace(init_lora_weights=True))
         loader = _loader(seed=1, expert_parallel_size=2)
-        loader._reinit_expert_parallel_lora(
-            SimpleNamespace(init_lora_weights="gaussian")
-        )
-        loader._reinit_expert_parallel_lora(None)
+        loader._reinit_lora_from_seed(SimpleNamespace(init_lora_weights="gaussian"))
+        loader._reinit_lora_from_seed(None)
         assert calls == []
 
     def test_rejects_expert_parallel(self, min_base_cfg):

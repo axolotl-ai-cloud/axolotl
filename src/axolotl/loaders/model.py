@@ -337,7 +337,7 @@ class ModelLoader:
             PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
             self._materialize_trainable_meta_params()
             # after materialization so every rank (not just rank 0) holds its own draw
-            self._reinit_expert_parallel_lora(lora_config)
+            self._reinit_lora_from_seed(lora_config)
 
         with nf4_phase("NF4 post-adapter configuration", enabled=staged_nf4):
             # Apply remaining patches and finalize
@@ -683,12 +683,12 @@ class ModelLoader:
         with _nf4_shape_stand_ins() if staged else nullcontext():
             return self._build_adapters()
 
-    def _reinit_expert_parallel_lora(self, lora_config: PeftConfig | None) -> None:
-        """Expert parallelism sizes the expert adapter locally, which shifts PEFT's RNG stream
-        for every later module, so each rank's fresh draw is re-done per module from the seed."""
+    def _reinit_lora_from_seed(self, lora_config: PeftConfig | None) -> None:
+        """Per-module seeded draws keep a seed's adapter init identical across parallel layouts;
+        expert parallelism sizes the expert adapter locally, which would otherwise shift PEFT's
+        RNG stream for every later module."""
         if (
             lora_config is None
-            or (self.cfg.expert_parallel_size or 1) <= 1
             or self.cfg.lora_model_dir
             or getattr(lora_config, "init_lora_weights", None) is not True
         ):
