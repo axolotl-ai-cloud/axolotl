@@ -99,7 +99,7 @@ For providers supporting Docker:
     - [PRIME Intellect](https://app.primeintellect.ai/dashboard/create-cluster?image=axolotl&location=Cheapest&security=Cheapest&show_spot=true)
     - [Modal](https://www.modal.com?utm_source=github&utm_medium=github&utm_campaign=axolotl)
     - [Novita](https://novita.ai/gpus-console?templateId=311)
-    - [JarvisLabs.ai](https://jarvislabs.ai/products/templates)
+    - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
 
 ### SkyPilot {#sec-skypilot}
 
