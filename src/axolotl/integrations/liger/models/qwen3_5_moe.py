@@ -1,5 +1,5 @@
 """
-Liger FLCE for Qwen3.5 MoE. Based on transformers v5.3.0.
+Liger FLCE for Qwen3.5 MoE. Based on transformers v5.17.0.
 """
 
 import sys
@@ -21,7 +21,6 @@ def lce_forward(
     labels: Optional[torch.LongTensor] = None,
     use_cache: Optional[bool] = None,
     output_router_logits: Optional[bool] = None,
-    cache_position: Optional[torch.LongTensor] = None,
     logits_to_keep: Union[int, torch.Tensor] = 0,
     **kwargs,
 ) -> MoeCausalLMOutputWithPast:
@@ -60,7 +59,6 @@ def lce_forward(
         inputs_embeds=inputs_embeds,
         use_cache=use_cache,
         output_router_logits=output_router_logits,
-        cache_position=cache_position,
         **kwargs,
     )
 

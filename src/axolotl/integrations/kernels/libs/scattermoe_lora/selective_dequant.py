@@ -277,6 +277,10 @@ def selective_expert_weights(
         parametrization = param_list[0]
 
         # BnB 4-bit parametrization
+        from axolotl.utils.nf4 import TorchaoNF4Parametrization
+
+        if isinstance(parametrization, TorchaoNF4Parametrization):
+            return parametrization(param_list.original, active_experts=active_experts)
         if hasattr(parametrization, "quant_state"):
             # The raw quantized data is on the ParametrizationList, not the
             # individual Bnb4bitParametrization module
@@ -284,10 +288,10 @@ def selective_expert_weights(
             qs = parametrization.quant_state
             # qs.shape is the original tensor shape before flattening.
             # For MoE experts it's [E, d1, d2] (3D) or [total_elements] (1D).
-            orig_shape = qs.shape
-            if isinstance(orig_shape, torch.Size) and len(orig_shape) == 3:
+            orig_shape = tuple(qs.shape)
+            if len(orig_shape) == 3:
                 expert_shape = (orig_shape[1], orig_shape[2])
-            elif isinstance(orig_shape, torch.Size) and len(orig_shape) == 1:
+            elif len(orig_shape) == 1:
                 # Flattened; infer the expert shape from module attributes.
                 E_total = getattr(experts_module, "num_experts", None)
                 if E_total is None:

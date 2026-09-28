@@ -48,6 +48,45 @@ def _rebuild(ref, qdata, scale, per_tensor_scale):
     )
 
 
+def _dense_row_scales(x):
+    from torchao.prototype.mx_formats.utils import from_blocked
+
+    if not x.is_swizzled_scales:
+        return x.scale
+    return from_blocked(x.scale.flatten(), x.shape[0], x.shape[1] // x.block_size)
+
+
+def normalize_dense_nvfp4_scales(model_or_tensor):
+    """Convert dense swizzled NVFP4 scales to row-major storage in place."""
+    tensors = (
+        model_or_tensor.parameters()
+        if hasattr(model_or_tensor, "parameters")
+        else (model_or_tensor,)
+    )
+    nvfp4_cls = _nvfp4_cls()
+    if nvfp4_cls is None:
+        return 0
+    converted = 0
+    for tensor in tensors:
+        if (
+            isinstance(tensor, nvfp4_cls)
+            and tensor.ndim == 2
+            and tensor.is_swizzled_scales
+        ):
+            tensor.scale = _dense_row_scales(tensor).contiguous()
+            tensor.is_swizzled_scales = False
+            converted += 1
+    return converted
+
+
+def _require_row_scales(tensor):
+    if tensor.ndim == 2 and tensor.is_swizzled_scales:
+        raise ValueError(
+            "Normalize dense NVFP4 scales before FSDP sharding with "
+            "normalize_dense_nvfp4_scales"
+        )
+
+
 def patch_nvfp4_fsdp():
     global _PATCHED
     if _PATCHED:
@@ -68,6 +107,7 @@ def patch_nvfp4_fsdp():
     @implements([aten.split.Tensor])
     def _split(func, types, args, kwargs):
         x, split_size = args[0], args[1]
+        _require_row_scales(x)
         dim = args[2] if len(args) > 2 else kwargs.get("dim", 0)
         if dim != 0:
             raise NotImplementedError(
@@ -91,6 +131,7 @@ def patch_nvfp4_fsdp():
         # FSDP pads on dim 0 (experts). Scale may be SWIZZLED (its trailing dims are not
         # K//block), so preserve qdata/scale trailing shapes and vary only dim 0.
         x, size = args[0], list(args[1])
+        _require_row_scales(x)
         E = size[0]
         qd = func(x.qdata, [E, *x.qdata.shape[1:]], **kwargs)
         sc = func(x.scale, [E, *x.scale.shape[1:]], **kwargs)
@@ -104,6 +145,7 @@ def patch_nvfp4_fsdp():
     @implements([aten.narrow.default])
     def _narrow(func, types, args, kwargs):
         x, dim, start, length = args[0], args[1], args[2], args[3]
+        _require_row_scales(x)
         if dim != 0:
             raise NotImplementedError(f"NVFP4 narrow only dim 0, got {dim}")
         qd = func(x.qdata, 0, start, length)
@@ -133,6 +175,7 @@ def patch_nvfp4_fsdp():
         x = args[0]
         dim = args[1] if len(args) > 1 else 0
         if dim == 0:  # expert-axis slice (FSDP shard); torchao only handles rank 2
+            _require_row_scales(x)
             start = args[2] if len(args) > 2 else None
             end = args[3] if len(args) > 3 else None
             step = args[4] if len(args) > 4 else 1
@@ -186,18 +229,28 @@ def patch_nvfp4_fsdp():
     def fsdp_pre_all_gather(
         self, mesh, outer_size=None, outer_stride=None, module=None, mp_policy=None
     ):
+        _require_row_scales(self)
         inputs = (self.qdata, self.scale)
-        if self.per_tensor_scale is not None:
-            inputs = inputs + (self.per_tensor_scale,)
-        meta = (self.per_tensor_scale is not None,)
+        pts = self.per_tensor_scale
+        scalar_pts = pts is not None and pts.dim() == 0
+        if pts is not None:
+            # FSDP concatenates every input on dim 0, including shared scales.
+            if pts.numel() == 1:
+                pts = (
+                    pts.reshape(1, 1, 1).expand(self.qdata.shape[0], 1, 1).contiguous()
+                )
+            inputs = inputs + (pts,)
+        meta = (pts is not None, scalar_pts)
         return inputs, meta
 
     def fsdp_post_all_gather(
         self, all_gather_outputs, metadata, param_dtype, *, out=None
     ):
-        (has_pts,) = metadata
+        has_pts, scalar_pts = metadata
         if has_pts:
             qdata, scale, pts = all_gather_outputs
+            if scalar_pts:
+                pts = pts[0, 0, 0]
         else:
             qdata, scale = all_gather_outputs
             pts = None

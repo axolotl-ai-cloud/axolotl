@@ -71,6 +71,7 @@ Reduces VRAM usage by using an optimized cross-entropy loss calculation.
 
 Provides efficient Triton kernels to improve training speed and reduce memory usage.
 
+- **Config:** `liger_kernel_impl: cutile | cutedsl` optionally selects an alternative kernel backend (liger-kernel >= 0.8.1, off by default): `cutile` (`pip install cuda-tile`) covers cross_entropy/geglu/layer_norm/rope and more; `cutedsl` (`pip install nvidia-cutlass-dsl`) covers cross_entropy/rms_norm, tuned for Blackwell. `fused_linear_cross_entropy` stays on Triton with either backend.
 - **Learn more:** [Custom Integrations - Liger Kernels](custom_integrations.qmd#liger-kernels)
 
 ### Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)

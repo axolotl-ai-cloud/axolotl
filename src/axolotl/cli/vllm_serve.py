@@ -29,7 +29,7 @@ def do_vllm_serve(
     Starts the VLLM server for serving LLM models used for online RL
 
     Args
-        :param cfg: Parsed doct of the YAML config
+        :param config: Parsed dict of the YAML config
         :param cli_args: dict of additional command-line arguments of type VllmServeCliArgs
 
     Returns:

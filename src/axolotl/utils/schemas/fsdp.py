@@ -25,10 +25,6 @@ class FSDPConfig(BaseModel):
         default=None,
         description="Offload parameters to CPU to reduce GPU memory usage",
     )
-    sync_module_states: bool | None = Field(
-        default=None,
-        description="Synchronize module states across all processes",
-    )
     cpu_ram_efficient_loading: bool | None = Field(
         default=None,
         description="Enable CPU RAM efficient loading to reduce memory usage during model loading",
@@ -37,11 +33,6 @@ class FSDPConfig(BaseModel):
         default=None,
         description="Disabling this enables swap memory usage for resource-constrained setups when offload_params is enabled.",
     )
-    use_orig_params: bool | None = Field(
-        default=None,
-        description="Use original parameters instead of flattened parameters",
-    )
-
     state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
     ) = Field(

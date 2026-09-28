@@ -486,15 +486,16 @@ class TestBailingHybridSupport:
 
         assert resolved is BailingMoeV3Config
 
-    def test_context_parallel_is_rejected(self):
-        """Ring attention severs the KDA recurrence: each rank would restart it from
-        zero with no state exchange, and the loss curve would not show it."""
-        with pytest.raises(ValueError, match="context_parallel_size"):
-            run_model_support_hooks(
-                get_model_support("bailing_hybrid"),
-                ModelHookPhase.CONFIGURE_RUN,
-                ModelHookContext(cfg=DictDefault(context_parallel_size=2)),
-            )
+    def test_context_parallel_uses_capability_validation(self):
+        from axolotl.model_support.base import Experimental
+
+        support = get_model_support("bailing_hybrid")
+        assert isinstance(support.capabilities["context_parallel"], Experimental)
+        run_model_support_hooks(
+            support,
+            ModelHookPhase.CONFIGURE_RUN,
+            ModelHookContext(cfg=DictDefault(context_parallel_size=4)),
+        )
 
     @pytest.mark.parametrize("context_parallel_size", [None, 1])
     def test_single_rank_is_allowed(self, context_parallel_size):
@@ -515,3 +516,25 @@ class TestBailingHybridSupport:
         for transform in transforms:
             for operation in getattr(transform, "operations", None) or []:
                 assert operation.reverse_op is not None
+
+
+class TestK2HorizonSupport:
+    """Built-in K2-Horizon descriptor: unpatched remote code, capability guards only."""
+
+    def test_registered_and_vanilla_family(self):
+        support = get_model_support("k2_horizon")
+        assert support is not None
+        assert type(support).__name__ == "K2HorizonSupport"
+        assert resolve_model_support(support).family == "vanilla_causal_lm"
+
+    @pytest.mark.parametrize(
+        "capability", ["cut_cross_entropy", "liger", "lora_kernels"]
+    )
+    def test_fused_kernel_features_are_rejected(self, capability):
+        with pytest.raises(ValueError, match="k2_horizon"):
+            check_capability(get_model_support("k2_horizon"), capability, "k2_horizon")
+
+    def test_packs_through_position_ids(self):
+        from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
+
+        assert "k2_horizon" in SUPPORTED_MULTIPACK_MODEL_TYPES
