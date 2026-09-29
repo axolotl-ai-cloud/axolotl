@@ -345,7 +345,7 @@ class ModelLoader:
             self.patch_manager.apply_post_model_load_patches(self.model)
             PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
             if (
-                self.cfg.tensor_parallel_size > 1
+                (self.cfg.tensor_parallel_size or 1) > 1
                 and self.device_mesh is not None
                 and not self.is_fsdp_enabled
                 and not self.cfg.adapter
