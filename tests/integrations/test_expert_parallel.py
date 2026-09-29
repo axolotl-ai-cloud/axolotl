@@ -1041,6 +1041,37 @@ class TestExpertLoraSlicing:
         assert n_local == 8 and rank == 2
         assert a is a_in and b is b_in  # no slice / copy when E_local == E_global
 
+    def test_forward_slice_keeps_local_sized_factors(self):
+        """An adapter applied after the EP slice is already E_local-sized; the wrapper's rank
+        (not E_global) identifies it, and a flagged wrapper passes through regardless."""
+        from types import SimpleNamespace
+
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+            _ep_local_expert_lora,
+        )
+
+        e_global, e_local, r = 8, 4, 8
+        a_in, b_in = torch.randn(e_local * r, 5), torch.randn(7, r * e_local)
+        experts = SimpleNamespace(
+            num_experts=e_local, num_experts_global=e_global, local_expert_offset=4
+        )
+        wrapper = SimpleNamespace(r={"default": r}, active_adapters=["default"])
+        a, b, n_local, rank = _ep_local_expert_lora(a_in, b_in, experts, wrapper)
+        assert (a is a_in and b is b_in) and n_local == e_local and rank == r
+
+        flagged = SimpleNamespace(_ep_lora_sharded=True)
+        a, b, n_local, rank = _ep_local_expert_lora(a_in, b_in, experts, flagged)
+        assert a is a_in and b is b_in and n_local == e_local
+
+        # a global adapter is still cut to this rank's block when the wrapper gives the rank
+        r_g = 2
+        a_g, b_g = torch.randn(e_global * r_g, 5), torch.randn(7, r_g * e_global)
+        wrapper = SimpleNamespace(r={"default": r_g}, active_adapters=["default"])
+        a, b, n_local, rank = _ep_local_expert_lora(a_g, b_g, experts, wrapper)
+        assert a.shape == (e_local * r_g, 5) and b.shape == (7, r_g * e_local)
+        assert rank == r_g
+        assert torch.equal(a, a_g[4 * r_g : 8 * r_g])
+
     def test_ranks_reconstruct_global_adapter(self):
         # All EP ranks' slices, concatenated on the expert axis, must rebuild the global adapter
         # (no expert dropped or duplicated).

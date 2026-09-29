@@ -71,7 +71,7 @@ def _unwrap_experts_lora(experts):
             continue
         from .layers import peft_lora_to_scattermoe
 
-        a, b, n_local, rank = _ep_local_expert_lora(lora_A, lora_B, experts)
+        a, b, n_local, rank = _ep_local_expert_lora(lora_A, lora_B, experts, param)
         sm_A, sm_B = peft_lora_to_scattermoe(a, b, n_local, rank)
         if which == "gup":
             gup_lora = (sm_A, sm_B, scaling)
@@ -81,21 +81,36 @@ def _unwrap_experts_lora(experts):
     return base_experts, gup_lora, down_lora
 
 
-def _ep_local_expert_lora(lora_A, lora_B, experts):
+def _wrapper_lora_rank(wrapper) -> int | None:
+    ranks = getattr(wrapper, "r", None) or {}
+    for adapter in getattr(wrapper, "active_adapters", None) or ():
+        if adapter in ranks:
+            return int(ranks[adapter])
+    return None
+
+
+def _ep_local_expert_lora(lora_A, lora_B, experts, wrapper=None):
     """Slice the routed-expert LoRA down to THIS EP rank's local experts.
 
-    Under expert parallelism the base weights are EP-sharded to ``num_experts`` (= E_local) but the
-    PEFT adapter param stays a single GLOBAL tensor over all ``num_experts_global`` experts (it is
-    FSDP-managed/gathered to full here — keeping it global avoids a plain-vs-DTensor mismatch in the
-    optimizer/grad-clip). So compute the rank from the GLOBAL expert count and take this rank's
+    Under expert parallelism the base weights are EP-sharded to ``num_experts`` (= E_local). An
+    adapter applied after the slice is already local (``shard_expert_lora`` flags its wrapper
+    ``_ep_lora_sharded``) and passes through untouched. A GLOBAL adapter over all
+    ``num_experts_global`` experts (applied before the slice) is cut to this rank's
     ``[offset : offset+E_local]`` expert block at forward time:
       * lora_A ``[r*E_global, in]`` expert-major  -> rows ``[offset*r : (offset+E_local)*r]``
       * lora_B ``[out, r*E_global]`` rank-major    -> reshape ``[out, r, E_global]``, take experts.
-    Non-EP modules (E_local == E_global) are a no-op. Returns ``(A, B, E_local, rank)``."""
+    ``wrapper`` (the PEFT ParamWrapper) supplies the true LoRA rank; without it the rank is
+    derived from the global expert count. Returns ``(A, B, E_local, rank)``."""
     e_local = experts.num_experts
     e_global = getattr(experts, "num_experts_global", e_local)
-    rank = lora_A.shape[0] // e_global
-    if e_global == e_local:
+    rank = _wrapper_lora_rank(wrapper)
+    if rank is None:
+        rank = lora_A.shape[0] // e_global
+    if (
+        e_global == e_local
+        or getattr(wrapper, "_ep_lora_sharded", False)
+        or lora_A.shape[0] == e_local * rank
+    ):
         return lora_A, lora_B, e_local, rank
     offset = getattr(experts, "local_expert_offset", 0)
     a = lora_A[offset * rank : (offset + e_local) * rank, :]
@@ -182,7 +197,7 @@ def _ep_local_peft_lora(experts):
         if lora_A is None or lora_B is None:
             factors.append(None)
             continue
-        local_A, local_B, _, _ = _ep_local_expert_lora(lora_A, lora_B, experts)
+        local_A, local_B, _, _ = _ep_local_expert_lora(lora_A, lora_B, experts, param)
         factors.append((local_A, local_B, scaling))
     return factors[0], factors[1]
 
