@@ -1,9 +1,4 @@
-"""Qwen3.5-MoE model support (hybrid Gated DeltaNet + attention, 256 routed experts).
-
-Also covers derivatives that keep the architecture but ship their own chat
-template (e.g. Nex-N2.5), so the multimodal collator dispatches on
-``model_type`` rather than on ``chat_template: qwen3_5``.
-"""
+"""Qwen3.5-MoE model support (hybrid Gated DeltaNet + attention MoE)."""
 
 from axolotl.model_support.base import ModelSupport
 from axolotl.model_support.profile import ModelProfile, ModelStrategyOverrides

@@ -102,8 +102,6 @@ def test_no_registry_key_collides_with_a_chat_template_name():
 
 
 def test_qwen3_5_moe_dispatches_on_model_type_not_chat_template():
-    """Derivatives like Nex-N2.5 ship their own template, so ``tokenizer_default``
-    must still reach the Qwen3.5 strategy."""
     strategy = get_processing_strategy(
         _stub_processor(), None, "tokenizer_default", model_type="qwen3_5_moe"
     )

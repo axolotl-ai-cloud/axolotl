@@ -25,7 +25,7 @@ Let us know how it goes. Happy finetuning! 🚀
 
 ### Chat template
 
-Use `chat_template: tokenizer_default`, not `qwen3_5`. Nex's template renders a `<think>` block on every assistant turn (not only the last) and allows system messages mid-conversation, so `qwen3_5` would mask multi-turn data incorrectly. Empty `<think>` blocks are masked out; the assistant content and `<|im_end|>` are trained.
+Use `chat_template: tokenizer_default`. The template renders a `<think>` block on every assistant turn. In text configs, empty `<think>` blocks are masked out and only the assistant content and `<|im_end|>` are trained. In multimodal configs (`mini-vision-lora.yaml`), masking is per turn, so the empty `<think>` block is trained along with each assistant reply.
 
 ### TIPS
 

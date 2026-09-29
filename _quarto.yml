@@ -451,6 +451,8 @@ website:
             - section: "Model Guides"
               contents:
                 - docs/models/k2-horizon.qmd
+                - docs/models/nex-n2.5.qmd
+                - docs/models/minicpm5.qmd
                 - docs/models/ling3.qmd
                 - docs/models/muse-glimmer.qmd
                 - docs/models/cohere-north-micro-vision-instruct.qmd

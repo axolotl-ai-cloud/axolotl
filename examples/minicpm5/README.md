@@ -13,8 +13,8 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 3. Run the finetuning example:
 
     ```bash
-    axolotl train examples/minicpm5/lora-2b.yml
-    axolotl train examples/minicpm5/fft-2b.yml
+    axolotl train examples/minicpm5/lora-2b.yaml
+    axolotl train examples/minicpm5/fft-2b.yaml
     ```
 
 Let us know how it goes. Happy finetuning! 🚀
@@ -31,7 +31,7 @@ eot_tokens:
 
 ### TIPS
 
-- The chat template adds an empty `<think>` block to assistant turns without `reasoning_content`; it is masked out of the loss. Verify with `axolotl preprocess examples/minicpm5/lora-2b.yml --debug`.
+- The chat template adds an empty `<think>` block to assistant turns without `reasoning_content`; it is masked out of the loss. Verify with `axolotl preprocess examples/minicpm5/lora-2b.yaml --debug`.
 - To train on reasoning traces, put them in `reasoning_content` on the assistant message ([docs](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template)).
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).

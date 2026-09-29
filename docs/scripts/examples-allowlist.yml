@@ -2,6 +2,10 @@ examples:
   # September 2026
   - name: k2-horizon
     title: K2-Horizon
+  - name: nex-n2.5
+    title: Nex-N2.5
+  - name: minicpm5
+    title: MiniCPM5
 
   # August 2026
   - name: ling3
