@@ -68,7 +68,6 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
-  # Add gate_proj, up_proj and down_proj to also target shared experts (nn.Linear):
   # - gate_proj
   # - up_proj
   # - down_proj

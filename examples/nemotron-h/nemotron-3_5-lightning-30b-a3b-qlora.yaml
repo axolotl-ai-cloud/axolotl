@@ -11,7 +11,7 @@ liger_rms_norm: true
 liger_glu_activation: true
 liger_rms_norm_gated: true
 
-# LoRA kernel patches are incompatible with this architecture — see README.
+# LoRA kernel patches are incompatible with this architecture.
 lora_mlp_kernel: false
 lora_qkv_kernel: false
 lora_o_kernel: false
