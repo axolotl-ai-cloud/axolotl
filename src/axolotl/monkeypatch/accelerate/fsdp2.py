@@ -28,6 +28,54 @@ def _nvfp4_local_tensor_cls(p):
     return NVFP4Tensor if isinstance(lt, NVFP4Tensor) else None
 
 
+def _rebuild_nvfp4_like(
+    reference, qdata, scale, per_tensor_scale, act_per_tensor_scale=None
+):
+    """Rebuild an NVFP4 shard without changing its encoding recipe."""
+    return type(reference)(
+        qdata,
+        scale,
+        reference.block_size,
+        reference.orig_dtype,
+        per_tensor_scale=per_tensor_scale,
+        act_per_tensor_scale=(
+            reference.act_per_tensor_scale
+            if act_per_tensor_scale is None
+            else act_per_tensor_scale
+        ),
+        is_swizzled_scales=reference.is_swizzled_scales,
+        use_triton_kernel=reference.use_triton_kernel,
+        act_quant_kwargs=reference.act_quant_kwargs,
+    )
+
+
+def _state_dict_entry(value, name, parameter_requires_grad, buffer_names):
+    if name in parameter_requires_grad:
+        return nn.Parameter(value, requires_grad=parameter_requires_grad[name])
+    if name in buffer_names:
+        return value
+    raise KeyError(f"state dict entry {name!r} is neither a parameter nor a buffer")
+
+
+def _restore_non_persistent_buffers(model, original_buffers, accelerator):
+    for fqn in sorted(original_buffers):
+        original = original_buffers[fqn]
+        if accelerator.is_main_process:
+            restored = original.to(accelerator.device)
+        else:
+            restored = torch.empty_like(original, device=accelerator.device)
+        dist.broadcast(restored, src=0)
+
+        if "." in fqn:
+            parent_fqn, local_buffer_name = fqn.rsplit(".", 1)
+            parent_module = model.get_submodule(parent_fqn)
+        else:
+            local_buffer_name = fqn
+            parent_module = model
+
+        parent_module.register_buffer(local_buffer_name, restored, persistent=False)
+
+
 def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp4_cls):
     """Scatter rank-0's full NVFP4Tensor expert param to each rank's shard.
 
@@ -41,8 +89,6 @@ def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp
     placements = sharded_meta_param.placements
     local_meta = sharded_meta_param._local_tensor
     e_global = sharded_meta_param.shape[0]
-    block_size = local_meta.block_size
-    dtype = local_meta.dtype
 
     def _scatter_component(name, ref_local):
         # Direct per-shard scatter: send each rank ONLY its dim-0 (expert-axis) shard. Avoids the
@@ -83,24 +129,25 @@ def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp
     local_qdata = _scatter_component("qdata", local_meta.qdata)
     local_scale = _scatter_component("scale", local_meta.scale)
 
-    local_pts = None
-    pts_ref = getattr(local_meta, "per_tensor_scale", None)
-    if pts_ref is not None:
-        if pts_ref.dim() >= 1 and pts_ref.shape[0] == local_meta.qdata.shape[0]:
-            # per-expert scale shards along dim 0 like qdata/scale
-            local_pts = _scatter_component("per_tensor_scale", pts_ref)
+    def _local_aux_scale(name):
+        ref = getattr(local_meta, name, None)
+        if ref is None:
+            return None
+        if ref.dim() >= 1 and ref.shape[0] == local_meta.qdata.shape[0]:
+            return _scatter_component(name, ref)
+        group = mesh.get_group()
+        src_rank = dist.get_process_group_ranks(group)[0]
+        if is_main:
+            local = getattr(full_nvfp4, name).to(device)
         else:
-            # replicated scalar — plain broadcast
-            if is_main:
-                local_pts = full_nvfp4.per_tensor_scale.to(device)
-            else:
-                local_pts = torch.empty(
-                    pts_ref.shape, device=device, dtype=pts_ref.dtype
-                )
-            dist.broadcast(local_pts, src=0)
+            local = torch.empty(ref.shape, device=device, dtype=ref.dtype)
+        dist.broadcast(local, src=src_rank, group=group)
+        return local
 
-    local_nvfp4 = nvfp4_cls(
-        local_qdata, local_scale, block_size, dtype, per_tensor_scale=local_pts
+    local_pts = _local_aux_scale("per_tensor_scale")
+    local_act_pts = _local_aux_scale("act_per_tensor_scale")
+    local_nvfp4 = _rebuild_nvfp4_like(
+        local_meta, local_qdata, local_scale, local_pts, local_act_pts
     )
     return DTensor.from_local(local_nvfp4, mesh, placements, run_check=False)
 
@@ -123,17 +170,18 @@ def _ep_expert_from_local(sharded_meta_param, full_local, nvfp4_cls):
     s = slice(dp_rank * e_dp, (dp_rank + 1) * e_dp)
     qd = full_local.qdata[s].to(dev)
     sc = full_local.scale[s].to(dev)
-    pts = getattr(full_local, "per_tensor_scale", None)
-    local_pts = None
-    if pts is not None:
-        local_pts = (
-            pts[s].to(dev)
-            if (pts.dim() >= 1 and pts.shape[0] == full_local.qdata.shape[0])
-            else pts.to(dev)
-        )
-    local_nv = nvfp4_cls(
-        qd, sc, local_meta.block_size, local_meta.dtype, per_tensor_scale=local_pts
-    )
+
+    def _local_aux_scale(name):
+        value = getattr(full_local, name, None)
+        if value is None:
+            return None
+        if value.dim() >= 1 and value.shape[0] == full_local.qdata.shape[0]:
+            return value[s].to(dev)
+        return value.to(dev)
+
+    local_pts = _local_aux_scale("per_tensor_scale")
+    local_act_pts = _local_aux_scale("act_per_tensor_scale")
+    local_nv = _rebuild_nvfp4_like(full_local, qd, sc, local_pts, local_act_pts)
     return DTensor.from_local(local_nv, mesh, placements, run_check=False)
 
 
@@ -173,6 +221,11 @@ def fsdp2_load_full_state_dict(
         return bool(_ep_tails) and ".experts." in name and name.endswith(_ep_tails)
 
     meta_sharded_sd = model.state_dict()
+    parameter_requires_grad = {
+        name: parameter.requires_grad
+        for name, parameter in model.named_parameters(remove_duplicate=False)
+    }
+    buffer_names = {name for name, _ in model.named_buffers(remove_duplicate=False)}
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
@@ -189,8 +242,8 @@ def fsdp2_load_full_state_dict(
             own = own.to(torch.device("cuda"))
             if offload_to_cpu:
                 own = own.cpu()
-            sharded_sd[param_name] = nn.Parameter(
-                own, requires_grad=sharded_meta_param.requires_grad
+            sharded_sd[param_name] = _state_dict_entry(
+                own, param_name, parameter_requires_grad, buffer_names
             )
             full_sd[param_name] = None
             continue
@@ -329,7 +382,9 @@ def fsdp2_load_full_state_dict(
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
 
-        sharded_sd[param_name] = nn.Parameter(sharded_param)
+        sharded_sd[param_name] = _state_dict_entry(
+            sharded_param, param_name, parameter_requires_grad, buffer_names
+        )
 
         del full_tensor
         full_sd[param_name] = None
@@ -426,6 +481,25 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     return log_bias_dtype_mismatch
 
 
+def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool:
+    """Staged NF4 holds the real weights on rank zero only; a peer's state dict would materialize meta."""
+    return not staged_nf4 or is_main_process
+
+
+def _install_requested_native_nvfp4_merge_aware_lora_linears(model) -> int:
+    from axolotl.monkeypatch.torchao_nvfp4_fsdp_lora import (
+        install_fsdp_native_nvfp4_merge_aware_lora_linears,
+    )
+
+    installed = install_fsdp_native_nvfp4_merge_aware_lora_linears(model)
+    if not installed:
+        LOG.info(
+            "No FSDP2-safe native merge-aware LoRA projections were installed; "
+            "leaving merge-aware support status unchanged."
+        )
+    return installed
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -456,7 +530,34 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     fsdp2_plugin = accelerator.state.fsdp_plugin
 
-    original_sd = model.state_dict()
+    from axolotl.monkeypatch.accelerate.fsdp2_quantized import model_has_nvfp4_params
+
+    if getattr(model, "_axolotl_native_nvfp4_metadata_requested", False):
+        from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+            prepare_sharded_native_metadata,
+        )
+
+        prepare_sharded_native_metadata(model)
+
+    if model_has_nvfp4_params(model):
+        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp import (
+            normalize_dense_nvfp4_scales,
+            patch_nvfp4_fsdp,
+        )
+        from axolotl.monkeypatch.accelerate.fsdp2_quantized import (
+            patch_fsdp2_traceable_wrapper_param_move,
+        )
+
+        normalize_dense_nvfp4_scales(model)
+        patch_nvfp4_fsdp()
+        patch_fsdp2_traceable_wrapper_param_move()
+
+    staged_nf4 = getattr(model, "_axolotl_staged_nf4", False)
+    original_sd = (
+        model.state_dict()
+        if _builds_original_state_dict(staged_nf4, accelerator.is_main_process)
+        else {}
+    )
 
     from torch.distributed.fsdp.wrap import (
         size_based_auto_wrap_policy,
@@ -512,6 +613,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             else None
         ),
     }
+    if getattr(model, "_axolotl_lora_fp32_gradients", False):
+        from axolotl.utils.lora_precision import lora_fsdp2_precision_policy
+
+        fsdp2_kwargs["mp_policy"] = lora_fsdp2_precision_policy(
+            fsdp2_kwargs["mp_policy"]
+        )
     model_has_params4bit = False
     for _, param in model.named_parameters():
         # this is a temporary fix whereby loading models with bnb params cannot be moved from
@@ -534,7 +641,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model, recurse=True, fqns=True
         )
         original_non_persistent_buffers = copy.deepcopy(
-            {k: v for k, v in model.named_buffers() if k in non_persistent_buffer_fqns}
+            {
+                k: v
+                for k, v in model.named_buffers(remove_duplicate=False)
+                if k in non_persistent_buffer_fqns
+            }
         )
         # We move the model to meta device, as then sharding happens on meta device
         model = model.to(torch.device("meta"))
@@ -602,6 +713,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 "param(s) from the FSDP wrap (kept as plain per-rank slices)."
             )
 
+    nf4_unwrapped_children = set()
+    if staged_nf4 and is_peft_model:
+        for module in model.modules():
+            if isinstance(module, ParamWrapper):
+                # ParamWrapper reads adapter weights directly, without invoking their forward hooks.
+                nf4_unwrapped_children.update(list(module.modules())[1:])
+
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -625,6 +743,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         nonfloat_param_guard,
         shard_fp32_modules,
     )
+    from axolotl.monkeypatch.fsdp2_qlora import apply_init_dtype_attrs_patch
 
     # Apply the quantized dtype/cast/sharding policy ONLY for float-logical torchao subclasses
     # (NVFP4Tensor/Float8Tensor/MXTensor) — the pre-quantized checkpoint case this path is for.
@@ -633,12 +752,19 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     # packed, which includes bnb Params4bit) and stays gated on that.
     _quantized = model_has_float_logical_quantized_params(model)
     _needs_nonfloat_guard = model_has_nonfloat_params(model)
+    if _needs_nonfloat_guard:
+        # PatchManager applies this for fsdp2 + 4/8-bit configs; direct callers of
+        # this function (tests, probes) would otherwise see FSDP2 cast packed bytes
+        apply_init_dtype_attrs_patch()
     _guard = (
         nonfloat_param_guard(model)
         if _needs_nonfloat_guard
         else contextlib.nullcontext()
     )
-    with _guard:
+    from axolotl.utils.nf4_loading import nf4_phase
+
+    phase = nf4_phase("NF4 FSDP2 wrapping") if staged_nf4 else contextlib.nullcontext()
+    with _guard, phase:
         if _quantized:
             # keep-fp32 modules (registered by model adapters, e.g. DSV4 mHC) get their own
             # fp32 shard group; remaining plain fp32 (PEFT LoRA) is cast to the compute dtype.
@@ -647,6 +773,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
         if auto_wrap_policy is not None:
             for module in get_module_children_bottom_up(model)[:-1]:
+                if module in nf4_unwrapped_children:
+                    continue
+                if staged_nf4 and isinstance(
+                    module,
+                    (nn.ModuleList, nn.ModuleDict, nn.ParameterList, nn.ParameterDict),
+                ):
+                    continue
                 if is_peft_model and isinstance(module, LoraLayer):
                     module_log_bias_mismatch = _process_lora_module_for_fsdp(
                         module, fsdp2_kwargs
@@ -663,25 +796,18 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        fsdp2_load_full_state_dict(
-            accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
-        )
+        load_state = fsdp2_load_full_state_dict
+        if staged_nf4:
+            from axolotl.monkeypatch.accelerate.fsdp2_nf4 import load_staged_nf4_state
+
+            load_state = load_staged_nf4_state
+        load_state(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict
-        for fqn, buffer_tensor in original_non_persistent_buffers.items():
-            buffer_tensor = buffer_tensor.to(accelerator.device)
-
-            if "." in fqn:
-                parent_fqn, local_buffer_name = fqn.rsplit(".", 1)
-                parent_module = model.get_submodule(parent_fqn)
-            else:
-                local_buffer_name = fqn
-                parent_module = model
-
-            parent_module.register_buffer(
-                local_buffer_name, buffer_tensor, persistent=False
-            )
+        _restore_non_persistent_buffers(
+            model, original_non_persistent_buffers, accelerator
+        )
 
         # We need to tie the weights again, as call to `load_full_state_dict` breaks the tie
         # Needs to be called both here and above
@@ -689,6 +815,27 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # removing the call above leads to extra memory usage as explained in the comment above
         if hasattr(model, "tie_weights"):
             model.tie_weights()
+
+    if getattr(model, "_axolotl_native_nvfp4_merge_aware_requested", False):
+        _install_requested_native_nvfp4_merge_aware_lora_linears(model)
+
+    if (
+        getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients_requested", None)
+        == "FSDP"
+    ):
+        from axolotl.monkeypatch.torchao_nvfp4_dynamic_ste import (
+            install_fsdp_native_nvfp4_dynamic_input_stes,
+        )
+
+        install_fsdp_native_nvfp4_dynamic_input_stes(model)
+        if not getattr(model, "_axolotl_native_nvfp4_dynamic_input_gradients", False):
+            model._axolotl_merge_aware_unsupported = True
+            LOG.warning(
+                "NVFP4 MERGE WARNING: dynamic native NVFP4 input-gradient coverage "
+                "is incomplete after FSDP2 wrapping; continuing without merged-NVFP4 "
+                "parity guarantee."
+            )
+
     return model
 
 

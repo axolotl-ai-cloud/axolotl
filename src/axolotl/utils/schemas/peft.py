@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
+VALUE_INDEPENDENT_LORA_INIT = (None, True, False, "gaussian")
+
 
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
@@ -38,6 +40,11 @@ class LoraConfig(BaseModel):
         default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
     )
 
+    nf4_backend: Literal["bitsandbytes", "torchao"] = Field(
+        default="bitsandbytes",
+        description="NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
+    )
+
     adapter: str | None = Field(
         default=None,
         json_schema_extra={
@@ -49,6 +56,13 @@ class LoraConfig(BaseModel):
         json_schema_extra={
             "description": "If you already have a lora model trained that you want to load, put that here. This means after training, if you want to test the model, you should set this to the value of `output_dir`. Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`."
         },
+    )
+    nvfp4_merge_aware: bool | None = Field(
+        default=None,
+        description=(
+            "Train supported NVFP4 LoRA targets against their merged quantized weights. "
+            "Defaults to enabled for supported backends; false opts out with a warning."
+        ),
     )
     lora_r: int | None = None
     lora_alpha: int | None = None
@@ -121,6 +135,12 @@ class LoraConfig(BaseModel):
             )
         },
     )
+    lora_fp32_gradients: bool = Field(
+        default=False,
+        description="Accumulate LoRA gradients in FP32. Keeps LoRA parameters in FP32 "
+        "on single-device/DDP/FSDP2; DeepSpeed uses native FP32 gradient buffers. "
+        "Fused reductions follow parameter precision. Frozen base weights are not promoted.",
+    )
     peft_autocast_adapter_dtype: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -129,9 +149,9 @@ class LoraConfig(BaseModel):
     )
 
     qlora_sharded_model_loading: bool | None = Field(
-        default=False,
+        default=None,
         json_schema_extra={
-            "description": "load qlora model in sharded format for FSDP using answer.ai technique."
+            "description": "Load QLoRA weights in sharded format for FSDP. Defaults to true for FSDP2 QLoRA with load_in_4bit and cpu_ram_efficient_loading, and false otherwise."
         },
     )
     lora_on_cpu: bool | None = Field(
@@ -247,6 +267,23 @@ class LoraConfig(BaseModel):
             raise ValueError(
                 "lora_dropout must be 0 when lora_target_parameters is set. "
                 "PEFT's ParamWrapper does not support lora_dropout != 0."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_lora_target_parameters_init(self):
+        # PEFT raises from inside the init after the model has loaded, which on a
+        # large MoE is after the whole staging run
+        if self.lora_target_parameters and (
+            self.peft_init_lora_weights not in VALUE_INDEPENDENT_LORA_INIT
+            or (self.peft and self.peft.loftq_config)
+        ):
+            raise ValueError(
+                "peft_init_lora_weights must be the default or gaussian when "
+                "lora_target_parameters is set: pissa, olora, loftq, corda, orthogonal "
+                "and lora_ga read base_layer.weight, which fused expert parameters do "
+                "not have, so PEFT fails when building the adapter; eva and mica are "
+                "not supported for target parameters."
             )
         return self
 

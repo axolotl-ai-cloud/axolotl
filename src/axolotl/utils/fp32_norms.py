@@ -75,13 +75,6 @@ def shard_norms_fp32(
     if source is not None and not getattr(source, "fp32_norms", False):
         return 0
 
-    if source is not None and getattr(source, "fsdp_version", None) != 2:
-        raise ValueError(
-            "fp32_norms requires fsdp_version: 2. FSDP1 enforces flat-param "
-            "dtype uniformity within each wrap group, which is incompatible "
-            "with keeping norms in fp32 while the rest of the layer is bf16."
-        )
-
     patterns = (
         list(patterns)
         if patterns is not None

@@ -77,10 +77,9 @@ def _merge_aware_wfq(
     """
     E, dim1, dim2 = w_dense.shape
     r = lora_A.shape[0] // E
-    A_3d = lora_A.reshape(E, r, dim2).to(w_dense.dtype)
-    B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1).to(w_dense.dtype)
-    # scaling folded into the small [E, r, dim2] operand, not the full product
-    w_eff = w_dense + torch.bmm(B_3d, A_3d * scaling)
+    A_3d = lora_A.reshape(E, r, dim2).float()
+    B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1).float()
+    w_eff = (w_dense.float() + torch.bmm(B_3d, A_3d) * scaling).to(w_dense.dtype)
     pts_flat = None if pts is None else pts.reshape(-1)
 
     from .nvfp4_quant import fake_quant_nvfp4_dispatch
@@ -100,6 +99,16 @@ def _use_grouped_mm(x: torch.Tensor) -> bool:
         and x.dtype == torch.bfloat16
         and hasattr(torch, "_grouped_mm")
         and torch.cuda.get_device_capability(x.device)[0] >= 9
+    )
+
+
+def _lora_grouped_mm_supported(x: torch.Tensor, lora_A: torch.Tensor, E: int) -> bool:
+    """Whether the LoRA rank layout meets grouped GEMM's 16-byte stride rule."""
+    r = lora_A.shape[0] // E
+    return (
+        _use_grouped_mm(x)
+        and lora_A.dtype == x.dtype
+        and (r * lora_A.element_size()) % 16 == 0
     )
 
 
@@ -138,7 +147,7 @@ def _lora_delta_per_group(
     A_3d = lora_A.reshape(E, r, dim2)  # [E, r, dim2]
     B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1)  # [E, dim1, r]
 
-    if _use_grouped_mm(x_grouped) and lora_A.dtype == x_grouped.dtype:
+    if _lora_grouped_mm_supported(x_grouped, lora_A, E):
         offs = _grouped_offs(expert_offsets, x_grouped.device)
         z = torch._grouped_mm(x_grouped, A_3d.transpose(-2, -1), offs=offs)
         if B_c is None:
@@ -185,7 +194,7 @@ def _lora_backward_per_group(
     A_3d = lora_A.reshape(E, r, dim2)  # [E, r, dim2]
     B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1)  # [E, dim1, r]
 
-    if _use_grouped_mm(grad_h) and lora_A.dtype == grad_h.dtype:
+    if _lora_grouped_mm_supported(grad_h, lora_A, E):
         offs = _grouped_offs(expert_offsets, grad_h.device)
         if B_c is None:
             # B_3d's permute leaves no unit-stride dim; grouped GEMM needs one.
@@ -814,4 +823,83 @@ def grouped_moe_reference_forward(
     )
     return combine_expert_outputs(
         y_grouped, gather_token_idx, weights_grouped, hidden_states.shape[0]
+    )
+
+
+def grouped_moe_merge_aware_ep_forward(
+    hidden_states: torch.Tensor,
+    local_top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    w1: torch.Tensor,
+    b1: Optional[torch.Tensor],
+    w2: torch.Tensor,
+    b2: Optional[torch.Tensor],
+    lora1: Optional[tuple[torch.Tensor, torch.Tensor]],
+    lora2: Optional[tuple[torch.Tensor, torch.Tensor]],
+    num_experts_local: int,
+    *,
+    act: str,
+    concat: bool,
+    scaling1: float,
+    scaling2: float,
+    limit: Optional[float] = None,
+    gated: bool = True,
+) -> torch.Tensor:
+    """Merge-aware grouped MoE forward for a rank's local DeepEP experts."""
+    if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
+        raise ValueError("merge-aware EP forward requires native NVFP4 expert weights")
+
+    num_tokens, top_k = local_top_k_index.shape
+    flat_expert = local_top_k_index.reshape(-1)
+    valid = flat_expert >= 0
+    if not bool(valid.any()):
+        return hidden_states.sum(dim=-1, keepdim=True).expand(-1, w2.shape[-2]) * 0
+
+    token_ids = torch.arange(
+        num_tokens, device=hidden_states.device, dtype=torch.long
+    ).repeat_interleave(top_k)
+    flat_weight = top_k_weights.reshape(-1).to(hidden_states.dtype)
+    flat_expert = flat_expert[valid].to(torch.long)
+    token_ids = token_ids[valid]
+    flat_weight = flat_weight[valid]
+
+    sorted_experts, order = torch.sort(flat_expert, stable=True)
+    gather_token_idx = token_ids[order]
+    weights_grouped = flat_weight[order]
+    x_grouped = hidden_states.index_select(0, gather_token_idx)
+    expert_offsets = torch.searchsorted(
+        sorted_experts,
+        torch.arange(
+            num_experts_local + 1,
+            device=hidden_states.device,
+            dtype=sorted_experts.dtype,
+        ),
+    )
+    merge_aware1 = lora1 is not None
+    merge_aware2 = lora2 is not None
+
+    y_grouped = grouped_expert_mlp_lora(
+        x_grouped,
+        expert_offsets,
+        dequantize_expert_weight(w1),
+        b1,
+        dequantize_expert_weight(w2),
+        b2,
+        lora1,
+        lora2,
+        act=act,
+        backend="torch",
+        concat=concat,
+        scaling1=scaling1,
+        scaling2=scaling2,
+        limit=limit,
+        merge_aware1=merge_aware1,
+        ma_pts1=w1.per_tensor_scale if merge_aware1 else None,
+        merge_aware2=merge_aware2,
+        ma_pts2=w2.per_tensor_scale if merge_aware2 else None,
+        gated=gated,
+    )
+    output = y_grouped.new_zeros((num_tokens, y_grouped.shape[-1]))
+    return output.index_add(
+        0, gather_token_idx, y_grouped * weights_grouped.unsqueeze(-1)
     )

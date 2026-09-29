@@ -23,12 +23,14 @@ df_template = template_env.get_template(dockerfile)
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
     "AXOLOTL_ARGS": os.environ.get("AXOLOTL_ARGS", ""),
-    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.6.0"),
-    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.11-cu126-2.6.0"),
-    "CUDA": os.environ.get("CUDA", "126"),
+    "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.13.0"),
+    "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.12-cu130-2.13.0"),
+    "CUDA": os.environ.get("CUDA", "130"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
     "NIGHTLY_BUILD": os.environ.get("NIGHTLY_BUILD", ""),
+    "MULTIGPU_TEST_SUITE": os.environ.get("MULTIGPU_TEST_SUITE", "multigpu"),
+    "NF4_TEST_STACK": os.environ.get("NF4_TEST_STACK", "pinned"),
     "CODECOV_TOKEN": os.environ.get("CODECOV_TOKEN", ""),
     "HF_HOME": "/workspace/data/huggingface-cache/hub",
     "PYTHONUNBUFFERED": os.environ.get("PYTHONUNBUFFERED", "1"),
@@ -56,7 +58,8 @@ VOLUME_CONFIG = {
 }
 
 N_GPUS = int(os.environ.get("N_GPUS", 2))
-GPU_CONFIG = f"H100:{N_GPUS}"
+GPU_TYPE = os.environ.get("GPU_TYPE", "H100")
+GPU_CONFIG = f"{GPU_TYPE}:{N_GPUS}"
 
 
 def run_cmd(cmd: str, run_folder: str):
@@ -72,11 +75,21 @@ def run_cmd(cmd: str, run_folder: str):
     gpu=GPU_CONFIG,
     timeout=120 * 60,
     cpu=16.0,
-    memory=131072 * N_GPUS,
+    memory=(
+        32768
+        if os.environ.get("MULTIGPU_TEST_SUITE") in {"nf4", "nvfp4"}
+        else 131072 * N_GPUS
+    ),
     volumes=VOLUME_CONFIG,
 )
 def cicd_pytest():
-    run_cmd("./cicd/multigpu.sh", "/workspace/axolotl")
+    suite = os.environ.get("MULTIGPU_TEST_SUITE", "multigpu")
+    scripts = {
+        "multigpu": "./cicd/multigpu.sh",
+        "nf4": "bash ./cicd/nf4.sh",
+        "nvfp4": "bash ./cicd/nvfp4.sh",
+    }
+    run_cmd(scripts[suite], "/workspace/axolotl")
 
 
 @app.local_entrypoint()

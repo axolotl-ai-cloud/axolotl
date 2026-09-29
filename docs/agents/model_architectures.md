@@ -64,6 +64,29 @@ Supported: Gemma4 (`gemma4_text`), Mixtral, Qwen MoE variants, Nemotron-3 (`nemo
 
 Nemotron-3 latentmoe (`nemotron_h`) experts are non-gated (`up_proj`/`down_proj`, relu², no gate_proj) in `moe_latent_size` width: target `experts.up_proj`/`experts.down_proj` in `lora_target_parameters`, and add `fc1_latent_proj`/`fc2_latent_proj` to `lora_target_modules` for the shared latent projections. NVFP4 checkpoints (modelopt MIXED_PRECISION) use the same plugin with `dsv4_fp4_grouped_mode: nvfp4`; only the routed experts stay packed NVFP4, everything else dequantizes to bf16 at load.
 
+## GLM-4.7-Flash
+
+**Model type**: `glm4_moe_lite`.
+
+The Liger plugin supports RMSNorm, dense/shared-expert SwiGLU, and both rotary layouts. Routed experts use the selected expert backend (for example, SonicMoE). To combine these optimizations with CCE:
+
+```yaml
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_cross_entropy: false
+liger_fused_linear_cross_entropy: false
+cut_cross_entropy: true
+use_sonicmoe: true
+fused_attn_kernel: true
+```
+
+For this architecture, `fused_attn_kernel` fuses partial RoPE and MLA Q/K/V assembly; latent RMSNorms remain separate. It preserves the selected attention backend and packed-sequence metadata. When enabled, it replaces the attention preparation normally handled by Liger RoPE. Cached decoding, CPU execution, and trainable rotary embeddings retain the Transformers forward path.
+
 ## Gemma 4
 
 **Models**: `google/gemma-4-26B-A4B` (MoE), `google/gemma-4-31B` (dense), `google/gemma-4-E2B`, `google/gemma-4-E4B`
@@ -94,19 +117,15 @@ Axolotl auto-detects Gemma4 and applies:
 |----------|--------|-------|
 | DDP | Yes | Auto-sets `ddp_find_unused_parameters=True` |
 | DDP + activation_offloading | Yes | `find_unused_parameters` is skipped (conflicts with checkpoint wrappers) |
-| FSDP1 | No | OOM during dequantization/sharding with QLoRA |
 | FSDP2 | Yes | Use `Gemma4TextDecoderLayer` (not `Gemma4DecoderLayer`) as wrap class |
 | FSDP2 + activation_offloading | Yes | Lowest VRAM (~26 GiB/GPU for 26B-A4B) |
 
 FSDP2 config:
 ```yaml
-fsdp:
-  - full_shard
-  - auto_wrap
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer
 ```
 
 ### MoE (26B-A4B)
@@ -165,7 +184,7 @@ lora_target_parameters:
 | `mm_token_type_ids is required` in DDP | `model.config` not accessible through DDP wrapper | Already fixed — `unwrap_model()` in `compute_loss` and `prediction_step` |
 | `marked a variable ready twice` in DDP | `ddp_find_unused_parameters=True` + activation_offloading checkpoint wrappers | Auto-handled — `find_unused_parameters` is skipped when `activation_offloading: true` |
 | Loss ~12 instead of ~0.5 | Using `lora_target_linear: true` (applies LoRA to vision/audio modules) | Use the regex `lora_target_modules` pattern instead |
-| FSDP2 `Could not find Gemma4AudioLayer` | Auto-wrap detects `_no_split_modules` including audio layers that don't exist | Explicitly set `fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer` |
+| FSDP2 `Could not find Gemma4AudioLayer` | Auto-wrap detects `_no_split_modules` including audio layers that don't exist | Explicitly set `fsdp_config.transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer` |
 | `Gemma4ClippableLinear not supported` by PEFT | Vision tower uses a non-standard linear wrapper | Axolotl patches this automatically via `_patch_peft_clippable_linear()` |
 
 ### E2B/E4B dense models

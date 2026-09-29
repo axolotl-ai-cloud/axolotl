@@ -9,6 +9,7 @@ the class names of modules that must stay fp32 (e.g. DeepSeek-V4 mHC) via
 from __future__ import annotations
 
 import contextlib
+import itertools
 
 import torch
 
@@ -68,6 +69,15 @@ def _is_float_logical_quantized_param(p) -> bool:
     return data is not None and type(data).__name__ in _QUANT_TENSOR_CLASS_NAMES
 
 
+def model_has_nvfp4_params(model) -> bool:
+    """True iff the model carries a native TorchAO NVFP4 tensor subclass."""
+    return any(
+        type(p).__name__ == "NVFP4Tensor"
+        or type(getattr(p, "data", None)).__name__ == "NVFP4Tensor"
+        for p in model.parameters()
+    )
+
+
 def model_has_float_logical_quantized_params(model) -> bool:
     """Capability check for the dtype/cast/sharding policy: ONLY float-logical quantized tensor
     subclasses (the pre-quantized NVFP4/Float8 checkpoint case). Plain bnb Params4bit QLoRA is
@@ -111,6 +121,43 @@ def nonfloat_param_guard(model):
         nn.Parameter.__new__ = orig_new
 
 
+def patch_fsdp2_traceable_wrapper_param_move() -> None:
+    """Preserve parameter trainability when FSDP2 moves tensor subclasses to its device."""
+    if getattr(patch_fsdp2_traceable_wrapper_param_move, "_axolotl_patched", False):
+        return
+
+    from torch import nn
+    from torch.distributed.fsdp._fully_shard import _fsdp_init
+    from torch.distributed.tensor import DTensor
+
+    def _move_states_to_device(params, buffers, device) -> None:
+        for tensor in itertools.chain(params, buffers):
+            if tensor.device == device or tensor.device.type == "meta":
+                continue
+            if isinstance(tensor, DTensor):
+                if (dtensor_mesh_type := tensor.device_mesh.device_type) != device.type:
+                    raise ValueError(
+                        "Requires DTensor to have mesh of the same type as the FSDP mesh "
+                        f"but got {dtensor_mesh_type} for DTensor and {device.type}"
+                    )
+                raise AssertionError(
+                    f"Expects DTensor to be moved to {dtensor_mesh_type} but got "
+                    f"{tensor.device}"
+                )
+            if _fsdp_init.is_traceable_wrapper_subclass(tensor):
+                with torch.no_grad():
+                    tensor_on_device = nn.Parameter(
+                        tensor.to(device), requires_grad=tensor.requires_grad
+                    )
+                torch.utils.swap_tensors(tensor, tensor_on_device)
+            else:
+                tensor.data = tensor.to(device)
+
+    _fsdp_init._move_states_to_device = _move_states_to_device
+    patch_fsdp2_traceable_wrapper_param_move._axolotl_patched = True
+    LOG.info("Patched FSDP2 traceable-wrapper device moves to preserve requires_grad")
+
+
 def shard_fp32_modules(model, fsdp2_kwargs, compute_dtype=torch.bfloat16) -> int:
     """Shard registered keep-fp32 modules (e.g. DSV4 mHC) in their own fp32 group: compute in fp32
     (cast inputs up) but emit ``compute_dtype`` outputs so they don't feed fp32 activations into
@@ -148,7 +195,14 @@ def cast_residual_fp32(model, compute_dtype=torch.bfloat16) -> int:
     from torch.distributed.tensor import DTensor
 
     n = 0
-    for p in model.parameters():
+    preserve_lora = getattr(model, "_axolotl_lora_fp32_gradients", False)
+    for name, p in model.named_parameters():
+        if (
+            preserve_lora
+            and p.requires_grad
+            and any(part.startswith("lora_") for part in name.split("."))
+        ):
+            continue
         if p.dtype == torch.float32 and not isinstance(p.data, DTensor):
             p.data = p.data.to(compute_dtype)
             n += 1
