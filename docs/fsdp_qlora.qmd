@@ -31,7 +31,7 @@ This disables memory pinning, allowing FSDP to use disk swap space as fallback. 
 
 ## Example Config
 
-[examples/llama-2/qlora-fsdp.yml](../examples/llama-2/qlora-fsdp.yml) contains an example of how to enable QLoRA + FSDP in axolotl.
+[examples/qwen3.5/27b-qlora-fsdp.yaml](../examples/qwen3.5/27b-qlora-fsdp.yaml) contains an example of how to enable QLoRA + FSDP in axolotl.
 
 ## References
 

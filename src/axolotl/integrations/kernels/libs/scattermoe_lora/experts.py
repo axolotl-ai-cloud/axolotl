@@ -5,6 +5,7 @@ ScatterMoE Triton call via ``parallel_linear_lora``.
 """
 
 import functools
+import warnings
 
 import torch
 import torch.nn.functional as F
@@ -21,12 +22,16 @@ from .selective_dequant import (
 )
 
 
+def _w1_name(module) -> str:
+    return "gate_up_proj" if hasattr(module, "gate_up_proj") else "up_proj"
+
+
 def _has_peft_wrapper(module):
     """Check if a module's parameter has been wrapped by PEFT ParamWrapper."""
     try:
         from peft.tuners.param_wrapper import ParamWrapper
 
-        for attr in ("gate_up_proj", "down_proj"):
+        for attr in ("gate_up_proj", "up_proj", "down_proj"):
             param = getattr(module, attr, None)
             if isinstance(param, ParamWrapper):
                 return True
@@ -47,14 +52,18 @@ def _unwrap_experts_lora(experts):
     except ImportError:
         return experts, None, None
 
-    if not isinstance(getattr(experts, "gate_up_proj", None), ParamWrapper):
+    w1_attr = _w1_name(experts)
+    if not isinstance(getattr(experts, w1_attr, None), ParamWrapper):
         return experts, None, None
 
     base_experts = experts
     gup_lora = None
     down_lora = None
 
-    for param, which in ((experts.gate_up_proj, "gup"), (experts.down_proj, "down")):
+    for param, which in (
+        (getattr(experts, w1_attr), "gup"),
+        (experts.down_proj, "down"),
+    ):
         if not isinstance(param, ParamWrapper):
             continue
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(param)
@@ -95,6 +104,174 @@ def _ep_local_expert_lora(lora_A, lora_B, experts):
         out, rank * e_local
     )
     return a, b, e_local, rank
+
+
+def _ep_adapter_unsupported_reason(experts):
+    """Return the first PEFT option the static EP merge path cannot reproduce."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None
+
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            continue
+        adapters = [
+            adapter
+            for adapter in getattr(param, "active_adapters", ())
+            if adapter in getattr(param, "lora_A", {})
+        ]
+        if len(adapters) > 1:
+            return "multiple active adapters"
+        if not adapters:
+            continue
+        if any(
+            getattr(dropout, "p", 0.0) != 0.0
+            for dropout in getattr(param, "lora_dropout", {}).values()
+        ):
+            return "LoRA dropout"
+        if any(getattr(param, "lora_bias", {}).values()):
+            return "LoRA bias"
+        if getattr(param, "lora_variant", None):
+            return "LoRA variant"
+        if any(getattr(param, "use_dora", {}).values()):
+            return "DoRA"
+    return None
+
+
+def _ep_factor_access_reason(experts):
+    """Reject raw factor reads that escaped their enclosing FSDP forward."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None
+
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            continue
+        lora_A, lora_B, _ = get_lora_params_from_wrapper(param)
+        if lora_A is None or lora_B is None:
+            continue
+        if type(lora_A).__name__ == "DTensor" or type(lora_B).__name__ == "DTensor":
+            return "FSDP-sharded LoRA factors outside their materialized forward"
+    return None
+
+
+def _ep_local_peft_lora(experts):
+    """Return this rank's PEFT-layout LoRA factors for both expert projections."""
+    try:
+        from peft.tuners.param_wrapper import ParamWrapper
+    except ImportError:
+        return None, None
+
+    factors = []
+    for name in (_w1_name(experts), "down_proj"):
+        param = getattr(experts, name, None)
+        if not isinstance(param, ParamWrapper) or getattr(
+            param, "disable_adapters", False
+        ):
+            factors.append(None)
+            continue
+        lora_A, lora_B, scaling = get_lora_params_from_wrapper(param)
+        if lora_A is None or lora_B is None:
+            factors.append(None)
+            continue
+        local_A, local_B, _, _ = _ep_local_expert_lora(lora_A, lora_B, experts)
+        factors.append((local_A, local_B, scaling))
+    return factors[0], factors[1]
+
+
+def _warn_merge_aware_ep_unsupported(experts, reason: str) -> None:
+    if getattr(experts, "_axolotl_merge_aware_ep_warning_emitted", False):
+        return
+    experts._axolotl_merge_aware_ep_warning_emitted = True
+    experts._axolotl_merge_aware_unsupported = True
+    warnings.warn(
+        "NVFP4 MERGE WARNING: expert-parallel merge-aware LoRA is unavailable "
+        f"for this experts module ({reason}). Continuing with ordinary LoRA; "
+        "merged NVFP4 deployment parity is not guaranteed.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
+    """Run merge-aware NVFP4 LoRA over local DeepEP experts, or report why it cannot."""
+    if reason := _ep_adapter_unsupported_reason(self):
+        return None, reason
+    if reason := _ep_factor_access_reason(self):
+        return None, reason
+    gup, down = _ep_local_peft_lora(self)
+    if gup is None and down is None:
+        return None, None
+
+    act = _detect_act_type(self, default=None)
+    gated = getattr(self, "has_gate", True)
+    if act is None:
+        return None, "unknown expert activation"
+    if not gated:
+        if act not in ("relu2", "relu_squared"):
+            return (
+                None,
+                f"non-gated experts support only the relu² activation; got {act!r}",
+            )
+    else:
+        from ..sonicmoe.epilogue import check_epilogue
+
+        try:
+            check_epilogue(
+                self,
+                act,
+                concat=getattr(self, "is_concatenated", True),
+                limit=getattr(self, "limit", None),
+                path="merge-aware EP",
+            )
+        except ValueError as error:
+            return None, str(error)
+
+    w1 = _get_base_param(getattr(self, _w1_name(self)))
+    w2 = _get_base_param(self.down_proj)
+    if not (is_nvfp4_param(w1) and is_nvfp4_param(w2)):
+        return None, "both expert projections need native NVFP4 base weights"
+    if (
+        getattr(w1, "act_quant_kwargs", None) is not None
+        or getattr(w2, "act_quant_kwargs", None) is not None
+    ):
+        return None, "dynamic activation quantization"
+
+    from ..sonicmoe.nvfp4_lora import grouped_moe_merge_aware_ep_forward
+
+    lora1 = None if gup is None else gup[:2]
+    lora2 = None if down is None else down[:2]
+    scaling1 = 1.0 if gup is None else gup[2]
+    scaling2 = 1.0 if down is None else down[2]
+    return (
+        grouped_moe_merge_aware_ep_forward(
+            hidden_states,
+            top_k_index,
+            top_k_weights,
+            w1,
+            getattr(self, _w1_name(self) + "_bias", None),
+            w2,
+            getattr(self, "down_proj_bias", None),
+            lora1,
+            lora2,
+            self.num_experts,
+            act=act,
+            concat=getattr(self, "is_concatenated", True),
+            scaling1=scaling1,
+            scaling2=scaling2,
+            limit=getattr(self, "limit", None),
+            gated=gated,
+        ),
+        None,
+    )
 
 
 def _get_base_param(param):
@@ -195,7 +372,7 @@ def _prepare_weights_and_lora(
         # would be the half-size shard (wrong dX shape). On single-GPU it's the same param.
         if module is not None:
             gate_up_weight.recipe = lambda m=module, a=active, f=select: f(
-                _get_base_param(m.gate_up_proj), a
+                _get_base_param(getattr(m, _w1_name(m))), a
             )
             down_weight.recipe = lambda m=module, a=active, f=select: f(
                 _get_base_param(m.down_proj), a
@@ -229,21 +406,25 @@ def _prepare_weights_and_lora(
     )
 
 
-def _detect_act_type(module) -> str:
+def _detect_act_type(module, *, default="silu") -> str | None:
     """Detect gated-activation type from an experts module's act_fn.
 
     Returns 'gelu_tanh' for Gemma4-style GeGLU (gelu_pytorch_tanh * up),
     'silu' for DSV4-style clamped SwiGLU (silu(clamp(gate)) * clamp(up)).
-    Falls back to 'silu' for any unrecognized activation.
+    ``default`` is returned for an unrecognized activation.
     """
     act_fn = getattr(module, "act_fn", None)
     if act_fn is None:
-        return "silu"
+        return default
     fn_name = (
         getattr(act_fn, "__name__", "") or getattr(type(act_fn), "__name__", "") or ""
     )
+    if "relusquared" in fn_name.lower() or "relu2" in fn_name.lower():
+        return "relu2"
     if "gelu" in fn_name.lower():
         return "gelu_tanh"
+    if "silu" in fn_name.lower() or "swish" in fn_name.lower():
+        return "silu"
     try:
         if isinstance(act_fn, functools.partial) and act_fn.func is F.gelu:
             return "gelu_tanh"
@@ -258,28 +439,28 @@ def _detect_act_type(module) -> str:
             return "gelu_tanh"
     except Exception:
         pass
-    return "silu"
+    return default
 
 
 def scattermoe_supports_layout(self) -> bool:
-    """True iff this experts module uses the standard layout scattermoe handles:
-    gate_up concatenated as [E, 2I, H], gated SwiGLU, no expert bias. gpt_oss-style
-    experts (interleaved gate/up, transposed [E, H, 2I], expert bias) return False."""
-    return not (
-        getattr(self, "is_transposed", False)
-        or not getattr(self, "is_concatenated", True)
-        or getattr(self, "has_bias", False)
-        or not getattr(self, "has_gate", True)
-    )
+    """True iff scattermoe handles this expert layout: non-transposed and biasless, with
+    either concatenated ``[E, 2I, H]`` gate_up or a bare ``[E, I, H]`` ``up_proj`` (non-gated).
+    gpt_oss-style experts (interleaved, transposed, biased) return False."""
+    if getattr(self, "is_transposed", False) or getattr(self, "has_bias", False):
+        return False
+    if not getattr(self, "has_gate", True):
+        return hasattr(self, "up_proj")
+    return getattr(self, "is_concatenated", True)
 
 
 def _check_supported_layout(self):
     """Reject expert layouts the fixed transpose/chunk below would miscompute."""
     if not scattermoe_supports_layout(self):
         raise NotImplementedError(
-            "scattermoe supports only concatenated, non-transposed, gated, biasless "
-            "experts (qwen/mixtral/deepseek/glm/...). This model's experts use an "
-            "unsupported layout; use use_sonicmoe or a built-in experts_implementation."
+            "scattermoe supports concatenated, non-transposed, biasless experts: "
+            "gated (qwen/mixtral/deepseek/glm/...) or non-gated up/down (nemotron_h). "
+            "This model's experts use an unsupported layout; use use_sonicmoe or a "
+            "built-in experts_implementation."
         )
 
 
@@ -398,6 +579,8 @@ def scattermoe_experts_forward(
         _check_supported_layout(self)  # raises for any other unsupported layout
 
     K = top_k_index.shape[1]
+    has_gate = getattr(self, "has_gate", True)
+    w1_attr = _w1_name(self)
 
     routing_weights = top_k_weights.to(hidden_states.dtype)
     sorted_expert_idxs, sorted_scattered_idxs, expert_offsets = flatten_sort_count(
@@ -407,7 +590,7 @@ def scattermoe_experts_forward(
     gup_lora, down_lora = None, None
     sm_lora = getattr(self, "_scattermoe_lora", None)
     if sm_lora:
-        gup_lora = sm_lora.get("gate_up_proj")
+        gup_lora = sm_lora.get(w1_attr)
         down_lora = sm_lora.get("down_proj")
     elif _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
@@ -416,7 +599,7 @@ def scattermoe_experts_forward(
     # lower-memory than the fused-Triton path at scale.
     _fp4_grouped_mode = RUNTIME.fp4_grouped_mode
     if _fp4_grouped_mode is not None and gup_lora is not None and down_lora is not None:
-        gu_base = _get_base_param(self.gate_up_proj)
+        gu_base = _get_base_param(getattr(self, w1_attr))
         dn_base = _get_base_param(self.down_proj)
         if is_nvfp4_param(gu_base):
             from .grouped_train import grouped_fp4_available, grouped_fp4_moe_train
@@ -438,8 +621,8 @@ def scattermoe_experts_forward(
                     "disable dsv4_fp4_grouped_mode."
                 )
             # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
-            _recipe = lambda: (  # noqa: E731
-                _get_base_param(self.gate_up_proj),
+            _recipe = lambda p=w1_attr: (  # noqa: E731
+                _get_base_param(getattr(self, p)),
                 _get_base_param(self.down_proj),
             )
             # persistent per-module cache so the backend requantizes the frozen weight to mxfp4
@@ -471,7 +654,7 @@ def scattermoe_experts_forward(
         and down_lora is not None
         and torch.cuda.is_available()
         and torch.cuda.get_device_capability()[0] >= 10
-        and is_nvfp4_param(_get_base_param(self.gate_up_proj))
+        and is_nvfp4_param(_get_base_param(getattr(self, w1_attr)))
     ):
         raise RuntimeError(
             "NVFP4 experts with LoRA require the grouped fp4 MoE path on Blackwell (sm100/sm120): "
@@ -484,9 +667,14 @@ def scattermoe_experts_forward(
     # WITHOUT touching self.gate_up_proj (would full-dequant).
     _bnb_experts = (
         hasattr(self, "parametrizations")
-        and "gate_up_proj" in self.parametrizations
+        and w1_attr in self.parametrizations
         and "down_proj" in self.parametrizations
     )
+    if _bnb_experts and not has_gate:
+        raise NotImplementedError(
+            "bnb-4bit non-gated experts (e.g. nemotron_h) are not supported by the "
+            "chunked-bnb MoE path; use an NVFP4 base or bf16 experts instead."
+        )
     _bnb_fast = False
     if _bnb_experts:
         from .chunked_bnb import bnb_fast_enabled
@@ -516,18 +704,16 @@ def scattermoe_experts_forward(
         sorted_expert_idxs, expert_offsets = remap_expert_indices(
             sorted_expert_idxs, expert_offsets, active, self.num_experts
         )
-        gate_up_weight = selective_expert_weights(
-            self, "gate_up_proj", active
-        ).transpose(2, 1)
+        gate_up_weight = selective_expert_weights(self, w1_attr, active).transpose(2, 1)
         down_weight = selective_expert_weights(self, "down_proj", active).transpose(
             2, 1
         )
         # Recompute-in-backward recipe: the selective dequant is a per-layer bf16 copy of the active
         # experts that ScatterMoELoRA would otherwise pin across all layers (~40 GB). The frozen
         # 4-bit param is resident, so re-run the dequant in backward via the closure.
-        gate_up_weight.recipe = lambda m=self, a=active: selective_expert_weights(
-            m, "gate_up_proj", a
-        ).transpose(2, 1)
+        gate_up_weight.recipe = lambda m=self, a=active, p=w1_attr: (
+            selective_expert_weights(m, p, a).transpose(2, 1)
+        )
         down_weight.recipe = lambda m=self, a=active: selective_expert_weights(
             m, "down_proj", a
         ).transpose(2, 1)
@@ -553,7 +739,7 @@ def scattermoe_experts_forward(
             gup_lora,
             down_lora,
         ) = _prepare_weights_and_lora(
-            _get_base_param(self.gate_up_proj),
+            _get_base_param(getattr(self, w1_attr)),
             _get_base_param(self.down_proj),
             sorted_expert_idxs,
             expert_offsets,
@@ -575,14 +761,18 @@ def scattermoe_experts_forward(
         grouped_in=False,
         grouped_out=True,
     )
-    gates, h = gates_h.chunk(2, dim=-1)
-    # Clamped SwiGLU when the model defines a swiglu_limit (e.g. DeepSeek-V4 limit=10) must match the
-    # eager experts' `_apply_gate` (gate.clamp(max=L); up.clamp(-L, L)), else outliers blow up.
-    _limit = getattr(self, "limit", None)
-    if _limit is not None:
-        gates = gates.clamp(max=_limit)
-        h = h.clamp(min=-_limit, max=_limit)
-    h = self.act_fn(gates) * h
+    if has_gate:
+        gates, h = gates_h.chunk(2, dim=-1)
+        # Clamped SwiGLU when the model defines a swiglu_limit (e.g. DeepSeek-V4 limit=10) must
+        # match the eager experts' `_apply_gate` (gate.clamp(max=L); up.clamp(-L, L)), else
+        # outliers blow up.
+        _limit = getattr(self, "limit", None)
+        if _limit is not None:
+            gates = gates.clamp(max=_limit)
+            h = h.clamp(min=-_limit, max=_limit)
+        h = self.act_fn(gates) * h
+    else:
+        h = self.act_fn(gates_h)
 
     output = _parallel_linear_maybe_lora(
         h,
@@ -686,16 +876,29 @@ def scattermoe_experts_forward_ep(
     """
     _check_supported_layout(self)
 
+    from ..sonicmoe.nvfp4_lora import merge_aware_enabled
+
+    if merge_aware_enabled():
+        merge_aware_output, unsupported_reason = _ep_merge_aware_forward(
+            self, hidden_states, top_k_index, top_k_weights
+        )
+        if merge_aware_output is not None:
+            return merge_aware_output
+        if unsupported_reason is not None:
+            _warn_merge_aware_ep_unsupported(self, unsupported_reason)
+
     # Prefer the grouped NVFP4 GEMM (the same backend the non-EP forward uses) over the triton
     # scatter2scatter LoRA kernel: it's faster AND has no Triton autotune, so there's no per-rank
     # autotune-timing skew to trip DeepEP's combine timeout (which is why the scatter2scatter path
     # needed AXOLOTL_EP_SINGLE_CONFIG). grouped_fp4_moe_train tolerates the DeepEP -1 sentinels
     # (remote-routed slots are dropped). Falls through to scatter2scatter for non-NVFP4 / mode-off /
     # no-LoRA layouts.
+    _has_gate = getattr(self, "has_gate", True)
+    _w1_attr = _w1_name(self)
     _gup_lora_g, _down_lora_g = None, None
     _sm_lora_g = getattr(self, "_scattermoe_lora", None)
     if _sm_lora_g:
-        _gup_lora_g = _sm_lora_g.get("gate_up_proj")
+        _gup_lora_g = _sm_lora_g.get(_w1_attr)
         _down_lora_g = _sm_lora_g.get("down_proj")
     elif _has_peft_wrapper(self):
         _, _gup_lora_g, _down_lora_g = _unwrap_experts_lora(self)
@@ -706,14 +909,14 @@ def scattermoe_experts_forward_ep(
         and _gup_lora_g is not None
         and _down_lora_g is not None
     ):
-        _gu_base_g = _get_base_param(self.gate_up_proj)
+        _gu_base_g = _get_base_param(getattr(self, _w1_attr))
         _dn_base_g = _get_base_param(self.down_proj)
         if is_nvfp4_param(_gu_base_g):
             from .grouped_train import grouped_fp4_available
 
             if grouped_fp4_available(_fp4_grouped_mode_g):
-                _recipe_g = lambda: (  # noqa: E731
-                    _get_base_param(self.gate_up_proj),
+                _recipe_g = lambda p=_w1_attr: (  # noqa: E731
+                    _get_base_param(getattr(self, p)),
                     _get_base_param(self.down_proj),
                 )
                 _cache_g = self.__dict__.setdefault("_dg_mxfp4_cache", {})
@@ -758,14 +961,14 @@ def scattermoe_experts_forward_ep(
     gup_lora, down_lora = None, None
     sm_lora = getattr(self, "_scattermoe_lora", None)
     if sm_lora:
-        gup_lora = sm_lora.get("gate_up_proj")
+        gup_lora = sm_lora.get(_w1_attr)
         down_lora = sm_lora.get("down_proj")
     elif _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
     gate_up_weight, down_weight, se, expert_offsets, gup_lora, down_lora = (
         _prepare_weights_and_lora(
-            _get_base_param(self.gate_up_proj),
+            _get_base_param(getattr(self, _w1_attr)),
             _get_base_param(self.down_proj),
             se,
             expert_offsets,
@@ -790,12 +993,15 @@ def scattermoe_experts_forward_ep(
         grouped_in=True,
         grouped_out=True,
     )
-    gates, h = gates_h.chunk(2, dim=-1)
-    _limit = getattr(self, "limit", None)
-    if _limit is not None:
-        gates = gates.clamp(max=_limit)
-        h = h.clamp(min=-_limit, max=_limit)
-    h = self.act_fn(gates) * h
+    if _has_gate:
+        gates, h = gates_h.chunk(2, dim=-1)
+        _limit = getattr(self, "limit", None)
+        if _limit is not None:
+            gates = gates.clamp(max=_limit)
+            h = h.clamp(min=-_limit, max=_limit)
+        h = self.act_fn(gates) * h
+    else:
+        h = self.act_fn(gates_h)
 
     down_out = _parallel_linear_maybe_lora(
         h,

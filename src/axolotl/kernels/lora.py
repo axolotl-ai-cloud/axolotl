@@ -23,6 +23,80 @@ from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
 
+def _parameter_dtypes(*parameters):
+    return tuple(param.dtype if param is not None else None for param in parameters)
+
+
+def _gradient_mm(left, right, dtype, scale):
+    if dtype == torch.float32 and left.dtype in (torch.float16, torch.bfloat16):
+        with torch.autocast(device_type=left.device.type, enabled=False):
+            if left.is_cuda:
+                return torch.mm(left, right, out_dtype=torch.float32).mul_(scale)
+            return torch.mm(left.float(), right.float()).mul_(scale)
+    result = torch.empty(
+        (left.shape[0], right.shape[1]), device=left.device, dtype=left.dtype
+    )
+    return result.addmm_(left, right, alpha=scale, beta=0)
+
+
+def _lora_parameter_gradients(X_t, grad, A, grad_B, scale, dtypes):
+    return (
+        _gradient_mm(X_t, grad_B, dtypes[0], scale),
+        _gradient_mm(A @ X_t, grad, dtypes[1], scale),
+    )
+
+
+def _requires_projection_forward(proj: nn.Module) -> bool:
+    if hasattr(proj, "_ma_orig_forward"):
+        return True
+    base = proj.get_base_layer() if hasattr(proj, "get_base_layer") else proj
+    weight = getattr(base, "weight", None)
+    if weight is not None and hasattr(weight, "to_local"):
+        weight = weight.to_local()
+    return type(weight).__name__ == "NVFP4Tensor"
+
+
+class _GatedActivation(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, gate, up, kind):
+        ctx.save_for_backward(gate, up)
+        ctx.kind = kind
+        forward = swiglu_forward if kind == "swiglu" else geglu_forward
+        return forward(
+            gate.reshape(1, -1, gate.shape[-1]), up.reshape(1, -1, up.shape[-1])
+        ).view_as(gate)
+
+    @staticmethod
+    def backward(ctx, grad):
+        gate, up = ctx.saved_tensors
+        backward = swiglu_backward if ctx.kind == "swiglu" else geglu_backward
+        # The activation kernels overwrite all three inputs.
+        _, dg, du = backward(
+            grad.contiguous().clone(),
+            gate.contiguous().clone(),
+            up.contiguous().clone(),
+        )
+        return dg, du, None
+
+
+def _projection_forward_mlp(self, X, kind):
+    gate = apply_lora_linear(self.gate_proj, X)
+    up = apply_lora_linear(self.up_proj, X)
+    exact_activation = (
+        isinstance(self.act_fn, nn.SiLU)
+        or type(self.act_fn).__name__ == "SiLUActivation"
+        if kind == "swiglu"
+        else (isinstance(self.act_fn, nn.GELU) and self.act_fn.approximate == "none")
+        or type(self.act_fn).__name__ == "GELUActivation"
+    )
+    hidden = (
+        _GatedActivation.apply(gate, up, kind)
+        if gate.is_cuda and exact_activation
+        else self.act_fn(gate) * up
+    )
+    return apply_lora_linear(self.down_proj, hidden)
+
+
 def get_lora_parameters(
     proj: nn.Module,
 ) -> tuple[
@@ -326,6 +400,9 @@ class LoRA_MLP(torch.autograd.Function):
         activation_fn_backward: Callable,
         inplace: bool | None = True,
     ) -> torch.Tensor:
+        ctx.lora_grad_dtypes = _parameter_dtypes(
+            gate_A, gate_B, up_A, up_B, down_A, down_B
+        )
         has_dropout = X_drop is not None
         has_dora = gate_magnitude is not None
         dtype = X.dtype
@@ -610,25 +687,35 @@ class LoRA_MLP(torch.autograd.Function):
 
         if down_A_t is not None and down_B_t is not None:
             grad_B_down = grad_output @ down_B_t.t()  # reused in matmul_lora above too
-            d_down_A = torch.empty_like(down_A_t)
-            d_down_B = torch.empty_like(down_B_t)
-            d_down_A.addmm_(h.t(), grad_B_down, alpha=down_scale, beta=0)
-            d_down_B.addmm_(down_A_t.t() @ h.t(), grad_output, alpha=down_scale, beta=0)
+            d_down_A, d_down_B = _lora_parameter_gradients(
+                h.t(),
+                grad_output,
+                down_A_t.t(),
+                grad_B_down,
+                down_scale,
+                ctx.lora_grad_dtypes[4:6],
+            )
 
         if up_A_t is not None and up_B_t is not None:
             grad_B_up = grad_up @ up_B_t.t()  # [T, rank] — reuse for dX
-            d_up_A = torch.empty_like(up_A_t)
-            d_up_B = torch.empty_like(up_B_t)
-            d_up_A.addmm_(X_lora.t(), grad_B_up, alpha=up_scale, beta=0)
-            d_up_B.addmm_(up_A_t.t() @ X_lora.t(), grad_up, alpha=up_scale, beta=0)
+            d_up_A, d_up_B = _lora_parameter_gradients(
+                X_lora.t(),
+                grad_up,
+                up_A_t.t(),
+                grad_B_up,
+                up_scale,
+                ctx.lora_grad_dtypes[2:4],
+            )
 
         if gate_A_t is not None and gate_B_t is not None:
             grad_B_gate = grad_gate @ gate_B_t.t()  # [T, rank] — reuse for dX
-            d_gate_A = torch.empty_like(gate_A_t)
-            d_gate_B = torch.empty_like(gate_B_t)
-            d_gate_A.addmm_(X_lora.t(), grad_B_gate, alpha=gate_scale, beta=0)
-            d_gate_B.addmm_(
-                gate_A_t.t() @ X_lora.t(), grad_gate, alpha=gate_scale, beta=0
+            d_gate_A, d_gate_B = _lora_parameter_gradients(
+                X_lora.t(),
+                grad_gate,
+                gate_A_t.t(),
+                grad_B_gate,
+                gate_scale,
+                ctx.lora_grad_dtypes[0:2],
             )
 
         # Compute input gradients
@@ -710,6 +797,11 @@ def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.
 
     Supports bias, dropout, and DoRA.
     """
+    if any(
+        _requires_projection_forward(p)
+        for p in (self.gate_proj, self.up_proj, self.down_proj)
+    ):
+        return _projection_forward_mlp(self, X, "swiglu")
     gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateDrop, gateMag = (
         get_lora_parameters(self.gate_proj)
     )
@@ -767,6 +859,11 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
 
     Supports bias, dropout, and DoRA.
     """
+    if any(
+        _requires_projection_forward(p)
+        for p in (self.gate_proj, self.up_proj, self.down_proj)
+    ):
+        return _projection_forward_mlp(self, X, "geglu")
     gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateDrop, gateMag = (
         get_lora_parameters(self.gate_proj)
     )
@@ -862,6 +959,7 @@ class LoRA_QKV(torch.autograd.Function):
         # Flags
         inplace: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        ctx.lora_grad_dtypes = _parameter_dtypes(q_A, q_B, k_A, k_B, v_A, v_B)
         has_dropout = X_drop is not None
         has_dora = q_magnitude is not None
 
@@ -1103,24 +1201,36 @@ class LoRA_QKV(torch.autograd.Function):
 
         if A_q is not None and B_q is not None:
             grad_B_q = q_grad @ B_q  # [T, rank] — reused for dA and dX
-            d_A_q = torch.empty_like(A_q.t())
-            d_B_q = torch.empty_like(B_q.t())
-            d_A_q.addmm_(X_lora_t, grad_B_q, alpha=q_scale, beta=0)
-            d_B_q.addmm_(A_q @ X_lora_t, q_grad, alpha=q_scale, beta=0)
+            d_A_q, d_B_q = _lora_parameter_gradients(
+                X_lora_t,
+                q_grad,
+                A_q,
+                grad_B_q,
+                q_scale,
+                ctx.lora_grad_dtypes[0:2],
+            )
 
         if A_k is not None and B_k is not None:
             grad_B_k = k_grad @ B_k
-            d_A_k = torch.empty_like(A_k.t())
-            d_B_k = torch.empty_like(B_k.t())
-            d_A_k.addmm_(X_lora_t, grad_B_k, alpha=k_scale, beta=0)
-            d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
+            d_A_k, d_B_k = _lora_parameter_gradients(
+                X_lora_t,
+                k_grad,
+                A_k,
+                grad_B_k,
+                k_scale,
+                ctx.lora_grad_dtypes[2:4],
+            )
 
         if A_v is not None and B_v is not None:
             grad_B_v = v_grad @ B_v
-            d_A_v = torch.empty_like(A_v.t())
-            d_B_v = torch.empty_like(B_v.t())
-            d_A_v.addmm_(X_lora_t, grad_B_v, alpha=v_scale, beta=0)
-            d_B_v.addmm_(A_v @ X_lora_t, v_grad, alpha=v_scale, beta=0)
+            d_A_v, d_B_v = _lora_parameter_gradients(
+                X_lora_t,
+                v_grad,
+                A_v,
+                grad_B_v,
+                v_scale,
+                ctx.lora_grad_dtypes[4:6],
+            )
 
         # writing into saved X is untraceable when X is another Function's view output
         q_weight_t = dequantize(q_weight, q_quant)
@@ -1246,6 +1356,9 @@ def apply_lora_qkv(
     Function so PyTorch handles its backward automatically. A single shared
     dropout mask is used across Q, K, V projections for memory efficiency.
     """
+    projections = (self.q_proj, self.k_proj, self.v_proj)
+    if any(_requires_projection_forward(p) for p in projections):
+        return tuple(apply_lora_linear(p, X) for p in projections)
     QW, Qb, QW_quant, QA, QB, QS, Qlb, Qdrop, Qmag = get_lora_parameters(self.q_proj)
     KW, Kb, KW_quant, KA, KB, KS, Klb, Kdrop, Kmag = get_lora_parameters(self.k_proj)
     VW, Vb, VW_quant, VA, VB, VS, Vlb, Vdrop, Vmag = get_lora_parameters(self.v_proj)
@@ -1328,6 +1441,7 @@ class LoRA_QK(torch.autograd.Function):
         # Flags
         inplace: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        ctx.lora_grad_dtypes = _parameter_dtypes(q_A, q_B, k_A, k_B)
         has_dropout = X_drop is not None
         has_dora = q_magnitude is not None
 
@@ -1496,17 +1610,25 @@ class LoRA_QK(torch.autograd.Function):
 
         if A_q is not None and B_q is not None:
             grad_B_q = q_grad @ B_q
-            d_A_q = torch.empty_like(A_q.t())
-            d_B_q = torch.empty_like(B_q.t())
-            d_A_q.addmm_(X_lora_t, grad_B_q, alpha=q_scale, beta=0)
-            d_B_q.addmm_(A_q @ X_lora_t, q_grad, alpha=q_scale, beta=0)
+            d_A_q, d_B_q = _lora_parameter_gradients(
+                X_lora_t,
+                q_grad,
+                A_q,
+                grad_B_q,
+                q_scale,
+                ctx.lora_grad_dtypes[0:2],
+            )
 
         if A_k is not None and B_k is not None:
             grad_B_k = k_grad @ B_k
-            d_A_k = torch.empty_like(A_k.t())
-            d_B_k = torch.empty_like(B_k.t())
-            d_A_k.addmm_(X_lora_t, grad_B_k, alpha=k_scale, beta=0)
-            d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
+            d_A_k, d_B_k = _lora_parameter_gradients(
+                X_lora_t,
+                k_grad,
+                A_k,
+                grad_B_k,
+                k_scale,
+                ctx.lora_grad_dtypes[2:4],
+            )
 
         # writing into saved X is untraceable when X is another Function's view output
         q_weight_t = dequantize(q_weight, q_quant)
@@ -1586,6 +1708,10 @@ def apply_lora_qk(
 
     Supports bias, dropout, and DoRA.
     """
+    if any(_requires_projection_forward(p) for p in (self.q_proj, self.k_proj)):
+        query = apply_lora_linear(self.q_proj, X)
+        key = apply_lora_linear(self.k_proj, X)
+        return query, key, key
     QW, Qb, QW_quant, QA, QB, QS, Qlb, Qdrop, Qmag = get_lora_parameters(self.q_proj)
     KW, Kb, KW_quant, KA, KB, KS, Klb, Kdrop, Kmag = get_lora_parameters(self.k_proj)
 
@@ -1641,6 +1767,7 @@ class LoRA_O(torch.autograd.Function):
         lora_bias: torch.Tensor | None,
         magnitude: torch.Tensor | None,
     ) -> torch.Tensor:
+        ctx.lora_grad_dtypes = _parameter_dtypes(A, B)
         has_dropout = X_drop is not None
         has_dora = magnitude is not None
         dtype = X.dtype
@@ -1734,10 +1861,14 @@ class LoRA_O(torch.autograd.Function):
         if A is not None:
             grad_B = dY @ B  # [T, rank] — reused below
             X_lora_t = X_lora.t()
-            d_A = torch.empty_like(A.t())
-            d_B = torch.empty_like(B.t())
-            d_A.addmm_(X_lora_t, grad_B, alpha=s, beta=0)
-            d_B.addmm_(A @ X_lora_t, dY, alpha=s, beta=0)
+            d_A, d_B = _lora_parameter_gradients(
+                X_lora_t,
+                dY,
+                A,
+                grad_B,
+                s,
+                ctx.lora_grad_dtypes,
+            )
 
         # Base path input gradient
         W_deq = dequantize(W.t(), W_quant)
@@ -1774,6 +1905,8 @@ def apply_lora_o(self, X: torch.Tensor) -> torch.Tensor:
 
     Supports bias, dropout, and DoRA.
     """
+    if _requires_projection_forward(self.o_proj):
+        return apply_lora_linear(self.o_proj, X)
     OW, Ob, OW_quant, OA, OB, OS, Olb, Odrop, Omag = get_lora_parameters(self.o_proj)
     X_drop = _apply_dropout(Odrop, X, self.training)
     output = LoRA_O.apply(X, X_drop, OW, Ob, OW_quant, OA, OB, OS, Olb, Omag)
@@ -1781,8 +1914,75 @@ def apply_lora_o(self, X: torch.Tensor) -> torch.Tensor:
     return output
 
 
+class LoRA_Delta(torch.autograd.Function):
+    """Fuse the adapter while the quantized base retains its own autograd path."""
+
+    @staticmethod
+    @torch_amp_custom_fwd
+    def forward(ctx, base, X, A, B, scale, bias):
+        dtype = base.dtype
+        x = X.reshape(-1, X.shape[-1]).to(dtype)
+        a, b = A.to(dtype), B.to(dtype)
+        ctx.save_for_backward(x, a, b)
+        ctx.scale = scale
+        ctx.input_shape = X.shape
+        ctx.parameter_dtypes = _parameter_dtypes(A, B)
+        ctx.bias_dtype = bias.dtype if bias is not None else None
+        result = torch.addmm(
+            base.reshape(-1, base.shape[-1]), x @ a.t(), b.t(), alpha=scale
+        )
+        if bias is not None:
+            result.add_(bias.to(dtype), alpha=scale)
+        return result.view_as(base)
+
+    @staticmethod
+    @torch_amp_custom_bwd
+    def backward(ctx, grad):
+        x, a, b = ctx.saved_tensors
+        dy = grad.reshape(-1, grad.shape[-1])
+        grad_b = dy @ b
+        da, db = _lora_parameter_gradients(
+            x.t(), dy, a, grad_b, ctx.scale, ctx.parameter_dtypes
+        )
+        dx = (grad_b @ a).mul_(ctx.scale).reshape(ctx.input_shape)
+        dbias = None
+        if ctx.bias_dtype is not None:
+            dbias = dy.sum(dim=0, dtype=ctx.bias_dtype).mul_(ctx.scale)
+        return grad, dx, da.t(), db.t(), None, dbias
+
+
+def _apply_native_quantized_lora(proj, X):
+    base_layer = proj.get_base_layer() if hasattr(proj, "get_base_layer") else proj
+    weight = base_layer.weight
+    if hasattr(weight, "to_local"):
+        weight = weight.to_local()
+    if getattr(weight, "act_quant_kwargs", None) is not None:
+        raise NotImplementedError(
+            "LoRA kernels require weight-only NVFP4 bases; torchao dynamic "
+            "activation quantization does not preserve the base input gradient."
+        )
+    if (
+        not hasattr(proj, "lora_A")
+        or proj.disable_adapters
+        or proj.merged
+        or len(proj.active_adapters) != 1
+        or any(proj.use_dora.values())
+    ):
+        return proj(X)
+    _, _, _, A, B, scale, bias, dropout, _ = get_lora_parameters(proj)
+    base = base_layer(X)
+    X_drop = _apply_dropout(dropout, X, proj.training)
+    return LoRA_Delta.apply(
+        base, X_drop if X_drop is not None else X, A, B, scale, bias
+    )
+
+
 def apply_lora_linear(proj: nn.Module, X: torch.Tensor) -> torch.Tensor:
-    """Routed through ``LoRA_O`` to avoid peft's bf16->fp32->bf16 dtype round-trip."""
+    """Fuse LoRA while retaining protected or native quantized base forwards."""
+    if _requires_projection_forward(proj):
+        if hasattr(proj, "_ma_orig_forward"):
+            return proj(X)
+        return _apply_native_quantized_lora(proj, X)
     W, b, W_quant, A, B, s, lora_bias, dropout, magnitude = get_lora_parameters(proj)
     X_drop = _apply_dropout(dropout, X, proj.training)
     return LoRA_O.apply(X, X_drop, W, b, W_quant, A, B, s, lora_bias, magnitude)
@@ -1817,6 +2017,10 @@ class LoRA_FusedProj(torch.autograd.Function):
         dtype = X.dtype
         X_lora = X_drop if has_dropout else X
 
+        ctx.lora_grad_dtypes = [
+            _parameter_dtypes(group[2], group[3])
+            for group in _chunk(tensors, _FUSED_PROJ_NUM_TENSORS)
+        ]
         outs = []
         weights = []
         saved = [X, X_drop if has_dropout else X]
@@ -1901,10 +2105,14 @@ class LoRA_FusedProj(torch.autograd.Function):
             grad_B = d_A = d_B = None
             if A is not None and B is not None:
                 grad_B = dY @ B
-                d_A = torch.empty_like(A.t())
-                d_B = torch.empty_like(B.t())
-                d_A.addmm_(X_lora_t, grad_B, alpha=s, beta=0)
-                d_B.addmm_(A @ X_lora_t, dY, alpha=s, beta=0)
+                d_A, d_B = _lora_parameter_gradients(
+                    X_lora_t,
+                    dY,
+                    A,
+                    grad_B,
+                    s,
+                    ctx.lora_grad_dtypes[i],
+                )
 
             # .to(dY.dtype): an NF4 base with an fp32 quant_state dequants to fp32,
             # which the shared in-place grad_X accumulator cannot mix. No-op in the
@@ -1947,6 +2155,8 @@ def apply_lora_gdn_in_proj(
     self, X: torch.Tensor, proj_names: tuple[str, ...]
 ) -> dict[str, torch.Tensor]:
     """Fuse GDN in-projections (shared ``X``) into one call; base-only projs fold in too."""
+    if any(_requires_projection_forward(getattr(self, name)) for name in proj_names):
+        return {name: apply_lora_linear(getattr(self, name), X) for name in proj_names}
     scales, quants, flat = [], [], []
     dropout_mod = None
     for name in proj_names:
@@ -2208,3 +2418,12 @@ def apply_lora_embedding(self, x: torch.Tensor) -> torch.Tensor:
 
     # Cast to model dtype (LoRA ops may upcast to float32)
     return result.to(output_dtype)
+
+
+def apply_lora_mlp_relu2(self, X: torch.Tensor) -> torch.Tensor:
+    """Fuse dense non-gated LoRA projections and ReLU-squared activation."""
+    from .relu2 import apply_relu2
+
+    return apply_lora_linear(
+        self.down_proj, apply_relu2(apply_lora_linear(self.up_proj, X))
+    )

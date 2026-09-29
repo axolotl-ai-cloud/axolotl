@@ -269,11 +269,11 @@ def _kernels():
         s = tl.minimum(tl.maximum(bs, E4M3_EPS), 448.0)
         sdec = _e4m3_rne(s)
         if HAS_PTS:
-            # torchao two-level: x * ((1/pts) / scale), NOT a divide
             r = tl.math.div_rn(tl.math.div_rn(1.0, pts), sdec)
-            q = x * r[:, None]
         else:
-            q = tl.math.div_rn(x, tl.broadcast_to(sdec[:, None], x.shape))
+            r = tl.math.div_rn(1.0, sdec)
+        # torchao 0.18 uses reciprocal multiplication for both scale modes.
+        q = x * r[:, None]
         q = tl.minimum(tl.maximum(q, -6.0), 6.0)
 
         # round-nearest-even onto the E2M1 grid: at each midpoint the tie goes

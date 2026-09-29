@@ -2,7 +2,7 @@
 Jamba model with LigerFusedLinearCrossEntropyLoss
 """
 
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 import torch
 from liger_kernel.transformers.fused_linear_cross_entropy import (
@@ -10,10 +10,7 @@ from liger_kernel.transformers.fused_linear_cross_entropy import (
 )
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import MoeCausalLMOutputWithPast
-from transformers.models.jamba.modeling_jamba import (
-    HybridMambaAttentionDynamicCache,
-    load_balancing_loss_func,
-)
+from transformers.models.jamba.modeling_jamba import load_balancing_loss_func
 
 
 def lce_forward(
@@ -21,17 +18,14 @@ def lce_forward(
     input_ids: torch.LongTensor = None,
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
-    past_key_values: Optional[HybridMambaAttentionDynamicCache] = None,
+    past_key_values=None,
     inputs_embeds: Optional[torch.FloatTensor] = None,
     labels: Optional[torch.LongTensor] = None,
     use_cache: Optional[bool] = None,
-    output_attentions: Optional[bool] = None,
-    output_hidden_states: Optional[bool] = None,
     output_router_logits: Optional[bool] = None,
-    return_dict: Optional[bool] = None,
-    cache_position: Optional[torch.LongTensor] = None,
-    num_logits_to_keep: Optional[Union[int, None]] = None,
-) -> Union[Tuple, MoeCausalLMOutputWithPast]:
+    logits_to_keep: Union[int, torch.Tensor] = 0,
+    **kwargs,
+) -> MoeCausalLMOutputWithPast:
     r"""
     Args:
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -39,8 +33,8 @@ def lce_forward(
             config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
             (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
 
-        num_logits_to_keep (`int` or `None`, *optional*):
-            Calculate logits for the last `num_logits_to_keep` tokens. If `None`, calculate logits for all
+        logits_to_keep (`int` or `torch.Tensor`, *optional*):
+            Calculate logits for the last `logits_to_keep` tokens. If `0`, calculate logits for all
             `input_ids`. Only last token logits are needed for generation, and calculating them only for that token
             can save memory, which becomes pretty significant for long sequences.
 
@@ -63,24 +57,10 @@ def lce_forward(
     "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
     ```"""
 
-    output_attentions = (
-        output_attentions
-        if output_attentions is not None
-        else self.config.output_attentions
-    )
     output_router_logits = (
         output_router_logits
         if output_router_logits is not None
         else self.config.output_router_logits
-    )
-
-    output_hidden_states = (
-        output_hidden_states
-        if output_hidden_states is not None
-        else self.config.output_hidden_states
-    )
-    return_dict = (
-        return_dict if return_dict is not None else self.config.use_return_dict
     )
 
     # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
@@ -91,11 +71,8 @@ def lce_forward(
         past_key_values=past_key_values,
         inputs_embeds=inputs_embeds,
         use_cache=use_cache,
-        output_attentions=output_attentions,
-        output_hidden_states=output_hidden_states,
         output_router_logits=output_router_logits,
-        cache_position=cache_position,
-        return_dict=return_dict,
+        **kwargs,
     )
 
     hidden_states = outputs[0]
@@ -114,11 +91,12 @@ def lce_forward(
         lce = LigerFusedLinearCrossEntropyLoss()
         loss = lce(self.lm_head.weight, shift_hidden_states, shift_labels)
     else:
-        if num_logits_to_keep is None:
-            logits = self.lm_head(hidden_states)
-        else:
-            logits = self.lm_head(hidden_states[..., -num_logits_to_keep:, :])
-        logits = logits.float()
+        slice_indices = (
+            slice(-logits_to_keep, None)
+            if isinstance(logits_to_keep, int)
+            else logits_to_keep
+        )
+        logits = self.lm_head(hidden_states[:, slice_indices, :]).float()
 
         if labels is not None:
             # Shift so that tokens < n predict n
@@ -135,7 +113,7 @@ def lce_forward(
     aux_loss = None
     if output_router_logits:
         aux_loss = load_balancing_loss_func(
-            outputs.router_logits if return_dict else outputs[-1],
+            outputs.router_logits,
             self.num_experts,
             self.num_experts_per_tok,
             attention_mask,
@@ -144,12 +122,6 @@ def lce_forward(
             loss += self.router_aux_loss_coef * aux_loss.to(
                 loss.device
             )  # make sure to reside in the same device
-
-    if not return_dict:
-        output = (logits,) + outputs[1:]
-        if output_router_logits:
-            output = (aux_loss,) + output
-        return (loss,) + output if loss is not None else output
 
     return MoeCausalLMOutputWithPast(
         loss=loss,

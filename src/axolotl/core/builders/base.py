@@ -119,6 +119,15 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
+        if getattr(self.model, "_axolotl_native_nvfp4_metadata", None) or getattr(
+            self.model, "_axolotl_native_nvfp4_metadata_requested", False
+        ):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                NativeNVFP4MergeMetadataCallback,
+            )
+
+            callbacks.append(NativeNVFP4MergeMetadataCallback())
+
         if self.cfg.resume_from_checkpoint:
             callbacks.append(SkipEvalOnResumeCallback())
 
@@ -203,6 +212,24 @@ class TrainerBuilderBase(abc.ABC):
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
         callbacks = []
+        if (
+            getattr(
+                self.model,
+                "_axolotl_native_nvfp4_deepspeed_merge_aware_requested",
+                False,
+            )
+            or getattr(
+                self.model,
+                "_axolotl_native_nvfp4_dynamic_input_gradients_requested",
+                None,
+            )
+            == "DeepSpeed"
+        ):
+            from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
+                DeepSpeedNativeNVFP4MergeAwareCallback,
+            )
+
+            callbacks.append(DeepSpeedNativeNVFP4MergeAwareCallback(trainer))
         if self.cfg.plugins:
             plugin_manager = PluginManager.get_instance()
             callbacks.extend(
@@ -690,9 +717,9 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.reward_model or self.cfg.rl:
             training_args_kwargs["max_length"] = self.cfg.sequence_len
 
-        if self.cfg.fsdp_config or self.cfg.fsdp:
+        if self.cfg.fsdp_config:
             training_args_kwargs["fsdp_config"] = self.cfg.fsdp_config
-            training_args_kwargs["fsdp"] = self.cfg.fsdp if self.cfg.fsdp else True
+            training_args_kwargs["fsdp"] = True
 
         self._configure_reporting(training_args_kwargs)
         self._configure_hub_parameters(training_args_kwargs)

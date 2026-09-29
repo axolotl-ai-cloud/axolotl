@@ -393,6 +393,32 @@ def shard_expert_lora(model, ep_size: int) -> int:
     return n
 
 
+def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
+    """Gather an adapter DTensor without moving its CPU-offloaded storage."""
+    if type(parameter).__name__ != "DTensor":
+        return parameter.data.detach()
+
+    local = parameter.to_local().detach()
+    mesh = parameter.device_mesh
+    if local.device.type != "cpu" or mesh.device_type != "cuda":
+        return parameter.full_tensor().detach()
+
+    from torch.distributed.tensor import DTensor
+
+    temporary = DTensor.from_local(
+        local.to(mesh.device_type),
+        mesh,
+        parameter.placements,
+        run_check=False,
+        shape=parameter.shape,
+        stride=parameter.stride(),
+    )
+    try:
+        return temporary.full_tensor().detach()
+    finally:
+        del temporary
+
+
 def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     """Write a complete LoRA adapter when experts are EP-sharded.
 
@@ -448,7 +474,7 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
 
     # Replicated (attention/router) LoRA: full tensors via FSDP all-gather, canonical PEFT keys.
     sd = {
-        name: (p.full_tensor() if type(p).__name__ == "DTensor" else p.data).detach()
+        name: _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
@@ -464,11 +490,7 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
         ep_sharded = getattr(wrapper, "_ep_lora_sharded", False)
         for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
-                full_local = (
-                    (w.full_tensor() if type(w).__name__ == "DTensor" else w.data)
-                    .detach()
-                    .contiguous()
-                )
+                full_local = _gather_adapter_tensor(w).contiguous()
                 full = (
                     gather_expert_lora_full(full_local, kind, e_global, ep_group)
                     if ep_sharded
@@ -536,7 +558,7 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     # Replicated + dp-sharded LoRA: full tensors via FSDP all-gather (collective — same iteration
     # order on every rank). Canonical PEFT keys via get_peft_model_state_dict.
     sd = {
-        name: (p.full_tensor() if type(p).__name__ == "DTensor" else p.data).detach()
+        name: _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
@@ -548,9 +570,7 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
             continue
         for sub in ("lora_A", "lora_B"):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
-                full = (
-                    w.full_tensor() if type(w).__name__ == "DTensor" else w.data
-                ).detach()
+                full = _gather_adapter_tensor(w)
                 key = f"{wname}.{sub}.weight"
                 target = (
                     key

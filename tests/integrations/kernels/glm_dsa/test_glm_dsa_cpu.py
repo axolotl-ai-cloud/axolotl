@@ -251,3 +251,22 @@ def test_cp_doc_ids_must_be_global_not_per_chunk():
     assert (
         old_r1[0, 2].item() == old_r0[0, 0].item()
     )  # doc C (rank1) collides with doc A (rank0)
+
+
+@pytest.mark.parametrize("mask_dtype", [torch.bool, torch.float32])
+def test_indexer_topk_excludes_masked_high_scores(monkeypatch, mask_dtype):
+    from axolotl.integrations.kernels.libs.glm_dsa import indexer
+
+    scores = torch.tensor([0.0, 10.0, 20.0, 30.0]).expand(1, 4, 4)
+    monkeypatch.setattr(indexer, "indexer_scores", lambda *_args: scores)
+    allowed = torch.ones(1, 4, 4, dtype=torch.bool).tril()
+    mask = allowed
+    if mask_dtype != torch.bool:
+        mask = torch.zeros_like(allowed, dtype=mask_dtype).masked_fill(
+            ~allowed, float("-inf")
+        )
+    placeholder = torch.empty(0)
+    indices = indexer.indexer_topk(
+        placeholder, placeholder, placeholder, 1.0, 1, attention_mask=mask
+    )
+    assert torch.equal(indices.squeeze(-1), torch.arange(4).unsqueeze(0))

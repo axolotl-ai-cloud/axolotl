@@ -15,6 +15,7 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
       - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/prepare_hf_cache.sh"
       - "cicd/Dockerfile-uv.jinja"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
@@ -24,6 +25,7 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
       - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/prepare_hf_cache.sh"
       - "cicd/Dockerfile-uv.jinja"
   workflow_dispatch:
 
@@ -97,7 +99,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.1
+            pytorch: 2.13.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -108,7 +110,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -148,13 +150,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
-            num_gpus: 1
-            axolotl_extras:
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.13.0
+            pytorch: 2.14.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -165,7 +161,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -203,19 +199,13 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.11.0
-            num_gpus: 1
-            axolotl_extras:
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.12.1
-            num_gpus: 1
-            axolotl_extras:
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
             pytorch: 2.13.0
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.14.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -226,7 +216,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -261,7 +251,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.1
+            pytorch: 2.14.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -272,7 +262,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
