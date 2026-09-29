@@ -3,8 +3,11 @@
 import fnmatch
 import json
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+from packaging import version as packaging_version
 from pydantic import (
     field_validator,
     model_validator,
@@ -85,6 +88,64 @@ _LORA_KERNEL_FLAGS = (
 )
 
 
+def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
+    """Whether the unset ``lora_*_kernel`` flags would be auto-enabled for this config.
+
+    ``get`` reads a config value by name (a raw ``data`` dict or a validated model).
+    The single source of truth for ``check_auto_enable_lora_kernels`` and for the
+    validators that must predict its outcome.
+    """
+    if get("rl") or get("nvfp4_merge_aware"):
+        return False
+    adapter = get("adapter")
+    if adapter not in ("lora", "qlora"):
+        return False
+    if any(get(flag) is not None for flag in _LORA_KERNEL_FLAGS):
+        return False
+    if adapter == "lora" and get("load_in_8bit"):
+        return False
+    if get("trust_remote_code"):
+        return False
+
+    from axolotl.model_support import (
+        Unsupported,
+        get_model_support,
+        resolve_model_support,
+    )
+
+    support = get_model_support(get("model_config_type"))
+    if support is not None and isinstance(
+        resolve_model_support(support).capabilities.get("lora_kernels"), Unsupported
+    ):
+        return False
+
+    # MoE without native grouped_mm (torch < 2.9): transformers' fallback uses
+    # torch.mm(out=) which bypasses autocast and fails on mixed dtypes in eval
+    torch_version = (get("env_capabilities") or {}).get("torch_version")
+    if torch_version is None:
+        import torch
+
+        torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+    if packaging_version.parse(torch_version) >= packaging_version.parse("2.9.0"):
+        return True
+    model_type = get("model_config_type") or ""
+    if "moe" in model_type.lower():
+        return False
+    base_model = get("base_model")
+    if base_model:
+        try:
+            from transformers import AutoConfig
+
+            auto_cfg = AutoConfig.from_pretrained(base_model, trust_remote_code=False)
+            if getattr(auto_cfg, "num_local_experts", None) or getattr(
+                auto_cfg, "num_experts", None
+            ):
+                return False
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+    return True
+
+
 def _lora_kernel_enabled(cfg, flag: str) -> bool:
     """Explicit flag value, else whether check_auto_enable_lora_kernels would set it.
 
@@ -94,13 +155,7 @@ def _lora_kernel_enabled(cfg, flag: str) -> bool:
     value = getattr(cfg, flag, None)
     if value is not None:
         return bool(value) and bool(cfg.adapter)
-    if cfg.adapter not in ("lora", "qlora"):
-        return False
-    if cfg.rl or cfg.trust_remote_code or getattr(cfg, "nvfp4_merge_aware", None):
-        return False
-    if cfg.adapter == "lora" and cfg.load_in_8bit:
-        return False
-    return all(getattr(cfg, f, None) is None for f in _LORA_KERNEL_FLAGS)
+    return lora_kernels_auto_enable(lambda key: getattr(cfg, key, None))
 
 
 def _sac_entry_covers(entry: str, module: str) -> bool:
@@ -1948,19 +2003,24 @@ class ModelCompatibilityValidationMixin:
             )
         return self
 
-    @model_validator(mode="after")
-    def check_torch_expert_parallel_checkpointing(self):
-        if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
-            return self
+    def _resolved_expert_parallel_backend(self) -> str | None:
         backend = getattr(self, "expert_parallel_backend", None)
         if backend == "auto":
             from importlib.util import find_spec
 
             backend = "deep_ep" if find_spec("deep_ep") is not None else "torch"
-        if backend != "torch":
+        return backend
+
+    @model_validator(mode="after")
+    def check_torch_expert_parallel_checkpointing(self):
+        if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
+            return self
+        if self._resolved_expert_parallel_backend() != "torch":
             return self
         # recompute has to replay the forward's routing through a SAC policy
-        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
+        if self.gradient_checkpointing and (
+            self.gradient_checkpointing_kwargs or {}
+        ).get("use_reentrant"):
             raise ValueError(
                 "expert_parallel_backend: torch requires non-reentrant gradient "
                 "checkpointing (gradient_checkpointing_kwargs.use_reentrant: false): "
@@ -1983,7 +2043,7 @@ class ModelCompatibilityValidationMixin:
     @model_validator(mode="after")
     def check_expert_parallel_dispatch_chunks(self):
         chunks = getattr(self, "expert_parallel_dispatch_chunks", None) or 1
-        if chunks > 1 and getattr(self, "expert_parallel_backend", None) == "deep_ep":
+        if chunks > 1 and self._resolved_expert_parallel_backend() == "deep_ep":
             raise ValueError(
                 "expert_parallel_dispatch_chunks > 1 requires expert_parallel_backend: "
                 "torch (DeepEP dispatches the whole batch in one fused kernel)"
@@ -2217,8 +2277,13 @@ class DistributedValidationMixin:
     def check_tensor_parallel_cpu_ram_efficient_loading(self):
         # transformers' TP load places each rank's own shard, so the rank-0-only load that
         # cpu_ram_efficient_loading broadcasts from would leave every other rank with zeros
+        # CPU-staged NF4 rejects TP itself and needs the flag intact to reach that check
+        staged_nf4 = self.nf4_backend == "torchao" or (
+            self.qlora_sharded_model_loading and self.load_in_4bit
+        )
         if (
             (self.tensor_parallel_size or 1) > 1
+            and not staged_nf4
             and self.fsdp_config
             and self.fsdp_config.cpu_ram_efficient_loading
         ):

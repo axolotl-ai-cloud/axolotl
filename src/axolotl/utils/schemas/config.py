@@ -70,7 +70,10 @@ from axolotl.utils.schemas.training import (
     SelectiveCheckpointingConfig,
 )
 from axolotl.utils.schemas.trl import TRLConfig
-from axolotl.utils.schemas.validation import ValidationMixin
+from axolotl.utils.schemas.validation import (
+    ValidationMixin,
+    lora_kernels_auto_enable,
+)
 from axolotl.utils.schemas.vllm import VllmConfig
 
 LOG = get_logger(__name__)
@@ -1958,81 +1961,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_auto_enable_lora_kernels(cls, data):
-        # Only proceed if using LoRA or QLoRA adapter
-        if data.get("rl"):
-            # RL trainers not tested so don't enable kernels by default
-            return data
-        if data.get("nvfp4_merge_aware"):
-            # Keep merge-aware kernel selection opt-in until its overhead is benchmarked.
-            return data
-        if data.get("adapter") in ["lora", "qlora"]:
-            # Skip if already set or using 8-bit
-            kernel_fields = [
-                "lora_mlp_kernel",
-                "lora_qkv_kernel",
-                "lora_o_kernel",
-                "lora_embedding_kernel",
-            ]
-            if (
-                any(data.get(k) is not None for k in kernel_fields)
-                or data.get("adapter") == "lora"
-                and data.get("load_in_8bit")
-            ):
-                return data
-
-            # Skip if trust_remote_code is enabled, as lora kernels are not compatible
-            if data.get("trust_remote_code"):
-                return data
-
-            # Skip architectures that declare the fused kernels unsupported.
-            # model_config_type is usually resolved later (normalize_config),
-            # which disables any kernels auto-enabled here.
-            from axolotl.model_support import (
-                Unsupported,
-                get_model_support,
-                resolve_model_support,
-            )
-
-            support = get_model_support(data.get("model_config_type"))
-            if support is not None and isinstance(
-                resolve_model_support(support).capabilities.get("lora_kernels"),
-                Unsupported,
-            ):
-                return data
-
-            # Skip auto-enable for MoE models when native grouped_mm is unavailable
-            # (torch < 2.9). The grouped_mm fallback in transformers uses torch.mm
-            # with out= which bypasses autocast and fails on mixed dtypes during eval.
-            env_capabilities = data.get("env_capabilities", {})
-            torch_version = env_capabilities.get("torch_version")
-            if torch_version is None:
-                import torch
-
-                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-            has_grouped_mm = version.parse(torch_version) >= version.parse("2.9.0")
-            if not has_grouped_mm:
-                is_moe = False
-                model_type = data.get("model_config_type", "")
-                if model_type and "moe" in model_type.lower():
-                    is_moe = True
-                if not is_moe:
-                    try:
-                        from transformers import AutoConfig
-
-                        base_model = data.get("base_model")
-                        if base_model:
-                            auto_cfg = AutoConfig.from_pretrained(
-                                base_model, trust_remote_code=False
-                            )
-                            if getattr(auto_cfg, "num_local_experts", None) or getattr(
-                                auto_cfg, "num_experts", None
-                            ):
-                                is_moe = True
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        pass
-                if is_moe:
-                    return data
-
+        if lora_kernels_auto_enable(data.get):
             # Auto-enable kernels if not explicitly set by user
             if data.get("lora_mlp_kernel") is None:
                 data["lora_mlp_kernel"] = True

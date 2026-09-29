@@ -43,6 +43,15 @@ class TestTorchExpertParallelCheckpointing:
                 gradient_checkpointing_kwargs={"use_reentrant": True},
             )
 
+    def test_reentrant_allowed_without_checkpointing(self, min_base_cfg):
+        cfg = _validate(
+            min_base_cfg,
+            expert_parallel_backend="torch",
+            gradient_checkpointing=False,
+            gradient_checkpointing_kwargs={"use_reentrant": True},
+        )
+        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+
     @pytest.mark.parametrize("mode", [True, "legacy", "disk"])
     def test_rejects_trl_activation_offloading(self, min_base_cfg, mode):
         with pytest.raises(ValueError, match="incompatible with activation_offloading"):
@@ -118,6 +127,20 @@ class TestExpertParallelDispatchChunks:
             expert_parallel_dispatch_chunks=2,
         )
         assert cfg.expert_parallel_dispatch_chunks == 2
+
+    @pytest.mark.parametrize("installed", [True, False])
+    def test_auto_backend_is_resolved(self, min_base_cfg, monkeypatch, installed):
+        _fake_deep_ep(monkeypatch, installed)
+        kwargs = dict(expert_parallel_backend="auto", expert_parallel_dispatch_chunks=2)
+        if installed:
+            with pytest.raises(
+                ValueError, match="requires expert_parallel_backend: torch"
+            ):
+                _validate(min_base_cfg, **kwargs)
+        else:
+            assert (
+                _validate(min_base_cfg, **kwargs).expert_parallel_dispatch_chunks == 2
+            )
 
     def test_defaults_to_one(self, min_base_cfg):
         cfg = _validate(min_base_cfg, expert_parallel_backend="deep_ep")
