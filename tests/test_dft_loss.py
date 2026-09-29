@@ -18,7 +18,7 @@ def dft_fixtures():
     logits = torch.randn(batch_size, seq_len, vocab_size, requires_grad=True)
     labels = torch.randint(0, vocab_size, (batch_size, seq_len))
     labels[:, :4] = -100
-    return logits, labels, vocab_size
+    return logits, labels
 
 
 def _reference(logits, labels):
@@ -31,29 +31,28 @@ def _reference(logits, labels):
     probs = torch.softmax(shift_logits[mask], dim=-1).gather(
         -1, shift_labels[mask].unsqueeze(-1)
     )
-    return (probs.squeeze(-1).detach() * ce), mask.sum()
+    return probs.squeeze(-1).detach() * ce
 
 
 def test_dft_matches_probability_weighted_ce(dft_fixtures):
-    logits, labels, _ = dft_fixtures
-    weighted_ce, num_tokens = _reference(logits, labels)
+    logits, labels = dft_fixtures
+    weighted_ce = _reference(logits, labels)
 
     loss = dft_loss(SimpleNamespace(logits=logits), labels)
     assert torch.allclose(loss, weighted_ce.mean())
 
     loss = dft_loss(SimpleNamespace(logits=logits), labels, num_items_in_batch=7)
     assert torch.allclose(loss, weighted_ce.sum() / 7)
-    assert num_tokens == (labels[..., 1:] != -100).sum()
 
 
 def test_dft_gradient_is_probability_scaled_ce_gradient(dft_fixtures):
-    logits, labels, _ = dft_fixtures
+    logits, labels = dft_fixtures
 
     dft_grad = torch.autograd.grad(
         dft_loss(SimpleNamespace(logits=logits), labels, num_items_in_batch=1),
         logits,
     )[0]
-    weighted_ce, _ = _reference(logits, labels)
+    weighted_ce = _reference(logits, labels)
     ref_grad = torch.autograd.grad(weighted_ce.sum(), logits)[0]
 
     assert torch.allclose(dft_grad, ref_grad, atol=1e-6)

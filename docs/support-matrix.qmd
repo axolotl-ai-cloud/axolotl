@@ -49,8 +49,12 @@ Most people start with two, each a single plugin to turn on: [Liger](#fused-trai
 | GDPO | `rl: gdpo` | ✔ | paired, multi-objective | multi-objective DPO (via GRPO strategy) |
 | GRPO | `rl: grpo` | ✔ | prompts (online) | vLLM generation, custom `reward_funcs`, async/replay |
 | EBFT | `rl: ebft` | ✔ | QA or raw text | energy/feature-matching rewards; needs `ebft:` block |
+| EAFT | `use_eaft: true` (+ `eaft_alpha`, `eaft_k`) | n/a | prompt to response | SFT loss weighted by top-k entropy |
+| DFT | `use_dft: true` | n/a | prompt to response | SFT loss weighted by detached token probability ([paper](https://arxiv.org/abs/2508.05629)) |
 
 Most runs start with **SFT** (the default). Reach for the preference methods (DPO and its variants) once you have chosen/rejected pairs, and GRPO when you have a verifiable reward. The rest are specialized.
+
+EAFT and DFT replace the SFT loss, so the logged train and eval loss is the reweighted objective, not cross-entropy. Don't compare it against CE runs or use it for `load_best_model_at_end` / early stopping.
 
 ## Fine-tuning strategies
 
@@ -112,11 +116,9 @@ The differentiators. All are opt-in; most need a specific GPU generation.
 | Liger | plugin `liger` + `liger_rope`, `liger_rms_norm(_gated)`, `liger_swiglu`/`liger_glu_activation`, `liger_cross_entropy`, `liger_fused_linear_cross_entropy` | RoPE, RMSNorm, SwiGLU, CE, fused-linear-CE |
 | Cut Cross Entropy (CCE) | plugin `cut_cross_entropy` + `cut_cross_entropy: true` | memory-lean logit-free CE (Apple fork) |
 | Chunked CE | `chunked_cross_entropy: true` | chunked loss for long sequences |
-| EAFT | `use_eaft: true` (+ `eaft_alpha`, `eaft_k`) | SFT loss weighted by top-k entropy |
-| DFT | `use_dft: true` | SFT loss weighted by detached token probability ([paper](https://arxiv.org/abs/2508.05629)) |
 | DenseMixer | plugin `densemixer` | fused MoE forward (OLMoE, Qwen2/3-MoE) |
 
-Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE / chunked). EAFT and DFT are mutually exclusive and, since they need full logits, bypass the fused CE kernels.
+Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE / chunked).
 
 ### MoE expert kernels
 
@@ -261,6 +263,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | QAT | any adapter, or 4/8-bit | full-model only |
 | Sample packing | any `rl:`, multimodal | RLHF & MM packing not supported |
 | Cut Cross Entropy | Liger CE / chunked CE | one CE optimization only |
+| `use_eaft` / `use_dft` | each other, `rl:`, reward models, CP, CCE / Liger FLCE / chunked CE | SFT-only; needs full logits and unsharded labels |
 | `use_dsv4_kernels` | attention-level LoRA | experts-only (fused indexer is gradientless) |
 | FSDP2 | 4/8-bit + DPO/KTO/ORPO/IPO | use DeepSpeed or FSDP1 |
 | LoRA kernels | FSDP1 / `trust_remote_code` / RLHF | SFT + FSDP2 only |

@@ -15,9 +15,10 @@ def dft_loss(outputs, labels, num_items_in_batch=None):
     args:
         outputs: model outputs containing logits
         labels: target labels for computing loss
-        num_items_in_batch: for sample packing support
+        num_items_in_batch: unmasked token count across gradient accumulation steps
     """
     logits = outputs.logits
+    labels = labels.to(logits.device)
 
     shift_logits = logits[..., :-1, :].contiguous()
     shift_labels = labels[..., 1:].contiguous()
@@ -27,8 +28,6 @@ def dft_loss(outputs, labels, num_items_in_batch=None):
     shift_labels_view = shift_labels.view(-1)
 
     mask = shift_labels_view != -100
-    if not mask.any():
-        return shift_logits_view.sum() * 0.0
 
     logprobs = F.log_softmax(shift_logits_view[mask].float(), dim=-1)
     per_token_logps = logprobs.gather(
@@ -37,9 +36,7 @@ def dft_loss(outputs, labels, num_items_in_batch=None):
 
     per_token_loss = -per_token_logps.exp().detach() * per_token_logps
 
-    if num_items_in_batch is not None:
-        loss = per_token_loss.sum() / num_items_in_batch
-    else:
-        loss = per_token_loss.mean()
+    if num_items_in_batch is None:
+        num_items_in_batch = mask.sum().clamp(min=1)
 
-    return loss
+    return per_token_loss.sum() / num_items_in_batch
