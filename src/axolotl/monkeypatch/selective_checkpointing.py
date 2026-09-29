@@ -550,7 +550,9 @@ def install_module_scope_hooks(
         for name, module in model.named_modules():
             if outer is not None and (outer == "" or name.startswith(outer + ".")):
                 continue
-            if not _module_name_matches(name, entry):
+            if not _module_name_matches(
+                name.removeprefix("base_model.model."), entry
+            ) and not _module_name_matches(name, entry):
                 continue
             layer = _encloses(name, layer_names)
             if layer is not None:

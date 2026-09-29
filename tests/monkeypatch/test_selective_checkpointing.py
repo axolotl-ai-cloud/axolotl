@@ -480,6 +480,19 @@ class TestModuleNameMatching:
             assert not layer.down.lora_A["default"]._forward_pre_hooks
             assert not layer.down.lora_B["default"]._forward_pre_hooks
 
+    def test_install_glob_matches_base_model_names_under_peft(self):
+        _, wrap = _peft_stack()
+        model = wrap()
+        names = [n for n, _ in model.named_modules()]
+        assert any(n.startswith("base_model.model.layers.0.down") for n in names)
+        state = SacPolicyState()
+        assert install_module_scope_hooks(model, state, ["layers.0.d*"]) == {
+            "layers.0.d*": 1
+        }
+        layers = model.base_model.model.layers
+        assert layers[0].down.base_layer._forward_pre_hooks
+        assert not layers[1].down.base_layer._forward_pre_hooks
+
     def test_install_glob_dedupes_nested(self):
         _, wrap = _peft_stack()
         model = wrap()
