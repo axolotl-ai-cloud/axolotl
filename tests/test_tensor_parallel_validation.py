@@ -214,6 +214,26 @@ class TestExpertParallelLoraReinit:
         loader._reinit_lora_from_seed(SimpleNamespace(init_lora_weights=True))
         assert calls == [(loader.model, 42)]
 
+    def test_unseeded_run_shares_rank0_seed_through_the_store(
+        self, monkeypatch, tmp_path
+    ):
+        import torch.distributed as dist
+
+        calls = self._spy(monkeypatch)
+        monkeypatch.setenv("RANK", "0")
+        monkeypatch.setenv("WORLD_SIZE", "1")
+        dist.init_process_group(
+            "gloo", init_method=f"file://{tmp_path / 'pg'}", rank=0, world_size=1
+        )
+        try:
+            loader = _loader(seed=None, expert_parallel_size=2)
+            loader._reinit_lora_from_seed(SimpleNamespace(init_lora_weights=True))
+            store = dist.distributed_c10d._get_default_store()
+            assert int(store.get("axolotl/lora_init_seed")) == torch.initial_seed()
+        finally:
+            dist.destroy_process_group()
+        assert calls == [(loader.model, torch.initial_seed())]
+
     def test_unseeded_run_uses_the_process_seed_not_zero(self, monkeypatch):
         calls = self._spy(monkeypatch)
         loader = _loader(seed=None, expert_parallel_size=2)

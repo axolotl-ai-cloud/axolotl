@@ -699,17 +699,19 @@ class ModelLoader:
 
     def _lora_init_seed(self) -> int:
         """Nothing seeds torch before model load, so an unseeded run's ``torch.initial_seed()``
-        differs per process; every rank must draw the same adapter for its experts."""
+        differs per process; every rank must draw the same adapter for its experts. The value
+        travels through the process group's store: no collective, so no device to get wrong
+        before the loader has pinned one."""
         if self.cfg.seed is not None:
             return int(self.cfg.seed)
-        seed = [torch.initial_seed()]
+        seed = torch.initial_seed()
         if dist.is_available() and dist.is_initialized():
-            device = None
-            # before the loader pins devices every rank still sits on cuda:0, which NCCL rejects
-            if torch.cuda.is_available() and "nccl" in str(dist.get_backend()):
-                device = torch.device("cuda", int(os.environ.get("LOCAL_RANK", 0)))
-            dist.broadcast_object_list(seed, src=0, device=device)
-        return int(seed[0])
+            store = dist.distributed_c10d._get_default_store()
+            key = "axolotl/lora_init_seed"
+            if dist.get_rank() == 0:
+                store.set(key, str(seed))
+            seed = int(store.get(key))
+        return seed
 
     def _build_adapters(self) -> PeftConfig | None:
         """Build the adapter, or only its config for a reference model."""
