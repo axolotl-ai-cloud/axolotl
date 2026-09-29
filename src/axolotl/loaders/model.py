@@ -704,7 +704,11 @@ class ModelLoader:
             return int(self.cfg.seed)
         seed = [torch.initial_seed()]
         if dist.is_available() and dist.is_initialized():
-            dist.broadcast_object_list(seed, src=0)
+            device = None
+            # before the loader pins devices every rank still sits on cuda:0, which NCCL rejects
+            if torch.cuda.is_available() and "nccl" in str(dist.get_backend()):
+                device = torch.device("cuda", int(os.environ.get("LOCAL_RANK", 0)))
+            dist.broadcast_object_list(seed, src=0, device=device)
         return int(seed[0])
 
     def _build_adapters(self) -> PeftConfig | None:
