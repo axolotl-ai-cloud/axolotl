@@ -158,7 +158,8 @@ def sonicmoe_experts_forward_with_lora(
     read, take the grouped reference path (dequant base + fused low-rank LoRA).
     On an EP-sharded module expert id ``num_experts`` marks a remote slot.
     """
-    if getattr(self, "num_experts_global", self.num_experts) > self.num_experts:
+    num_experts_global = getattr(self, "num_experts_global", None)
+    if num_experts_global is not None and num_experts_global > self.num_experts:
         return _sonicmoe_ep_forward(self, hidden_states, top_k_index, top_k_weights)
     return _sonicmoe_forward(self, hidden_states, top_k_index, top_k_weights)
 
