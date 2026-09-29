@@ -219,13 +219,13 @@ class DistributedParallelMixin(Trainer):
             for _n, m in _detect_experts_modules(self.model)
         )
 
-    def _tp_size(self) -> int:
+    def _axolotl_tp_size(self) -> int:
         cfg = getattr(self, "axolotl_cfg", None)
         return int(getattr(cfg, "tensor_parallel_size", 1) or 1)
 
     def save_model(self, output_dir: str | None = None, _internal_call: bool = False):
         if (
-            self._tp_size() > 1
+            self._axolotl_tp_size() > 1
             and not self._ep_full_param_experts()
             and tp_save_joins_all_ranks(self.accelerator, self.is_fsdp_enabled)
         ):
