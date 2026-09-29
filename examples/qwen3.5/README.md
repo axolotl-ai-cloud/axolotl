@@ -60,7 +60,7 @@ lora_target_parameters:
 
 ### Shared Experts (MoE)
 
-Shared experts use `nn.Linear` (unlike routed experts which are 3D `nn.Parameter` tensors), so they can be targeted via `lora_target_modules`. To also train shared expert projections alongside attention, uncomment `gate_up_proj` and `down_proj` in `lora_target_modules`:
+Shared experts use `nn.Linear` (unlike routed experts which are 3D `nn.Parameter` tensors), so they can be targeted via `lora_target_modules`. To also train shared expert projections alongside attention, uncomment `gate_proj`, `up_proj` and `down_proj` in `lora_target_modules`:
 
 ```yaml
 lora_target_modules:
@@ -68,8 +68,9 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
-  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):
-  # - gate_up_proj
+  # Add gate_proj, up_proj and down_proj to also target shared experts (nn.Linear):
+  # - gate_proj
+  # - up_proj
   # - down_proj
 ```
 
