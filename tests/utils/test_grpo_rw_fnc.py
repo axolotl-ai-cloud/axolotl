@@ -1,6 +1,7 @@
 import os
 
 import httpx
+import huggingface_hub
 import pytest
 from huggingface_hub.errors import RepositoryNotFoundError
 
@@ -30,5 +31,14 @@ def test_get_reward_func_unknown_hub_repo_raises_error(monkeypatch):
         )
 
     monkeypatch.setattr("axolotl.core.trainers.grpo.snapshot_download", repo_not_found)
-    with pytest.raises(ValueError, match="Reward function .* not found"):
+    with pytest.raises(ValueError, match="Reward function .* not found") as excinfo:
         GRPOStrategy.get_reward_func("nonexistent_module.my_reward")
+    assert isinstance(excinfo.value.__cause__, ModuleNotFoundError)
+
+
+def test_get_reward_func_unknown_offline_raises_error(monkeypatch):
+    """Offline, an unknown reward function still gets a clear ValueError"""
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", True)
+    with pytest.raises(ValueError, match="Reward function .* not found") as excinfo:
+        GRPOStrategy.get_reward_func("nonexistent_module.my_reward")
+    assert isinstance(excinfo.value.__cause__, ModuleNotFoundError)
