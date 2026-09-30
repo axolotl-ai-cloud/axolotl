@@ -80,6 +80,7 @@ class TestSacPolicy:
             torch.ops.aten._scaled_dot_product_flash_attention,
             torch.ops.aten._scaled_dot_product_efficient_attention,
             torch.ops.aten._scaled_dot_product_cudnn_attention,
+            torch.ops.aten._cudnn_attention_forward,
         ):
             assert policy(None, packet.default) == CheckpointPolicy.MUST_SAVE
 
