@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import collections
 import importlib
-import traceback
 from dataclasses import dataclass
+from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 from peft import PeftConfig, PeftMixedModel, PeftModel
@@ -38,7 +38,34 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+PLUGIN_ENTRY_POINT_GROUP = "axolotl.plugins"
+
+# Entry-point registrations are authoritative for installed distributions. This
+# fallback keeps the bundled integration available from a source checkout with
+# missing or stale package metadata.
 BUILTIN_PLUGINS = ("axolotl.integrations.context_parallel.ContextParallelPlugin",)
+
+
+def _plugin_name(target: str) -> str:
+    """Normalize an entry-point target to the legacy dotted plugin name."""
+    module_name, separator, class_name = target.partition(":")
+    return f"{module_name}.{class_name}" if separator else target
+
+
+def get_builtin_plugins() -> tuple[str, ...]:
+    """Return bundled and installed plugins without importing their modules."""
+    return tuple(
+        dict.fromkeys(
+            (
+                *BUILTIN_PLUGINS,
+                *(
+                    _plugin_name(point.value)
+                    for point in entry_points(group=PLUGIN_ENTRY_POINT_GROUP)
+                ),
+            )
+        )
+    )
+
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
@@ -334,8 +361,11 @@ def load_plugin(plugin_name: str) -> BasePlugin:
     Raises:
         ImportError: If the plugin module cannot be imported.
     """
-    # split the plugin name into module and class
-    module_name, class_name = plugin_name.rsplit(".", 1)
+    # Accept the entry-point ``module:class`` form as well as the established
+    # dotted config value.
+    module_name, separator, class_name = plugin_name.partition(":")
+    if not separator:
+        module_name, class_name = plugin_name.rsplit(".", 1)
 
     # import the module
     try:
@@ -391,9 +421,9 @@ class PluginManager:
         exist, it creates a new one.
         """
         manager = PluginManager()
-        for plugin_name in BUILTIN_PLUGINS:
+        for plugin_name in get_builtin_plugins():
             if plugin_name not in manager.plugins:
-                manager.plugins[plugin_name] = load_plugin(plugin_name)
+                manager.register(plugin_name)
         return manager
 
     @property
@@ -418,16 +448,17 @@ class PluginManager:
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
             LOG.info(f"Plugin loaded successfully: {plugin_name}")
-        except ImportError as exc:
-            LOG.error(f"Failed to load plugin: {plugin_name}")
-            # print stacktrace
-            traceback.print_exc()
-            print(f"Error: {exc}")
+        except Exception:  # pylint: disable=broad-exception-caught
+            LOG.warning(
+                "Could not import plugin '%s'; skipping it",
+                plugin_name,
+                exc_info=True,
+            )
 
     def on_config_validation_error(self, cfg):
         """Lets plugins in the current config undo register()-time side effects."""
         for plugin_name, plugin in self.plugins.items():
-            if plugin_name in BUILTIN_PLUGINS or plugin_name in (
+            if plugin_name in get_builtin_plugins() or plugin_name in (
                 cfg.get("plugins") or []
             ):
                 plugin.on_config_validation_error(cfg)

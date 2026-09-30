@@ -230,17 +230,14 @@ class TrainerBuilderBase(abc.ABC):
             )
 
             callbacks.append(DeepSpeedNativeNVFP4MergeAwareCallback(trainer))
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            callbacks.extend(
-                [
-                    cb
-                    for cb in plugin_manager.add_callbacks_post_trainer(
-                        self.cfg, trainer
-                    )
-                    if cb
-                ]
-            )
+        plugin_manager = PluginManager.get_instance()
+        callbacks.extend(
+            [
+                cb
+                for cb in plugin_manager.add_callbacks_post_trainer(self.cfg, trainer)
+                if cb
+            ]
+        )
         return callbacks
 
     def hook_pre_create_training_args(self, training_arguments_kwargs):

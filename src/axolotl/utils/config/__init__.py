@@ -467,10 +467,10 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
-    from axolotl.integrations.base import BUILTIN_PLUGINS
+    from axolotl.integrations.base import get_builtin_plugins
     from axolotl.utils.schemas import config as config_schema
 
-    if cfg.plugins or BUILTIN_PLUGINS:
+    if cfg.plugins or get_builtin_plugins():
         AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
     else:
         AxolotlConfigWCapabilities = config_schema.AxolotlConfigWCapabilities
@@ -527,16 +527,18 @@ def validate_config(
 
 
 def prepare_plugins(cfg):
-    """Prepare built-in plugins and plugins explicitly selected by the config."""
-    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
+    """Prepare installed plugins and plugins explicitly selected by the config."""
+    from axolotl.integrations.base import PluginManager, get_builtin_plugins
 
-    if not cfg.get("plugins") and not BUILTIN_PLUGINS:
+    builtin_plugins = get_builtin_plugins()
+
+    if not cfg.get("plugins") and not builtin_plugins:
         return
 
     plugin_manager = PluginManager.get_instance()
     for plugin_name in cfg.get("plugins") or []:
-        if plugin_name not in BUILTIN_PLUGINS:
+        if plugin_name not in builtin_plugins:
             plugin_manager.register(plugin_name)
-    for plugin_name in dict.fromkeys((*BUILTIN_PLUGINS, *(cfg.get("plugins") or []))):
+    for plugin_name in dict.fromkeys((*builtin_plugins, *(cfg.get("plugins") or []))):
         if plugin_name in plugin_manager.plugins:
             plugin_manager.plugins[plugin_name].register(cfg)

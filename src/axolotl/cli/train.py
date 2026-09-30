@@ -45,7 +45,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         cli_args: Training-specific CLI arguments.
     """
     from axolotl.cli.checks import check_accelerate_default_config, check_user_token
-    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
+    from axolotl.integrations.base import PluginManager, get_builtin_plugins
 
     check_accelerate_default_config()
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
@@ -65,7 +65,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         from axolotl.train import train as train_fn
 
     dataset_meta = None
-    if cfg.get("plugins") or BUILTIN_PLUGINS:
+    if cfg.get("plugins") or get_builtin_plugins():
         plugin_manager = PluginManager.get_instance()
         dataset_meta = plugin_manager.load_datasets(cfg, preprocess=False)
 
@@ -79,7 +79,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         model, tokenizer, trainer = train_fn(cfg=cfg, dataset_meta=dataset_meta)
         del model, tokenizer, trainer
     finally:
-        if cfg.get("plugins") or BUILTIN_PLUGINS:
+        if cfg.get("plugins") or get_builtin_plugins():
             plugin_manager = PluginManager.get_instance()
             plugin_manager.post_train_unload(cfg)
         gc.collect()
@@ -153,7 +153,9 @@ def ray_train_func(kwargs: dict):
     # Plugins must be registered before `validate_config` so the plugin-extended
     # pydantic schema is in scope on this worker; otherwise plugin-specific cfg
     # fields are silently dropped by `model_dump(exclude_none=True)`.
-    if cfg.get("plugins"):
+    from axolotl.integrations.base import get_builtin_plugins
+
+    if cfg.get("plugins") or get_builtin_plugins():
         prepare_plugins_fn: Any = _lazy_attr("prepare_plugins")
         prepare_plugins_fn(cfg)
 
@@ -194,7 +196,7 @@ def ray_train_func(kwargs: dict):
     accelerator_cls(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
 
     # Bind the post-validation cfg to the plugin manager.
-    if cfg.get("plugins"):
+    if cfg.get("plugins") or get_builtin_plugins():
         plugin_set_cfg_fn: Any = _lazy_attr("plugin_set_cfg")
         plugin_set_cfg_fn(cfg)
 
