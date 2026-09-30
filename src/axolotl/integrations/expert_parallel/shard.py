@@ -405,6 +405,14 @@ def shard_expert_lora(model, ep_size: int) -> int:
     return n
 
 
+_CHECKPOINT_WRAPPER = "_checkpoint_wrapped_module."
+
+
+def _strip_checkpoint_wrapper(name: str) -> str:
+    """Module names keep the checkpoint-wrapper segment; state-dict keys never do."""
+    return name.replace(_CHECKPOINT_WRAPPER, "")
+
+
 def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
     """Gather an adapter DTensor without moving its CPU-offloaded storage."""
     if type(parameter).__name__ != "DTensor":
@@ -463,12 +471,12 @@ def gather_ep_experts_into_state_dict(state_dict: dict, model, ep_group) -> int:
             chunks = [torch.empty_like(local) for _ in range(ep_size)]
             dist.all_gather(chunks, local, group=ep_group)
             full = torch.cat(chunks, dim=0)
-            target = f"{name}.{attr}".replace("_checkpoint_wrapped_module.", "")
+            target = _strip_checkpoint_wrapper(f"{name}.{attr}")
             matches = [
                 k
                 for k in keys
-                if k.replace("_checkpoint_wrapped_module.", "") == target
-                or k.replace("_checkpoint_wrapped_module.", "").endswith("." + target)
+                if _strip_checkpoint_wrapper(k) == target
+                or _strip_checkpoint_wrapper(k).endswith("." + target)
             ]
             if not matches and not state_dict:
                 continue
@@ -496,6 +504,13 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
 
     from peft.utils.save_and_load import get_peft_model_state_dict
     from safetensors.torch import save_file
+
+    from axolotl.monkeypatch.peft.state_dict import (
+        patch_peft_checkpoint_wrapper_prefixes,
+    )
+
+    # without it PEFT's module-name prefixes miss every checkpoint-wrapped key: empty adapter
+    patch_peft_checkpoint_wrapper_prefixes()
 
     # The EP-sharded 3D expert params and the global expert count. Gather straight from the
     # ParamWrappers by parameter_name (chaining `base_layer` through FSDP-wrapped units to reach
@@ -537,7 +552,7 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
 
     # Replicated (attention/router) LoRA: full tensors via FSDP all-gather, canonical PEFT keys.
     sd = {
-        name: _gather_adapter_tensor(p)
+        _strip_checkpoint_wrapper(name): _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
@@ -557,7 +572,7 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
                     if ep_sharded
                     else full_local
                 )
-                key = f"{wname}.{sub}.weight"
+                key = _strip_checkpoint_wrapper(f"{wname}.{sub}.weight")
                 target = (
                     key
                     if key in adapter_sd
@@ -609,6 +624,13 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     from peft.utils.save_and_load import get_peft_model_state_dict
     from safetensors.torch import save_file
 
+    from axolotl.monkeypatch.peft.state_dict import (
+        patch_peft_checkpoint_wrapper_prefixes,
+    )
+
+    # without it PEFT's module-name prefixes miss every checkpoint-wrapped key: empty adapter
+    patch_peft_checkpoint_wrapper_prefixes()
+
     if not any("lora_" in n for n, _ in model.named_parameters()):
         return False
 
@@ -619,7 +641,7 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     # Replicated + dp-sharded LoRA: full tensors via FSDP all-gather (collective — same iteration
     # order on every rank). Canonical PEFT keys via get_peft_model_state_dict.
     sd = {
-        name: _gather_adapter_tensor(p)
+        _strip_checkpoint_wrapper(name): _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
@@ -632,7 +654,7 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
         for sub in ("lora_A", "lora_B"):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
                 full = _gather_adapter_tensor(w)
-                key = f"{wname}.{sub}.weight"
+                key = _strip_checkpoint_wrapper(f"{wname}.{sub}.weight")
                 target = (
                     key
                     if key in adapter_sd

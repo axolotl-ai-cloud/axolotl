@@ -262,7 +262,6 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | DeepSpeed | FSDP | pick one |
 | EP | TP | rejected at config validation |
 | EP | DDP / DeepSpeed / `SHARDED_STATE_DICT` | rejected at config validation; EP needs FSDP2 and a full state dict (a sharded one keeps only EP group 0's experts) |
-| EP | HSDP without `dp_shard_size` or `context_parallel_size` > 1 | rejected at config validation; the experts need a shard axis inside each replica |
 | LoRA / QLoRA | TP | rejected at model load unless the base is native NVFP4 (`torchao_tp_lora`); a bf16 adapter would be shard-local |
 | DDP | TP / CP | use FSDP2 instead |
 | QAT | any adapter, or 4/8-bit | full-model only |

@@ -92,9 +92,9 @@ class TestExpertParallelStateDictType:
 
 @pytest.mark.usefixtures("ep_plugin")
 class TestExpertParallelReplicateAxis:
-    def test_rejects_replicate_without_shard_axis(self, min_base_cfg):
-        with pytest.raises(ValueError, match="needs a shard axis"):
-            _validate(min_base_cfg, dp_replicate_size=2, **FULL_FSDP)
+    def test_accepts_replicate_without_shard_axis(self, min_base_cfg):
+        cfg = _validate(min_base_cfg, dp_replicate_size=2, **FULL_FSDP)
+        assert cfg.dp_replicate_size == 2
 
     @pytest.mark.parametrize(
         "axes",
@@ -108,10 +108,9 @@ class TestExpertParallelReplicateAxis:
         cfg = _validate(min_base_cfg, dp_replicate_size=2, **axes, **FULL_FSDP)
         assert cfg.dp_replicate_size == 2
 
-    def test_plugin_mesh_check_rejects_without_process_group(self):
+    def test_plugin_mesh_check_accepts_replicate_without_shard_axis(self):
         cfg = SimpleNamespace(expert_parallel_size=2, dp_replicate_size=2)
-        with pytest.raises(ValueError, match="needs a shard axis"):
-            ExpertParallelPlugin._validate_mesh_axes(cfg)
+        ExpertParallelPlugin._validate_mesh_axes(cfg)
 
     def test_plugin_mesh_check_accepts_shard_axis(self):
         cfg = SimpleNamespace(

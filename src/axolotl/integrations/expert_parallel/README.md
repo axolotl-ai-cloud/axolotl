@@ -235,7 +235,7 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
   | HSDP × EP × dp_shard | >1 | >1 | 1 | >1 | ✅ `dp_replicate` outermost |
   | HSDP × EP × cp | >1 | >1 | >1 | 1 | ✅ `dp_replicate` outermost |
   | HSDP × EP × cp × dp_shard | >1 | >1 | >1 | >1 | ✅ |
-  | HSDP × EP (no `dp_shard`, no `cp`) | >1 | >1 | 1 | 1 | ❌ rejected at config validation: the experts have no axis inside each replica to reduce over |
+  | HSDP × EP (no `dp_shard`, no `cp`) | >1 | >1 | 1 | 1 | ✅ `dp_replicate` outermost; each replica keeps its expert slices whole (size-1 shard mesh) and reduces them across replicas |
   | EP × TP | * | >1 | * | * | ❌ rejected at config validation (`ValueError`) |
 
   Experts shard on `ep`, the sequence on `cp`, dense weights on every non-`ep` axis, expert

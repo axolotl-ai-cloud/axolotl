@@ -1579,6 +1579,17 @@ class TestTorchBackendCheckpointHooks:
         # the wait aliases the collective's storage, so it is never saved on its own
         assert self._policy(torch.ops._c10d_functional.wait_tensor.default) is None
 
+    def test_post_model_build_single_process_warns_about_rank_not_layout(
+        self, monkeypatch, caplog
+    ):
+        _forbid_find_spec(monkeypatch)
+        cfg = _torch_ep_cfg(expert_parallel_size=2)
+        with caplog.at_level("WARNING"):
+            ExpertParallelPlugin().post_model_build(cfg, _build_qwen3moe_block())
+        msg = "\n".join(r.getMessage() for r in caplog.records)
+        assert "EP group of size 1" in msg
+        assert "non-canonical" not in msg and "canonical" not in msg
+
     @pytest.mark.parametrize("chunks", [1, 3])
     def test_post_model_build_sets_dispatch_chunks(self, monkeypatch, chunks):
         from axolotl.integrations.expert_parallel import experts_fn
