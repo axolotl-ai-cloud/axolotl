@@ -528,17 +528,27 @@ def validate_config(
 
 def prepare_plugins(cfg):
     """Prepare installed plugins and plugins explicitly selected by the config."""
-    from axolotl.integrations.base import PluginManager, get_builtin_plugins
+    from axolotl.integrations.base import (
+        PluginManager,
+        get_builtin_plugins,
+        normalize_plugin_name,
+    )
 
     builtin_plugins = get_builtin_plugins()
+    configured_plugins = tuple(
+        dict.fromkeys(
+            normalize_plugin_name(plugin_name)
+            for plugin_name in cfg.get("plugins") or []
+        )
+    )
 
-    if not cfg.get("plugins") and not builtin_plugins:
+    if not configured_plugins and not builtin_plugins:
         return
 
     plugin_manager = PluginManager.get_instance()
-    for plugin_name in cfg.get("plugins") or []:
-        if plugin_name not in builtin_plugins:
-            plugin_manager.register(plugin_name)
-    for plugin_name in dict.fromkeys((*builtin_plugins, *(cfg.get("plugins") or []))):
+    for plugin_name in configured_plugins:
+        if plugin_name not in plugin_manager.plugins:
+            plugin_manager.register(plugin_name, required=True)
+    for plugin_name in dict.fromkeys((*builtin_plugins, *configured_plugins)):
         if plugin_name in plugin_manager.plugins:
             plugin_manager.plugins[plugin_name].register(cfg)

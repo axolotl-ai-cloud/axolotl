@@ -164,9 +164,10 @@ the first model-support lookup and then remain registered for that process.
 
 ## Adding a CLI command
 
-An integration can contribute its own `axolotl` subcommand. Unlike plugin hooks, which are
-loaded from the `plugins:` list of a config file, a subcommand has to be discoverable before
-any config is read, so it is registered through a packaging entry point instead.
+An integration can contribute its own `axolotl` subcommand. Unlike training plugins selected
+through a config file's `plugins:` list, a subcommand has to be discoverable before any config
+is read, so it is registered through a packaging entry point instead. Always-on training plugins
+can also use the `axolotl.plugins` entry-point group described above.
 
 Define a regular `click` command in your package:
 

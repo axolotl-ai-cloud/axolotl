@@ -49,7 +49,7 @@ BUILTIN_PLUGINS = (
 )
 
 
-def _plugin_name(target: str) -> str:
+def normalize_plugin_name(target: str) -> str:
     """Normalize an entry-point target to the legacy dotted plugin name."""
     module_name, separator, class_name = target.partition(":")
     return f"{module_name}.{class_name}" if separator else target
@@ -62,7 +62,7 @@ def get_builtin_plugins() -> tuple[str, ...]:
             (
                 *BUILTIN_PLUGINS,
                 *(
-                    _plugin_name(point.value)
+                    normalize_plugin_name(point.value)
                     for point in entry_points(group=PLUGIN_ENTRY_POINT_GROUP)
                 ),
             )
@@ -437,14 +437,15 @@ class PluginManager:
     def cfg(self, cfg):
         self._cfg = cfg
 
-    def register(self, plugin_name: str):
+    def register(self, plugin_name: str, *, required: bool = False):
         """Registers a new plugin by its name.
 
         Args:
             plugin_name: The name of the plugin to be registered.
+            required: Raise a load failure instead of skipping the plugin.
 
         Raises:
-            ImportError: If the plugin module cannot be imported.
+            Exception: If a required plugin cannot be loaded.
         """
         try:
             LOG.info(f"Attempting to load plugin: {plugin_name}")
@@ -452,17 +453,28 @@ class PluginManager:
             self.plugins[plugin_name] = plugin
             LOG.info(f"Plugin loaded successfully: {plugin_name}")
         except Exception:  # pylint: disable=broad-exception-caught
+            if required:
+                LOG.warning(
+                    "Could not load required plugin '%s'",
+                    plugin_name,
+                    exc_info=True,
+                )
+                raise
             LOG.warning(
-                "Could not import plugin '%s'; skipping it",
+                "Could not load plugin '%s'; skipping it",
                 plugin_name,
                 exc_info=True,
             )
 
     def on_config_validation_error(self, cfg):
         """Lets plugins in the current config undo register()-time side effects."""
+        configured_plugins = {
+            normalize_plugin_name(name) for name in cfg.get("plugins") or []
+        }
         for plugin_name, plugin in self.plugins.items():
-            if plugin_name in get_builtin_plugins() or plugin_name in (
-                cfg.get("plugins") or []
+            if (
+                plugin_name in get_builtin_plugins()
+                or plugin_name in configured_plugins
             ):
                 plugin.on_config_validation_error(cfg)
 
