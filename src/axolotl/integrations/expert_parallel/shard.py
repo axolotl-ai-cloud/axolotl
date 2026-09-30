@@ -482,6 +482,12 @@ def gather_ep_experts_into_state_dict(state_dict: dict, model, ep_group) -> int:
     return replaced
 
 
+def _unwrapped_name(name: str) -> str:
+    """Parameter name as PEFT's own state dict spells it (activation checkpointing wraps
+    modules in ``_checkpoint_wrapped_module``, which ``named_parameters`` keeps)."""
+    return name.replace("_checkpoint_wrapped_module.", "")
+
+
 def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     """Write a complete LoRA adapter when experts are EP-sharded.
 
@@ -537,7 +543,7 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
 
     # Replicated (attention/router) LoRA: full tensors via FSDP all-gather, canonical PEFT keys.
     sd = {
-        name: _gather_adapter_tensor(p)
+        _unwrapped_name(name): _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
@@ -557,7 +563,7 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
                     if ep_sharded
                     else full_local
                 )
-                key = f"{wname}.{sub}.weight"
+                key = _unwrapped_name(f"{wname}.{sub}.weight")
                 target = (
                     key
                     if key in adapter_sd
@@ -619,7 +625,7 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     # Replicated + dp-sharded LoRA: full tensors via FSDP all-gather (collective — same iteration
     # order on every rank). Canonical PEFT keys via get_peft_model_state_dict.
     sd = {
-        name: _gather_adapter_tensor(p)
+        _unwrapped_name(name): _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
@@ -632,7 +638,7 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
         for sub in ("lora_A", "lora_B"):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
                 full = _gather_adapter_tensor(w)
-                key = f"{wname}.{sub}.weight"
+                key = _unwrapped_name(f"{wname}.{sub}.weight")
                 target = (
                     key
                     if key in adapter_sd

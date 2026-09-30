@@ -115,3 +115,38 @@ def test_fsdp2_adapter_save_ignores_frozen_base_parameters(monkeypatch, tmp_path
     assert save_fsdp2_lora_adapter(model, str(tmp_path))
     assert saved.keys() == {"lora_A.default.weight"}
     torch.testing.assert_close(saved["lora_A.default.weight"], adapter.detach())
+
+
+def test_adapter_keys_drop_the_activation_checkpoint_wrapper(tmp_path):
+    from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
+    from safetensors.torch import load_file
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        apply_activation_checkpointing,
+    )
+    from transformers import LlamaConfig, LlamaForCausalLM
+    from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
+    def peft_model():
+        torch.manual_seed(0)
+        config = LlamaConfig(
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            vocab_size=32,
+        )
+        return get_peft_model(
+            LlamaForCausalLM(config), LoraConfig(r=2, target_modules=["q_proj"])
+        )
+
+    model = peft_model()
+    apply_activation_checkpointing(
+        model, check_fn=lambda module: isinstance(module, LlamaDecoderLayer)
+    )
+    assert any("_checkpoint_wrapped_module" in n for n, _ in model.named_parameters())
+
+    assert save_fsdp2_lora_adapter(model, str(tmp_path))
+
+    saved = load_file(str(tmp_path / "adapter_model.safetensors"))
+    assert saved.keys() == get_peft_model_state_dict(peft_model()).keys()
