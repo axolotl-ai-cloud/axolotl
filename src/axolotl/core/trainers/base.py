@@ -408,9 +408,7 @@ class AxolotlTrainer(
         count = super()._get_num_items_in_batch(batch_samples, device)
         pc = getattr(self.accelerator, "parallelism_config", None)
         if self._deepspeed_sequence_parallel_group() is not None:
-            # each SP rank averages over its own shard; compute_loss reweights it to the
-            # sequence's share (ZeRO sums gradients over the SP ranks)
-            return None
+            return None  # transformers' Ulysses loss already weights by valid tokens
         if (
             count is None
             or pc is None
@@ -513,12 +511,7 @@ class AxolotlTrainer(
                 return_outputs=return_outputs,
                 num_items_in_batch=num_items_in_batch,
             )
-        # transformers' `deepspeed_sp_compute_loss` returns the token-weighted sequence mean
-        # through a differentiable all_gather, whose backward hands every SP rank the full
-        # weight of its shard; ZeRO then SUMS over the SP ranks, so the update is sp_size x
-        # too large unless each rank backpropagates 1/sp_size of that mean. `training_step`
-        # scales the logged value back up. Every rank keeps the same graph (no per-rank
-        # branch), so the collective inside the all_gather backward stays symmetric.
+        # transformers' Ulysses loss assumes gradients are averaged over SP ranks; ZeRO sums them
         result = super().compute_loss(
             model, inputs, return_outputs=return_outputs, num_items_in_batch=None
         )
@@ -533,7 +526,7 @@ class AxolotlTrainer(
         if self._deepspeed_sequence_parallel_group() is not None and torch.is_tensor(
             loss
         ):
-            loss = loss * pc.sp_size
+            loss = loss * pc.sp_size  # undo compute_loss's gradient scaling for logging
         return loss
 
     @override
