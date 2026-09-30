@@ -216,7 +216,7 @@ The same list applies to either backend. Slots routed to another rank reach the 
 
 The pre-`expert_parallel` names (`deep_ep`, `deep_ep_grouped_mm`, `deep_ep_scattermoe`, `deep_ep_sonicmoe`, `torch_ep_eager`, `torch_ep_grouped_mm`, `torch_ep_scattermoe`, `torch_ep_sonicmoe`) are deprecated: they still load, with a warning, as the matching local implementation (`*_scattermoe` / `*_sonicmoe` set `use_scattermoe` / `use_sonicmoe`). The backend prefix is ignored, as before; `expert_parallel_backend` picks the dispatch.
 
-EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
+EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. The mesh is ordered `(dp_replicate, dp_shard, cp, ep, tp)`, `ep` innermost, so each EP all-to-all group is a run of consecutive ranks that stays inside a node whenever `ep × tp` fits on one; the startup log reports which axes cross nodes. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
 
 ## Limitations
 

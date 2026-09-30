@@ -876,25 +876,25 @@ class TestMeshTopology:
         assert set().union(*cp.values()) == {0, 1, 2, 3}
 
     def test_world4_ep2_dp2_orthogonal(self):
-        """At world=4 with ep=2 and dp_shard=2, EP groups must be strided
-        ({0,2}, {1,3}) and dp_shard groups contiguous ({0,1}, {2,3}).
+        """At world=4 with ep=2 and dp_shard=2, `ep` is the inner axis: EP groups are
+        consecutive ranks ({0,1}, {2,3}, node-local) and dp_shard groups strided ({0,2}, {1,3}).
         """
         results = _spawn_topology_check(world_size=4, ep_size=2, dp_shard_size=2)
         # Build per-rank groupings from results.
         ep_groups_by_rank = {r: tuple(eps) for r, eps, _ in results}
         dp_groups_by_rank = {r: tuple(dps) for r, _, dps in results}
 
-        # EP groups (strided): {0,2} and {1,3}
-        assert ep_groups_by_rank[0] == (0, 2), ep_groups_by_rank
-        assert ep_groups_by_rank[1] == (1, 3), ep_groups_by_rank
-        assert ep_groups_by_rank[2] == (0, 2), ep_groups_by_rank
-        assert ep_groups_by_rank[3] == (1, 3), ep_groups_by_rank
+        # EP groups (consecutive): {0,1} and {2,3}
+        assert ep_groups_by_rank[0] == (0, 1), ep_groups_by_rank
+        assert ep_groups_by_rank[1] == (0, 1), ep_groups_by_rank
+        assert ep_groups_by_rank[2] == (2, 3), ep_groups_by_rank
+        assert ep_groups_by_rank[3] == (2, 3), ep_groups_by_rank
 
-        # dp_shard groups (contiguous, matches accelerate): {0,1} and {2,3}
-        assert dp_groups_by_rank[0] == (0, 1), dp_groups_by_rank
-        assert dp_groups_by_rank[1] == (0, 1), dp_groups_by_rank
-        assert dp_groups_by_rank[2] == (2, 3), dp_groups_by_rank
-        assert dp_groups_by_rank[3] == (2, 3), dp_groups_by_rank
+        # dp_shard groups (strided): {0,2} and {1,3}
+        assert dp_groups_by_rank[0] == (0, 2), dp_groups_by_rank
+        assert dp_groups_by_rank[1] == (1, 3), dp_groups_by_rank
+        assert dp_groups_by_rank[2] == (0, 2), dp_groups_by_rank
+        assert dp_groups_by_rank[3] == (1, 3), dp_groups_by_rank
 
     def test_world4_ep4_dp1_uses_world(self):
         """ep_size == world_size short-circuits to dist.group.WORLD."""

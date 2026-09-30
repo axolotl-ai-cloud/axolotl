@@ -1461,7 +1461,7 @@ class TestHsdpEpCpParallelismConfig:
     def test_accepted_with_ep(self, monkeypatch):
         pc = self._config(monkeypatch, 2)
         assert pc._sizes["ep"] == 2
-        assert pc.dp_shard_cp_dim_names == ["ep", "cp"]
+        assert pc.dp_shard_cp_dim_names == ["cp", "ep"]
         assert pc.fsdp_dim_names == ["dp_replicate", "dp_shard_cp"]
         assert pc.total_size == 8
 

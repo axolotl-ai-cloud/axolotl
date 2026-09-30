@@ -111,6 +111,7 @@ See our example configs [here](https://github.com/axolotl-ai-cloud/axolotl/tree/
 5.  EP + CP on a 4-GPU long-context MoE run:
     - You want the experts sharded and each sequence split across 2 GPUs.
     - Set `expert_parallel_size: 2` and `context_parallel_size: 2`. Add `dp_shard_size: 2` on 8 GPUs to also shard the dense weights (`ep × cp × dp_shard == world_size`).
+    - Axis order is `dp_replicate, dp_shard, cp, ep, tp` (outer to inner): `ep` groups are consecutive ranks and stay node-local whenever `ep × tp` fits on a node, while `dp_shard` groups stride across nodes. The startup log prints the mesh and which axes cross nodes.
 
 6.  HSDP + EP on 2 nodes of 4 GPUs:
     - Set `dp_replicate_size: 2`, `expert_parallel_size: 2`, `dp_shard_size: 2`.
