@@ -13,8 +13,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
+import httpx
 import pytest
-import requests
 
 from axolotl.utils.dict import DictDefault
 
@@ -103,13 +103,16 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
+
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
+                # snapshot_download reports network errors and hub outages as LocalEntryNotFoundError
                 except (
-                    requests.exceptions.ReadTimeout,
-                    requests.exceptions.ConnectionError,
-                    requests.exceptions.HTTPError,
+                    httpx.TransportError,
+                    HfHubHTTPError,
+                    LocalEntryNotFoundError,
                 ) as exc:
                     if attempt < max_retries - 1:
                         wait = 2**attempt * delay  # in seconds
