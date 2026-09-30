@@ -102,6 +102,38 @@ class NormalizeConfigTestCase(unittest.TestCase):
         self.assertTrue(cfg.bf16)
         self.assertFalse(cfg.fp16)
 
+    def test_single_eval_per_run_evaluates_at_epoch_end(self):
+        # evals_per_epoch: 1 with num_epochs: 1 is one eval for the whole run.
+        # An eval_steps ratio of 1.0 would mean "every step", so it must map to an
+        # epoch-end eval instead of leaving evaluation disabled.
+        cfg = self._get_base_cfg()
+        cfg.val_set_size = 0.05
+        cfg.evals_per_epoch = 1
+
+        normalize_config(cfg)
+
+        self.assertIsNone(cfg.eval_steps)
+        self.assertEqual(cfg.eval_strategy, "epoch")
+
+    def test_multiple_evals_per_run_use_step_ratio(self):
+        cfg = self._get_base_cfg()
+        cfg.val_set_size = 0.05
+        cfg.evals_per_epoch = 2
+
+        normalize_config(cfg)
+
+        self.assertEqual(cfg.eval_steps, 0.5)
+        self.assertIsNone(cfg.eval_strategy)
+
+    def test_evals_per_epoch_without_eval_data_keeps_eval_disabled(self):
+        cfg = self._get_base_cfg()
+        cfg.evals_per_epoch = 1
+
+        normalize_config(cfg)
+
+        self.assertIsNone(cfg.eval_steps)
+        self.assertIsNone(cfg.eval_strategy)
+
     def test_migrate_fsdp_config(self):
         """Test basic FSDP config migration with and without fsdp_version"""
         cfg_with_version = self._get_base_cfg() | DictDefault(

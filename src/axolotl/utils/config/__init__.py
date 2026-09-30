@@ -254,6 +254,9 @@ def normalize_config(cfg):
         eval_steps = 1.0 / (cfg.evals_per_epoch * cfg.num_epochs)
         if eval_steps < 1.0:  # prevent evals on every step
             cfg.eval_steps = eval_steps
+        elif eval_steps == 1.0:
+            # a single eval for the whole run; eval_steps=1.0 would mean every step
+            cfg.eval_strategy = "epoch"
         elif eval_steps > 1:
             LOG.warning(
                 f"Invalid value for eval_steps ({eval_steps}) from evals_per_epoch and/or num_epochs. Skipping evaluations."
