@@ -4,6 +4,8 @@ tests for chat_template prompt strategy
 
 import unittest
 
+import pytest
+
 from axolotl.prompt_strategies.messages.chat import load
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -55,6 +57,36 @@ class TestMessagesChatLlama3:
         assert input_ids == expected_input_ids, (
             f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
         )
+
+
+class TestMessagesChatTrainingField:
+    """
+    `message_field_training` from the dataset config must select the per-message weight.
+    """
+
+    @pytest.mark.parametrize("field", ["weight", "train", "training"])
+    def test_configured_training_field_sets_weights(self, field):
+        strategy = load(
+            None,
+            DictDefault({"train_on_inputs": False, "sequence_len": 512}),
+            DictDefault(
+                {
+                    "chat_template": "chatml",
+                    "field_messages": "messages",
+                    "message_field_training": field,
+                }
+            ),
+        )
+        sample = {
+            "messages": [
+                {"role": "user", "content": "hello", field: 1},
+                {"role": "assistant", "content": "bad answer", field: 0},
+            ]
+        }
+
+        conversation = strategy.message_transform(sample)["conversation"]
+
+        assert [msg["weight"] for msg in conversation] == [1, 0]
 
 
 if __name__ == "__main__":

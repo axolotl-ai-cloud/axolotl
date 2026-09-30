@@ -104,7 +104,7 @@ def chat_message_transform_builder(
             if field in sample[conversations_field][0]
         )
         if not any(
-            field in sample[conversations_field][0] for field in message_field_training
+            field in sample[conversations_field][0] for field in message_weight_fields
         ):
             message_weight_field = None
         else:
