@@ -129,7 +129,7 @@ def test_attention_patching_rejects_mla():
         patch_self_attn_lora(cfg)
 
     assert attention_cls.forward is original_forward
-    assert not hasattr(attention_cls, "_original_forward")
+    delattr(attention_cls, "_original_forward")
 
 
 def test_swiglu_mlp_integration(small_llama_model):

@@ -299,8 +299,9 @@ def patch_self_attn_lora(cfg: DictDefault):
             )
         return
 
-    original_forward = inspect.getsource(attention_cls.forward)
-    self_attn_forward, _ = detab_code(original_forward)
+    self_attn_forward = inspect.getsource(attention_cls.forward)
+    attention_cls._original_forward = self_attn_forward
+    self_attn_forward, _ = detab_code(self_attn_forward)
 
     if not any(qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES) or (
         ORIGINAL_O_CODE not in self_attn_forward
@@ -310,7 +311,6 @@ def patch_self_attn_lora(cfg: DictDefault):
             "layout, so lora_qkv_kernel/lora_o_kernel cannot be applied. Set "
             "lora_qkv_kernel: false and lora_o_kernel: false."
         )
-    attention_cls._original_forward = original_forward
 
     for qkv_orig, qkv_patched in QKV_PATCHES:
         if qkv_orig in self_attn_forward:
