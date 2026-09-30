@@ -33,6 +33,7 @@ Available configs:
 | `35b-a3b-moe-qlora-fsdp.yaml` | Qwen3.5-35B-A3B | MoE, text-only QLoRA + FSDP2 | — |
 | `122b-a10b-moe-qlora.yaml` | Qwen3.5-122B-A10B | MoE, text-only QLoRA | — |
 | `122b-a10b-moe-qlora-fsdp.yaml` | Qwen3.5-122B-A10B | MoE, text-only QLoRA + FSDP2 | — |
+| `qwen3.6-35b-a3b-moe-qlora.yaml` | Qwen3.6-35B-A3B | MoE, text-only QLoRA (see [Qwen3.6 and Edge0](#qwen36-and-edge0)) | — |
 
 ### Gated DeltaNet Linear Attention
 
@@ -59,7 +60,7 @@ lora_target_parameters:
 
 ### Shared Experts (MoE)
 
-Shared experts use `nn.Linear` (unlike routed experts which are 3D `nn.Parameter` tensors), so they can be targeted via `lora_target_modules`. To also train shared expert projections alongside attention, uncomment `gate_up_proj` and `down_proj` in `lora_target_modules`:
+Shared experts use `nn.Linear` (unlike routed experts which are 3D `nn.Parameter` tensors), so they can be targeted via `lora_target_modules`. To also train shared expert projections alongside attention, uncomment `gate_proj`, `up_proj` and `down_proj` in `lora_target_modules`:
 
 ```yaml
 lora_target_modules:
@@ -67,12 +68,20 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
-  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):
-  # - gate_up_proj
+  # - gate_proj
+  # - up_proj
   # - down_proj
 ```
 
 Use `lora_target_parameters` (see [Routed Experts](#routed-experts-moe) above) to target routed experts separately.
+
+### Qwen3.6 and Edge0
+
+[Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) keeps the `qwen3_5_moe` architecture and trains with `qwen3.6-35b-a3b-moe-qlora.yaml`. Its extra `mtp.*` (multi-token prediction) tensors are dropped on load.
+
+Edge0 checkpoints are MLX int4 exports ([Edge0-35B-A3B-preview](https://huggingface.co/Edge0/Edge0-35B-A3B-preview) of Qwen3.6-35B-A3B, [Edge0-8B-A1B-preview](https://huggingface.co/Edge0/Edge0-8B-A1B-preview) of Ling-3.0-tiny) and cannot be loaded by transformers. Fine-tune the base model instead and quantize afterwards.
+
+[Nex-N2.5-mini](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/nex-n2.5) shares this architecture with its own chat template.
 
 ### TIPS
 
