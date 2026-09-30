@@ -968,11 +968,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
     # ------------------------------------------------------------------
 
     def _sync_peft_weights_no_merge(self):
-        """Thread-safe weight sync: stream merged LoRA weights without in-place modification.
+        """Stream merged LoRA weights to vLLM without in-place modification.
 
         Required for FP8 models where merge_adapter() fails (addmm not implemented
-        for Float8), and also safe for concurrent use since it never modifies base
-        weights in-place.
+        for Float8). The trainer's weights are untouched, but vLLM's are not usable
+        mid-transfer, so callers must not overlap this with generation.
         """
         accelerator = self.vllm_generation.accelerator
         if not (self.vllm_generation.mode == "server" and accelerator.is_main_process):
@@ -1050,10 +1050,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 except Exception as exc:
                     logger.warning("Failed to reset prefix cache: %s", exc)
 
-                # Clean up old adapter versions (keep only current)
-                if self._lora_sync_version > 1:
+                # Keep the previous version too: vLLM reads an adapter from disk
+                # lazily when a request is scheduled, and requests queued before
+                # this reload (e.g. async prefetch) still point at it.
+                if self._lora_sync_version > 2:
                     old_path = os.path.join(
-                        self._lora_sync_dir, f"v{self._lora_sync_version - 1}"
+                        self._lora_sync_dir, f"v{self._lora_sync_version - 2}"
                     )
                     if os.path.exists(old_path):
                         import shutil
@@ -1109,28 +1111,29 @@ class AsyncGRPOTrainer(GRPOTrainer):
             else:
                 from accelerate.utils import is_peft_model
 
-                use_no_merge = is_peft_model(self.vllm_generation.model)
-
-                if use_no_merge:
-                    # No-merge sync: computes merged weights as new tensors
-                    # (doesn't modify base weights in-place), so it's safe to
-                    # run concurrently with BG generation — no lock needed.
-                    self._sync_peft_weights_no_merge()
+                # PEFT: merged weights computed as new tensors, never modifying
+                # base weights in place. Non-PEFT: stock sync.
+                if is_peft_model(self.vllm_generation.model):
+                    sync_fn = self._sync_peft_weights_no_merge
                 else:
-                    # Non-PEFT: use stock sync (acquires lock to avoid overlap)
-                    if self.data_producer is not None and hasattr(
-                        self.data_producer, "_generate_lock"
-                    ):
-                        with self.data_producer._generate_lock:
-                            self.vllm_generation.sync_weights()
-                    elif self._async_queue is not None:
-                        pending = list(self._async_queue.queue)
-                        for f in pending:
-                            if isinstance(f, concurrent.futures.Future):
-                                f.result()
-                        self.vllm_generation.sync_weights()
-                    else:
-                        self.vllm_generation.sync_weights()
+                    sync_fn = self.vllm_generation.sync_weights
+                # Both paths need the lock: vLLM's layerwise reload leaves
+                # layers uninitialized between /start_weight_update and
+                # /finish_weight_update, so an overlapping BG generation
+                # samples from garbage weights (NaN logprobs).
+                if self.data_producer is not None and hasattr(
+                    self.data_producer, "_generate_lock"
+                ):
+                    with self.data_producer._generate_lock:
+                        sync_fn()
+                elif self._async_queue is not None:
+                    pending = list(self._async_queue.queue)
+                    for f in pending:
+                        if isinstance(f, concurrent.futures.Future):
+                            f.result()
+                    sync_fn()
+                else:
+                    sync_fn()
             self._last_synced_step = step
 
     def _zero_pad_embedding_for_fp8(self):
@@ -1385,28 +1388,26 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 extra_fields,
             ) = self._generate_rank0_only(prompts)
         else:
+            # TRL >= 1.13 returns this rank's slice only (no num_items_in_batch),
+            # so inputs already line up with the outputs; num_items_in_batch is
+            # computed below from the loss mask, as TRL does.
             (
                 prompt_ids_list,
                 completion_ids_list,
                 tool_mask_list,
                 completions,
-                num_items_in_batch,
                 sampling_per_token_logps_list,
                 extra_fields,
+                _images,
+                _tool_images,
             ) = self._generate(prompts)
-            # _generate gathers prompts from all ranks internally. Gather inputs
-            # to match the full-batch output size.
-            if self.accelerator.num_processes > 1:
-                from accelerate.utils import gather_object
-
-                inputs = gather_object(inputs)
-                prompts = [x["prompt"] for x in inputs]
+            num_items_in_batch = None
 
         # --- Pad to tensors ---
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
         prompt_mask = [torch.ones_like(ids, dtype=torch.long) for ids in prompt_ids]
         prompt_ids = pad(
-            prompt_ids, padding_value=self.pad_token_id, padding_side="left"
+            prompt_ids, padding_value=self._tokenizer.pad_token_id, padding_side="left"
         )
         prompt_mask = pad(prompt_mask, padding_value=0, padding_side="left")
 
@@ -1417,7 +1418,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
             torch.ones_like(ids, dtype=torch.long) for ids in completion_ids
         ]
         completion_ids = pad(
-            completion_ids, padding_value=self.pad_token_id, padding_side="right"
+            completion_ids,
+            padding_value=self._tokenizer.pad_token_id,
+            padding_side="right",
         )
         completion_mask = pad(completion_mask, padding_value=0, padding_side="right")
 
@@ -1439,7 +1442,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         # --- Mask truncated completions ---
         if self.mask_truncated_completions:
-            eos_and_pad = [self.eos_token_id, self.pad_token_id]
+            eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
             is_trunc = torch.tensor(
                 [ids[-1] not in eos_and_pad for ids in completion_ids_list],
                 device=device,
@@ -1447,6 +1450,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
             completion_mask = completion_mask * (~is_trunc).unsqueeze(1).int()
             if tool_mask is not None:
                 tool_mask = tool_mask * (~is_trunc).unsqueeze(1).int()
+
+        if num_items_in_batch is None:
+            loss_mask = (
+                completion_mask if tool_mask is None else completion_mask * tool_mask
+            )
+            num_items_in_batch = self.accelerator.gather(loss_mask.sum()).sum()
 
         # --- Multimodal forward kwargs ---
         num_images = [len(il) for il in images] if images is not None else None
@@ -1904,7 +1913,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             agg_lengths.float().max().item()
         )
 
-        eos_and_pad = [self.eos_token_id, self.pad_token_id]
+        eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
         is_trunc = torch.tensor(
             [ids[-1].item() not in eos_and_pad for ids in completion_ids], device=device
         )
@@ -2316,7 +2325,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 agg_lengths.float().max().item()
             )
 
-            eos_and_pad = [self.eos_token_id, self.pad_token_id]
+            eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
             is_trunc = torch.tensor(
                 [ids[-1].item() not in eos_and_pad for ids in all_completion_ids],
                 device=device,

@@ -451,8 +451,7 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
         trainer.aux_loss_enabled = False
         trainer.num_generations = 2
         trainer.num_iterations = 1
-        trainer.pad_token_id = 0
-        trainer.eos_token_id = 1
+        trainer._tokenizer = types.SimpleNamespace(pad_token_id=0, eos_token_id=1)
         trainer.mask_truncated_completions = False
         trainer.tools = None
         trainer.chat_template_kwargs = {}
@@ -485,9 +484,10 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
                 [[4, 5], [4, 5, 6]],  # completion_ids_list
                 None,  # tool_mask_list
                 ["a", "b"],  # completions
-                2,  # num_items_in_batch
                 None,  # sampling_per_token_logps_list
                 None,  # extra_fields
+                None,  # images
+                [],  # tool_images
             )
         )
         trainer.processing_class = MagicMock()
