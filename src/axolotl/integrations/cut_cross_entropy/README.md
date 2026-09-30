@@ -77,6 +77,7 @@ LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_
 - glm46v
 - glm4v
 - glm4v_moe
+- glm5_next
 - glm_image
 - glm_moe_dsa
 - gpt_oss

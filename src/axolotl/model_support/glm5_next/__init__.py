@@ -1,6 +1,6 @@
 """GLM-5.3-Flash model support (hybrid KDA / DSA sparse MLA + MoE + mHC)."""
 
-from axolotl.model_support.base import ModelSupport, Unsupported
+from axolotl.model_support.base import ModelSupport, Supported, Unsupported
 from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
@@ -35,10 +35,7 @@ class Glm5NextSupport(ModelSupport):
     profile = ModelProfile(
         family=IMAGE_TEXT_TO_TEXT,
         capabilities={
-            "cut_cross_entropy": Unsupported(
-                "ml-cross-entropy has no glm5_next forward, and the generic patch "
-                "targets a ForCausalLM class this model does not have."
-            ),
+            "cut_cross_entropy": Supported(),
             "lora_kernels": Unsupported(
                 "The KDA layers are named self_attn with q/k/v/o_proj, so the fused "
                 "QKV/O rewrite matches on name but not on the KDA forward."

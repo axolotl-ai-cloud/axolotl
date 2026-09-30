@@ -1,5 +1,8 @@
 base_model: zai-org/GLM-5.3-Flash-BF16
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
