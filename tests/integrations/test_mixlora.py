@@ -169,6 +169,44 @@ class TestMixLora:
 
         assert torch.allclose(source.router.gate.weight, target.router.gate.weight)
 
+    @pytest.mark.parametrize(
+        "base_dtype, expected",
+        [
+            (torch.float16, torch.float32),
+            (torch.bfloat16, torch.float32),
+            (torch.float32, torch.float32),
+        ],
+    )
+    def test_trainable_params_are_fp32_under_amp(
+        self, mock_cfg, mock_swiglu_ffn, base_dtype, expected
+    ):
+        """Router/expert params must not stay fp16: GradScaler rejects fp16 grads."""
+        model = nn.Module()
+        model.layers = nn.ModuleList([nn.Module()])
+        model.layers[0].mlp = mock_swiglu_ffn.to(base_dtype)
+
+        patch_model_with_mixlora(model, mock_cfg)
+        block = model.layers[0].mlp
+
+        assert all(p.dtype == expected for p in block.router.parameters())
+        assert all(p.dtype == expected for p in block.experts.parameters())
+        assert all(p.dtype == base_dtype for p in block.base_ffn.parameters())
+
+    def test_trainable_param_cast_respects_autocast_flag(
+        self, mock_cfg, mock_swiglu_ffn
+    ):
+        """peft_autocast_adapter_dtype=False opts out, as it does for PEFT LoRA."""
+        cfg = DictDefault({**mock_cfg, "peft_autocast_adapter_dtype": False})
+        model = nn.Module()
+        model.layers = nn.ModuleList([nn.Module()])
+        model.layers[0].mlp = mock_swiglu_ffn.to(torch.float16)
+
+        patch_model_with_mixlora(model, cfg)
+
+        assert all(
+            p.dtype == torch.float16 for p in model.layers[0].mlp.router.parameters()
+        )
+
     def test_mixlora_plugin_registers_trainer(self, mock_cfg, monkeypatch):
         """Test that the MixLoRA plugin wires up the integration trainer."""
         fake_trainer_module = types.ModuleType("axolotl.integrations.mixlora.trainer")
