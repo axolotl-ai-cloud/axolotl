@@ -513,23 +513,17 @@ class AxolotlTrainer(
                 return_outputs=return_outputs,
                 num_items_in_batch=num_items_in_batch,
             )
-        # Ulysses hands each SP rank a shard of the same sequences and ZeRO SUMS their
-        # gradients, so a rank's loss must be its shard's share of the sequence mean:
-        # local_mean * local_tokens / sequence_tokens. `training_step` scales the logged
-        # value back up by sp_size.
-        targets = (
-            inputs["shift_labels"] if "shift_labels" in inputs else inputs["labels"]
+        # transformers' `deepspeed_sp_compute_loss` returns the token-weighted sequence mean
+        # through a differentiable all_gather, whose backward hands every SP rank the full
+        # weight of its shard; ZeRO then SUMS over the SP ranks, so the update is sp_size x
+        # too large unless each rank backpropagates 1/sp_size of that mean. `training_step`
+        # scales the logged value back up. Every rank keeps the same graph (no per-rank
+        # branch), so the collective inside the all_gather backward stays symmetric.
+        result = super().compute_loss(
+            model, inputs, return_outputs=return_outputs, num_items_in_batch=None
         )
-        local_tokens = targets.ne(-100).sum()
-        total_tokens = local_tokens.clone()
-        torch.distributed.all_reduce(total_tokens, group=sp_group)
-        loss, outputs = super().compute_loss(
-            model, inputs, return_outputs=True, num_items_in_batch=None
-        )
-        if local_tokens.item() == 0:
-            loss = outputs.logits.sum() * 0.0
-        else:
-            loss = loss * (local_tokens / total_tokens.clamp_min(1))
+        loss, outputs = result if return_outputs else (result, None)
+        loss = loss / self.accelerator.parallelism_config.sp_size
         return (loss, outputs) if return_outputs else loss
 
     @override

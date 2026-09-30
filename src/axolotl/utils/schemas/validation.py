@@ -2287,10 +2287,10 @@ class ComplexValidationMixin:
                 "GLM DSA context parallelism needs ringmaster, which does not run under "
                 "DeepSpeed; use FSDP2 instead."
             )
-        if self.rl in (RLType.GRPO, RLType.GDPO, RLType.EBFT):
+        if self.rl:
             raise ValueError(
-                f"rl: {self.rl} with context_parallel_size > 1 needs ringmaster, which "
-                "does not run under DeepSpeed; use FSDP2 instead."
+                f"rl: {self.rl} with context_parallel_size > 1 under DeepSpeed is not "
+                "supported: only the SFT trainer weights each Ulysses rank's loss; use FSDP2."
             )
         cp = getattr(self, "context_parallel", None)
         if cp is not None and (

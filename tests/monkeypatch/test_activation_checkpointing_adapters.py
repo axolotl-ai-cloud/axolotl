@@ -161,7 +161,33 @@ def test_fsdp2_apply_ac_wraps_each_layer_once(batch):
     assert counts and all(c == 2 for c in counts.values()), counts
 
 
-def test_patch_routes_accelerate_ac_through_axolotl_wrapper():
+def test_fsdp2_apply_ac_skips_layers_under_hf_gradient_checkpointing():
+    from types import SimpleNamespace
+
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        CheckpointWrapper,
+    )
+    from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+    from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeDecoderLayer
+
+    from axolotl.monkeypatch.accelerate.fsdp2 import fsdp2_apply_ac
+
+    model = _tiny_peft_moe()
+    model.gradient_checkpointing_enable(
+        gradient_checkpointing_kwargs={"use_reentrant": False}
+    )
+    plugin = SimpleNamespace(
+        auto_wrap_policy=functools.partial(
+            transformer_auto_wrap_policy, transformer_layer_cls={Qwen3MoeDecoderLayer}
+        ),
+        transformer_cls_names_to_wrap=["Qwen3MoeDecoderLayer"],
+        activation_checkpointing_offload=False,
+    )
+    fsdp2_apply_ac(SimpleNamespace(state=SimpleNamespace(fsdp_plugin=plugin)), model)
+    assert not any(isinstance(m, CheckpointWrapper) for m in model.modules())
+
+
+def test_patch_routes_accelerate_ac_through_axolotl_wrapper(monkeypatch):
     import accelerate.accelerator
 
     from axolotl.monkeypatch.accelerate.fsdp2 import (
@@ -169,5 +195,9 @@ def test_patch_routes_accelerate_ac_through_axolotl_wrapper():
         patch_accelerate_fsdp2,
     )
 
+    for name in ("fsdp2_apply_ac", "fsdp2_prepare_model"):
+        monkeypatch.setattr(
+            accelerate.accelerator, name, getattr(accelerate.accelerator, name)
+        )
     patch_accelerate_fsdp2()
     assert accelerate.accelerator.fsdp2_apply_ac is fsdp2_apply_ac

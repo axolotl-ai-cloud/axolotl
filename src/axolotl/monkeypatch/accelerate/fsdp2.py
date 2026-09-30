@@ -563,6 +563,22 @@ def _has_checkpoint_wrapper(model: torch.nn.Module) -> bool:
     return any(isinstance(m, CheckpointWrapper) for m in model.modules())
 
 
+def _activation_checkpointing_active(model: torch.nn.Module) -> bool:
+    """A CheckpointWrapper already wraps the layers, or HF `gradient_checkpointing_enable`
+    already recomputes them from inside their forward; a second checkpoint nests recompute."""
+    if _has_checkpoint_wrapper(model):
+        return True
+    if any(
+        getattr(m, "gradient_checkpointing", False) is True for m in model.modules()
+    ):
+        LOG.warning(
+            "fsdp_config.activation_checkpointing skipped: gradient_checkpointing already "
+            "recomputes every layer; set one of the two."
+        )
+        return True
+    return False
+
+
 def fsdp2_apply_ac(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """accelerate's per-layer AC pass using axolotl's SAC-aware, non-reentrant wrapper."""
     from accelerate.utils.fsdp_utils import fsdp2_prepare_auto_wrap_policy
@@ -571,6 +587,8 @@ def fsdp2_apply_ac(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         offload_wrapper,
     )
 
+    if _activation_checkpointing_active(model):
+        return model
     plugin = accelerator.state.fsdp_plugin
     policy = fsdp2_prepare_auto_wrap_policy(plugin, model)
     wrap = _activation_checkpoint_wrapper_fn()
@@ -661,7 +679,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     # accelerate >= 1.15 applies AC in `_prepare_fsdp2` (via the patched `fsdp2_apply_ac`)
     # before calling this; wrapping again nests two checkpoints per layer.
-    if fsdp2_plugin.activation_checkpointing and not _has_checkpoint_wrapper(model):
+    if fsdp2_plugin.activation_checkpointing and not _activation_checkpointing_active(
+        model
+    ):
         from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
             apply_activation_checkpointing,
         )

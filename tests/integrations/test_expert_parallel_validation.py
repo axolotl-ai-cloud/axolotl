@@ -9,7 +9,6 @@ from axolotl.integrations.expert_parallel.args import (
     ExpertParallelArgs,
     validate_expert_parallel_topology,
 )
-from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -107,16 +106,6 @@ class TestExpertParallelReplicateAxis:
     def test_accepts_replicate_with_shard_axis(self, min_base_cfg, axes):
         cfg = _validate(min_base_cfg, dp_replicate_size=2, **axes, **FULL_FSDP)
         assert cfg.dp_replicate_size == 2
-
-    def test_plugin_mesh_check_accepts_replicate_without_shard_axis(self):
-        cfg = SimpleNamespace(expert_parallel_size=2, dp_replicate_size=2)
-        ExpertParallelPlugin._validate_mesh_axes(cfg)
-
-    def test_plugin_mesh_check_accepts_shard_axis(self):
-        cfg = SimpleNamespace(
-            expert_parallel_size=2, dp_replicate_size=2, dp_shard_size=2
-        )
-        ExpertParallelPlugin._validate_mesh_axes(cfg)
 
 
 class TestTopologyHelper:

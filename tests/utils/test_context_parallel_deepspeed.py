@@ -101,3 +101,24 @@ class TestPluginGate:
         assert not plugin._enabled(
             SimpleNamespace(context_parallel=cp, deepspeed="zero3.json")
         )
+
+
+@pytest.mark.parametrize("rl", ["dpo", "kto", "orpo", "grpo"])
+def test_deepspeed_context_parallel_rejects_every_rl_trainer(monkeypatch, rl):
+    from axolotl.utils.config import validate_config
+
+    monkeypatch.setenv("WORLD_SIZE", "4")
+    cfg = DictDefault(
+        base_model="HuggingFaceTB/SmolLM2-135M",
+        learning_rate=1e-3,
+        datasets=[{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+        micro_batch_size=1,
+        gradient_accumulation_steps=1,
+        sequence_len=2048,
+        rl=rl,
+        remove_unused_columns=False,
+        deepspeed="deepspeed_configs/zero2.json",
+        context_parallel_size=2,
+    )
+    with pytest.raises(ValueError, match="only the SFT trainer"):
+        validate_config(cfg)

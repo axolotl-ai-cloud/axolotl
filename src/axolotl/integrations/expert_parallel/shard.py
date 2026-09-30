@@ -358,6 +358,25 @@ def _ep_sliced_experts(model):
     return out
 
 
+def _module_lora_ranks(config, module_path: str) -> set[int]:
+    """Ranks PEFT may have given this module's parameter adapters: ``rank_pattern`` is keyed by
+    ``<module>.<parameter>`` for ``target_parameters``, falling back to ``config.r``."""
+    from peft.utils.other import get_pattern_key
+
+    rank_pattern = getattr(config, "rank_pattern", None) or {}
+    base_rank = getattr(config, "r", None)
+    ranks = set()
+    for target in getattr(config, "target_parameters", None) or ():
+        key = f"{module_path}.{str(target).rsplit('.', 1)[-1]}"
+        matched = get_pattern_key(rank_pattern.keys(), key) if rank_pattern else None
+        rank = rank_pattern.get(matched, base_rank) if matched else base_rank
+        if rank:
+            ranks.add(int(rank))
+    if base_rank:
+        ranks.add(int(base_rank))
+    return ranks
+
+
 def ep_local_adapter_dir(model, adapter_dir: str) -> str:
     """Resume a routed-expert LoRA on an EP-sliced model.
 
@@ -391,12 +410,14 @@ def ep_local_adapter_dir(model, adapter_dir: str) -> str:
         offset, e_local, e_global = sliced[match.group(1)]
         ep_dim = 0 if match.group(3) == "A" else 1
         # E_local*r and E_global*r' can coincide, so the rank comes from the config, not the shape
-        r = getattr(config, "r", None)
-        if not r or tensor.shape[ep_dim] != e_global * r:
-            if r and tensor.shape[ep_dim] != e_local * r:
+        ranks = _module_lora_ranks(config, match.group(1))
+        packed = tensor.shape[ep_dim]
+        if not any(packed == e_global * r for r in ranks):
+            if not any(packed == e_local * r for r in ranks):
                 LOG.warning(
-                    f"expert_parallel: {key!r} has {tensor.shape[ep_dim]} packed rows, expected "
-                    f"{e_global * r} (global) or {e_local * r} (local); left untouched."
+                    f"expert_parallel: {key!r} has {packed} packed rows, expected "
+                    f"{sorted(e_global * r for r in ranks)} (global) or "
+                    f"{sorted(e_local * r for r in ranks)} (local); left untouched."
                 )
             continue
         weights[key] = ep_adapter_load_local_shard(

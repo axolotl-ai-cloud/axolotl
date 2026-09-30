@@ -29,12 +29,13 @@ class _Model(torch.nn.Module):
         self.experts = _Experts(num_experts)
 
 
-def _lora_config():
+def _lora_config(**overrides):
     return LoraConfig(
         r=RANK,
         lora_alpha=4,
         target_modules=["q_proj"],
         target_parameters=["experts.gate_up_proj", "experts.down_proj"],
+        **overrides,
     )
 
 
@@ -53,6 +54,18 @@ def _ep_sliced(model, ep_rank):
     local.experts.num_local_experts = e_local
     local.experts.local_expert_offset = start
     return local
+
+
+@pytest.fixture(autouse=True)
+def _rank_local_dirs_under_tmp_path(tmp_path, monkeypatch):
+    import tempfile
+
+    original = tempfile.mkdtemp
+    monkeypatch.setattr(
+        tempfile,
+        "mkdtemp",
+        lambda *args, **kwargs: original(*args, **{**kwargs, "dir": str(tmp_path)}),
+    )
 
 
 @pytest.fixture
@@ -152,3 +165,33 @@ def test_load_lora_removes_the_rank_local_directory(saved_adapter, monkeypatch):
     assert created and created[0] != adapter_dir
     assert not os.path.exists(created[0])
     assert any("lora_" in name for name, _ in model.named_parameters())
+
+
+def test_rank_pattern_override_is_still_sliced(tmp_path):
+    torch.manual_seed(1)
+    base = _Model(E_GLOBAL)
+    # E_global*RANK == E_local*(2*RANK): the shape alone cannot tell global from local
+    r = 2 * RANK
+    config = _lora_config(
+        rank_pattern={"experts.gate_up_proj": r, "experts.down_proj": r}
+    )
+    peft = get_peft_model(copy.deepcopy(base), config)
+    with torch.no_grad():
+        for p in peft.parameters():
+            if p.requires_grad:
+                p.copy_(torch.randn_like(p))
+    peft.save_pretrained(str(tmp_path / "adapter"))
+    local = _ep_sliced(base, 1)
+    resumed = PeftModel.from_pretrained(
+        local, ep_local_adapter_dir(local, str(tmp_path / "adapter"))
+    )
+    full = dict(peft.named_parameters())
+    e_local = E_GLOBAL // EP_SIZE
+    checked = 0
+    for key, value in resumed.named_parameters():
+        if "experts" in key and "lora_A" in key:
+            torch.testing.assert_close(
+                value, full[key][e_local * r : 2 * e_local * r], msg=key
+            )
+            checked += 1
+    assert checked
