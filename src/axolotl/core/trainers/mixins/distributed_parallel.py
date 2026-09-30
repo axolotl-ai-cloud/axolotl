@@ -2,6 +2,8 @@
 Mixin for correctly saving fsdp
 """
 
+import contextlib
+
 from accelerate import PartialState
 from transformers import Trainer
 
@@ -264,6 +266,42 @@ class DistributedParallelMixin(Trainer):
             return self._save_model_native(output_dir, _internal_call)
         finally:
             accelerator.__dict__.pop("get_state_dict", None)
+
+    def _ep_checkpoint_context(self):
+        cfg = getattr(self, "axolotl_cfg", None)
+        if (
+            not cfg
+            or (getattr(cfg, "expert_parallel_size", 1) or 1) <= 1
+            or not self.is_fsdp_enabled
+        ):
+            return contextlib.nullcontext()
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+        from axolotl.integrations.expert_parallel.shard import (
+            ep_complete_full_state_dicts,
+        )
+
+        ep_group = getattr(
+            self.accelerator.unwrap_model(self.model), "_ep_lora_group", None
+        )
+        if ep_group is None:
+            ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+        return ep_complete_full_state_dicts(ep_group)
+
+    def _save_optimizer_and_scheduler(self, output_dir):
+        with self._ep_checkpoint_context():
+            return super()._save_optimizer_and_scheduler(output_dir)
+
+    def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
+        with self._ep_checkpoint_context():
+            return super()._load_from_checkpoint(resume_from_checkpoint, model)
+
+    def _load_optimizer_and_scheduler(self, checkpoint):
+        with self._ep_checkpoint_context():
+            return super()._load_optimizer_and_scheduler(checkpoint)
+
+    def _load_best_model(self):
+        with self._ep_checkpoint_context():
+            return super()._load_best_model()
 
     def _save(self, output_dir: str | None = None, state_dict=None):
         if (

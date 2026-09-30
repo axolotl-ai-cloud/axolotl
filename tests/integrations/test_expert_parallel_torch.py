@@ -1209,6 +1209,100 @@ class TestGatherEpExpertsIntoStateDict:
         assert torch.equal(r0["down"][2:], torch.full((2, 4, 2), 2.0))
 
 
+def _ep_checkpoint_roundtrip_worker(rank, world_size, port, q):
+    """Resume-checkpoint path on an (ep=2, dp_shard=2) mesh: the rank-0 full state dicts carry
+    all 4 experts, and a rank-0 broadcast load restores every EP group's own experts."""
+    try:
+        _init_gloo(rank, world_size, port)
+        from torch.distributed.checkpoint import state_dict as dcp_state_dict
+        from torch.distributed.checkpoint.state_dict import StateDictOptions
+        from torch.distributed.device_mesh import init_device_mesh
+
+        from axolotl.integrations.expert_parallel.plugin import (
+            ExpertParallelPlugin,
+            expert_fsdp_mesh,
+        )
+        from axolotl.integrations.expert_parallel.shard import (
+            ep_complete_full_state_dicts,
+        )
+
+        mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("ep", "dp_shard"))
+        ep = mesh.get_coordinate()[0]
+        model = _tiny_ep_experts_model(0.0)
+        experts = model.model.layers[0].mlp.experts
+        with torch.no_grad():
+            for i in range(2):
+                experts.gate_up_proj[i].fill_(ep * 2 + i + 1)
+                experts.down_proj[i].fill_(ep * 2 + i + 1)
+        ExpertParallelPlugin.fully_shard_experts(
+            model, expert_fsdp_mesh(mesh), {"reshard_after_forward": True}
+        )
+        # the tiny forward reads gate_up_proj only
+        optimizer = torch.optim.Adam([experts.gate_up_proj], lr=0.1)
+        experts(torch.full((3, 4), float(rank + 1))).sum().backward()
+        optimizer.step()
+
+        def live():
+            state = optimizer.state[experts.gate_up_proj]
+            return [
+                experts.gate_up_proj,
+                experts.down_proj,
+                state["exp_avg"],
+                state["exp_avg_sq"],
+            ]
+
+        before = [t.to_local().clone() for t in live()]
+        key = "model.layers.0.mlp.experts.gate_up_proj"
+        save = StateDictOptions(full_state_dict=True, cpu_offload=True)
+        load = StateDictOptions(
+            full_state_dict=True, cpu_offload=True, broadcast_from_rank0=True
+        )
+        with ep_complete_full_state_dicts(mesh["ep"].get_group()):
+            msd = dcp_state_dict.get_model_state_dict(model, options=save)
+            osd = dcp_state_dict.get_optimizer_state_dict(
+                model, optimizer, options=save
+            )
+            saved = (
+                {
+                    "experts": msd[key][:, 0, 0].tolist(),
+                    "exp_avg_rows": osd["state"][key]["exp_avg"].shape[0],
+                }
+                if rank == 0
+                else None
+            )
+            with torch.no_grad():
+                for tensor in live():
+                    tensor.to_local().zero_()
+            dcp_state_dict.set_model_state_dict(
+                model, msd if rank == 0 else {}, options=load
+            )
+            dcp_state_dict.set_optimizer_state_dict(
+                model, optimizer, osd if rank == 0 else {}, options=load
+            )
+        restored = all(
+            torch.equal(a, b.to_local()) for a, b in zip(before, live(), strict=True)
+        )
+        q.put((rank, {"saved": saved, "restored": restored}))
+    except Exception:  # pylint: disable=broad-except
+        q.put((rank, traceback.format_exc()))
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+class TestEpCompleteFullStateDicts:
+    def test_resume_checkpoint_roundtrips_every_ep_group(self):
+        res = _run_spawned(_ep_checkpoint_roundtrip_worker, world_size=4, timeout=300)
+        for rank in range(4):
+            assert isinstance(res[rank], dict), res[rank]
+            assert res[rank]["restored"], rank
+        saved = res[0]["saved"]
+        assert saved["exp_avg_rows"] == 4
+        # experts 1 and 3 get no gradient (the forward reads expert 0 of each rank)
+        assert saved["experts"][1] == 2.0 and saved["experts"][3] == 4.0
+        assert saved["experts"][0] != 0.0 and saved["experts"][2] != 0.0
+
+
 class TestEpClipGradNormPatchGate:
     """The EP-aware clip engages for pure EP under FSDP2, not only for EP x dp_shard/cp."""
 

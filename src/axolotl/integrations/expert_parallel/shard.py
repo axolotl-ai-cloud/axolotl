@@ -15,6 +15,7 @@ modules hold only their local slice of the experts dim. The registered
 
 from __future__ import annotations
 
+import contextlib
 import gc
 
 import torch
@@ -313,6 +314,21 @@ def _slice_expert_lora_param(linear, dim: int, e_global: int, start: int, end: i
     return r
 
 
+def _ep_slice(full, kind: str, e_global: int, ep_rank: int, ep_size: int):
+    """This EP rank's experts out of an all-experts tensor; ``kind`` as in :func:`gather_expert_lora_full`
+    (``"A"``: experts contiguous along dim 0, which also covers the expert weights; ``"B"``: lora_B)."""
+    e_local = e_global // ep_size
+    start, end = ep_rank * e_local, (ep_rank + 1) * e_local
+    if kind == "A":
+        rows = full.shape[0] // e_global
+        return full[start * rows : end * rows]
+    out_dim = full.shape[0]
+    r = full.shape[1] // e_global
+    return full.reshape(out_dim, r, e_global)[:, :, start:end].reshape(
+        out_dim, r * e_local
+    )
+
+
 def ep_adapter_load_local_shard(
     global_adapter, ep_dim, e_global, ep_coord, ep_size, placements, dp_size, dp_rank
 ):
@@ -328,18 +344,9 @@ def ep_adapter_load_local_shard(
     """
     from torch.distributed.tensor import Shard
 
-    e_local = e_global // ep_size
-    start, end = ep_coord * e_local, (ep_coord + 1) * e_local
-    if ep_dim == 0:  # lora_A: [E*r, in] expert-major rows
-        r = global_adapter.shape[0] // e_global
-        ep_slice = global_adapter[start * r : end * r, :]
-    else:  # lora_B: [out, r*E] -> [out, r, E], experts on the last axis
-        out_dim = global_adapter.shape[0]
-        r = global_adapter.shape[1] // e_global
-        ep_slice = global_adapter.reshape(out_dim, r, e_global)[
-            :, :, start:end
-        ].reshape(out_dim, r * e_local)
-    local = ep_slice
+    local = _ep_slice(
+        global_adapter, "A" if ep_dim == 0 else "B", e_global, ep_coord, ep_size
+    )
     for placement in placements:
         if isinstance(placement, Shard):
             local = local.chunk(dp_size, dim=placement.dim)[dp_rank]
@@ -690,3 +697,238 @@ def gather_expert_lora_full(local: torch.Tensor, kind: str, e_global: int, ep_gr
     r = local.shape[1] // e_local
     parts = [g.reshape(out_dim, r, e_local) for g in gathered]
     return torch.cat(parts, dim=2).reshape(out_dim, r * e_global)
+
+
+def _ep_sharded_entries(model) -> list[tuple[str, torch.nn.Parameter, str, int]]:
+    """``(fqn, param, kind, e_global)`` for every parameter holding only this EP rank's experts,
+    in ``named_parameters`` order (identical on every rank)."""
+    from torch.distributed.checkpoint.state_dict import _get_fqns
+
+    layout: dict[int, tuple[str, int]] = {}
+    for _name, module in _detect_experts_modules(model):
+        e_local = getattr(module, "num_local_experts", None)
+        e_global = getattr(module, "num_experts_global", None)
+        if e_local is None or e_global is None or e_local >= e_global:
+            continue
+        for attr in (
+            "gate_up_proj",
+            "down_proj",
+            "gate_up_proj_bias",
+            "down_proj_bias",
+        ):
+            param = getattr(module, attr, None)
+            if isinstance(param, torch.nn.Parameter):
+                layout[id(param)] = ("A", e_global)
+    for _name, wrapper in model.named_modules():
+        if not _is_param_wrapper(wrapper) or not getattr(
+            wrapper, "_ep_lora_sharded", False
+        ):
+            continue
+        e_global = getattr(_real_experts_base(wrapper), "num_experts_global", None)
+        if e_global is None:
+            continue
+        for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
+            for factor in getattr(wrapper, sub, {}).values():
+                layout[id(factor.weight)] = (kind, e_global)
+    return [
+        (next(iter(_get_fqns(model, name))), param, *layout[id(param)])
+        for name, param in model.named_parameters()
+        if id(param) in layout
+    ]
+
+
+def _collective_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda", torch.cuda.current_device())
+    return torch.device("cpu")
+
+
+def _is_plain(tensor) -> bool:
+    local = tensor.to_local() if type(tensor).__name__ == "DTensor" else tensor
+    return type(local) is torch.Tensor or type(local) is torch.nn.Parameter
+
+
+def _stash_full_ep_tensors(slots, ep_rank: int, ep_size: int):
+    """Swap every all-experts value in ``slots`` for this rank's EP slice, so torch's load sees
+    the live shapes. ``slots`` is ``(tag, container, key, param, kind, e_global)``. Returns this
+    rank's full tensors by tag and global rank 0's ``(tag, shape, dtype)`` list, which every rank
+    then restores from rank 0."""
+    fulls: dict = {}
+    for tag, container, key, param, kind, e_global in slots:
+        value = container.get(key) if container else None
+        full_shape = list(param.shape)
+        full_shape[0 if kind == "A" else 1] *= ep_size
+        if not isinstance(value, torch.Tensor) or list(value.shape) != full_shape:
+            continue
+        container[key] = _ep_slice(value, kind, e_global, ep_rank, ep_size)
+        fulls[tag] = value
+    meta = [
+        [(tag, tuple(v.shape), v.dtype) for tag, v in fulls.items()]
+        if dist.get_rank() == 0
+        else None
+    ]
+    dist.broadcast_object_list(meta, src=0)
+    return fulls, meta[0]
+
+
+@torch.no_grad()
+def _restore_full_ep_tensors(fulls, meta, live, ep_rank: int, ep_size: int) -> None:
+    """Broadcast each of rank 0's all-experts tensors and copy this rank's EP slice into its
+    live counterpart ``live[tag] -> (tensor, kind, e_global)``."""
+    from torch.distributed.tensor import DTensor, distribute_tensor
+
+    device = _collective_device()
+    for tag, shape, dtype in meta:
+        if dist.get_rank() == 0:
+            full = fulls[tag].to(device)
+        else:
+            full = torch.empty(shape, dtype=dtype, device=device)
+        dist.broadcast(full, src=0)
+        target, kind, e_global = live[tag]
+        own = _ep_slice(full, kind, e_global, ep_rank, ep_size)
+        if isinstance(target, DTensor):
+            mesh = target.device_mesh
+            own = distribute_tensor(
+                own.to(mesh.device_type, dtype=target.dtype),
+                mesh,
+                target.placements,
+                src_data_rank=None,
+            ).to_local()
+            target = target.to_local()
+        target.copy_(own)
+
+
+@contextlib.contextmanager
+def ep_complete_full_state_dicts(ep_group):
+    """Make torch's full model/optimizer state dicts carry every EP group's experts.
+
+    FSDP gathers an expert tensor only over its own EP group's mesh, so the rank-0 full state
+    dict of a resume checkpoint holds EP group 0's experts, and the rank-0 broadcast load hands
+    those to every group. Inside this context the full-state-dict getters all-gather the
+    EP-sharded tensors (expert weights, expert LoRA, and their optimizer state) to ``E_global``,
+    and the setters give each EP rank its own slice. Collective: enter on every rank.
+    """
+    import torch.distributed.checkpoint.state_dict as dcp_state_dict
+
+    ep_size = dist.get_world_size(ep_group) if ep_group is not None else 1
+    if ep_size <= 1:
+        yield
+        return
+    ep_rank = dist.get_rank(ep_group)
+    names = (
+        "get_model_state_dict",
+        "get_optimizer_state_dict",
+        "set_model_state_dict",
+        "set_optimizer_state_dict",
+    )
+    originals = {name: getattr(dcp_state_dict, name) for name in names}
+
+    def _optimizer_state(optimizers):
+        if isinstance(optimizers, torch.optim.Optimizer):
+            optimizers = (optimizers,)
+        state = {}
+        for optimizer in optimizers:
+            state.update(optimizer.state)
+        return state
+
+    def _param_states(param, param_state):
+        keys = []
+        for key in sorted(param_state):
+            value = param_state[key]
+            if not torch.is_tensor(value) or tuple(value.shape) != tuple(param.shape):
+                continue
+            if not _is_plain(value):
+                LOG.warning_once(
+                    "expert_parallel: optimizer state %r is a tensor subclass and is not "
+                    "EP-gathered; a resume restores EP group 0's copy on every group.",
+                    key,
+                )
+                continue
+            keys.append(key)
+        return keys
+
+    def _gather(tensor, kind, e_global):
+        local = _gather_adapter_tensor(tensor).contiguous()
+        return gather_expert_lora_full(local, kind, e_global, ep_group)
+
+    def get_model_state_dict(model, *args, options=None, **kwargs):
+        state_dict = originals["get_model_state_dict"](
+            model, *args, options=options, **kwargs
+        )
+        if options is None or not options.full_state_dict:
+            return state_dict
+        for fqn, param, kind, e_global in _ep_sharded_entries(model):
+            if options.ignore_frozen_params and not param.requires_grad:
+                continue
+            full = _gather(param, kind, e_global)
+            if state_dict:
+                state_dict[fqn] = full.to(state_dict[fqn].device)
+        return state_dict
+
+    def get_optimizer_state_dict(model, optimizers, *args, options=None, **kwargs):
+        osd = originals["get_optimizer_state_dict"](
+            model, optimizers, *args, options=options, **kwargs
+        )
+        if options is None or not options.full_state_dict:
+            return osd
+        state = _optimizer_state(optimizers)
+        saved = osd.get("state") if isinstance(osd, dict) else None
+        for fqn, param, kind, e_global in _ep_sharded_entries(model):
+            param_state = state.get(param) or {}
+            for key in _param_states(param, param_state):
+                full = _gather(param_state[key], kind, e_global)
+                if saved:
+                    saved[fqn][key] = full.to(saved[fqn][key].device)
+        return osd
+
+    def set_model_state_dict(model, model_state_dict, *args, **kwargs):
+        entries = _ep_sharded_entries(model)
+        slots = [
+            (fqn, model_state_dict, fqn, param, kind, e_global)
+            for fqn, param, kind, e_global in entries
+        ]
+        fulls, meta = _stash_full_ep_tensors(slots, ep_rank, ep_size)
+        result = originals["set_model_state_dict"](
+            model, model_state_dict, *args, **kwargs
+        )
+        live = {fqn: (param, kind, e_global) for fqn, param, kind, e_global in entries}
+        _restore_full_ep_tensors(fulls, meta, live, ep_rank, ep_size)
+        return result
+
+    def set_optimizer_state_dict(model, optimizers, optim_state_dict, *args, **kwargs):
+        entries = _ep_sharded_entries(model)
+        saved = (
+            optim_state_dict.get("state")
+            if isinstance(optim_state_dict, dict)
+            else None
+        ) or {}
+        slots = [
+            ((fqn, key), saved.get(fqn), key, param, kind, e_global)
+            for fqn, param, kind, e_global in entries
+            for key in sorted(saved.get(fqn) or {})
+        ]
+        fulls, meta = _stash_full_ep_tensors(slots, ep_rank, ep_size)
+        result = originals["set_optimizer_state_dict"](
+            model, optimizers, optim_state_dict, *args, **kwargs
+        )
+        state = _optimizer_state(optimizers)
+        live = {}
+        for fqn, param, kind, e_global in entries:
+            for key, value in (state.get(param) or {}).items():
+                live[(fqn, key)] = (value, kind, e_global)
+        _restore_full_ep_tensors(fulls, meta, live, ep_rank, ep_size)
+        return result
+
+    patched = {
+        "get_model_state_dict": get_model_state_dict,
+        "get_optimizer_state_dict": get_optimizer_state_dict,
+        "set_model_state_dict": set_model_state_dict,
+        "set_optimizer_state_dict": set_optimizer_state_dict,
+    }
+    for name, fn in patched.items():
+        setattr(dcp_state_dict, name, fn)
+    try:
+        yield
+    finally:
+        for name, fn in originals.items():
+            setattr(dcp_state_dict, name, fn)
