@@ -1,0 +1,72 @@
+name: Request GPU tests
+
+on:
+  pull_request_target:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  rerun:
+    if: github.event.label.name == 'run-gpu-tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      # Only trusted inline code runs with the base repository's token.
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            if (pr.state !== 'open' || pr.draft ||
+                !pr.labels.some(label => label.name === 'run-gpu-tests')) return;
+
+            for (const workflow of ['docker-e2e.yml', 'multi-gpu-e2e.yml']) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                ...context.repo,
+                workflow_id: workflow,
+                event: 'pull_request',
+                head_sha: pr.head.sha,
+                per_page: 100,
+              });
+              const run = runs
+                .filter(run => run.pull_requests.some(item => item.number === pr.number))
+                .sort((a, b) => b.id - a.id)[0];
+              if (!run) {
+                core.info(`${workflow}: no run for this PR commit; path filters may exclude it.`);
+                continue;
+              }
+
+              // Wait for an initial label check, but leave running GPU tests alone.
+              let status = run.status;
+              for (let attempt = 0; status !== 'completed' && attempt < 24; attempt++) {
+                const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                  ...context.repo, run_id: run.id, per_page: 100,
+                });
+                if (jobs.some(job => job.name.startsWith('run-e2e /') ||
+                                     job.name.startsWith('run-multigpu /'))) break;
+                await new Promise(resolve => setTimeout(resolve, 10000));
+                const { data: current } = await github.rest.actions.getWorkflowRun({
+                  ...context.repo, run_id: run.id,
+                });
+                status = current.status;
+              }
+              if (status !== 'completed') {
+                core.info(`${workflow}: run ${run.id} is already active; leaving it running.`);
+                continue;
+              }
+
+              const { data: currentPr } = await github.rest.pulls.get({
+                ...context.repo, pull_number: pr.number,
+              });
+              if (currentPr.state !== 'open' || currentPr.draft ||
+                  currentPr.head.sha !== pr.head.sha ||
+                  !currentPr.labels.some(label => label.name === 'run-gpu-tests')) return;
+              await github.rest.actions.reRunWorkflow({ ...context.repo, run_id: run.id });
+              core.info(`${workflow}: reran ${run.html_url}`);
+            }

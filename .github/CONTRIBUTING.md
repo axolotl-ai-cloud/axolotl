@@ -104,7 +104,13 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 #### GPU End-to-End Tests
 
-GPU-heavy CI (the `docker-e2e-tests` and multi-GPU e2e workflows) is opt-in on pull requests: it only runs once a maintainer applies the `run-gpu-tests` label. Labeling starts the GPU suites immediately without re-running the CPU checks, and subsequent pushes to a labeled PR re-run them automatically. Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
+GPU-heavy CI (the `docker-e2e-tests` and multi-GPU e2e workflows) is opt-in on pull requests: it only runs once a maintainer applies the `run-gpu-tests` label. Subsequent pushes to a labeled PR re-run the suites automatically.
+
+The GPU workflows keep their path filters in `docker-e2e.yml` and `multi-gpu-e2e.yml` and do not subscribe to label events. The separate `gpu-label.yml` handler reruns the existing workflow runs for the PR's current commit when `run-gpu-tests` is applied. The shared gate reads current PR labels so these reruns can enable GPU jobs. Unrelated labels never create GPU workflow runs, and active GPU tests are left running. Removing and reapplying `run-gpu-tests` reruns completed suites.
+
+The label handler uses `pull_request_target` with trusted inline code only and must be present on the default branch; it never checks out PR code.
+
+Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
 
 CPU NF4 tests marked `nf4_distributed` run in a dedicated job with its own timeout,
 across the same PyTorch versions as the main CPU matrix. The source, sdist, nightly,
