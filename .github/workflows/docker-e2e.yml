@@ -14,7 +14,7 @@ on:
       - "cicd/prepare_hf_cache.sh"
       - "cicd/Dockerfile-uv.jinja"
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "**.py"
       - "pyproject.toml"
@@ -27,15 +27,14 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  check-gpu-label:
+    uses: ./.github/workflows/gpu-pr-gate.yml
+
   run-e2e:
-    if: >
-      github.event_name != 'pull_request' ||
-      (
-        !github.event.pull_request.draft &&
-        contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
-        (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
-      )
+    needs: check-gpu-label
+    if: needs.check-gpu-label.outputs.enabled == 'true'
     uses: ./.github/workflows/docker-e2e-jobs.yml
     secrets: inherit

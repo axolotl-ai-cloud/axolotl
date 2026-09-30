@@ -17,13 +17,6 @@ env:
 
 jobs:
   gate-skip-e2e:
-    if: >
-      github.event_name != 'pull_request' ||
-      (
-        !github.event.pull_request.draft &&
-        contains(github.event.pull_request.labels.*.name, 'run-gpu-tests') &&
-        (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-tests')
-      )
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compute.outputs.skip }}
@@ -55,7 +48,6 @@ jobs:
     # Run this job first as a gate for running the remainder of the test matrix
     if: >
       github.repository_owner == 'axolotl-ai-cloud' &&
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
       needs.gate-skip-e2e.outputs.skip != 'true'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
@@ -104,7 +96,6 @@ jobs:
   docker-e2e-tests:
     if: >
       github.repository_owner == 'axolotl-ai-cloud' &&
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
       needs.gate-skip-e2e.outputs.skip != 'true'
     # this job needs to be run on self-hosted GPU runners...
     runs-on: [self-hosted, modal]
@@ -156,7 +147,6 @@ jobs:
   docker-e2e-kernel-tests:
     if: >
       github.repository_owner == 'axolotl-ai-cloud' &&
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
       needs.gate-skip-e2e.outputs.skip != 'true'
     runs-on: [self-hosted, modal]
     timeout-minutes: 90
