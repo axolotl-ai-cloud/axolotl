@@ -390,10 +390,27 @@ class AxolotlTrainer(
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
+    def _deepspeed_sequence_parallel_group(self):
+        """DeepSpeed Ulysses (ALST) SP group, or ``None`` when CP is not mapped onto it."""
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if (
+            pc is None
+            or getattr(pc, "sp_backend", None) != "deepspeed"
+            or (getattr(pc, "sp_size", 1) or 1) <= 1
+        ):
+            return None
+        from deepspeed.utils import groups
+
+        return groups._get_sequence_parallel_group()
+
     @override
     def _get_num_items_in_batch(self, batch_samples, device):
         count = super()._get_num_items_in_batch(batch_samples, device)
         pc = getattr(self.accelerator, "parallelism_config", None)
+        if self._deepspeed_sequence_parallel_group() is not None:
+            # each SP rank averages over its own shard; compute_loss reweights it to the
+            # sequence's share (ZeRO sums gradients over the SP ranks)
+            return None
         if (
             count is None
             or pc is None
@@ -488,12 +505,42 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        return super().compute_loss(
-            model,
-            inputs,
-            return_outputs=return_outputs,
-            num_items_in_batch=num_items_in_batch,
+        sp_group = self._deepspeed_sequence_parallel_group()
+        if sp_group is None or not model.training:
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+        # Ulysses hands each SP rank a shard of the same sequences and ZeRO SUMS their
+        # gradients, so a rank's loss must be its shard's share of the sequence mean:
+        # local_mean * local_tokens / sequence_tokens. `training_step` scales the logged
+        # value back up by sp_size.
+        targets = (
+            inputs["shift_labels"] if "shift_labels" in inputs else inputs["labels"]
         )
+        local_tokens = targets.ne(-100).sum()
+        total_tokens = local_tokens.clone()
+        torch.distributed.all_reduce(total_tokens, group=sp_group)
+        loss, outputs = super().compute_loss(
+            model, inputs, return_outputs=True, num_items_in_batch=None
+        )
+        if local_tokens.item() == 0:
+            loss = outputs.logits.sum() * 0.0
+        else:
+            loss = loss * (local_tokens / total_tokens.clamp_min(1))
+        return (loss, outputs) if return_outputs else loss
+
+    @override
+    def training_step(self, *args, **kwargs):
+        loss = super().training_step(*args, **kwargs)
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if self._deepspeed_sequence_parallel_group() is not None and torch.is_tensor(
+            loss
+        ):
+            loss = loss * pc.sp_size
+        return loss
 
     @override
     def _prepare_context_parallel_inputs(self, model, inputs):

@@ -16,6 +16,7 @@ modules hold only their local slice of the experts dim. The registered
 from __future__ import annotations
 
 import gc
+import os
 
 import torch
 import torch.distributed as dist
@@ -344,6 +345,73 @@ def ep_adapter_load_local_shard(
         if isinstance(placement, Shard):
             local = local.chunk(dp_size, dim=placement.dim)[dp_rank]
     return local.contiguous()
+
+
+def _ep_sliced_experts(model):
+    """(module path, offset, E_local, E_global) for every EP-sliced experts module."""
+    out = {}
+    for name, module in model.named_modules():
+        e_local = getattr(module, "num_local_experts", None)
+        e_global = getattr(module, "num_experts_global", None)
+        if e_local is not None and e_global is not None and e_local < e_global:
+            out[name] = (module.local_expert_offset, e_local, e_global)
+    return out
+
+
+def ep_local_adapter_dir(model, adapter_dir: str) -> str:
+    """Resume a routed-expert LoRA on an EP-sliced model.
+
+    A saved adapter holds every expert (``E_global``), but after ``shard_expert_weights`` PEFT
+    sizes the expert LoRA from this rank's ``E_local`` experts, so ``PeftModel.from_pretrained``
+    fails on the shape mismatch. Returns ``adapter_dir`` untouched when nothing is EP-sliced,
+    otherwise a temporary adapter directory whose expert-LoRA tensors are cut to this rank's
+    experts (attention/router LoRA is copied as-is; already-local tensors are left alone).
+    """
+    sliced = _ep_sliced_experts(model)
+    if not sliced:
+        return adapter_dir
+
+    import re
+    import tempfile
+
+    from peft import PeftConfig
+    from peft.utils.save_and_load import load_peft_weights
+    from safetensors.torch import save_file
+
+    config = PeftConfig.from_pretrained(adapter_dir)
+    weights = load_peft_weights(adapter_dir, device="cpu")
+    key_re = re.compile(
+        r"^(?:base_model\.model\.)?(.*?)((?:\.base_layer)*)\.lora_(A|B)\.weight$"
+    )
+    cut = 0
+    for key, tensor in list(weights.items()):
+        match = key_re.match(key)
+        if match is None or match.group(1) not in sliced:
+            continue
+        offset, e_local, e_global = sliced[match.group(1)]
+        ep_dim = 0 if match.group(3) == "A" else 1
+        # E_local*r and E_global*r' can coincide, so the rank comes from the config, not the shape
+        r = getattr(config, "r", None)
+        if not r or tensor.shape[ep_dim] != e_global * r:
+            if r and tensor.shape[ep_dim] != e_local * r:
+                LOG.warning(
+                    f"expert_parallel: {key!r} has {tensor.shape[ep_dim]} packed rows, expected "
+                    f"{e_global * r} (global) or {e_local * r} (local); left untouched."
+                )
+            continue
+        weights[key] = ep_adapter_load_local_shard(
+            tensor, ep_dim, e_global, offset // e_local, e_global // e_local, (), 1, 0
+        ).contiguous()
+        cut += 1
+
+    out = tempfile.mkdtemp(prefix="axolotl-ep-adapter-")
+    config.save_pretrained(out)
+    save_file(weights, os.path.join(out, "adapter_model.safetensors"))
+    LOG.info(
+        f"expert_parallel: cut {cut} expert-LoRA tensor(s) of {adapter_dir!r} to this rank's "
+        f"experts before loading."
+    )
+    return out
 
 
 def shard_expert_lora(model, ep_size: int) -> int:

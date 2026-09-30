@@ -10,7 +10,10 @@ Ulysses, Ring, and their combination (USP), while Accelerate owns the device mes
 and FSDP2 gradient reduction. Under `deepspeed:` the same `context_parallel_size`
 maps onto DeepSpeed's Ulysses (ALST) implementation through accelerate's
 sequence-parallel axis: only the Ulysses backend is available there, ZeRO owns the
-sharding, and the remaining ranks replicate.
+sharding, and the remaining ranks replicate. Axolotl adds the `position_ids` Ulysses
+needs to every sample and weights each rank's loss by its share of the sequence's
+tokens, so per-step loss and gradient norm match a single-process run of the same
+sequences (DeepSpeed >= 0.18.2).
 
 ## Configuration
 

@@ -365,7 +365,8 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Add position_id column (PoSE)",
                 )
-    elif cfg.sample_packing:
+    elif cfg.sample_packing or deepspeed_context_parallel(cfg):
+        # DeepSpeed Ulysses shards the sequence, so every batch must carry global positions
         drop_long_kwargs = {}
         if filter_map_kwargs:
             drop_long_kwargs["desc"] = "Add position_id column (Sample Packing)"
@@ -375,7 +376,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             **filter_map_kwargs,
             **drop_long_kwargs,
         )
-        if cfg.eval_sample_packing:
+        if cfg.eval_sample_packing or deepspeed_context_parallel(cfg):
             if eval_dataset:
                 eval_dataset = eval_dataset.map(
                     add_position_ids,
@@ -384,6 +385,10 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 )
 
     return train_dataset, eval_dataset
+
+
+def deepspeed_context_parallel(cfg) -> bool:
+    return bool(cfg.deepspeed) and (cfg.context_parallel_size or 1) > 1
 
 
 def process_pretraining_datasets_for_packing(

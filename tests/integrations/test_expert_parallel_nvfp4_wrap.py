@@ -27,12 +27,12 @@ def _free_port():
         return s.getsockname()[1]
 
 
-def _run_spawned(target, world_size=WORLD, timeout=240):
+def _run_spawned(target, world_size=WORLD, timeout=240, device="cpu"):
     ctx = mp.get_context("spawn")
     q = ctx.Queue()
     port = _free_port()
     procs = [
-        ctx.Process(target=target, args=(rank, world_size, port, q))
+        ctx.Process(target=target, args=(rank, world_size, port, q, device))
         for rank in range(world_size)
     ]
     for p in procs:
@@ -62,11 +62,16 @@ class _Experts(torch.nn.Module):
         return (x @ w) @ self.down_proj[0]
 
 
-def _nvfp4_worker(rank, world_size, port, q):
+def _nvfp4_worker(rank, world_size, port, q, device="cpu"):
     try:
         os.environ["MASTER_ADDR"] = "127.0.0.1"
         os.environ["MASTER_PORT"] = str(port)
-        dist.init_process_group("gloo", rank=rank, world_size=world_size)
+        if device == "cuda":
+            torch.cuda.set_device(rank)
+        dist.init_process_group(
+            "nccl" if device == "cuda" else "gloo", rank=rank, world_size=world_size
+        )
+        torch.set_default_device(device)
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
         from axolotl.integrations.expert_parallel.plugin import (
@@ -91,7 +96,7 @@ def _nvfp4_worker(rank, world_size, port, q):
         experts.num_experts_global = E * world_size
         root = torch.nn.Module()
         root.experts = experts
-        mesh = per_rank_expert_mesh(None, "cpu")
+        mesh = per_rank_expert_mesh(None, device)
         ExpertParallelPlugin.fully_shard_experts(
             root, mesh, {"reshard_after_forward": True}
         )
@@ -133,12 +138,24 @@ def _nvfp4_worker(rank, world_size, port, q):
             dist.destroy_process_group()
 
 
-def test_pure_ep_wraps_nvfp4_experts_per_rank():
-    res = _run_spawned(_nvfp4_worker)
+def _check(results, tol=1e-5):
     for rank in range(WORLD):
-        assert isinstance(res[rank], dict), res[rank]
-        assert res[rank]["param_cls"] == "DTensor", res[rank]
-        assert res[rank]["local_cls"] == "NVFP4Tensor", res[rank]
-        assert res[rank]["local_ok"], res[rank]
+        res = results[rank]
+        assert isinstance(res, dict), res
+        assert res["param_cls"] == "DTensor", res
+        assert res["local_cls"] == "NVFP4Tensor", res
+        assert res["local_ok"], res
         for metric in ("fwd", "fwd_again", "d_down"):
-            assert res[rank][metric] <= 1e-5, f"rank {rank} {metric}: {res[rank]}"
+            assert res[metric] <= tol, f"rank {rank} {metric}: {res}"
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.cuda.device_count() < WORLD,
+    reason="needs two CUDA devices",
+)
+def test_pure_ep_wraps_nvfp4_experts_per_rank_cuda():
+    _check(_run_spawned(_nvfp4_worker, device="cuda"), tol=1e-3)
+
+
+def test_pure_ep_wraps_nvfp4_experts_per_rank():
+    _check(_run_spawned(_nvfp4_worker))

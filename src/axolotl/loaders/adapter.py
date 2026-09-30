@@ -450,9 +450,11 @@ def load_lora(
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}
+        from axolotl.integrations.expert_parallel.shard import ep_local_adapter_dir
+
         model = PeftModel.from_pretrained(
             model,
-            cfg.lora_model_dir,
+            ep_local_adapter_dir(model, cfg.lora_model_dir),
             is_trainable=(not inference),
             **model_kwargs,
         )

@@ -218,3 +218,25 @@ class TestDropNoTrainableTokens(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDeepSpeedContextParallelPositionIds(unittest.TestCase):
+    """DeepSpeed Ulysses needs global positions in every batch, packed or not."""
+
+    def _process(self, **cfg):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True, **cfg})
+        data = {"input_ids": [[5, 6, 7], [8, 9]], "labels": [[5, 6, 7], [8, 9]]}
+        return process_datasets_for_packing(
+            cfg, Dataset.from_dict(data), Dataset.from_dict(data)
+        )
+
+    def test_deepspeed_context_parallel_adds_position_ids(self):
+        train_dataset, eval_dataset = self._process(
+            deepspeed="zero2.json", context_parallel_size=2
+        )
+        self.assertEqual(train_dataset["position_ids"], [[0, 1, 2], [0, 1]])
+        self.assertEqual(eval_dataset["position_ids"], [[0, 1, 2], [0, 1]])
+
+    def test_unpacked_without_deepspeed_has_no_position_ids(self):
+        train_dataset, _ = self._process(context_parallel_size=2)
+        self.assertNotIn("position_ids", train_dataset.column_names)
