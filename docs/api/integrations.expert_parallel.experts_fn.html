@@ -919,8 +919,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.integrations.expert_parallel.experts_fn.kernel_to_registered_name" id="toc-axolotl.integrations.expert_parallel.experts_fn.kernel_to_registered_name" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.experts_fn.kernel_to_registered_name">kernel_to_registered_name</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.experts_fn.register_all" id="toc-axolotl.integrations.expert_parallel.experts_fn.register_all" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.experts_fn.register_all">register_all</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.experts_fn.resolve_local_implementation" id="toc-axolotl.integrations.expert_parallel.experts_fn.resolve_local_implementation" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.experts_fn.resolve_local_implementation">resolve_local_implementation</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -935,10 +935,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.expert_parallel.experts_fn" class="level1">
 <h1>integrations.expert_parallel.experts_fn</h1>
 <p><code>integrations.expert_parallel.experts_fn</code></p>
-<p>DeepEP-backed registered functions for <code>ALL_EXPERTS_FUNCTIONS</code>.</p>
-<p>Four names registered (eager / grouped_mm / scattermoe / sonicmoe) sharing one
-<code>_deep_ep_forward</code> body. Templates ported from <code>bench_deep_ep.py</code> Stage 1
-modes 3 and 4.</p>
+<p>The <code>expert_parallel</code> experts implementation for <code>ALL_EXPERTS_FUNCTIONS</code>.</p>
+<p>Dispatches tokens to the ranks owning their experts (DeepEP or torch all-to-all), runs
+whichever experts implementation the user configured on the received rows, and combines
+the results back. Slots owned by another rank reach the local implementation as expert id
+<code>num_experts</code> with weight 0.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -950,24 +951,24 @@ modes 3 and 4.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.integrations.expert_parallel.experts_fn.kernel_to_registered_name">kernel_to_registered_name</a></td>
-<td>Map <code>expert_parallel_local_kernel</code> -&gt; registered name.</td>
+<td><a href="#axolotl.integrations.expert_parallel.experts_fn.register_all">register_all</a></td>
+<td>Register <code>expert_parallel</code> in <code>ALL_EXPERTS_FUNCTIONS</code> and whitelist it.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.integrations.expert_parallel.experts_fn.register_all">register_all</a></td>
-<td>Register the four names in <code>ALL_EXPERTS_FUNCTIONS</code> and whitelist them.</td>
+<td><a href="#axolotl.integrations.expert_parallel.experts_fn.resolve_local_implementation">resolve_local_implementation</a></td>
+<td>The experts forward registered under <code>name</code> (default: the configured one).</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.integrations.expert_parallel.experts_fn.kernel_to_registered_name" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.experts_fn.kernel_to_registered_name">kernel_to_registered_name</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.experts_fn.kernel_to_registered_name(kernel)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Map <code>expert_parallel_local_kernel</code> -&gt; registered name.</p>
-</section>
 <section id="axolotl.integrations.expert_parallel.experts_fn.register_all" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.experts_fn.register_all">register_all</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.experts_fn.register_all()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Register the four names in <code>ALL_EXPERTS_FUNCTIONS</code> and whitelist them.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.experts_fn.register_all()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Register <code>expert_parallel</code> in <code>ALL_EXPERTS_FUNCTIONS</code> and whitelist it.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.experts_fn.resolve_local_implementation" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.experts_fn.resolve_local_implementation">resolve_local_implementation</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.experts_fn.resolve_local_implementation(name<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The experts forward registered under <code>name</code> (default: the configured one).</p>
 
 
 </section>

@@ -1277,7 +1277,7 @@ Note
 <tr class="odd">
 <td>Tensor Parallel (TP) 🟡</td>
 <td><code>tensor_parallel_size:</code></td>
-<td>FSDP2</td>
+<td>FSDP2 (full-parameter; adapters only on native NVFP4 bases)</td>
 </tr>
 <tr class="even">
 <td>Context/Sequence Parallel (CP)</td>
@@ -1287,16 +1287,16 @@ Note
 <tr class="odd">
 <td>Expert Parallel (EP) 🟡</td>
 <td>plugin <code>expert_parallel</code> + <code>expert_parallel_size:</code></td>
-<td>FSDP2 (DeepEP backend)</td>
+<td>Requires FSDP2 + <code>state_dict_type: FULL_STATE_DICT</code>; CP, HSDP (<code>deep_ep</code> or <code>torch</code> backend, <code>expert_parallel_backend:</code>)</td>
 </tr>
 <tr class="even">
-<td>N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡</td>
+<td>N-D (HSDP, FSDP+CP, HSDP+CP, FSDP+EP+CP, HSDP+EP, HSDP+EP+CP) 🟡</td>
 <td>combine <code>dp_replicate</code>/<code>dp_shard</code>/<code>tp</code>/<code>cp</code>/<code>ep</code></td>
 <td>see <a href="../docs/nd_parallelism.html">nd_parallelism</a></td>
 </tr>
 </tbody>
 </table>
-<p>Blocked combinations: <strong>EP x TP/CP</strong>, <strong>DDP x TP/CP</strong> (use FSDP2 instead), <strong>DeepSpeed x FSDP</strong>. See <a href="#incompatible">Incompatible combinations</a>.</p>
+<p>Blocked combinations: <strong>EP x TP</strong>, <strong>LoRA/QLoRA x TP</strong> (except native NVFP4 bases), <strong>DDP x TP/CP</strong> (use FSDP2 instead), <strong>DeepSpeed x FSDP</strong>. See <a href="#incompatible">Incompatible combinations</a>.</p>
 </section>
 <section id="performance-integrations-custom-kernels" class="level2">
 <h2 class="anchored" data-anchor-id="performance-integrations-custom-kernels">Performance integrations &amp; custom kernels</h2>
@@ -1385,7 +1385,7 @@ Note
 </tr>
 </tbody>
 </table>
-<p><strong>With Expert Parallel:</strong> ScatterMoE composes with EP (registered as <code>deep_ep_scattermoe</code>). SonicMoE’s local route (<code>deep_ep_sonicmoe</code>) handles bf16 gated experts and received native NVFP4 expert batches, including local expert IDs and sentinel slots. This local coverage does not qualify end-to-end DeepEP dispatch/combine with FSDP2; that configuration remains pending supported-hardware validation. The non-gated SonicMoE EP path is likewise unqualified.</p>
+<p><strong>With Expert Parallel:</strong> EP runs as the <code>expert_parallel</code> experts implementation, which wraps the configured local one on either <code>expert_parallel_backend</code>. ScatterMoE composes with it. SonicMoE’s local route handles bf16 gated experts and received native NVFP4 expert batches, including local expert IDs and sentinel slots. This local coverage does not qualify end-to-end DeepEP dispatch/combine with FSDP2; that configuration remains pending supported-hardware validation. The non-gated SonicMoE EP path is likewise unqualified.</p>
 <p><strong>Non-gated (latentmoe) experts:</strong> Nemotron-3 (<code>nemotron_h</code>) uses non-gated relu² experts (<code>up_proj</code>/<code>down_proj</code>, no gate) in <code>moe_latent_size</code> width. Both kernels support it: ScatterMoE natively, SonicMoE via a grouped-GEMM path (the fused CUTLASS epilogue lands with the next sonic-moe kernel build). NVFP4 checkpoints (modelopt <code>MIXED_PRECISION</code>) keep the routed experts packed NVFP4 and dequantize every other quantized weight to bf16 at load.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -1503,9 +1503,9 @@ Warning
 <td>shards MLP to cut memory</td>
 </tr>
 <tr class="even">
-<td>Ring attention</td>
+<td>Ulysses / Ring / USP (ringmaster)</td>
 <td>via <code>context_parallel_size</code></td>
-<td>long-context CP</td>
+<td>long-context CP; <code>auto</code> prefers Ulysses</td>
 </tr>
 <tr class="odd">
 <td>Activation offloading</td>
@@ -1763,7 +1763,7 @@ Warning
 </tr>
 <tr class="even">
 <td>Expert Parallel</td>
-<td>FSDP2 + DeepEP + Ampere/Hopper (NVLink)</td>
+<td>FSDP2 (<code>fsdp_version: 2</code> + <code>fsdp_config</code>, not DDP/DeepSpeed) with <code>fsdp_config.state_dict_type: FULL_STATE_DICT</code>; <code>deep_ep</code> backend (Ampere/Hopper, NVLink) or <code>torch</code> backend (any NCCL/gloo fabric)</td>
 </tr>
 <tr class="odd">
 <td>Context/Sequence parallel</td>
@@ -1827,50 +1827,65 @@ Warning
 </tr>
 <tr class="even">
 <td>EP</td>
-<td>TP / CP</td>
-<td>raises <code>NotImplementedError</code></td>
+<td>TP</td>
+<td>rejected at config validation</td>
 </tr>
 <tr class="odd">
+<td>EP</td>
+<td>DDP / DeepSpeed / <code>SHARDED_STATE_DICT</code></td>
+<td>rejected at config validation; EP needs FSDP2 and a full state dict (a sharded one keeps only EP group 0’s experts)</td>
+</tr>
+<tr class="even">
+<td>EP</td>
+<td>HSDP without <code>dp_shard_size</code> or <code>context_parallel_size</code> &gt; 1</td>
+<td>rejected at config validation; the experts need a shard axis inside each replica</td>
+</tr>
+<tr class="odd">
+<td>LoRA / QLoRA</td>
+<td>TP</td>
+<td>rejected at model load unless the base is native NVFP4 (<code>torchao_tp_lora</code>); a bf16 adapter would be shard-local</td>
+</tr>
+<tr class="even">
 <td>DDP</td>
 <td>TP / CP</td>
 <td>use FSDP2 instead</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>QAT</td>
 <td>any adapter, or 4/8-bit</td>
 <td>full-model only</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Sample packing</td>
 <td>any <code>rl:</code>, multimodal</td>
 <td>RLHF &amp; MM packing not supported</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Cut Cross Entropy</td>
 <td>Liger CE / chunked CE</td>
 <td>one CE optimization only</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>use_dsv4_kernels</code></td>
 <td>attention-level LoRA</td>
 <td>experts-only (fused indexer is gradientless)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>FSDP2</td>
 <td>4/8-bit + DPO/KTO/ORPO/IPO</td>
 <td>use DeepSpeed</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>LoRA kernels</td>
 <td><code>trust_remote_code</code> / RLHF</td>
 <td>SFT + FSDP2 only</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>batch_flattening</code></td>
 <td><code>sample_packing</code></td>
 <td>choose one</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>FP8 + DDP</td>
 <td><code>torch.compile</code></td>
 <td>⚪ known-broken; drop compile or use FSDP2</td>
@@ -1890,7 +1905,7 @@ Warning
 <li>Flash Attention 4</li>
 <li>Multimodal / VLM (“limited, no full feature parity”)</li>
 <li>N-D parallelism and Tensor Parallel</li>
-<li>Expert Parallel / DeepEP</li>
+<li>Expert Parallel (<code>deep_ep</code> or <code>torch</code> backend)</li>
 </ul>
 </section>
 <section id="wip-feature-branch-only" class="level3">
@@ -1915,7 +1930,7 @@ Warning
 <li><strong>Full fine-tune of NVFP4</strong> (fp4 base FFT, “a separate, larger effort”)</li>
 <li>Multimodal + sample packing</li>
 <li>LoRA kernels + RLHF</li>
-<li>EP + TP/CP</li>
+<li>EP + TP</li>
 <li>Multiple DPO loss types (RPO)</li>
 <li>Sample packing across multiple streaming datasets</li>
 </ul>

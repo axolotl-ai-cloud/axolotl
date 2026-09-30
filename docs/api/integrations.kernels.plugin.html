@@ -977,7 +977,8 @@ specifics to <code>ModelAdapter</code> subclasses (see <code>adapters/</code>).<
 <p>Register the expert-kernel backend + generic capabilities, then run adapter hooks.</p>
 <p>Architecture-agnostic: routing stays in each model’s SparseMoEBlock; only the experts
 call is dispatched through the registry. When EP is active the ExpertParallelPlugin owns
-<code>experts_implementation</code> (a <code>deep_ep_*</code> composite), so we don’t overwrite it here.</p>
+<code>experts_implementation</code> (<code>expert_parallel</code>, wrapping this kernel), so we don’t
+overwrite it here.</p>
 
 
 </section>

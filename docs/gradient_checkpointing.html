@@ -1048,12 +1048,54 @@ traffic, and stacks with <code>activation_offloading: hidden_states</code>.</p>
 <code>activation_offloading: hidden_states</code>: layer inputs go to CPU while attention outputs are saved
 (on GPU, or on CPU with <code>offload: true</code>). It is incompatible with the TRL-offloader modes
 (<code>true</code>/<code>legacy</code>/<code>disk</code>), which replace gradient checkpointing instead of running inside it.
-Saving matmul ops (e.g.&nbsp;<code>aten::mm</code>) is rejected for LoRA/QLoRA runs: PEFT mutates the base linear
-output in-place, which invalidates cached tensors.</p>
+Saving matmul ops (via <code>save</code>, <code>save_modules</code> or <code>save_matmul_min_k</code>) is rejected while a
+fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
+output in place, which invalidates the cached tensor.</p>
+<section id="saving-specific-projections" class="level4">
+<h4 class="anchored" data-anchor-id="saving-specific-projections">Saving specific projections</h4>
+<p>All projections dispatch the same <code>aten::mm</code>/<code>aten::addmm</code>, so <code>save: [aten::mm]</code> saves every
+one of them. Two rules target individual projections instead; both also work with <code>offload: true</code>.</p>
+<p><code>save_modules</code> saves the matmuls that run inside the named modules:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save_modules</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">o_proj</span><span class="kw">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>An entry matches a module name exactly, as a trailing dotted suffix (<code>o_proj</code>,
+<code>self_attn.o_proj</code>), or as a glob over the full name when it contains <code>*</code>, <code>?</code> or <code>[</code>. Names are
+those of the base model, before PEFT wraps it, and a PEFT-wrapped match resolves to its
+<code>base_layer</code>, so only the frozen base matmul is saved, not <code>lora_A</code>/<code>lora_B</code>. Modules that
+enclose the decoder layers, or run outside them (<code>lm_head</code>, <code>embed_tokens</code>), are never in scope.</p>
+<p><code>save_matmul_min_k</code> saves every matmul whose contraction dim K (a linear’s <code>in_features</code>) is at
+least the threshold, including MoE expert (<code>aten::_grouped_mm</code>) and bitsandbytes 4-bit gemms:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save_matmul_min_k</span><span class="kw">:</span><span class="at"> </span><span class="dv">8192</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Saving only helps for ops that recompute would otherwise re-run. Recompute stops at the last
+tensor backward needs, so a layer’s final projection (<code>down_proj</code> in Llama/Qwen3-style layers,
+whose output only feeds the residual add) is never replayed; saving it costs memory for no
+speedup. Prefer <code>o_proj</code>, <code>gate_proj</code> or <code>up_proj</code>.</p>
+<p>Validation rejects entries covered by an enabled fused LoRA kernel (<code>lora_mlp_kernel</code>,
+<code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>, auto-enabled for LoRA/QLoRA), and the error names the flag
+to turn off. At runtime a warning is logged for any rule that matched no module, whose hooks never
+fired, whose saved tensors were never replayed, or whose threshold no matmul reached.</p>
+<p><code>save: []</code> saves nothing through the list, so <code>save: []</code> with <code>save_modules</code> saves only the named
+projections and recomputes attention.</p>
+</section>
+<section id="plugin-registered-saves" class="level4">
+<h4 class="anchored" data-anchor-id="plugin-registered-saves">Plugin-registered saves</h4>
+<p>Plugins can register ops that every selective-checkpoint policy saves, ahead of <code>save</code> and the
+rules, through <code>axolotl.monkeypatch.selective_checkpointing</code>. <code>register_mandatory_save</code> is for
+correctness: ops whose recompute would diverge from the forward, such as a router’s <code>topk</code> whose
+near-ties would re-route tokens, or a device-to-host copy that sizes a collective and would
+re-sync. Their outputs are cloned for the forward so an in-place edit (a router normalising its
+<code>topk</code> weights) cannot corrupt the cached copy. <code>register_preferred_save</code> only trades memory for
+skipping an expensive recompute. FSDP2 <code>activation_checkpointing</code> applies registered saves on its
+own; under plain <code>gradient_checkpointing</code> a plugin installs them with
+<code>apply_selective_checkpointing(model, save=[])</code>.</p>
+</section>
 </section>
 <section id="enabling-layer-offloading" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-layer-offloading">Enabling Layer Offloading</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">layer_offloading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">layer_offloading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Layer offloading reduces GPU memory usage by moving frozen (non-trainable) decoder layer parameters to CPU
 and streaming them back to GPU one layer at a time during the forward and backward passes. This is
 particularly useful for LoRA/QLoRA training where most of the model’s parameters are frozen — only the

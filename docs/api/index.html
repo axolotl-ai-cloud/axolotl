@@ -2025,7 +2025,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/integrations.expert_parallel.args.html#axolotl.integrations.expert_parallel.args">integrations.expert_parallel.args</a></td>
-<td>Pydantic args for the Expert-Parallel (DeepEP) plugin.</td>
+<td>Pydantic args for the Expert-Parallel plugin.</td>
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/integrations.expert_parallel.buffer.html#axolotl.integrations.expert_parallel.buffer">integrations.expert_parallel.buffer</a></td>
@@ -2033,217 +2033,221 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/integrations.expert_parallel.experts_fn.html#axolotl.integrations.expert_parallel.experts_fn">integrations.expert_parallel.experts_fn</a></td>
-<td>DeepEP-backed registered functions for <code>ALL_EXPERTS_FUNCTIONS</code>.</td>
+<td>The <code>expert_parallel</code> experts implementation for <code>ALL_EXPERTS_FUNCTIONS</code>.</td>
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/integrations.expert_parallel.plugin.html#axolotl.integrations.expert_parallel.plugin">integrations.expert_parallel.plugin</a></td>
-<td>Expert-Parallel (DeepEP) plugin for axolotl.</td>
+<td>Expert-Parallel plugin for axolotl (DeepEP or torch all-to-all dispatch).</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/integrations.expert_parallel.shard.html#axolotl.integrations.expert_parallel.shard">integrations.expert_parallel.shard</a></td>
 <td>Generic expert-weight sharding for <code>@use_experts_implementation</code> modules.</td>
 </tr>
 <tr class="even">
+<td><a href="../../docs/api/integrations.expert_parallel.torch_dispatch.html#axolotl.integrations.expert_parallel.torch_dispatch">integrations.expert_parallel.torch_dispatch</a></td>
+<td>Token-dispatch expert parallelism over plain <code>all_to_all_single</code> (NCCL or gloo).</td>
+</tr>
+<tr class="odd">
 <td><a href="../../docs/api/integrations.grokfast.args.html#axolotl.integrations.grokfast.args">integrations.grokfast.args</a></td>
 <td>config args for grokfast plugin</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.grokfast.optimizer.html#axolotl.integrations.grokfast.optimizer">integrations.grokfast.optimizer</a></td>
 <td></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.hatchery.args.html#axolotl.integrations.hatchery.args">integrations.hatchery.args</a></td>
 <td>Pydantic config schema for the Hatchery integration.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.hatchery.data.html#axolotl.integrations.hatchery.data">integrations.hatchery.data</a></td>
 <td>Convert axolotl batch tensors to Tinker/Hatchery Datum format.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.hatchery.plugin.html#axolotl.integrations.hatchery.plugin">integrations.hatchery.plugin</a></td>
 <td>Axolotl plugin that routes training to a remote Hatchery/Tinker API.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.hatchery.rewards.math_reward.html#axolotl.integrations.hatchery.rewards.math_reward">integrations.hatchery.rewards.math_reward</a></td>
 <td>Math reward function for hendrycks_math GRPO training.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.hatchery.rl_trainer.html#axolotl.integrations.hatchery.rl_trainer">integrations.hatchery.rl_trainer</a></td>
 <td>Remote RL trainer (GRPO/PPO) using Tinker or Hatchery API.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.hatchery.trainer.html#axolotl.integrations.hatchery.trainer">integrations.hatchery.trainer</a></td>
 <td>Remote trainer that dispatches to Tinker or Hatchery API.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kd.html#axolotl.integrations.kd">integrations.kd</a></td>
 <td>Plugin init to add KD support to Axolotl.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.kd.args.html#axolotl.integrations.kd.args">integrations.kd.args</a></td>
 <td>Plugin args for KD support.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kd.callbacks.html#axolotl.integrations.kd.callbacks">integrations.kd.callbacks</a></td>
 <td>Transformers trainer callbacks to schedule the KD temperature during training</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.kd.chat_template.html#axolotl.integrations.kd.chat_template">integrations.kd.chat_template</a></td>
 <td>Chat template prompt strategy loader with KD support</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kd.collator.html#axolotl.integrations.kd.collator">integrations.kd.collator</a></td>
 <td>DataCollator for axolotl to handle KD fields without using -inf for padding,</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.kd.collator_online_teacher.html#axolotl.integrations.kd.collator_online_teacher">integrations.kd.collator_online_teacher</a></td>
 <td>Packed data loader for online teacher training supporting vllm and sglang.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kd.kernels.liger.html#axolotl.integrations.kd.kernels.liger">integrations.kd.kernels.liger</a></td>
 <td>Liger Kernels for Chunked Top-K Log-Prob Distillation</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.kd.topk_logprob.forward_kl.html#axolotl.integrations.kd.topk_logprob.forward_kl">integrations.kd.topk_logprob.forward_kl</a></td>
 <td>loss for top_k KL divergence</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kd.trainer.html#axolotl.integrations.kd.trainer">integrations.kd.trainer</a></td>
 <td>KD trainer</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.kd.utils.html#axolotl.integrations.kd.utils">integrations.kd.utils</a></td>
 <td>Helper KD utils</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kernels.args.html#axolotl.integrations.kernels.args">integrations.kernels.args</a></td>
 <td></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.kernels.autotune_callback.html#axolotl.integrations.kernels.autotune_callback">integrations.kernels.autotune_callback</a></td>
 <td>Trainer callback for reporting Triton autotune results from scattermoe-lora kernels.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kernels.autotune_collector.html#axolotl.integrations.kernels.autotune_collector">integrations.kernels.autotune_collector</a></td>
 <td>Collect Triton autotune results from scattermoe-lora kernels.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.kernels.constants.html#axolotl.integrations.kernels.constants">integrations.kernels.constants</a></td>
 <td>Diagnostic helpers for MoE kernel integrations (kernel dispatch itself</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.kernels.plugin.html#axolotl.integrations.kernels.plugin">integrations.kernels.plugin</a></td>
 <td></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.liger.args.html#axolotl.integrations.liger.args">integrations.liger.args</a></td>
 <td>Module for handling LIGER input arguments.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.liger.plugin.html#axolotl.integrations.liger.plugin">integrations.liger.plugin</a></td>
 <td>Liger-Kernel Plugin for Axolotl</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.liger.utils.html#axolotl.integrations.liger.utils">integrations.liger.utils</a></td>
 <td>utils to patch liger kernel ops to disable torch.compile</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.liger.models.base.html#axolotl.integrations.liger.models.base">integrations.liger.models.base</a></td>
 <td>Generic FLCE patch for untested models similar to Llama</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.liger.models.deepseekv2.html#axolotl.integrations.liger.models.deepseekv2">integrations.liger.models.deepseekv2</a></td>
 <td>DeepseekV2 model with LigerFusedLinearCrossEntropyLoss</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.liger.models.jamba.html#axolotl.integrations.liger.models.jamba">integrations.liger.models.jamba</a></td>
 <td>Jamba model with LigerFusedLinearCrossEntropyLoss</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.liger.models.qwen3_5.html#axolotl.integrations.liger.models.qwen3_5">integrations.liger.models.qwen3_5</a></td>
 <td>Liger FLCE for Qwen3.5. Based on transformers v5.17.0.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.liger.models.qwen3_5_moe.html#axolotl.integrations.liger.models.qwen3_5_moe">integrations.liger.models.qwen3_5_moe</a></td>
 <td>Liger FLCE for Qwen3.5 MoE. Based on transformers v5.17.0.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.llm_compressor.args.html#axolotl.integrations.llm_compressor.args">integrations.llm_compressor.args</a></td>
 <td>LLMCompressor and Sparse Finetuning config models.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.llm_compressor.plugin.html#axolotl.integrations.llm_compressor.plugin">integrations.llm_compressor.plugin</a></td>
 <td>Sparse Finetuning plugin for Axolotl — enables handling of sparse neural networks</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.llm_compressor.utils.html#axolotl.integrations.llm_compressor.utils">integrations.llm_compressor.utils</a></td>
 <td>Utilities for llmcompressor integration with axolotl.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.lm_eval.args.html#axolotl.integrations.lm_eval.args">integrations.lm_eval.args</a></td>
 <td>Module for handling lm eval harness input arguments.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.lm_eval.cli.html#axolotl.integrations.lm_eval.cli">integrations.lm_eval.cli</a></td>
 <td>axolotl CLI for running lm_eval tasks</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.mora.args.html#axolotl.integrations.mora.args">integrations.mora.args</a></td>
 <td>Config args for MoRA / ReMoRA.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.mora.plugin.html#axolotl.integrations.mora.plugin">integrations.mora.plugin</a></td>
 <td>MoRA / ReMoRA plugin for Axolotl.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.args.html#axolotl.integrations.nemo_gym.args">integrations.nemo_gym.args</a></td>
 <td>Input arguments for the NeMo Gym integration plugin.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.data_producer.html#axolotl.integrations.nemo_gym.data_producer">integrations.nemo_gym.data_producer</a></td>
 <td>NeMo Gym Data Producer for async GRPO training.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.dataset.html#axolotl.integrations.nemo_gym.dataset">integrations.nemo_gym.dataset</a></td>
 <td>Dataset loading for NeMo Gym JSONL files.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.multi_turn.html#axolotl.integrations.nemo_gym.multi_turn">integrations.nemo_gym.multi_turn</a></td>
 <td>Multi-turn rollout function for NeMo Gym environments.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.plugin.html#axolotl.integrations.nemo_gym.plugin">integrations.nemo_gym.plugin</a></td>
 <td>NeMo Gym Plugin for Axolotl.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.rewards.html#axolotl.integrations.nemo_gym.rewards">integrations.nemo_gym.rewards</a></td>
 <td>NeMo Gym reward functions.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.server.html#axolotl.integrations.nemo_gym.server">integrations.nemo_gym.server</a></td>
 <td>NeMo Gym server lifecycle management.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.spectrum.html#axolotl.integrations.spectrum">integrations.spectrum</a></td>
 <td>Spectrum Plugin to automatically generate unfrozen parameters based on SNR data.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.spectrum.args.html#axolotl.integrations.spectrum.args">integrations.spectrum.args</a></td>
 <td>Module for handling Spectrum input arguments.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.swanlab.args.html#axolotl.integrations.swanlab.args">integrations.swanlab.args</a></td>
 <td>SwanLab configuration arguments</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.swanlab.callbacks.html#axolotl.integrations.swanlab.callbacks">integrations.swanlab.callbacks</a></td>
 <td>SwanLab callbacks for Axolotl trainers.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.swanlab.completion_logger.html#axolotl.integrations.swanlab.completion_logger">integrations.swanlab.completion_logger</a></td>
 <td>SwanLab completion logger for RLHF/DPO/KTO/ORPO/GRPO training.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.swanlab.plugins.html#axolotl.integrations.swanlab.plugins">integrations.swanlab.plugins</a></td>
 <td>SwanLab Plugin for Axolotl</td>
 </tr>

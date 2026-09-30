@@ -923,6 +923,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.loaders.model.check_tensor_parallel_adapter_support" id="toc-axolotl.loaders.model.check_tensor_parallel_adapter_support" class="nav-link" data-scroll-target="#axolotl.loaders.model.check_tensor_parallel_adapter_support">check_tensor_parallel_adapter_support</a></li>
+  <li><a href="#axolotl.loaders.model.check_tensor_parallel_rl_adapter_support" id="toc-axolotl.loaders.model.check_tensor_parallel_rl_adapter_support" class="nav-link" data-scroll-target="#axolotl.loaders.model.check_tensor_parallel_rl_adapter_support">check_tensor_parallel_rl_adapter_support</a></li>
   <li><a href="#axolotl.loaders.model.should_convert_embedding_dtypes" id="toc-axolotl.loaders.model.should_convert_embedding_dtypes" class="nav-link" data-scroll-target="#axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</a></li>
   <li><a href="#axolotl.loaders.model.should_skip_peft_embedding_upcast" id="toc-axolotl.loaders.model.should_skip_peft_embedding_upcast" class="nav-link" data-scroll-target="#axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</a></li>
   </ul></li>
@@ -1092,6 +1094,14 @@ adapter integration, and various optimizations.</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.loaders.model.check_tensor_parallel_adapter_support">check_tensor_parallel_adapter_support</a></td>
+<td>Adapters under TP exist only for native NVFP4 bases (<code>torchao_tp_lora</code>); on a bf16</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.loaders.model.check_tensor_parallel_rl_adapter_support">check_tensor_parallel_rl_adapter_support</a></td>
+<td>DPO/IPO/KTO hand TRL the peft config and TRL wraps the already TP-sharded model, after</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</a></td>
 <td>Whether the post-quantization pass converts modules back to <code>torch_dtype</code>.</td>
 </tr>
@@ -1101,14 +1111,30 @@ adapter integration, and various optimizations.</p>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.loaders.model.check_tensor_parallel_adapter_support" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.model.check_tensor_parallel_adapter_support">check_tensor_parallel_adapter_support</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>loaders.model.check_tensor_parallel_adapter_support(native_nvfp4_prepared)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Adapters under TP exist only for native NVFP4 bases (<code>torchao_tp_lora</code>); on a bf16
+base PEFT sizes the LoRA factors from the already-sharded weight, so every rank trains
+a different shard-local adapter and the save writes one shard.</p>
+<p>Takes the result of <code>prepare_native_nvfp4_tp_lora</code> (or a bool for the all-or-nothing
+case). A partially quantized checkpoint whose unquantized modules are still in the
+<code>tp_plan</code> is rejected too: those LoRA modules would get plain PEFT on a TP-sharded base.</p>
+</section>
+<section id="axolotl.loaders.model.check_tensor_parallel_rl_adapter_support" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.model.check_tensor_parallel_rl_adapter_support">check_tensor_parallel_rl_adapter_support</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>loaders.model.check_tensor_parallel_rl_adapter_support(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>DPO/IPO/KTO hand TRL the peft config and TRL wraps the already TP-sharded model, after
+the loader could install <code>torchao_tp_lora</code>, so even an NVFP4 base ends up shard-local.</p>
+</section>
 <section id="axolotl.loaders.model.should_convert_embedding_dtypes" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_convert_embedding_dtypes(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_convert_embedding_dtypes(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Whether the post-quantization pass converts modules back to <code>torch_dtype</code>.</p>
 </section>
 <section id="axolotl.loaders.model.should_skip_peft_embedding_upcast" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_skip_peft_embedding_upcast(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_skip_peft_embedding_upcast(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Whether PEFT’s kbit preparation should leave the embeddings alone.</p>
 <p>Upcasting them there is pure peak memory whenever the later conversion back to
 <code>torch_dtype</code> reverts it, so skip it then unless the user asked otherwise.</p>

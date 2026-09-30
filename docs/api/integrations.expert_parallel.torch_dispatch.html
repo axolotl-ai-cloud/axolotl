@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.schemas.validation – Axolotl</title>
+<title>integrations.expert_parallel.torch_dispatch – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -915,29 +915,24 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.schemas.validation" id="toc-axolotl.utils.schemas.validation" class="nav-link active" data-scroll-target="#axolotl.utils.schemas.validation">utils.schemas.validation</a>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch" id="toc-axolotl.integrations.expert_parallel.torch_dispatch" class="nav-link active" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch">integrations.expert_parallel.torch_dispatch</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.schemas.validation.AttentionValidationMixin" id="toc-axolotl.utils.schemas.validation.AttentionValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.AttentionValidationMixin">AttentionValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.ChatTemplateValidationMixin" id="toc-axolotl.utils.schemas.validation.ChatTemplateValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.ChatTemplateValidationMixin">ChatTemplateValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.ComplexValidationMixin" id="toc-axolotl.utils.schemas.validation.ComplexValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.ComplexValidationMixin">ComplexValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.DatasetValidationMixin" id="toc-axolotl.utils.schemas.validation.DatasetValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.DatasetValidationMixin">DatasetValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.DistributedValidationMixin" id="toc-axolotl.utils.schemas.validation.DistributedValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.DistributedValidationMixin">DistributedValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin" id="toc-axolotl.utils.schemas.validation.EBFTValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.EBFTValidationMixin">EBFTValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.GRPOVllmValidationMixin" id="toc-axolotl.utils.schemas.validation.GRPOVllmValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.GRPOVllmValidationMixin">GRPOVllmValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.LoRAValidationMixin" id="toc-axolotl.utils.schemas.validation.LoRAValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.LoRAValidationMixin">LoRAValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin" id="toc-axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin">ModelCompatibilityValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.OptimizationValidationMixin" id="toc-axolotl.utils.schemas.validation.OptimizationValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.OptimizationValidationMixin">OptimizationValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.PretrainingValidationMixin" id="toc-axolotl.utils.schemas.validation.PretrainingValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.PretrainingValidationMixin">PretrainingValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.RLValidationMixin" id="toc-axolotl.utils.schemas.validation.RLValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.RLValidationMixin">RLValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.SystemValidationMixin" id="toc-axolotl.utils.schemas.validation.SystemValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.SystemValidationMixin">SystemValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.TrainingValidationMixin" id="toc-axolotl.utils.schemas.validation.TrainingValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.TrainingValidationMixin">TrainingValidationMixin</a></li>
-  <li><a href="#axolotl.utils.schemas.validation.ValidationMixin" id="toc-axolotl.utils.schemas.validation.ValidationMixin" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.ValidationMixin">ValidationMixin</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.TorchEPHandle" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.TorchEPHandle" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.TorchEPHandle">TorchEPHandle</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.schemas.validation.lora_kernels_auto_enable" id="toc-axolotl.utils.schemas.validation.lora_kernels_auto_enable" class="nav-link" data-scroll-target="#axolotl.utils.schemas.validation.lora_kernels_auto_enable">lora_kernels_auto_enable</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single">all_to_all_single</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_async" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_async" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_async">all_to_all_single_async</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_equal" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_equal" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_equal">all_to_all_single_equal</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.build_send_layout" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.build_send_layout" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.build_send_layout">build_send_layout</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.chunk_bounds" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.chunk_bounds" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.chunk_bounds">chunk_bounds</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.combine" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.combine" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.combine">combine</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.compute_send_counts" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.compute_send_counts" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.compute_send_counts">compute_send_counts</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.dispatch" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.dispatch" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.dispatch">dispatch</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.dispatch_chunked_forward" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.dispatch_chunked_forward" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.dispatch_chunked_forward">dispatch_chunked_forward</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.torch_dispatch.to_host" id="toc-axolotl.integrations.expert_parallel.torch_dispatch.to_host" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.torch_dispatch.to_host">to_host</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -949,10 +944,22 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.utils.schemas.validation" class="level1">
-<h1>utils.schemas.validation</h1>
-<p><code>utils.schemas.validation</code></p>
-<p>Module with validation methods for config pydantic model.</p>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch" class="level1">
+<h1>integrations.expert_parallel.torch_dispatch</h1>
+<p><code>integrations.expert_parallel.torch_dispatch</code></p>
+<p>Token-dispatch expert parallelism over plain <code>all_to_all_single</code> (NCCL or gloo).</p>
+<p>The layout matches DeepEP’s contract so every local experts kernel runs unchanged: each
+token is sent ONCE to every rank that owns at least one of its top-k experts, carrying a
+K-wide <code>recv_topk_idx</code> (local expert ids in <code>[0, E_local)</code> for that rank, <code>-1</code> for
+slots owned elsewhere) and K-wide fp32 <code>recv_topk_weights</code> (<code>0</code> on <code>-1</code> slots). The
+local kernel weights and sums over K, and <code>combine</code> sums the per-rank partial outputs
+back onto the source tokens.</p>
+<p>The collectives are registered as <code>torch.ops.axolotl.ep_all_to_all_single</code> and
+<code>torch.ops.axolotl.ep_all_to_all_single_equal</code> so selective activation checkpointing
+can match (and save) them by name.</p>
+<p>Hang safety: the split sizes are derived from the routing, so every rank must see the
+same routing for the same step. Recomputation under activation checkpointing must reuse
+the forward’s <code>topk</code> result and CPU split copies rather than re-running them.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -964,283 +971,23 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.AttentionValidationMixin">AttentionValidationMixin</a></td>
-<td>Validation methods related to attention mechanisms.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.ChatTemplateValidationMixin">ChatTemplateValidationMixin</a></td>
-<td>Validation methods related to chat template configuration.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.ComplexValidationMixin">ComplexValidationMixin</a></td>
-<td>Complex validation methods that involve multiple systems.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.DatasetValidationMixin">DatasetValidationMixin</a></td>
-<td>Validation methods related to dataset configuration.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.DistributedValidationMixin">DistributedValidationMixin</a></td>
-<td>validation for distributed training.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin">EBFTValidationMixin</a></td>
-<td>Validation for EBFT (Energy-Based Fine-Tuning) configuration.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.GRPOVllmValidationMixin">GRPOVllmValidationMixin</a></td>
-<td>Validation mixin for vllm when using GRPO.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.LoRAValidationMixin">LoRAValidationMixin</a></td>
-<td>Validation methods related to LoRA/QLoRA configuration.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin">ModelCompatibilityValidationMixin</a></td>
-<td>Validation methods for specific model compatibility.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.OptimizationValidationMixin">OptimizationValidationMixin</a></td>
-<td>Validation methods related to optimization and performance.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.PretrainingValidationMixin">PretrainingValidationMixin</a></td>
-<td>Validation methods related to pretraining configuration.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.RLValidationMixin">RLValidationMixin</a></td>
-<td>Validation methods related to RL training configuration.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.SystemValidationMixin">SystemValidationMixin</a></td>
-<td>Validation methods related to system and hardware configuration.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.TrainingValidationMixin">TrainingValidationMixin</a></td>
-<td>Validation methods related to training configuration.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.ValidationMixin">ValidationMixin</a></td>
-<td>Full validation mixin for Axolotl configuration.</td>
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.TorchEPHandle">TorchEPHandle</a></td>
+<td>State <code>combine</code> needs to return expert outputs to their source tokens.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.schemas.validation.AttentionValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.AttentionValidationMixin">AttentionValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.AttentionValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to attention mechanisms.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.ChatTemplateValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.ChatTemplateValidationMixin">ChatTemplateValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ChatTemplateValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to chat template configuration.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.ComplexValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.ComplexValidationMixin">ComplexValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ComplexValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Complex validation methods that involve multiple systems.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.DatasetValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.DatasetValidationMixin">DatasetValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.DatasetValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to dataset configuration.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.DistributedValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.DistributedValidationMixin">DistributedValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.DistributedValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>validation for distributed training.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin">EBFTValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation for EBFT (Energy-Based Fine-Tuning) configuration.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading">check_ebft_activation_offloading</a></td>
-<td>activation_offloading replaces gradient checkpointing with FSDP-style wrapping,</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required">check_ebft_config_required</a></td>
-<td>rl: ebft requires an ebft config section.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant">check_ebft_gradient_checkpointing_reentrant</a></td>
-<td>flex_attention + non-reentrant gradient checkpointing causes CheckpointError.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_dataset_split">check_ebft_strided_dataset_split</a></td>
-<td>Warn about the common <code>train_on_split</code> mistake (silently ignored by schema).</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_sequence_len">check_ebft_strided_sequence_len</a></td>
-<td>Warn if sequence_len is too large for single-GPU strided EBFT.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile">check_ebft_torch_compile</a></td>
-<td>torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading">check_ebft_activation_offloading</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>activation_offloading replaces gradient checkpointing with FSDP-style wrapping,
-which conflicts with flex_attention’s use_reentrant requirement.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required">check_ebft_config_required</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>rl: ebft requires an ebft config section.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant">check_ebft_gradient_checkpointing_reentrant</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant(</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>flex_attention + non-reentrant gradient checkpointing causes CheckpointError.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_dataset_split" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_dataset_split">check_ebft_strided_dataset_split</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_dataset_split(</span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Warn about the common <code>train_on_split</code> mistake (silently ignored by schema).</p>
-</section>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_sequence_len" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_sequence_len">check_ebft_strided_sequence_len</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_sequence_len(</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Warn if sequence_len is too large for single-GPU strided EBFT.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile">check_ebft_torch_compile</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
-and CheckpointErrors. The flex_attention kernel compiles itself internally —
-whole-model torch.compile is not needed and actively harmful.</p>
-</section>
-</section>
-</section>
-<section id="axolotl.utils.schemas.validation.GRPOVllmValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.GRPOVllmValidationMixin">GRPOVllmValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.GRPOVllmValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation mixin for vllm when using GRPO.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.LoRAValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.LoRAValidationMixin">LoRAValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.LoRAValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to LoRA/QLoRA configuration.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin">ModelCompatibilityValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ModelCompatibilityValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods for specific model compatibility.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.OptimizationValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.OptimizationValidationMixin">OptimizationValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.OptimizationValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to optimization and performance.</p>
-<section id="methods-1" class="level4">
-<h4 class="anchored" data-anchor-id="methods-1">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts">check_cross_entropy_conflicts</a></td>
-<td>Check for mutual exclusivity between cross entropy patch options.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts">check_cross_entropy_conflicts</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts(</span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
-<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Check for mutual exclusivity between cross entropy patch options.</p>
-<p>Only one of the following can be enabled at a time:
-- cut_cross_entropy (CutCrossEntropyPlugin)
-- chunked_cross_entropy
-- liger_cross_entropy (LigerPlugin)
-- liger_fused_linear_cross_entropy (LigerPlugin)</p>
-</section>
-</section>
-</section>
-<section id="axolotl.utils.schemas.validation.PretrainingValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.PretrainingValidationMixin">PretrainingValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.PretrainingValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to pretraining configuration.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.RLValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.RLValidationMixin">RLValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.RLValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to RL training configuration.</p>
-<section id="methods-2" class="level4">
-<h4 class="anchored" data-anchor-id="methods-2">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility">check_grpo_batch_size_divisibility</a></td>
-<td>Surface GRPO batch-shape mismatches at config-parse time.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility">check_grpo_batch_size_divisibility</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility(</span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Surface GRPO batch-shape mismatches at config-parse time.</p>
-<p>TRL’s GRPOTrainer requires that the per-step generation batch size be
-evenly divisible by <code>num_generations</code> so that every prompt can be
-replicated exactly <code>num_generations</code> times. The runtime check inside
-<code>GRPOTrainer.__init__</code> only fires after the model has been loaded —
-too late and too cryptic for the user. We replicate the check here so
-the failure is immediate and actionable.</p>
-<section id="also-enforces" class="level6 doc-section doc-section-also-enforces">
-<h6 class="doc-section doc-section-also-enforces anchored" data-anchor-id="also-enforces">Also enforces</h6>
-<ul>
-<li><code>num_generations &gt;= 2</code> (group-relative advantage needs variance)</li>
-<li><code>effective_gbs &gt;= num_generations * world_size</code> when capabilities
-indicate multiple ranks (each rank needs at least one full group)</li>
-</ul>
-</section>
-</section>
-</section>
-</section>
-<section id="axolotl.utils.schemas.validation.SystemValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.SystemValidationMixin">SystemValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.SystemValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to system and hardware configuration.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.TrainingValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.TrainingValidationMixin">TrainingValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.TrainingValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Validation methods related to training configuration.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.ValidationMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.ValidationMixin">ValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Full validation mixin for Axolotl configuration.</p>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.TorchEPHandle" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.TorchEPHandle">TorchEPHandle</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.TorchEPHandle(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    num_tokens,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    send_token_idx<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    send_splits<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    recv_splits<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    group<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    recv_x<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    recv_w<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>State <code>combine</code> needs to return expert outputs to their source tokens.</p>
 </section>
 </section>
 <section id="functions" class="level2">
@@ -1254,18 +1001,153 @@ indicate multiple ranks (each rank needs at least one full group)</li>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.lora_kernels_auto_enable">lora_kernels_auto_enable</a></td>
-<td>Whether the unset <code>lora_*_kernel</code> flags would be auto-enabled for this config.</td>
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single">all_to_all_single</a></td>
+<td>Differentiable uneven all-to-all along dim 0. <code>output_splits</code> / <code>input_splits</code> are</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_async">all_to_all_single_async</a></td>
+<td>Differentiable uneven all-to-all whose wait is deferred to the output’s first use.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_equal">all_to_all_single_equal</a></td>
+<td>Differentiable equal-split all-to-all along dim 0.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.build_send_layout">build_send_layout</a></td>
+<td>Rank-major, token-ascending send order with per-destination local expert ids.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.chunk_bounds">chunk_bounds</a></td>
+<td><code>chunks</code> contiguous <code>[start, end)</code> token ranges; the last takes the remainder,</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.combine">combine</a></td>
+<td>Return <code>[N_recv,H]</code> expert outputs to their source ranks and sum them per token.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.compute_send_counts">compute_send_counts</a></td>
+<td>Return <code>(dest [T,K], is_in_rank [T,P], send_counts [P])</code> for global <code>topk_idx</code></td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.dispatch">dispatch</a></td>
+<td>Send each token once to every rank owning one of its experts.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.dispatch_chunked_forward">dispatch_chunked_forward</a></td>
+<td><code>dispatch -&gt; local_kernel -&gt; combine</code> over <code>chunks</code> token ranges, pipelined.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.expert_parallel.torch_dispatch.to_host">to_host</a></td>
+<td>Device-&gt;host copy of the split counts, dispatched as <code>axolotl::ep_to_host</code>.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.schemas.validation.lora_kernels_auto_enable" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.lora_kernels_auto_enable">lora_kernels_auto_enable</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.lora_kernels_auto_enable(get)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Whether the unset <code>lora_*_kernel</code> flags would be auto-enabled for this config.</p>
-<p><code>get</code> reads a config value by name (a raw <code>data</code> dict or a validated model).
-The single source of truth for <code>check_auto_enable_lora_kernels</code> and for the
-validators that must predict its outcome.</p>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single">all_to_all_single</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.all_to_all_single(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    x,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    output_splits,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    input_splits,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    group,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Differentiable uneven all-to-all along dim 0. <code>output_splits</code> / <code>input_splits</code> are
+CPU int64 tensors of length <code>group.size()</code>; backward is the same op with them swapped.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_async" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_async">all_to_all_single_async</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.all_to_all_single_async(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    x,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    output_splits,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    input_splits,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    group,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Differentiable uneven all-to-all whose wait is deferred to the output’s first use.</p>
+<p>Returns an <code>AsyncCollectiveTensor</code> so compute enqueued before that use overlaps the
+collective. Dispatches as <code>_c10d_functional::all_to_all_single</code> / <code>wait_tensor</code>.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_equal" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.all_to_all_single_equal">all_to_all_single_equal</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.all_to_all_single_equal(x, group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Differentiable equal-split all-to-all along dim 0.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.build_send_layout" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.build_send_layout">build_send_layout</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.build_send_layout(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    topk_idx,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    topk_weights,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    dest,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    is_in_rank,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    num_send,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    num_local_experts,</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Rank-major, token-ascending send order with per-destination local expert ids.</p>
+<p>Returns <code>(send_token_idx [N], send_rank [N], send_idx [N,K], send_w [N,K])</code>. <code>num_send</code>
+must equal <code>is_in_rank.sum()</code>; passing it from the host avoids a device sync.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.chunk_bounds" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.chunk_bounds">chunk_bounds</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.chunk_bounds(num_tokens, chunks)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>chunks</code> contiguous <code>[start, end)</code> token ranges; the last takes the remainder,
+so some are empty when <code>num_tokens &lt; chunks</code>.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.combine" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.combine">combine</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.combine(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    local_out,</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    handle,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Return <code>[N_recv,H]</code> expert outputs to their source ranks and sum them per token.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.compute_send_counts" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.compute_send_counts">compute_send_counts</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.compute_send_counts(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    topk_idx,</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    num_ranks,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    num_local_experts,</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Return <code>(dest [T,K], is_in_rank [T,P], send_counts [P])</code> for global <code>topk_idx</code>
+(<code>-1</code> = unrouted). <code>dest</code> is the owning rank per slot, <code>-1</code> where unrouted.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.dispatch" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.dispatch">dispatch</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.dispatch(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    x,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    topk_idx,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    topk_weights,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    num_local_experts,</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    group,</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Send each token once to every rank owning one of its experts.</p>
+<p><code>x</code> is <code>[T,H]</code>, <code>topk_idx</code> <code>[T,K]</code> int64 global expert ids (<code>-1</code> = unrouted),
+<code>topk_weights</code> <code>[T,K]</code> fp32. Returns <code>(recv_x, recv_idx, recv_w, handle)</code> in the
+DeepEP layout. Tokens with no routed expert are not sent; their combined output is zero.
+<code>group=None</code> or a size-1 group is the collective-free local path.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.dispatch_chunked_forward" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.dispatch_chunked_forward">dispatch_chunked_forward</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.dispatch_chunked_forward(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    x,</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    topk_idx,</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>    topk_weights,</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    local_kernel,</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    num_local_experts,</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    group,</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    chunks,</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>dispatch -&gt; local_kernel -&gt; combine</code> over <code>chunks</code> token ranges, pipelined.</p>
+<p>Chunk <code>i+1</code>’s dispatch all-to-alls are issued before chunk <code>i</code>’s local kernel, and
+chunk <code>i</code>’s combine is consumed only after chunk <code>i+1</code>’s kernel is enqueued, so the
+collectives overlap expert compute in forward. The split counts of every chunk come
+from ONE count exchange and ONE device-&gt;host copy. Every rank issues every chunk’s
+collectives in the same order, including empty ones.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.torch_dispatch.to_host" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.torch_dispatch.to_host">to_host</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.torch_dispatch.to_host(x)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Device-&gt;host copy of the split counts, dispatched as <code>axolotl::ep_to_host</code>.</p>
 
 
 </section>

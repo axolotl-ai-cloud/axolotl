@@ -921,6 +921,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.core.trainers.mixins.distributed_parallel.DistributedParallelMixin" id="toc-axolotl.core.trainers.mixins.distributed_parallel.DistributedParallelMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.distributed_parallel.DistributedParallelMixin">DistributedParallelMixin</a></li>
   </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.core.trainers.mixins.distributed_parallel.tp_save_joins_all_ranks" id="toc-axolotl.core.trainers.mixins.distributed_parallel.tp_save_joins_all_ranks" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.distributed_parallel.tp_save_joins_all_ranks">tp_save_joins_all_ranks</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -955,6 +959,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.distributed_parallel.DistributedParallelMixin">DistributedParallelMixin</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.distributed_parallel.DistributedParallelMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Mixin for correctly saving fsdp</p>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.mixins.distributed_parallel.tp_save_joins_all_ranks">tp_save_joins_all_ranks</a></td>
+<td>Whether every TP rank must enter <code>save_pretrained</code> for the gather + barrier.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.core.trainers.mixins.distributed_parallel.tp_save_joins_all_ranks" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.distributed_parallel.tp_save_joins_all_ranks">tp_save_joins_all_ranks</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.distributed_parallel.tp_save_joins_all_ranks(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    accelerator,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    is_fsdp_enabled,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether every TP rank must enter <code>save_pretrained</code> for the gather + barrier.</p>
 
 
 </section>

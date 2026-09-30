@@ -923,6 +923,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh" id="toc-axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh">expert_fsdp_mesh</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis" id="toc-axolotl.integrations.expert_parallel.plugin.expert_shard_axis" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</a></li>
   </ul></li>
   </ul></li>
@@ -938,7 +939,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.expert_parallel.plugin" class="level1">
 <h1>integrations.expert_parallel.plugin</h1>
 <p><code>integrations.expert_parallel.plugin</code></p>
-<p>Expert-Parallel (DeepEP) plugin for axolotl.</p>
+<p>Expert-Parallel plugin for axolotl (DeepEP or torch all-to-all dispatch).</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -951,14 +952,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin">ExpertParallelPlugin</a></td>
-<td>Plugin that swaps MoE dispatch/combine for DeepEP-fused kernels.</td>
+<td>Plugin that swaps MoE dispatch/combine for expert-parallel token dispatch.</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin">ExpertParallelPlugin</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.plugin.ExpertParallelPlugin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Plugin that swaps MoE dispatch/combine for DeepEP-fused kernels.</p>
+<p>Plugin that swaps MoE dispatch/combine for expert-parallel token dispatch.</p>
 <section id="methods" class="level4">
 <h4 class="anchored" data-anchor-id="methods">Methods</h4>
 <table class="caption-top table">
@@ -971,7 +972,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin.fully_shard_experts">fully_shard_experts</a></td>
-<td>Pre-wrap each Experts module with FSDP on the <code>dp_shard</code> axis.</td>
+<td>Pre-wrap each Experts module (or the expert-LoRA ParamWrapper enclosing it) with</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin.post_model_load">post_model_load</a></td>
@@ -986,7 +987,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    dp_shard_mesh,</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    fsdp2_kwargs,</span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Pre-wrap each Experts module with FSDP on the <code>dp_shard</code> axis.</p>
+<p>Pre-wrap each Experts module (or the expert-LoRA ParamWrapper enclosing it) with
+FSDP on <code>dp_shard_mesh</code>: the non-ep data axes under composition, a per-rank size-1
+mesh under pure EP.</p>
 <p>Called from the patched <code>fsdp2_prepare_model</code> BEFORE the outer auto-wrap
 so experts become FSDPModules and the auto-wrap walker skips them.
 Inherits the outer wrap’s policy (mp, offload, reshard) so inner/outer
@@ -1018,14 +1021,26 @@ DDP looks for the attribute on the top-level module — which is now
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh">expert_fsdp_mesh</a></td>
+<td>The mesh the routed experts FSDP-shard on under EP composition, or <code>None</code>.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</a></td>
 <td>The non-<code>ep</code> mesh axis the routed experts FSDP-shard on under EP composition, or <code>None</code>.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh">expert_fsdp_mesh</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.plugin.expert_fsdp_mesh(mesh)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The mesh the routed experts FSDP-shard on under EP composition, or <code>None</code>.</p>
+<p>Every non-<code>ep</code> data axis (<code>dp_shard</code> and <code>cp</code>) is flattened into one shard
+dim: cp ranks hold different halves of the same sequences, so their expert grads must
+be reduced exactly like dp_shard’s. <code>dp_replicate</code> stays a separate outer dim (HSDP).</p>
+</section>
 <section id="axolotl.integrations.expert_parallel.plugin.expert_shard_axis" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.plugin.expert_shard_axis(mesh_dim_names)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.plugin.expert_shard_axis(mesh_dim_names)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The non-<code>ep</code> mesh axis the routed experts FSDP-shard on under EP composition, or <code>None</code>.</p>
 <p>Prefers <code>dp_shard</code> (EP×dp_shard: experts shard on the data axis); falls back to <code>cp</code> (EP×cp,
 where the cp ranks of an ep-group hold the SAME experts since cp shards the sequence, not the

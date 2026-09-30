@@ -921,6 +921,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs" id="toc-axolotl.integrations.expert_parallel.args.ExpertParallelArgs" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs">ExpertParallelArgs</a></li>
   </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.integrations.expert_parallel.args.validate_expert_parallel_topology" id="toc-axolotl.integrations.expert_parallel.args.validate_expert_parallel_topology" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.args.validate_expert_parallel_topology">validate_expert_parallel_topology</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -934,7 +938,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.expert_parallel.args" class="level1">
 <h1>integrations.expert_parallel.args</h1>
 <p><code>integrations.expert_parallel.args</code></p>
-<p>Pydantic args for the Expert-Parallel (DeepEP) plugin.</p>
+<p>Pydantic args for the Expert-Parallel plugin.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -966,18 +970,52 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_backend">expert_parallel_backend</a></td>
+<td>Token dispatch backend. <code>deep_ep</code>: DeepEP fused kernels (NVLink/RDMA). <code>torch</code>: plain <code>all_to_all_single</code> over the EP process group (any NCCL/gloo setup). <code>auto</code>: <code>deep_ep</code> when importable, else <code>torch</code>.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_dispatch_chunks">expert_parallel_dispatch_chunks</a></td>
+<td><code>torch</code> backend only: split each MoE forward’s tokens into this many chunks and pipeline them, so chunk <code>i+1</code>’s dispatch all-to-all overlaps chunk <code>i</code>’s expert GEMMs. <code>1</code> keeps the unchunked path. Overlaps the forward only. Each chunk adds collective and launch overhead, so this can be slower than <code>1</code>; benchmark before raising it past <code>2</code>.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_save_dispatch">expert_parallel_save_dispatch</a></td>
+<td><code>torch</code> backend under activation checkpointing (<code>gradient_checkpointing</code> or FSDP2 <code>fsdp_config.activation_checkpointing</code>): save the dispatch/combine all-to-all outputs so backward does not re-issue the collectives, at the cost of holding the received rows per layer (24 GiB on Qwen3-30B-A3B at 32k packed on 2 GPUs). Recomputing them cost 1.6 s/step on a PCIe-only pair and was a tie on an NVLink pair, so the default recomputes; enable this on bandwidth-starved links with memory to spare. The routing <code>topk</code> and host-side split counts are always saved.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_size">expert_parallel_size</a></td>
 <td>Number of EP ranks. 1 = disabled (default), &gt; 1 = enabled.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_token_capacity">expert_parallel_token_capacity</a></td>
 <td>Max tokens routed to any single expert per forward; the lowest-weight excess (token,expert) assignments are dropped. DeepEP’s intranode combine deadlocks once one expert is overloaded, and GLM-style routers concentrate more with depth — set this (e.g.&nbsp;1024) for them. <code>None</code> = no cap.</td>
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.args.validate_expert_parallel_topology">validate_expert_parallel_topology</a></td>
+<td>Reject EP layouts the sharding, clipping and save paths do not handle.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.expert_parallel.args.validate_expert_parallel_topology" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.args.validate_expert_parallel_topology">validate_expert_parallel_topology</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.args.validate_expert_parallel_topology(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Reject EP layouts the sharding, clipping and save paths do not handle.</p>
+
+
 </section>
 </section>
 </section>
