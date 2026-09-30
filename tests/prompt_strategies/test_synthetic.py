@@ -13,6 +13,36 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.datasets import SyntheticDataset
 
 
+@pytest.mark.parametrize("sequence_length", [1, 16])
+def test_short_default_sequences(sequence_length):
+    config = SyntheticDataset(sequence_length=sequence_length, length=2)
+    strategies = [
+        SyntheticDatasetStrategy(sequence_length=sequence_length, length=2),
+        load(
+            MagicMock(vocab_size=1000),
+            DictDefault(sequence_len=sequence_length),
+            config.model_dump(),
+        ),
+    ]
+    for strategy in strategies:
+        for row in strategy.wrap_dataset(None):
+            assert len(row["input_ids"]) == sequence_length
+            assert row["labels"] == row["input_ids"]
+            assert row["attention_mask"] == [1] * sequence_length
+
+
+def test_load_normalizes_min_turn_length():
+    strategy = load(
+        MagicMock(vocab_size=1000),
+        DictDefault(sequence_len=64),
+        {"min_turn_length": "32", "max_turns": 4, "length": 2},
+    )
+    assert strategy.min_turn_length == 32
+    for row in strategy.wrap_dataset(None):
+        assert len(row["labels"]) == 64
+        assert -100 in row["labels"]
+
+
 @pytest.mark.parametrize("use_schema", [False, True])
 def test_default_single_turn_labels_all_tokens(use_schema):
     ds_cfg = SyntheticDataset(length=2).model_dump() if use_schema else {"length": 2}
@@ -164,6 +194,8 @@ def test_multi_turn_minimum_length(fraction):
         {"input_fraction": float("inf")},
         {"input_fraction": float("nan")},
         {"sequence_length": 7, "max_turns": 4},
+        {"sequence_length": 16, "input_fraction": 0.25},
+        {"sequence_length": 16, "max_turns": 4, "input_fraction": 0},
         {"min_turn_length": 0},
         {"sequence_length": 63, "min_turns": 2, "max_turns": 4},
     ],

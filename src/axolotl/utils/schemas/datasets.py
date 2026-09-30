@@ -375,6 +375,7 @@ class SyntheticDataset(BaseModel):
         tokens_per_turn = max(self.min_turn_length, 2 if self.input_fraction > 0 else 1)
         if (
             self.sequence_length is not None
+            and (self.max_turns > 1 or self.input_fraction > 0)
             and self.sequence_length < tokens_per_turn * self.min_turns
         ):
             raise ValueError(

@@ -34,6 +34,7 @@ must fit min_turns pairs. No chat special tokens are inserted. Defaults are
 min_turns: 1, max_turns: 1, and input_fraction: 0 (all tokens labeled). For multiple
 turns, max_turns must exceed min_turns and an omitted input_fraction becomes 0.25.
 An explicit input_fraction: 0 always labels all tokens.
+The default single-turn, unmasked mode does not enforce min_turn_length.
 """
 
 from typing import Any, Dict, Optional
@@ -80,7 +81,9 @@ class SyntheticDatasetStrategy(DatasetWrappingStrategy):
         self.min_turns = chat_config.min_turns
         self.max_turns = chat_config.max_turns
         self.input_fraction = chat_config.input_fraction
-        self.min_turn_length = max(min_turn_length, 2 if self.input_fraction > 0 else 1)
+        self.min_turn_length = max(
+            chat_config.min_turn_length, 2 if self.input_fraction > 0 else 1
+        )
 
     def wrap_dataset(
         self,
