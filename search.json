@@ -213,7 +213,7 @@
     "href": "docs/installation.html#sec-cloud",
     "title": "Installation",
     "section": "3 Cloud Environments",
-    "text": "3 Cloud Environments\n\n3.1 Cloud GPU Providers\nFor providers supporting Docker:\n\nUse axolotlai/axolotl-cloud-uv:main-latest\nAvailable on:\n\nRunPod\nVast.ai\nPRIME Intellect\nModal\nNovita\nJarvisLabs.ai\nLatitude.sh\n\n\n\n\n3.2 SkyPilot\nTo launch Axolotl on your own cloud accounts (AWS, GCP, Azure, etc.) or Kubernetes cluster with a single command, see the SkyPilot guide.\n\n\n3.3 Google Colab",
+    "text": "3 Cloud Environments\n\n3.1 Cloud GPU Providers\nFor providers supporting Docker:\n\nUse axolotlai/axolotl-cloud-uv:main-latest\nAvailable on:\n\nRunPod\nVast.ai\nPRIME Intellect\nModal\nNovita\nJarvisLabs.ai\n\n\n\n\n3.2 SkyPilot\nTo launch Axolotl on your own cloud accounts (AWS, GCP, Azure, etc.) or Kubernetes cluster with a single command, see the SkyPilot guide.\n\n\n3.3 Google Colab",
     "crumbs": [
       "Getting Started",
       "Installation"
