@@ -34,6 +34,14 @@ _loading_builtins = False
 _builtins_lock = threading.RLock()
 
 
+def _is_builtin_support_class(support_cls: type[ModelSupport]) -> bool:
+    return any(
+        support_cls.__module__ == module
+        or support_cls.__module__.startswith(f"{module}.")
+        for module in _BUILTIN_MODULES
+    )
+
+
 def _is_registered_model_support(support_cls: type[ModelSupport]) -> bool:
     model_types = _validate_model_types(support_cls)
     with _builtins_lock:
@@ -142,16 +150,30 @@ def register_model_support(support_cls: type[ModelSupport]) -> type[ModelSupport
     # Loading built-ins first makes last-registration-wins deterministic for plugins.
     _ensure_builtins()
 
+    with _builtins_lock:
+        protected_model_types = {
+            model_type
+            for model_type in model_types
+            if _builtins_loaded
+            and _is_builtin_support_class(support_cls)
+            and model_type in _REGISTRY
+            and not _is_builtin_support_class(type(_REGISTRY[model_type]))
+        }
+    if len(protected_model_types) == len(model_types):
+        return support_cls
+
     instance = support_cls()
     with _builtins_lock:
         for model_type in model_types:
+            if model_type in protected_model_types:
+                continue
             if model_type in _REGISTRY:
                 LOG.warning(
                     "Overriding model support for %s with %s",
                     model_type,
                     support_cls.__name__,
                 )
-        _REGISTRY.update(dict.fromkeys(model_types, instance))
+            _REGISTRY[model_type] = instance
     return support_cls
 
 

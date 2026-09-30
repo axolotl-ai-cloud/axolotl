@@ -39,6 +39,8 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 PLUGIN_ENTRY_POINT_GROUP = "axolotl.plugins"
+_plugin_entry_points: tuple[str, ...] | None = None
+_plugin_entry_points_source = None
 
 # Entry-point registrations are authoritative for installed distributions. This
 # fallback keeps the bundled integration available from a source checkout with
@@ -55,16 +57,27 @@ def normalize_plugin_name(target: str) -> str:
     return f"{module_name}.{class_name}" if separator else target
 
 
+def reset_plugin_entry_points_cache() -> None:
+    """Clear cached plugin entry points, primarily for test isolation."""
+    global _plugin_entry_points, _plugin_entry_points_source  # pylint: disable=global-statement
+    _plugin_entry_points = None
+    _plugin_entry_points_source = None
+
+
 def get_builtin_plugins() -> tuple[str, ...]:
     """Return bundled and installed plugins without importing their modules."""
+    global _plugin_entry_points, _plugin_entry_points_source  # pylint: disable=global-statement
+    if _plugin_entry_points is None or _plugin_entry_points_source is not entry_points:
+        _plugin_entry_points = tuple(
+            normalize_plugin_name(point.value)
+            for point in entry_points(group=PLUGIN_ENTRY_POINT_GROUP)
+        )
+        _plugin_entry_points_source = entry_points
     return tuple(
         dict.fromkeys(
             (
                 *BUILTIN_PLUGINS,
-                *(
-                    normalize_plugin_name(point.value)
-                    for point in entry_points(group=PLUGIN_ENTRY_POINT_GROUP)
-                ),
+                *_plugin_entry_points,
             )
         )
     )

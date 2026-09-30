@@ -71,6 +71,39 @@ def test_entry_point_model_support_overrides_builtin(monkeypatch):
     )
 
 
+def test_entry_point_override_survives_reentrant_builtin_registration(monkeypatch):
+    monkeypatch.setattr(support_registry, "_REGISTRY", {})
+    monkeypatch.setattr(support_registry, "_builtins_loaded", False)
+    monkeypatch.setattr(support_registry, "_loading_builtins", False)
+    monkeypatch.setattr(support_registry, "_BUILTIN_MODULES", ("fake_builtin",))
+
+    BuiltinSupport = type(
+        "BuiltinSupport",
+        (ModelSupport,),
+        {"__module__": "fake_builtin", "model_types": ("shared_arch",)},
+    )
+
+    class ExternalSupport(ModelSupport):
+        model_types = ("shared_arch",)
+
+    class EntryPoint:
+        def load(self):
+            return ExternalSupport
+
+    monkeypatch.setattr(support_registry.importlib, "import_module", lambda _: None)
+    monkeypatch.setattr(
+        support_registry,
+        "entry_points",
+        lambda **kwargs: [EntryPoint()],
+    )
+
+    support_registry.register_model_support(BuiltinSupport)
+
+    assert isinstance(
+        support_registry.get_model_support("shared_arch"), ExternalSupport
+    )
+
+
 def test_decorated_entry_point_model_support_is_not_registered_twice(monkeypatch):
     from unittest.mock import Mock
 
