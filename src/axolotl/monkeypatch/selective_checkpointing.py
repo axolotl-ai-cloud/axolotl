@@ -55,7 +55,7 @@ _ATEN_ATTENTION_PACKETS = (
     "_scaled_dot_product_efficient_attention",
     "_scaled_dot_product_cudnn_attention",
     "_scaled_dot_product_flash_attention_for_cpu",
-    "aten._cudnn_attention_forward",
+    "_cudnn_attention_forward",
 )
 
 # regions to observe before warning that no op ever matched the save policy
