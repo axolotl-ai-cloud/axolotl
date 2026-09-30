@@ -8,6 +8,7 @@ Covers:
   - GRPO: generation batch size must be divisible by num_generations,
     num_generations >= 2, and effective_gbs >= num_generations * world_size
   - context_parallel_size > 1 requires kernel-backed attention
+  - use_dft / use_eaft are SFT-only and reject each other, RL, reward models, CP and fused CE
 """
 
 import pytest
@@ -457,3 +458,40 @@ class TestFlashAttnAvailabilityMessage:
 
         assert validated.attn_implementation == "flash_attention_2"
         assert cleared == [True]
+
+
+class TestCustomLossConflictsValidator:
+    """use_dft / use_eaft need full logits and unsharded labels in the SFT trainer."""
+
+    @staticmethod
+    def _check(data):
+        from axolotl.utils.schemas.validation import OptimizationValidationMixin
+
+        return OptimizationValidationMixin.check_custom_loss_conflicts(data)
+
+    def test_dft_and_eaft_together_raises(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(use_dft=True, use_eaft=True)
+        with pytest.raises(ValueError, match="cannot be enabled together"):
+            validate_config(cfg)
+
+    def test_dft_alone_passes(self, min_base_cfg):
+        validated = validate_config(min_base_cfg | DictDefault(use_dft=True))
+        assert validated.use_dft is True
+
+    @pytest.mark.parametrize("loss", ["use_dft", "use_eaft"])
+    @pytest.mark.parametrize(
+        "conflict",
+        [
+            {"rl": "dpo"},
+            {"reward_model": True},
+            {"process_reward_model": True},
+            {"cut_cross_entropy": True},
+            {"liger_fused_linear_cross_entropy": True},
+            {"chunked_cross_entropy": True},
+            {"context_parallel_size": 2},
+            {"sequence_parallel_degree": 2},
+        ],
+    )
+    def test_conflict_raises(self, loss, conflict):
+        with pytest.raises(ValueError, match="SFT-only"):
+            self._check({loss: True, **conflict})

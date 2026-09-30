@@ -1362,6 +1362,42 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_custom_loss_conflicts(cls, data):
+        custom_losses = [k for k in ("use_dft", "use_eaft") if data.get(k)]
+        if not custom_losses:
+            return data
+        if len(custom_losses) > 1:
+            raise ValueError("`use_dft` and `use_eaft` cannot be enabled together.")
+
+        # labels are popped before forward: fused/chunked CE never runs, CP shards logits but not labels
+        conflicts = [
+            k
+            for k in (
+                "rl",
+                "reward_model",
+                "process_reward_model",
+                "cut_cross_entropy",
+                "liger_fused_linear_cross_entropy",
+                "chunked_cross_entropy",
+            )
+            if data.get(k)
+        ]
+        cp_size = (
+            data.get("context_parallel_size")
+            or data.get("sequence_parallel_degree")
+            or 1
+        )
+        if cp_size > 1:
+            conflicts.append("context_parallel_size > 1")
+        if conflicts:
+            raise ValueError(
+                f"`{custom_losses[0]}` is an SFT-only loss and cannot be combined "
+                f"with: {', '.join(conflicts)}."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_fsdp_version(cls, data):
         if data.get("fsdp"):
             raise ValueError(
