@@ -19,7 +19,7 @@ def _stub(tmp_path, *, save_only_model=False, should_save=True, adapter_handled=
         state=SimpleNamespace(global_step=5, save_to_json=MagicMock()),
         args=SimpleNamespace(save_only_model=save_only_model, should_save=should_save),
         _get_output_dir=lambda trial=None: str(tmp_path),
-        _save_fsdp2_quantized_lora_adapter=MagicMock(return_value=adapter_handled),
+        _save_gathered_lora_adapter=MagicMock(return_value=adapter_handled),
         _save_optimizer_and_scheduler=MagicMock(),
         _save_scaler=MagicMock(),
         _save_rng_state=MagicMock(),
@@ -30,7 +30,7 @@ def test_quantized_lora_checkpoint_persists_resume_state(tmp_path):
     stub = _stub(tmp_path)
     out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
     assert out is None
-    stub._save_fsdp2_quantized_lora_adapter.assert_called_once()
+    stub._save_gathered_lora_adapter.assert_called_once()
     # the F4 fix: optimizer/scheduler/scaler/RNG + trainer_state all written (resumable)
     stub._save_optimizer_and_scheduler.assert_called_once()
     stub._save_scaler.assert_called_once()
@@ -54,7 +54,7 @@ def test_resume_state_failure_keeps_adapter_and_does_not_raise(tmp_path):
     )
     out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
     assert out is None  # did not raise
-    stub._save_fsdp2_quantized_lora_adapter.assert_called_once()
+    stub._save_gathered_lora_adapter.assert_called_once()
 
 
 def test_fsdp2_checkpoint_save_uses_axolotl_cfg_when_trainer_flag_unset():
@@ -103,7 +103,7 @@ def test_quantized_lora_checkpoint_uses_ep_adapter_save(monkeypatch, tmp_path):
         accelerator=SimpleNamespace(unwrap_model=lambda wrapped: wrapped),
         _is_fsdp2_quantized_param=AxolotlTrainer._is_fsdp2_quantized_param,
     )
-    # _save_fsdp2_quantized_lora_adapter gates on these helpers; bind the real
+    # _save_gathered_lora_adapter gates on these helpers; bind the real
     # implementations so the test exercises actual enablement + quant detection.
     stub._is_fsdp2_checkpoint_save_enabled = lambda: (
         AxolotlTrainer._is_fsdp2_checkpoint_save_enabled(stub)
@@ -121,9 +121,7 @@ def test_quantized_lora_checkpoint_uses_ep_adapter_save(monkeypatch, tmp_path):
     monkeypatch.setattr(shard, "save_ep_lora_adapter", save_ep_lora_adapter)
     monkeypatch.setattr(shard, "save_fsdp2_lora_adapter", save_fsdp2_lora_adapter)
 
-    handled = AxolotlTrainer._save_fsdp2_quantized_lora_adapter(
-        stub, model, str(tmp_path)
-    )
+    handled = AxolotlTrainer._save_gathered_lora_adapter(stub, model, str(tmp_path))
 
     assert handled is True
     resolve_ep_group.assert_called_once_with(stub.axolotl_cfg)

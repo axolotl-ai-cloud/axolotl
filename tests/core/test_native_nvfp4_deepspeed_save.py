@@ -36,7 +36,7 @@ def test_native_save_excludes_frozen_and_restores_method(
     trainer.is_deepspeed_enabled = True
     trainer.model_wrapped = engine
     trainer._get_output_dir = lambda trial: str(tmp_path)
-    trainer._save_fsdp2_quantized_lora_adapter = lambda *args: False
+    trainer._save_gathered_lora_adapter = lambda *args: False
     trainer._is_fsdp2_quantized_param = lambda p: p is model.weight
 
     def save(self, model, trial, **kwargs):

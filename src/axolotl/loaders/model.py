@@ -80,6 +80,46 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
+def check_tensor_parallel_adapter_support(native_nvfp4_prepared) -> None:
+    """Adapters under TP exist only for native NVFP4 bases (``torchao_tp_lora``); on a bf16
+    base PEFT sizes the LoRA factors from the already-sharded weight, so every rank trains
+    a different shard-local adapter and the save writes one shard.
+
+    Takes the result of ``prepare_native_nvfp4_tp_lora`` (or a bool for the all-or-nothing
+    case). A partially quantized checkpoint whose unquantized modules are still in the
+    ``tp_plan`` is rejected too: those LoRA modules would get plain PEFT on a TP-sharded base.
+    """
+    skipped = tuple(getattr(native_nvfp4_prepared, "skipped", ()))
+    if skipped:
+        shown = ", ".join(skipped[:5]) + (", ..." if len(skipped) > 5 else "")
+        raise ValueError(
+            "tensor_parallel_size > 1 with an adapter (lora/qlora) requires every LoRA "
+            "target to sit on a native NVFP4 weight; these targets are TP-sharded but not "
+            f"NVFP4 (e.g. modules_to_not_convert): {shown}. Drop them from "
+            "lora_target_modules or use FSDP (dp_shard_size) / context_parallel_size instead"
+        )
+    if native_nvfp4_prepared:
+        return
+    raise ValueError(
+        "tensor_parallel_size > 1 with an adapter (lora/qlora) is only supported for "
+        "native NVFP4 base models; use FSDP (dp_shard_size) or context_parallel_size instead"
+    )
+
+
+def check_tensor_parallel_rl_adapter_support(cfg) -> None:
+    """DPO/IPO/KTO hand TRL the peft config and TRL wraps the already TP-sharded model, after
+    the loader could install ``torchao_tp_lora``, so even an NVFP4 base ends up shard-local."""
+    if not cfg.adapter or (cfg.tensor_parallel_size or 1) <= 1:
+        return
+    if cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO] and not cfg.merge_lora:
+        raise ValueError(
+            f"tensor_parallel_size > 1 with an adapter is not supported for rl: {cfg.rl}; "
+            "the trainer applies PEFT to the TP-sharded model itself, so every rank would "
+            "train a shard-local adapter. Use FSDP (dp_shard_size) or "
+            "context_parallel_size instead"
+        )
+
+
 def _is_native_nvfp4_quantization_config(config) -> bool:
     quant_type = getattr(config, "quant_type", None)
     if type(quant_type).__name__ == "NVFP4WeightOnlyConfig":
@@ -296,12 +336,25 @@ class ModelLoader:
             lora_config = self._load_adapters()
             PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
             self._materialize_trainable_meta_params()
+            # after materialization so every rank (not just rank 0) holds its own draw
+            self._reinit_lora_from_seed(lora_config)
 
         with nf4_phase("NF4 post-adapter configuration", enabled=staged_nf4):
             # Apply remaining patches and finalize
             self._apply_post_lora_load_setup(skip_move_to_device)
             self.patch_manager.apply_post_model_load_patches(self.model)
             PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+            if (
+                (self.cfg.tensor_parallel_size or 1) > 1
+                and self.device_mesh is not None
+                and not self.is_fsdp_enabled
+                and not self.cfg.adapter
+            ):
+                from axolotl.monkeypatch.accelerate.tp import (
+                    replicate_plain_params_for_tp,
+                )
+
+                replicate_plain_params_for_tp(self.model, self.device_mesh["tp"])
         quantizer = getattr(self.model, "hf_quantizer", None)
         if (
             self.cfg.adapter in ("lora", "qlora")
@@ -455,6 +508,8 @@ class ModelLoader:
             save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
             recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
             offload=bool(sac_kwargs.get("offload")),
+            save_modules=sac_kwargs.get("save_modules"),
+            save_matmul_min_k=sac_kwargs.get("save_matmul_min_k"),
         )
 
     def _apply_activation_checkpointing(self):
@@ -628,10 +683,41 @@ class ModelLoader:
         with _nf4_shape_stand_ins() if staged else nullcontext():
             return self._build_adapters()
 
+    def _reinit_lora_from_seed(self, lora_config: PeftConfig | None) -> None:
+        """Per-module seeded draws keep a seed's adapter init identical across parallel layouts;
+        expert parallelism sizes the expert adapter locally, which would otherwise shift PEFT's
+        RNG stream for every later module."""
+        if (
+            lora_config is None
+            or self.cfg.lora_model_dir
+            or getattr(lora_config, "init_lora_weights", None) is not True
+        ):
+            return
+        from axolotl.loaders.adapter import reinit_lora_from_seed
+
+        reinit_lora_from_seed(self.model, self._lora_init_seed())
+
+    def _lora_init_seed(self) -> int:
+        """Nothing seeds torch before model load, so an unseeded run's ``torch.initial_seed()``
+        differs per process; every rank must draw the same adapter for its experts. The value
+        travels through the process group's store: no collective, so no device to get wrong
+        before the loader has pinned one."""
+        if self.cfg.seed is not None:
+            return int(self.cfg.seed)
+        seed = torch.initial_seed()
+        if dist.is_available() and dist.is_initialized():
+            store = dist.distributed_c10d._get_default_store()
+            key = "axolotl/lora_init_seed"
+            if dist.get_rank() == 0:
+                store.set(key, str(seed))
+            seed = int(store.get(key))
+        return seed
+
     def _build_adapters(self) -> PeftConfig | None:
         """Build the adapter, or only its config for a reference model."""
         lora_config = None
         if not self.reference_model or self.cfg.lora_model_dir:
+            check_tensor_parallel_rl_adapter_support(self.cfg)
             # If we're not loading the reference model, then we're loading the model
             # for training. Then, the DPO trainer doesn't want the PEFT model loaded
             # over it, it just wants the LoRA / PEFT config.
@@ -656,10 +742,12 @@ class ModelLoader:
                         prepare_native_nvfp4_tp_lora,
                     )
 
-                    prepare_native_nvfp4_tp_lora(
+                    prepared = prepare_native_nvfp4_tp_lora(
                         self.model,
                         merge_aware=self.cfg.get("nvfp4_merge_aware") is not False,
                     )
+                    if self.cfg.adapter:
+                        check_tensor_parallel_adapter_support(prepared)
                 elif not self.cfg.merge_lora:
                     from axolotl.integrations.kernels.merge_aware_setup import (
                         configure_native_merge_aware,
@@ -1163,11 +1251,24 @@ class ModelLoader:
         skip_move_to_device = False
 
         if self.cfg.tensor_parallel_size > 1:
-            self.model_kwargs["tp_size"] = self.cfg.tensor_parallel_size
-            self.model_kwargs["tp_plan"] = "auto"
+            from transformers.distributed import DistributedConfig
+
+            # transformers requires tp_size * fsdp_size == world_size; the data axes (dp_shard,
+            # dp_replicate, cp) all count as its "fsdp" size, and TP is still applied on our mesh's
+            # `tp` dim only.
+            world_size = int(os.environ.get("WORLD_SIZE", 1))
+            self.model_kwargs["distributed_config"] = DistributedConfig(
+                tp_size=self.cfg.tensor_parallel_size,
+                tp_plan="auto",
+                fsdp_size=max(1, world_size // self.cfg.tensor_parallel_size),
+            )
             self.model_kwargs["device_mesh"] = self.device_mesh
             if "device_map" in self.model_kwargs:
                 del self.model_kwargs["device_map"]  # not compatible with `tp_plan`
+            # the TP load places shards by mesh coordinate while later index-less "cuda"
+            # allocations follow the current device, which nothing else sets before training
+            if torch.cuda.is_available():
+                torch.cuda.set_device(int(os.environ.get("LOCAL_RANK", 0)))
 
         if self.is_fsdp_enabled:
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:

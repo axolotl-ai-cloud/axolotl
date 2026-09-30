@@ -308,6 +308,7 @@ quartodoc:
         - integrations.expert_parallel.experts_fn
         - integrations.expert_parallel.plugin
         - integrations.expert_parallel.shard
+        - integrations.expert_parallel.torch_dispatch
         - integrations.grokfast.args
         - integrations.grokfast.optimizer
         - integrations.hatchery.args

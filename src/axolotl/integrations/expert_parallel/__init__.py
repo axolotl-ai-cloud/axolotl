@@ -6,15 +6,17 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Expert-Parallel (DeepEP) integration for axolotl.
+"""Expert-Parallel integration for axolotl.
 
-Replaces the dispatch/combine path in transformers MoE blocks with DeepEP's
-fused kernels. Registers four names in `transformers.integrations.moe.ALL_EXPERTS_FUNCTIONS`:
+Replaces the dispatch/combine path in transformers MoE blocks with token-parallel
+dispatch, on either of two backends (`expert_parallel_backend`): DeepEP's fused
+kernels (`deep_ep`), or plain `all_to_all_single` over the EP process group (`torch`,
+any NCCL/gloo fabric, no extra build). Registers one name, `expert_parallel`, in
+`transformers.integrations.moe.ALL_EXPERTS_FUNCTIONS`; it wraps whichever experts
+implementation is configured (`use_scattermoe`, `use_sonicmoe`, or any registered
+`experts_implementation`, default `grouped_mm`) around the dispatch and combine.
 
-- `deep_ep`               — eager local expert MLP (reference)
-- `deep_ep_grouped_mm`    — transformers' grouped_mm kernel (default)
-- `deep_ep_scattermoe`    — axolotl's ScatterMoE kernel
-- `deep_ep_sonicmoe`      — axolotl's SonicMoE kernel
+See the integration README for backend selection and requirements.
 """
 
 from .args import ExpertParallelArgs

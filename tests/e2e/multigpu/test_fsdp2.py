@@ -2,9 +2,11 @@
 
 import json
 import os
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
+import torch
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
@@ -14,6 +16,7 @@ from axolotl.utils.dict import DictDefault
 from tests.e2e.utils import (
     check_lora_b_fully_trained,
     check_tensorboard_loss_decreased,
+    most_recent_subdir,
     require_torch_2_7_0,
     requires_flash_attn,
 )
@@ -275,7 +278,21 @@ class TestFSDP2:
         check_lora_b_fully_trained(temp_dir)
 
     @require_torch_2_7_0
-    def test_lora_sft_cpu_ram_efficient_loading_expert_parallel(self, temp_dir):
+    @pytest.mark.parametrize(
+        "ep_backend",
+        [
+            "torch",
+            pytest.param(
+                "deep_ep",
+                marks=pytest.mark.skipif(
+                    find_spec("deep_ep") is None, reason="deep_ep not installed"
+                ),
+            ),
+        ],
+    )
+    def test_lora_sft_cpu_ram_efficient_loading_expert_parallel(
+        self, temp_dir, ep_backend
+    ):
         # ep == world_size builds no device mesh, so nothing else initializes the process
         # group before the load; the loader must do it or non-rank-0 buffers stay on meta
         cfg = DictDefault(
@@ -285,6 +302,7 @@ class TestFSDP2:
                     "axolotl.integrations.expert_parallel.ExpertParallelPlugin",
                 ],
                 "expert_parallel_size": 2,
+                "expert_parallel_backend": ep_backend,
                 "experts_implementation": "grouped_mm",
                 "sequence_len": 1024,
                 "val_set_size": 0.01,
@@ -357,6 +375,175 @@ class TestFSDP2:
         check_lora_b_fully_trained(temp_dir)
 
     @require_torch_2_7_0
+    @pytest.mark.parametrize("adapter", [None, "lora"], ids=["fft", "lora"])
+    def test_fft_sft_expert_parallel_gradient_parity(self, temp_dir, adapter):
+        """One SGD step with FSDP alone and with FSDP + pure EP must apply the same update.
+
+        SGD makes the saved weight delta the (clipped) gradient itself, so a wrong expert
+        gradient scale (the EP combine sums over ranks where FSDP averages) shows up as a
+        2x update norm; Adam would normalize it away and the loss curve would still match.
+        The EP checkpoint must also come back with every expert, not one rank's slice.
+        """
+        from huggingface_hub import snapshot_download
+        from safetensors.torch import load_file
+
+        pattern = "adapter_model*.safetensors" if adapter else "model*.safetensors"
+
+        def load_safetensors(directory, glob=pattern):
+            state_dict = {}
+            for file in sorted(Path(directory).glob(glob)):
+                state_dict.update(load_file(file))
+            return state_dict
+
+        def run(variant, expert_parallel):
+            out_dir = Path(temp_dir) / variant
+            cfg = DictDefault(
+                {
+                    "base_model": "axolotl-ai-co/tiny-mixtral-30m",
+                    "experts_implementation": "grouped_mm",
+                    "sequence_len": 512,
+                    "val_set_size": 0,
+                    "datasets": [
+                        {
+                            "path": "tatsu-lab/alpaca",
+                            "type": "alpaca",
+                            "split": "train[:1%]",
+                        },
+                    ],
+                    "max_steps": 1,
+                    "warmup_steps": 0,
+                    "micro_batch_size": 2,
+                    "gradient_accumulation_steps": 1,
+                    "output_dir": str(out_dir),
+                    "learning_rate": 10.0,
+                    "optimizer": "sgd",
+                    "lr_scheduler": "constant",
+                    "max_grad_norm": 1.0,
+                    "weight_decay": 0.0,
+                    "fsdp_version": 2,
+                    "fsdp_config": {
+                        "offload_params": False,
+                        "cpu_ram_efficient_loading": True,
+                        "transformer_layer_cls_to_wrap": "MixtralDecoderLayer",
+                        "state_dict_type": "FULL_STATE_DICT",
+                        "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+                        "reshard_after_forward": True,
+                    },
+                    "seed": 42,
+                    "bf16": True,
+                    "save_strategy": "no",
+                    "save_only_model": True,
+                    "use_tensorboard": True,
+                    "logging_steps": 1,
+                }
+            )
+            if expert_parallel:
+                cfg["plugins"] = [
+                    "axolotl.integrations.expert_parallel.ExpertParallelPlugin"
+                ]
+                cfg["expert_parallel_size"] = 2
+                cfg["expert_parallel_backend"] = "torch"
+                cfg["dp_shard_size"] = 1
+            if adapter:
+                cfg["adapter"] = adapter
+                cfg["lora_r"] = 8
+                cfg["lora_alpha"] = 16
+                cfg["lora_dropout"] = 0.0
+                cfg["lora_target_modules"] = ["q_proj", "k_proj", "v_proj", "o_proj"]
+                cfg["lora_target_parameters"] = [
+                    "mlp.experts.gate_up_proj",
+                    "mlp.experts.down_proj",
+                ]
+                cfg["lora_mlp_kernel"] = False
+                cfg["lora_qkv_kernel"] = False
+                cfg["lora_o_kernel"] = False
+            out_dir.mkdir(parents=True, exist_ok=True)
+            with open(out_dir / "config.yaml", "w", encoding="utf-8") as fout:
+                fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))
+            execute_subprocess_async(
+                [
+                    "axolotl",
+                    "train",
+                    str(out_dir / "config.yaml"),
+                    "--num-processes",
+                    "2",
+                    "--main-process-port",
+                    f"{get_torch_dist_unique_port()}",
+                ]
+            )
+            return load_safetensors(out_dir), read_grad_norm(out_dir)
+
+        def read_grad_norm(out_dir):
+            from tbparse import SummaryReader
+
+            tb_log_path = most_recent_subdir(out_dir / "runs")
+            scalars = SummaryReader(str(tb_log_path)).scalars
+            values = scalars[scalars.tag == "train/grad_norm"].value.values
+            assert len(values), "no grad_norm logged"
+            return float(values[-1])
+
+        noep, grad_norm_noep = run("noep", expert_parallel=False)
+        ep, grad_norm_ep = run("ep2", expert_parallel=True)
+        # clipping to max_grad_norm cancels a uniform gradient scale in the update, so the
+        # pre-clip global norm is the only place such an error is visible
+        grad_norm_ratio = grad_norm_ep / grad_norm_noep
+        assert 0.95 < grad_norm_ratio < 1.05, (
+            f"EP grad_norm {grad_norm_ep:.4f} is {grad_norm_ratio:.3f}x "
+            f"the FSDP grad_norm {grad_norm_noep:.4f}"
+        )
+        if adapter:
+            # lora_A receives no gradient while lora_B is zero, so it must come back as the
+            # same seeded init in both arms; lora_B alone is the one-step update
+            for key in noep:
+                if "lora_A" in key:
+                    assert torch.equal(ep[key], noep[key]), f"{key} differs under EP"
+            init = {k: torch.zeros_like(v) for k, v in noep.items() if "lora_B" in k}
+            assert init, "no lora_B parameter saved"
+        else:
+            # compare in the on-disk key format the trainer saves (Mixtral's legacy layout)
+            init = load_safetensors(
+                snapshot_download(
+                    "axolotl-ai-co/tiny-mixtral-30m", allow_patterns=["*.safetensors"]
+                ),
+                glob="*.safetensors",
+            )
+
+        assert set(ep) == set(noep), (
+            "EP checkpoint keys differ from the FSDP checkpoint"
+        )
+        ratios = {}
+        for key, init_w in init.items():
+            init_w = init_w.float()
+            delta_noep = (noep[key].float() - init_w).norm().item()
+            delta_ep = (ep[key].float() - init_w).norm().item()
+            assert ep[key].shape == noep[key].shape, key
+            if delta_noep == 0:
+                assert delta_ep == 0, f"{key} moved under EP but not under FSDP"
+                continue
+            ratios[key] = delta_ep / delta_noep
+        assert ratios, "no parameter moved in one SGD step"
+        experts = {k: r for k, r in ratios.items() if "experts" in k}
+        assert experts, "no expert parameter moved"
+        # The expert LoRA init is drawn per module from the seed over the global expert
+        # count, so the LoRA arms are as directly comparable as the full-param ones.
+        for key, ratio in ratios.items():
+            assert 0.85 < ratio < 1.15, (
+                f"{key}: EP update norm is {ratio:.3f}x the FSDP update norm"
+            )
+        # clipping fixes the total update norm at lr * max_grad_norm, so a wrong global grad
+        # norm (a per-rank expert norm) scales every tensor and hides in the per-key band
+        total_noep = sum(
+            (noep[k].float() - init[k].float()).norm() ** 2 for k in ratios
+        ).sqrt()
+        total_ep = sum(
+            (ep[k].float() - init[k].float()).norm() ** 2 for k in ratios
+        ).sqrt()
+        total_ratio = (total_ep / total_noep).item()
+        assert 0.995 < total_ratio < 1.005, (
+            f"EP total update norm is {total_ratio:.4f}x the FSDP total update norm"
+        )
+
+    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "base_model, layer_cls, expert_parallel",
         [
@@ -427,6 +614,7 @@ class TestFSDP2:
                 "axolotl.integrations.expert_parallel.ExpertParallelPlugin",
             ]
             cfg["expert_parallel_size"] = 2
+            cfg["expert_parallel_backend"] = "torch"
 
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         with open(Path(temp_dir) / "config.yaml", "w", encoding="utf-8") as fout:

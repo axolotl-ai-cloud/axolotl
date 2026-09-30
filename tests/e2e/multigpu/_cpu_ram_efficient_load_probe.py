@@ -24,8 +24,9 @@ def _weight_checksums(model: torch.nn.Module) -> list[float]:
 
     sums = []
     for name, param in model.named_parameters():
-        # EP-sharded base experts legitimately differ per rank; everything else must match rank 0
-        if ".experts." in name and "lora_" not in name:
+        # EP-sharded experts and their local-sized LoRA legitimately differ per rank;
+        # everything else must match rank 0
+        if ".experts." in name:
             continue
         full = param.full_tensor() if isinstance(param, DTensor) else param
         sums.append(float(full.detach().float().sum()))

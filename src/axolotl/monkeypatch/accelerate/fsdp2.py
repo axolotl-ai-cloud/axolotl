@@ -166,7 +166,9 @@ def _ep_expert_from_local(sharded_meta_param, full_local, nvfp4_cls):
     local_meta = sharded_meta_param._local_tensor
     dev = mesh.device_type
     e_dp = local_meta.qdata.shape[0]  # this rank's dp-local expert count
-    dp_rank = dist.get_group_rank(mesh.get_group(), dist.get_rank())
+    dp_rank = mesh.get_local_rank(
+        mesh.ndim - 1
+    )  # the shard dim; outer dims replicate (HSDP)
     s = slice(dp_rank * e_dp, (dp_rank + 1) * e_dp)
     qd = full_local.qdata[s].to(dev)
     sc = full_local.scale[s].to(dev)
@@ -229,12 +231,10 @@ def fsdp2_load_full_state_dict(
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
-        # Pure-EP: the EP-sharded experts are excluded from the FSDP wrap (ignored_params), so they
-        # stay PLAIN per-rank meta params here. shard_expert_weights already scattered each rank's
+        # Pure-EP quantized experts are excluded from the FSDP wrap (ignored_params), so they stay
+        # PLAIN per-rank meta params here. shard_expert_weights already scattered each rank's
         # correct [E_local] slice before the meta move, so each rank's own `full_sd` entry is right —
-        # load it locally with NO rank-0 broadcast (which would replicate experts[0:E_local]). Only
-        # applies when the param is plain (not a DTensor); EP×dp_shard composition keeps them as
-        # DTensors loaded via the mesh path below.
+        # load it locally with NO rank-0 broadcast (which would replicate experts[0:E_local]).
         if _is_ep_expert_param(param_name) and not hasattr(
             sharded_meta_param, "device_mesh"
         ):
@@ -249,6 +249,31 @@ def fsdp2_load_full_state_dict(
             continue
 
         nvfp4_cls = _nvfp4_local_tensor_cls(sharded_meta_param)
+
+        # EP-sharded experts as DTensors (pure EP per-rank mesh, or an EP×dp_shard subgroup): every
+        # rank of the mesh already holds its ep-group's [E_local] slice in its own full_sd, so shard
+        # that locally instead of sourcing from a rank 0 that owns different experts.
+        if (
+            _is_ep_expert_param(param_name)
+            and nvfp4_cls is None
+            and hasattr(sharded_meta_param, "device_mesh")
+        ):
+            from torch.distributed.tensor import distribute_tensor
+
+            device_mesh = sharded_meta_param.device_mesh
+            own = full_sd[param_name].to(
+                device_mesh.device_type, dtype=sharded_meta_param.dtype
+            )
+            sharded_param = distribute_tensor(
+                own, device_mesh, sharded_meta_param.placements, src_data_rank=None
+            )
+            if offload_to_cpu:
+                sharded_param = sharded_param.cpu()
+            sharded_sd[param_name] = nn.Parameter(
+                sharded_param, requires_grad=sharded_meta_param.requires_grad
+            )
+            full_sd[param_name] = None
+            continue
 
         full_tensor = None
         # Skip the dtype cast for NVFP4 (its components are scattered raw, not cast to bf16).
@@ -291,18 +316,17 @@ def fsdp2_load_full_state_dict(
             ".experts." in param_name
             and (".lora_A." in param_name or ".lora_B." in param_name)
             and hasattr(sharded_meta_param, "device_mesh")
-            and dist.get_world_size(sharded_meta_param.device_mesh.get_group())
-            < dist.get_world_size()
+            and sharded_meta_param.device_mesh.size() < dist.get_world_size()
         ):
-            # EP×dp_shard/cp composition: the routed-expert LoRA adapter lives on a dp_shard SUBGROUP
-            # mesh and holds only THIS ep-group's E_local experts, but full_sd carries the GLOBAL
-            # (all-experts) adapter (4096-row lora_A etc.). The generic broadcast below would mismatch
-            # sizes (rank-0 sends the global tensor, receivers allocate the E_local size) and replicate
-            # rank-0's experts onto ranks owning a different ep-slice. Broadcast rank-0's global adapter
-            # (a consistent shape on every rank), then slice THIS rank's ep-experts + dp_shard and
-            # from_local. The ep slice is expert-aware (lora_B's experts are not contiguous in its flat
-            # r*E dim), so it mirrors shard_expert_lora rather than a plain chunk.
-            from torch.distributed.tensor import DTensor
+            # The routed-expert LoRA adapter lives on the expert mesh (a per-rank mesh under pure EP,
+            # the dp_shard/cp subgroup under composition) and holds only THIS ep-group's E_local
+            # experts. full_sd normally carries the adapter at that same local shape, drawn on every
+            # rank from the seed for ITS experts (reinit_lora_from_seed), so shard each rank's own
+            # copy: broadcasting rank 0's would hand every ep-group rank 0's experts. A GLOBAL
+            # (all-experts) adapter is instead broadcast whole, then cut to THIS rank's ep-experts
+            # + dp_shard slice; that ep slice is expert-aware (lora_B's experts are not contiguous
+            # in its flat r*E dim).
+            from torch.distributed.tensor import DTensor, distribute_tensor
 
             from axolotl.integrations.expert_parallel.shard import (
                 ep_adapter_load_local_shard,
@@ -310,10 +334,40 @@ def fsdp2_load_full_state_dict(
 
             mesh = sharded_meta_param.device_mesh
             placements = sharded_meta_param.placements
-            dp_size = mesh.size()
-            ep_size = dist.get_world_size() // dp_size
-            ep_dim = 0 if ".lora_A." in param_name else 1
             dev = mesh.device_type
+            is_local = torch.zeros(1, dtype=torch.uint8, device=dev)
+            if _accelerator.is_main_process:
+                is_local.fill_(
+                    int(tuple(full_tensor.shape) == tuple(sharded_meta_param.size()))
+                )
+            dist.broadcast(is_local, src=0)
+            if is_local.item():
+                g = full_sd[param_name].to(dev, dtype=sharded_meta_param.dtype)
+                sharded_param = distribute_tensor(
+                    g, mesh, placements, src_data_rank=None
+                )
+                if offload_to_cpu:
+                    sharded_param = sharded_param.cpu()
+                sharded_sd[param_name] = nn.Parameter(
+                    sharded_param, requires_grad=sharded_meta_param.requires_grad
+                )
+                full_sd[param_name] = None
+                continue
+            # The adapter mesh is a sub-mesh (dp_shard or cp, with dp_replicate under HSDP) of the
+            # root mesh; read this rank's ep coordinate from the root rather than deriving it from
+            # the group's ranks, which only works when the world is exactly ep x that mesh.
+            root = mesh._get_root_mesh() or mesh
+            root_names = tuple(root.mesh_dim_names or ())
+            if "ep" in root_names:
+                ep_size = root["ep"].size()
+                ep_coord = root.get_coordinate()[root_names.index("ep")]
+            else:
+                ep_size = dist.get_world_size() // mesh.size()
+                ep_coord = min(mesh.mesh.flatten().tolist()) // mesh.size()
+            shard_dim = mesh.ndim - 1
+            dp_size = mesh.size(shard_dim)
+            dp_rank = mesh.get_local_rank(shard_dim)
+            ep_dim = 0 if ".lora_A." in param_name else 1
             gshape = list(sharded_meta_param.size())
             gshape[ep_dim] *= ep_size
             if _accelerator.is_main_process:
@@ -321,15 +375,13 @@ def fsdp2_load_full_state_dict(
             else:
                 g = torch.empty(gshape, device=dev, dtype=sharded_meta_param.dtype)
             dist.broadcast(g, src=0)
-            ep_coord = min(dist.get_process_group_ranks(mesh.get_group())) // dp_size
-            dp_rank = dist.get_group_rank(mesh.get_group(), dist.get_rank())
             local = ep_adapter_load_local_shard(
                 g,
                 ep_dim,
                 model._ep_num_experts_global,
                 ep_coord,
                 ep_size,
-                placements,
+                (placements[shard_dim],),
                 dp_size,
                 dp_rank,
             )
@@ -500,6 +552,26 @@ def _install_requested_native_nvfp4_merge_aware_lora_linears(model) -> int:
     return installed
 
 
+def _activation_checkpoint_wrapper_fn():
+    """Non-reentrant ``checkpoint_wrapper`` that honours registered mandatory SAC saves."""
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        CheckpointImpl,
+        checkpoint_wrapper,
+    )
+
+    from axolotl.monkeypatch.selective_checkpointing import (
+        build_sac_context_fn,
+        has_registered_saves,
+    )
+
+    kwargs = {}
+    if has_registered_saves():
+        kwargs["context_fn"] = build_sac_context_fn(save=[])
+    return functools.partial(
+        checkpoint_wrapper, checkpoint_impl=CheckpointImpl.NO_REENTRANT, **kwargs
+    )
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -577,18 +649,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     if fsdp2_plugin.activation_checkpointing:
         from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-            CheckpointImpl,
             apply_activation_checkpointing,
-            checkpoint_wrapper,
         )
 
         # Apply activation checkpointing before applying `fully_shard`
         apply_activation_checkpointing(
             model,
-            checkpoint_wrapper_fn=functools.partial(
-                checkpoint_wrapper,
-                checkpoint_impl=CheckpointImpl.NO_REENTRANT,
-            ),
+            checkpoint_wrapper_fn=_activation_checkpoint_wrapper_fn(),
             auto_wrap_policy=fsdp2_plugin.auto_wrap_policy,
         )
 
@@ -677,6 +744,16 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         getattr(mesh, "mesh_dim_names", None) if mesh is not None else None
     )
     if _ep_shard_axis is not None:
+        from axolotl.integrations.expert_parallel.shard import _detect_experts_modules
+
+        # The EP plugin's fallback path leaves the experts unsharded; FSDP them normally then.
+        if not any(
+            getattr(m, "num_experts_global", None) is not None
+            and m.num_local_experts < m.num_experts_global
+            for _n, m in _detect_experts_modules(model)
+        ):
+            _ep_shard_axis = None
+    if _ep_shard_axis is not None:
         from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
         from axolotl.integrations.expert_parallel.shard import shard_expert_lora
 
@@ -686,16 +763,19 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # save time can pick up a stale/size-1 mesh).
         model._ep_lora_group = mesh["ep"].get_group()
         shard_expert_lora(model, mesh["ep"].size())
+        from axolotl.integrations.expert_parallel.plugin import expert_fsdp_mesh
+
         ExpertParallelPlugin.fully_shard_experts(
-            model, mesh[_ep_shard_axis], fsdp2_kwargs
+            model, expert_fsdp_mesh(mesh), fsdp2_kwargs
         )
     elif getattr(model, "_ddp_params_and_buffers_to_ignore", None):
         # Pure EP (ep_size == world_size): no ep×dp_shard mesh is built, so the experts were
         # manually EP-sharded (shard_expert_weights scattered each rank's real [E_local] slice) but
         # there is NO dp_shard axis to FSDP them onto. Left to the outer fully_shard(mesh=None) they
-        # would be re-sharded on the flat world mesh and replicated from rank 0, destroying EP. Exclude
-        # the EP-sharded expert base params from the FSDP wrap entirely so each rank keeps its own
-        # [E_local] slice as a plain param; fsdp2_load_full_state_dict restores them per-rank.
+        # would be re-sharded on the flat world mesh and replicated from rank 0, destroying EP.
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+        from axolotl.integrations.expert_parallel.shard import _detect_experts_modules
+
         ep_ignored = {
             p
             for n, p in model.named_parameters()
@@ -704,13 +784,44 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             and n.rsplit(".", 1)[-1]
             in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
         }
-        if ep_ignored:
+        # Pre-quantized (torchao subclass) frozen experts keep the plain per-rank path below.
+        plain_experts = all(type(p.data) is torch.Tensor for p in ep_ignored)
+        if ep_ignored and plain_experts:
+            # Every param must be a DTensor (foreach/fused optimizers and clip reject a
+            # Tensor/DTensor mix), so wrap the experts — and the expert-LoRA wrappers, which the
+            # outer decoder-layer unit would otherwise shard ACROSS ep ranks — on a per-rank
+            # (size-1) dp_shard mesh: the all-gather is a no-op and each rank keeps its own slice.
+            from torch.distributed.device_mesh import init_device_mesh
+
+            from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+            from axolotl.integrations.expert_parallel.shard import (
+                _detect_experts_modules,
+                shard_expert_lora,
+            )
+
+            device_type = mesh.device_type if mesh is not None else "cuda"
+            ep_mesh = init_device_mesh(
+                device_type,
+                (dist.get_world_size(), 1),
+                mesh_dim_names=("ep", "dp_shard"),
+            )
+            model._ep_expert_mesh = ep_mesh
+            model._ep_lora_group = dist.group.WORLD
+            shard_expert_lora(model, dist.get_world_size())
+            ExpertParallelPlugin.fully_shard_experts(
+                model, ep_mesh["dp_shard"], fsdp2_kwargs
+            )
+            LOG.info(
+                f"expert_parallel (pure EP): wrapped {len(list(_detect_experts_modules(model)))} "
+                "Experts module(s) on a per-rank mesh."
+            )
+        elif ep_ignored:
             fsdp2_kwargs["ignored_params"] = (
                 set(fsdp2_kwargs.get("ignored_params") or set()) | ep_ignored
             )
             LOG.info(
-                f"expert_parallel (pure EP): excluded {len(ep_ignored)} EP-sharded expert "
-                "param(s) from the FSDP wrap (kept as plain per-rank slices)."
+                f"expert_parallel (pure EP): excluded {len(ep_ignored)} quantized EP-sharded "
+                "expert param(s) from the FSDP wrap (kept as plain per-rank slices)."
             )
 
     nf4_unwrapped_children = set()

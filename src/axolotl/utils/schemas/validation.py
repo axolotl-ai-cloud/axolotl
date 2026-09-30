@@ -1,9 +1,13 @@
 """Module with validation methods for config pydantic model."""
 
+import fnmatch
 import json
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+from packaging import version as packaging_version
 from pydantic import (
     field_validator,
     model_validator,
@@ -19,6 +23,154 @@ from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 LOG = get_logger(__name__)
+
+# modules whose forward a fused kernel replaces, so module-scope SAC hooks on
+# them never fire; containers are listed because their hooks still fire but the
+# kernel's visible mm inside is then mutated in place
+_SAC_FUSED_MODULE_COVERAGE = (
+    (
+        "lora_mlp_kernel",
+        (
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+            "mlp",
+            "mixer",
+            "shared_experts",
+            "shared_expert",
+            "feedforward",
+            "experts",
+            "gate_projs",
+            "up_projs",
+            "down_projs",
+        ),
+    ),
+    (
+        "lora_qkv_kernel",
+        (
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "in_proj_qkv",
+            "in_proj_z",
+            "in_proj_b",
+            "in_proj_a",
+            "self_attn",
+            "linear_attn",
+            "mixer",
+        ),
+    ),
+    ("lora_o_kernel", ("o_proj", "out_proj", "self_attn", "linear_attn", "mixer")),
+    ("flash_attn_fuse_mlp", ("gate_proj", "up_proj", "down_proj", "mlp")),
+)
+
+# decoder-layer and model containers enclose every projection a LoRA kernel runs;
+# a numeric last component (``layers.0``) names a decoder layer
+_SAC_LAYER_CONTAINERS = (
+    "model",
+    "language_model",
+    "text_model",
+    "decoder",
+    "transformer",
+    "backbone",
+    "layers",
+    "layer",
+    "h",
+    "blocks",
+    "block",
+)
+
+_LORA_KERNEL_FLAGS = (
+    "lora_mlp_kernel",
+    "lora_qkv_kernel",
+    "lora_o_kernel",
+    "lora_embedding_kernel",
+)
+
+
+def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
+    """Whether the unset ``lora_*_kernel`` flags would be auto-enabled for this config.
+
+    ``get`` reads a config value by name (a raw ``data`` dict or a validated model).
+    The single source of truth for ``check_auto_enable_lora_kernels`` and for the
+    validators that must predict its outcome.
+    """
+    if get("rl") or get("nvfp4_merge_aware"):
+        return False
+    adapter = get("adapter")
+    if adapter not in ("lora", "qlora"):
+        return False
+    if any(get(flag) is not None for flag in _LORA_KERNEL_FLAGS):
+        return False
+    if adapter == "lora" and get("load_in_8bit"):
+        return False
+    if get("trust_remote_code"):
+        return False
+
+    from axolotl.model_support import (
+        Unsupported,
+        get_model_support,
+        resolve_model_support,
+    )
+
+    support = get_model_support(get("model_config_type"))
+    if support is not None and isinstance(
+        resolve_model_support(support).capabilities.get("lora_kernels"), Unsupported
+    ):
+        return False
+
+    # MoE without native grouped_mm (torch < 2.9): transformers' fallback uses
+    # torch.mm(out=) which bypasses autocast and fails on mixed dtypes in eval
+    torch_version = (get("env_capabilities") or {}).get("torch_version")
+    if torch_version is None:
+        import torch
+
+        torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+    if packaging_version.parse(torch_version) >= packaging_version.parse("2.9.0"):
+        return True
+    model_type = get("model_config_type") or ""
+    if "moe" in model_type.lower():
+        return False
+    base_model = get("base_model")
+    if base_model:
+        try:
+            from transformers import AutoConfig
+
+            auto_cfg = AutoConfig.from_pretrained(base_model, trust_remote_code=False)
+            if getattr(auto_cfg, "num_local_experts", None) or getattr(
+                auto_cfg, "num_experts", None
+            ):
+                return False
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+    return True
+
+
+def _lora_kernel_enabled(cfg, flag: str) -> bool:
+    """Explicit flag value, else whether check_auto_enable_lora_kernels would set it.
+
+    Auto-enable runs only on the capabilities-aware config class, so an unset flag
+    is predicted from the same preconditions rather than read as off.
+    """
+    value = getattr(cfg, flag, None)
+    if value is not None:
+        return bool(value) and bool(cfg.adapter)
+    return lora_kernels_auto_enable(lambda key: getattr(cfg, key, None))
+
+
+def _sac_entry_covers(entry: str, module: str) -> bool:
+    last = entry.rsplit(".", 1)[-1]
+    if any(ch in last for ch in "*?["):
+        return fnmatch.fnmatchcase(module, last)
+    return last == module
+
+
+def _sac_entry_is_layer_container(entry: str) -> bool:
+    last = entry.rsplit(".", 1)[-1]
+    if any(ch in last for ch in "*?["):
+        candidates = _SAC_LAYER_CONTAINERS + tuple(str(i) for i in range(100))
+        return any(fnmatch.fnmatchcase(name, last) for name in candidates)
+    return last.isdigit() or last in _SAC_LAYER_CONTAINERS
 
 
 def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
@@ -1787,27 +1939,114 @@ class ModelCompatibilityValidationMixin:
                 "activation_offloading: hidden_states (or false); the TRL offloader "
                 "paths bypass HF gradient checkpointing"
             )
-        if self.adapter:
-            # PEFT adds the adapter delta into the base linear output in-place,
-            # mutating cached mm outputs; SAC's cache-mutation guard errors at runtime
+        sac = self.selective_checkpointing
+        fused_lora = any(
+            _lora_kernel_enabled(self, flag)
+            for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+        )
+        if fused_lora:
             matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
             bad = [
                 spec
-                for spec in self.selective_checkpointing.save
+                for spec in sac.save
                 if spec != "attention" and any(spec in op for op in matmul_ops)
             ]
             if bad:
                 raise ValueError(
                     f"selective_checkpointing.save entries {bad} match matmul ops, "
-                    "which cannot be saved when training with a LoRA/QLoRA adapter: "
-                    "PEFT mutates the base linear output in-place to add the adapter "
-                    "delta, which invalidates the cached tensor. Use save: [attention] "
-                    "or train without an adapter."
+                    "which cannot be saved while a fused LoRA kernel is enabled: the "
+                    "kernel adds the adapter delta into the base matmul output "
+                    "in-place (addmm_), which invalidates the cached tensor. Set "
+                    "lora_mlp_kernel: false, lora_qkv_kernel: false and "
+                    "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
+                    "or use save: [attention]."
                 )
+            if sac.save_matmul_min_k:
+                raise ValueError(
+                    "selective_checkpointing.save_matmul_min_k saves the base matmul "
+                    "that a fused LoRA kernel then mutates in-place (addmm_). Set "
+                    "lora_mlp_kernel: false, lora_qkv_kernel: false and "
+                    "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
+                    "or drop save_matmul_min_k."
+                )
+        for flag, modules in _SAC_FUSED_MODULE_COVERAGE:
+            enabled = (
+                _lora_kernel_enabled(self, flag)
+                if flag.startswith("lora_")
+                else bool(getattr(self, flag, None))
+            )
+            if not enabled:
+                continue
+            for entry in sac.save_modules or []:
+                if any(_sac_entry_covers(entry, module) for module in modules):
+                    raise ValueError(
+                        f"selective_checkpointing.save_modules entry {entry!r} names "
+                        f"a module whose forward is replaced by {flag}: true, so its "
+                        "hooks never fire and the rule would be a silent no-op. Set "
+                        f"{flag}: false (LoRA kernels are auto-enabled for "
+                        "LoRA/QLoRA) or remove the entry."
+                    )
+                if flag.startswith("lora_") and _sac_entry_is_layer_container(entry):
+                    raise ValueError(
+                        f"selective_checkpointing.save_modules entry {entry!r} scopes "
+                        "a decoder layer or model container, which holds the "
+                        f"projections {flag}: true runs; the kernel adds the adapter "
+                        "delta into their saved base matmul output in-place "
+                        f"(addmm_), which invalidates the cached tensor. Set {flag}: "
+                        "false (LoRA kernels are auto-enabled for LoRA/QLoRA) or name "
+                        "a projection the kernel does not cover."
+                    )
         if self.torch_compile:
             LOG.warning(
                 "selective_checkpointing with torch_compile is untested in axolotl; "
                 "the SAC context_fn targets the eager checkpointing path"
+            )
+        return self
+
+    def _resolved_expert_parallel_backend(self) -> str | None:
+        backend = getattr(self, "expert_parallel_backend", None)
+        if backend == "auto":
+            from importlib.util import find_spec
+
+            backend = "deep_ep" if find_spec("deep_ep") is not None else "torch"
+        return backend
+
+    @model_validator(mode="after")
+    def check_torch_expert_parallel_checkpointing(self):
+        if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
+            return self
+        if self._resolved_expert_parallel_backend() != "torch":
+            return self
+        # recompute has to replay the forward's routing through a SAC policy
+        if self.gradient_checkpointing and (
+            self.gradient_checkpointing_kwargs or {}
+        ).get("use_reentrant"):
+            raise ValueError(
+                "expert_parallel_backend: torch requires non-reentrant gradient "
+                "checkpointing (gradient_checkpointing_kwargs.use_reentrant: false): "
+                "recompute must reuse the forward's routing, which reentrant "
+                "checkpointing cannot guarantee"
+            )
+        if self.gradient_checkpointing and self.activation_offloading in (
+            True,
+            "legacy",
+            "disk",
+        ):
+            raise ValueError(
+                "expert_parallel_backend: torch is incompatible with activation_offloading "
+                f"{self.activation_offloading!r}: the TRL offloader bypasses the "
+                "checkpointing policy that keeps recompute on the forward's routing. "
+                "Use activation_offloading: hidden_states or false."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_expert_parallel_dispatch_chunks(self):
+        chunks = getattr(self, "expert_parallel_dispatch_chunks", None) or 1
+        if chunks > 1 and self._resolved_expert_parallel_backend() == "deep_ep":
+            raise ValueError(
+                "expert_parallel_dispatch_chunks > 1 requires expert_parallel_backend: "
+                "torch (DeepEP dispatches the whole batch in one fused kernel)"
             )
         return self
 
@@ -2026,12 +2265,44 @@ class DistributedValidationMixin:
 
     @model_validator(mode="after")
     def check_tensor_parallel_optimizer(self):
-        if self.tensor_parallel_size > 1:
+        if (self.tensor_parallel_size or 1) > 1:
             if self.optimizer in ["paged_adamw_8bit", "adamw_8bit", "adamw_bnb_8bit"]:
                 raise ValueError(
                     "tensor_parallel_size is not supported with paged_adamw_8bit, adamw_8bit, and adamw_bnb_8bit optimizers"
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_cpu_ram_efficient_loading(self):
+        # transformers' TP load places each rank's own shard, so the rank-0-only load that
+        # cpu_ram_efficient_loading broadcasts from would leave every other rank with zeros
+        # CPU-staged NF4 rejects TP itself and needs the flag intact to reach that check
+        staged_nf4 = self.nf4_backend == "torchao" or (
+            self.qlora_sharded_model_loading and self.load_in_4bit
+        )
+        if (
+            (self.tensor_parallel_size or 1) > 1
+            and not staged_nf4
+            and self.fsdp_config
+            and self.fsdp_config.cpu_ram_efficient_loading
+        ):
+            LOG.warning(
+                "fsdp_config.cpu_ram_efficient_loading is disabled with tensor_parallel_size > 1; "
+                "each rank loads its own tensor-parallel shard directly"
+            )
+            self.fsdp_config.cpu_ram_efficient_loading = False
+        return self
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_expert_parallel(self):
+        if (self.tensor_parallel_size or 1) > 1 and (
+            getattr(self, "expert_parallel_size", 1) or 1
+        ) > 1:
+            raise ValueError(
+                "tensor_parallel_size > 1 cannot be combined with expert_parallel_size > 1; "
+                "shard the experts with expert_parallel_size and the rest with dp_shard_size"
+            )
         return self
 
 
@@ -2179,6 +2450,7 @@ class ValidationMixin(
     PretrainingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
+    DistributedValidationMixin,
     EBFTValidationMixin,
     GRPOVllmValidationMixin,
 ):

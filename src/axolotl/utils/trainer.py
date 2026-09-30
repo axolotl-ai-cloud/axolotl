@@ -638,6 +638,9 @@ def setup_parallelism_envs(cfg):
     if cfg.tensor_parallel_size and cfg.tensor_parallel_size > 1:
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_TP_SIZE"] = str(cfg.tensor_parallel_size)
+        from axolotl.monkeypatch.accelerate.tp import patch_accelerate_prepare_tp
+
+        patch_accelerate_prepare_tp()
     if cfg.dp_shard_size and cfg.dp_shard_size > 1:
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_DP_SHARD_SIZE"] = str(cfg.dp_shard_size)

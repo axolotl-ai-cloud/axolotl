@@ -1,11 +1,11 @@
-"""CPU routing coverage for SonicMoE's DeepEP local kernel."""
+"""CPU routing coverage for SonicMoE's expert-parallel local forward."""
 
 from types import SimpleNamespace
 
 import pytest
 import torch
 
-from axolotl.integrations.expert_parallel import experts_fn
+from axolotl.integrations.kernels.libs.sonicmoe import experts as sonic
 
 
 def _native_weight():
@@ -15,15 +15,16 @@ def _native_weight():
     return NVFP4Tensor.to_nvfp4(torch.randn(16, 16, dtype=torch.bfloat16))
 
 
-def test_sonicmoe_local_routes_native_weights_to_merge_aware_ep(monkeypatch):
+def _ep_experts(weight):
+    return SimpleNamespace(
+        gate_up_proj=weight, down_proj=weight, num_experts=2, num_experts_global=4
+    )
+
+
+def test_sonicmoe_ep_routes_native_weights_to_merge_aware_ep(monkeypatch):
     from axolotl.integrations.kernels.libs.scattermoe_lora import experts as scatter
 
-    native = _native_weight()
-    experts = SimpleNamespace(
-        gate_up_proj=native,
-        down_proj=native,
-        num_experts=2,
-    )
+    experts = _ep_experts(_native_weight())
     received = {}
 
     def merge_aware(module, hidden_states, topk_idx, topk_weights):
@@ -37,16 +38,17 @@ def test_sonicmoe_local_routes_native_weights_to_merge_aware_ep(monkeypatch):
 
     monkeypatch.setattr(scatter, "scattermoe_experts_forward_ep", merge_aware)
     monkeypatch.setattr(
-        "axolotl.integrations.kernels.libs.sonicmoe.experts.sonicmoe_experts_forward_with_lora",
-        lambda *_: pytest.fail(
-            "native experts must not enter SonicMoE's EP-unsupported path"
-        ),
+        sonic,
+        "_sonicmoe_forward",
+        lambda *_: pytest.fail("native experts must not enter the CUTLASS path"),
     )
     hidden = torch.randn(3, 16)
-    local_ids = torch.tensor([[0, -1], [1, 0], [-1, 1]])
+    local_ids = torch.tensor([[0, 2], [1, 0], [2, 1]])
     weights = torch.rand(3, 2)
 
-    actual = experts_fn._sonicmoe_local(experts, hidden, local_ids, weights)
+    actual = sonic.sonicmoe_experts_forward_with_lora(
+        experts, hidden, local_ids, weights
+    )
 
     assert actual is not hidden
     assert received["module"] is experts
@@ -55,15 +57,12 @@ def test_sonicmoe_local_routes_native_weights_to_merge_aware_ep(monkeypatch):
     assert received["topk_weights"] is weights
 
 
-def test_sonicmoe_local_keeps_dense_sentinel_and_bucket_behavior(monkeypatch):
-    experts = SimpleNamespace(
-        gate_up_proj=torch.randn(2, 32, 16),
-        down_proj=torch.randn(2, 16, 16),
-        num_experts=2,
-    )
+def test_sonicmoe_ep_keeps_dense_sentinel_and_bucket_behavior(monkeypatch):
+    experts = _ep_experts(torch.randn(2, 32, 16))
+    experts.down_proj = torch.randn(2, 16, 16)
     received = {}
 
-    def sonic(module, hidden_states, topk_idx, topk_weights):
+    def cutlass(module, hidden_states, topk_idx, topk_weights):
         received.update(
             module=module,
             hidden_states=hidden_states,
@@ -72,28 +71,29 @@ def test_sonicmoe_local_keeps_dense_sentinel_and_bucket_behavior(monkeypatch):
         )
         return hidden_states
 
-    monkeypatch.setattr(
-        "axolotl.integrations.kernels.libs.sonicmoe.experts.sonicmoe_experts_forward_with_lora",
-        sonic,
-    )
+    monkeypatch.setattr(sonic, "_sonicmoe_forward", cutlass)
     hidden = torch.randn(3, 16)
-    local_ids = torch.tensor([[0, -1], [1, 0], [-1, 1]])
+    local_ids = torch.tensor([[0, 2], [1, 0], [2, 1]])
     weights = torch.rand(3, 2)
 
-    actual = experts_fn._sonicmoe_local(experts, hidden, local_ids, weights)
+    actual = sonic.sonicmoe_experts_forward_with_lora(
+        experts, hidden, local_ids, weights
+    )
 
     assert actual.shape == hidden.shape
     assert received["module"] is experts
     assert received["hidden_states"].shape[0] == 1024
-    assert torch.all(received["topk_idx"][:3][local_ids < 0] == 2)
+    assert torch.equal(received["topk_idx"][:3], local_ids)
+    # pad rows carry the local sentinel id, so every GEMM range drops them
+    assert torch.all(received["topk_idx"][3:] == experts.num_experts)
     assert torch.equal(received["topk_weights"][:3], weights)
+    assert torch.all(received["topk_weights"][3:] == 0)
 
 
-def test_sonicmoe_local_native_all_sentinels_preserves_raw_ep_routing(monkeypatch):
+def test_sonicmoe_ep_native_empty_batch_preserves_raw_routing(monkeypatch):
     from axolotl.integrations.kernels.libs.scattermoe_lora import experts as scatter
 
-    native = _native_weight()
-    experts = SimpleNamespace(gate_up_proj=native, down_proj=native, num_experts=2)
+    experts = _ep_experts(_native_weight())
     received = {}
 
     def merge_aware(module, hidden_states, topk_idx, topk_weights):
@@ -105,8 +105,24 @@ def test_sonicmoe_local_native_all_sentinels_preserves_raw_ep_routing(monkeypatc
     ids = torch.empty((0, 2), dtype=torch.long)
     weights = torch.empty((0, 2))
 
-    output = experts_fn._sonicmoe_local(experts, hidden, ids, weights)
+    output = sonic.sonicmoe_experts_forward_with_lora(experts, hidden, ids, weights)
 
     assert output.shape == hidden.shape
     assert received["ids"] is ids
     assert received["weights"] is weights
+
+
+def test_sonicmoe_dense_module_skips_ep_forward(monkeypatch):
+    experts = SimpleNamespace(has_gate=True, num_experts=2)
+    monkeypatch.setattr(
+        sonic,
+        "_sonicmoe_ep_forward",
+        lambda *_: pytest.fail("a module without num_experts_global is not EP-sharded"),
+    )
+    with pytest.raises(ValueError, match="CUDA"):
+        sonic.sonicmoe_experts_forward_with_lora(
+            experts,
+            torch.zeros(2, 4),
+            torch.zeros(2, 1, dtype=torch.long),
+            torch.ones(2, 1),
+        )

@@ -57,3 +57,12 @@ evals_per_epoch:
 saves_per_epoch: 1
 
 seed: 42
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true

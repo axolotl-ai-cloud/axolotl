@@ -297,6 +297,11 @@ def save_trained_model(
         if save_ep_lora_adapter(model, cfg.output_dir, ep_group):
             return
 
+    # TP-local NVFP4 LoRA factors: only the trainer's save gathers them across the TP group
+    if cfg.adapter and (cfg.tensor_parallel_size or 1) > 1:
+        trainer.save_model(cfg.output_dir)
+        return
+
     # FSDP2 (no EP) LoRA: the DCP sharded save fails ("Failed to validate global plan") on the
     # frozen NVFP4 base DTensors, so gather just the adapter and write it directly.
     if cfg.adapter and (trainer.is_fsdp_enabled or cfg.fsdp_config):
@@ -386,6 +391,11 @@ def save_trained_model(
                 os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
             except FileNotFoundError:
                 pass
+    elif (cfg.tensor_parallel_size or 1) > 1 and not cfg.adapter:
+        # every TP rank must join the DTensor gather inside save_pretrained; one rank writes
+        model.save_pretrained(
+            cfg.output_dir, is_main_process=trainer.accelerator.is_main_process
+        )
     elif cfg.local_rank == 0:
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
             trainer.model.save_pretrained(cfg.output_dir)

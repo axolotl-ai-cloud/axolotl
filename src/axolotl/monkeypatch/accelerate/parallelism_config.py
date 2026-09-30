@@ -3,7 +3,7 @@
 Two extensions:
 - Allow pure CP standalone via `ACCELERATE_ALLOW_CP_STANDALONE`.
 - Add Expert Parallel (`ep`) as a first-class mesh axis inside the
-  data-parallel group. Mesh order is `(ep, dp_replicate, dp_shard, cp, sp, tp)`
+  data-parallel group. Mesh order is `(dp_replicate, ep, dp_shard, cp, sp, tp)`
   so the dp axes stay contiguous (required for `_flatten("dp")`).
 
 See `expert_parallel/README.md` for the full integration story.
@@ -16,12 +16,27 @@ from accelerate import DistributedType
 
 
 def _patched_post_init(self):
-    _ORIG_POST_INIT(self)
-
     if not hasattr(self, "ep_size") or self.ep_size is None:
         self.ep_size = int(os.environ.get("PARALLELISM_CONFIG_EP_SIZE", "1") or 1)
     if self.ep_size < 1:
         raise ValueError(f"ep_size must be at least 1, got {self.ep_size}")
+
+    try:
+        _ORIG_POST_INIT(self)
+    except ValueError as exc:
+        # accelerate reads dp_shard == 1 as DDP and refuses to compose it with CP under
+        # dp_replicate; with EP the dense weights still FSDP-shard over (ep, cp), so the
+        # layout is HSDP whose shard group is ep x cp. That check is the last statement
+        # before `_sizes` is assigned, so finish the original init here.
+        if "pure data parallelism" not in str(exc) or self.ep_size <= 1:
+            raise
+        self._sizes = {
+            "dp_replicate": self.dp_replicate_size,
+            "dp_shard": self.dp_shard_size,
+            "tp": self.tp_size,
+            "cp": self.cp_size,
+            "sp": self.sp_size,
+        }
 
     # Register so `_set_size`, `_validate_accelerator`, `_get_mesh` see it.
     self._sizes["ep"] = self.ep_size
@@ -46,10 +61,10 @@ def _patched_dp_dim_names(self):
     """DP axes (different ranks see different data). EP is included — each
     EP rank pulls its own batch."""
     dims = []
-    if self.ep_enabled:
-        dims += ["ep"]
     if self.dp_replicate_enabled:
         dims += ["dp_replicate"]
+    if self.ep_enabled:
+        dims += ["ep"]
     if self.dp_shard_enabled:
         dims += ["dp_shard"]
     return dims
@@ -84,10 +99,12 @@ def _patched_non_dp_dim_names(self):
 
 def _patched_get_mesh(self):
     """Build (dim_names, shape) for `init_device_mesh`. Order keeps the dp
-    block (ep, dp_replicate, dp_shard) contiguous so `_flatten("dp")` works.
+    block (dp_replicate, ep, dp_shard) contiguous so `_flatten("dp")` works, and
+    puts `dp_replicate` outermost so `(dp_replicate, dp_shard_cp)` slices in
+    ascending order when `dp_shard_cp` flattens `(ep, dp_shard, cp)`.
     """
     mesh_dims = {p: self._sizes[p] for p in self.active_mesh_dims}
-    mesh_order = ["ep", "dp_replicate", "dp_shard", "cp", "sp", "tp"]
+    mesh_order = ["dp_replicate", "ep", "dp_shard", "cp", "sp", "tp"]
     sorted_items = sorted(mesh_dims.items(), key=lambda x: mesh_order.index(x[0]))
     return tuple(zip(*sorted_items, strict=True))
 
@@ -220,10 +237,11 @@ def _ep_aware_clip_grad_norm(
 
 def patch_clip_grad_norm_for_ep():
     """Replace `Accelerator.clip_grad_norm_` with the EP-aware version when
-    the active parallelism composes `ep` with `dp_shard` and/or `cp` (i.e., the
-    FSDP+EP composition produces multi-mesh DTensor grads — the experts shard on
-    the dp_shard/cp subgroup, the non-experts on the flattened dp_shard_cp mesh,
-    so the stock `clip_grad_norm_` can't stack their per-param norms together).
+    the active parallelism composes `ep` with FSDP2 (`dp_shard`, `cp`, or pure EP
+    with FSDP-sharded dense params): the FSDP+EP composition produces multi-mesh
+    DTensor grads — the experts shard on the dp_shard/cp subgroup (or a per-rank
+    mesh), the non-experts on the flattened mesh, so the stock `clip_grad_norm_`
+    can't stack their per-param norms together.
     """
     from accelerate import Accelerator
 
@@ -233,13 +251,18 @@ def patch_clip_grad_norm_for_ep():
 
     def patched_clip_grad_norm_(self, parameters, max_norm, norm_type=2):
         pc = getattr(self, "parallelism_config", None)
-        if (
-            pc is not None
-            and getattr(pc, "ep_enabled", False)
-            and (
-                getattr(pc, "dp_shard_enabled", False)
-                or getattr(pc, "cp_enabled", False)
-            )
+        # Pure EP builds no ParallelismConfig (only the env var), yet it still mixes meshes:
+        # dense params on the flat world mesh, trainable experts on a per-rank mesh whose
+        # `full_tensor()` sees one rank's experts, so the stock clip gets a per-rank norm.
+        ep_enabled = (
+            getattr(pc, "ep_enabled", False)
+            if pc is not None
+            else int(os.environ.get("PARALLELISM_CONFIG_EP_SIZE", "1") or 1) > 1
+        )
+        if ep_enabled and (
+            getattr(pc, "dp_shard_enabled", False)
+            or getattr(pc, "cp_enabled", False)
+            or getattr(self, "is_fsdp2", False)
         ):
             self.unscale_gradients()
             params = list(parameters)

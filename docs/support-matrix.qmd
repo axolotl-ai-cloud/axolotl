@@ -93,12 +93,12 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | DeepSpeed ZeRO 1/2/3 (+CPU offload) | `deepspeed: deepspeed_configs/zeroN*.json` | TP |
 | FSDP2 | `fsdp_version: 2` (default) + `fsdp_config:` | TP, CP, EP |
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
-| Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 |
+| Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 (full-parameter; adapters only on native NVFP4 bases) |
 | Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, axolotl-ringmaster (Ulysses/Ring/USP) |
-| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | FSDP2 (DeepEP backend) |
-| N-D (HSDP, FSDP+TP+CP, FSDP+EP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
+| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | Requires FSDP2 + `state_dict_type: FULL_STATE_DICT`; CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
+| N-D (HSDP, FSDP+CP, HSDP+CP, FSDP+EP+CP, HSDP+EP, HSDP+EP+CP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
-Blocked combinations: **EP x TP/CP**, **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
+Blocked combinations: **EP x TP**, **LoRA/QLoRA x TP** (except native NVFP4 bases), **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
 
 ## Performance integrations & custom kernels
 
@@ -125,7 +125,7 @@ Only **one** cross-entropy optimization may be enabled at a time (CCE / Liger CE
 | GLM-DSA kernels | `use_glm_dsa_kernels: true` | SM90+ | GLM-4.7/5.2 sparse-MLA (DSA) attention |
 | Grouped-GEMM backend | `moe_grouped_backend: auto\|marlin\|cutlass\|deepgemm` | capability-selected | fp4 grouped experts |
 
-**With Expert Parallel:** ScatterMoE composes with EP (registered as `deep_ep_scattermoe`). SonicMoE's local route (`deep_ep_sonicmoe`) handles bf16 gated experts and received native NVFP4 expert batches, including local expert IDs and sentinel slots. This local coverage does not qualify end-to-end DeepEP dispatch/combine with FSDP2; that configuration remains pending supported-hardware validation. The non-gated SonicMoE EP path is likewise unqualified.
+**With Expert Parallel:** EP runs as the `expert_parallel` experts implementation, which wraps the configured local one on either `expert_parallel_backend`. ScatterMoE composes with it. SonicMoE's local route handles bf16 gated experts and received native NVFP4 expert batches, including local expert IDs and sentinel slots. This local coverage does not qualify end-to-end DeepEP dispatch/combine with FSDP2; that configuration remains pending supported-hardware validation. The non-gated SonicMoE EP path is likewise unqualified.
 
 **Non-gated (latentmoe) experts:** Nemotron-3 (`nemotron_h`) uses non-gated relu² experts (`up_proj`/`down_proj`, no gate) in `moe_latent_size` width. Both kernels support it: ScatterMoE natively, SonicMoE via a grouped-GEMM path (the fused CUTLASS epilogue lands with the next sonic-moe kernel build). NVFP4 checkpoints (modelopt `MIXED_PRECISION`) keep the routed experts packed NVFP4 and dequantize every other quantized weight to bf16 at load.
 
@@ -157,7 +157,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Sample packing (multipack) | `sample_packing: true` | block-diagonal attention + position reset; needs a varlen backend; ⚪ not with RLHF or multimodal |
 | Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not `trust_remote_code` |
 | Tiled MLP | `tiled_mlp: true` | shards MLP to cut memory |
-| Ring attention | via `context_parallel_size` | long-context CP |
+| Ulysses / Ring / USP (ringmaster) | via `context_parallel_size` | long-context CP; `auto` prefers Ulysses |
 | Activation offloading | `activation_offloading:` | requires gradient checkpointing; ⚪ CUDA only (no CPU-only training) |
 
 ## Model architectures
@@ -239,7 +239,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | Feature | Requires |
 |---|---|
 | QLoRA | `load_in_4bit: true` |
-| Expert Parallel | FSDP2 + DeepEP + Ampere/Hopper (NVLink) |
+| Expert Parallel | FSDP2 (`fsdp_version: 2` + `fsdp_config`, not DDP/DeepSpeed) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; `deep_ep` backend (Ampere/Hopper, NVLink) or `torch` backend (any NCCL/gloo fabric) |
 | Context/Sequence parallel | Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention |
 | SonicMoE | Hopper/Blackwell + CUDA 12.9 (else auto-falls back to ScatterMoE) |
 | FP8 attention | SM90+ and PyTorch >= 2.11 |
@@ -255,7 +255,10 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | ✕ | ✕ | Note |
 |---|---|---|
 | DeepSpeed | FSDP | pick one |
-| EP | TP / CP | raises `NotImplementedError` |
+| EP | TP | rejected at config validation |
+| EP | DDP / DeepSpeed / `SHARDED_STATE_DICT` | rejected at config validation; EP needs FSDP2 and a full state dict (a sharded one keeps only EP group 0's experts) |
+| EP | HSDP without `dp_shard_size` or `context_parallel_size` > 1 | rejected at config validation; the experts need a shard axis inside each replica |
+| LoRA / QLoRA | TP | rejected at model load unless the base is native NVFP4 (`torchao_tp_lora`); a bf16 adapter would be shard-local |
 | DDP | TP / CP | use FSDP2 instead |
 | QAT | any adapter, or 4/8-bit | full-model only |
 | Sample packing | any `rl:`, multimodal | RLHF & MM packing not supported |
@@ -277,7 +280,7 @@ Works, but flagged unstable:
 - Flash Attention 4
 - Multimodal / VLM ("limited, no full feature parity")
 - N-D parallelism and Tensor Parallel
-- Expert Parallel / DeepEP
+- Expert Parallel (`deep_ep` or `torch` backend)
 
 ### 🚧 WIP / feature-branch only
 Not in a tagged release yet:
@@ -296,7 +299,7 @@ Not in a tagged release yet:
 - **Full fine-tune of NVFP4** (fp4 base FFT, "a separate, larger effort")
 - Multimodal + sample packing
 - LoRA kernels + RLHF
-- EP + TP/CP
+- EP + TP
 - Multiple DPO loss types (RPO)
 - Sample packing across multiple streaming datasets
 

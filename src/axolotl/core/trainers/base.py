@@ -391,6 +391,33 @@ class AxolotlTrainer(
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
     @override
+    def _get_num_items_in_batch(self, batch_samples, device):
+        count = super()._get_num_items_in_batch(batch_samples, device)
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if (
+            count is None
+            or pc is None
+            or getattr(pc, "tp_size", 1) <= 1
+            or self.args.average_tokens_across_devices
+        ):
+            return count
+        # transformers floors the count by tp*cp expecting a gradient all-reduce over the TP
+        # ranks; here TP ranks never reduce with each other (FSDP shards on the data axes
+        # only), so recount and keep only the CP share
+        labels_for_count = [
+            batch["shift_labels"]
+            if "shift_labels" in batch
+            else batch["labels"][..., 1:]
+            if getattr(self, "_loss_shifts_labels", False)
+            else batch["labels"]
+            for batch in batch_samples
+        ]
+        count = sum(labels.ne(-100).sum() for labels in labels_for_count)
+        if torch.is_tensor(count):
+            count = count.to(device)
+        cp_size = pc.non_data_parallel_size // pc.tp_size
+        return count // cp_size if cp_size > 1 else count
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -839,19 +866,36 @@ class AxolotlTrainer(
             or type(getattr(tensor, "data", None)).__name__ in quant_names
         )
 
-    def _save_fsdp2_quantized_lora_adapter(self, model, output_dir) -> bool:
-        """Save just the LoRA adapter (gathered via DTensor.full_tensor) when the run is FSDP2 + a
-        quantized (NVFP4/Float8) frozen base — the case where the DCP sharded save raises
+    def _save_gathered_lora_adapter(self, model, output_dir) -> bool:
+        """Save just the LoRA adapter (gathered via DTensor.full_tensor) when the default
+        checkpoint would not carry it whole: the experts are EP-sharded (neither the FSDP
+        full-state-dict gather nor the DCP sharded save gathers across the EP axis), or the
+        run is FSDP2 + a quantized (NVFP4/Float8) frozen base, where the DCP sharded save raises
         "Failed to validate global plan". Returns True if it handled the save, else False (caller
-        falls back to the normal checkpoint path). No-op for non-PEFT / non-FSDP2 / non-quantized runs.
+        falls back to the normal checkpoint path).
         """
-        if not self._is_fsdp2_checkpoint_save_enabled():
+        cfg = getattr(self, "axolotl_cfg", None)
+        ep_size = (getattr(cfg, "expert_parallel_size", 1) or 1) if cfg else 1
+        if ep_size <= 1 and not self._is_fsdp2_checkpoint_save_enabled():
             return False
         try:
             from peft import PeftModel
 
             unwrapped = self.accelerator.unwrap_model(model)
             if not isinstance(unwrapped, PeftModel):
+                return False
+            if ep_size > 1:
+                from axolotl.integrations.expert_parallel.plugin import (
+                    ExpertParallelPlugin,
+                )
+                from axolotl.integrations.expert_parallel.shard import (
+                    save_ep_lora_adapter,
+                )
+
+                ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+                if save_ep_lora_adapter(unwrapped, output_dir, ep_group):
+                    return True
+            if not self._is_fsdp2_checkpoint_save_enabled():
                 return False
             # quantized base? (torchao tensor-subclass DTensors — what breaks DCP). Handle DTensor
             # by inspecting the local tensor.
@@ -864,23 +908,10 @@ class AxolotlTrainer(
                 save_fsdp2_lora_adapter,
             )
 
-            cfg = getattr(self, "axolotl_cfg", None)
-            if cfg and (getattr(cfg, "expert_parallel_size", 1) or 1) > 1:
-                from axolotl.integrations.expert_parallel.plugin import (
-                    ExpertParallelPlugin,
-                )
-                from axolotl.integrations.expert_parallel.shard import (
-                    save_ep_lora_adapter,
-                )
-
-                ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
-                if save_ep_lora_adapter(unwrapped, output_dir, ep_group):
-                    return True
-
             return bool(save_fsdp2_lora_adapter(unwrapped, output_dir))
         except Exception as exc:  # pylint: disable=broad-except
             LOG.warning(
-                "FSDP2 quantized-LoRA adapter save failed (%s); falling back to default save.",
+                "Gathered LoRA adapter save failed (%s); falling back to default save.",
                 exc,
             )
             return False
@@ -892,10 +923,10 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
 
-        # FSDP2 + a quantized (NVFP4/Float8) frozen base breaks the DCP sharded save
-        # ("Failed to validate global plan" — the torchao tensor-subclass DTensors are unvalidatable).
+        # EP-sharded expert LoRA is never gathered by the FSDP/DCP saves, and FSDP2 + a quantized
+        # (NVFP4/Float8) frozen base breaks the DCP sharded save ("Failed to validate global plan").
         # For a PEFT (LoRA) run we only need the adapter, so gather it directly and skip the DCP save.
-        if self._save_fsdp2_quantized_lora_adapter(model, output_dir):
+        if self._save_gathered_lora_adapter(model, output_dir):
             # The adapter is written above in place of the DCP model state. Still persist the
             # optimizer/scheduler/scaler/RNG and trainer state so the checkpoint stays RESUMABLE —
             # only the trainable adapter carries optimizer state (the quantized base is frozen), so
