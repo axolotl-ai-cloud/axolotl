@@ -102,7 +102,7 @@ If those didn't help, please try the below solutions:
 
 ## Related Resources
 
-- [Apertus Tech Report](https://github.com/swiss-ai/apertus-tech-report/blob/main/Apertus_Tech_Report.pdf)
+- [Apertus Tech Report](https://github.com/swiss-ai/apertus-tech-report)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl Website](https://axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
