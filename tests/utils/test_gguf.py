@@ -267,6 +267,29 @@ class TestLoraPreflight:
         _patch_adapter_config(adapter_dir, modules_to_save=None)
         lora_preflight(adapter_dir)
 
+    def test_rslora(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, use_rslora=True)
+        with pytest.raises(ValueError, match="rsLoRA adapter"):
+            lora_preflight(adapter_dir)
+
+    def test_rslora_disabled_is_fine(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, use_rslora=False)
+        lora_preflight(adapter_dir)
+
+    def test_alpha_pattern(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, alpha_pattern={"q_proj": 32})
+        with pytest.raises(ValueError, match="alpha_pattern"):
+            lora_preflight(adapter_dir)
+
+    def test_empty_alpha_pattern_is_fine(self, adapter_dir):
+        _patch_adapter_config(adapter_dir, alpha_pattern={})
+        lora_preflight(adapter_dir)
+
+    def test_rank_pattern_is_fine(self, adapter_dir):
+        # llama.cpp reads each tensor's rank from its shape.
+        _patch_adapter_config(adapter_dir, rank_pattern={"q_proj": 32})
+        lora_preflight(adapter_dir)
+
 
 class TestExportLoraGGUF:
     """Tests for converting an adapter to a standalone GGUF LoRA."""
@@ -311,6 +334,38 @@ class TestExportLoraGGUF:
             )
 
         assert mock_run.call_args.args[0][-2:] == ["--base", str(adapter_dir)]
+
+    def test_quantized_base_config_is_stripped(
+        self, adapter_dir, llama_cpp_dir, tmp_path
+    ):
+        base_config = {
+            "architectures": ["LlamaForCausalLM"],
+            "quantization_config": {
+                "quant_method": "bitsandbytes",
+                "load_in_4bit": True,
+            },
+        }
+        (adapter_dir / "config.json").write_text(json.dumps(base_config))
+        seen = {}
+
+        def fake_run(cmd, output):
+            base = Path(cmd[cmd.index("--base") + 1])
+            seen["base"] = base
+            seen["config"] = json.loads((base / "config.json").read_text())
+
+        with patch("axolotl.utils.gguf._run", side_effect=fake_run):
+            export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        assert seen["base"] != adapter_dir
+        assert seen["config"] == {"architectures": ["LlamaForCausalLM"]}
+        assert not seen["base"].exists()
+        assert "quantization_config" in json.loads(
+            (adapter_dir / "config.json").read_text()
+        )
 
     def test_adapter_without_a_base_config_is_left_to_the_converter(
         self, adapter_dir, llama_cpp_dir, tmp_path

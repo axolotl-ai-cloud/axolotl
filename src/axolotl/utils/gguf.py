@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess  # nosec B404
 import sys
+import tempfile
 from pathlib import Path
 from typing import Sequence
 
@@ -157,6 +158,26 @@ def lora_preflight(adapter_dir: Path) -> None:
             f"modules_to_save={sorted(modules)}. {merge_instead}"
         )
 
+    # llama.cpp scales every tensor by the global lora_alpha / rank, so any other scaling is silently lost.
+    if config.get("use_rslora"):
+        raise ValueError(f"llama.cpp cannot convert an rsLoRA adapter. {merge_instead}")
+
+    if config.get("alpha_pattern"):
+        raise ValueError(
+            f"llama.cpp cannot convert an adapter with alpha_pattern. {merge_instead}"
+        )
+
+
+def _lora_base_dir(adapter_dir: Path, scratch: Path) -> Path:
+    """The dir to pass as `--base`, with the base config's quantization_config removed."""
+    config = json.loads((adapter_dir / "config.json").read_text(encoding="utf-8"))
+    # The converter rejects quantized bases, though a LoRA export never reads base weights.
+    if config.pop("quantization_config", None) is None:
+        return adapter_dir
+
+    (scratch / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    return scratch
+
 
 def _run(cmd: list[str], output: Path) -> None:
     LOG.info("Running: %s", " ".join(cmd))
@@ -252,11 +273,11 @@ def export_lora_gguf(
         "--outtype",
         outtype,
     ]
-    # Without `--base` the converter fetches the base config from the Hub.
-    if (adapter_dir / "config.json").is_file():
-        cmd += ["--base", str(adapter_dir)]
-
     LOG.info("Converting %s to a GGUF LoRA (%s)...", adapter_dir, outtype)
-    _run(cmd, converted)
+    with tempfile.TemporaryDirectory() as scratch:
+        # Without `--base` the converter fetches the base config from the Hub.
+        if (adapter_dir / "config.json").is_file():
+            cmd += ["--base", str(_lora_base_dir(adapter_dir, Path(scratch)))]
+        _run(cmd, converted)
 
     return [converted]
