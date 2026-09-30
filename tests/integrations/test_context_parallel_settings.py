@@ -6,7 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from axolotl.integrations.context_parallel.args import ContextParallelConfig
-from axolotl.integrations.context_parallel.settings import resolve_settings
+from axolotl.integrations.context_parallel.settings import (
+    attention_patterns,
+    resolve_settings,
+)
 
 
 @pytest.mark.parametrize(
@@ -42,6 +45,7 @@ def _resolve(u=1, r=4, **kwargs):
         ({"u": 2, "r": 2}, ("none", "allgather")),
         ({"contiguous_reason": "recurrent state passing"}, ("none", "allgather")),
         ({"sliding_window": True}, ("none", "allgather")),
+        ({"chunked_attention": True}, ("none", "allgather")),
         ({"settings": {"rotate_method": "alltoall"}}, ("none", "p2p")),
         (
             {
@@ -78,6 +82,10 @@ def test_effective_settings(kwargs, expected):
             {"sliding_window": True, "settings": {"load_balance": "head_tail"}},
             "sliding-window",
         ),
+        (
+            {"chunked_attention": True, "settings": {"load_balance": "head_tail"}},
+            "chunked attention",
+        ),
         ({"u": 4, "r": 1, "settings": {"ring_impl": "hf_kernels"}}, "only apply"),
         ({"glm_dsa": True, "settings": {"backend": "ring"}}, "GLM DSA owns"),
     ],
@@ -86,6 +94,20 @@ def test_ineffective_settings_fail(kwargs, match):
     pytest.importorskip("ringmaster")
     with pytest.raises(ValueError, match=match):
         _resolve(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "config,expected",
+    [
+        ({"sliding_window": 4}, (True, False)),
+        ({"sliding_window": 4, "layer_types": ["full_attention"]}, (False, False)),
+        ({"layer_types": ["sliding_attention", "full_attention"]}, (True, False)),
+        ({"layer_types": ["chunked_attention", "full_attention"]}, (False, True)),
+    ],
+)
+def test_attention_patterns(config, expected):
+    model = SimpleNamespace(config=SimpleNamespace(**config), modules=lambda: ())
+    assert attention_patterns([model]) == expected
 
 
 @pytest.mark.parametrize("descriptor", [None, "missing", "supported", "unsupported"])
