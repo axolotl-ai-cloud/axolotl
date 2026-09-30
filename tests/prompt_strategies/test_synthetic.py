@@ -1,12 +1,191 @@
 """Tests for the synthetic dataset generator."""
 
 import unittest
+from itertools import groupby
 from unittest.mock import MagicMock
 
+import pytest
 from datasets import Dataset
+from pydantic import ValidationError
 
 from axolotl.prompt_strategies._synthetic import SyntheticDatasetStrategy, load
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.datasets import SyntheticDataset
+
+
+@pytest.mark.parametrize("use_schema", [False, True])
+def test_default_single_turn_labels_all_tokens(use_schema):
+    ds_cfg = SyntheticDataset(length=2).model_dump() if use_schema else {"length": 2}
+    strategy = load(MagicMock(vocab_size=1000), DictDefault(sequence_len=64), ds_cfg)
+    assert strategy.min_turns == strategy.max_turns == 1
+    assert strategy.input_fraction == 0
+    for row in strategy.wrap_dataset(None):
+        assert row["labels"] == row["input_ids"]
+
+
+@pytest.mark.parametrize("use_schema", [False, True])
+@pytest.mark.parametrize("fraction", [None, 0, 0.2])
+def test_multi_turn_input_fraction_default(use_schema, fraction):
+    ds_cfg = {"min_turns": 2, "max_turns": 4, "length": 2}
+    if fraction is not None:
+        ds_cfg["input_fraction"] = fraction
+    if use_schema:
+        ds_cfg = SyntheticDataset(**ds_cfg).model_dump()
+    strategy = load(MagicMock(vocab_size=1000), DictDefault(sequence_len=256), ds_cfg)
+    assert strategy.input_fraction == (0.25 if fraction is None else fraction)
+    for row in strategy.wrap_dataset(None):
+        assert (-100 in row["labels"]) == (fraction != 0)
+
+
+def test_zero_input_fraction_with_short_turns():
+    strategy = SyntheticDatasetStrategy(
+        sequence_length=3,
+        length=2,
+        min_turns=3,
+        max_turns=4,
+        input_fraction=0,
+        min_turn_length=1,
+    )
+    for row in strategy.wrap_dataset(None):
+        assert row["labels"] == row["input_ids"]
+    with pytest.raises(ValidationError, match="sequence_length"):
+        SyntheticDataset(
+            sequence_length=2,
+            min_turns=3,
+            max_turns=4,
+            input_fraction=0,
+            min_turn_length=1,
+        )
+
+
+@pytest.mark.parametrize("input_fraction", [0, 0.25])
+@pytest.mark.parametrize("sequence_length", [64, 127, 257])
+def test_full_sequences_and_turn_budget(input_fraction, sequence_length):
+    ds_cfg = SyntheticDataset(
+        sequence_length=sequence_length,
+        min_turn_length=32,
+        min_turns=2,
+        max_turns=12,
+        length=200,
+        input_fraction=input_fraction,
+        seed=42,
+    ).model_dump()
+    strategy = load(MagicMock(vocab_size=1000), DictDefault(sequence_len=512), ds_cfg)
+    result = strategy.wrap_dataset(None)
+    for row in result:
+        length = len(row["input_ids"])
+        assert length == sequence_length
+        assert len(row["labels"]) == length
+        assert row["attention_mask"] == [1] * length
+        if input_fraction == 0:
+            assert row["labels"] == row["input_ids"]
+            continue
+        runs = [
+            len(list(tokens))
+            for _, tokens in groupby(label == -100 for label in row["labels"])
+        ]
+        assert 2 <= len(runs) // 2 <= min(12, length // 32)
+        turn_lengths = [a + b for a, b in zip(runs[::2], runs[1::2], strict=True)]
+        assert min(turn_lengths) >= 32
+        assert max(turn_lengths) - min(turn_lengths) <= 1
+        assert sum(turn_lengths) == length
+    assert result.to_dict() == strategy.wrap_dataset(None).to_dict()
+
+
+def test_fixed_length_caps_turns_to_budget():
+    result = SyntheticDatasetStrategy(
+        sequence_length=65, length=10, min_turns=2, max_turns=100
+    ).wrap_dataset(None)
+    for row in result:
+        runs = [list(tokens) for _, tokens in groupby(x == -100 for x in row["labels"])]
+        assert [len(run) for run in runs] == [8, 25, 8, 24]
+
+
+@pytest.mark.parametrize("fraction", [0.2, 0.5, 0.75])
+def test_multi_turn_masking(fraction):
+    strategy = SyntheticDatasetStrategy(
+        sequence_length=1003,
+        length=100,
+        seed=42,
+        min_turns=2,
+        max_turns=5,
+        input_fraction=fraction,
+    )
+    result = strategy.wrap_dataset(None)
+    turn_counts = set()
+    for row in result:
+        assert len(row["input_ids"]) == len(row["labels"]) == 1003
+        assert row["attention_mask"] == [1] * 1003
+        runs = [
+            (masked, len(list(tokens)))
+            for masked, tokens in groupby(label == -100 for label in row["labels"])
+        ]
+        assert 4 <= len(runs) <= 10
+        assert len(runs) % 2 == 0
+        turn_counts.add(len(runs) // 2)
+        for input_run, output_run in zip(runs[::2], runs[1::2], strict=True):
+            assert input_run[0] is True
+            assert output_run[0] is False
+            total = input_run[1] + output_run[1]
+            assert abs(input_run[1] - total * fraction) <= 0.5
+        assert all(
+            label == -100 or label == token
+            for label, token in zip(row["labels"], row["input_ids"], strict=True)
+        )
+    assert turn_counts == {2, 3, 4, 5}
+    assert result.to_dict() == strategy.wrap_dataset(None).to_dict()
+
+
+@pytest.mark.parametrize("fraction", [1e-20, 0.5, 0.999999])
+def test_multi_turn_minimum_length(fraction):
+    result = SyntheticDatasetStrategy(
+        sequence_length=6,
+        length=2,
+        min_turns=3,
+        max_turns=4,
+        input_fraction=fraction,
+        min_turn_length=1,
+    ).wrap_dataset(None)
+    for row in result:
+        assert row["labels"][::2] == [-100] * 3
+        assert row["labels"][1::2] == row["input_ids"][1::2]
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"min_turns": 0},
+        {"max_turns": 0},
+        {"min_turns": 5, "max_turns": 2},
+        {"min_turns": 2, "max_turns": 2},
+        {"input_fraction": -1},
+        {"input_fraction": 1},
+        {"input_fraction": 2},
+        {"input_fraction": float("inf")},
+        {"input_fraction": float("nan")},
+        {"sequence_length": 7, "max_turns": 4},
+        {"min_turn_length": 0},
+        {"sequence_length": 63, "min_turns": 2, "max_turns": 4},
+    ],
+)
+def test_invalid_multi_turn_config(options):
+    with pytest.raises(ValidationError):
+        SyntheticDataset(**options)
+    with pytest.raises(ValidationError):
+        SyntheticDatasetStrategy(**options)
+
+
+def test_load_multi_turn_schema_defaults():
+    ds_cfg = SyntheticDataset(min_turns=2, max_turns=3, input_fraction=0.2).model_dump()
+    tokenizer = MagicMock(vocab_size=1000)
+    strategy = load(tokenizer, DictDefault(sequence_len=128), ds_cfg)
+    assert strategy.min_turns == 2
+    assert strategy.max_turns == 3
+    assert strategy.input_fraction == 0.2
+    assert strategy.sequence_length == 128
+    assert strategy.max_input_id == 1000
+    with pytest.raises(ValidationError, match="sequence_length"):
+        load(tokenizer, DictDefault(sequence_len=5), ds_cfg)
 
 
 class TestSyntheticDatasetStrategy(unittest.TestCase):
@@ -35,7 +214,9 @@ class TestSyntheticDatasetStrategy(unittest.TestCase):
             assert all(v == 1 for v in row["attention_mask"])
 
     def test_labels_equal_input_ids(self):
-        strategy = SyntheticDatasetStrategy(sequence_length=64, length=10, seed=0)
+        strategy = SyntheticDatasetStrategy(
+            sequence_length=64, length=10, seed=0, input_fraction=0
+        )
         dummy = Dataset.from_dict({"text": [""]})
         result = strategy.wrap_dataset(dummy)
 
