@@ -283,3 +283,13 @@ class TestExpertParallelLoraReinit:
         )
         out = validate_config(cfg)
         assert out.fsdp_config.cpu_ram_efficient_loading is False
+
+    @pytest.mark.parametrize("fsdp", [True, False])
+    def test_adapter_under_tp_rejects_fsdp(self, min_base_cfg, fsdp):
+        cfg = DictDefault(tensor_parallel_size=2, adapter="lora") | min_base_cfg
+        if fsdp:
+            cfg |= DictDefault(fsdp_version=2, fsdp_config={})
+            with pytest.raises(ValueError, match="only supported without FSDP"):
+                validate_config(cfg)
+        else:
+            validate_config(cfg)

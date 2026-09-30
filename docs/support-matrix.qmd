@@ -93,12 +93,12 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | DeepSpeed ZeRO 1/2/3 (+CPU offload) | `deepspeed: deepspeed_configs/zeroN*.json` | TP |
 | FSDP2 | `fsdp_version: 2` (default) + `fsdp_config:` | TP, CP, EP |
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
-| Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 (full-parameter; adapters only on native NVFP4 bases) |
+| Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 (full-parameter); adapters only on native NVFP4 bases, without FSDP |
 | Context/Sequence Parallel (CP) | `context_parallel_size:` | FSDP2, axolotl-ringmaster (Ulysses/Ring/USP) |
 | Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | Requires FSDP2 + `state_dict_type: FULL_STATE_DICT`; CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
 | N-D (HSDP, FSDP+CP, HSDP+CP, FSDP+EP+CP, HSDP+EP, HSDP+EP+CP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
-Blocked combinations: **EP x TP**, **LoRA/QLoRA x TP** (except native NVFP4 bases), **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
+Blocked combinations: **EP x TP**, **LoRA/QLoRA x TP** (except native NVFP4 bases without FSDP), **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).
 
 ## Performance integrations & custom kernels
 

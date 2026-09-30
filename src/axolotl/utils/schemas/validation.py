@@ -2295,6 +2295,26 @@ class DistributedValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_tensor_parallel_fsdp_adapter(self):
+        # accelerate's FSDP2 x TP prepare re-creates the replicated LoRA factors as DTensors,
+        # dropping the TP gradient-sum hooks torchao_tp_lora installs on them at load
+        # CPU-staged NF4 rejects TP itself
+        staged_nf4 = self.nf4_backend == "torchao" or (
+            self.qlora_sharded_model_loading and self.load_in_4bit
+        )
+        if (
+            (self.tensor_parallel_size or 1) > 1
+            and self.adapter
+            and not staged_nf4
+            and (self.fsdp_config is not None or getattr(self, "fsdp", None))
+        ):
+            raise ValueError(
+                "tensor_parallel_size > 1 with an adapter is only supported without FSDP; "
+                "drop fsdp_config (TP only) or tensor_parallel_size (FSDP only)"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_tensor_parallel_expert_parallel(self):
         if (self.tensor_parallel_size or 1) > 1 and (
             getattr(self, "expert_parallel_size", 1) or 1
