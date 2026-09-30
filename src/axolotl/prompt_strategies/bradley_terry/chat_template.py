@@ -35,7 +35,7 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
         max_length = self.prompter.max_length
 
         prompt["messages"] = []
-        if prompt["system"]:
+        if prompt.get("system"):
             prompt["messages"].append({"role": "system", "content": prompt["system"]})
         prompt["messages"].append({"role": "user", "content": prompt["input"]})
         prompt["messages"].append({"role": "assistant", "content": prompt["chosen"]})
@@ -52,7 +52,7 @@ class BTChatTemplateStrategy(ChatTemplateStrategy):
             ]
 
         prompt["messages"] = []
-        if prompt["system"]:
+        if prompt.get("system"):
             prompt["messages"].append({"role": "system", "content": prompt["system"]})
         prompt["messages"].append({"role": "user", "content": prompt["input"]})
         prompt["messages"].append({"role": "assistant", "content": prompt["rejected"]})
