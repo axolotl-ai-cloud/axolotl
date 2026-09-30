@@ -926,31 +926,7 @@ class AxolotlTrainer(
         # EP-sharded expert LoRA is never gathered by the FSDP/DCP saves, and FSDP2 + a quantized
         # (NVFP4/Float8) frozen base breaks the DCP sharded save ("Failed to validate global plan").
         # For a PEFT (LoRA) run we only need the adapter, so gather it directly and skip the DCP save.
-        if self._save_gathered_lora_adapter(model, output_dir):
-            # The adapter is written above in place of the DCP model state. Still persist the
-            # optimizer/scheduler/scaler/RNG and trainer state so the checkpoint stays RESUMABLE —
-            # only the trainable adapter carries optimizer state (the quantized base is frozen), so
-            # these saves don't touch the unvalidatable NVFP4 DTensors. Defensive: if any of them
-            # fails under FSDP2, keep the (already-written) adapter rather than aborting the save.
-            try:
-                if not self.args.save_only_model:
-                    self._save_optimizer_and_scheduler(output_dir)
-                    self._save_scaler(output_dir)
-                    self._save_rng_state(output_dir)
-                if self.args.should_save:
-                    # "trainer_state.json" is HF's canonical resume file (global_step, epoch, ...).
-                    self.state.save_to_json(
-                        os.path.join(output_dir, "trainer_state.json")
-                    )
-            except Exception as exc:  # pylint: disable=broad-except
-                LOG.warning(
-                    "Could not persist optimizer/RNG/trainer state for %s (%s); the checkpoint is "
-                    "adapter-only and not resumable.",
-                    output_dir,
-                    exc,
-                )
-            gc.collect()
-            return None
+        adapter_saved = self._save_gathered_lora_adapter(model, output_dir)
 
         # Save total_tokens state if tracking is enabled
         if self.args.include_tkps and hasattr(self.state, "tokens"):
@@ -981,6 +957,9 @@ class AxolotlTrainer(
         )
         missing = object()
         previous = getattr(engine, "__dict__", {}).get("save_checkpoint", missing)
+        if adapter_saved:
+            # the rest of the checkpoint (optimizer, RNG, trainer state, rotation) stays HF's
+            self.save_model = lambda *args, **save_kwargs: None
         if exclude_frozen:
 
             def save_without_frozen(*args, **checkpoint_kwargs):
@@ -991,6 +970,8 @@ class AxolotlTrainer(
         try:
             result = super()._save_checkpoint(model, trial, **kwargs)
         finally:
+            if adapter_saved:
+                del self.save_model
             if exclude_frozen:
                 if previous is missing:
                     del engine.save_checkpoint

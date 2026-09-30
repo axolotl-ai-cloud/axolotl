@@ -1,60 +1,49 @@
 """F4: FSDP2 + quantized-base LoRA checkpoints must stay resumable.
 
 The DCP sharded model save fails on the NVFP4/Float8 frozen base, so the trainer saves just the
-adapter — but it must STILL persist optimizer/scheduler/scaler/RNG and trainer_state so periodic
-checkpoints can resume. These bind ``AxolotlTrainer._save_checkpoint`` to a stub (no Trainer/GPU)
-and assert the resume artifacts are written after the adapter save.
+adapter in place of the model save, and the rest of HF's checkpoint (optimizer/scheduler/RNG,
+trainer state, rotation) still runs.
 """
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import peft
+import pytest
+import torch
+from transformers import Trainer
 
 from axolotl.core.trainers.base import AxolotlTrainer
 
 
-def _stub(tmp_path, *, save_only_model=False, should_save=True, adapter_handled=True):
-    return SimpleNamespace(
-        state=SimpleNamespace(global_step=5, save_to_json=MagicMock()),
-        args=SimpleNamespace(save_only_model=save_only_model, should_save=should_save),
-        _get_output_dir=lambda trial=None: str(tmp_path),
-        _save_gathered_lora_adapter=MagicMock(return_value=adapter_handled),
-        _save_optimizer_and_scheduler=MagicMock(),
-        _save_scaler=MagicMock(),
-        _save_rng_state=MagicMock(),
+@pytest.mark.parametrize("adapter_handled", [True, False])
+def test_gathered_adapter_replaces_only_the_model_save(
+    monkeypatch, tmp_path, adapter_handled
+):
+    model_saves = []
+    monkeypatch.setattr(
+        AxolotlTrainer, "save_model", lambda self, *a, **k: model_saves.append(a)
     )
 
+    def hf_save_checkpoint(self, model, trial, **kwargs):
+        self.save_model(str(tmp_path), _internal_call=True)
+        return "rest of the checkpoint"
 
-def test_quantized_lora_checkpoint_persists_resume_state(tmp_path):
-    stub = _stub(tmp_path)
-    out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
-    assert out is None
-    stub._save_gathered_lora_adapter.assert_called_once()
-    # the F4 fix: optimizer/scheduler/scaler/RNG + trainer_state all written (resumable)
-    stub._save_optimizer_and_scheduler.assert_called_once()
-    stub._save_scaler.assert_called_once()
-    stub._save_rng_state.assert_called_once()
-    stub.state.save_to_json.assert_called_once()
+    monkeypatch.setattr(Trainer, "_save_checkpoint", hf_save_checkpoint)
+    trainer = object.__new__(AxolotlTrainer)
+    trainer.state = SimpleNamespace(global_step=5)
+    trainer.args = SimpleNamespace(include_tkps=False)
+    trainer.is_deepspeed_enabled = False
+    trainer.model_wrapped = None
+    trainer._get_output_dir = lambda trial=None: str(tmp_path)
+    trainer._save_gathered_lora_adapter = MagicMock(return_value=adapter_handled)
 
+    out = trainer._save_checkpoint(model=torch.nn.Linear(2, 2), trial=None)
 
-def test_save_only_model_skips_optimizer_but_writes_trainer_state(tmp_path):
-    stub = _stub(tmp_path, save_only_model=True)
-    AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
-    stub._save_optimizer_and_scheduler.assert_not_called()
-    stub._save_rng_state.assert_not_called()
-    stub.state.save_to_json.assert_called_once()  # trainer_state still written for resume bookkeeping
-
-
-def test_resume_state_failure_keeps_adapter_and_does_not_raise(tmp_path):
-    # If an FSDP2 resume-artifact save raises, keep the (already-written) adapter rather than aborting.
-    stub = _stub(tmp_path)
-    stub._save_optimizer_and_scheduler = MagicMock(
-        side_effect=RuntimeError("dcp optim fail")
-    )
-    out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
-    assert out is None  # did not raise
-    stub._save_gathered_lora_adapter.assert_called_once()
+    assert out == "rest of the checkpoint"
+    trainer._save_gathered_lora_adapter.assert_called_once()
+    assert len(model_saves) == (0 if adapter_handled else 1)
+    assert "save_model" not in trainer.__dict__
 
 
 def test_fsdp2_checkpoint_save_uses_axolotl_cfg_when_trainer_flag_unset():
