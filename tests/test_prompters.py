@@ -55,6 +55,22 @@ tell me a joke about the following<|end|>
             == res
         )
 
+    def test_prompt_style_w_phi_with_input(self):
+        prompter = AlpacaPrompter(prompt_style=PromptStyle.PHI.value)
+        res = next(
+            prompter.build_prompt("tell me a joke about the following", "alpacas")
+        )
+        assert (
+            """<|system|>
+Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.<|end|>
+<|user|>
+tell me a joke about the following
+alpacas<|end|>
+<|assistant|>
+"""
+            == res
+        )
+
     def test_prompt_style_w_chat(self):
         prompter = AlpacaPrompter(prompt_style=PromptStyle.CHAT.value)
         res = next(

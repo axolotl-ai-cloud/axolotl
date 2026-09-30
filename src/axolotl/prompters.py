@@ -63,7 +63,9 @@ class AlpacaPrompter(Prompter):
             )
             self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
         elif self.prompt_style == PromptStyle.PHI.value:
-            self.turn_format = "<|user|>\n{instruction}<|end|>{input}<|assistant|>"
+            self.turn_format = (
+                "<|user|>\n{instruction}\n{input}<|end|>\n<|assistant|>\n"
+            )
             self.turn_no_input_format = (
                 "<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
             )
