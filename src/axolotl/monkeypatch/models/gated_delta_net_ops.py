@@ -162,7 +162,7 @@ def _build_ops() -> None:
             g = g.to(q.dtype)
         qn, q_rstd = l2norm_fwd(q)
         kn, k_rstd = l2norm_fwd(k)
-        g_cum, o, A, _ = chunk_gated_delta_rule_fwd(
+        g_cum, o, A, *_ = chunk_gated_delta_rule_fwd(
             q=qn,
             k=kn,
             v=v,
@@ -207,7 +207,7 @@ def _build_ops() -> None:
         # Mirror FLA's input_guard: v arrives as a non-contiguous split/reshape view, and the stride-hardcoded kernels mis-specialize without contiguization.
         qn, kn, v = qn.contiguous(), kn.contiguous(), v.contiguous()
         g_cum, beta, A = g_cum.contiguous(), beta.contiguous(), A.contiguous()
-        dq, dk, dv, db, dg, _ = chunk_gated_delta_rule_bwd(
+        dq, dk, dv, db, dg, *_ = chunk_gated_delta_rule_bwd(
             q=qn,
             k=kn,
             v=v,

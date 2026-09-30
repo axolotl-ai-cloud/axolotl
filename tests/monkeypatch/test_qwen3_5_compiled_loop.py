@@ -403,7 +403,7 @@ class TestDecoderLoopCompiles:
             model(input_ids=input_ids, position_ids=position_ids, use_cache=False)
 
     def test_opcheck_custom_ops(self, packing_patched):
-        """opcheck the fakes' hardcoded fla 0.4.1 shapes/dtypes (chunk-64 A, f32 g_cum/rstd) so a silent FLA drift turns into a red CI, not a miscompile."""
+        """opcheck the fakes' hardcoded FLA shapes/dtypes (chunk-64 A, f32 g_cum/rstd) so a silent FLA drift turns into a red CI, not a miscompile."""
         torch.manual_seed(1)
         B, T, H, K, V = 1, 64, 4, 16, 16
         q = torch.randn(B, T, H, K, device="cuda", dtype=torch.bfloat16)
