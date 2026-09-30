@@ -784,21 +784,20 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             and n.rsplit(".", 1)[-1]
             in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
         }
-        # Pre-quantized (torchao subclass) frozen experts keep the plain per-rank path below.
-        plain_experts = all(type(p.data) is torch.Tensor for p in ep_ignored)
-        if ep_ignored and plain_experts:
+        if ep_ignored:
             # Every param must be a DTensor (foreach/fused optimizers and clip reject a
             # Tensor/DTensor mix), so wrap the experts — and the expert-LoRA wrappers, which the
             # outer decoder-layer unit would otherwise shard ACROSS ep ranks — on a per-rank
             # (size-1) dp_shard mesh: the all-gather is a no-op and each rank keeps its own slice.
             from torch.distributed.device_mesh import init_device_mesh
 
-            from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
-            from axolotl.integrations.expert_parallel.shard import (
-                _detect_experts_modules,
-                shard_expert_lora,
-            )
+            from axolotl.integrations.expert_parallel.shard import shard_expert_lora
 
+            # Pre-quantized (torchao subclass) frozen experts stay plain per-rank slices.
+            if not all(type(p.data) is torch.Tensor for p in ep_ignored):
+                fsdp2_kwargs["ignored_params"] = (
+                    set(fsdp2_kwargs.get("ignored_params") or set()) | ep_ignored
+                )
             device_type = mesh.device_type if mesh is not None else "cuda"
             ep_mesh = init_device_mesh(
                 device_type,
@@ -814,14 +813,6 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             LOG.info(
                 f"expert_parallel (pure EP): wrapped {len(list(_detect_experts_modules(model)))} "
                 "Experts module(s) on a per-rank mesh."
-            )
-        elif ep_ignored:
-            fsdp2_kwargs["ignored_params"] = (
-                set(fsdp2_kwargs.get("ignored_params") or set()) | ep_ignored
-            )
-            LOG.info(
-                f"expert_parallel (pure EP): excluded {len(ep_ignored)} quantized EP-sharded "
-                "expert param(s) from the FSDP wrap (kept as plain per-rank slices)."
             )
 
     nf4_unwrapped_children = set()

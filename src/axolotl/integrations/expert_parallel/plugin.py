@@ -614,7 +614,8 @@ class ExpertParallelPlugin(BasePlugin):
 
         kwargs = dict(fsdp2_kwargs)
         kwargs["mesh"] = dp_shard_mesh
-        kwargs.pop("ignored_params", None)
+        # pre-quantized frozen experts: kept out of every unit, their LoRA wrapped around them
+        ignored = set(kwargs.pop("ignored_params", None) or ())
 
         root = dp_shard_mesh._get_root_mesh()
         ep_size = (
@@ -650,14 +651,17 @@ class ExpertParallelPlugin(BasePlugin):
         lora_wrapped_experts = {_real_experts_base(pw) for pw in outer_expert_pws}
 
         wrapped = []
-        for _name, module in _detect_experts_modules(model):
-            if module in lora_wrapped_experts:
+        units = [
+            module
+            for _name, module in _detect_experts_modules(model)
+            if module not in lora_wrapped_experts
+        ] + outer_expert_pws
+        for module in units:
+            own_ignored = ignored.intersection(module.parameters())
+            if own_ignored and own_ignored.issuperset(module.parameters()):
                 continue
-            fully_shard(module, **kwargs)
+            fully_shard(module, **kwargs, ignored_params=own_ignored or None)
             wrapped.append(module)
-        for pw in outer_expert_pws:
-            fully_shard(pw, **kwargs)
-            wrapped.append(pw)
 
         for module in wrapped:
             # A non-default factor makes FSDP reduce with NCCL PREMUL_SUM, which returns zeros
