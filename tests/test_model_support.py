@@ -538,3 +538,25 @@ class TestK2HorizonSupport:
         from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 
         assert "k2_horizon" in SUPPORTED_MULTIPACK_MODEL_TYPES
+
+
+class TestGlm5NextSupport:
+    """Built-in GLM-5.3-Flash descriptor: packing patch plus capability guards."""
+
+    @pytest.mark.parametrize("model_type", ["glm5_next", "glm5_next_text"])
+    def test_registered_and_multimodal_family(self, model_type):
+        support = get_model_support(model_type)
+        assert type(support).__name__ == "Glm5NextSupport"
+        assert resolve_model_support(support).family == "image_text_to_text"
+
+    @pytest.mark.parametrize(
+        "capability", ["cut_cross_entropy", "lora_kernels", "sdpa_varlen"]
+    )
+    def test_unsupported_features_are_rejected(self, capability):
+        with pytest.raises(ValueError, match="glm5_next"):
+            check_capability(get_model_support("glm5_next"), capability, "glm5_next")
+
+    def test_packs_through_position_ids(self):
+        from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
+
+        assert {"glm5_next", "glm5_next_text"} <= set(SUPPORTED_MULTIPACK_MODEL_TYPES)
