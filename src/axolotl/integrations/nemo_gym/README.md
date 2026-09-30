@@ -288,7 +288,7 @@ sync with filesystem + HTTP:
 
 1. `accelerator.get_state_dict()` gathers LoRA weights from all ranks
 2. Rank 0 saves adapter to `/tmp/lora_sync_*/vN/`
-3. Rank 0 POSTs to `/set_lora_adapter/` on vLLM server
+3. Rank 0 loads it through `/v1/load_lora_adapter`, under the served model's name
 4. vLLM loads adapter natively via Punica kernels
 5. Only ~40MB transferred (vs multiple GBs for full model weights)
 

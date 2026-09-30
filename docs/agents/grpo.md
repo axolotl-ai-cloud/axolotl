@@ -63,7 +63,6 @@ src/axolotl/
     trainer.py                     # AxolotlGRPOTrainer
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
-  scripts/vllm_serve_lora.py       # vLLM serve script with LoRA sync support
   utils/schemas/trl.py             # TRL config schema (all trl: options)
 
 docs/grpo.qmd                     # Full user docs: async, rewards, scaling, config reference

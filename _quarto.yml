@@ -251,7 +251,6 @@ quartodoc:
         - utils.train
         - utils.trainer
         - utils.wandb_
-        - utils.weight_serde
         - utils.schedulers
         - utils.distributed
         - utils.dict
@@ -392,12 +391,6 @@ quartodoc:
         - utils.callbacks.swanlab
         - utils.callbacks.tokens_per_second
         - utils.callbacks.trackio_
-    - title: Scripts
-      desc: Standalone helper scripts
-      contents:
-        - scripts.process_cleanup
-        - scripts.vllm_serve_lora
-        - scripts.vllm_worker_ext
     - title: Telemetry
       desc: Usage telemetry
       contents:

@@ -4,14 +4,11 @@ Tests:
 - split_tensor_dict: scalar type preservation (int/float/bool)
 - shuffle_sequence_dict: scalar type preservation
 - extract_logprobs: NaN → 0.0 replacement
-- VLLMClient.batch_update_named_params: method exists after patch
-- VLLMGeneration: weight_sync_chunk_size attribute after patch
 - Patch idempotency: applying patch twice doesn't break anything
 """
 
 import unittest
 from dataclasses import dataclass
-from unittest.mock import MagicMock
 
 import torch
 
@@ -189,14 +186,6 @@ class TestExtractLogprobs(unittest.TestCase):
 class TestPatchApplication(unittest.TestCase):
     """Tests for patch_trl_vllm() application."""
 
-    def test_batch_update_added_to_client(self):
-        from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
-
-        patch_trl_vllm()
-        from trl.generation.vllm_client import VLLMClient
-
-        self.assertTrue(hasattr(VLLMClient, "batch_update_named_params"))
-
     def test_extract_logprobs_patched(self):
         from axolotl.monkeypatch.trainer.trl_vllm import (
             _patched_extract_logprobs,
@@ -224,62 +213,16 @@ class TestPatchApplication(unittest.TestCase):
         )
 
     def test_patch_idempotent(self):
-        from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
+        from axolotl.monkeypatch.trainer.trl_vllm import (
+            _patched_extract_logprobs,
+            patch_trl_vllm,
+        )
 
         patch_trl_vllm()
         patch_trl_vllm()  # second call should not error
-        from trl.generation.vllm_client import VLLMClient
+        from trl.generation import vllm_generation
 
-        self.assertTrue(hasattr(VLLMClient, "batch_update_named_params"))
-
-
-class TestBatchUpdateChunking(unittest.TestCase):
-    """Tests for batch_update_named_params chunking logic."""
-
-    def test_no_chunk_single_batch(self):
-        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
-
-        # Test that with chunk_size=None, all params go in one chunk
-        client = MagicMock()
-        client.base_url = "http://localhost:8000"
-        client.session.post.return_value = MagicMock(status_code=200)
-        client.communicator = MagicMock()
-        client.communicator.group = MagicMock()
-        client.rank = 0
-
-        params = [
-            ("layer.0.weight", torch.randn(10, 10)),
-            ("layer.1.weight", torch.randn(10, 10)),
-        ]
-        _batch_update_named_params(client, params, chunk_size=None)
-
-        # Should make exactly 1 HTTP call
-        self.assertEqual(client.session.post.call_count, 1)
-
-    def test_chunk_splits_params(self):
-        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
-
-        client = MagicMock()
-        client.base_url = "http://localhost:8000"
-        client.session.post.return_value = MagicMock(status_code=200)
-        client.communicator = MagicMock()
-        client.communicator.group = MagicMock()
-        client.rank = 0
-
-        params = [
-            ("a", torch.randn(100)),  # 100 elements
-            ("b", torch.randn(100)),  # 100 elements
-            ("c", torch.randn(100)),  # 100 elements
-        ]
-        _batch_update_named_params(client, params, chunk_size=150)
-
-        # Should make 2 HTTP calls: [a,b] then [c] (100+100 > 150 triggers split)
-        # Actually: a=100 < 150, a+b=200 > 150 → chunk [a], then b=100 < 150,
-        # b+c=200 > 150 → chunk [b], then [c]. So 3 calls.
-        # Wait: first a added (100 < 150), then b: 100+100=200 > 150, so chunk=[a],
-        # new chunk starts with b (100 < 150), then c: 100+100=200 > 150, so chunk=[b],
-        # final chunk=[c]. 3 HTTP calls.
-        self.assertEqual(client.session.post.call_count, 3)
+        self.assertIs(vllm_generation.extract_logprobs, _patched_extract_logprobs)
 
 
 if __name__ == "__main__":

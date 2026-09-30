@@ -1446,7 +1446,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.vllm-lora-sync/--no-trl.vllm-lora-sync",),
         "trl__vllm_lora_sync",
         None,
-        "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. Auto-selects vllm_serve_lora serve module. Syncs only LoRA adapter weights vs full merged model.",
+        "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. `axolotl vllm-serve` starts vLLM with runtime LoRA loading enabled. Syncs only LoRA adapter weights vs full merged model.",
     ),
     (
         ("--vllm.device",),
@@ -1506,7 +1506,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.enable-reasoning/--no-vllm.enable-reasoning",),
         "vllm__enable_reasoning",
         None,
-        "Enable reasoning for VLLM",
+        "Deprecated and ignored: vLLM enables reasoning whenever reasoning_parser is set.",
     ),
     (
         ("--vllm.reasoning-parser",),
@@ -1524,13 +1524,13 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.serve-module",),
         "vllm__serve_module",
         "str",
-        "Python module for vLLM serve script. Set to 'axolotl.scripts.vllm_serve_lora' for native LoRA support, or leave None for default TRL serve.",
+        "Python module whose `main(args)` starts the vLLM server instead of `vllm serve`. Leave unset to run `vllm serve`.",
     ),
     (
         ("--vllm.worker-extension-cls",),
         "vllm__worker_extension_cls",
         "str",
-        "vLLM worker extension class for weight synchronization. Defaults to 'trl.scripts.vllm_serve.WeightSyncWorkerExtension'.",
+        "vLLM worker extension class, passed to `vllm serve --worker-extension-cls`.",
     ),
     (
         ("--ebft.feature-layers",),

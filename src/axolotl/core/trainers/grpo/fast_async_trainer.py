@@ -171,7 +171,7 @@ class FastAsyncGRPOConfig(AsyncGRPOConfig):
         metadata={
             "help": "When True, sync LoRA adapter weights to vLLM via filesystem instead of merging into base model "
             "and NCCL-broadcasting all parameters. vLLM loads the adapter natively using Punica kernels. "
-            "Requires vllm_serve_lora serve module (auto-selected when this is True). "
+            "`axolotl vllm-serve` starts vLLM with runtime LoRA loading when this is True. "
             "Syncs only LoRA adapter weights (much smaller) vs full merged model. Legacy merge behavior is used when False."
         },
     )
