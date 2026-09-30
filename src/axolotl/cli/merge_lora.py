@@ -24,10 +24,13 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    if str(getattr(cfg, "adapter", None)) == "mixlora":
+    from axolotl.integrations.base import PluginManager
+
+    adapter = getattr(cfg, "adapter", None)
+    if not PluginManager.get_instance().adapter_supports_merge(adapter):
         raise NotImplementedError(
-            "merge-lora is not supported for `adapter: mixlora` — MixLoRA experts "
-            "are not merged into the base model. Load the trained checkpoint "
+            f"merge-lora is not supported for `adapter: {adapter}` — this adapter's "
+            "weights are not merged into the base model. Load the trained checkpoint "
             "directly via `lora_model_dir` instead."
         )
 
