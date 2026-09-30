@@ -43,7 +43,10 @@ PLUGIN_ENTRY_POINT_GROUP = "axolotl.plugins"
 # Entry-point registrations are authoritative for installed distributions. This
 # fallback keeps the bundled integration available from a source checkout with
 # missing or stale package metadata.
-BUILTIN_PLUGINS = ("axolotl.integrations.context_parallel.ContextParallelPlugin",)
+BUILTIN_PLUGINS = (
+    "axolotl.integrations.context_parallel.ContextParallelPlugin",
+    "axolotl.integrations.expert_parallel.ExpertParallelPlugin",
+)
 
 
 def _plugin_name(target: str) -> str:

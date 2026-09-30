@@ -2,8 +2,6 @@
 base_model: Mapika/GLM-5.2-NVFP4
 
 plugins:
-  # Expert parallelism (requires the deep_ep package). Drop this plugin + the expert_parallel_* keys below for plain FSDP2.
-  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.kernels.KernelsPlugin
 use_kernels: true
@@ -15,7 +13,8 @@ strict: false
 
 attn_implementation: sdpa
 
-# Pure EP: set expert_parallel_size to the total GPU count (256 must divide it evenly), dp_shard_size 1.
+# Pure EP with DeepEP: install the deep_ep package for the NVLink dispatch path.
+# Set expert_parallel_size to the total GPU count (256 must divide it evenly), dp_shard_size 1.
 expert_parallel_size: 8                      # = total GPU count (8 for 8xH100; 2 for 2xB200)
 dp_shard_size: 1
 expert_parallel_num_nvl_bytes: 4294967296    # 4 GiB DeepEP intranode (NVLink) dispatch/combine buffer
