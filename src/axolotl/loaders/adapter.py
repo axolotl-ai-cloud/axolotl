@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import types
 from pathlib import Path
 from typing import Any
@@ -452,12 +453,17 @@ def load_lora(
             model_kwargs["device_map"] = {"": "cpu"}
         from axolotl.integrations.expert_parallel.shard import ep_local_adapter_dir
 
-        model = PeftModel.from_pretrained(
-            model,
-            ep_local_adapter_dir(model, cfg.lora_model_dir),
-            is_trainable=(not inference),
-            **model_kwargs,
-        )
+        adapter_dir = ep_local_adapter_dir(model, cfg.lora_model_dir)
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                adapter_dir,
+                is_trainable=(not inference),
+                **model_kwargs,
+            )
+        finally:
+            if adapter_dir != cfg.lora_model_dir:
+                shutil.rmtree(adapter_dir, ignore_errors=True)
     else:
         model = get_peft_model(model, lora_config, **model_kwargs)
 

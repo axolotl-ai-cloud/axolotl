@@ -69,6 +69,18 @@ class TestParallelismEnvs:
         assert os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] == "true"
         assert "PARALLELISM_CONFIG_CP_SIZE" not in os.environ
 
+    def test_deepspeed_autotp_shrinks_the_replicas(self, monkeypatch):
+        from axolotl.utils import trainer as trainer_utils
+
+        monkeypatch.setattr(trainer_utils, "get_world_size", lambda: 8)
+        cfg = DictDefault(
+            context_parallel_size=2,
+            tensor_parallel_size=2,
+            deepspeed="deepspeed_configs/zero2.json",
+        )
+        trainer_utils.setup_deepspeed_context_parallel_envs(cfg)
+        assert os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] == "2"
+
     def test_fsdp_exports_cp_axis(self, monkeypatch):
         from axolotl.utils import trainer as trainer_utils
 

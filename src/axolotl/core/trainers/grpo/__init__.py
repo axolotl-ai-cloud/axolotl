@@ -14,6 +14,7 @@ from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOC
 from axolotl.core.trainers.grpo.trainer import (
     AxolotlAsyncGRPOTrainer,
     AxolotlGRPOContextParallelTrainer,
+    AxolotlGRPOSequenceParallelTrainer,  # noqa: F401  deprecated alias, kept importable
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault

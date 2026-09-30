@@ -8,6 +8,7 @@ import torch
 from peft import LoraConfig, PeftModel, get_peft_model
 
 from axolotl.integrations.expert_parallel.shard import ep_local_adapter_dir
+from axolotl.utils.dict import DictDefault
 
 E_GLOBAL, EP_SIZE, HIDDEN, RANK = 8, 2, 6, 2
 
@@ -118,3 +119,36 @@ def test_already_local_adapter_is_left_alone(saved_adapter, tmp_path):
     assert a.keys() == b.keys()
     for key in a:
         torch.testing.assert_close(a[key], b[key])
+
+
+def test_load_lora_removes_the_rank_local_directory(saved_adapter, monkeypatch):
+    import os
+
+    from axolotl.integrations.expert_parallel import shard
+    from axolotl.loaders import adapter as adapter_module
+
+    base, _, adapter_dir = saved_adapter
+    local = _ep_sliced(base, 0)
+    created = []
+    original = shard.ep_local_adapter_dir
+
+    def tracking(model, directory):
+        out = original(model, directory)
+        created.append(out)
+        return out
+
+    monkeypatch.setattr(shard, "ep_local_adapter_dir", tracking)
+    cfg = DictDefault(
+        {
+            "lora_model_dir": adapter_dir,
+            "lora_r": RANK,
+            "lora_alpha": 4,
+            "lora_dropout": 0.0,
+            "lora_target_modules": ["q_proj"],
+            "lora_target_parameters": ["experts.gate_up_proj", "experts.down_proj"],
+        }
+    )
+    model, _ = adapter_module.load_lora(local, cfg)
+    assert created and created[0] != adapter_dir
+    assert not os.path.exists(created[0])
+    assert any("lora_" in name for name, _ in model.named_parameters())

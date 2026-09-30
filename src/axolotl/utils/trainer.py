@@ -692,8 +692,9 @@ def setup_deepspeed_context_parallel_envs(cfg):
         cfg.attn_implementation or "sdpa"
     )
     world_size = get_world_size()
-    if world_size > 1 and world_size % cp_size == 0 and world_size // cp_size > 1:
-        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(world_size // cp_size)
+    non_dp = cp_size * (cfg.tensor_parallel_size or 1)
+    if world_size > 1 and world_size % non_dp == 0 and world_size // non_dp > 1:
+        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(world_size // non_dp)
     os.environ.pop("PARALLELISM_CONFIG_CP_SIZE", None)
 
 
