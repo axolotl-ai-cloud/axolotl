@@ -3,6 +3,7 @@
 import importlib
 import inspect
 import os
+import warnings
 from typing import Any
 
 from huggingface_hub import snapshot_download
@@ -12,7 +13,7 @@ from trl.trainer.grpo_trainer import RewardFunc
 from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
 from axolotl.core.trainers.grpo.trainer import (
     AxolotlAsyncGRPOTrainer,
-    AxolotlGRPOSequenceParallelTrainer,
+    AxolotlGRPOContextParallelTrainer,
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault
@@ -29,20 +30,28 @@ class GRPOStrategy:
     @classmethod
     def get_trainer_class(
         cls,
-        sequence_parallel: bool = False,
+        context_parallel: bool = False,
         async_grpo: bool = False,
+        sequence_parallel: bool | None = None,
     ) -> (
         type[AxolotlGRPOTrainer]
-        | type[AxolotlGRPOSequenceParallelTrainer]
+        | type[AxolotlGRPOContextParallelTrainer]
         | type[AxolotlAsyncGRPOTrainer]
     ):
-        if sequence_parallel and async_grpo:
+        if sequence_parallel is not None:
+            warnings.warn(
+                "`sequence_parallel` is deprecated; use `context_parallel`",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            context_parallel = context_parallel or sequence_parallel
+        if context_parallel and async_grpo:
             raise ValueError(
-                "sequence_parallel and async_grpo cannot both be enabled. "
+                "context_parallel and async_grpo cannot both be enabled. "
                 "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
             )
-        if sequence_parallel:
-            return AxolotlGRPOSequenceParallelTrainer
+        if context_parallel:
+            return AxolotlGRPOContextParallelTrainer
         if async_grpo:
             return AxolotlAsyncGRPOTrainer
         return AxolotlGRPOTrainer

@@ -348,6 +348,7 @@ def build_parallelism_config(cfg):
         cfg.dp_replicate_size,
         bool(cfg.fsdp or cfg.fsdp_config),
         getattr(cfg, "expert_parallel_size", None),
+        is_deepspeed=bool(getattr(cfg, "deepspeed", None)),
     )
 
     if pc_kwargs:
@@ -368,8 +369,11 @@ def _get_parallel_config_kwargs(
     dp_replicate_size: int | None = None,
     is_fsdp: bool = False,
     expert_parallel_size: int | None = None,
+    is_deepspeed: bool = False,
 ):
-    pc_kwargs = {}
+    """Under DeepSpeed, ``context_parallel_size`` becomes accelerate's DeepSpeed Ulysses
+    ``sp`` axis (ALST) and the remaining ranks replicate, since ZeRO owns sharding."""
+    pc_kwargs: dict[str, int | str] = {}
     remaining_world_size = world_size
 
     # EP consumes part of world_size; subtract it up front so the auto-fill
@@ -387,8 +391,22 @@ def _get_parallel_config_kwargs(
         remaining_world_size = remaining_world_size // tensor_parallel_size
 
     if context_parallel_size and context_parallel_size > 1:
-        pc_kwargs["cp_size"] = context_parallel_size
+        if is_deepspeed:
+            pc_kwargs["sp_size"] = context_parallel_size
+            pc_kwargs["sp_backend"] = "deepspeed"
+        else:
+            pc_kwargs["cp_size"] = context_parallel_size
         remaining_world_size = remaining_world_size // context_parallel_size
+
+    if is_deepspeed and "sp_size" in pc_kwargs and remaining_world_size > 1:
+        if dp_replicate_size and dp_replicate_size > 1:
+            if dp_replicate_size != remaining_world_size:
+                raise ValueError(
+                    f"dp_replicate_size ({dp_replicate_size}) must equal world_size / "
+                    f"context_parallel_size ({remaining_world_size}) under DeepSpeed."
+                )
+        pc_kwargs["dp_replicate_size"] = remaining_world_size
+        return pc_kwargs
 
     if dp_shard_size is None and dp_replicate_size in (None, 1):
         if remaining_world_size > 1:

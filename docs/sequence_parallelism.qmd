@@ -1,12 +1,16 @@
 ---
-title: Sequence Parallelism
+title: Context Parallelism
 description: Train with long sequences split across multiple GPUs.
 ---
 
-Context parallelism splits each sequence across a group of GPUs to reduce the
+Context parallelism (CP, called sequence parallelism by some frameworks and by
+older Axolotl releases) splits each sequence across a group of GPUs to reduce the
 activation memory needed for long-context training. Axolotl uses Ringmaster for
 Ulysses, Ring, and their combination (USP), while Accelerate owns the device mesh
-and FSDP2 gradient reduction.
+and FSDP2 gradient reduction. Under `deepspeed:` the same `context_parallel_size`
+maps onto DeepSpeed's Ulysses (ALST) implementation through accelerate's
+sequence-parallel axis: only the Ulysses backend is available there, ZeRO owns the
+sharding, and the remaining ranks replicate.
 
 ## Configuration
 

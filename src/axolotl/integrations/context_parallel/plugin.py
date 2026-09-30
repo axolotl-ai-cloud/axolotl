@@ -51,6 +51,10 @@ class ContextParallelPlugin(BasePlugin):
         return cp
 
     def _enabled(self, cfg) -> bool:
+        if getattr(cfg, "deepspeed", None):
+            return (
+                False  # DeepSpeed runs maps CP onto accelerate's DeepSpeed Ulysses axis
+            )
         cp = self._cp_cfg(cfg)
         return bool(cp and getattr(cp, "size", 1) and cp.size > 1)
 

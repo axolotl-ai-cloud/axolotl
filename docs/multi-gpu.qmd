@@ -24,7 +24,7 @@ You generally cannot combine these strategies; they are mutually exclusive.
 
 These features can often be combined with the strategies above:
 
-*   **Sequence Parallelism**: Splits long sequences across GPUs (Compatible with DDP, DeepSpeed, and FSDP).
+*   **Context Parallelism** (CP): Splits long sequences across GPUs (Ringmaster under FSDP2; DeepSpeed Ulysses under DeepSpeed).
 *   **FSDP + QLoRA**: Combines 4-bit quantization with FSDP (Specific to FSDP).
 
 ## DeepSpeed {#sec-deepspeed}
@@ -145,13 +145,14 @@ fsdp_config:
   reshard_after_forward: true
 ```
 
-## Sequence parallelism {#sec-sequence-parallelism}
+## Context parallelism {#sec-sequence-parallelism}
 
-We support sequence parallelism (SP) via
+We support context parallelism (CP; other frameworks call the same thing sequence parallelism) via
 [axolotl-ringmaster](https://github.com/axolotl-ai-cloud/ringmaster) (`context_parallel_size`),
 which prefers Ulysses head-parallel attention and falls back to Ring attention for the
 remainder of the CP degree. This allows one to split up sequences across GPUs, which is
-useful in the event that a single sequence causes OOM errors during model training.
+useful in the event that a single sequence causes OOM errors during model training. Under
+DeepSpeed the same key maps onto DeepSpeed's Ulysses (ALST) implementation through accelerate.
 
 See our [dedicated guide](sequence_parallelism.qmd) for more information.
 

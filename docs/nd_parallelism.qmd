@@ -35,13 +35,13 @@ Also known as "horizontal model parallelism," as described in the [Megatron-LM p
 
 ### Context Parallelism (CP) {#sec-cp}
 
-Context Parallelism, also called [Sequence Parallelism](sequence_parallelism.qmd), addresses the memory bottleneck from long sequences. The input sequence itself is split along the sequence length dimension and distributed across the GPUs of a `cp` group; every GPU in the group sees the same batch.
+Context Parallelism (CP; the term we use for what some frameworks call sequence parallelism, see the [guide](sequence_parallelism.qmd)) addresses the memory bottleneck from long sequences. The input sequence itself is split along the sequence length dimension and distributed across the GPUs of a `cp` group; every GPU in the group sees the same batch.
 
 - How it works: If you have a sequence of 8192 tokens and a `context_parallel_size` of 4, each GPU will only handle a chunk of 2048 tokens.
 - The Challenge: Attention is not local; every token needs to "attend to" every other token. Splitting the sequence breaks this.
 - The Solution (Ringmaster): CP is built in via [axolotl-ringmaster](sequence_parallelism.qmd) and needs no `plugins:` entry. With `context_parallel.backend: auto` (the default) it prefers **Ulysses**, which all-to-alls the attention *heads* across the group so each GPU runs ordinary attention on a subset of heads over the full sequence, and covers any remainder of the CP degree with **Ring** attention (KV blocks passed around the group), a combination known as USP. Ulysses runs on SDPA or Flash Attention; Ring/USP training needs Flash Attention. Set `backend: ulysses`, `ring`, or `usp` (with `ulysses_size` / `ring_size`) to override.
 - Previous releases implemented CP with `ring-flash-attention` under `sequence_parallel_degree`; that key is deprecated and maps to `context_parallel_size`, and `ring_attn_func` / `heads_k_stride` are ignored.
-- **Mamba/SSM and linear-attention hybrids** (Nemotron-H, Falcon-H1, Granite MoE Hybrid, GDN/KDA): Ringmaster shards the recurrent layers too, passing state across ranks. See [Sequence Parallelism](sequence_parallelism.qmd) for requirements.
+- **Mamba/SSM and linear-attention hybrids** (Nemotron-H, Falcon-H1, Granite MoE Hybrid, GDN/KDA): Ringmaster shards the recurrent layers too, passing state across ranks. See [Context Parallelism](sequence_parallelism.qmd) for requirements.
 
 ### Expert Parallelism (EP) {#sec-ep}
 
@@ -77,7 +77,7 @@ dp_replicate_size: 2
 # Number of GPUs for Tensor Parallelism.
 tensor_parallel_size: 1  # (default is 1, no TP)
 
-# Number of GPUs for Context/Sequence Parallelism.
+# Number of GPUs for Context Parallelism.
 context_parallel_size: 1 # (default is 1, no CP)
 
 # Number of GPUs to shard MoE experts across (Expert Parallel).
@@ -182,4 +182,5 @@ Axolotl normalizes the loss per rank (`average_tokens_across_devices` is off), s
 
 - `tp_size` refers to `tensor_parallel_size`
 - `cp_size` refers to `context_parallel_size`
+- `sp` is accelerate's DeepSpeed Ulysses axis; axolotl sets it only when `context_parallel_size` runs under `deepspeed:`. Older configs' `sequence_parallel_degree` is a deprecated alias of `context_parallel_size`.
 - `ep_size` refers to `expert_parallel_size`

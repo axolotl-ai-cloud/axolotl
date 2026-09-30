@@ -18,7 +18,11 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
+from axolotl.utils.distributed import (
+    get_world_size,
+    init_distributed_state,
+    reduce_and_broadcast,
+)
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -649,8 +653,11 @@ def setup_parallelism_envs(cfg):
         os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(cfg.dp_replicate_size)
     if cfg.context_parallel_size and cfg.context_parallel_size > 1:
         set_accelerate_parallelism_config = True
-        os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
-        os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
+        if cfg.deepspeed:
+            setup_deepspeed_context_parallel_envs(cfg)
+        else:
+            os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
+            os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
     # Expert Parallel patch must apply before the first `Accelerator()`
     # call so `ep_size` lands in the mesh.
     if cfg.expert_parallel_size and cfg.expert_parallel_size > 1:
@@ -664,6 +671,25 @@ def setup_parallelism_envs(cfg):
         patch_parallelism_config()
     if set_accelerate_parallelism_config:
         os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
+
+
+def setup_deepspeed_context_parallel_envs(cfg):
+    """Map ``context_parallel_size`` onto accelerate's DeepSpeed Ulysses (ALST) ``sp`` axis.
+
+    ZeRO owns sharding, so the ranks outside the CP group replicate; accelerate registers
+    the sequence-parallel groups with the engine and shards each batch across the group.
+    """
+    cp_size = cfg.context_parallel_size
+    os.environ["PARALLELISM_CONFIG_SP_SIZE"] = str(cp_size)
+    os.environ["PARALLELISM_CONFIG_SP_BACKEND"] = "deepspeed"
+    os.environ["PARALLELISM_CONFIG_SP_SEQ_LENGTH_IS_VARIABLE"] = "true"
+    os.environ["PARALLELISM_CONFIG_SP_ATTN_IMPLEMENTATION"] = (
+        cfg.attn_implementation or "sdpa"
+    )
+    world_size = get_world_size()
+    if world_size > 1 and world_size % cp_size == 0 and world_size // cp_size > 1:
+        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(world_size // cp_size)
+    os.environ.pop("PARALLELISM_CONFIG_CP_SIZE", None)
 
 
 def prepare_optim_env(cfg):

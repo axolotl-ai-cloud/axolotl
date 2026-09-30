@@ -1,7 +1,7 @@
 """Repeat random sampler (similar to the one implemented in
 https://github.com/huggingface/trl/blob/main/trl/trainer/grpo_trainer.py) that adds
-sequence parallelism functionality; i.e., duplicating data across ranks in the same
-sequence parallel group.
+context parallelism functionality; i.e., duplicating data across ranks in the same
+context parallel group.
 """
 
 from typing import Iterator, Sized
@@ -10,26 +10,26 @@ import torch
 from torch.utils.data import Sampler
 
 
-class SequenceParallelRepeatRandomSampler(Sampler):
-    """Sampler for GRPO training with sequence parallelism.
+class ContextParallelRepeatRandomSampler(Sampler):
+    """Sampler for GRPO training with context parallelism.
 
     This sampler ensures:
-    - Ranks in the same sequence parallel (SP) group receive identical data.
+    - Ranks in the same context parallel (CP) group receive identical data.
     - Each index is repeated multiple times for sampling different completions.
     - Entire batches are repeated for reuse in multiple updates.
-    - Data is properly distributed across SP groups.
+    - Data is properly distributed across CP groups.
 
-    In the table below, the values represent dataset indices. Each SP group has
+    In the table below, the values represent dataset indices. Each CP group has
     `context_parallel_size = 2` GPUs working together on the same data. There are 2
-    SP groups (SP0 and SP1), with `world_size = 4` total GPUs.
+    CP groups (CP0 and CP1), with `world_size = 4` total GPUs.
 
-                                               Sequence Parallel Groups
-                                        |       SP0        |       SP1        |
+                                                Context Parallel Groups
+                                        |       CP0        |       CP1        |
                                         |  GPU 0  |  GPU 1 |  GPU 2  |  GPU 3 |
                     global_step  step    <---> mini_repeat_count=3
-                                            <----------> batch_size=2 per SP group
-    grad_accum=2   ▲  ▲  0       0         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- SP groups get different data
-                   ▼  |  0       1         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- Same data for each SP group GPU
+                                            <----------> batch_size=2 per CP group
+    grad_accum=2   ▲  ▲  0       0         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- CP groups get different data
+                   ▼  |  0       1         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- Same data for each CP group GPU
                       |
                       |  1       2         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- Repeat same indices for iterations
     num_iterations=2  ▼  1       3         [0 0 0  1 1 1]     [2 2 2  3 3 3]   <- When using gradient accumulation
@@ -45,7 +45,7 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         rank: Rank of current process.
         batch_size: Number of samples per batch.
         repeat_count: How many times to repeat the full sampling process.
-        context_parallel_size: Number of ranks in a sequence parallel group.
+        context_parallel_size: Number of ranks in a context parallel group.
         shuffle: Whether to shuffle the dataset.
         seed: Random seed for shuffling.
         drop_last: Whether to drop the last incomplete batch.
@@ -76,29 +76,29 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         self.world_size = world_size
         self.rank = rank
 
-        # Sequence parallelism parameters
+        # Context parallelism parameters
         self.context_parallel_size = context_parallel_size
-        self.num_sp_groups = world_size // context_parallel_size
-        self.sp_group_id = rank // context_parallel_size
+        self.num_cp_groups = world_size // context_parallel_size
+        self.cp_group_id = rank // context_parallel_size
 
         # Adjust dataset size for distributed sampling
         self.num_samples = len(self.dataset)
         self.total_size = self.num_samples
 
-        # Calculate effective number of samples per SP group
+        # Calculate effective number of samples per CP group
         if (
             self.drop_last
-            and self.total_size % (self.num_sp_groups * self.batch_size) != 0
+            and self.total_size % (self.num_cp_groups * self.batch_size) != 0
         ):
             # Drop last incomplete batch if drop_last is True
-            self.num_samples_per_sp_group = (
-                self.total_size // self.batch_size // self.num_sp_groups
+            self.num_samples_per_cp_group = (
+                self.total_size // self.batch_size // self.num_cp_groups
             ) * self.batch_size
         else:
             # Round up to include last batch if drop_last is False
-            self.num_samples_per_sp_group = (
-                (self.total_size + self.batch_size * self.num_sp_groups - 1)
-                // (self.batch_size * self.num_sp_groups)
+            self.num_samples_per_cp_group = (
+                (self.total_size + self.batch_size * self.num_cp_groups - 1)
+                // (self.batch_size * self.num_cp_groups)
                 * self.batch_size
             )
 
@@ -125,21 +125,21 @@ class SequenceParallelRepeatRandomSampler(Sampler):
             padding = indices[: self.batch_size - len(indices) % self.batch_size]
             indices += padding
 
-        # Subsample based on SP group ID
-        # Each SP group gets distinct batches of data
+        # Subsample based on CP group ID
+        # Each CP group gets distinct batches of data
         batch_indices = []
-        for i in range(0, len(indices), self.batch_size * self.num_sp_groups):
-            start_idx = i + self.sp_group_id * self.batch_size
+        for i in range(0, len(indices), self.batch_size * self.num_cp_groups):
+            start_idx = i + self.cp_group_id * self.batch_size
             end_idx = min(start_idx + self.batch_size, len(indices))
             if start_idx < len(indices):
                 for j in range(self.batch_size):
                     if start_idx + j < end_idx:
                         batch_indices.append(indices[start_idx + j])
 
-        # Make sure batch_indices is exactly batch_size * num_batches_per_sp_group
+        # Make sure batch_indices is exactly batch_size * num_batches_per_cp_group
         if self.drop_last:
-            num_batches_per_sp_group = self.num_samples_per_sp_group // self.batch_size
-            target_len = self.batch_size * num_batches_per_sp_group
+            num_batches_per_cp_group = self.num_samples_per_cp_group // self.batch_size
+            target_len = self.batch_size * num_batches_per_cp_group
             if len(batch_indices) > target_len:
                 batch_indices = batch_indices[:target_len]
 
@@ -160,7 +160,7 @@ class SequenceParallelRepeatRandomSampler(Sampler):
         """
         # Total length including all repetitions
         return (
-            self.num_samples_per_sp_group * self.mini_repeat_count * self.repeat_count
+            self.num_samples_per_cp_group * self.mini_repeat_count * self.repeat_count
         )
 
     def set_epoch(self, epoch: int) -> None:
@@ -170,3 +170,6 @@ class SequenceParallelRepeatRandomSampler(Sampler):
             epoch: Epoch number to use for shuffling.
         """
         self.epoch = epoch
+
+
+SequenceParallelRepeatRandomSampler = ContextParallelRepeatRandomSampler
