@@ -1,5 +1,8 @@
 base_model: zai-org/GLM-5.3-Flash-BF16
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 load_in_4bit: true
 quantize_moe_experts: true
 

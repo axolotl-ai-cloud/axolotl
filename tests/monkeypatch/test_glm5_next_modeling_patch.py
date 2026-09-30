@@ -11,8 +11,12 @@ from transformers.models.glm5_next.configuration_glm5_next import (  # noqa: E40
 
 
 def _torch_reference(dispatcher):
-    (cell,) = type(dispatcher).forward.__closure__
-    return cell.cell_contents.__wrapped__
+    """Unwrap a kernel dispatcher to its torch fallback, with or without `kernels` installed."""
+    forward = getattr(type(dispatcher), "forward", None)
+    if forward is not None:
+        (cell,) = forward.__closure__
+        dispatcher = cell.cell_contents
+    return dispatcher.__wrapped__
 
 
 @pytest.fixture(autouse=True)

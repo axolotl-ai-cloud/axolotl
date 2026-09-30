@@ -549,12 +549,15 @@ class TestGlm5NextSupport:
         assert type(support).__name__ == "Glm5NextSupport"
         assert resolve_model_support(support).family == "image_text_to_text"
 
-    @pytest.mark.parametrize(
-        "capability", ["cut_cross_entropy", "lora_kernels", "sdpa_varlen"]
-    )
+    @pytest.mark.parametrize("capability", ["lora_kernels", "sdpa_varlen"])
     def test_unsupported_features_are_rejected(self, capability):
         with pytest.raises(ValueError, match="glm5_next"):
             check_capability(get_model_support("glm5_next"), capability, "glm5_next")
+
+    def test_cut_cross_entropy_is_supported(self):
+        check_capability(
+            get_model_support("glm5_next"), "cut_cross_entropy", "glm5_next"
+        )
 
     def test_packs_through_position_ids(self):
         from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES

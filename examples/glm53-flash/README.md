@@ -8,7 +8,9 @@ This guide shows how to fine-tune it with Axolotl.
 
 1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
-2. Run the finetuning example:
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
+
+3. Run the finetuning example:
 
     ```bash
     # QLoRA FSDP2 (8x H100 80GB)
@@ -32,7 +34,6 @@ This model quantizes expert weights on load. To learn about expert quantization,
 | `sample_packing` | Requires `flash-linear-attention`. |
 | `lora_target_linear` | Incompatible. It also targets the vision tower and the no-grad DSA indexer. |
 | LoRA kernels | Unsupported |
-| Cut Cross Entropy | Unsupported |
 | `sdpa_varlen` | Unsupported |
 | Full finetuning | Untested. |
 
