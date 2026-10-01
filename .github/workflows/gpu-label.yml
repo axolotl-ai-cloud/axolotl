@@ -10,7 +10,7 @@ jobs:
   rerun:
     if: github.event.label.name == 'run-gpu-tests'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     permissions:
       actions: write
       pull-requests: read
@@ -26,7 +26,7 @@ jobs:
             if (pr.state !== 'open' || pr.draft ||
                 !pr.labels.some(label => label.name === 'run-gpu-tests')) return;
 
-            for (const workflow of ['docker-e2e.yml', 'multi-gpu-e2e.yml']) {
+            for (const workflow of ['tests.yml']) {
               const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
                 ...context.repo,
                 workflow_id: workflow,
@@ -42,14 +42,14 @@ jobs:
                 continue;
               }
 
-              // Wait for an initial label check, but leave running GPU tests alone.
+              // Wait for CPU tests to finish, but leave a running GPU rerun alone.
               let status = run.status;
-              for (let attempt = 0; status !== 'completed' && attempt < 24; attempt++) {
+              for (let attempt = 0; status !== 'completed' && attempt < 360; attempt++) {
                 const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
                   ...context.repo, run_id: run.id, per_page: 100,
                 });
-                if (jobs.some(job => job.name.startsWith('run-e2e /') ||
-                                     job.name.startsWith('run-multigpu /'))) break;
+                if (jobs.some(job => job.name.startsWith('docker-e2e /') ||
+                                     job.name.startsWith('multi-gpu-e2e /'))) break;
                 await new Promise(resolve => setTimeout(resolve, 10000));
                 const { data: current } = await github.rest.actions.getWorkflowRun({
                   ...context.repo, run_id: run.id,
