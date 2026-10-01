@@ -179,7 +179,8 @@ def _normalize_sentinels(recv_topk_idx, recv_topk_weights, num_local_experts):
     """Map the dispatch's ``-1`` remote slots to ``num_local_experts`` with weight 0.
 
     transformers' grouped_mm / sonicmoe / deepgemm drop ids ``>= num_experts`` natively;
-    batched_mm clamps them and relies on the zero weight.
+    batched_mm clamps them and relies on the zero weight. Both need the module's
+    ``_is_expert_parallel`` set first, which ``_ep_forward`` does.
     """
     remote = recv_topk_idx < 0
     return (
