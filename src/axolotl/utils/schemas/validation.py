@@ -7,7 +7,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from packaging import version as packaging_version
 from pydantic import (
     field_validator,
     model_validator,
@@ -119,30 +118,6 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     ):
         return False
 
-    # MoE without native grouped_mm (torch < 2.9): transformers' fallback uses
-    # torch.mm(out=) which bypasses autocast and fails on mixed dtypes in eval
-    torch_version = (get("env_capabilities") or {}).get("torch_version")
-    if torch_version is None:
-        import torch
-
-        torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-    if packaging_version.parse(torch_version) >= packaging_version.parse("2.9.0"):
-        return True
-    model_type = get("model_config_type") or ""
-    if "moe" in model_type.lower():
-        return False
-    base_model = get("base_model")
-    if base_model:
-        try:
-            from transformers import AutoConfig
-
-            auto_cfg = AutoConfig.from_pretrained(base_model, trust_remote_code=False)
-            if getattr(auto_cfg, "num_local_experts", None) or getattr(
-                auto_cfg, "num_experts", None
-            ):
-                return False
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
     return True
 
 

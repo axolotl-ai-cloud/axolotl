@@ -1904,7 +1904,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="after")
     def check_fp8_attention_preflight(self):
-        """fp8 attention requires SM90+ and torch >= 2.11 (torchao >= 0.17 is pinned)."""
+        """fp8 attention requires SM90+ (torchao >= 0.17 is pinned)."""
         if self.attn_implementation != "fp8":
             return self
 
@@ -1916,19 +1916,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     f"attn_implementation=fp8 requires compute capability sm_90 or "
                     f"higher (Hopper+). Detected {cc!r}."
                 )
-
-        torch_version = (
-            self.env_capabilities.torch_version if self.env_capabilities else None
-        )
-        if torch_version is None:
-            import torch
-
-            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-        if version.parse(torch_version) < version.parse("2.11.0"):
-            raise ValueError(
-                f"attn_implementation=fp8 requires PyTorch >= 2.11.0. "
-                f"Detected {torch_version}."
-            )
 
         return self
 
@@ -1992,60 +1979,18 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_adopt_torch_version(cls, data):
-        if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
-            env_capabilities = data.get("env_capabilities", {})
-            torch_version = env_capabilities.get("torch_version")
-
-            if torch_version is None:
-                import torch
-
-                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-            if version.parse(torch_version) < version.parse("2.5.1"):
-                raise ValueError(
-                    "ADOPT optimizer is incompatible with torch version < 2.5.1"
-                )
-        return data
-
-    @model_validator(mode="after")
-    def check_flex_torch_version(self):
-        if self.attn_implementation == "flex_attention":
-            torch_version = (
-                self.env_capabilities.torch_version if self.env_capabilities else None
-            )
-            if torch_version is None:
-                import torch
-
-                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-            if version.parse(torch_version) < version.parse("2.6.0"):
-                raise ValueError(
-                    "Flex attention is not supported on torch version < 2.6.0"
-                )
-        return self
-
-    @model_validator(mode="before")
-    @classmethod
     def check_torch_compile_auto(cls, data):
         if data.get("torch_compile") == "auto":
             env_capabilities = data.get("env_capabilities", {})
             if env_capabilities.get("torch_version"):
-                if version.parse(
-                    env_capabilities.get("torch_version")
-                ) >= version.parse("2.5.1"):
-                    LOG.info(
-                        "torch.compile is available, setting torch_compile to True"
-                    )
-                    data["torch_compile"] = True
-                else:
-                    data["torch_compile"] = False
+                LOG.info("torch.compile is available, setting torch_compile to True")
+                data["torch_compile"] = True
             else:
                 data["torch_compile"] = False
             if data["torch_compile"] is False and data.get("torch_compile_options"):
                 LOG.warning(
                     "torch_compile: auto resolved to False on this environment "
-                    "(torch < 2.5.1); ignoring torch_compile_options."
+                    "(torch version unknown); ignoring torch_compile_options."
                 )
                 data["torch_compile_options"] = None
         return data
@@ -2062,9 +2007,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_min_torch_version(self):
         if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
-            if version.parse(torch_version) < version.parse("2.6.0"):
+            if version.parse(torch_version) < version.parse("2.13.0"):
                 LOG.warning(
-                    f"torch=={torch_version} not be supported. Please upgrade to torch>=2.6.0."
+                    f"torch=={torch_version} may not be supported. Please upgrade to torch>=2.13.0."
                 )
 
         return self
@@ -2089,34 +2034,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             "activation_dtype"
         ) not in (None, "int8"):
             raise ValueError("Ternary QAT only supports activation_dtype: int8.")
-
-        env_capabilities = data.get("env_capabilities", {})
-        torch_version = env_capabilities.get("torch_version")
-
-        if torch_version is None:
-            import torch
-
-            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-        if version.parse(torch_version) < version.parse("2.6.0"):
-            raise ValueError("QAT is not supported on torch version < 2.6.0")
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_torch_version(cls, data):
-        env_capabilities = data.get("env_capabilities", {})
-        torch_version = env_capabilities.get("torch_version")
-
-        if torch_version is None:
-            import torch
-
-            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-        if data.get("fsdp_config"):
-            if version.parse(torch_version) < version.parse("2.7.0"):
-                raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
 
         return data
 

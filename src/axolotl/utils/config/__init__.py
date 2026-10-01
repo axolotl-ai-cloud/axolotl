@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
-    is_torch_greater_or_equal,
     is_torch_npu_available,
 )
 
@@ -181,13 +180,9 @@ def resolve_dtype(cfg):
     else:
         if cfg.tf32 is True:
             torch.set_float32_matmul_precision("high")
-            if is_torch_greater_or_equal("2.9.0"):
-                torch.backends.fp32_precision = "tf32"
-                torch.backends.cuda.matmul.fp32_precision = "tf32"
-                torch.backends.cudnn.fp32_precision = "tf32"
-            else:
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
+            torch.backends.fp32_precision = "tf32"
+            torch.backends.cuda.matmul.fp32_precision = "tf32"
+            torch.backends.cudnn.fp32_precision = "tf32"
         if cfg.bf16:
             cfg.fp16 = False
 
