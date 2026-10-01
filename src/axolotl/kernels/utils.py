@@ -3,9 +3,7 @@
 import torch
 
 # Detect the actual accelerator so the AMP decorators are device-agnostic.
-_accelerator = (
-    torch.accelerator.current_accelerator() if hasattr(torch, "accelerator") else None
-)
+_accelerator = torch.accelerator.current_accelerator()
 # torch.amp.custom_fwd/bwd expect a device type string ("cuda", "npu", ...);
 # str(device) would be the invalid device type "None" on builds without one.
 _amp_device_type = _accelerator.type if _accelerator is not None else "cuda"
