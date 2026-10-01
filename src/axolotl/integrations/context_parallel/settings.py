@@ -1,6 +1,27 @@
 """Resolve only settings implemented by the selected Ringmaster strategy."""
 
 
+def attention_patterns(models):
+    sliding = False
+    chunked = False
+    for model in models:
+        config = (
+            model.config.get_text_config()
+            if hasattr(model.config, "get_text_config")
+            else model.config
+        )
+        layer_types = getattr(config, "layer_types", None)
+        if layer_types is None:
+            sliding |= bool(getattr(config, "sliding_window", None))
+        else:
+            sliding |= "sliding_attention" in layer_types
+            chunked |= "chunked_attention" in layer_types
+        sliding |= any(
+            bool(getattr(module, "sliding_window", None)) for module in model.modules()
+        )
+    return sliding, chunked
+
+
 def resolve_settings(
     cp,
     resolved,
@@ -8,6 +29,7 @@ def resolve_settings(
     num_kv_heads,
     contiguous_reason=None,
     sliding_window=False,
+    chunked_attention=False,
     glm_dsa=False,
     inner_attn="flash_attention_2",
     dropout=0.0,
@@ -34,13 +56,14 @@ def resolve_settings(
         return "glm_dsa"
 
     pure_ring = resolved.ring_size > 1 and resolved.ulysses_size == 1
+    restricted_attention = sliding_window or chunked_attention
     balance = cp.load_balance
     if balance == "auto":
         balance = (
             "head_tail"
             if pure_ring
             and not contiguous_reason
-            and not sliding_window
+            and not restricted_attention
             and "rotate_method" not in explicit
             and inner_attn == "flash_attention_2"
             and not dropout
@@ -52,9 +75,9 @@ def resolve_settings(
         raise ValueError(
             f"load_balance: head_tail is incompatible with {contiguous_reason}; use none or auto"
         )
-    if balance != "none" and sliding_window:
+    if balance != "none" and restricted_attention:
         raise ValueError(
-            f"load_balance: {balance} does not support sliding-window attention; use none"
+            f"load_balance: {balance} does not support sliding-window or chunked attention; use none"
         )
     if resolved.ring_size == 1:
         if "rotate_method" in explicit or cp.ring_impl != "auto":
@@ -71,11 +94,12 @@ def resolve_settings(
     else:
         communication = "allgather" if cp.rotate_method == "allgather" else "p2p"
     if communication == "p2p" and (
-        inner_attn != "flash_attention_2" or dropout or sliding_window
+        inner_attn != "flash_attention_2" or dropout or restricted_attention
     ):
         raise ValueError(
             "Ring P2P schedules require flash_attention_2, zero attention dropout, "
-            "and no sliding window; use load_balance: none with rotate_method: allgather"
+            "and no sliding window or chunked attention; use load_balance: none "
+            "with rotate_method: allgather"
         )
     resolved.load_balance = rm.LoadBalance(balance)
     return communication
