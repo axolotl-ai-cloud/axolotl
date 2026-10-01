@@ -73,6 +73,7 @@ jobs:
   nf4-distributed:
     name: NF4 distributed CPU
     if: ${{ !github.event.pull_request.draft }}
+    needs: [prime-cdn-s3-cache, pre-commit]
     uses: ./.github/workflows/nf4-cpu.yml
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -81,7 +82,7 @@ jobs:
     name: PyTest
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
-    needs: [prime-cdn-s3-cache]
+    needs: [prime-cdn-s3-cache, pre-commit]
     strategy:
       max-parallel: 2
       fail-fast: false
@@ -184,7 +185,7 @@ jobs:
     name: PyTest SDist
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
-    needs: [prime-cdn-s3-cache]
+    needs: [prime-cdn-s3-cache, pre-commit]
     strategy:
       max-parallel: 2
       fail-fast: false
