@@ -185,6 +185,8 @@ include-package-data = true
 axolotl = [
     "**/*.yaml",
     "**/*.jinja",
+    "core/trainers/prm/LICENSE",
+    "core/trainers/prm/NOTICE",
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
 ]
 
@@ -199,6 +201,8 @@ version = { file = "VERSION" }
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+extend-exclude = ["src/axolotl/core/trainers/prm"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "B", "I"]

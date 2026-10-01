@@ -7,19 +7,7 @@ from trl.experimental.orpo import ORPOTrainer
 from axolotl.core.trainers.mixins import DistributedParallelMixin, RngLoaderMixin
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.trainers.mixins.scheduler import SchedulerMixin
-from axolotl.core.training_args import PRM_TRL_ERROR
-
-try:
-    from trl.experimental.prm import PRMTrainer
-except ImportError:
-
-    class PRMTrainer:  # type: ignore[no-redef]
-        """Placeholder so this module stays importable without trl's PRM."""
-
-        # __new__, not __init__: the trainer mixins put transformers' Trainer
-        # ahead of this placeholder in the MRO.
-        def __new__(cls, *args, **kwargs):
-            raise ImportError(PRM_TRL_ERROR)
+from axolotl.core.trainers.prm.prm_trainer import PRMTrainer
 
 
 class AxolotlORPOTrainer(
@@ -91,7 +79,7 @@ class AxolotlPRMTrainer(
     PRMTrainer,
 ):
     """
-    Extend the base trl.PRMTrainer for axolotl helpers
+    Extend the vendored PRMTrainer for axolotl helpers
     """
 
     tag_names = ["axolotl", "prm"]
