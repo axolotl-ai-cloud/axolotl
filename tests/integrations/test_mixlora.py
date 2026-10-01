@@ -207,6 +207,46 @@ class TestMixLora:
             p.dtype == torch.float16 for p in model.layers[0].mlp.router.parameters()
         )
 
+    @pytest.mark.parametrize("base_dtype", [torch.float16, torch.bfloat16])
+    @pytest.mark.parametrize("training", [True, False])
+    def test_forward_without_autocast_mixed_adapter_dtype(
+        self, mock_cfg, mock_swiglu_ffn, base_dtype, training
+    ):
+        """fp32 router/experts must accept half activations without autocast.
+
+        Covers `bf16: full` and inference/generate, where nothing reconciles the
+        dtype gap the fp32 adapter cast opens up.
+        """
+        model = nn.Module()
+        model.layers = nn.ModuleList([nn.Module()])
+        model.layers[0].mlp = mock_swiglu_ffn.to(base_dtype)
+
+        patch_model_with_mixlora(model, mock_cfg)
+        block = model.layers[0].mlp
+        block.train(training)
+
+        assert block.router.gate.weight.dtype == torch.float32
+
+        x = torch.randn(2, 10, 128, dtype=base_dtype)
+        out = block(x)
+
+        assert out.dtype == base_dtype
+        assert out.shape == x.shape
+        assert torch.isfinite(out.float()).all()
+
+        if training:
+            loss = out.float().pow(2).mean() + collect_mixlora_aux_loss(
+                block, router_aux_loss_coef=mock_cfg.mixlora_router_aux_loss_coef
+            )
+            loss.backward()
+
+            assert block.router.gate.weight.grad is not None
+            assert block.router.gate.weight.grad.dtype == torch.float32
+            assert all(
+                p.grad is not None and p.grad.dtype == torch.float32
+                for p in block.experts.parameters()
+            )
+
     def test_mixlora_plugin_registers_trainer(self, mock_cfg, monkeypatch):
         """Test that the MixLoRA plugin wires up the integration trainer."""
         fake_trainer_module = types.ModuleType("axolotl.integrations.mixlora.trainer")
