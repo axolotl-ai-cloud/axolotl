@@ -33,14 +33,16 @@ adapters, 5 steps, loss 1.5–2.6 (see [Verified run](#verified-run)).
 
 ## Dependency
 
-Runs on axolotl `main` (PR #4003 and #4018 have merged — main now carries the
-CPU-staged NF4 loader, the chunked bitsandbytes quant/dequant that a 6.7e9-element
-fused expert tensor needs, and the skip for re-initializing parametrized weights).
+Runs on axolotl `main`, with no patches to axolotl internals. Everything this
+needed has landed upstream:
 
-One fix is still carried here and reported upstream: `loaders/model.py` passes
-`_no_split_modules` to `infer_auto_device_map` as a `list`. Transformers exposes it
-as a `set`, which accelerate wraps instead of iterating, so decoder layers were
-being split across GPUs and the residual add inside them raised.
+- #4003 — CPU-staged NF4 loader, and the chunked bitsandbytes quant/dequant a
+  6.7e9-element fused expert tensor requires
+- #4018 — skip re-initializing parametrized quantized weights
+- #4091 — `no_split_module_classes` from `_no_split_modules`, without which a
+  decoder layer could be split across GPUs and its residual add raised
+
+This branch is therefore only the model descriptor, the CCE patch and the configs.
 
 ## Why the LoRA targets look unusual
 
