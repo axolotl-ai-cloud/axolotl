@@ -15,15 +15,15 @@ dependencies = [
     "torch>=2.13.0,<=2.14.0",
     "packaging==26.0",
     "huggingface_hub==1.18.0",
-    "peft==0.21.0",
+    "peft==0.21.1",
     "tokenizers==0.23.1",
-    "transformers==5.17.0",
+    "transformers==5.18.0",
     "accelerate==1.15.0",
-    "datasets==4.8.4",
-    "trl==1.13.0",
+    "datasets==5.0.1",
+    "trl==1.14.1",
     "hf_xet==1.4.3",
-    "kernels>=0.16.0,<0.17.0",
-    "trackio==0.19.0",
+    "kernels>=0.17.0,<0.18.0",
+    "trackio==0.40.0",
     "typing-extensions==4.15.0",
     "optimum==1.16.2",
     "hf_transfer",
@@ -65,7 +65,7 @@ dependencies = [
     "antlr4-python3-runtime==4.13.2",
 
     "schedulefree==1.4.1",
-    "openenv-core==0.1.0",
+    "openenv-core>=0.1.0",
 
     # Axolotl contribs
     "axolotl-contribs-lgpl==0.0.7",
@@ -74,13 +74,13 @@ dependencies = [
     # Telemetry
     "posthog==6.7.11",
 
-    "mistral-common==1.11.5",
+    "mistral-common==1.12.0",
 
     # Platform-specific (Linux only)
     "bitsandbytes==0.50.2 ; sys_platform != 'darwin'",
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.33.post2 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
-    "liger-kernel==0.8.1 ; sys_platform != 'darwin'",
+    "liger-kernel==0.8.4 ; sys_platform != 'darwin'",
     "torchao==0.18.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
 
     # Architecture-specific
