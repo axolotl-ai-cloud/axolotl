@@ -266,8 +266,6 @@ class TorchEPHandle:
     send_splits: torch.Tensor | None = None
     recv_splits: torch.Tensor | None = None
     group: dist.ProcessGroup | None = None
-    recv_x: torch.Tensor | None = None
-    recv_w: torch.Tensor | None = None
 
 
 def dispatch(
@@ -317,30 +315,8 @@ def dispatch(
         send_splits=send_splits,
         recv_splits=recv_splits,
         group=group,
-        recv_x=recv_x,
-        recv_w=recv_w,
     )
     return recv_x, recv_idx, recv_w, handle
-
-
-def _anchor_backward(local_out: torch.Tensor, handle: TorchEPHandle) -> torch.Tensor:
-    if torch.is_grad_enabled() and (
-        local_out.shape[0] == 0 or not local_out.requires_grad
-    ):
-        # A rank that received no rows must still join every backward all-to-all of this
-        # layer (combine, recv_x, recv_w), else the peers' backward collectives hang.
-        anchors = [
-            t.sum()
-            for t in (handle.recv_x, handle.recv_w)
-            if t is not None and t.requires_grad
-        ]
-        if anchors:
-            local_out = local_out + (sum(anchors) * 0).to(local_out.dtype)
-        elif not local_out.requires_grad:
-            # grad-ness can differ per rank (trainable experts, frozen inputs, zero
-            # received rows); the combine backward must be issued on all or none
-            local_out = local_out.detach().requires_grad_()
-    return local_out
 
 
 def combine(
@@ -349,7 +325,6 @@ def combine(
     """Return ``[N_recv,H]`` expert outputs to their source ranks and sum them per token."""
     if handle.send_token_idx is None:
         return local_out if dtype is None else local_out.to(dtype)
-    local_out = _anchor_backward(local_out, handle)
     out_send = all_to_all_single(
         local_out, handle.send_splits, handle.recv_splits, handle.group
     )
@@ -423,13 +398,10 @@ def dispatch_chunked_forward(
             send_splits=send_splits,
             recv_splits=recv_splits,
             group=group,
-            recv_x=recv_x,
-            recv_w=recv_w,
         )
-        return recv_idx, handle
+        return recv_x, recv_w, recv_idx, handle
 
     def issue_combine(local_out, handle):
-        local_out = _anchor_backward(local_out, handle)
         return all_to_all_single_async(
             local_out,
             handle.send_splits.tolist(),
@@ -445,16 +417,16 @@ def dispatch_chunked_forward(
     in_flight: list[tuple[torch.Tensor, TorchEPHandle] | None] = [None] * chunks
     pending = issue_dispatch(0)
     for i in range(chunks):
-        recv_idx, handle = pending
+        recv_x, recv_w, recv_idx, handle = pending
         if i + 1 < chunks:
             pending = issue_dispatch(i + 1)
         # wait before the kernel: an unwaited collective output has data_ptr() 0, so a
         # Triton/CuTe kernel that is its first reader bypasses the deferred wait
-        handle.recv_x = funcol.wait_tensor(handle.recv_x)
-        handle.recv_w = funcol.wait_tensor(handle.recv_w)
+        recv_x = funcol.wait_tensor(recv_x)
+        recv_w = funcol.wait_tensor(recv_w)
         with torch.no_grad():
             recv_idx = funcol.wait_tensor(recv_idx)
-        local_out = local_kernel(handle.recv_x, recv_idx, handle.recv_w)
+        local_out = local_kernel(recv_x, recv_idx, recv_w)
         in_flight[i] = (issue_combine(local_out, handle), handle)
         if i >= 1:
             prev = in_flight[i - 1]

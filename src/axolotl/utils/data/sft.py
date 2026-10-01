@@ -38,6 +38,7 @@ from axolotl.utils.distributed import is_local_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
+    deepspeed_context_parallel,
     process_datasets_for_packing,
 )
 
@@ -348,8 +349,10 @@ def _load_raw_datasets(
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
             dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
-        if (split == "train" and cfg.sample_packing) or (
-            split == "test" and cfg.eval_sample_packing
+        if (
+            (split == "train" and cfg.sample_packing)
+            or (split == "test" and cfg.eval_sample_packing)
+            or deepspeed_context_parallel(cfg)
         ):
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 

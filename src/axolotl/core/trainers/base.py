@@ -390,10 +390,25 @@ class AxolotlTrainer(
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
+    def _deepspeed_sequence_parallel_group(self):
+        """DeepSpeed Ulysses (ALST) SP group, or ``None`` when CP is not mapped onto it."""
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if (
+            pc is None
+            or getattr(pc, "sp_backend", None) != "deepspeed"
+            or (getattr(pc, "sp_size", 1) or 1) <= 1
+        ):
+            return None
+        from deepspeed.utils import groups
+
+        return groups._get_sequence_parallel_group()
+
     @override
     def _get_num_items_in_batch(self, batch_samples, device):
         count = super()._get_num_items_in_batch(batch_samples, device)
         pc = getattr(self.accelerator, "parallelism_config", None)
+        if self._deepspeed_sequence_parallel_group() is not None:
+            return None  # transformers' Ulysses loss already weights by valid tokens
         if (
             count is None
             or pc is None
@@ -488,12 +503,31 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        return super().compute_loss(
-            model,
-            inputs,
-            return_outputs=return_outputs,
-            num_items_in_batch=num_items_in_batch,
+        sp_group = self._deepspeed_sequence_parallel_group()
+        if sp_group is None or not model.training:
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+        # transformers' Ulysses loss assumes gradients are averaged over SP ranks; ZeRO sums them
+        result = super().compute_loss(
+            model, inputs, return_outputs=return_outputs, num_items_in_batch=None
         )
+        loss, outputs = result if return_outputs else (result, None)
+        loss = loss / self.accelerator.parallelism_config.sp_size
+        return (loss, outputs) if return_outputs else loss
+
+    @override
+    def training_step(self, *args, **kwargs):
+        loss = super().training_step(*args, **kwargs)
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if self._deepspeed_sequence_parallel_group() is not None and torch.is_tensor(
+            loss
+        ):
+            loss = loss * pc.sp_size  # undo compute_loss's gradient scaling for logging
+        return loss
 
     @override
     def _prepare_context_parallel_inputs(self, model, inputs):

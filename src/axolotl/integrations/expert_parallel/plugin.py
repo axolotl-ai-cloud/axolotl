@@ -19,8 +19,6 @@ import torch.distributed as dist
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
-from .args import reject_replicate_without_shard_axis
-
 LOG = get_logger(__name__)
 
 # pre-``expert_parallel`` composite names -> local implementation; the backend prefix is ignored
@@ -86,6 +84,31 @@ def expert_shard_axis(mesh_dim_names) -> str | None:
     return None
 
 
+def per_rank_expert_mesh(mesh, device_type: str):
+    """The mesh the routed experts FSDP-wrap on when EP has no shard axis (pure EP, or
+    ``dp_replicate x ep``): a fresh ``(dp_replicate?, ep, dp_shard=1)`` mesh whose size-1
+    ``dp_shard`` dim keeps each rank's expert slice whole (the all-gather is a no-op) while
+    making every param a DTensor; ``dp_replicate`` stays the outer dim so HSDP reduces the
+    expert grads across replicas. Returns the ``(dp_replicate, dp_shard)`` or ``dp_shard``
+    sub-mesh to hand ``fully_shard_experts``."""
+    from torch.distributed.device_mesh import init_device_mesh
+
+    names = (
+        tuple(getattr(mesh, "mesh_dim_names", None) or ()) if mesh is not None else ()
+    )
+    if "ep" in names:
+        ep_size = mesh["ep"].size()
+        replicate = mesh["dp_replicate"].size() if "dp_replicate" in names else 1
+    else:
+        ep_size, replicate = dist.get_world_size(), 1
+    shape: tuple[int, ...] = (ep_size, 1)
+    dim_names: tuple[str, ...] = ("ep", "dp_shard")
+    if replicate > 1:
+        shape, dim_names = (replicate, *shape), ("dp_replicate", *dim_names)
+    root = init_device_mesh(device_type, shape, mesh_dim_names=dim_names)
+    return root[("dp_replicate", "dp_shard")] if replicate > 1 else root["dp_shard"]
+
+
 class ExpertParallelPlugin(BasePlugin):
     """Plugin that swaps MoE dispatch/combine for expert-parallel token dispatch."""
 
@@ -137,20 +160,30 @@ class ExpertParallelPlugin(BasePlugin):
 
         self._reject_transformers_distributed_model(model)
         ep_group = self._resolve_ep_group(cfg)
+        ep_world = dist.get_world_size(ep_group) if ep_group is not None else 1
         sharded = shard_expert_weights(model, ep_group)
 
         if sharded == 0:
-            message = (
-                "expert_parallel_size > 1 but no Experts modules were detected for "
-                "sharding (the model does not use transformers' canonical 3-D "
-                "gate_up_proj/down_proj experts layout)."
-            )
-            if ep_group is not None and dist.get_world_size(ep_group) > 1:
-                raise ValueError(
-                    message + " Expert parallelism cannot run on this model; "
-                    "set expert_parallel_size: 1."
+            if ep_world <= 1:
+                world = dist.get_world_size() if dist.is_initialized() else 1
+                LOG.warning(
+                    f"expert_parallel_size={cfg.expert_parallel_size} but this process resolved "
+                    f"an EP group of size {ep_world} (world_size={world}); expert weights stay "
+                    "unsharded and dispatch/combine is a no-op. Launch with `accelerate launch` "
+                    "or `torchrun` so every EP rank is a separate process."
                 )
-            LOG.warning(message + " Expert-parallel dispatch/combine is a no-op.")
+            else:
+                raise ValueError(
+                    "expert_parallel_size > 1 but no Experts modules were detected for "
+                    "sharding (the model does not use transformers' canonical 3-D "
+                    "gate_up_proj/down_proj experts layout). Expert parallelism cannot run "
+                    "on this model; set expert_parallel_size: 1."
+                )
+        else:
+            LOG.info(
+                f"expert_parallel: sharded {sharded} Experts module(s); "
+                f"ep_rank={dist.get_rank(ep_group)}/{ep_world}"
+            )
 
         chunks = getattr(cfg, "expert_parallel_dispatch_chunks", None) or 1
         if backend == "deep_ep":
@@ -521,19 +554,16 @@ class ExpertParallelPlugin(BasePlugin):
             )
 
         if ep_size == world_size:
+            LOG.info(f"expert_parallel: pure EP, ep group = WORLD (ep={ep_size})")
             return dist.group.WORLD
 
-        # EP composed with FSDP (`dp_shard`) and/or context parallel (`cp`) on orthogonal mesh
-        # axes — read the ep group from accelerate's mesh, or build one ourselves if accelerate
-        # hasn't (e.g., topology unit tests that drive `_resolve_ep_group` directly). Experts shard
-        # on `ep` (tokens move via all-to-all); the sequence shards on `cp` (DSA attention gathers
-        # the compressed KV on that axis); non-expert weights shard on `dp_shard`. TP is still
-        # unsupported in composition. A bare (dp_replicate, ep) mesh is rejected: the experts
-        # need a dp_shard or cp axis inside each replica to reduce over.
-        reject_replicate_without_shard_axis(
-            ep_size, dp_replicate_size, dp_shard_size, cp_size
-        )
-        if dp_shard_size > 1 or cp_size > 1:
+        # EP composed with FSDP (`dp_shard`), context parallel (`cp`) and/or HSDP
+        # (`dp_replicate`) on orthogonal mesh axes — read the ep group from accelerate's mesh, or
+        # build one ourselves if accelerate hasn't (e.g., topology unit tests that drive
+        # `_resolve_ep_group` directly). Experts shard on `ep` (tokens move via all-to-all); the
+        # sequence shards on `cp` (DSA attention gathers the compressed KV on that axis);
+        # non-expert weights shard on `dp_shard`. TP is still unsupported in composition.
+        if dp_shard_size > 1 or cp_size > 1 or dp_replicate_size > 1:
             if tp_size > 1:
                 raise NotImplementedError(
                     "EP × TP composition not yet supported. Got "
@@ -544,24 +574,25 @@ class ExpertParallelPlugin(BasePlugin):
             if mesh is None or "ep" not in (mesh.mesh_dim_names or ()):
                 from torch.distributed.device_mesh import init_device_mesh
 
-                # Fallback mesh from the >1 axes (ep outermost). Orthogonality of the ep/cp/dp
-                # groups is what matters; accelerate's mesh is preferred when present so the ep
-                # group matches the one used for the experts' FSDP exclusion.
-                axes = []
-                if dp_replicate_size > 1:
-                    axes.append(("dp_replicate", dp_replicate_size))
-                axes.append(("ep", ep_size))
-                if cp_size > 1:
-                    axes.append(("cp", cp_size))
-                if dp_shard_size > 1:
-                    axes.append(("dp_shard", dp_shard_size))
+                from axolotl.monkeypatch.accelerate.parallelism_config import (
+                    MESH_ORDER,
+                )
+
+                # Fallback mesh in accelerate's axis order (ep innermost, node-local groups).
+                sizes = {
+                    "dp_replicate": dp_replicate_size,
+                    "dp_shard": dp_shard_size,
+                    "cp": cp_size,
+                    "ep": ep_size,
+                }
+                axes = [(n, sizes[n]) for n in MESH_ORDER if sizes.get(n, 1) > 1]
                 mesh = init_device_mesh(
                     "cuda" if torch.cuda.is_available() else "cpu",
                     tuple(s for _, s in axes),
                     mesh_dim_names=tuple(n for n, _ in axes),
                 )
             ExpertParallelPlugin._device_mesh = mesh
-            LOG.debug(
+            LOG.info(
                 f"expert_parallel: ep mesh shape={tuple(mesh.shape)} "
                 f"axes={mesh.mesh_dim_names}; ep group "
                 f"members={dist.get_process_group_ranks(mesh['ep'].get_group())}"
@@ -572,9 +603,9 @@ class ExpertParallelPlugin(BasePlugin):
         raise ValueError(
             f"expert_parallel_size ({ep_size}) < world_size ({world_size}) "
             "without dp_shard_size/context_parallel_size > 1 to fill the remaining axes is not "
-            "supported. Set dp_shard_size and/or context_parallel_size such that "
-            "dp_replicate × ep × cp × dp_shard == world_size (dp_replicate needs one of the two "
-            "shard axes), or set expert_parallel_size = world_size for pure EP."
+            "supported. Set dp_replicate_size, dp_shard_size and/or context_parallel_size such "
+            "that dp_replicate × ep × cp × dp_shard == world_size, or set "
+            "expert_parallel_size = world_size for pure EP."
         )
 
     @staticmethod
@@ -761,9 +792,6 @@ class ExpertParallelPlugin(BasePlugin):
         dp_replicate_size = getattr(cfg, "dp_replicate_size", None) or 1
         tp_size = getattr(cfg, "tensor_parallel_size", None) or 1
         cp_size = getattr(cfg, "context_parallel_size", None) or 1
-        reject_replicate_without_shard_axis(
-            ep_size, dp_replicate_size, dp_shard_size, cp_size
-        )
 
         if not (dist.is_available() and dist.is_initialized()):
             return  # validated at process-group time

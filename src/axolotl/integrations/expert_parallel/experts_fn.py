@@ -188,13 +188,32 @@ def _normalize_sentinels(recv_topk_idx, recv_topk_weights, num_local_experts):
     )
 
 
-def _run_local(experts, local, recv_x, recv_topk_idx, recv_topk_weights):
-    idx, weights = _normalize_sentinels(
-        recv_topk_idx,
-        recv_topk_weights,
-        getattr(experts, "num_local_experts", experts.num_experts),
+def _pad_expert_rows(recv_x, idx, weights, num_local_experts):
+    """Append one zero row routed to each local expert (unit weight, sentinels elsewhere).
+
+    Every expert then sees at least one row on every rank, so every expert weight gets a
+    grad (exactly zero for an otherwise idle expert) and FSDP's reduce-scatter payload is
+    the same on every dp_shard peer; the pad rows are sliced off before combine.
+    """
+    e = num_local_experts
+    k = idx.shape[1]
+    pad_idx = idx.new_full((e, k), e)
+    pad_idx[:, 0] = torch.arange(e, device=idx.device)
+    pad_w = weights.new_zeros((e, k))
+    pad_w[:, 0] = 1
+    return (
+        torch.cat((recv_x, recv_x.new_zeros((e, recv_x.shape[1])))),
+        torch.cat((idx, pad_idx)),
+        torch.cat((weights, pad_w)),
     )
-    return local(experts, recv_x, idx, weights)
+
+
+def _run_local(experts, local, recv_x, recv_topk_idx, recv_topk_weights):
+    e_local = getattr(experts, "num_local_experts", experts.num_experts)
+    idx, weights = _normalize_sentinels(recv_topk_idx, recv_topk_weights, e_local)
+    n = recv_x.shape[0]
+    recv_x, idx, weights = _pad_expert_rows(recv_x, idx, weights, e_local)
+    return local(experts, recv_x, idx, weights)[:n]
 
 
 class _DeepEPDispatch(torch.autograd.Function):

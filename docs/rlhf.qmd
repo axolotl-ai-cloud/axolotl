@@ -1023,9 +1023,9 @@ def correctness_reward(completions, answers, **kwargs) -> list[float]:
     return rewards
 ```
 
-#### Sequence Parallelism
+#### Context Parallelism
 
-GDPO supports sequence parallelism for long-context training:
+GDPO supports context parallelism for long-context training:
 
 ```yaml
 rl: gdpo

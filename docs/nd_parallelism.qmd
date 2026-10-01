@@ -35,13 +35,13 @@ Also known as "horizontal model parallelism," as described in the [Megatron-LM p
 
 ### Context Parallelism (CP) {#sec-cp}
 
-Context Parallelism, also called [Sequence Parallelism](sequence_parallelism.qmd), addresses the memory bottleneck from long sequences. The input sequence itself is split along the sequence length dimension and distributed across the GPUs of a `cp` group; every GPU in the group sees the same batch.
+Context Parallelism (CP; the term we use for what some frameworks call sequence parallelism, see the [guide](sequence_parallelism.qmd)) addresses the memory bottleneck from long sequences. The input sequence itself is split along the sequence length dimension and distributed across the GPUs of a `cp` group; every GPU in the group sees the same batch.
 
 - How it works: If you have a sequence of 8192 tokens and a `context_parallel_size` of 4, each GPU will only handle a chunk of 2048 tokens.
 - The Challenge: Attention is not local; every token needs to "attend to" every other token. Splitting the sequence breaks this.
 - The Solution (Ringmaster): CP is built in via [axolotl-ringmaster](sequence_parallelism.qmd) and needs no `plugins:` entry. With `context_parallel.backend: auto` (the default) it prefers **Ulysses**, which all-to-alls the attention *heads* across the group so each GPU runs ordinary attention on a subset of heads over the full sequence, and covers any remainder of the CP degree with **Ring** attention (KV blocks passed around the group), a combination known as USP. Ulysses runs on SDPA or Flash Attention; Ring/USP training needs Flash Attention. Set `backend: ulysses`, `ring`, or `usp` (with `ulysses_size` / `ring_size`) to override.
 - Previous releases implemented CP with `ring-flash-attention` under `sequence_parallel_degree`; that key is deprecated and maps to `context_parallel_size`, and `ring_attn_func` / `heads_k_stride` are ignored.
-- **Mamba/SSM and linear-attention hybrids** (Nemotron-H, Falcon-H1, Granite MoE Hybrid, GDN/KDA): Ringmaster shards the recurrent layers too, passing state across ranks. See [Sequence Parallelism](sequence_parallelism.qmd) for requirements.
+- **Mamba/SSM and linear-attention hybrids** (Nemotron-H, Falcon-H1, Granite MoE Hybrid, GDN/KDA): Ringmaster shards the recurrent layers too, passing state across ranks. See [Context Parallelism](sequence_parallelism.qmd) for requirements.
 
 ### Expert Parallelism (EP) {#sec-ep}
 
@@ -49,7 +49,7 @@ Expert Parallelism shards the experts of a Mixture-of-Experts (MoE) model across
 
 - How it works: the EP plugin slices each `Experts` module's `gate_up_proj` / `down_proj` along the experts dimension and replaces the dispatch/combine path with the chosen backend. Each rank sees a different batch (so EP is data-parallel for *data*) but holds different expert shards (model-parallel for *expert weights*).
 - When to use: MoE training where the experts dominate the parameter count and don't fit under FSDP alone, or where you want to compose with FSDP on orthogonal mesh axes.
-- Requires FSDP2 (`fsdp_version: 2` + `fsdp_config`) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; EP under DDP or with a sharded state dict is rejected at config validation (a sharded checkpoint would keep only EP group 0's experts). Composes with FSDP, CP and HSDP: `dp_replicate_size × expert_parallel_size × dp_shard_size × context_parallel_size = world_size`. EP shards experts on the `ep` axis; the dense parameters FSDP-shard across every other axis; the expert slices FSDP-shard across the `dp_shard` and `cp` ranks of their EP group (both see different tokens, so expert gradients reduce over both), with `dp_replicate` as an outer replication dim under HSDP (HSDP × EP needs `dp_shard_size > 1` or `context_parallel_size > 1`; a bare `(dp_replicate, ep)` mesh is rejected). When `expert_parallel_size` equals the world size (pure EP) the trainable experts stay whole on each rank. Full-parameter and LoRA (`lora_target_parameters` on the experts) training both work; the saved checkpoint or adapter carries every expert. EP × TP is not supported.
+- Requires FSDP2 (`fsdp_version: 2` + `fsdp_config`) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; EP under DDP or with a sharded state dict is rejected at config validation (a sharded checkpoint would keep only EP group 0's experts). Composes with FSDP, CP and HSDP: `dp_replicate_size × expert_parallel_size × dp_shard_size × context_parallel_size = world_size`. EP shards experts on the `ep` axis; the dense parameters FSDP-shard across every other axis; the expert slices FSDP-shard across the `dp_shard` and `cp` ranks of their EP group (both see different tokens, so expert gradients reduce over both), with `dp_replicate` as an outer replication dim under HSDP (with no `dp_shard`/`cp` axis each replica keeps its expert slices whole and the replicas reduce expert gradients with each other). When `expert_parallel_size` equals the world size (pure EP) the trainable experts stay whole on each rank. Full-parameter and LoRA (`lora_target_parameters` on the experts) training both work; the saved checkpoint or adapter carries every expert. EP × TP is not supported.
 - Two dispatch backends, set with `expert_parallel_backend` (default `auto`): `deep_ep` uses the [DeepEP](https://github.com/deepseek-ai/DeepEP) library's fused kernels (Ampere or Hopper, all-pairs NVLink/RDMA); `torch` dispatches over a plain `all_to_all_single` on the EP process group and runs on any NCCL/gloo fabric, including PCIe-only nodes with no NVLink. `auto` picks `deep_ep` when it's importable, else `torch`. See [Expert Parallelism Integration](custom_integrations.qmd#expert-parallelism-integration) for backend details, install steps, and the `torch` backend's checkpointing note.
 
 ### Hybrid Sharding Data Parallel (HSDP) {#sec-hsdp}
@@ -77,7 +77,7 @@ dp_replicate_size: 2
 # Number of GPUs for Tensor Parallelism.
 tensor_parallel_size: 1  # (default is 1, no TP)
 
-# Number of GPUs for Context/Sequence Parallelism.
+# Number of GPUs for Context Parallelism.
 context_parallel_size: 1 # (default is 1, no CP)
 
 # Number of GPUs to shard MoE experts across (Expert Parallel).
@@ -111,6 +111,7 @@ See our example configs [here](https://github.com/axolotl-ai-cloud/axolotl/tree/
 5.  EP + CP on a 4-GPU long-context MoE run:
     - You want the experts sharded and each sequence split across 2 GPUs.
     - Set `expert_parallel_size: 2` and `context_parallel_size: 2`. Add `dp_shard_size: 2` on 8 GPUs to also shard the dense weights (`ep × cp × dp_shard == world_size`).
+    - Axis order is `dp_replicate, dp_shard, cp, ep, tp` (outer to inner): `ep` groups are consecutive ranks and stay node-local whenever `ep × tp` fits on a node, while `dp_shard` groups stride across nodes. The startup log prints the mesh and which axes cross nodes.
 
 6.  HSDP + EP on 2 nodes of 4 GPUs:
     - Set `dp_replicate_size: 2`, `expert_parallel_size: 2`, `dp_shard_size: 2`.
@@ -170,7 +171,7 @@ This matrix describes how different parallelism methods can be combined in Axolo
 | **EP + CP** | 1 | 1 | 1 | >1 | >1 | ✅ **2D Parallelism** (MoE, long context). Experts on `ep`, sequences on `cp`; expert slices FSDP-shard across `cp`. |
 | **FSDP + EP + CP** | 1 | >1 | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE). Expert slices shard across `dp_shard × cp`. |
 | **HSDP + EP** | >1 | >1 | 1 | 1 | >1 | ✅ **3D Parallelism** (MoE, multi-node). `dp_replicate` replicates the whole EP × FSDP layout; needs `dp_shard_size > 1` (or `cp_size > 1`, next row). |
-| HSDP + EP, no shard axis | >1 | 1 | 1 | 1 | >1 | ❌ Not supported; rejected at config validation. The experts have no axis inside each replica to reduce over. |
+| **HSDP + EP**, no shard axis | >1 | 1 | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE, multi-node). `dp_replicate` replicates the pure-EP layout; the dense weights FSDP-shard over `ep` inside each replica and the expert slices stay whole per rank, reducing across replicas. |
 | **HSDP + EP + CP** | >1 | 1 | 1 | >1 | >1 | ✅ **3D Parallelism** (MoE, multi-node, long context). `dp_replicate` outermost; the dense weights FSDP-shard over `ep × cp` and the expert slices over `cp`, so no `dp_shard` axis is needed (accelerate's own DDP + CP rejection is lifted when `ep` supplies the shard group). |
 | EP + TP | 1 | * | >1 | * | >1 | ❌ Not supported; rejected at config validation. |
 | DDP + TP/CP | >1 | 1 | >1 | >1 | 1 | ❌ **Not Supported**. The `ParallelismConfig` explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (`dp_shard_size > 1`). |
@@ -182,4 +183,5 @@ Axolotl normalizes the loss per rank (`average_tokens_across_devices` is off), s
 
 - `tp_size` refers to `tensor_parallel_size`
 - `cp_size` refers to `context_parallel_size`
+- `sp` is accelerate's DeepSpeed Ulysses axis; axolotl sets it only when `context_parallel_size` runs under `deepspeed:`. Older configs' `sequence_parallel_degree` is a deprecated alias of `context_parallel_size`.
 - `ep_size` refers to `expert_parallel_size`

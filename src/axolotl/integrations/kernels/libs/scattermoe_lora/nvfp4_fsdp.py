@@ -87,6 +87,53 @@ def _require_row_scales(tensor):
         )
 
 
+_PACKED = "packed"
+_PACK_ALIGN = 16
+
+
+def _pack_components(nv):
+    """Serialise ``(qdata, scale, per_tensor_scale)`` into one ``[E, C]`` uint8 buffer.
+
+    Each component is laid out flat at a 16-byte-aligned offset so the unpack side can
+    ``view`` it back to its dtype and shape without a copy; the row count keeps FSDP's
+    per-parameter size bookkeeping happy (dim 0 of every all-gather input is the expert axis).
+    """
+    comps = [
+        ("qdata", nv.qdata),
+        ("scale", nv.scale),
+        ("per_tensor_scale", nv.per_tensor_scale),
+    ]
+    specs, chunks, offset = [], [], 0
+    for name, t in comps:
+        if t is None:
+            specs.append((name, None, None, 0, 0))
+            continue
+        flat = t.contiguous().reshape(-1).view(torch.uint8)
+        pad = (-flat.numel()) % _PACK_ALIGN
+        specs.append((name, t.dtype, tuple(t.shape), offset, flat.numel()))
+        chunks.append(flat)
+        if pad:
+            chunks.append(flat.new_zeros(pad))
+        offset += flat.numel() + pad
+    rows = nv.qdata.shape[0]
+    tail = (-offset) % rows
+    if tail:
+        chunks.append(chunks[0].new_zeros(tail))
+    buf = torch.cat(chunks).view(rows, -1)
+    return (buf,), (_PACKED, tuple(specs))
+
+
+def _unpack_components(buf, specs):
+    flat = buf.reshape(-1)
+    out = []
+    for _name, dtype, shape, offset, nbytes in specs:
+        if dtype is None:
+            out.append(None)
+            continue
+        out.append(flat[offset : offset + nbytes].view(dtype).view(shape))
+    return tuple(out)
+
+
 def patch_nvfp4_fsdp():
     global _PATCHED
     if _PATCHED:
@@ -202,11 +249,13 @@ def patch_nvfp4_fsdp():
         # FSDP reconstructs the contiguous unsharded param via as_strided(orig_size,
         # contiguous_stride, 0). The reconstructed NVFP4 already has the right qdata/scale
         # (incl. swizzled scale) shapes; as_strided them to their own contiguous shapes (a
-        # view op must return NEW tensors, so we can't return x as-is).
+        # view op must return NEW tensors, so we can't return x as-is). Each component keeps
+        # its own storage offset: after a packed single-rank unshard they are views into one
+        # shared buffer.
         x = args[0]
         qshape, sshape = list(x.qdata.shape), list(x.scale.shape)
-        qd = func(x.qdata, qshape, _cstride(qshape), 0)
-        sc = func(x.scale, sshape, _cstride(sshape), 0)
+        qd = func(x.qdata, qshape, _cstride(qshape), x.qdata.storage_offset())
+        sc = func(x.scale, sshape, _cstride(sshape), x.scale.storage_offset())
         return _rebuild(x, qd, sc, x.per_tensor_scale)
 
     @implements([aten.copy_.default])
@@ -230,6 +279,10 @@ def patch_nvfp4_fsdp():
         self, mesh, outer_size=None, outer_stride=None, module=None, mp_policy=None
     ):
         _require_row_scales(self)
+        if mesh is not None and mesh.size() == 1:
+            # FSDP2's single-rank unshard copies only all_gather_inputs[0], so a size-1 shard
+            # mesh (pure EP, dp_replicate x ep) gets the components packed into one buffer.
+            return _pack_components(self)
         inputs = (self.qdata, self.scale)
         pts = self.per_tensor_scale
         scalar_pts = pts is not None and pts.dim() == 0
@@ -246,14 +299,17 @@ def patch_nvfp4_fsdp():
     def fsdp_post_all_gather(
         self, all_gather_outputs, metadata, param_dtype, *, out=None
     ):
-        has_pts, scalar_pts = metadata
-        if has_pts:
-            qdata, scale, pts = all_gather_outputs
-            if scalar_pts:
-                pts = pts[0, 0, 0]
+        if metadata[0] == _PACKED:
+            qdata, scale, pts = _unpack_components(all_gather_outputs[0], metadata[1])
         else:
-            qdata, scale = all_gather_outputs
-            pts = None
+            has_pts, scalar_pts = metadata
+            if has_pts:
+                qdata, scale, pts = all_gather_outputs
+                if scalar_pts:
+                    pts = pts[0, 0, 0]
+            else:
+                qdata, scale = all_gather_outputs
+                pts = None
         if out is not None:
             # reconstruct in-place into the existing unsharded param
             out.qdata, out.scale, out.per_tensor_scale = qdata, scale, pts

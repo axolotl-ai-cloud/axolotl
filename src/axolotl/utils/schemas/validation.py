@@ -917,7 +917,7 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_grpo_liger_sequence_parallel(cls, data):
+    def check_grpo_liger_context_parallel(cls, data):
         if (
             data.get("rl") == "grpo"
             and data.get("trl", {})
@@ -2268,14 +2268,46 @@ class ComplexValidationMixin:
                 )
 
             LOG.warning(
-                "Sequence parallelism (SP) is enabled with "
+                "Context parallelism (CP) is enabled with "
                 f"context_parallel_size={self.context_parallel_size}. "
-                "Please note that logged losses may differ slightly to the non-SP "
+                "Please note that logged losses may differ slightly to the non-CP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
                 "for more details."
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def check_context_parallel_deepspeed(self):
+        if not (self.deepspeed and (self.context_parallel_size or 1) > 1):
+            return self
+        if getattr(self, "use_glm_dsa_kernels", False):
+            raise ValueError(
+                "GLM DSA context parallelism needs ringmaster, which does not run under "
+                "DeepSpeed; use FSDP2 instead."
+            )
+        if self.rl:
+            raise ValueError(
+                f"rl: {self.rl} with context_parallel_size > 1 under DeepSpeed is not "
+                "supported: only the SFT trainer weights each Ulysses rank's loss; use FSDP2."
+            )
+        cp = getattr(self, "context_parallel", None)
+        if cp is not None and (
+            getattr(cp, "backend", "auto") not in ("auto", "ulysses")
+            or getattr(cp, "ring_size", None) not in (None, 1)
+            or getattr(cp, "ulysses_size", None) not in (None, cp.size)
+        ):
+            raise ValueError(
+                "Under DeepSpeed, context parallelism maps to DeepSpeed Ulysses (ALST): "
+                "only `context_parallel.backend: ulysses` (or auto) with the full CP "
+                "degree as ulysses_size is supported; Ring/USP need FSDP2."
+            )
+        LOG.info(
+            "DeepSpeed + context_parallel_size=%d: sequences are split with DeepSpeed "
+            "Ulysses (ALST) through accelerate's sequence-parallel axis.",
+            self.context_parallel_size,
+        )
         return self
 
     @model_validator(mode="after")

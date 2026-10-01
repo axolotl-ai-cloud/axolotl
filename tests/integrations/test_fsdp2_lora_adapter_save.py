@@ -115,3 +115,46 @@ def test_fsdp2_adapter_save_ignores_frozen_base_parameters(monkeypatch, tmp_path
     assert save_fsdp2_lora_adapter(model, str(tmp_path))
     assert saved.keys() == {"lora_A.default.weight"}
     torch.testing.assert_close(saved["lora_A.default.weight"], adapter.detach())
+
+
+def test_fsdp2_adapter_save_strips_checkpoint_wrapper_names(monkeypatch, tmp_path):
+    from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
+    from safetensors import torch as safetensors_torch
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        checkpoint_wrapper,
+    )
+
+    class Layer(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q = torch.nn.Linear(4, 4)
+
+        def forward(self, x):
+            return self.q(x)
+
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = torch.nn.ModuleList([Layer(), Layer()])
+
+        def forward(self, x):
+            for layer in self.layers:
+                x = layer(x)
+            return x
+
+    torch.manual_seed(0)
+    model = get_peft_model(Model(), LoraConfig(r=2, target_modules=["q"]))
+    expected = get_peft_model_state_dict(model)
+    for i, layer in enumerate(model.base_model.model.layers):
+        model.base_model.model.layers[i] = checkpoint_wrapper(layer)
+
+    saved = {}
+    monkeypatch.setattr(
+        safetensors_torch,
+        "save_file",
+        lambda state_dict, output: saved.update(state_dict),
+    )
+    assert save_fsdp2_lora_adapter(model, str(tmp_path))
+    assert saved.keys() == expected.keys()
+    for key, value in expected.items():
+        torch.testing.assert_close(saved[key], value)
