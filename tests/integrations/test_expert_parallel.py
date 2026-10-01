@@ -537,6 +537,41 @@ class TestCheckpointSaveScoping:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.parametrize("rank", [0, 1])
+def test_sharding_marks_experts_parallel(monkeypatch, rank):
+    from axolotl.integrations.expert_parallel import shard
+
+    model = torch.nn.Module()
+    model.experts = torch.nn.Module()
+    model.experts.gate_up_proj = torch.nn.Parameter(torch.randn(4, 8, 4))
+    model.experts.down_proj = torch.nn.Parameter(torch.randn(4, 4, 4))
+    model.experts.num_experts = 4
+    model.experts._is_expert_parallel = False
+    model.dense = torch.nn.Linear(4, 4)
+    original = model.experts.gate_up_proj.detach().clone()
+    monkeypatch.setattr(shard.dist, "get_world_size", lambda group=None: 2)
+    monkeypatch.setattr(shard.dist, "get_rank", lambda group=None: rank)
+    monkeypatch.setattr(
+        shard.dist,
+        "all_gather_object",
+        lambda ranks, value: ranks.__setitem__(slice(None), [0, 1]),
+    )
+
+    def scatter_on_cpu(module, name, count, ranks):
+        shard._replace_with_slice(
+            module, name, ranks[rank] * count, (ranks[rank] + 1) * count
+        )
+
+    monkeypatch.setattr(shard, "_scatter_expert_from_rank0", scatter_on_cpu)
+    assert shard_expert_weights(model, object()) == 1
+    assert model.experts._is_expert_parallel is True
+    assert model.experts.num_experts == model.experts.num_local_experts == 2
+    torch.testing.assert_close(
+        model.experts.gate_up_proj, original[rank * 2 : (rank + 1) * 2]
+    )
+    assert not getattr(model.dense, "_is_expert_parallel", False)
+
+
 class TestShardingSingleRank:
     """At world_size=1, sharding is a no-op."""
 
@@ -558,11 +593,13 @@ class TestShardingSingleRank:
         n = shard_expert_weights(block, dist.group.WORLD)
         assert n == 0
         assert tuple(block.experts.gate_up_proj.shape) == original_shape
+        assert not block.experts._is_expert_parallel
 
     def test_none_group_no_op(self):
         block = _build_qwen3moe_block(num_experts=16)
         n = shard_expert_weights(block, None)
         assert n == 0
+        assert not block.experts._is_expert_parallel
 
 
 # --------------------------------------------------------------------------- #

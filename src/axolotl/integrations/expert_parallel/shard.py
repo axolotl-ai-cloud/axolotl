@@ -226,6 +226,7 @@ def shard_expert_weights(model, ep_group) -> int:
         model._ep_num_experts_global = E
         # Override the kernel's view of num_experts for grouped_mm/scattermoe bucketing.
         module.num_experts = E_local
+        module._is_expert_parallel = True
 
         # Mark sharded params as DDP-ignored — they hold rank-specific content
         # and must NOT be broadcast from rank 0 at DDP construction.

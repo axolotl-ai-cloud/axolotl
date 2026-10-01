@@ -638,10 +638,12 @@ def _local_impl_checks(rank, world_size):
 
         ep = copy.deepcopy(full)
         s = _shard_experts(ep, rank, world_size)
+        assert ep._is_expert_parallel is False
         xe, we = x.clone().requires_grad_(True), w.clone().requires_grad_(True)
         experts_fn.set_dispatch_chunks(chunks)
         try:
             ye = experts_fn._ep_forward(ep, xe, idx, we, local=local, backend="torch")
+            assert ep._is_expert_parallel is True
         finally:
             experts_fn.set_dispatch_chunks(1)
         (ye * gout).sum().backward()

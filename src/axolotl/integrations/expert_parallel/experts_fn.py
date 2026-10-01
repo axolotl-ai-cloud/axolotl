@@ -370,6 +370,7 @@ def _ep_forward(
     ep_backend = _BACKENDS[backend]
     local_fn = resolve_local_implementation(local)
     _maybe_install_decorator_attrs(self)
+    self._is_expert_parallel = True
     original_dtype = None
     if ep_backend.cast_bf16 and hidden_states.dtype != torch.bfloat16:
         original_dtype = hidden_states.dtype
