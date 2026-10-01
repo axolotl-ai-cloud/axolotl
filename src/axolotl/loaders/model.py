@@ -952,11 +952,6 @@ class ModelLoader:
                 max_memory=max_memory,
                 no_split_module_classes=no_split_module_classes(model_canvas),
                 dtype=self.cfg.torch_dtype,
-                # list(): transformers exposes this as a set, which accelerate
-                # wraps rather than iterates, so layers get split across devices
-                no_split_module_classes=list(
-                    getattr(model_canvas, "_no_split_modules", None) or []
-                ),
             )
             # We can discard max_memory now as we have a device map set up
             max_memory = None
