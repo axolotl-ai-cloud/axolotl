@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -925,6 +937,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.loaders.model.check_tensor_parallel_adapter_support" id="toc-axolotl.loaders.model.check_tensor_parallel_adapter_support" class="nav-link" data-scroll-target="#axolotl.loaders.model.check_tensor_parallel_adapter_support">check_tensor_parallel_adapter_support</a></li>
   <li><a href="#axolotl.loaders.model.check_tensor_parallel_rl_adapter_support" id="toc-axolotl.loaders.model.check_tensor_parallel_rl_adapter_support" class="nav-link" data-scroll-target="#axolotl.loaders.model.check_tensor_parallel_rl_adapter_support">check_tensor_parallel_rl_adapter_support</a></li>
+  <li><a href="#axolotl.loaders.model.no_split_module_classes" id="toc-axolotl.loaders.model.no_split_module_classes" class="nav-link" data-scroll-target="#axolotl.loaders.model.no_split_module_classes">no_split_module_classes</a></li>
   <li><a href="#axolotl.loaders.model.should_convert_embedding_dtypes" id="toc-axolotl.loaders.model.should_convert_embedding_dtypes" class="nav-link" data-scroll-target="#axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</a></li>
   <li><a href="#axolotl.loaders.model.should_skip_peft_embedding_upcast" id="toc-axolotl.loaders.model.should_skip_peft_embedding_upcast" class="nav-link" data-scroll-target="#axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</a></li>
   </ul></li>
@@ -1102,10 +1115,14 @@ adapter integration, and various optimizations.</p>
 <td>DPO/IPO/KTO hand TRL the peft config and TRL wraps the already TP-sharded model, after</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.loaders.model.no_split_module_classes">no_split_module_classes</a></td>
+<td>Module class names a device map must keep on one device (transformers stores them as a set).</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</a></td>
 <td>Whether the post-quantization pass converts modules back to <code>torch_dtype</code>.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</a></td>
 <td>Whether PEFT’s kbit preparation should leave the embeddings alone.</td>
 </tr>
@@ -1127,14 +1144,19 @@ case). A partially quantized checkpoint whose unquantized modules are still in t
 <p>DPO/IPO/KTO hand TRL the peft config and TRL wraps the already TP-sharded model, after
 the loader could install <code>torchao_tp_lora</code>, so even an NVFP4 base ends up shard-local.</p>
 </section>
+<section id="axolotl.loaders.model.no_split_module_classes" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.model.no_split_module_classes">no_split_module_classes</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>loaders.model.no_split_module_classes(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Module class names a device map must keep on one device (transformers stores them as a set).</p>
+</section>
 <section id="axolotl.loaders.model.should_convert_embedding_dtypes" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.model.should_convert_embedding_dtypes">should_convert_embedding_dtypes</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_convert_embedding_dtypes(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_convert_embedding_dtypes(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Whether the post-quantization pass converts modules back to <code>torch_dtype</code>.</p>
 </section>
 <section id="axolotl.loaders.model.should_skip_peft_embedding_upcast" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.model.should_skip_peft_embedding_upcast">should_skip_peft_embedding_upcast</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_skip_peft_embedding_upcast(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>loaders.model.should_skip_peft_embedding_upcast(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Whether PEFT’s kbit preparation should leave the embeddings alone.</p>
 <p>Upcasting them there is pure peak memory whenever the later conversion back to
 <code>torch_dtype</code> reverts it, so skip it then unless the user asked otherwise.</p>

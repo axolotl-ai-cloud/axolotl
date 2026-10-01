@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -923,6 +935,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.utils.trainer.add_position_ids" id="toc-axolotl.utils.trainer.add_position_ids" class="nav-link" data-scroll-target="#axolotl.utils.trainer.add_position_ids">add_position_ids</a></li>
   <li><a href="#axolotl.utils.trainer.create_weighted_mask" id="toc-axolotl.utils.trainer.create_weighted_mask" class="nav-link" data-scroll-target="#axolotl.utils.trainer.create_weighted_mask">create_weighted_mask</a></li>
   <li><a href="#axolotl.utils.trainer.filter_sequences_by_length" id="toc-axolotl.utils.trainer.filter_sequences_by_length" class="nav-link" data-scroll-target="#axolotl.utils.trainer.filter_sequences_by_length">filter_sequences_by_length</a></li>
+  <li><a href="#axolotl.utils.trainer.setup_deepspeed_context_parallel_envs" id="toc-axolotl.utils.trainer.setup_deepspeed_context_parallel_envs" class="nav-link" data-scroll-target="#axolotl.utils.trainer.setup_deepspeed_context_parallel_envs">setup_deepspeed_context_parallel_envs</a></li>
   <li><a href="#axolotl.utils.trainer.setup_trainer" id="toc-axolotl.utils.trainer.setup_trainer" class="nav-link" data-scroll-target="#axolotl.utils.trainer.setup_trainer">setup_trainer</a></li>
   </ul></li>
   </ul></li>
@@ -966,6 +979,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Filter sequences outside valid length range [min_sequence_len, sequence_len].</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.utils.trainer.setup_deepspeed_context_parallel_envs">setup_deepspeed_context_parallel_envs</a></td>
+<td>Map <code>context_parallel_size</code> onto accelerate’s DeepSpeed Ulysses (ALST) <code>sp</code> axis.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.utils.trainer.setup_trainer">setup_trainer</a></td>
 <td>Helper method for instantiating and building a (causal or RLHF) trainer.</td>
 </tr>
@@ -1013,19 +1030,26 @@ remaining in each sample.</p>
 <p>If raise_on_drop is set, the code raises a ValueError if a sample is
 encountered that is too long and would have been dropped.</p>
 </section>
+<section id="axolotl.utils.trainer.setup_deepspeed_context_parallel_envs" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.trainer.setup_deepspeed_context_parallel_envs">setup_deepspeed_context_parallel_envs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.setup_deepspeed_context_parallel_envs(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Map <code>context_parallel_size</code> onto accelerate’s DeepSpeed Ulysses (ALST) <code>sp</code> axis.</p>
+<p>ZeRO owns sharding, so the ranks outside the CP group replicate; accelerate registers
+the sequence-parallel groups with the engine and shards each batch across the group.</p>
+</section>
 <section id="axolotl.utils.trainer.setup_trainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.trainer.setup_trainer">setup_trainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.setup_trainer(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    train_dataset,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    eval_dataset,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    processor,</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    total_num_steps,</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    model_ref<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.setup_trainer(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    train_dataset,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    eval_dataset,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    processor,</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    total_num_steps,</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    model_ref<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Helper method for instantiating and building a (causal or RLHF) trainer.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>

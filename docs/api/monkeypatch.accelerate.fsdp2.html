@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -919,6 +931,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_apply_ac" id="toc-axolotl.monkeypatch.accelerate.fsdp2.fsdp2_apply_ac" class="nav-link" data-scroll-target="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_apply_ac">fsdp2_apply_ac</a></li>
   <li><a href="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict" id="toc-axolotl.monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict" class="nav-link" data-scroll-target="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict">fsdp2_load_full_state_dict</a></li>
   <li><a href="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_prepare_model" id="toc-axolotl.monkeypatch.accelerate.fsdp2.fsdp2_prepare_model" class="nav-link" data-scroll-target="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_prepare_model">fsdp2_prepare_model</a></li>
   <li><a href="#axolotl.monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp" id="toc-axolotl.monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp" class="nav-link" data-scroll-target="#axolotl.monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp">patch_initialize_missing_keys_for_fsdp</a></li>
@@ -951,39 +964,48 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_apply_ac">fsdp2_apply_ac</a></td>
+<td>accelerate’s per-layer AC pass using axolotl’s SAC-aware, non-reentrant wrapper.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict">fsdp2_load_full_state_dict</a></td>
 <td>Loads the full state dict (could be only on rank 0) into the sharded model. This is done by broadcasting the</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.accelerate.fsdp2.fsdp2_prepare_model">fsdp2_prepare_model</a></td>
 <td>Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp">patch_initialize_missing_keys_for_fsdp</a></td>
 <td>Patch _initialize_missing_keys to skip re-initialization on FSDP non-rank-0.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.accelerate.fsdp2.patch_move_missing_keys_meta_for_fsdp">patch_move_missing_keys_meta_for_fsdp</a></td>
 <td>Stop transformers materializing the FULL model on every non-rank-0 rank during load.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.accelerate.fsdp2.patch_peft_param_wrapper_for_fsdp2">patch_peft_param_wrapper_for_fsdp2</a></td>
 <td>Patch PEFT’s _LoraParameterProxy.forward for FSDP2 DTensor compatibility.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.accelerate.fsdp2.patch_tied_keys_for_meta_device">patch_tied_keys_for_meta_device</a></td>
 <td>Patch _adjust_tied_keys_with_tied_pointers to skip meta tensors.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.monkeypatch.accelerate.fsdp2.fsdp2_apply_ac" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.fsdp2_apply_ac">fsdp2_apply_ac</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.fsdp2_apply_ac(accelerator, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>accelerate’s per-layer AC pass using axolotl’s SAC-aware, non-reentrant wrapper.</p>
+</section>
 <section id="axolotl.monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict">fsdp2_load_full_state_dict</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    _accelerator,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    full_sd,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    offload_to_cpu<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.fsdp2_load_full_state_dict(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    _accelerator,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    full_sd,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    offload_to_cpu<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Loads the full state dict (could be only on rank 0) into the sharded model. This is done by broadcasting the
 parameters from rank 0 to all other ranks. This function modifies the model in-place.
 Args:
@@ -994,7 +1016,7 @@ full_sd (<code>dict</code>): The full state dict to load, can only be on rank 0<
 </section>
 <section id="axolotl.monkeypatch.accelerate.fsdp2.fsdp2_prepare_model" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.fsdp2_prepare_model">fsdp2_prepare_model</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.fsdp2_prepare_model(accelerator, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.fsdp2_prepare_model(accelerator, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
@@ -1051,7 +1073,7 @@ full_sd (<code>dict</code>): The full state dict to load, can only be on rank 0<
 </section>
 <section id="axolotl.monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp">patch_initialize_missing_keys_for_fsdp</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_initialize_missing_keys_for_fsdp()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Patch _initialize_missing_keys to skip re-initialization on FSDP non-rank-0.</p>
 <p>When using cpu_ram_efficient_loading, non-rank-0 processes load weights on
 meta device and move them to CPU as empty tensors. Without this patch,
@@ -1066,7 +1088,7 @@ Remove this patch once transformers includes the fix in a stable release.</p>
 </section>
 <section id="axolotl.monkeypatch.accelerate.fsdp2.patch_move_missing_keys_meta_for_fsdp" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.patch_move_missing_keys_meta_for_fsdp">patch_move_missing_keys_meta_for_fsdp</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_move_missing_keys_meta_for_fsdp()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_move_missing_keys_meta_for_fsdp()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Stop transformers materializing the FULL model on every non-rank-0 rank during load.</p>
 <p><code>_move_missing_keys_from_meta_to_device</code> has a branch <code>is_fsdp_enabled() and not is_local_dist_rank_0() and not is_quantized</code> that moves EVERY meta parameter to real CPU
 storage (<code>torch.zeros_like(param, device="cpu")</code>). For an unrecognized-quantizer checkpoint
@@ -1085,7 +1107,7 @@ tensor; see <code>axolotl.loaders.utils.materialize_trainable_meta_params</code>
 </section>
 <section id="axolotl.monkeypatch.accelerate.fsdp2.patch_peft_param_wrapper_for_fsdp2" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.patch_peft_param_wrapper_for_fsdp2">patch_peft_param_wrapper_for_fsdp2</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_peft_param_wrapper_for_fsdp2()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_peft_param_wrapper_for_fsdp2()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Patch PEFT’s _LoraParameterProxy.forward for FSDP2 DTensor compatibility.</p>
 <p>PEFT’s ParamWrapper applies LoRA via torch.nn.utils.parametrize, which adds
 delta_weight to the base weight W inside _LoraParameterProxy.forward().
@@ -1097,7 +1119,7 @@ metadata wrapping, no communication).</p>
 </section>
 <section id="axolotl.monkeypatch.accelerate.fsdp2.patch_tied_keys_for_meta_device" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.accelerate.fsdp2.patch_tied_keys_for_meta_device">patch_tied_keys_for_meta_device</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_tied_keys_for_meta_device()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.accelerate.fsdp2.patch_tied_keys_for_meta_device()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Patch _adjust_tied_keys_with_tied_pointers to skip meta tensors.</p>
 <p>Meta tensors all share data_ptr()==0, causing every parameter to be incorrectly
 grouped as “tied”. Skipping them is safe since they have no real storage.</p>

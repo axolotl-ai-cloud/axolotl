@@ -222,6 +222,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -848,7 +860,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -969,7 +981,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#gdpo-vs-grpo" id="toc-gdpo-vs-grpo" class="nav-link" data-scroll-target="#gdpo-vs-grpo">GDPO vs GRPO</a></li>
   <li><a href="#why-gdpo" id="toc-why-gdpo" class="nav-link" data-scroll-target="#why-gdpo">Why GDPO?</a></li>
   <li><a href="#reward-functions-1" id="toc-reward-functions-1" class="nav-link" data-scroll-target="#reward-functions-1">Reward Functions</a></li>
-  <li><a href="#sequence-parallelism" id="toc-sequence-parallelism" class="nav-link" data-scroll-target="#sequence-parallelism">Sequence Parallelism</a></li>
+  <li><a href="#context-parallelism" id="toc-context-parallelism" class="nav-link" data-scroll-target="#context-parallelism">Context Parallelism</a></li>
   </ul></li>
   <li><a href="#simpo" id="toc-simpo" class="nav-link" data-scroll-target="#simpo">SimPO</a></li>
   <li><a href="#ebft" id="toc-ebft" class="nav-link" data-scroll-target="#ebft">EBFT</a>
@@ -1968,9 +1980,9 @@ Tip
 <span id="cb62-9"><a href="#cb62-9" aria-hidden="true" tabindex="-1"></a>        rewards.append(score)</span>
 <span id="cb62-10"><a href="#cb62-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> rewards</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="sequence-parallelism" class="level4">
-<h4 class="anchored" data-anchor-id="sequence-parallelism">Sequence Parallelism</h4>
-<p>GDPO supports sequence parallelism for long-context training:</p>
+<section id="context-parallelism" class="level4">
+<h4 class="anchored" data-anchor-id="context-parallelism">Context Parallelism</h4>
+<p>GDPO supports context parallelism for long-context training:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb63"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> gdpo</span></span>
 <span id="cb63-2"><a href="#cb63-2" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>

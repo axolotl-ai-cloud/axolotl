@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -920,6 +932,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#gated-deltanet-linear-attention" id="toc-gated-deltanet-linear-attention" class="nav-link" data-scroll-target="#gated-deltanet-linear-attention">Gated DeltaNet Linear Attention</a></li>
   <li><a href="#routed-experts-moe" id="toc-routed-experts-moe" class="nav-link" data-scroll-target="#routed-experts-moe">Routed Experts (MoE)</a></li>
   <li><a href="#shared-experts-moe" id="toc-shared-experts-moe" class="nav-link" data-scroll-target="#shared-experts-moe">Shared Experts (MoE)</a></li>
+  <li><a href="#qwen3.6-and-edge0" id="toc-qwen3.6-and-edge0" class="nav-link" data-scroll-target="#qwen3.6-and-edge0">Qwen3.6 and Edge0</a></li>
   <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">TIPS</a></li>
   </ul></li>
   <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
@@ -967,12 +980,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </ol>
 <p>Available configs:</p>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 25%">
-<col style="width: 25%">
-<col style="width: 25%">
-<col style="width: 25%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Config</th>
@@ -1036,6 +1043,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>MoE, text-only QLoRA + FSDP2</td>
 <td>—</td>
 </tr>
+<tr class="even">
+<td><code>qwen3.6-35b-a3b-moe-qlora.yaml</code></td>
+<td>Qwen3.6-35B-A3B</td>
+<td>MoE, text-only QLoRA (see <a href="#qwen36-and-edge0">Qwen3.6 and Edge0</a>)</td>
+<td>—</td>
+</tr>
 </tbody>
 </table>
 <section id="gated-deltanet-linear-attention" class="level3">
@@ -1057,16 +1070,22 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="shared-experts-moe" class="level3">
 <h3 class="anchored" data-anchor-id="shared-experts-moe">Shared Experts (MoE)</h3>
-<p>Shared experts use <code>nn.Linear</code> (unlike routed experts which are 3D <code>nn.Parameter</code> tensors), so they can be targeted via <code>lora_target_modules</code>. To also train shared expert projections alongside attention, uncomment <code>gate_up_proj</code> and <code>down_proj</code> in <code>lora_target_modules</code>:</p>
+<p>Shared experts use <code>nn.Linear</code> (unlike routed experts which are 3D <code>nn.Parameter</code> tensors), so they can be targeted via <code>lora_target_modules</code>. To also train shared expert projections alongside attention, uncomment <code>gate_proj</code>, <code>up_proj</code> and <code>down_proj</code> in <code>lora_target_modules</code>:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> q_proj</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> k_proj</span></span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> v_proj</span></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> o_proj</span></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">  # - gate_up_proj</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">  # - gate_proj</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">  # - up_proj</span></span>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">  # - down_proj</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Use <code>lora_target_parameters</code> (see <a href="#routed-experts-moe">Routed Experts</a> above) to target routed experts separately.</p>
+</section>
+<section id="qwen3.6-and-edge0" class="level3">
+<h3 class="anchored" data-anchor-id="qwen3.6-and-edge0">Qwen3.6 and Edge0</h3>
+<p><a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">Qwen3.6-35B-A3B</a> keeps the <code>qwen3_5_moe</code> architecture and trains with <code>qwen3.6-35b-a3b-moe-qlora.yaml</code>. Its extra <code>mtp.*</code> (multi-token prediction) tensors are dropped on load.</p>
+<p>Edge0 checkpoints are MLX int4 exports (<a href="https://huggingface.co/Edge0/Edge0-35B-A3B-preview">Edge0-35B-A3B-preview</a> of Qwen3.6-35B-A3B, <a href="https://huggingface.co/Edge0/Edge0-8B-A1B-preview">Edge0-8B-A1B-preview</a> of Ling-3.0-tiny) and cannot be loaded by transformers. Fine-tune the base model instead and quantize afterwards.</p>
+<p><a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/nex-n2.5">Nex-N2.5-mini</a> shares this architecture with its own chat template.</p>
 </section>
 <section id="tips" class="level3">
 <h3 class="anchored" data-anchor-id="tips">TIPS</h3>

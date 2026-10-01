@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -987,13 +999,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="sec-cp" class="level3">
 <h3 class="anchored" data-anchor-id="sec-cp">Context Parallelism (CP)</h3>
-<p>Context Parallelism, also called <a href="../docs/sequence_parallelism.html">Sequence Parallelism</a>, addresses the memory bottleneck from long sequences. The input sequence itself is split along the sequence length dimension and distributed across the GPUs of a <code>cp</code> group; every GPU in the group sees the same batch.</p>
+<p>Context Parallelism (CP; the term we use for what some frameworks call sequence parallelism, see the <a href="../docs/sequence_parallelism.html">guide</a>) addresses the memory bottleneck from long sequences. The input sequence itself is split along the sequence length dimension and distributed across the GPUs of a <code>cp</code> group; every GPU in the group sees the same batch.</p>
 <ul>
 <li>How it works: If you have a sequence of 8192 tokens and a <code>context_parallel_size</code> of 4, each GPU will only handle a chunk of 2048 tokens.</li>
 <li>The Challenge: Attention is not local; every token needs to “attend to” every other token. Splitting the sequence breaks this.</li>
 <li>The Solution (Ringmaster): CP is built in via <a href="../docs/sequence_parallelism.html">axolotl-ringmaster</a> and needs no <code>plugins:</code> entry. With <code>context_parallel.backend: auto</code> (the default) it prefers <strong>Ulysses</strong>, which all-to-alls the attention <em>heads</em> across the group so each GPU runs ordinary attention on a subset of heads over the full sequence, and covers any remainder of the CP degree with <strong>Ring</strong> attention (KV blocks passed around the group), a combination known as USP. Ulysses runs on SDPA or Flash Attention; Ring/USP training needs Flash Attention. Set <code>backend: ulysses</code>, <code>ring</code>, or <code>usp</code> (with <code>ulysses_size</code> / <code>ring_size</code>) to override.</li>
 <li>Previous releases implemented CP with <code>ring-flash-attention</code> under <code>sequence_parallel_degree</code>; that key is deprecated and maps to <code>context_parallel_size</code>, and <code>ring_attn_func</code> / <code>heads_k_stride</code> are ignored.</li>
-<li><strong>Mamba/SSM and linear-attention hybrids</strong> (Nemotron-H, Falcon-H1, Granite MoE Hybrid, GDN/KDA): Ringmaster shards the recurrent layers too, passing state across ranks. See <a href="../docs/sequence_parallelism.html">Sequence Parallelism</a> for requirements.</li>
+<li><strong>Mamba/SSM and linear-attention hybrids</strong> (Nemotron-H, Falcon-H1, Granite MoE Hybrid, GDN/KDA): Ringmaster shards the recurrent layers too, passing state across ranks. See <a href="../docs/sequence_parallelism.html">Context Parallelism</a> for requirements.</li>
 </ul>
 </section>
 <section id="sec-ep" class="level3">
@@ -1002,7 +1014,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>How it works: the EP plugin slices each <code>Experts</code> module’s <code>gate_up_proj</code> / <code>down_proj</code> along the experts dimension and replaces the dispatch/combine path with the chosen backend. Each rank sees a different batch (so EP is data-parallel for <em>data</em>) but holds different expert shards (model-parallel for <em>expert weights</em>).</li>
 <li>When to use: MoE training where the experts dominate the parameter count and don’t fit under FSDP alone, or where you want to compose with FSDP on orthogonal mesh axes.</li>
-<li>Requires FSDP2 (<code>fsdp_version: 2</code> + <code>fsdp_config</code>) with <code>fsdp_config.state_dict_type: FULL_STATE_DICT</code>; EP under DDP or with a sharded state dict is rejected at config validation (a sharded checkpoint would keep only EP group 0’s experts). Composes with FSDP, CP and HSDP: <code>dp_replicate_size × expert_parallel_size × dp_shard_size × context_parallel_size = world_size</code>. EP shards experts on the <code>ep</code> axis; the dense parameters FSDP-shard across every other axis; the expert slices FSDP-shard across the <code>dp_shard</code> and <code>cp</code> ranks of their EP group (both see different tokens, so expert gradients reduce over both), with <code>dp_replicate</code> as an outer replication dim under HSDP (HSDP × EP needs <code>dp_shard_size &gt; 1</code> or <code>context_parallel_size &gt; 1</code>; a bare <code>(dp_replicate, ep)</code> mesh is rejected). When <code>expert_parallel_size</code> equals the world size (pure EP) the trainable experts stay whole on each rank. Full-parameter and LoRA (<code>lora_target_parameters</code> on the experts) training both work; the saved checkpoint or adapter carries every expert. EP × TP is not supported.</li>
+<li>Requires FSDP2 (<code>fsdp_version: 2</code> + <code>fsdp_config</code>) with <code>fsdp_config.state_dict_type: FULL_STATE_DICT</code>; EP under DDP or with a sharded state dict is rejected at config validation (a sharded checkpoint would keep only EP group 0’s experts). Composes with FSDP, CP and HSDP: <code>dp_replicate_size × expert_parallel_size × dp_shard_size × context_parallel_size = world_size</code>. EP shards experts on the <code>ep</code> axis; the dense parameters FSDP-shard across every other axis; the expert slices FSDP-shard across the <code>dp_shard</code> and <code>cp</code> ranks of their EP group (both see different tokens, so expert gradients reduce over both), with <code>dp_replicate</code> as an outer replication dim under HSDP (with no <code>dp_shard</code>/<code>cp</code> axis each replica keeps its expert slices whole and the replicas reduce expert gradients with each other). When <code>expert_parallel_size</code> equals the world size (pure EP) the trainable experts stay whole on each rank. Full-parameter and LoRA (<code>lora_target_parameters</code> on the experts) training both work; the saved checkpoint or adapter carries every expert. EP × TP is not supported.</li>
 <li>Two dispatch backends, set with <code>expert_parallel_backend</code> (default <code>auto</code>): <code>deep_ep</code> uses the <a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a> library’s fused kernels (Ampere or Hopper, all-pairs NVLink/RDMA); <code>torch</code> dispatches over a plain <code>all_to_all_single</code> on the EP process group and runs on any NCCL/gloo fabric, including PCIe-only nodes with no NVLink. <code>auto</code> picks <code>deep_ep</code> when it’s importable, else <code>torch</code>. See <a href="../docs/custom_integrations.html#expert-parallelism-integration">Expert Parallelism Integration</a> for backend details, install steps, and the <code>torch</code> backend’s checkpointing note.</li>
 </ul>
 </section>
@@ -1032,7 +1044,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs for Tensor Parallelism.</span></span>
 <span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="fu">tensor_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">  # (default is 1, no TP)</span></span>
 <span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs for Context/Sequence Parallelism.</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs for Context Parallelism.</span></span>
 <span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co"> # (default is 1, no CP)</span></span>
 <span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs to shard MoE experts across (Expert Parallel).</span></span>
@@ -1079,6 +1091,7 @@ Tip
 <ul>
 <li>You want the experts sharded and each sequence split across 2 GPUs.</li>
 <li>Set <code>expert_parallel_size: 2</code> and <code>context_parallel_size: 2</code>. Add <code>dp_shard_size: 2</code> on 8 GPUs to also shard the dense weights (<code>ep × cp × dp_shard == world_size</code>).</li>
+<li>Axis order is <code>dp_replicate, dp_shard, cp, ep, tp</code> (outer to inner): <code>ep</code> groups are consecutive ranks and stay node-local whenever <code>ep × tp</code> fits on a node, while <code>dp_shard</code> groups stride across nodes. The startup log prints the mesh and which axes cross nodes.</li>
 </ul></li>
 <li>HSDP + EP on 2 nodes of 4 GPUs:
 <ul>
@@ -1249,13 +1262,13 @@ Tip
 <td>✅ <strong>3D Parallelism</strong> (MoE, multi-node). <code>dp_replicate</code> replicates the whole EP × FSDP layout; needs <code>dp_shard_size &gt; 1</code> (or <code>cp_size &gt; 1</code>, next row).</td>
 </tr>
 <tr class="odd">
-<td>HSDP + EP, no shard axis</td>
+<td><strong>HSDP + EP</strong>, no shard axis</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">&gt;1</td>
-<td>❌ Not supported; rejected at config validation. The experts have no axis inside each replica to reduce over.</td>
+<td>✅ <strong>2D Parallelism</strong> (MoE, multi-node). <code>dp_replicate</code> replicates the pure-EP layout; the dense weights FSDP-shard over <code>ep</code> inside each replica and the expert slices stay whole per rank, reducing across replicas.</td>
 </tr>
 <tr class="even">
 <td><strong>HSDP + EP + CP</strong></td>
@@ -1311,6 +1324,7 @@ Note
 <ul>
 <li><code>tp_size</code> refers to <code>tensor_parallel_size</code></li>
 <li><code>cp_size</code> refers to <code>context_parallel_size</code></li>
+<li><code>sp</code> is accelerate’s DeepSpeed Ulysses axis; axolotl sets it only when <code>context_parallel_size</code> runs under <code>deepspeed:</code>. Older configs’ <code>sequence_parallel_degree</code> is a deprecated alias of <code>context_parallel_size</code>.</li>
 <li><code>ep_size</code> refers to <code>expert_parallel_size</code></li>
 </ul>
 

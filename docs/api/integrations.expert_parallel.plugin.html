@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -925,6 +937,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh" id="toc-axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh">expert_fsdp_mesh</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis" id="toc-axolotl.integrations.expert_parallel.plugin.expert_shard_axis" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.plugin.per_rank_expert_mesh" id="toc-axolotl.integrations.expert_parallel.plugin.per_rank_expert_mesh" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.plugin.per_rank_expert_mesh">per_rank_expert_mesh</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -1028,6 +1041,10 @@ DDP looks for the attribute on the top-level module — which is now
 <td><a href="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</a></td>
 <td>The non-<code>ep</code> mesh axis the routed experts FSDP-shard on under EP composition, or <code>None</code>.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.plugin.per_rank_expert_mesh">per_rank_expert_mesh</a></td>
+<td>The mesh the routed experts FSDP-wrap on when EP has no shard axis (pure EP, or</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.integrations.expert_parallel.plugin.expert_fsdp_mesh" class="level3">
@@ -1047,6 +1064,16 @@ where the cp ranks of an ep-group hold the SAME experts since cp shards the sequ
 experts, so FSDP-sharding them on cp keeps each rank from holding the full ep-group slice). Returns
 <code>None</code> for pure EP (no secondary axis) or when there is no <code>ep</code> axis to compose with — those
 paths don’t pre-wrap the experts here.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.plugin.per_rank_expert_mesh" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.plugin.per_rank_expert_mesh">per_rank_expert_mesh</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.plugin.per_rank_expert_mesh(mesh, device_type)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The mesh the routed experts FSDP-wrap on when EP has no shard axis (pure EP, or
+<code>dp_replicate x ep</code>): a fresh <code>(dp_replicate?, ep, dp_shard=1)</code> mesh whose size-1
+<code>dp_shard</code> dim keeps each rank’s expert slice whole (the all-gather is a no-op) while
+making every param a DTensor; <code>dp_replicate</code> stays the outer dim so HSDP reduces the
+expert grads across replicas. Returns the <code>(dp_replicate, dp_shard)</code> or <code>dp_shard</code>
+sub-mesh to hand <code>fully_shard_experts</code>.</p>
 
 
 </section>

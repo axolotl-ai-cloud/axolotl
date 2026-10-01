@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -921,6 +933,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.utils.schemas.peft.LoftQConfig" id="toc-axolotl.utils.schemas.peft.LoftQConfig" class="nav-link" data-scroll-target="#axolotl.utils.schemas.peft.LoftQConfig">LoftQConfig</a></li>
   <li><a href="#axolotl.utils.schemas.peft.LoraConfig" id="toc-axolotl.utils.schemas.peft.LoraConfig" class="nav-link" data-scroll-target="#axolotl.utils.schemas.peft.LoraConfig">LoraConfig</a></li>
+  <li><a href="#axolotl.utils.schemas.peft.MixLoraConfig" id="toc-axolotl.utils.schemas.peft.MixLoraConfig" class="nav-link" data-scroll-target="#axolotl.utils.schemas.peft.MixLoraConfig">MixLoraConfig</a></li>
   <li><a href="#axolotl.utils.schemas.peft.PeftConfig" id="toc-axolotl.utils.schemas.peft.PeftConfig" class="nav-link" data-scroll-target="#axolotl.utils.schemas.peft.PeftConfig">PeftConfig</a></li>
   <li><a href="#axolotl.utils.schemas.peft.ReLoRAConfig" id="toc-axolotl.utils.schemas.peft.ReLoRAConfig" class="nav-link" data-scroll-target="#axolotl.utils.schemas.peft.ReLoRAConfig">ReLoRAConfig</a></li>
   </ul></li>
@@ -957,10 +970,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Peft / LoRA configuration subset</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.utils.schemas.peft.MixLoraConfig">MixLoraConfig</a></td>
+<td>MixLoRA configuration subset for MoE-style LoRA finetuning</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.utils.schemas.peft.PeftConfig">PeftConfig</a></td>
 <td>peftq configuration subset</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.schemas.peft.ReLoRAConfig">ReLoRAConfig</a></td>
 <td>ReLoRA configuration subset</td>
 </tr>
@@ -976,14 +993,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.peft.LoraConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Peft / LoRA configuration subset</p>
 </section>
+<section id="axolotl.utils.schemas.peft.MixLoraConfig" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.peft.MixLoraConfig">MixLoraConfig</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.peft.MixLoraConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>MixLoRA configuration subset for MoE-style LoRA finetuning</p>
+</section>
 <section id="axolotl.utils.schemas.peft.PeftConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.peft.PeftConfig">PeftConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.peft.PeftConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.peft.PeftConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>peftq configuration subset</p>
 </section>
 <section id="axolotl.utils.schemas.peft.ReLoRAConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.peft.ReLoRAConfig">ReLoRAConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.peft.ReLoRAConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.peft.ReLoRAConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>ReLoRA configuration subset</p>
 
 

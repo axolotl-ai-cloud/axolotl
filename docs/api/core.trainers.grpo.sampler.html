@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -919,7 +931,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler" id="toc-axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler">SequenceParallelRepeatRandomSampler</a></li>
+  <li><a href="#axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler" id="toc-axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler">ContextParallelRepeatRandomSampler</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -936,8 +948,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p><code>core.trainers.grpo.sampler</code></p>
 <p>Repeat random sampler (similar to the one implemented in
 https://github.com/huggingface/trl/blob/main/trl/trainer/grpo_trainer.py) that adds
-sequence parallelism functionality; i.e., duplicating data across ranks in the same
-sequence parallel group.</p>
+context parallelism functionality; i.e., duplicating data across ranks in the same
+context parallel group.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -949,14 +961,14 @@ sequence parallel group.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler">SequenceParallelRepeatRandomSampler</a></td>
-<td>Sampler for GRPO training with sequence parallelism.</td>
+<td><a href="#axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler">ContextParallelRepeatRandomSampler</a></td>
+<td>Sampler for GRPO training with context parallelism.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler">SequenceParallelRepeatRandomSampler</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler(</span>
+<section id="axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler">ContextParallelRepeatRandomSampler</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler(</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    dataset,</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    mini_repeat_count,</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    world_size,</span>
@@ -968,22 +980,22 @@ sequence parallel group.</p>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    seed<span class="op">=</span><span class="dv">0</span>,</span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    drop_last<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Sampler for GRPO training with sequence parallelism.</p>
+<p>Sampler for GRPO training with context parallelism.</p>
 <p>This sampler ensures:
-- Ranks in the same sequence parallel (SP) group receive identical data.
+- Ranks in the same context parallel (CP) group receive identical data.
 - Each index is repeated multiple times for sampling different completions.
 - Entire batches are repeated for reuse in multiple updates.
-- Data is properly distributed across SP groups.</p>
-<p>In the table below, the values represent dataset indices. Each SP group has
+- Data is properly distributed across CP groups.</p>
+<p>In the table below, the values represent dataset indices. Each CP group has
 <code>context_parallel_size = 2</code> GPUs working together on the same data. There are 2
-SP groups (SP0 and SP1), with <code>world_size = 4</code> total GPUs.</p>
-<pre><code>                                       Sequence Parallel Groups
-                                |       SP0        |       SP1        |
+CP groups (CP0 and CP1), with <code>world_size = 4</code> total GPUs.</p>
+<pre><code>                                        Context Parallel Groups
+                                |       CP0        |       CP1        |
                                 |  GPU 0  |  GPU 1 |  GPU 2  |  GPU 3 |
             global_step  step    &lt;---&gt; mini_repeat_count=3
-                                    &lt;----------&gt; batch_size=2 per SP group</code></pre>
-<p>grad_accum=2 ▲ ▲ 0 0 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- SP groups get different data
-▼ | 0 1 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- Same data for each SP group GPU
+                                    &lt;----------&gt; batch_size=2 per CP group</code></pre>
+<p>grad_accum=2 ▲ ▲ 0 0 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- CP groups get different data
+▼ | 0 1 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- Same data for each CP group GPU
 |
 | 1 2 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- Repeat same indices for iterations
 num_iterations=2 ▼ 1 3 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- When using gradient accumulation</p>
@@ -1047,7 +1059,7 @@ num_iterations=2 ▼ 1 3 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- When using gradient a
 <tr class="odd">
 <td>context_parallel_size</td>
 <td>int</td>
-<td>Number of ranks in a sequence parallel group.</td>
+<td>Number of ranks in a context parallel group.</td>
 <td><code>1</code></td>
 </tr>
 <tr class="even">
@@ -1082,14 +1094,14 @@ num_iterations=2 ▼ 1 3 [0 0 0 1 1 1] [2 2 2 3 3 3] &lt;- When using gradient a
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler.set_epoch">set_epoch</a></td>
+<td><a href="#axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler.set_epoch">set_epoch</a></td>
 <td>Sets the epoch for this sampler.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler.set_epoch" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler.set_epoch">set_epoch</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.sampler.SequenceParallelRepeatRandomSampler.set_epoch(epoch)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler.set_epoch" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler.set_epoch">set_epoch</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.sampler.ContextParallelRepeatRandomSampler.set_epoch(epoch)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Sets the epoch for this sampler.</p>
 <section id="parameters-1" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>

@@ -222,6 +222,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -848,7 +860,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -928,6 +940,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#came_pytorch" id="toc-came_pytorch" class="nav-link" data-scroll-target="#came_pytorch">came_pytorch</a></li>
   <li><a href="#muon" id="toc-muon" class="nav-link" data-scroll-target="#muon">muon</a></li>
   <li><a href="#dion" id="toc-dion" class="nav-link" data-scroll-target="#dion">dion</a></li>
+  <li><a href="#scao" id="toc-scao" class="nav-link" data-scroll-target="#scao">scao</a></li>
   <li><a href="#sinkgd" id="toc-sinkgd" class="nav-link" data-scroll-target="#sinkgd">sinkgd</a></li>
   <li><a href="#q_galore_adamw8bit" id="toc-q_galore_adamw8bit" class="nav-link" data-scroll-target="#q_galore_adamw8bit">q_galore_adamw8bit</a></li>
   <li><a href="#polora" id="toc-polora" class="nav-link" data-scroll-target="#polora">polora</a></li>
@@ -1088,6 +1101,22 @@ Note: Implementation written for PyTorch 2.7+ for DTensor</p>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_momentum</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.95</span></span>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.00001</span><span class="co">  # learning rate for embeddings and parameters that fallback to AdamW</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="scao" class="level3">
+<h3 class="anchored" data-anchor-id="scao">scao</h3>
+<p>SCAO (Sparse Curvature-Aware Adaptive Optimizer) is a second-order optimizer
+that approximates curvature information with sparse preconditioning while
+keeping usage close to AdamW.</p>
+<p>GitHub: <a href="https://github.com/whispering3/scao">https://github.com/whispering3/scao</a></p>
+<p>Install: <code>pip install axolotl[optimizers]</code></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> scao</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co"># optional SCAO args can be passed through optim_args</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">precond_freq</span><span class="kw">:</span><span class="at"> </span><span class="dv">20</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">k_min</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">k_max</span><span class="kw">:</span><span class="at"> </span><span class="dv">128</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sparsity</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.7</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
 <section id="sinkgd" class="level3">
 <h3 class="anchored" data-anchor-id="sinkgd">sinkgd</h3>
 <p>SinkGD (Gradient Multi-Normalization) is a <strong>stateless</strong> optimizer: 2D linear weight
@@ -1099,11 +1128,11 @@ torchao’s 8-bit optimizer base, so optimizer-state memory is very small (~87% 
 zero optimizer state).</p>
 <p>Requires PyTorch &gt;= 2.5.1 (relies on torchao’s low-bit optimizer base and <code>torch.compile</code>).</p>
 <p>Paper: <a href="https://arxiv.org/abs/2502.06742">https://arxiv.org/abs/2502.06742</a></p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> sinkgd</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.001</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkhorn_iters</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">      # number of SR-Sinkhorn row/column normalization iterations</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span><span class="co">  # α scale applied to linear-layer updates</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> sinkgd</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.001</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkhorn_iters</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">      # number of SR-Sinkhorn row/column normalization iterations</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span><span class="co">  # α scale applied to linear-layer updates</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <section id="width-transfer-sinkgd_base_width-and-spectral-normalization" class="level4">
 <h4 class="anchored" data-anchor-id="width-transfer-sinkgd_base_width-and-spectral-normalization">Width transfer (<code>sinkgd_base_width</code>) and spectral normalization</h4>
 <p>Two optional, default-off knobs help the learning rate transfer across model width and
@@ -1118,10 +1147,10 @@ learning rate should scale as <code>1/d_in</code>. Set <code>sinkgd_base_width</
 (<code>d_in</code> is the layer’s input dim — the shared input of a fused QKV / gate-up matrix). With
 <code>sinkgd_base_width</code> unset, behavior is identical to before (plain scalar <code>sinkgd_lr_scale</code>),
 so existing configs are unchanged.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_base_width</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span><span class="co">        # d_in you tuned sinkgd_lr_scale at; enables 1/d_in transfer</span></span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_width_exponent</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span><span class="co">  # 1.0 = pure 1/d_in (default); tune only if width varies &gt;10x</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_base_width</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span><span class="co">        # d_in you tuned sinkgd_lr_scale at; enables 1/d_in transfer</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_width_exponent</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span><span class="co">  # 1.0 = pure 1/d_in (default); tune only if width varies &gt;10x</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong>Spectral normalization (<code>sinkgd_spectral_norm</code>).</strong> Rescales each update to a target operator
 norm via a cheap warm-started power iteration (~2 matvecs/layer, +1–3% step time, one
 <code>O(d_in)</code> state vector per matrix). With <code>sinkgd_spectral_target: muon</code> it pins the operator
@@ -1129,11 +1158,11 @@ norm to <code>sqrt(d_out/d_in)</code>, which makes SinkGD <em>Muon-class</em> an
 trained to lower loss than plain <code>1/d_in</code> in width sweeps — so use it <strong>instead of</strong>
 <code>sinkgd_base_width</code>, not with it. <code>unit</code> (the default target) pins a width-independent norm and
 acts as a pure conditioning stabilizer on top of <code>1/d_in</code>.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_spectral_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_spectral_target</span><span class="kw">:</span><span class="at"> muon</span><span class="co">   # spectral norm owns width transfer (leave sinkgd_base_width unset)</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_spectral_norm_iters</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">  # power-iteration steps per update (warm-started; 1–2 is enough)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_spectral_norm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_spectral_target</span><span class="kw">:</span><span class="at"> muon</span><span class="co">   # spectral norm owns width transfer (leave sinkgd_base_width unset)</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_spectral_norm_iters</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">  # power-iteration steps per update (warm-started; 1–2 is enough)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Distributed (<code>fsdp_version: 2</code>): width-aware scaling and spectral norm both work under FSDP2/TP
 sharding. On replicated / expert-sharded weights everything runs locally with no extra
 communication. On a matrix-dim-sharded weight (the common FSDP2 row-sharded case) the spectral
@@ -1158,8 +1187,8 @@ that run without a shard group to amortize against (single device, or replicated
 expert-sharded weights under FSDP2) also fall back when the matrix has fewer than
 <code>sinkgd_fused_min_numel</code> elements (default <code>2^25</code>) — at those sizes the epilogue’s extra
 kernel launches make the compiled path faster.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_fused_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_fused_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="weight-sphere-variant-sinkgd_md_sphere-experimental" class="level4">
 <h4 class="anchored" data-anchor-id="weight-sphere-variant-sinkgd_md_sphere-experimental">Weight-sphere variant (<code>sinkgd_md_sphere</code>, experimental)</h4>
@@ -1173,10 +1202,10 @@ and its optimum is narrow, so it needs per-scale LR tuning and is <strong>off by
 plain spectral-norm path (above) unless you specifically want the tightest activation bound.
 It adds a per-matrix scalar all-reduce (the sphere’s global Frobenius norm) on top of the
 spectral all-reduce under FSDP2; the sphere radius and power-iteration vector round-trip.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_md_sphere</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="co">  # tune learning_rate per width: lr_opt ~ d_model**-0.6 (e.g. ~0.03 at d=2048)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_md_sphere</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="co">  # tune learning_rate per width: lr_opt ~ d_model**-0.6 (e.g. ~0.03 at d=2048)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
 <section id="q_galore_adamw8bit" class="level3">
@@ -1192,26 +1221,26 @@ Paper: <a href="https://arxiv.org/abs/2407.08296">https://arxiv.org/abs/2407.082
 <p>This optimizer is for <strong>full fine-tuning</strong>. It is incompatible with <code>adapter</code>
 (LoRA/QLoRA), <code>load_in_8bit</code>, and <code>load_in_4bit</code>. DeepSpeed is currently gated
 off; FSDP2 (<code>fsdp_config:</code>) is supported.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> q_galore_adamw8bit</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="co"># which parameter substrings get the low-rank projection</span></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="co"># (defaults to ["attn", "mlp"] if unset — matches the reference impl)</span></span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_target_modules</span><span class="kw">:</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> attn</span></span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> mlp</span></span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore hyperparameters (defaults shown)</span></span>
-<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_rank</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span></span>
-<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_update_proj_gap</span><span class="kw">:</span><span class="at"> </span><span class="dv">200</span><span class="co">       # max steps between SVD refreshes</span></span>
-<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.25</span></span>
-<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_type</span><span class="kw">:</span><span class="at"> std</span></span>
-<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_quant</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">           # INT-quantize the projection matrix P</span></span>
-<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_bits</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">               # bitwidth for P</span></span>
-<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_group_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span><span class="co">       # must divide P's last dim evenly</span></span>
-<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_cos_threshold</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.4</span><span class="co">         # skip SVD if P_t is this similar to P_{t-1}</span></span>
-<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_gamma_proj</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="co">              # grow update_proj_gap by this factor when stable</span></span>
-<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_queue_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> q_galore_adamw8bit</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="co"># which parameter substrings get the low-rank projection</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co"># (defaults to ["attn", "mlp"] if unset — matches the reference impl)</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_target_modules</span><span class="kw">:</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> attn</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> mlp</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore hyperparameters (defaults shown)</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_rank</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_update_proj_gap</span><span class="kw">:</span><span class="at"> </span><span class="dv">200</span><span class="co">       # max steps between SVD refreshes</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.25</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_type</span><span class="kw">:</span><span class="at"> std</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_quant</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">           # INT-quantize the projection matrix P</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_bits</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">               # bitwidth for P</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_group_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span><span class="co">       # must divide P's last dim evenly</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_cos_threshold</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.4</span><span class="co">         # skip SVD if P_t is this similar to P_{t-1}</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_gamma_proj</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="co">              # grow update_proj_gap by this factor when stable</span></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_queue_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="polora" class="level3">
 <h3 class="anchored" data-anchor-id="polora">polora</h3>
@@ -1223,25 +1252,25 @@ plus two diagonal preconditioners, roughly half of Adam’s.</p>
 <p>GitHub: <a href="https://github.com/nikhilgsh/polora">https://github.com/nikhilgsh/polora</a>
 Docs: <a href="https://nikhilgsh.github.io/polora/">https://nikhilgsh.github.io/polora/</a></p>
 <p>Install from source:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install git+https://github.com/nikhilgsh/polora.git</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install git+https://github.com/nikhilgsh/polora.git</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li>Requires <code>adapter: lora</code> or <code>adapter: qlora</code>, and single-GPU, DDP, or FSDP2.</li>
 <li>We recommend enabling <code>sample_packing</code> and higher batch sizes to minimize optim step overhead.</li>
 <li>We find that <code>learning_rate</code> should be set 1-2 orders of magnitude higher than AdamW: 3e-4 -&gt; 3e-2.</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> polora</span></span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.01</span><span class="co">      # make sure to sweep</span></span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="co"># optional, defaults shown</span></span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">beta1</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.9</span><span class="co">             # momentum</span></span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">curvature_beta</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.99</span><span class="co">   # EMA for the diagonal preconditioners</span></span>
-<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">epsilon</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0e-12</span><span class="co">       # numerical floor</span></span>
-<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">delta</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0e-4</span><span class="co">          # relative damping of the inverse square roots</span></span>
-<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ns_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span><span class="co">            # PolarExpress matrix-sign iterations</span></span>
-<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">higham_iters</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span><span class="co">        # Newton-Schulz iterations for the inverse square roots</span></span>
-<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">         # torch.compile the spectral kernels</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> polora</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.01</span><span class="co">      # make sure to sweep</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="co"># optional, defaults shown</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">beta1</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.9</span><span class="co">             # momentum</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">curvature_beta</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.99</span><span class="co">   # EMA for the diagonal preconditioners</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">epsilon</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0e-12</span><span class="co">       # numerical floor</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">delta</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0e-4</span><span class="co">          # relative damping of the inverse square roots</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ns_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span><span class="co">            # PolarExpress matrix-sign iterations</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">higham_iters</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span><span class="co">        # Newton-Schulz iterations for the inverse square roots</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">         # torch.compile the spectral kernels</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">

@@ -221,6 +221,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -847,7 +859,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -920,7 +932,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
   <li><a href="#axolotl.core.trainers.grpo.trainer.AxolotlAsyncGRPOTrainer" id="toc-axolotl.core.trainers.grpo.trainer.AxolotlAsyncGRPOTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.trainer.AxolotlAsyncGRPOTrainer">AxolotlAsyncGRPOTrainer</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer" id="toc-axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer">AxolotlGRPOSequenceParallelTrainer</a></li>
+  <li><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer" id="toc-axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer">AxolotlGRPOContextParallelTrainer</a></li>
   <li><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOTrainer" id="toc-axolotl.core.trainers.grpo.trainer.AxolotlGRPOTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOTrainer">AxolotlGRPOTrainer</a></li>
   </ul></li>
   </ul></li>
@@ -936,7 +948,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.core.trainers.grpo.trainer" class="level1">
 <h1>core.trainers.grpo.trainer</h1>
 <p><code>core.trainers.grpo.trainer</code></p>
-<p>Axolotl GRPO trainers (with and without sequence parallelism handling)</p>
+<p>Axolotl GRPO trainers (with and without context parallelism handling)</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -952,8 +964,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Extend AsyncGRPOTrainer with axolotl helpers</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer">AxolotlGRPOSequenceParallelTrainer</a></td>
-<td>Extend the base GRPOTrainer for sequence parallelism handling</td>
+<td><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer">AxolotlGRPOContextParallelTrainer</a></td>
+<td>Extend the base GRPOTrainer for context parallelism handling</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOTrainer">AxolotlGRPOTrainer</a></td>
@@ -966,9 +978,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.trainer.AxolotlAsyncGRPOTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Extend AsyncGRPOTrainer with axolotl helpers</p>
 </section>
-<section id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer">AxolotlGRPOSequenceParallelTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer(</span>
+<section id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer">AxolotlGRPOContextParallelTrainer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer(</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    reward_funcs,</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
@@ -981,7 +993,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    optimizer_cls_and_kwargs<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Extend the base GRPOTrainer for sequence parallelism handling</p>
+<p>Extend the base GRPOTrainer for context parallelism handling</p>
 <section id="methods" class="level4">
 <h4 class="anchored" data-anchor-id="methods">Methods</h4>
 <table class="caption-top table">
@@ -993,14 +1005,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer.get_train_dataloader">get_train_dataloader</a></td>
+<td><a href="#axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer.get_train_dataloader">get_train_dataloader</a></td>
 <td>Get dataloader for training</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer.get_train_dataloader" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer.get_train_dataloader">get_train_dataloader</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.trainer.AxolotlGRPOSequenceParallelTrainer.get_train_dataloader(</span>
+<section id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer.get_train_dataloader" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer.get_train_dataloader">get_train_dataloader</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.trainer.AxolotlGRPOContextParallelTrainer.get_train_dataloader(</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Get dataloader for training</p>
 </section>

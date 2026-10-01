@@ -187,6 +187,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/nex-n2.5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nex-N2.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiniCPM5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/ling3.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Ling 3.0</span></a>
   </div>
@@ -813,7 +825,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Sequence Parallelism</span></a>
+ <span class="menu-text">Context Parallelism</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1010,13 +1022,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h2 class="anchored" data-anchor-id="training-methods">Training methods</h2>
 <p><em>The “what objective are you optimizing” axis.</em></p>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 20%">
-<col style="width: 20%">
-<col style="width: 20%">
-<col style="width: 20%">
-<col style="width: 20%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Method</th>
@@ -1111,9 +1116,24 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>QA or raw text</td>
 <td>energy/feature-matching rewards; needs <code>ebft:</code> block</td>
 </tr>
+<tr class="odd">
+<td>EAFT</td>
+<td><code>use_eaft: true</code> (+ <code>eaft_alpha</code>, <code>eaft_k</code>)</td>
+<td>n/a</td>
+<td>prompt to response</td>
+<td>SFT loss weighted by top-k entropy</td>
+</tr>
+<tr class="even">
+<td>DFT</td>
+<td><code>use_dft: true</code></td>
+<td>n/a</td>
+<td>prompt to response</td>
+<td>SFT loss weighted by detached token probability (<a href="https://arxiv.org/abs/2508.05629">paper</a>)</td>
+</tr>
 </tbody>
 </table>
 <p>Most runs start with <strong>SFT</strong> (the default). Reach for the preference methods (DPO and its variants) once you have chosen/rejected pairs, and GRPO when you have a verifiable reward. The rest are specialized.</p>
+<p>EAFT and DFT replace the SFT loss, so the logged train and eval loss is the reweighted objective, not cross-entropy. Don’t compare it against CE runs or use it for <code>load_best_model_at_end</code> / early stopping.</p>
 </section>
 <section id="fine-tuning-strategies" class="level2">
 <h2 class="anchored" data-anchor-id="fine-tuning-strategies">Fine-tuning strategies</h2>
@@ -1262,7 +1282,7 @@ Note
 <tr class="even">
 <td>DeepSpeed ZeRO 1/2/3 (+CPU offload)</td>
 <td><code>deepspeed: deepspeed_configs/zeroN*.json</code></td>
-<td>TP</td>
+<td>TP, CP (Ulysses via DeepSpeed ALST; experimental)</td>
 </tr>
 <tr class="odd">
 <td>FSDP2</td>
@@ -1280,9 +1300,9 @@ Note
 <td>FSDP2 (full-parameter; adapters only on native NVFP4 bases)</td>
 </tr>
 <tr class="even">
-<td>Context/Sequence Parallel (CP)</td>
+<td>Context Parallel (CP)</td>
 <td><code>context_parallel_size:</code></td>
-<td>FSDP2, axolotl-ringmaster (Ulysses/Ring/USP)</td>
+<td>FSDP2 with axolotl-ringmaster (Ulysses/Ring/USP); DeepSpeed with DeepSpeed Ulysses (ALST, Ulysses only)</td>
 </tr>
 <tr class="odd">
 <td>Expert Parallel (EP) 🟡</td>
@@ -1532,38 +1552,42 @@ Warning
 <td>flash-attn hijack, SwiGLU, CCE, Liger; Llama-4 linearized experts</td>
 </tr>
 <tr class="even">
+<td>MiniCPM5</td>
+<td>same as Llama</td>
+</tr>
+<tr class="odd">
 <td>Mistral / Mixtral / Ministral / Magistral</td>
 <td>flash-attn hijack, CCE; Mixtral ZeRO-3 MoE patch</td>
 </tr>
-<tr class="odd">
-<td>Qwen 2/2.5/3/3.5 (+MoE, +VL)</td>
+<tr class="even">
+<td>Qwen 2/2.5/3/3.5/3.6 (+MoE, +VL; Nex-N2.5)</td>
 <td>fused attention kernels, multipack, gated RMSNorm, VL flash</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Gemma 2/3/4 (+unified VL)</td>
 <td>hybrid sliding/global attention mask, fused attn, expert quant</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>DeepSeek V2/V3/V4</td>
 <td>DSv4 fused attn/RoPE/MLP kernels, NVFP4 grouped experts (LoRA)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>GLM 4.x / 4.7 / 5.2 (+MoE-DSA)</td>
 <td>DSA sparse-attention kernels, NVFP4 grouped experts (LoRA)</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Hybrid SSM (Mamba, Nemotron-H, Falcon-H1, GraniteMoE-Hybrid)</td>
 <td>packing + CP for Mamba2 layers</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, K2-Horizon, Apertus, SEED-OSS</td>
 <td>packing / tokenizer / activation patches</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Multimodal 🟡 (Qwen-VL, Pixtral, Llama-Vision, LLaVA, InternVL, SmolVLM2, Voxtral, LFM2-VL)</td>
 <td>processor + VL attention support (no full feature parity)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>BitNet (1.58-bit) ⚪</td>
 <td>full fine-tune only, <strong>LoRA not supported</strong> (see <a href="../docs/1_58bit_finetuning.html">1_58bit_finetuning</a>)</td>
 </tr>
@@ -1766,7 +1790,7 @@ Warning
 <td>FSDP2 (<code>fsdp_version: 2</code> + <code>fsdp_config</code>, not DDP/DeepSpeed) with <code>fsdp_config.state_dict_type: FULL_STATE_DICT</code>; <code>deep_ep</code> backend (Ampere/Hopper, NVLink) or <code>torch</code> backend (any NCCL/gloo fabric)</td>
 </tr>
 <tr class="odd">
-<td>Context/Sequence parallel</td>
+<td>Context parallel</td>
 <td>Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention</td>
 </tr>
 <tr class="even">
@@ -1836,34 +1860,34 @@ Warning
 <td>rejected at config validation; EP needs FSDP2 and a full state dict (a sharded one keeps only EP group 0’s experts)</td>
 </tr>
 <tr class="even">
-<td>EP</td>
-<td>HSDP without <code>dp_shard_size</code> or <code>context_parallel_size</code> &gt; 1</td>
-<td>rejected at config validation; the experts need a shard axis inside each replica</td>
-</tr>
-<tr class="odd">
 <td>LoRA / QLoRA</td>
 <td>TP</td>
 <td>rejected at model load unless the base is native NVFP4 (<code>torchao_tp_lora</code>); a bf16 adapter would be shard-local</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>DDP</td>
 <td>TP / CP</td>
 <td>use FSDP2 instead</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>QAT</td>
 <td>any adapter, or 4/8-bit</td>
 <td>full-model only</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Sample packing</td>
 <td>any <code>rl:</code>, multimodal</td>
 <td>RLHF &amp; MM packing not supported</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Cut Cross Entropy</td>
 <td>Liger CE / chunked CE</td>
 <td>one CE optimization only</td>
+</tr>
+<tr class="odd">
+<td><code>use_eaft</code> / <code>use_dft</code></td>
+<td>each other, <code>rl:</code>, reward models, CP, CCE / Liger FLCE / chunked CE</td>
+<td>SFT-only; needs full logits and unsharded labels</td>
 </tr>
 <tr class="even">
 <td><code>use_dsv4_kernels</code></td>

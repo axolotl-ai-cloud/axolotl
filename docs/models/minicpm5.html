@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.dict – Axolotl</title>
+<title>MiniCPM5 – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -147,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/k2-horizon.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/minicpm5.html">MiniCPM5</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -206,13 +206,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
  <span class="menu-text">Model Guides</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
@@ -227,7 +227,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/models/minicpm5.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">MiniCPM5</span></a>
   </div>
 </li>
@@ -927,78 +927,81 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.dict" id="toc-axolotl.utils.dict" class="nav-link active" data-scroll-target="#axolotl.utils.dict">utils.dict</a>
+  <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting started</a>
   <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.dict.DictDefault" id="toc-axolotl.utils.dict.DictDefault" class="nav-link" data-scroll-target="#axolotl.utils.dict.DictDefault">DictDefault</a></li>
+  <li><a href="#turn-terminator" id="toc-turn-terminator" class="nav-link" data-scroll-target="#turn-terminator">Turn terminator</a></li>
+  <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">TIPS</a></li>
   </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.utils.dict.remove_none_values" id="toc-axolotl.utils.dict.remove_none_values" class="nav-link" data-scroll-target="#axolotl.utils.dict.remove_none_values">remove_none_values</a></li>
-  </ul></li>
-  </ul></li>
+  <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
+  <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/k2-horizon.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/minicpm5.html">MiniCPM5</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">MiniCPM5</h1>
+</div>
 
 
 
+<div class="quarto-title-meta">
 
-<section id="axolotl.utils.dict" class="level1">
-<h1>utils.dict</h1>
-<p><code>utils.dict</code></p>
-<p>Module containing the DictDefault class</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.dict.DictDefault">DictDefault</a></td>
-<td>A Dict that returns None instead of returning empty Dict for missing keys.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.dict.DictDefault" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.dict.DictDefault">DictDefault</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.<span class="bu">dict</span>.DictDefault()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>A Dict that returns None instead of returning empty Dict for missing keys.</p>
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p><a href="https://huggingface.co/openbmb/MiniCPM5-2B">MiniCPM5-2B</a> is an open source model from OpenBMB. It uses the Llama architecture, so Axolotl’s Llama optimizations (flash attention, sample packing, Cut Cross Entropy, Liger) apply.</p>
+<p>This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.</p>
+<section id="getting-started" class="level2">
+<h2 class="anchored" data-anchor-id="getting-started">Getting started</h2>
+<ol type="1">
+<li><p>Install Axolotl following the <a href="https://docs.axolotl.ai/docs/installation.html">installation guide</a>.</p></li>
+<li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
+<li><p>Run the finetuning example:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/minicpm5/lora-2b.yaml</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/minicpm5/fft-2b.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+</ol>
+<p>Let us know how it goes. Happy finetuning! 🚀</p>
+<section id="turn-terminator" class="level3">
+<h3 class="anchored" data-anchor-id="turn-terminator">Turn terminator</h3>
+<p>The tokenizer’s <code>eos_token</code> is <code>&lt;/s&gt;</code>, but the chat template ends each turn with <code>&lt;|im_end|&gt;</code>. Both configs set <code>eot_tokens</code> so <code>&lt;|im_end|&gt;</code> is trained and the model learns to stop:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> tokenizer_default</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">eot_tokens</span><span class="kw">:</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="st">"&lt;|im_end|&gt;"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="tips" class="level3">
+<h3 class="anchored" data-anchor-id="tips">TIPS</h3>
+<ul>
+<li>The chat template adds an empty <code>&lt;think&gt;</code> block to assistant turns without <code>reasoning_content</code>; it is masked out of the loss. Verify with <code>axolotl preprocess examples/minicpm5/lora-2b.yaml --debug</code>.</li>
+<li>To train on reasoning traces, put them in <code>reasoning_content</code> on the assistant message (<a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">docs</a>).</li>
+<li>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
+<li>The dataset format follows the OpenAI Messages format as seen <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>.</li>
+</ul>
 </section>
 </section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.utils.dict.remove_none_values">remove_none_values</a></td>
-<td>Remove null from a dictionary-like obj or list.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.utils.dict.remove_none_values" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.dict.remove_none_values">remove_none_values</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.<span class="bu">dict</span>.remove_none_values(obj)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Remove null from a dictionary-like obj or list.
-These can appear due to Dataset loading causing schema merge.
-See https://github.com/axolotl-ai-cloud/axolotl/pull/2909</p>
+<section id="optimization-guides" class="level2">
+<h2 class="anchored" data-anchor-id="optimization-guides">Optimization Guides</h2>
+<p>Please check the <a href="https://docs.axolotl.ai/docs/optimizations.html">Optimizations doc</a>.</p>
+</section>
+<section id="related-resources" class="level2">
+<h2 class="anchored" data-anchor-id="related-resources">Related Resources</h2>
+<ul>
+<li><a href="https://docs.axolotl.ai">Axolotl Docs</a></li>
+<li><a href="https://axolotl.ai">Axolotl Website</a></li>
+<li><a href="https://github.com/axolotl-ai-cloud/axolotl">Axolotl GitHub</a></li>
+<li><a href="https://discord.gg/7m9sfhzaf3">Axolotl Discord</a></li>
+</ul>
 
 
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->
