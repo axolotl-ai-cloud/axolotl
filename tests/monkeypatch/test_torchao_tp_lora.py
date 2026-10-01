@@ -111,6 +111,65 @@ def test_prepare_is_idempotent_and_uses_factor_gradient_hook(monkeypatch):
     assert len(model.lora_A["second"].weight._backward_hooks) == 1
 
 
+class DTensor:
+    """What PEFT leaves on the sharded factor under transformers' DTensor TP."""
+
+    def __init__(self, local, placement):
+        self._local = local
+        self.placements = (placement,)
+        self.requires_grad = True
+
+    def to_local(self):
+        return self._local
+
+
+def _peft_wrapped(model, factor_name, dim):
+    factor = model.__getattr__(factor_name)["default"]
+    local = factor.weight.detach().clone()
+    factor._parameters["weight"] = DTensor(local, Shard(dim))
+    factor.forward = lambda *args, **kwargs: None
+    return local
+
+
+@pytest.mark.parametrize(
+    "layout,factor_name,dim", [("colwise", "lora_B", 0), ("rowwise", "lora_A", 1)]
+)
+def test_prepare_localizes_peft_dtensor_factor(monkeypatch, layout, factor_name, dim):
+    model = _LoRA()
+    if layout == "rowwise":
+        object.__setattr__(
+            model.base_layer,
+            "weight",
+            SimpleNamespace(
+                placements=(Shard(1),),
+                shape=(4, 8),
+                device_mesh=SimpleNamespace(get_group=lambda: "tp"),
+                to_local=lambda: SimpleNamespace(shape=(4, 4)),
+            ),
+        )
+    local = _peft_wrapped(model, factor_name, dim)
+    monkeypatch.setattr(torchao_tp_lora, "_is_native_nvfp4_dtensor", lambda _: True)
+    monkeypatch.setattr(torchao_tp_lora, "_lora_tp_plan", lambda *_: layout)
+    monkeypatch.setattr(torchao_tp_lora.dist, "get_world_size", lambda group: 1)
+
+    assert torchao_tp_lora.prepare_native_nvfp4_tp_lora(model)
+    factor = model.__getattr__(factor_name)["default"]
+    assert isinstance(factor.weight, torch.nn.Parameter)
+    assert factor.weight.data_ptr() == local.data_ptr()
+    assert "forward" not in factor.__dict__
+    assert factor.weight.requires_grad
+
+
+def test_prepare_rejects_peft_factor_sharded_on_the_wrong_dim(monkeypatch):
+    model = _LoRA()
+    _peft_wrapped(model, "lora_A", 1)
+    monkeypatch.setattr(torchao_tp_lora, "_is_native_nvfp4_dtensor", lambda _: True)
+    monkeypatch.setattr(torchao_tp_lora, "_lora_tp_plan", lambda *_: "colwise")
+
+    with pytest.raises(ValueError, match="expects lora_B sharded on dim 0"):
+        torchao_tp_lora.prepare_native_nvfp4_tp_lora(model)
+
+
 def test_prepare_rejects_unsynchronized_dropout(monkeypatch):
     model = _LoRA()
     model.lora_dropout["default"] = torch.nn.Dropout(0.1)
