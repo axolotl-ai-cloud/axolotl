@@ -21,7 +21,7 @@ dependencies = [
     "accelerate==1.15.0",
     "datasets==5.0.1",
     "trl==1.14.1",
-    "hf_xet==1.4.3",
+    "hf_xet>=1.5.2",
     "kernels>=0.17.0,<0.18.0",
     "trackio==0.40.0",
     "typing-extensions==4.15.0",
