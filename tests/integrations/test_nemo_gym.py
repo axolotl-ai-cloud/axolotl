@@ -381,10 +381,10 @@ class TestSelectWeightSyncTransport(unittest.TestCase):
             == "lora_filesystem"
         )
 
-    def test_lora_with_axolotl_endpoint(self):
+    def test_lora_prefers_lora_endpoint_over_nccl(self):
         from axolotl.integrations.nemo_gym.plugin import select_weight_sync_transport
 
-        caps = self._caps(lora_axolotl=True)
+        caps = self._caps(lora_filesystem=True, nccl=True)
         assert (
             select_weight_sync_transport(caps, has_lora=True, vllm_lora_sync_pref=False)
             == "lora_filesystem"
@@ -402,23 +402,12 @@ class TestSelectWeightSyncTransport(unittest.TestCase):
     def test_full_param_prefers_nccl(self):
         from axolotl.integrations.nemo_gym.plugin import select_weight_sync_transport
 
-        caps = self._caps(nccl=True, http_full=True)
+        caps = self._caps(nccl=True, lora_filesystem=True)
         assert (
             select_weight_sync_transport(
                 caps, has_lora=False, vllm_lora_sync_pref=False
             )
             == "nccl"
-        )
-
-    def test_full_param_falls_back_to_http(self):
-        from axolotl.integrations.nemo_gym.plugin import select_weight_sync_transport
-
-        caps = self._caps(http_full=True)
-        assert (
-            select_weight_sync_transport(
-                caps, has_lora=False, vllm_lora_sync_pref=False
-            )
-            == "http_full"
         )
 
     def test_full_param_no_routes_returns_none(self):
@@ -466,24 +455,20 @@ class TestProbeVllmWeightSync(unittest.TestCase):
 
         assert caps.probed is True
         assert caps.lora_filesystem is True
-        assert caps.lora_axolotl is False
         assert caps.nccl is False
-        assert caps.http_full is False
 
-    def test_axolotl_serve_lora_full_capabilities(self):
-        """``axolotl vllm-serve`` exposes NCCL + LoRA + HTTP full sync."""
+    def test_dev_mode_vllm_with_lora_full_capabilities(self):
+        """``axolotl vllm-serve`` with LoRA sync: dev-mode weight transfer + LoRA."""
         from unittest.mock import patch
 
         from axolotl.integrations.nemo_gym.plugin import probe_vllm_weight_sync
 
         spec = {
             "paths": {
-                "/init_communicator/": {"post": {}},
-                "/update_named_param/": {"post": {}},
-                "/batch_update_named_params/": {"post": {}},
-                "/set_lora_adapter/": {"post": {}},
-                "/clear_lora_adapter/": {"post": {}},
-                "/http_update_weights/": {"post": {}},
+                "/init_weight_transfer_engine": {"post": {}},
+                "/start_weight_update": {"post": {}},
+                "/update_weights": {"post": {}},
+                "/finish_weight_update": {"post": {}},
                 "/v1/load_lora_adapter": {"post": {}},
             }
         }
@@ -494,23 +479,19 @@ class TestProbeVllmWeightSync(unittest.TestCase):
 
         assert caps.probed is True
         assert caps.nccl is True
-        assert caps.lora_axolotl is True
         assert caps.lora_filesystem is True
-        assert caps.http_full is True
 
-    def test_trl_vllm_serve_nccl_only(self):
-        """``trl vllm-serve`` exposes NCCL routes but not LoRA filesystem."""
+    def test_dev_mode_vllm_nccl_only(self):
+        """``vllm serve`` in dev mode without LoRA: weight transfer only."""
         from unittest.mock import patch
 
         from axolotl.integrations.nemo_gym.plugin import probe_vllm_weight_sync
 
         spec = {
             "paths": {
-                "/init_communicator/": {"post": {}},
-                "/update_named_param/": {"post": {}},
-                "/batch_update_named_params/": {"post": {}},
-                "/close_communicator/": {"post": {}},
-                "/generate/": {"post": {}},
+                "/init_weight_transfer_engine": {"post": {}},
+                "/update_weights": {"post": {}},
+                "/v1/completions": {"post": {}},
             }
         }
         with patch("requests.get") as mock_get:
@@ -521,8 +502,6 @@ class TestProbeVllmWeightSync(unittest.TestCase):
         assert caps.probed is True
         assert caps.nccl is True
         assert caps.lora_filesystem is False
-        assert caps.lora_axolotl is False
-        assert caps.http_full is False
 
     def test_unreachable_server_records_error(self):
         from unittest.mock import patch
@@ -550,7 +529,6 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
       - LoRA + LoRA-loading endpoint   → installs filesystem LoRA sync
       - LoRA + only NCCL endpoint      → uses NCCL broadcast
       - Full FT + NCCL endpoint        → uses NCCL broadcast (standard TRL flow)
-      - Full FT + HTTP endpoint        → raises NotImplementedError (step 3)
       - No usable transport            → raises ValueError with a precise diagnosis
     """
 
@@ -645,17 +623,6 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
             plugin.post_trainer_create(cfg, trainer)
             wire.assert_called_once()
 
-    def test_full_finetune_with_http_endpoint_not_implemented_yet(self):
-        from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
-
-        plugin = NemoGymPlugin()
-        plugin._vllm_caps = self._caps(http_full=True)
-        cfg = self._fake_cfg(adapter=None, vllm_lora_sync=False)
-        trainer = self._fake_trainer()
-        with self.assertRaises(NotImplementedError) as ctx:
-            plugin.post_trainer_create(cfg, trainer)
-        assert "HTTP weight sync" in str(ctx.exception)
-
     def test_full_finetune_with_no_routes_raises_with_full_param_message(self):
         from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
 
@@ -667,8 +634,7 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
             plugin.post_trainer_create(cfg, trainer)
         msg = str(ctx.exception)
         assert "no-op trainer" in msg
-        assert "init_communicator" in msg
-        assert "http_update_weights" in msg
+        assert "init_weight_transfer_engine" in msg
 
     def test_unprobed_caps_raises_with_probe_failure_message(self):
         from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin

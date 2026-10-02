@@ -88,6 +88,11 @@ try:
 except ImportError:
     _fused_selective_log_softmax = None
 
+from axolotl.core.trainers.grpo.vllm_weight_sync import (
+    init_communicator_lazily,
+    load_lora_adapter,
+    peft_weights_for_vllm,
+)
 from axolotl.utils.logging import get_logger
 
 # ---------------------------------------------------------------------------
@@ -754,27 +759,19 @@ class AsyncGRPOTrainer(GRPOTrainer):
     """
 
     def __init__(self, *args, **kwargs):
-        # Skip NCCL communicator init when using LoRA sync (filesystem) or HTTP-only
-        # merged weight sync. NCCL is only needed for the standard update_named_param
-        # path which broadcasts tensors through the communicator.
         training_args = kwargs.get("args") or (args[1] if len(args) > 1 else None)
-        _skip_nccl = False
-        if training_args is not None:
-            if getattr(training_args, "vllm_lora_sync", False):
-                _skip_nccl = True  # LoRA sync uses filesystem + HTTP
-            elif getattr(training_args, "async_prefetch", False):
-                # Skip NCCL at init to avoid DDP param count mismatch in multi-GPU.
-                # init_communicator allocates device tensors on rank 0 only, which
-                # causes DDP to see different param counts across ranks.
-                # The communicator is initialized lazily on first weight sync instead.
-                _skip_nccl = True
+        _lora_sync = bool(getattr(training_args, "vllm_lora_sync", False))
+        # Skip NCCL at init to avoid DDP param count mismatch in multi-GPU:
+        # init_communicator allocates device tensors on rank 0 only. Merged-weight
+        # sync opens it lazily on the first push instead.
+        _skip_nccl = _lora_sync or bool(getattr(training_args, "async_prefetch", False))
         if _skip_nccl:
             from trl.generation.vllm_generation import VLLMGeneration
 
             _orig_init_vllm = VLLMGeneration._init_vllm
 
             def _init_vllm_no_communicator(self_vllm):
-                """Init vLLM client without NCCL communicator (LoRA sync uses filesystem)."""
+                """Init vLLM client without opening the NCCL communicator."""
                 if self_vllm.mode == "server" and self_vllm.accelerator.is_main_process:
                     from trl.generation.vllm_client import VLLMClient
 
@@ -789,7 +786,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         group_port=self_vllm.group_port,
                         connection_timeout=self_vllm.server_timeout,
                     )
-                    # Deliberately skip init_communicator — no NCCL needed
+                    if not _lora_sync:
+                        init_communicator_lazily(
+                            self_vllm.vllm_client, self_vllm.accelerator.device
+                        )
                 elif self_vllm.mode != "server":
                     _orig_init_vllm(self_vllm)
 
@@ -968,124 +968,30 @@ class AsyncGRPOTrainer(GRPOTrainer):
     # ------------------------------------------------------------------
 
     def _sync_peft_weights_no_merge(self):
-        """Thread-safe weight sync: compute merged LoRA weights without in-place modification.
+        """Stream merged LoRA weights to vLLM without in-place modification.
 
         Required for FP8 models where merge_adapter() fails (addmm not implemented
-        for Float8), and also safe for concurrent use since it never modifies base
-        weights in-place.
+        for Float8). The trainer's weights are untouched, but vLLM's are not usable
+        mid-transfer, so callers must not overlap this with generation.
         """
         accelerator = self.vllm_generation.accelerator
         if not (self.vllm_generation.mode == "server" and accelerator.is_main_process):
             return
 
-        # In multi-GPU async mode, we skip NCCL communicator init to avoid
-        # DDP param count mismatch and NCCL device conflicts. Weight sync
-        # uses the HTTP-only fallback in batch_update_named_params instead.
-
-        model = self.vllm_generation.model
         vllm_client = self.vllm_generation.vllm_client
-        fix_name = self.vllm_generation._fix_param_name_to_vllm
-
-        # Build lookup: module_path -> (A, B, scaling) for all active LoRA layers
-        lora_info = {}
-        for mod_name, module in model.base_model.model.named_modules():
-            if not hasattr(module, "lora_A") or not hasattr(module, "active_adapters"):
-                continue
-            active = module.active_adapters[0]
-            if active not in module.lora_A:
-                continue
-            lora_info[mod_name] = (
-                module.lora_A[active].weight.data,
-                module.lora_B[active].weight.data,
-                module.scaling[active],
-            )
-
-        # Build lookup for FP8 scale_inv parameters (needed for dequantization)
-        scale_inv_lookup = {}
-        for pname, pparam in model.named_parameters():
-            if "weight_scale_inv" in pname:
-                # Map weight name -> scale_inv tensor
-                weight_name = pname.replace(".weight_scale_inv", ".weight")
-                scale_inv_lookup[weight_name] = pparam.data
-
-        # Only sync parameters that have LoRA modifications — skip unchanged
-        # base weights to avoid OOM on the vLLM GPU from allocating the entire
-        # model's worth of NCCL receive buffers.
-        params_to_sync = []
-        compute_dtype = torch.bfloat16
-        for name, param in model.named_parameters():
-            vllm_name = name.removeprefix("base_model.model.").replace(
-                ".base_layer", ""
-            )
-            if model.prefix in vllm_name:
-                continue
-            if "original_module" in vllm_name:
-                continue
-            if "weight_scale_inv" in vllm_name or "input_scale" in vllm_name:
-                continue
-            if not vllm_name.endswith(".weight"):
-                continue
-            # fix_name strips modules_to_save.default. prefix
-            raw_mod_path = vllm_name[: -len(".weight")]
-            vllm_name = fix_name(vllm_name, extra_prefixes=["modules_to_save.default."])
-            mod_path = vllm_name[: -len(".weight")]
-
-            # Sync weights that have LoRA adapters OR are modules_to_save
-            is_lora = mod_path in lora_info
-            is_modules_to_save = raw_mod_path != mod_path  # fix_name stripped a prefix
-            if not is_lora and not is_modules_to_save:
-                continue
-
-            data = param.data
-
-            # Dequantize FP8 weights before merging
-            if data.dtype == torch.float8_e4m3fn and name in scale_inv_lookup:
-                scale_inv = scale_inv_lookup[name]
-                fp8_bf16 = data.to(compute_dtype)
-                if scale_inv.dim() == 2 and fp8_bf16.dim() == 2:
-                    sr, sc = scale_inv.shape
-                    br = fp8_bf16.shape[0] // sr
-                    bc = fp8_bf16.shape[1] // sc
-                    data = (
-                        fp8_bf16.reshape(sr, br, sc, bc)
-                        * scale_inv[:, None, :, None].to(compute_dtype)
-                    ).reshape(fp8_bf16.shape)
-                elif scale_inv.dim() <= 1:
-                    data = fp8_bf16 * scale_inv.to(compute_dtype)
-                else:
-                    data = fp8_bf16
-            elif data.dtype == torch.float8_e4m3fn:
-                data = data.to(compute_dtype)
-
-            if is_lora:
-                A, B, s = lora_info[mod_path]
-                merged = data.to(compute_dtype) + s * (
-                    B.to(compute_dtype) @ A.to(compute_dtype)
-                )
-                params_to_sync.append((vllm_name, merged))
-            else:
-                # modules_to_save: send raw weight (no LoRA merge needed)
-                params_to_sync.append((vllm_name, data.to(compute_dtype)))
-
-        # Batch sync only LoRA-modified params via HTTP+NCCL
-        if params_to_sync:
-            sync_mb = sum(t.numel() * t.element_size() for _, t in params_to_sync) / 1e6
-            logger.info(
-                f"Syncing {len(params_to_sync)} LoRA-modified params ({sync_mb:.0f} MB)"
-            )
-            vllm_client.batch_update_named_params(params_to_sync)
-
-        # Reset prefix cache after weight update
+        metadata, named_params = peft_weights_for_vllm(
+            self.vllm_generation.model, self.vllm_generation._fix_param_name_to_vllm
+        )
+        logger.info(f"Syncing {len(metadata)} params with merged LoRA weights to vLLM")
+        vllm_client.update_named_params(metadata, named_params)
         vllm_client.reset_prefix_cache()
 
     def _sync_lora_adapter(self):
         """Sync LoRA adapter to vLLM via filesystem (native LoRA mode).
 
-        Saves the PEFT adapter to a temp directory and POSTs the path to vLLM's
-        /set_lora_adapter/ endpoint. vLLM loads the adapter natively using Punica
-        kernels, avoiding the need to merge weights and NCCL-broadcast the full model.
-
-        Syncs only the LoRA adapter weights via filesystem instead of the full merged model via NCCL.
+        Saves the PEFT adapter to a temp directory and has vLLM load it through
+        /v1/load_lora_adapter, avoiding the need to merge weights and
+        NCCL-broadcast the full model.
 
         FSDP/DeepSpeed: All ranks must participate in the state_dict gather.
         accelerator.get_state_dict() handles this (FSDP uses FullStateDictConfig
@@ -1135,63 +1041,32 @@ class AsyncGRPOTrainer(GRPOTrainer):
             unwrapped = accelerator.unwrap_model(model)
             unwrapped.save_pretrained(adapter_path, state_dict=state_dict)
 
-            import requests
-
             vllm_client = self.vllm_generation.vllm_client
-            base_url = vllm_client.base_url
-            base_model = getattr(self.args, "model_name_or_path", "axolotl-lora")
             sync_timeout = getattr(self.args, "vllm_server_timeout", 300) or 300
+            # No early return on failure: the other ranks are waiting at the barrier.
+            if load_lora_adapter(vllm_client, adapter_path, sync_timeout):
+                try:
+                    vllm_client.reset_prefix_cache()
+                except Exception as exc:
+                    logger.warning("Failed to reset prefix cache: %s", exc)
 
-            # Try standard vLLM /v1/load_lora_adapter first, fall back to custom endpoint
-            response = requests.post(
-                f"{base_url}/v1/load_lora_adapter",
-                json={
-                    "lora_name": base_model,
-                    "lora_path": adapter_path,
-                    "load_inplace": True,
-                },
-                timeout=sync_timeout,
-            )
-            if response.status_code != 200:
-                # Fallback: try custom /set_lora_adapter/ endpoint
-                response = requests.post(
-                    f"{base_url}/set_lora_adapter/",
-                    json={
-                        "lora_name": "active_lora",
-                        "lora_int_id": self._lora_sync_version,
-                        "lora_path": adapter_path,
-                    },
-                    timeout=30,
-                )
-                if response.status_code != 200:
-                    logger.warning(
-                        "Failed to set LoRA adapter: %s %s",
-                        response.status_code,
-                        response.text,
+                # Keep the previous version too: vLLM reads an adapter from disk
+                # lazily when a request is scheduled, and requests queued before
+                # this reload (e.g. async prefetch) still point at it.
+                if self._lora_sync_version > 2:
+                    old_path = os.path.join(
+                        self._lora_sync_dir, f"v{self._lora_sync_version - 2}"
                     )
-                    return
+                    if os.path.exists(old_path):
+                        import shutil
 
-            # Reset prefix cache after adapter update
-            try:
-                vllm_client.reset_prefix_cache()
-            except Exception as exc:
-                logger.warning("Failed to reset prefix cache: %s", exc)
+                        shutil.rmtree(old_path, ignore_errors=True)
 
-            # Clean up old adapter versions (keep only current)
-            if self._lora_sync_version > 1:
-                old_path = os.path.join(
-                    self._lora_sync_dir, f"v{self._lora_sync_version - 1}"
+                logger.info(
+                    "Synced LoRA adapter v%d to vLLM (%s)",
+                    self._lora_sync_version,
+                    adapter_path,
                 )
-                if os.path.exists(old_path):
-                    import shutil
-
-                    shutil.rmtree(old_path, ignore_errors=True)
-
-            logger.info(
-                "Synced LoRA adapter v%d to vLLM (%s)",
-                self._lora_sync_version,
-                adapter_path,
-            )
 
         # Barrier to ensure all ranks complete before resuming forward passes.
         # Without this, rank 1 may start a forward pass (triggering FSDP unshard)
@@ -1236,28 +1111,29 @@ class AsyncGRPOTrainer(GRPOTrainer):
             else:
                 from accelerate.utils import is_peft_model
 
-                use_no_merge = is_peft_model(self.vllm_generation.model)
-
-                if use_no_merge:
-                    # No-merge sync: computes merged weights as new tensors
-                    # (doesn't modify base weights in-place), so it's safe to
-                    # run concurrently with BG generation — no lock needed.
-                    self._sync_peft_weights_no_merge()
+                # PEFT: merged weights computed as new tensors, never modifying
+                # base weights in place. Non-PEFT: stock sync.
+                if is_peft_model(self.vllm_generation.model):
+                    sync_fn = self._sync_peft_weights_no_merge
                 else:
-                    # Non-PEFT: use stock sync (acquires lock to avoid overlap)
-                    if self.data_producer is not None and hasattr(
-                        self.data_producer, "_generate_lock"
-                    ):
-                        with self.data_producer._generate_lock:
-                            self.vllm_generation.sync_weights()
-                    elif self._async_queue is not None:
-                        pending = list(self._async_queue.queue)
-                        for f in pending:
-                            if isinstance(f, concurrent.futures.Future):
-                                f.result()
-                        self.vllm_generation.sync_weights()
-                    else:
-                        self.vllm_generation.sync_weights()
+                    sync_fn = self.vllm_generation.sync_weights
+                # Both paths need the lock: vLLM's layerwise reload leaves
+                # layers uninitialized between /start_weight_update and
+                # /finish_weight_update, so an overlapping BG generation
+                # samples from garbage weights (NaN logprobs).
+                if self.data_producer is not None and hasattr(
+                    self.data_producer, "_generate_lock"
+                ):
+                    with self.data_producer._generate_lock:
+                        sync_fn()
+                elif self._async_queue is not None:
+                    pending = list(self._async_queue.queue)
+                    for f in pending:
+                        if isinstance(f, concurrent.futures.Future):
+                            f.result()
+                    sync_fn()
+                else:
+                    sync_fn()
             self._last_synced_step = step
 
     def _zero_pad_embedding_for_fp8(self):
@@ -1512,28 +1388,26 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 extra_fields,
             ) = self._generate_rank0_only(prompts)
         else:
+            # TRL >= 1.13 returns this rank's slice only (no num_items_in_batch),
+            # so inputs already line up with the outputs; num_items_in_batch is
+            # computed below from the loss mask, as TRL does.
             (
                 prompt_ids_list,
                 completion_ids_list,
                 tool_mask_list,
                 completions,
-                num_items_in_batch,
                 sampling_per_token_logps_list,
                 extra_fields,
+                _images,
+                _tool_images,
             ) = self._generate(prompts)
-            # _generate gathers prompts from all ranks internally. Gather inputs
-            # to match the full-batch output size.
-            if self.accelerator.num_processes > 1:
-                from accelerate.utils import gather_object
-
-                inputs = gather_object(inputs)
-                prompts = [x["prompt"] for x in inputs]
+            num_items_in_batch = None
 
         # --- Pad to tensors ---
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
         prompt_mask = [torch.ones_like(ids, dtype=torch.long) for ids in prompt_ids]
         prompt_ids = pad(
-            prompt_ids, padding_value=self.pad_token_id, padding_side="left"
+            prompt_ids, padding_value=self._tokenizer.pad_token_id, padding_side="left"
         )
         prompt_mask = pad(prompt_mask, padding_value=0, padding_side="left")
 
@@ -1544,7 +1418,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
             torch.ones_like(ids, dtype=torch.long) for ids in completion_ids
         ]
         completion_ids = pad(
-            completion_ids, padding_value=self.pad_token_id, padding_side="right"
+            completion_ids,
+            padding_value=self._tokenizer.pad_token_id,
+            padding_side="right",
         )
         completion_mask = pad(completion_mask, padding_value=0, padding_side="right")
 
@@ -1566,7 +1442,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         # --- Mask truncated completions ---
         if self.mask_truncated_completions:
-            eos_and_pad = [self.eos_token_id, self.pad_token_id]
+            eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
             is_trunc = torch.tensor(
                 [ids[-1] not in eos_and_pad for ids in completion_ids_list],
                 device=device,
@@ -1574,6 +1450,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
             completion_mask = completion_mask * (~is_trunc).unsqueeze(1).int()
             if tool_mask is not None:
                 tool_mask = tool_mask * (~is_trunc).unsqueeze(1).int()
+
+        if num_items_in_batch is None:
+            loss_mask = (
+                completion_mask if tool_mask is None else completion_mask * tool_mask
+            )
+            num_items_in_batch = self.accelerator.gather(loss_mask.sum()).sum()
 
         # --- Multimodal forward kwargs ---
         num_images = [len(il) for il in images] if images is not None else None
@@ -2031,7 +1913,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             agg_lengths.float().max().item()
         )
 
-        eos_and_pad = [self.eos_token_id, self.pad_token_id]
+        eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
         is_trunc = torch.tensor(
             [ids[-1].item() not in eos_and_pad for ids in completion_ids], device=device
         )
@@ -2443,7 +2325,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 agg_lengths.float().max().item()
             )
 
-            eos_and_pad = [self.eos_token_id, self.pad_token_id]
+            eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
             is_trunc = torch.tensor(
                 [ids[-1].item() not in eos_and_pad for ids in all_completion_ids],
                 device=device,

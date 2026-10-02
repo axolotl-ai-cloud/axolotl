@@ -51,7 +51,10 @@ class VllmConfig(BaseModel):
 
     enable_reasoning: bool | None = Field(
         default=None,
-        json_schema_extra={"description": "Enable reasoning for VLLM"},
+        json_schema_extra={
+            "description": "Deprecated and ignored: vLLM enables reasoning whenever "
+            "reasoning_parser is set."
+        },
     )
     reasoning_parser: str | None = Field(
         default=None,
@@ -67,14 +70,13 @@ class VllmConfig(BaseModel):
     serve_module: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Python module for vLLM serve script. Set to 'axolotl.scripts.vllm_serve_lora' "
-            "for native LoRA support, or leave None for default TRL serve."
+            "description": "Python module whose `main(args)` starts the vLLM server instead of "
+            "`vllm serve`. Leave unset to run `vllm serve`."
         },
     )
     worker_extension_cls: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "vLLM worker extension class for weight synchronization. "
-            "Defaults to 'trl.scripts.vllm_serve.WeightSyncWorkerExtension'."
+            "description": "vLLM worker extension class, passed to `vllm serve --worker-extension-cls`."
         },
     )

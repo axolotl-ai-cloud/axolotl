@@ -132,9 +132,9 @@ LoRA sync is the recommended weight synchronization method when training with Lo
 ### How It Works
 
 1. The trainer calls `model.save_pretrained()` to write the LoRA adapter weights to a temporary directory
-2. The trainer sends an HTTP POST to `/set_lora_adapter/` on the vLLM server
+2. The trainer asks vLLM to load it through `/v1/load_lora_adapter`, under the served model's name
 3. vLLM loads the adapter using its native LoRA support (Punica kernels)
-4. Generation uses the updated adapter on the next request
+4. Requests for the served model name use the updated adapter from then on
 
 ### Benefits
 
@@ -156,7 +156,7 @@ trl:
   vllm_sync_interval: 5   # Sync every 5 training steps
 ```
 
-Setting `vllm_lora_sync: true` automatically selects the LoRA-aware vLLM serve script (`axolotl.scripts.vllm_serve_lora`). You do not need to set `vllm.serve_module` manually.
+With `vllm_lora_sync: true`, `axolotl vllm-serve` starts vLLM with `--enable-lora` and `VLLM_ALLOW_RUNTIME_LORA_UPDATING=1`. `--max-lora-rank` is `lora_r` rounded up to the next rank vLLM supports.
 
 ::: {.callout-important}
 LoRA sync requires that you are training with a LoRA adapter (`adapter: lora` or `adapter: qlora`). It is not applicable to full fine-tuning.
@@ -242,10 +242,6 @@ A single `kill` often does not fully stop vLLM. Always use `kill -9` and verify 
 The vLLM server exposes a health endpoint. Wait for it to return 200 before starting training:
 
 ```bash
-# For the LoRA serve script (trailing slash required)
-curl http://localhost:8000/health/
-
-# For the default TRL serve script
 curl http://localhost:8000/health
 ```
 
@@ -266,11 +262,11 @@ These control the vLLM server process started by `axolotl vllm-serve`.
 | `dtype` | str | `auto` | Data type (`auto`, `float16`, `bfloat16`) |
 | `max_model_len` | int | `None` | Maximum model context length. Set explicitly if the default is too large for your GPU |
 | `enable_prefix_caching` | bool | `None` | Enable prefix caching for repeated prompt prefixes |
-| `enable_reasoning` | bool | `None` | Enable reasoning mode for models with thinking tokens |
+| `enable_reasoning` | bool | `None` | Deprecated and ignored: setting `reasoning_parser` enables reasoning |
 | `reasoning_parser` | str | `None` | Parser for reasoning output |
 | `enforce_eager` | bool | `None` | Disable CUDA graph capture (required for some architectures like Qwen3.5 hybrid attention) |
-| `serve_module` | str | `None` | Python module for vLLM serve script. Auto-set when `vllm_lora_sync: true` |
-| `worker_extension_cls` | str | `None` | vLLM worker extension class for weight sync |
+| `serve_module` | str | `None` | Python module whose `main(args)` starts the server instead of `vllm serve` |
+| `worker_extension_cls` | str | `None` | Passed to `vllm serve --worker-extension-cls` |
 
 ### Trainer vLLM Options (`trl:` section)
 
@@ -299,7 +295,7 @@ For a full working GRPO config including vLLM, LoRA sync, async generation, rewa
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve grpo_config.yaml
 
 # Wait for health check to pass
-curl http://localhost:8000/health/
+curl http://localhost:8000/health
 
 # Terminal 2: Start training
 CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
@@ -309,7 +305,7 @@ CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
 
 | Problem | Likely Cause | Solution |
 |---------|-------------|----------|
-| Training hangs waiting for vLLM | Server not started or wrong port | Check `curl http://localhost:8000/health/` and verify `vllm_server_host`/`vllm_server_port` match |
+| Training hangs waiting for vLLM | Server not started or wrong port | Check `curl http://localhost:8000/health` and verify `vllm_server_host`/`vllm_server_port` match |
 | OOM on vLLM GPU | `gpu_memory_utilization` too high or `max_model_len` too large | Reduce `gpu_memory_utilization` to 0.7 or set `max_model_len` explicitly |
 | OOM on training GPU | Batch too large for policy logprobs | Reduce `micro_batch_size` or `num_generations` |
 | Accuracy stays at zero | Stale vLLM from previous run | Restart vLLM: `pkill -9 -f "vllm\|EngineCore"`, verify with `nvidia-smi`, restart |

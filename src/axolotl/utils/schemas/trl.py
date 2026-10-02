@@ -389,6 +389,7 @@ class TRLConfig(BaseModel):
         default=False,
         json_schema_extra={
             "description": "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. "
-            "Auto-selects vllm_serve_lora serve module. Syncs only LoRA adapter weights vs full merged model."
+            "`axolotl vllm-serve` starts vLLM with runtime LoRA loading enabled. Syncs only LoRA adapter "
+            "weights vs full merged model."
         },
     )
