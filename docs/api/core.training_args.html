@@ -937,7 +937,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.core.training_args.AxolotlPRMConfig" id="toc-axolotl.core.training_args.AxolotlPRMConfig" class="nav-link" data-scroll-target="#axolotl.core.training_args.AxolotlPRMConfig">AxolotlPRMConfig</a></li>
   <li><a href="#axolotl.core.training_args.AxolotlRewardConfig" id="toc-axolotl.core.training_args.AxolotlRewardConfig" class="nav-link" data-scroll-target="#axolotl.core.training_args.AxolotlRewardConfig">AxolotlRewardConfig</a></li>
   <li><a href="#axolotl.core.training_args.AxolotlTrainingArguments" id="toc-axolotl.core.training_args.AxolotlTrainingArguments" class="nav-link" data-scroll-target="#axolotl.core.training_args.AxolotlTrainingArguments">AxolotlTrainingArguments</a></li>
-  <li><a href="#axolotl.core.training_args.PRMConfig" id="toc-axolotl.core.training_args.PRMConfig" class="nav-link" data-scroll-target="#axolotl.core.training_args.PRMConfig">PRMConfig</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -987,10 +986,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.core.training_args.AxolotlTrainingArguments">AxolotlTrainingArguments</a></td>
 <td>Training arguments for Causal trainer</td>
 </tr>
-<tr class="odd">
-<td><a href="#axolotl.core.training_args.PRMConfig">PRMConfig</a></td>
-<td>Placeholder so this module stays importable without trl’s PRM.</td>
-</tr>
 </tbody>
 </table>
 <section id="axolotl.core.training_args.AxolotlCPOConfig" class="level3">
@@ -1010,7 +1005,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.core.training_args.AxolotlPRMConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.training_args.AxolotlPRMConfig">AxolotlPRMConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.training_args.AxolotlPRMConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.training_args.AxolotlPRMConfig(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    learning_rate<span class="op">=</span><span class="fl">1e-05</span>,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    max_length<span class="op">=</span><span class="dv">1024</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    max_completion_length<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    disable_dropout<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    step_separator<span class="op">=</span><span class="st">'</span><span class="ch">\n</span><span class="st">'</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    train_on_last_step_only<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    dataset_num_proc<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>PRM config for PRM training</p>
 </section>
 <section id="axolotl.core.training_args.AxolotlRewardConfig" class="level3">
@@ -1024,11 +1027,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Training arguments for Causal trainer</p>
 <p>This code is duplicated due to HF TrainingArguments not setting output_dir with a
 default value so it can’t be used as a mixin.</p>
-</section>
-<section id="axolotl.core.training_args.PRMConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.training_args.PRMConfig">PRMConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>core.training_args.PRMConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Placeholder so this module stays importable without trl’s PRM.</p>
 
 
 </section>

@@ -1189,9 +1189,9 @@ existing HF attention kernels (FA2/FA3/FA4, sdpa, flex) — <strong>no <code>fla
 dependency</strong>. This is a built-in plugin: configure <code>context_parallel_size</code> or
 <code>context_parallel</code> without adding a <code>plugins:</code> entry.</p>
 <p>Requires <strong>torch ≥ 2.13</strong>. The integration targets the pinned upstream releases
-<strong>Transformers 5.17.0</strong>, <strong>Accelerate 1.15.0</strong>, and <strong>axolotl-ringmaster ≥0.2.1</strong>.
-No custom Transformers or Accelerate branch is required. Ringmaster 0.2.1 includes
-the packed attention and recurrent context-parallel adapters.</p>
+<strong>Transformers 5.17.0</strong>, <strong>Accelerate 1.15.0</strong>, and <strong>axolotl-ringmaster ≥0.2.3</strong>.
+No custom Transformers or Accelerate branch is required. Ringmaster 0.2.3 includes
+packed, sliding-window, chunked, and recurrent context-parallel support.</p>
 <section id="usage" class="level3">
 <h3 class="anchored" data-anchor-id="usage">Usage</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">            # the kernel Ulysses wraps (FA2 here)</span></span>
