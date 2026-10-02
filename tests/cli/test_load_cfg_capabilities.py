@@ -1,5 +1,6 @@
 """Tests for GPU capability detection in `load_cfg` and `ray_train_func`."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -106,6 +107,7 @@ def test_ray_train_func_validates_with_worker_capabilities(monkeypatch):
     monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.Accelerator", accelerator_mock)
+    monkeypatch.setattr("axolotl.cli.train.setup_tracking_env_vars", lambda *_: None)
 
     with patch("axolotl.cli.train.gpu_capabilities") as mock_caps:
         mock_caps.return_value = (
@@ -161,6 +163,7 @@ def test_ray_train_func_registers_plugins_before_validate_config(monkeypatch):
     monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.setup_tracking_env_vars", lambda *_: None)
 
     ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
 
@@ -198,8 +201,42 @@ def test_ray_train_func_skips_plugin_registration_when_no_plugins(monkeypatch):
     monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.setup_tracking_env_vars", lambda *_: None)
 
     ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
 
     prepare_plugins_mock.assert_not_called()
     plugin_set_cfg_mock.assert_not_called()
+
+
+def test_ray_train_func_sets_up_tracking_env_vars(monkeypatch):
+    """Tracker env vars must be set on the worker before training starts."""
+    cfg_dict = {
+        "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "micro_batch_size": 1,
+        "gradient_accumulation_steps": 1,
+        "mlflow_experiment_name": "ray-exp",
+        "wandb_project": "ray-proj",
+    }
+    monkeypatch.delenv("MLFLOW_EXPERIMENT_NAME", raising=False)
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+
+    seen_env = {}
+
+    def capture_env(**_):
+        seen_env["mlflow"] = os.environ.get("MLFLOW_EXPERIMENT_NAME")
+        seen_env["wandb"] = os.environ.get("WANDB_PROJECT")
+
+    monkeypatch.setattr(
+        "axolotl.cli.train.validate_config", MagicMock(side_effect=lambda cfg, **_: cfg)
+    )
+    monkeypatch.setattr("axolotl.cli.train.gpu_capabilities", lambda: ({}, {}))
+    monkeypatch.setattr("axolotl.cli.train.do_train", capture_env)
+    monkeypatch.setattr("axolotl.cli.train.prepare_optim_env", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+
+    ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
+
+    assert seen_env == {"mlflow": "ray-exp", "wandb": "ray-proj"}

@@ -223,6 +223,13 @@ def plugin_set_cfg(cfg: DictDefault):
         PluginManager.get_instance().cfg = cfg
 
 
+def setup_tracking_env_vars(cfg: DictDefault):
+    setup_wandb_env_vars(cfg)
+    setup_mlflow_env_vars(cfg)
+    setup_comet_env_vars(cfg)
+    setup_trackio_env_vars(cfg)
+
+
 @send_errors
 def load_cfg(
     config: str | Path | DictDefault = Path("examples/"), **kwargs
@@ -324,10 +331,7 @@ def load_cfg(
     prepare_optim_env(cfg)
     normalize_config(cfg)
     normalize_cfg_datasets(cfg)
-    setup_wandb_env_vars(cfg)
-    setup_mlflow_env_vars(cfg)
-    setup_comet_env_vars(cfg)
-    setup_trackio_env_vars(cfg)
+    setup_tracking_env_vars(cfg)
     plugin_set_cfg(cfg)
 
     TELEMETRY_MANAGER.send_event(event_type="config-processed", properties=cfg)

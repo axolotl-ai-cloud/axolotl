@@ -23,6 +23,7 @@ _LAZY_IMPORTS = {
     "prepare_optim_env": "axolotl.utils.trainer",
     "prepare_plugins": "axolotl.cli.config",
     "resolve_dtype": "axolotl.utils.config",
+    "setup_tracking_env_vars": "axolotl.cli.config",
     "train": "axolotl.train",
     "validate_config": "axolotl.utils.config",
 }
@@ -185,6 +186,10 @@ def ray_train_func(kwargs: dict):
     prepare_optim_env_fn(cfg)
     normalize_config_fn(cfg)
     resolve_dtype_fn(cfg)
+
+    # HF tracker callbacks read os.environ; workers on an existing Ray cluster don't inherit the driver's.
+    setup_tracking_env_vars_fn: Any = _lazy_attr("setup_tracking_env_vars")
+    setup_tracking_env_vars_fn(cfg)
 
     # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
     if cfg.deepspeed and hasattr(cfg.deepspeed, "to_dict"):
