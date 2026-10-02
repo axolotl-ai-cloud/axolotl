@@ -150,7 +150,10 @@ class TestDecoderLoopCompiles:
         assert not breaks, f"decoder loop graph-broke: {list(breaks)}"
         assert counters["stats"]["unique_graphs"] >= 1
 
-    def test_fa2_loop_compiles_with_varlen_kwargs(self, packing_patched):
+    @pytest.mark.parametrize("gradient_checkpointing", [False, True])
+    def test_fa2_loop_compiles_with_varlen_kwargs(
+        self, packing_patched, gradient_checkpointing
+    ):
         """FA2: collator-precomputed cu_seq_lens/max_length let the loop compile; without them transformers' per-layer varlen derivation graph-breaks it."""
         from transformers.modeling_flash_attention_utils import (
             prepare_fa_kwargs_from_position_ids,
@@ -161,9 +164,11 @@ class TestDecoderLoopCompiles:
 
         counters.clear()
         model = _build_model(attn="flash_attention_2")
-        model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs={"use_reentrant": False}
-        )
+        assert "flash" in model.config._attn_implementation
+        if gradient_checkpointing:
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
         model.train()
         input_ids, position_ids = _packed_inputs()
         (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(
@@ -274,6 +279,7 @@ class TestDecoderLoopCompiles:
 
         torch._dynamo.reset()
         model = _build_model(attn="flash_attention_2")
+        assert "flash" in model.config._attn_implementation
         if gradient_checkpointing:
             model.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": False}
