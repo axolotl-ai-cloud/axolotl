@@ -6,9 +6,11 @@ import unittest
 
 from axolotl.utils.data.rl import (
     _drop_long_sequences,
+    _load_rl_dataset_transform_fn,
     _raise_on_long_sequences,
     _truncate_long_sequences_rl,
 )
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
 
@@ -118,6 +120,35 @@ class TestDropLongSequences(unittest.TestCase):
             sample, RLType.DPO, self.tokenizer, sequence_len=10
         )
         self.assertTrue(result)
+
+
+class TestLoadRLDatasetTransformFn(unittest.TestCase):
+    """Tests for _load_rl_dataset_transform_fn dataset-type dispatch.
+
+    Regression coverage for https://github.com/axolotl-ai-cloud/axolotl/issues/3269:
+    GRPO datasets configured with a built-in strategy name (e.g.
+    ``type: chat_template``) must not be silently routed to the DPO
+    chosen/rejected transform, which raises a confusing KeyError.
+    """
+
+    def setUp(self):
+        self.cfg = DictDefault({"datasets": [{"type": "chat_template"}]})
+
+    def test_dpo_resolves_builtin_chat_template_strategy(self):
+        # Baseline: DPO is expected to resolve axolotl's built-in
+        # `chat_template` strategy under its own module namespace.
+        fn = _load_rl_dataset_transform_fn(RLType.DPO, "chat_template", self.cfg, 0)
+        self.assertIsNotNone(fn)
+
+    def test_grpo_does_not_resolve_builtin_dpo_strategy(self):
+        # GRPO must not fall back to DPO's built-in `chat_template` strategy,
+        # since that expects "chosen"/"rejected" fields GRPO samples lack.
+        fn = _load_rl_dataset_transform_fn(RLType.GRPO, "chat_template", self.cfg, 0)
+        self.assertIsNone(fn)
+
+    def test_gdpo_does_not_resolve_builtin_dpo_strategy(self):
+        fn = _load_rl_dataset_transform_fn(RLType.GDPO, "chat_template", self.cfg, 0)
+        self.assertIsNone(fn)
 
 
 class TestRaiseOnLongSequences(unittest.TestCase):

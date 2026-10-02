@@ -8,6 +8,7 @@ from datasets import Dataset, DatasetDict
 from transformers import PreTrainedTokenizer
 
 from axolotl.loaders import load_tokenizer
+from axolotl.prompt_strategies.base import load as load_prompt_strategy
 from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.ebft import load as load_ebft
 from axolotl.prompt_strategies.kto import load as load_kto
@@ -293,6 +294,37 @@ def _truncate_long_sequences_rl(
     return sample
 
 
+def _load_rl_dataset_transform_fn(
+    rl: RLType, _type: str, cfg: DictDefault, dataset_idx: int
+) -> Callable[..., Any] | tuple[Callable[..., Any], dict[str, Any]] | None:
+    """Resolve the dataset transform function for a given RL type and dataset type.
+
+    GRPO/GDPO datasets require a user-defined transform function (see
+    docs/grpo.qmd) and must not silently fall back to a built-in DPO-style
+    strategy, which expects chosen/rejected fields and would otherwise raise a
+    confusing KeyError instead of a clear "unable to load" error.
+
+    Args:
+        rl: The configured RL training type.
+        _type: The dataset's configured `type` string.
+        cfg: Global configuration object.
+        dataset_idx: Index of this dataset within `cfg.datasets`.
+
+    Returns:
+        The resolved transform function (optionally paired with `map_kwargs`),
+            or None if no strategy could be resolved for `_type`.
+    """
+    if rl is RLType.ORPO:
+        return load_orpo(_type, cfg, dataset_idx=dataset_idx)
+    if rl is RLType.KTO:
+        return load_kto(_type, cfg, dataset_idx=dataset_idx)
+    if rl is RLType.EBFT:
+        return load_ebft(_type, cfg, dataset_idx=dataset_idx)
+    if rl in {RLType.GRPO, RLType.GDPO}:
+        return load_prompt_strategy(_type, cfg, dataset_idx=dataset_idx)
+    return load_dpo(_type, cfg, dataset_idx=dataset_idx)
+
+
 def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     """Load and process dataset split for RL training.
 
@@ -319,14 +351,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
         if _type:
             if isinstance(_type, DictDefault):
                 _type = "user_defined.default"
-            if cfg.rl is RLType.ORPO:
-                ds_transform_fn = load_orpo(_type, cfg, dataset_idx=i)
-            elif cfg.rl is RLType.KTO:
-                ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
-            elif cfg.rl is RLType.EBFT:
-                ds_transform_fn = load_ebft(_type, cfg, dataset_idx=i)
-            else:
-                ds_transform_fn = load_dpo(_type, cfg, dataset_idx=i)
+            ds_transform_fn = _load_rl_dataset_transform_fn(cfg.rl, _type, cfg, i)
 
             if ds_transform_fn is None:
                 raise ValueError(
