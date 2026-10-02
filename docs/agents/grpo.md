@@ -9,8 +9,8 @@ Terminal 1 (GPU 0)                    Terminal 2 (GPU 1)
 ┌──────────────────────┐              ┌──────────────────────────────────┐
 │  vLLM Server         │   HTTP       │  Trainer                         │
 │  Serves base model   │◄────────────►│  1. Send prompts to vLLM         │
-│  + LoRA adapter      │  /generate   │  2. Score completions (rewards)  │
-│                      │  /set_lora   │  3. Compute advantages           │
+│  + LoRA adapter      │  /v1/*       │  2. Score completions (rewards)  │
+│                      │  LoRA load   │  3. Compute advantages           │
 │  Punica kernels for  │              │  4. PPO-clip gradient update     │
 │  LoRA inference      │              │  5. Sync LoRA weights to vLLM    │
 └──────────────────────┘              └──────────────────────────────────┘
@@ -58,12 +58,11 @@ See [training_stability.qmd](../training_stability.qmd) for detailed diagnostics
 ```
 src/axolotl/
   cli/train.py                     # Entry point
-  cli/vllm_serve.py                # Entry point for vLLM server
+  cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
     trainer.py                     # AxolotlGRPOTrainer
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
-  scripts/vllm_serve_lora.py       # vLLM serve script with LoRA sync support
   utils/schemas/trl.py             # TRL config schema (all trl: options)
 
 docs/grpo.qmd                     # Full user docs: async, rewards, scaling, config reference

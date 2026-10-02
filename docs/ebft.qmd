@@ -538,7 +538,7 @@ The arrows indicate the desired direction: alignment and reward should trend upw
 In PEFT (LoRA) mode, the feature network shares base weights with the actor model by using the `disable_adapter()` context manager. This saves an entire model copy in VRAM (approximately 1--16 GB depending on model size). For non-PEFT training, a separate frozen deepcopy is created.
 
 ::: {.callout-note}
-The `disable_adapter()` approach relies on an invariant: `merge_adapter()` is never called on the base weights. All weight sync paths (LoRA sync, HTTP, NCCL) compute merged weights as new tensors or save the adapter to the filesystem, leaving base weights unmodified.
+The `disable_adapter()` approach relies on an invariant: `merge_adapter()` is never called on the base weights. All weight sync paths (LoRA sync, NCCL) compute merged weights as new tensors or save the adapter to the filesystem, leaving base weights unmodified.
 :::
 
 ## Examples

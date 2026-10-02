@@ -70,7 +70,7 @@ policy_model:
       entrypoint: app.py
       base_url: http://localhost:8000/v1
       api_key: dummy_key
-      model: Qwen/Qwen3-0.6B   # Must match your training model
+      model: Qwen/Qwen3-0.6B   # Must match nemo_gym_model_name (default: base_model)
       return_token_id_information: true
       uses_reasoning_parser: false
 
@@ -288,9 +288,10 @@ sync with filesystem + HTTP:
 
 1. `accelerator.get_state_dict()` gathers LoRA weights from all ranks
 2. Rank 0 saves adapter to `/tmp/lora_sync_*/vN/`
-3. Rank 0 POSTs to `/set_lora_adapter/` on vLLM server
-4. vLLM loads adapter natively via Punica kernels
-5. Only ~40MB transferred (vs multiple GBs for full model weights)
+3. Rank 0 POSTs to vLLM's native `/v1/load_lora_adapter`, registering the adapter as `<base model>-v<N>` and addressing subsequent trainer requests to that name; a non-200 response raises
+4. In multi-turn mode the same adapter is also re-registered under `nemo_gym_model_name` (default: `base_model`), because agent servers address vLLM by the fixed `model` in their config. Keep that `model` equal to `nemo_gym_model_name`, and to the name vLLM serves the base model under
+5. vLLM loads adapter natively via Punica kernels
+6. Only ~40MB transferred (vs multiple GBs for full model weights)
 
 ### Multi-Environment Support
 
@@ -384,12 +385,12 @@ from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
     --enable-lora --max-lora-rank 64 \
     --enable-auto-tool-choice --tool-call-parser hermes
   ```
-- **`VLLM_ALLOW_RUNTIME_LORA_UPDATING=1`**: Required for `vllm_lora_sync: true`. Without it, vLLM won't expose the `/v1/load_lora_adapter` endpoint and weight sync will fail silently. The plugin warns if this endpoint is missing.
+- **`VLLM_ALLOW_RUNTIME_LORA_UPDATING=True`** (set automatically by `axolotl vllm-serve` when LoRA is enabled): Required for `vllm_lora_sync: true`. Without it, vLLM won't expose the `/v1/load_lora_adapter` endpoint and weight sync will fail silently. The plugin warns if this endpoint is missing.
 - **`--enable-lora`**: Enables LoRA adapter support in vLLM
 - **`--enable-auto-tool-choice --tool-call-parser hermes`**: Required for Qwen3 tool calling
 - **`max_model_len` must be > `max_completion_length`**: Leave room for prompt tokens (~200). If equal, the NeMo Gym model proxy gets a 400 error and returns empty completions.
 - **`CUDA_HOME` required**: DeepSpeed import needs it for the nvcc shim
-- **NCCL weight sync broken with vLLM 0.17**: Use `vllm_lora_sync: true` (filesystem + HTTP via `/v1/load_lora_adapter`)
+- **Full-parameter weight sync needs the native NCCL routes**: start the server with `axolotl vllm-serve` (sets `VLLM_SERVER_DEV_MODE=1` and the weight-transfer config), or run `vllm serve` with `VLLM_SERVER_DEV_MODE=1 --weight-transfer-config '{"backend":"nccl"}'`. For LoRA, use `vllm_lora_sync: true` (filesystem + `/v1/load_lora_adapter`)
 
 ### Multi-Turn
 - **Agent server required**: Multi-turn delegates to NeMo Gym's agent server `/run` endpoint. Without an agent, the plugin falls back to single-turn `/verify`
