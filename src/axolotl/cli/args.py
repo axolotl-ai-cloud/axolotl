@@ -128,6 +128,12 @@ class ExportCliArgs:
             "help": "Checkpoint to export. Defaults to the merged/trained output dir."
         },
     )
+    lora: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Export the adapter as a standalone GGUF LoRA instead of a full model."
+        },
+    )
     outfile: Optional[str] = field(
         default=None,
         metadata={"help": "Output path; {ftype} is replaced by each weight type."},
