@@ -127,7 +127,14 @@ class DataCollatorForSeq2Seq:
             )
             features["decoder_input_ids"] = decoder_input_ids
 
-        if self.emit_fa_varlen_kwargs and "position_ids" in features:
+        if (
+            self.emit_fa_varlen_kwargs
+            and "position_ids" in features
+            and (
+                "attention_mask" not in features
+                or bool(features["attention_mask"].all())
+            )
+        ):
             # Precompute FA2 varlen metadata once so transformers' per-layer derivation (a data-dependent op that breaks the compiled decoder loop) is skipped; bit-identical to what it would compute itself.
             try:
                 from transformers.modeling_flash_attention_utils import (
