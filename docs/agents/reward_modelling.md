@@ -25,7 +25,7 @@ Dataset format: `{"system": "...", "input": "...", "chosen": "...", "rejected": 
 
 Train a token classifier to score each reasoning step. Uses `AutoModelForTokenClassification`.
 
-Requires `trl<=1.13.0` (`pip install trl==1.13.0`): TRL removed `trl.experimental.prm` in later versions. ORM is unaffected.
+Uses the vendored Hugging Face TRL v1.13.0 PRM trainer in `src/axolotl/core/trainers/prm/` (Apache 2.0). No TRL downgrade is required.
 
 ```yaml
 base_model: Qwen/Qwen2.5-3B

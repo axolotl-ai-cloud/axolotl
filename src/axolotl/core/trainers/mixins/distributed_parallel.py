@@ -2,6 +2,8 @@
 Mixin for correctly saving fsdp
 """
 
+import os
+
 from accelerate import PartialState
 from transformers import Trainer
 
@@ -80,13 +82,27 @@ class DistributedParallelMixin(Trainer):
                     model._axolotl_native_nvfp4_deepspeed_prepared = True
         return super()._wrap_model(model, *args, **kwargs)
 
-    def _clip_grad_norm(self, model):
+    def _expert_parallel_enabled(self) -> bool:
+        parallelism = getattr(self.accelerator, "parallelism_config", None)
+        if parallelism is not None:
+            return bool(getattr(parallelism, "ep_enabled", False))
+        # pure EP builds no ParallelismConfig, only the env var
+        return int(os.environ.get("PARALLELISM_CONFIG_EP_SIZE", "1") or 1) > 1
+
+    def _global_mesh(self):
+        return getattr(
+            self.accelerator,
+            "torch_device_mesh",
+            getattr(getattr(self.accelerator, "state", None), "device_mesh", None),
+        )
+
+    def _cpu_offloaded(self) -> bool:
         from torch.distributed.fsdp import CPUOffloadPolicy
 
         plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
-        if not isinstance(getattr(plugin, "cpu_offload", None), CPUOffloadPolicy):
-            return super()._clip_grad_norm(model)
+        return isinstance(getattr(plugin, "cpu_offload", None), CPUOffloadPolicy)
 
+    def _clip_grad_norm(self, model):
         from axolotl.utils.gradient_clipping import (
             clip_grad_norm_ep_local_shards_,
             clip_grad_norm_local_shards_,
@@ -95,33 +111,22 @@ class DistributedParallelMixin(Trainer):
         )
 
         parameters = list(model.parameters())
-        if not has_cpu_offloaded_dtensor_gradients(parameters):
-            return super()._clip_grad_norm(model)
-        self.accelerator.unscale_gradients()
-        parallelism = getattr(self.accelerator, "parallelism_config", None)
-        if getattr(parallelism, "ep_enabled", False):
+        if self._expert_parallel_enabled():
+            # experts live on their own mesh: one ownership-filtered global norm
+            self.accelerator.unscale_gradients()
             return clip_grad_norm_ep_local_shards_(
                 parameters,
                 self.args.max_grad_norm,
                 ep_local_parameters=ep_local_parameter_ids(model),
-                global_mesh=getattr(
-                    self.accelerator,
-                    "torch_device_mesh",
-                    getattr(
-                        getattr(self.accelerator, "state", None), "device_mesh", None
-                    ),
-                ),
+                global_mesh=self._global_mesh(),
             )
-        return clip_grad_norm_local_shards_(parameters, self.args.max_grad_norm)
+        if self._cpu_offloaded() and has_cpu_offloaded_dtensor_gradients(parameters):
+            self.accelerator.unscale_gradients()
+            return clip_grad_norm_local_shards_(parameters, self.args.max_grad_norm)
+        return super()._clip_grad_norm(model)
 
     def _get_grad_norm(self, model, grad_norm=None):
         if grad_norm is not None:
-            return super()._get_grad_norm(model, grad_norm)
-        from torch.distributed.fsdp import CPUOffloadPolicy
-
-        plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
-        parameters = list(model.parameters())
-        if not isinstance(getattr(plugin, "cpu_offload", None), CPUOffloadPolicy):
             return super()._get_grad_norm(model, grad_norm)
         from axolotl.utils.gradient_clipping import (
             ep_local_parameter_ids,
@@ -130,23 +135,18 @@ class DistributedParallelMixin(Trainer):
             has_cpu_offloaded_dtensor_parameters,
         )
 
-        if not has_cpu_offloaded_dtensor_parameters(parameters):
-            return super()._get_grad_norm(model, grad_norm)
-        self.accelerator.unscale_gradients()
-        parallelism = getattr(self.accelerator, "parallelism_config", None)
-        if getattr(parallelism, "ep_enabled", False):
+        parameters = list(model.parameters())
+        if self._expert_parallel_enabled():
+            self.accelerator.unscale_gradients()
             return get_grad_norm_ep_local_shards_(
                 parameters,
                 ep_local_parameters=ep_local_parameter_ids(model),
-                global_mesh=getattr(
-                    self.accelerator,
-                    "torch_device_mesh",
-                    getattr(
-                        getattr(self.accelerator, "state", None), "device_mesh", None
-                    ),
-                ),
+                global_mesh=self._global_mesh(),
             )
-        return get_grad_norm_local_shards_(parameters)
+        if self._cpu_offloaded() and has_cpu_offloaded_dtensor_parameters(parameters):
+            self.accelerator.unscale_gradients()
+            return get_grad_norm_local_shards_(parameters)
+        return super()._get_grad_norm(model, grad_norm)
 
     def _save_model_native(
         self, output_dir: str | None = None, _internal_call: bool = False

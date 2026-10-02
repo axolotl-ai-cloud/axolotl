@@ -5,7 +5,6 @@ import torch.distributed as dist
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.tensor import DTensor, Replicate, Shard
 
-from axolotl.monkeypatch.accelerate.parallelism_config import _ep_aware_clip_grad_norm
 from axolotl.utils.gradient_clipping import (
     clip_grad_norm_ep_local_shards_,
     ep_local_parameter_ids,
@@ -87,7 +86,7 @@ def main():
     )
     replica.grad = _dtensor(torch.tensor([7.0]), all_mesh, (Replicate(),), (1,))
     plain_replica.grad = torch.tensor([6.0])
-    gpu_path_norm = _ep_aware_clip_grad_norm(
+    gpu_path_norm = clip_grad_norm_ep_local_shards_(
         [expert, nonexpert, replica, plain_replica],
         torch.tensor(279.0).sqrt().item() / 3,
         ep_local_parameters={id(expert)},
@@ -121,7 +120,9 @@ def main():
         torch.tensor([3.0 if dp == 0 else 4.0]), dp_mesh, (Shard(0),), (2,)
     )
     torch.testing.assert_close(
-        _ep_aware_clip_grad_norm([subgroup], 10.0, global_mesh=mesh),
+        clip_grad_norm_ep_local_shards_(
+            [subgroup], 10.0, ep_local_parameters=set(), global_mesh=mesh
+        ),
         torch.tensor(5.0),
     )
     dist.barrier()

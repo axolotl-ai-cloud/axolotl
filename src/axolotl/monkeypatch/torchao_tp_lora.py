@@ -138,6 +138,30 @@ def _merge_aware_unsupported_reason(module) -> str | None:
     return None
 
 
+def _localize_peft_tp_factors(module, layout: str) -> None:
+    """PEFT >= 0.21.1 wraps the sharded factor as a DTensor and installs transformers'
+    TP forward on it; this path computes with local factors and does its own reductions."""
+    sharded = ("lora_B", 0) if layout == "colwise" else ("lora_A", 1)
+    for factor_name in ("lora_A", "lora_B"):
+        for factor in getattr(module, factor_name).values():
+            weight = factor.weight
+            if type(weight).__name__ == "DTensor":
+                placement = weight.placements[-1]
+                expected_dim = sharded[1] if factor_name == sharded[0] else None
+                if (
+                    expected_dim is None
+                    or getattr(placement, "dim", None) != expected_dim
+                ):
+                    raise ValueError(
+                        f"Native NVFP4 TP {layout} LoRA expects {sharded[0]} sharded on dim "
+                        f"{sharded[1]}, got {factor_name} with placement {placement}"
+                    )
+                factor.weight = torch.nn.Parameter(
+                    weight.to_local(), requires_grad=weight.requires_grad
+                )
+            factor.__dict__.pop("forward", None)
+
+
 def _validate_ordinary_lora(module, layout: str) -> None:
     if getattr(module, "lora_variant", None) or any(
         getattr(module, "use_dora", {}).values()
@@ -308,6 +332,7 @@ def prepare_native_nvfp4_tp_lora(
                 "Native NVFP4 TP LoRA only supports colwise and rowwise TP plans"
             )
         layout = _tp_lora_layout(weight, plan)
+        _localize_peft_tp_factors(module, layout)
         _validate_ordinary_lora(module, layout)
         unavailable = _merge_aware_unsupported_reason(module) if merge_aware else None
         if unavailable is not None:
