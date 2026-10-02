@@ -30,12 +30,29 @@
 
 ## 🎉 Latest Updates
 
+- 2026/10:
+  - [Distributed training improvements](https://github.com/axolotl-ai-cloud/axolotl/pull/4091) keep EP groups node-local when the topology permits, add DeepSpeed Ulysses support through `context_parallel_size`, and fix expert-LoRA resume and FSDP2 activation checkpointing with LoRA.
+- 2026/09:
+  - New model support has been added in Axolotl for [MiniCPM5](https://docs.axolotl.ai/docs/models/minicpm5.html), [Nex-N2.5-mini](https://docs.axolotl.ai/docs/models/nex-n2.5.html), [Qwen3.6](https://docs.axolotl.ai/docs/models/qwen3.5.html), [Qwen3.8-Flash-Next](https://docs.axolotl.ai/docs/models/qwen3.8-flash-next.html), and [K2 Horizon](https://docs.axolotl.ai/docs/models/k2-horizon.html).
+  - [CPU-staged FSDP2 QLoRA loading](https://docs.axolotl.ai/docs/expert_quantization.html#cpu-staged-fsdp2-qlora-loading) lets you load models larger than a single GPU's memory without materializing a full quantized replica on each GPU.
+  - [GGUF export](https://docs.axolotl.ai/docs/export.html) is now available via `axolotl export`, with optional quantization for deployment with llama.cpp and Ollama.
+  - [NVFP4 LoRA](https://docs.axolotl.ai/docs/nvfp4_lora.html) now supports native TorchAO dense weights and merge-aware training, optimizing against the quantized merged weights for deployment.
+  - New training options: [MixLoRA](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/mixlora) adds routed LoRA experts to dense models, and [Dynamic Fine-Tuning (DFT)](https://github.com/axolotl-ai-cloud/axolotl/pull/4008) weights the SFT loss by token probability.
+  - [Ringmaster context parallelism](https://docs.axolotl.ai/docs/sequence_parallelism.html) adds Ulysses and combined Ulysses/Ring (USP) support, sample packing, and CP fixes for GDN, KDA, and Mamba/Mamba2 models.
+  - [Torch all-to-all Expert Parallelism](https://docs.axolotl.ai/docs/custom_integrations.html#expert-parallelism-integration) enables MoE training over NVLink or PCIe without requiring DeepEP. Expanded [N-D parallelism](https://docs.axolotl.ai/docs/nd_parallelism.html) supports EP with FSDP2, HSDP, and context parallelism, plus FSDP2 + tensor parallelism.
+  - [Selective activation checkpointing](https://docs.axolotl.ai/docs/gradient_checkpointing.html#selective-activation-checkpointing-sac) adds rules to save specific projections or large matrix multiplications, with optional CPU offload to tune the memory/recomputation tradeoff.
+  - Improved [plugin integration](https://docs.axolotl.ai/docs/custom_integrations.html) includes new cloud provider interfaces for launching training jobs, with support for [Nebius Serverless Jobs](https://docs.axolotl.ai/docs/nebius-serverless.html).
 - 2026/08:
   - New model support has been added in Axolotl for [Ling 3.0](https://docs.axolotl.ai/docs/models/ling3.html), [Muse Glimmer](https://docs.axolotl.ai/docs/models/muse-glimmer.html), [North Micro Vision Instruct](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html) and [Shieldstral](https://docs.axolotl.ai/docs/models/shieldstral.html).
 - 2026/07:
   - [NVFP4 (4-bit) MoE LoRA training](https://docs.axolotl.ai/docs/nvfp4_lora.html) is now supported via ScatterMoE (W4A16) and SonicMoE (W4A4), including adapter merge back into a plain NVFP4 checkpoint.
 - 2026/06:
-  - [Expert Parallelism (EP)](https://docs.axolotl.ai/docs/nd_parallelism.html) for distributed MoE training via DeepEP or plain NCCL/gloo `all_to_all_single`, remote training through [Tinker-compatible APIs](https://github.com/axolotl-ai-cloud/axolotl/pull/3614), [Context Parallelism for hybrid SSM models](https://github.com/axolotl-ai-cloud/axolotl/pull/3572) (Nemotron-H, Falcon-H1, Bamba), [BitNet 1.58-bit](https://github.com/axolotl-ai-cloud/axolotl/pull/3634) fine-tuning, and a [multimodal assistant-only loss-masking fix](https://github.com/axolotl-ai-cloud/axolotl/pull/3625).
+  - [Expert Parallelism (EP)](https://docs.axolotl.ai/docs/nd_parallelism.html) for distributed MoE training via DeepEP, remote training through [Tinker-compatible APIs](https://github.com/axolotl-ai-cloud/axolotl/pull/3614), [Context Parallelism for hybrid SSM models](https://github.com/axolotl-ai-cloud/axolotl/pull/3572) (Nemotron-H, Falcon-H1, Bamba), [BitNet 1.58-bit](https://github.com/axolotl-ai-cloud/axolotl/pull/3634) fine-tuning, and a [multimodal assistant-only loss-masking fix](https://github.com/axolotl-ai-cloud/axolotl/pull/3625).
+
+<details>
+
+<summary>Expand older updates</summary>
+
 - 2026/04:
   - New model support has been added in Axolotl for [Mistral Medium 3.5](https://docs.axolotl.ai/docs/models/mistral-medium-3_5.html) and [Gemma 4](https://docs.axolotl.ai/docs/models/gemma4.html).
   - New RL and kernels: [Async GRPO](https://github.com/axolotl-ai-cloud/axolotl/pull/3486) (up to 58% faster steps), [Flash Attention 4](https://docs.axolotl.ai/docs/attention.html#flash-attention), [NeMo Gym](https://github.com/axolotl-ai-cloud/axolotl/pull/3516), and [EBFT](https://github.com/axolotl-ai-cloud/axolotl/pull/3527).
@@ -43,11 +60,6 @@
 - 2026/03:
   - New model support has been added in Axolotl for [Mistral Small 4](https://docs.axolotl.ai/docs/models/mistral4.html), [Qwen3.5, Qwen3.5 MoE](https://docs.axolotl.ai/docs/models/qwen3.5.html), [GLM-4.7-Flash](https://docs.axolotl.ai/docs/models/glm47-flash.html), [GLM-4.6V](https://docs.axolotl.ai/docs/models/glm46v.html), and [GLM-4.5-Air](https://docs.axolotl.ai/docs/models/glm45.html).
   - [MoE expert quantization](https://docs.axolotl.ai/docs/expert_quantization.html) support (via `quantize_moe_experts: true`) greatly reduces VRAM when training MoE models (FSDP2 compat).
-
-<details>
-
-<summary>Expand older updates</summary>
-
 - 2026/02:
   - [ScatterMoE LoRA](https://github.com/axolotl-ai-cloud/axolotl/pull/3410) support. LoRA fine-tuning directly on MoE expert weights using custom Triton kernels.
   - Axolotl now has support for [SageAttention](https://github.com/axolotl-ai-cloud/axolotl/pull/2823) and [GDPO](https://github.com/axolotl-ai-cloud/axolotl/pull/3353) (Generalized DPO).
