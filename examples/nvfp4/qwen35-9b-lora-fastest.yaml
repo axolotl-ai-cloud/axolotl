@@ -1,0 +1,83 @@
+# Fastest native NVFP4 training path for Qwen3.5-9B LoRA on Blackwell.
+#
+# Target shape: text-only SFT, sequence_len 2048, sample packing, no gradient
+# checkpointing, on a 96GB Blackwell card (sm_100 / sm_120).
+#
+# base: compute pre-quantizes the frozen base into the two NVFP4 layouts so
+# fprop and dgrad run as pure FP4 GEMMs with no per-step base-quant prologue. The
+# lm_head stays bf16 (excluded) and frozen under LoRA, so cross_entropy.mode:
+# auto resolves to the chunked bf16 CE kernel — convergence-safe (CCE / Liger
+# fused-linear CE loss-collapse under NVFP4 SR grads) and skips materializing the
+# [tokens, vocab] logits. Use bf16 (not fp16) on Blackwell.
+base_model: Qwen/Qwen3.5-9B
+
+# NVFP4 FP4-GEMM training ships as a plugin.
+plugins:
+  - axolotl.integrations.nvfp4.NVFP4Plugin
+model_config_type: qwen3_5
+strict: false
+
+chat_template: qwen3_5
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+val_set_size: 0.0
+output_dir: ./outputs/nvfp4_qwen35_fastest_out/
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+load_in_8bit: false
+load_in_4bit: false
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+  - linear_attn.in_proj_qkv
+  - linear_attn.in_proj_z
+  - linear_attn.out_proj
+
+gradient_accumulation_steps: 1
+# Targets a 96GB Blackwell card. Reduce micro_batch_size on smaller cards or
+# enable gradient_checkpointing if you need memory headroom.
+micro_batch_size: 4
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 2.0e-4
+max_grad_norm: 1.0
+
+bf16: true
+fp16: false
+tf32: true
+torch_compile: true
+
+gradient_checkpointing: false
+attn_implementation: flash_attention_2
+
+nvfp4_training:
+  enabled: true
+  quantize: [all]              # all eligible LoRA base linears ([all, lm_head] to add the head)
+  base: compute
+  # Head-aware fused CE: bf16 head here -> chunked bf16 kernel (skips logits).
+  cross_entropy:
+    mode: auto
+    # Vocab tile width (speed<->VRAM dial, loss-invariant); default 4096 is lighter.
+    vocab_block: 8192
+
+warmup_steps: 10
+logging_steps: 1
+save_strategy: "no"
+saves_per_epoch:
+evals_per_epoch:
+weight_decay: 0.0
+special_tokens:

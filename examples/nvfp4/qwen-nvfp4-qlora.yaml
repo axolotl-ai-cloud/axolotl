@@ -1,0 +1,82 @@
+# NVFP4-QLoRA: a LoRA adapter over a base whose frozen weights are stored packed
+# in FP4 (~3.5x weight memory saving vs bf16). This REPLACES bnb NF4 QLoRA — do
+# NOT set load_in_4bit/load_in_8bit (they conflict with FP4 storage; the gate
+# will refuse). Use `adapter: lora` for this path; `adapter: qlora` forces
+# load_in_4bit and therefore cannot pair with FP4 storage.
+#
+# Like full-FT NVFP4 this is a THROUGHPUT play that only pays off on large GEMMs:
+# use >=3B models (the per-GEMM quant prologue dominates below ~hidden 1024) and
+# keep torch.compile on (the speedup only materializes compiled).
+base_model: Qwen/Qwen2.5-3B
+
+# NVFP4 FP4-GEMM training ships as a plugin.
+plugins:
+  - axolotl.integrations.nvfp4.NVFP4Plugin
+
+# NVFP4 owns the base-weight quantization here; bnb must stay off.
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+
+output_dir: ./outputs/nvfp4_qlora_out/
+
+sequence_len: 1024
+sample_packing: true
+pad_to_sequence_len: true
+
+# sample_packing needs a varlen-capable backend. On Blackwell (sm_120) sdpa with
+# a packed block-diagonal mask cannot use the fused flash kernel and falls back to
+# the materialized-softmax math path (6-13x slower attention, and it leaks across
+# packed samples). flash_attention_2 does varlen packing via position_ids — fast
+# AND sample-isolated. Keep it on whenever sample_packing is true.
+attn_implementation: flash_attention_2
+
+bf16: true
+torch_compile: true
+
+nvfp4_training:
+  enabled: true
+  quantize: [all]            # all eligible LoRA base linears
+  base: storage              # FP4 STORAGE on the frozen base (NVFP4-QLoRA)
+  # ~15% high-precision policy (NVFP4 paper): keep the first block and a few tail
+  # blocks in bf16. Tune to your block count; tail blocks matter most.
+  keep_hp_blocks: {first: 1, last: 4}
+  # Also FP4-quantize the output head and run the logit-free fp4 cross-entropy
+  # (memory win on the large [vocab, hidden] tensor; small convergence cost):
+  # quantize: [all, lm_head]
+  # cross_entropy: {mode: auto}   # FP4 head -> fp4 CE kernel
+  # Store the frozen FP4 base packed (qdata + scales) in a torch.save sidecar
+  # (~3.5x smaller than bf16); bit-exact for the frozen base, LOSSY for FFT resume
+  # (no bf16 master). Off by default.
+  # save_packed: true
+
+gradient_accumulation_steps: 1
+micro_batch_size: 8
+num_epochs: 1
+optimizer: adamw_torch_fused
+learning_rate: 2e-4
+
+logging_steps: 1
+warmup_steps: 10
+weight_decay: 0.0
+
+evals_per_epoch: 1
+saves_per_epoch: 1
+save_only_model: true
