@@ -137,6 +137,16 @@ def main():
                 model.A_log.fill_(-6)
             reference = copy.deepcopy(model)
         else:
+            original_gdn_forward = Qwen3_5GatedDeltaNet.forward
+            patched_gdn = os.environ.get("RM_AXOLOTL_GDN_PATCHED") == "1"
+            if patched_gdn:
+                from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                    patch_qwen3_5_modeling_packing,
+                )
+
+                patch_qwen3_5_modeling_packing(
+                    torch_compile=os.environ.get("RM_AXOLOTL_GDN_COMPILE") == "1"
+                )
             config = Qwen3_5TextConfig(
                 hidden_size=64,
                 num_hidden_layers=1,
@@ -160,7 +170,7 @@ def main():
 
             reference.forward = MethodType(
                 _rebind_globals(
-                    reference.forward.__func__,
+                    original_gdn_forward if patched_gdn else reference.forward.__func__,
                     {
                         "torch_chunk_gated_delta_rule": chunk_gdn,
                         "causal_conv1d_fn": reference_conv,
@@ -231,11 +241,25 @@ def main():
                 )
             )
         restore = wire_recurrent_layers(model, group=dist.group.WORLD).restore
+        if os.environ.get("RM_AXOLOTL_GDN_COMPILE") == "1":
+            model = torch.compile(model, backend="eager", fullgraph=False)
         if isinstance(model, Hybrid):
             model.group = dist.group.WORLD
         local_x = x.chunk(world, dim=1)[rank].contiguous().requires_grad_()
         print(f"rank={rank} CP forward", flush=True)
-        actual = model(local_x)
+        if family == "gdn" and os.environ.get("RM_AXOLOTL_GDN_PATCHED") == "1":
+            position_ids = (
+                positions.chunk(world, dim=1)[rank]
+                if packed
+                else torch.arange(
+                    rank * local_x.shape[1],
+                    (rank + 1) * local_x.shape[1],
+                    device=x.device,
+                ).unsqueeze(0)
+            )
+            actual = model(local_x, position_ids=position_ids)
+        else:
+            actual = model(local_x)
         if isinstance(actual, tuple):
             actual = actual[0]
         target = expected.chunk(world, dim=1)[rank]
