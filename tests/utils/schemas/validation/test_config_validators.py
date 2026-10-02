@@ -124,7 +124,7 @@ class TestLoraTargetModulesRegexValidator:
 
 
 class TestGRPOBatchSizeValidator:
-    """GRPO requires (mb*GA) % num_generations == 0 and num_generations >= 2.
+    """GRPO requires (mb*GA*world_size) % num_generations == 0 and num_generations >= 2.
 
     These call the @model_validator(mode="before") classmethod directly on a
     plain dict — same input shape it receives during full Pydantic validation,
@@ -237,23 +237,45 @@ class TestGRPOBatchSizeValidator:
         data = {
             "rl": "grpo",
             "micro_batch_size": 1,
-            "gradient_accumulation_steps": 4,  # gbs=4
+            "gradient_accumulation_steps": 2,  # gbs = 1*2*2 = 4
             "world_size": 2,  # need gbs >= 4*2 = 8
             "trl": {"num_generations": 4},
         }
         with pytest.raises(ValueError, match=r"world_size=2"):
             self._check(data)
 
-    def test_multi_rank_group_size_satisfied(self):
+    def test_multi_rank_derived_gbs_includes_world_size(self):
         data = {
             "rl": "grpo",
-            "micro_batch_size": 1,
-            "gradient_accumulation_steps": 8,  # gbs=8 >= 4*2
+            "micro_batch_size": 4,
+            "gradient_accumulation_steps": 1,  # gbs = 4*1*2 = 8 >= 4*2
             "world_size": 2,
             "trl": {"num_generations": 4},
         }
         out = self._check(data)
-        assert out["gradient_accumulation_steps"] == 8
+        assert out["gradient_accumulation_steps"] == 1
+
+    def test_multi_rank_divisibility_uses_world_size(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 3,
+            "gradient_accumulation_steps": 1,  # gbs = 3*1*2 = 6
+            "world_size": 2,
+            "trl": {"num_generations": 4},
+        }
+        with pytest.raises(ValueError, match="gradient_accumulation_steps: 2"):
+            self._check(data)
+
+    def test_multi_rank_explicit_generation_batch_size_is_global(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 4,
+            "gradient_accumulation_steps": 1,
+            "world_size": 2,
+            "trl": {"num_generations": 4, "generation_batch_size": 4},
+        }
+        with pytest.raises(ValueError, match=r"world_size=2"):
+            self._check(data)
 
 
 class TestBatchSizeFieldsValidator:

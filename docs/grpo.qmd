@@ -23,8 +23,8 @@ Terminal 1 (GPU 0)                    Terminal 2 (GPU 1)
 │  vLLM Server         │              │  Trainer                         │
 │                      │   HTTP       │                                  │
 │  Serves base model   │◄────────────►│  Background thread:              │
-│  + LoRA adapter      │  /generate   │    Send prompts to vLLM          │
-│                      │  /set_lora   │    Pad & collate completions     │
+│  + LoRA adapter      │  /v1/*       │    Send prompts to vLLM          │
+│                      │  LoRA load   │    Pad & collate completions     │
 │  Punica kernels for  │              │                                  │
 │  LoRA inference      │              │  Main thread:                    │
 │                      │              │    Score completions (rewards)   │

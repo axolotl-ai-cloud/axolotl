@@ -331,6 +331,248 @@ class TestVllmLoraSyncPatch(unittest.TestCase):
         assert trainer.vllm_generation.sync_weights is first_hook
 
 
+class TestSyncLoraAdapterFailure(unittest.TestCase):
+    """_sync_lora_adapter must raise when vLLM rejects the adapter load."""
+
+    @staticmethod
+    def _make_trainer(tmp_path):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        accelerator = MagicMock()
+        accelerator.is_main_process = True
+        accelerator.num_processes = 1
+        accelerator.get_state_dict.return_value = {}
+        vllm_client = types.SimpleNamespace(
+            base_url="http://localhost:8000", model="base/model"
+        )
+        vllm_generation = types.SimpleNamespace(
+            accelerator=accelerator,
+            model=MagicMock(),
+            mode="server",
+            vllm_client=vllm_client,
+        )
+        trainer = object.__new__(AsyncGRPOTrainer)
+        trainer.args = types.SimpleNamespace(vllm_server_timeout=5)
+        trainer.vllm_generation = vllm_generation
+        trainer._lora_sync_version = 0
+        trainer._lora_sync_dir = str(tmp_path)
+        return trainer
+
+    def test_non_200_raises_with_hint(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trainer = self._make_trainer(tmp)
+            response = MagicMock(status_code=404, text="Not Found")
+            with patch("requests.post", return_value=response) as post:
+                with self.assertRaises(RuntimeError) as ctx:
+                    trainer._sync_lora_adapter()
+
+            urls = [c[0][0] for c in post.call_args_list]
+            self.assertEqual(sum(u.endswith("/v1/load_lora_adapter") for u in urls), 1)
+            self.assertFalse(any(u.endswith("/resume") for u in urls))
+            msg = str(ctx.exception)
+            self.assertIn("404", msg)
+            self.assertIn("Not Found", msg)
+            self.assertIn("axolotl vllm-serve", msg)
+            self.assertEqual(trainer.vllm_generation.vllm_client.model, "base/model")
+
+    def test_versions_get_fresh_names_and_stale_ones_are_unloaded(self):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trainer = self._make_trainer(tmp)
+            client = trainer.vllm_generation.vllm_client
+            response = MagicMock(status_code=200, text="ok")
+            with patch("requests.post", return_value=response) as post:
+                for version in (1, 2, 3):
+                    os.makedirs(os.path.join(tmp, f"v{version}"))
+                    trainer._sync_lora_adapter()
+                    self.assertEqual(client.model, f"base/model-v{version}")
+
+            calls = [(c[0][0].rsplit("/", 1)[-1], c[1]) for c in post.call_args_list]
+            self.assertEqual(
+                [name for name, _ in calls],
+                ["pause", "load_lora_adapter", "resume"] * 3 + ["unload_lora_adapter"],
+            )
+            loads = [kw["json"] for name, kw in calls if name == "load_lora_adapter"]
+            self.assertEqual(
+                [p["lora_name"] for p in loads],
+                ["base/model-v1", "base/model-v2", "base/model-v3"],
+            )
+            self.assertFalse(any(p["load_inplace"] for p in loads))
+            self.assertEqual(calls[0][1]["params"], {"mode": "wait"})
+            self.assertEqual(calls[-1][1]["json"], {"lora_name": "base/model-v1"})
+            self.assertFalse(os.path.exists(os.path.join(tmp, "v1")))
+            self.assertTrue(os.path.exists(os.path.join(tmp, "v2")))
+
+    def test_alias_is_repointed_at_each_version(self):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trainer = self._make_trainer(tmp)
+            trainer._vllm_lora_alias = "base/model"
+            client = trainer.vllm_generation.vllm_client
+            response = MagicMock(status_code=200, text="ok")
+            with patch("requests.post", return_value=response) as post:
+                for version in (1, 2):
+                    os.makedirs(os.path.join(tmp, f"v{version}"))
+                    trainer._sync_lora_adapter()
+
+            calls = [(c[0][0].rsplit("/", 1)[-1], c[1]) for c in post.call_args_list]
+            self.assertEqual(
+                [name for name, _ in calls],
+                [
+                    "pause",
+                    "load_lora_adapter",
+                    "unload_lora_adapter",
+                    "load_lora_adapter",
+                    "resume",
+                ]
+                * 2,
+            )
+            last_alias_load = calls[-2][1]["json"]
+            self.assertEqual(last_alias_load["lora_name"], "base/model")
+            self.assertEqual(last_alias_load["lora_path"], os.path.join(tmp, "v2"))
+            self.assertFalse(last_alias_load["load_inplace"])
+            self.assertEqual(calls[-3][1]["json"], {"lora_name": "base/model"})
+            self.assertEqual(client.model, "base/model-v2")
+
+
+class TestMergedSyncDispatch(unittest.TestCase):
+    """PEFT merged sync is rank-0-only, so FSDP must use the collective sync."""
+
+    @staticmethod
+    def _make_trainer(is_fsdp_enabled):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        trainer = object.__new__(AsyncGRPOTrainer)
+        trainer.args = types.SimpleNamespace(
+            vllm_sync_interval=1, vllm_lora_sync=False, async_prefetch=True
+        )
+        trainer.use_vllm = True
+        trainer.state = types.SimpleNamespace(global_step=1)
+        trainer._last_synced_step = 0
+        trainer.is_fsdp_enabled = is_fsdp_enabled
+        trainer.data_producer = None
+        trainer._async_queue = None
+        trainer.vllm_generation = MagicMock()
+        trainer._sync_peft_weights_no_merge = MagicMock()
+        trainer._ensure_vllm_communicator = MagicMock()
+        return trainer
+
+    def _run(self, is_fsdp_enabled):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        trainer = self._make_trainer(is_fsdp_enabled)
+        with patch("accelerate.utils.is_peft_model", return_value=True):
+            AsyncGRPOTrainer._maybe_sync_vllm_weights(trainer)
+        return trainer
+
+    def test_peft_without_fsdp_uses_no_merge_sync(self):
+        trainer = self._run(is_fsdp_enabled=False)
+        trainer._sync_peft_weights_no_merge.assert_called_once()
+        trainer.vllm_generation.sync_weights.assert_not_called()
+
+    def test_peft_with_fsdp_uses_collective_sync(self):
+        trainer = self._run(is_fsdp_enabled=True)
+        trainer._sync_peft_weights_no_merge.assert_not_called()
+        trainer.vllm_generation.sync_weights.assert_called_once()
+
+
+class TestPeftSyncFusedSiblings(unittest.TestCase):
+    def test_q_v_lora_also_sends_k(self):
+        import torch
+        from torch import nn
+
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        class LoraLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.base_layer = nn.Linear(4, 4, bias=False)
+                self.lora_A = nn.ModuleDict({"default": nn.Linear(4, 2, bias=False)})
+                self.lora_B = nn.ModuleDict({"default": nn.Linear(2, 4, bias=False)})
+                self.active_adapters = ["default"]
+                self.scaling = {"default": 1.0}
+
+        class Attn(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.q_proj = LoraLinear()
+                self.k_proj = nn.Linear(4, 4, bias=False)
+                self.v_proj = LoraLinear()
+                self.o_proj = nn.Linear(4, 4, bias=False)
+                self.q_norm = nn.LayerNorm(4)
+
+        class Inner(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.layers = nn.ModuleList([nn.ModuleDict({"self_attn": Attn()})])
+
+        class Wrapped(nn.Module):
+            prefix = "lora_"
+
+            def __init__(self):
+                super().__init__()
+                self.base_model = nn.Module()
+                self.base_model.model = nn.Module()
+                self.base_model.model.model = Inner()
+
+        model = Wrapped()
+        client = MagicMock()
+        vllm_generation = types.SimpleNamespace(
+            accelerator=types.SimpleNamespace(is_main_process=True),
+            mode="server",
+            model=model,
+            vllm_client=client,
+            _fix_param_name_to_vllm=lambda name, extra_prefixes=None: name,
+        )
+        trainer = object.__new__(AsyncGRPOTrainer)
+        trainer.vllm_generation = vllm_generation
+        trainer._sync_peft_weights_no_merge()
+
+        names = [n for n, _ in client.batch_update_named_params.call_args[0][0]]
+        self.assertEqual(
+            names,
+            [
+                f"model.layers.0.self_attn.{m}.weight"
+                for m in ("q_proj", "k_proj", "v_proj", "o_proj")
+            ],
+        )
+        self.assertIsInstance(
+            client.batch_update_named_params.call_args[0][0][1][1], torch.Tensor
+        )
+
+
+class TestEnsureVllmCommunicator(unittest.TestCase):
+    @staticmethod
+    def _trainer(communicator):
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
+
+        client = MagicMock()
+        client.communicator = communicator
+        trainer = object.__new__(AsyncGRPOTrainer)
+        trainer.vllm_generation = types.SimpleNamespace(
+            mode="server",
+            accelerator=types.SimpleNamespace(is_main_process=True, device="cuda:0"),
+            vllm_client=client,
+        )
+        return trainer, client
+
+    def test_inits_when_missing(self):
+        trainer, client = self._trainer(None)
+        trainer._ensure_vllm_communicator()
+        client.init_communicator.assert_called_once_with(device="cuda:0")
+
+    def test_noop_when_present(self):
+        trainer, client = self._trainer(object())
+        trainer._ensure_vllm_communicator()
+        client.init_communicator.assert_not_called()
+
+
 class TestMaybeSyncVllmWeightsIntervalDefault(unittest.TestCase):
     """``_maybe_sync_vllm_weights`` must not crash when interval is unset.
 
@@ -451,8 +693,7 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
         trainer.aux_loss_enabled = False
         trainer.num_generations = 2
         trainer.num_iterations = 1
-        trainer.pad_token_id = 0
-        trainer.eos_token_id = 1
+        trainer._tokenizer = MagicMock(pad_token_id=0, eos_token_id=1)
         trainer.mask_truncated_completions = False
         trainer.tools = None
         trainer.chat_template_kwargs = {}
@@ -485,9 +726,10 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
                 [[4, 5], [4, 5, 6]],  # completion_ids_list
                 None,  # tool_mask_list
                 ["a", "b"],  # completions
-                2,  # num_items_in_batch
                 None,  # sampling_per_token_logps_list
                 None,  # extra_fields
+                None,  # images
+                None,  # tool_images
             )
         )
         trainer.processing_class = MagicMock()

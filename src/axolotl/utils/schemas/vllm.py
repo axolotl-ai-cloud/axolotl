@@ -67,14 +67,15 @@ class VllmConfig(BaseModel):
     serve_module: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Python module for vLLM serve script. Set to 'axolotl.scripts.vllm_serve_lora' "
-            "for native LoRA support, or leave None for default TRL serve."
+            "description": "Custom Python module exposing main(script_args) to run instead of vLLM's native "
+            "server. Leave None to launch the native server; the legacy value "
+            "'axolotl.scripts.vllm_serve_lora' is deprecated and ignored."
         },
     )
     worker_extension_cls: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "vLLM worker extension class for weight synchronization. "
-            "Defaults to 'trl.scripts.vllm_serve.WeightSyncWorkerExtension'."
+            "description": "Optional vLLM worker extension class passed to the native server "
+            "via --worker-extension-cls. Not needed for TRL weight sync."
         },
     )
