@@ -107,11 +107,11 @@ Extends a model's context window by interpolating its Rotary Position Embeddings
 
 - **Config:** Pass the `rope_scaling` config under the `overrides_of_model_config: `. To learn how to set RoPE, check the respective model config.
 
-### Sequence Parallelism
+### Context Parallelism
 
-Splits long sequences across multiple GPUs, enabling training with sequence lengths that would not fit on a single device.
+Splits long sequences across multiple GPUs, enabling training with sequence lengths that would not fit on a single device. (Older docs call this sequence parallelism.)
 
-- **Learn more:** [Sequence Parallelism Documentation](sequence_parallelism.qmd)
+- **Learn more:** [Context Parallelism Documentation](sequence_parallelism.qmd)
 
 ### Artic Long Sequence Training (ALST)
 
@@ -132,7 +132,7 @@ To train models that don't fit on a single GPU, you'll need to use a distributed
 
 ### N-D Parallelism (Beta)
 
-For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
+For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Context, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
 
 - **Learn more:** [N-D Parallelism Guide](nd_parallelism.qmd)
 

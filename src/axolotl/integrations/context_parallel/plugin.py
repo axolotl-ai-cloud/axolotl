@@ -51,6 +51,10 @@ class ContextParallelPlugin(BasePlugin):
         return cp
 
     def _enabled(self, cfg) -> bool:
+        if getattr(cfg, "deepspeed", None):
+            return (
+                False  # DeepSpeed runs maps CP onto accelerate's DeepSpeed Ulysses axis
+            )
         cp = self._cp_cfg(cfg)
         return bool(cp and getattr(cp, "size", 1) and cp.size > 1)
 
@@ -118,7 +122,11 @@ class ContextParallelPlugin(BasePlugin):
         rm_cfg.normalize(num_kv_heads=num_kv_heads, intra_node_size=intra_node_size())
         from ringmaster.strategies.state_passing import recurrent_plan
 
-        from .settings import check_model_capability, resolve_settings
+        from .settings import (
+            attention_patterns,
+            check_model_capability,
+            resolve_settings,
+        )
 
         for model in models:
             model_config = model.config
@@ -171,16 +179,14 @@ class ContextParallelPlugin(BasePlugin):
             if self._gather_outputs
             else None
         )
+        sliding_window, chunked_attention = attention_patterns(models)
         communication = resolve_settings(
             cp,
             rm_cfg,
             num_kv_heads=num_kv_heads,
             contiguous_reason=reason,
-            sliding_window=any(
-                getattr(module, "sliding_window", None)
-                for model in models
-                for module in model.modules()
-            ),
+            sliding_window=sliding_window,
+            chunked_attention=chunked_attention,
             glm_dsa=glm_dsa,
             inner_attn=inner_attn,
             dropout=max(

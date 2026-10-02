@@ -123,22 +123,3 @@ def validate_expert_parallel_topology(cfg) -> None:
                 f"FULL_STATE_DICT, got {value!r}. {value} checkpoints keep only EP group 0's "
                 "experts; the full state dict gathers every EP group's experts before rank 0 writes."
             )
-
-    reject_replicate_without_shard_axis(
-        ep_size,
-        getattr(cfg, "dp_replicate_size", None) or 1,
-        getattr(cfg, "dp_shard_size", None) or 1,
-        getattr(cfg, "context_parallel_size", None) or 1,
-    )
-
-
-def reject_replicate_without_shard_axis(
-    ep_size: int, dp_replicate_size: int, dp_shard_size: int, cp_size: int
-) -> None:
-    if ep_size > 1 and dp_replicate_size > 1 and dp_shard_size <= 1 and cp_size <= 1:
-        raise ValueError(
-            f"expert_parallel_size ({ep_size}) with dp_replicate_size ({dp_replicate_size}) "
-            "needs a shard axis inside each replica: set dp_shard_size > 1 or "
-            "context_parallel_size > 1. A (dp_replicate, ep) mesh gives the experts no group "
-            "to reduce over, so replicas would drift apart."
-        )

@@ -202,6 +202,11 @@ def should_skip_peft_embedding_upcast(cfg: DictDefault) -> bool:
     return should_convert_embedding_dtypes(cfg)
 
 
+def no_split_module_classes(model) -> list[str]:
+    """Module class names a device map must keep on one device (transformers stores them as a set)."""
+    return sorted(getattr(model, "_no_split_modules", None) or ())
+
+
 class ModelLoader:
     """Manages model configuration, initialization and application of patches during
     model loading.
@@ -942,6 +947,7 @@ class ModelLoader:
             device_map = infer_auto_device_map(
                 model_canvas,
                 max_memory=max_memory,
+                no_split_module_classes=no_split_module_classes(model_canvas),
                 dtype=self.cfg.torch_dtype,
             )
             # We can discard max_memory now as we have a device map set up

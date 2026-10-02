@@ -289,3 +289,41 @@ def test_dense_normalization_preserves_values_storage_and_parameter_identity():
     assert nvfp4_fsdp.normalize_dense_nvfp4_scales(model) == 0
     assert model.weight is parameter
     assert torch.equal(parameter.dequantize(), original)
+
+
+class _Mesh:
+    def __init__(self, n):
+        self._n = n
+
+    def size(self, mesh_dim=None):
+        return self._n
+
+
+@pytest.mark.parametrize("scale_kind", ["none", "scalar", "per_expert"])
+def test_nvfp4_fsdp_single_rank_packed_roundtrip(scale_kind):
+    """A size-1 shard mesh (pure EP, dp_replicate x ep) gets ONE packed all-gather input, since
+    FSDP2's single-rank unshard copies only ``all_gather_inputs[0]``; the unpack side views the
+    components straight out of that buffer."""
+    nv = _make_nvfp4(4, 8, 32, per_expert_pts=scale_kind == "per_expert")
+    if scale_kind == "none":
+        nv.per_tensor_scale = None
+    orig = nv.dequantize(torch.bfloat16)
+
+    inputs, meta = nv.fsdp_pre_all_gather(_Mesh(1))
+    assert len(inputs) == 1
+    assert inputs[0].dtype == torch.uint8 and inputs[0].shape[0] == 4
+    buf = torch.empty_like(inputs[0])
+    buf.copy_(inputs[0])
+    recon, inner = nv.fsdp_post_all_gather((buf,), meta, torch.bfloat16)
+    assert inner == (buf,)
+    assert torch.equal(recon.dequantize(torch.bfloat16), orig)
+    assert recon.qdata.data_ptr() == buf.data_ptr()
+    if scale_kind == "scalar":
+        assert recon.per_tensor_scale.dim() == 0
+    reused = recon.clone()
+    nv.fsdp_post_all_gather((buf,), meta, torch.bfloat16, out=reused)
+    assert torch.equal(reused.dequantize(torch.bfloat16), orig)
+    # multi-rank meshes keep the per-component inputs the gathered path expects
+    assert len(nv.fsdp_pre_all_gather(_Mesh(2))[0]) == (
+        2 if scale_kind == "none" else 3
+    )

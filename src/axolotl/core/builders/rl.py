@@ -62,7 +62,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 )
             )
             trainer_cls = GRPOStrategy.get_trainer_class(
-                sequence_parallel=self.cfg.context_parallel_size > 1,
+                context_parallel=self.cfg.context_parallel_size > 1,
                 async_grpo=async_grpo,
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))

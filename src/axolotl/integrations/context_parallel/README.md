@@ -7,9 +7,9 @@ dependency**. This is a built-in plugin: configure `context_parallel_size` or
 `context_parallel` without adding a `plugins:` entry.
 
 Requires **torch ≥ 2.13**. The integration targets the pinned upstream releases
-**Transformers 5.17.0**, **Accelerate 1.15.0**, and **axolotl-ringmaster ≥0.2.1**.
-No custom Transformers or Accelerate branch is required. Ringmaster 0.2.1 includes
-the packed attention and recurrent context-parallel adapters.
+**Transformers 5.17.0**, **Accelerate 1.15.0**, and **axolotl-ringmaster ≥0.2.3**.
+No custom Transformers or Accelerate branch is required. Ringmaster 0.2.3 includes
+packed, sliding-window, chunked, and recurrent context-parallel support.
 
 ## Usage
 

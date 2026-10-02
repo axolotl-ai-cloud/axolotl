@@ -231,23 +231,6 @@ def fsdp2_load_full_state_dict(
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
-        # Pure-EP quantized experts are excluded from the FSDP wrap (ignored_params), so they stay
-        # PLAIN per-rank meta params here. shard_expert_weights already scattered each rank's
-        # correct [E_local] slice before the meta move, so each rank's own `full_sd` entry is right —
-        # load it locally with NO rank-0 broadcast (which would replicate experts[0:E_local]).
-        if _is_ep_expert_param(param_name) and not hasattr(
-            sharded_meta_param, "device_mesh"
-        ):
-            own = full_sd[param_name]
-            own = own.to(torch.device("cuda"))
-            if offload_to_cpu:
-                own = own.cpu()
-            sharded_sd[param_name] = _state_dict_entry(
-                own, param_name, parameter_requires_grad, buffer_names
-            )
-            full_sd[param_name] = None
-            continue
-
         nvfp4_cls = _nvfp4_local_tensor_cls(sharded_meta_param)
 
         # EP-sharded experts as DTensors (pure EP per-rank mesh, or an EP×dp_shard subgroup): every
@@ -572,6 +555,53 @@ def _activation_checkpoint_wrapper_fn():
     )
 
 
+def _has_checkpoint_wrapper(model: torch.nn.Module) -> bool:
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        CheckpointWrapper,
+    )
+
+    return any(isinstance(m, CheckpointWrapper) for m in model.modules())
+
+
+def _activation_checkpointing_active(model: torch.nn.Module) -> bool:
+    """A CheckpointWrapper already wraps the layers, or HF `gradient_checkpointing_enable`
+    already recomputes them from inside their forward; a second checkpoint nests recompute."""
+    if _has_checkpoint_wrapper(model):
+        return True
+    if any(
+        getattr(m, "gradient_checkpointing", False) is True for m in model.modules()
+    ):
+        LOG.warning(
+            "fsdp_config.activation_checkpointing skipped: gradient_checkpointing already "
+            "recomputes every layer; set one of the two."
+        )
+        return True
+    return False
+
+
+def fsdp2_apply_ac(accelerator, model: torch.nn.Module) -> torch.nn.Module:
+    """accelerate's per-layer AC pass using axolotl's SAC-aware, non-reentrant wrapper."""
+    from accelerate.utils.fsdp_utils import fsdp2_prepare_auto_wrap_policy
+    from accelerate.utils.other import get_module_children_bottom_up
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        offload_wrapper,
+    )
+
+    if _activation_checkpointing_active(model):
+        return model
+    plugin = accelerator.state.fsdp_plugin
+    policy = fsdp2_prepare_auto_wrap_policy(plugin, model)
+    wrap = _activation_checkpoint_wrapper_fn()
+    offload = bool(getattr(plugin, "activation_checkpointing_offload", False))
+    for name, layer in get_module_children_bottom_up(model, return_fqns=True)[:-1]:
+        if policy(layer):
+            wrapped = wrap(layer)
+            if offload:
+                wrapped = offload_wrapper(wrapped)
+            model.set_submodule(name, wrapped)
+    return model
+
+
 def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     """Prepares the model for FSDP2 in-place. Also returns the model to avoid misuse of the original model.
 
@@ -647,7 +677,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     # This is because of `apply_activation_checkpointing` which will can reuse this function
     fsdp2_plugin.set_auto_wrap_policy(model)
 
-    if fsdp2_plugin.activation_checkpointing:
+    # accelerate >= 1.15 applies AC in `_prepare_fsdp2` (via the patched `fsdp2_apply_ac`)
+    # before calling this; wrapping again nests two checkpoints per layer.
+    if fsdp2_plugin.activation_checkpointing and not _activation_checkpointing_active(
+        model
+    ):
         from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
             apply_activation_checkpointing,
         )
@@ -769,12 +803,18 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model, expert_fsdp_mesh(mesh), fsdp2_kwargs
         )
     elif getattr(model, "_ddp_params_and_buffers_to_ignore", None):
-        # Pure EP (ep_size == world_size): no ep×dp_shard mesh is built, so the experts were
-        # manually EP-sharded (shard_expert_weights scattered each rank's real [E_local] slice) but
-        # there is NO dp_shard axis to FSDP them onto. Left to the outer fully_shard(mesh=None) they
-        # would be re-sharded on the flat world mesh and replicated from rank 0, destroying EP.
-        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
-        from axolotl.integrations.expert_parallel.shard import _detect_experts_modules
+        # EP with no shard axis (pure EP, or dp_replicate x ep): shard_expert_weights scattered each
+        # rank its real [E_local] slice, but there is no dp_shard/cp axis to FSDP them onto. Left to
+        # the outer fully_shard they would be re-sharded across the ep ranks and replicated from
+        # rank 0, destroying EP.
+        from axolotl.integrations.expert_parallel.plugin import (
+            ExpertParallelPlugin,
+            per_rank_expert_mesh,
+        )
+        from axolotl.integrations.expert_parallel.shard import (
+            _detect_experts_modules,
+            shard_expert_lora,
+        )
 
         ep_ignored = {
             p
@@ -784,44 +824,27 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             and n.rsplit(".", 1)[-1]
             in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
         }
-        # Pre-quantized (torchao subclass) frozen experts keep the plain per-rank path below.
-        plain_experts = all(type(p.data) is torch.Tensor for p in ep_ignored)
-        if ep_ignored and plain_experts:
+        if ep_ignored:
             # Every param must be a DTensor (foreach/fused optimizers and clip reject a
             # Tensor/DTensor mix), so wrap the experts — and the expert-LoRA wrappers, which the
             # outer decoder-layer unit would otherwise shard ACROSS ep ranks — on a per-rank
             # (size-1) dp_shard mesh: the all-gather is a no-op and each rank keeps its own slice.
-            from torch.distributed.device_mesh import init_device_mesh
-
-            from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
-            from axolotl.integrations.expert_parallel.shard import (
-                _detect_experts_modules,
-                shard_expert_lora,
-            )
-
+            # Under dp_replicate x ep that mesh keeps dp_replicate as the outer dim, so the
+            # replicas' expert grads all-reduce like any other HSDP param.
             device_type = mesh.device_type if mesh is not None else "cuda"
-            ep_mesh = init_device_mesh(
-                device_type,
-                (dist.get_world_size(), 1),
-                mesh_dim_names=("ep", "dp_shard"),
+            expert_mesh = per_rank_expert_mesh(mesh, device_type)
+            root = expert_mesh._get_root_mesh()
+            model._ep_lora_group = (
+                mesh["ep"].get_group()
+                if mesh is not None and "ep" in (mesh.mesh_dim_names or ())
+                else dist.group.WORLD
             )
-            model._ep_expert_mesh = ep_mesh
-            model._ep_lora_group = dist.group.WORLD
-            shard_expert_lora(model, dist.get_world_size())
-            ExpertParallelPlugin.fully_shard_experts(
-                model, ep_mesh["dp_shard"], fsdp2_kwargs
-            )
+            shard_expert_lora(model, root["ep"].size())
+            ExpertParallelPlugin.fully_shard_experts(model, expert_mesh, fsdp2_kwargs)
             LOG.info(
-                f"expert_parallel (pure EP): wrapped {len(list(_detect_experts_modules(model)))} "
-                "Experts module(s) on a per-rank mesh."
-            )
-        elif ep_ignored:
-            fsdp2_kwargs["ignored_params"] = (
-                set(fsdp2_kwargs.get("ignored_params") or set()) | ep_ignored
-            )
-            LOG.info(
-                f"expert_parallel (pure EP): excluded {len(ep_ignored)} quantized EP-sharded "
-                "expert param(s) from the FSDP wrap (kept as plain per-rank slices)."
+                f"expert_parallel: wrapped {len(list(_detect_experts_modules(model)))} "
+                f"Experts module(s) on a per-rank mesh {tuple(root.mesh_dim_names)}="
+                f"{tuple(root.shape)}."
             )
 
     nf4_unwrapped_children = set()
@@ -1123,3 +1146,4 @@ def patch_accelerate_fsdp2():
     import accelerate
 
     accelerate.accelerator.fsdp2_prepare_model = fsdp2_prepare_model
+    accelerate.accelerator.fsdp2_apply_ac = fsdp2_apply_ac

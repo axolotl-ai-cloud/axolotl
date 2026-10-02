@@ -711,15 +711,21 @@ class TestSentinelNormalization:
         captured = {}
 
         def spy(module, x, idx, w):
-            captured["idx"], captured["w"] = idx, w
-            return torch.zeros_like(x)
+            captured["x"], captured["idx"], captured["w"] = x, idx, w
+            return x.sum(dim=-1, keepdim=True).expand_as(x).clone()
 
         idx = torch.tensor([[0, -1], [-1, 3], [2, 1]])
         w = torch.rand(3, 2)
-        experts_fn._run_local(experts, spy, torch.randn(3, H), idx, w)
-        assert captured["idx"].tolist() == [[0, E_LOCAL], [E_LOCAL, 3], [2, 1]]
-        assert torch.equal(captured["w"], w.masked_fill(idx < 0, 0))
+        x = torch.randn(3, H)
+        out = experts_fn._run_local(experts, spy, x, idx, w)
+        assert captured["idx"][:3].tolist() == [[0, E_LOCAL], [E_LOCAL, 3], [2, 1]]
+        assert torch.equal(captured["w"][:3], w.masked_fill(idx < 0, 0))
         assert idx.min() == -1  # caller's routing is not mutated
+        # one zero pad row per local expert, unit weight, sliced off the output
+        assert captured["idx"][3:].tolist() == [[e, E_LOCAL] for e in range(E_LOCAL)]
+        assert captured["w"][3:].tolist() == [[1.0, 0.0]] * E_LOCAL
+        assert torch.equal(captured["x"][3:], torch.zeros(E_LOCAL, H))
+        assert out.shape == (3, H)
 
     def test_resolve_local_implementation(self):
         from transformers.integrations.moe import (
@@ -1274,9 +1280,9 @@ class TestEpClipGradNormPatchGate:
 
 
 def _composed_fsdp_worker(rank, world_size, port, q):
-    """EP x dp_shard on a (2, 2) CPU mesh, or EP x dp_replicate x dp_shard on (2, 2, 2):
-    expert grads must be the mean over every rank's loss, exactly like a dense param, even
-    though FSDP only reduces over the dp ranks."""
+    """EP x dp_shard on a (2, 2) CPU mesh, EP x dp_replicate x dp_shard on (2, 2, 2), or
+    dp_replicate x ep with no shard axis: expert grads must be the mean over every rank's
+    loss, exactly like a dense param, even though FSDP only reduces over the dp ranks."""
     try:
         _init_gloo(rank, world_size, port)
         from torch.distributed.device_mesh import init_device_mesh
@@ -1284,11 +1290,14 @@ def _composed_fsdp_worker(rank, world_size, port, q):
         from axolotl.integrations.expert_parallel.plugin import (
             ExpertParallelPlugin,
             expert_fsdp_mesh,
+            per_rank_expert_mesh,
         )
 
         layout = os.environ["EP_TEST_LAYOUT"].split(",")
         mesh = init_device_mesh("cpu", (2,) * len(layout), mesh_dim_names=tuple(layout))
         expert_mesh = expert_fsdp_mesh(mesh)
+        if expert_mesh is None:
+            expert_mesh = per_rank_expert_mesh(mesh, "cpu")
         model = _tiny_ep_experts_model(0.5)
         experts = model.model.layers[0].mlp.experts
         ExpertParallelPlugin.fully_shard_experts(
@@ -1330,19 +1339,108 @@ def _composed_fsdp_worker(rank, world_size, port, q):
             dist.destroy_process_group()
 
 
+def _ep_dp_shard_zero_row_worker(rank, world_size, port, q):
+    """EP x dp_shard on a (2, 2) CPU mesh where one dp_shard peer's local experts receive
+    no rows at all: every expert weight must still hold a grad on every rank (FSDP2 drops
+    grad-less params from the reduce-scatter, which would desynchronise the peers), and the
+    reduced grads must equal the world mean of the dense reference."""
+    try:
+        _init_gloo(rank, world_size, port)
+        from torch.distributed.device_mesh import init_device_mesh
+
+        from axolotl.integrations.expert_parallel import experts_fn
+        from axolotl.integrations.expert_parallel.experts_fn import (
+            _ep_forward,
+            register_all,
+        )
+        from axolotl.integrations.expert_parallel.plugin import (
+            ExpertParallelPlugin,
+            expert_fsdp_mesh,
+        )
+
+        register_all()
+        experts_fn.set_backend("torch")
+        experts_fn.set_local_implementation("eager")
+        mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("ep", "dp_shard"))
+        ep_rank, dp_rank = mesh.get_coordinate()
+        TD.set_ep_group(mesh["ep"].get_group())
+
+        full = _build_experts()
+        # the dp_shard-0 pair routes every token to ep-rank 0's experts, so ep-rank 1's
+        # experts see zero rows there while its dp_shard-1 peer's experts see a mix
+        x, idx, w = _routing(rank, "rank1_receives_zero" if dp_rank == 0 else "mixed")
+        gout = torch.randn(T, H, generator=torch.Generator().manual_seed(21 + rank))
+
+        ref = copy.deepcopy(full)
+        yr = _ep_forward(ref, x, idx, w, local="eager", backend="torch")
+        (yr * gout).sum().backward()
+        ref_gu, ref_dn = ref.gate_up_proj.grad.clone(), ref.down_proj.grad.clone()
+        dist.all_reduce(ref_gu)
+        dist.all_reduce(ref_dn)
+
+        ep = copy.deepcopy(full)
+        s = _shard_experts(ep, ep_rank, mesh["ep"].size())
+        ep.config = copy.copy(ep.config)
+        ep.config._experts_implementation = "expert_parallel"
+        root = torch.nn.Module()
+        root.experts = ep
+        ExpertParallelPlugin.fully_shard_experts(
+            root, expert_fsdp_mesh(mesh), {"reshard_after_forward": True}
+        )
+        ye = ep(x, idx, w)
+        (ye * gout).sum().backward()
+        grads = {"gate_up": ep.gate_up_proj.grad, "down": ep.down_proj.grad}
+        out = {
+            "fwd": _max_diff(ye, yr),
+            "grad_missing": [k for k, g in grads.items() if g is None],
+            "rows_received": int(idx.numel()),
+        }
+        if not out["grad_missing"]:
+            out["d_gate_up"] = _max_diff(
+                grads["gate_up"].full_tensor(), ref_gu[s] / world_size
+            )
+            out["d_down"] = _max_diff(
+                grads["down"].full_tensor(), ref_dn[s] / world_size
+            )
+        q.put((rank, out))
+    except Exception:  # pylint: disable=broad-except
+        q.put((rank, traceback.format_exc()))
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+class TestEpDpShardZeroRows:
+    def test_idle_expert_peer_still_reduces(self):
+        res = _run_spawned(_ep_dp_shard_zero_row_worker, world_size=4, timeout=300)
+        for rank in range(4):
+            assert isinstance(res[rank], dict), res[rank]
+            assert res[rank]["grad_missing"] == [], res[rank]
+            for metric in ("fwd", "d_gate_up", "d_down"):
+                assert res[rank][metric] <= 1e-5, f"rank {rank} {metric}={res[rank]}"
+
+
 class TestComposedExpertShardingGradScale:
     @pytest.mark.parametrize(
         "layout",
-        ["ep,dp_shard", "ep,cp", "dp_replicate,ep,dp_shard", "ep,dp_shard,cp"],
+        [
+            "ep,dp_shard",
+            "ep,cp",
+            "dp_replicate,ep,dp_shard",
+            "ep,dp_shard,cp",
+            "dp_replicate,ep",
+        ],
     )
     def test_expert_grads_are_world_mean(self, monkeypatch, layout):
         world_size = 2 ** len(layout.split(","))
         monkeypatch.setenv("EP_TEST_LAYOUT", layout)
         res = _run_spawned(_composed_fsdp_worker, world_size=world_size, timeout=300)
+        # a size-1 shard group divides once itself; forcing SUM there would divide twice
+        expect_force_sum = layout != "dp_replicate,ep"
         for rank in range(world_size):
             assert isinstance(res[rank], dict), res[rank]
             assert res[rank]["divide_factor"] == float(world_size)
-            assert res[rank]["force_sum"] is True
+            assert res[rank]["force_sum"] is expect_force_sum
             assert res[rank]["grad_ok"], res[rank]
 
 
@@ -1363,7 +1461,7 @@ class TestHsdpEpCpParallelismConfig:
     def test_accepted_with_ep(self, monkeypatch):
         pc = self._config(monkeypatch, 2)
         assert pc._sizes["ep"] == 2
-        assert pc.dp_shard_cp_dim_names == ["ep", "cp"]
+        assert pc.dp_shard_cp_dim_names == ["cp", "ep"]
         assert pc.fsdp_dim_names == ["dp_replicate", "dp_shard_cp"]
         assert pc.total_size == 8
 

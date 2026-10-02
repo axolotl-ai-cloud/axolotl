@@ -671,10 +671,12 @@ def generate_dataset_hash_from_config(
     if dataset_extra:
         extra_payload["datasets"] = sorted(dataset_extra, key=_stable_json)
 
+    # DeepSpeed CP prepares position_ids even when unpacked, so its rows differ
+    deepspeed_cp = bool(cfg.deepspeed) and (cfg.context_parallel_size or 1) > 1
     config_str = (
         f"{cfg.sequence_len}@{cfg.sample_packing}@{cfg.eval_sample_packing}@"
         f"{cfg.group_by_length}@{cfg.kd_temperature or 1.0}@"
-        f"{cfg.dataset_exact_deduplication or False}|"
+        f"{cfg.dataset_exact_deduplication or False}@{deepspeed_cp}|"
         f"{'|'.join(sorted([f'{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}:{d.weight or 1.0}' for d in cfg_datasets]))}"
         f"{dataset_config_str}"
         f"|{tokenizer_fingerprint}"

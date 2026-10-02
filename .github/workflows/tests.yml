@@ -9,14 +9,22 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/prepare_hf_cache.sh"
+      - "cicd/Dockerfile-uv.jinja"
   pull_request:
-    # no `labeled` here: the label-gated GPU jobs live in docker-e2e.yml so
-    # labeling a PR doesn't re-run the CPU jobs
+    # GPU tests are label-gated, so adding the label re-runs this workflow via
+    # gpu-label.yml after the initial CPU run has completed.
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/cicd_cuda_kernels.sh"
+      - "cicd/prepare_hf_cache.sh"
+      - "cicd/Dockerfile-uv.jinja"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
@@ -26,6 +34,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   TRANSFORMERS_IS_CI: "yes"
@@ -64,6 +73,7 @@ jobs:
   nf4-distributed:
     name: NF4 distributed CPU
     if: ${{ !github.event.pull_request.draft }}
+    needs: [prime-cdn-s3-cache, pre-commit]
     uses: ./.github/workflows/nf4-cpu.yml
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -72,7 +82,7 @@ jobs:
     name: PyTest
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
-    needs: [prime-cdn-s3-cache]
+    needs: [prime-cdn-s3-cache, pre-commit]
     strategy:
       max-parallel: 2
       fail-fast: false
@@ -172,10 +182,10 @@ jobs:
           fail_ci_if_error: false
 
   pytest-sdist:
-    name: PyTest from Source Dist
+    name: PyTest SDist
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
-    needs: [prime-cdn-s3-cache]
+    needs: [prime-cdn-s3-cache, pre-commit]
     strategy:
       max-parallel: 2
       fail-fast: false
@@ -275,3 +285,18 @@ jobs:
 
       - name: Show HF cache
         run: hf cache ls
+
+  check-gpu-label:
+    uses: ./.github/workflows/gpu-pr-gate.yml
+
+  docker-e2e:
+    needs: [pre-commit, nf4-distributed, pytest, pytest-sdist, check-gpu-label]
+    if: needs.check-gpu-label.outputs.enabled == 'true'
+    uses: ./.github/workflows/docker-e2e.yml
+    secrets: inherit
+
+  multi-gpu-e2e:
+    needs: [pre-commit, nf4-distributed, pytest, pytest-sdist, check-gpu-label]
+    if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true'
+    uses: ./.github/workflows/multi-gpu-e2e.yml
+    secrets: inherit

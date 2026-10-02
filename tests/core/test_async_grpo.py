@@ -62,37 +62,37 @@ class TestReplayBuffer(unittest.TestCase):
 
 
 class TestGRPOStrategyConflict(unittest.TestCase):
-    """Tests for sequence_parallel + async_grpo conflict detection."""
+    """Tests for context_parallel + async_grpo conflict detection."""
 
     def test_raises_on_both_enabled(self):
         from axolotl.core.trainers.grpo import GRPOStrategy
 
         with self.assertRaises(ValueError) as ctx:
-            GRPOStrategy.get_trainer_class(sequence_parallel=True, async_grpo=True)
-        self.assertIn("sequence_parallel", str(ctx.exception))
+            GRPOStrategy.get_trainer_class(context_parallel=True, async_grpo=True)
+        self.assertIn("context_parallel", str(ctx.exception))
         self.assertIn("async_grpo", str(ctx.exception))
 
     def test_sequence_parallel_only(self):
         from axolotl.core.trainers.grpo import GRPOStrategy
         from axolotl.core.trainers.grpo.trainer import (
-            AxolotlGRPOSequenceParallelTrainer,
+            AxolotlGRPOContextParallelTrainer,
         )
 
-        cls = GRPOStrategy.get_trainer_class(sequence_parallel=True, async_grpo=False)
-        self.assertIs(cls, AxolotlGRPOSequenceParallelTrainer)
+        cls = GRPOStrategy.get_trainer_class(context_parallel=True, async_grpo=False)
+        self.assertIs(cls, AxolotlGRPOContextParallelTrainer)
 
     def test_async_only(self):
         from axolotl.core.trainers.grpo import GRPOStrategy
         from axolotl.core.trainers.grpo.trainer import AxolotlAsyncGRPOTrainer
 
-        cls = GRPOStrategy.get_trainer_class(sequence_parallel=False, async_grpo=True)
+        cls = GRPOStrategy.get_trainer_class(context_parallel=False, async_grpo=True)
         self.assertIs(cls, AxolotlAsyncGRPOTrainer)
 
     def test_neither(self):
         from axolotl.core.trainers.grpo import GRPOStrategy
         from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
 
-        cls = GRPOStrategy.get_trainer_class(sequence_parallel=False, async_grpo=False)
+        cls = GRPOStrategy.get_trainer_class(context_parallel=False, async_grpo=False)
         self.assertIs(cls, AxolotlGRPOTrainer)
 
 
