@@ -163,14 +163,28 @@ def _make_qwen3_5_gated_delta_forward(module):
         use_precomputed_states = (
             cache_params is not None and cache_params.has_previous_state(self.layer_idx)
         )
+        cp_conv = getattr(self, "_axolotl_gdn_cp_conv", None)
+        cp_chunk = getattr(self, "_axolotl_gdn_cp_chunk", None)
+        if (cp_conv is None) != (cp_chunk is None):
+            raise RuntimeError(
+                "GDN context-parallel kernels must be installed together"
+            )
+        use_cp_kernels = cp_conv is not None
 
         # Training, no cache: route the FLA kernels through opaque ops that take position_ids and derive cu_seqlens eagerly, so aten.nonzero never enters the traced loop.
         use_compiled_ops = (
-            _FLA_COMPILED_OPS and cache_params is None and not use_precomputed_states
+            _FLA_COMPILED_OPS
+            and not use_cp_kernels
+            and cache_params is None
+            and not use_precomputed_states
         )
         cu_seqlens = None
         pos_for_varlen = None
-        if not use_precomputed_states and position_ids is not None:
+        if (
+            not use_precomputed_states
+            and not use_cp_kernels
+            and position_ids is not None
+        ):
             if use_compiled_ops:
                 pos_for_varlen = position_ids
             else:
@@ -211,6 +225,15 @@ def _make_qwen3_5_gated_delta_forward(module):
                 self.conv1d.bias,
                 self.activation,
             ).transpose(1, 2)
+        elif use_cp_kernels:
+            if cache_params is not None:
+                raise ValueError("GDN context parallelism requires use_cache=False")
+            mixed_qkv = cp_conv(
+                mixed_qkv,
+                self.conv1d.weight.squeeze(1),
+                self.conv1d.bias,
+                self.activation,
+            )
         elif pos_for_varlen is not None:
             # Opaque op (same FLA varlen kernels): traceable, unlike the raw entry whose data-dependent .item() graph-breaks the loop.
             mixed_qkv = torch.ops.axolotl_gdn.gdn_conv(
@@ -268,7 +291,18 @@ def _make_qwen3_5_gated_delta_forward(module):
             if use_precomputed_states
             else None
         )
-        if use_compiled_ops:
+        if use_cp_kernels:
+            core_attn_out, last_recurrent_state = cp_chunk(
+                query,
+                key,
+                value,
+                g=g,
+                beta=beta,
+                initial_state=recurrent_state,
+                output_final_state=False,
+                use_qk_l2norm_in_kernel=True,
+            )
+        elif use_compiled_ops:
             # Opaque op mirroring ChunkGatedDeltaRuleFunction: FLA's public entry is @torch.compiler.disable and would graph-break the loop. pos_for_varlen None = dense.
             # Contiguize here: setup_context saves the op's inputs, so split views would re-pay this copy every backward.
             core_attn_out = torch.ops.axolotl_gdn.gdn_chunk(
@@ -329,6 +363,7 @@ def _make_qwen3_5_gated_delta_forward(module):
 
         return _la_proj_fwd(self, "out_proj", core_attn_out)
 
+    patched_forward._axolotl_gdn_kernel_interface = True
     return patched_forward
 
 
