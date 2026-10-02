@@ -71,3 +71,24 @@ def test_fa_varlen_collator_keeps_fully_valid_attention_mask():
         ]
     )
     assert batch["cu_seq_lens_q"].tolist() == [0, 2, 4]
+
+
+def test_fa_varlen_collator_skips_dense_attention_mask():
+    batch = DataCollatorForSeq2Seq(tokenizer=_Tokenizer(), emit_fa_varlen_kwargs=True)(
+        [
+            {
+                "input_ids": [10, 11, 12, 13],
+                "position_ids": [0, 1, 0, 1],
+                "attention_mask": [
+                    [
+                        [1, 0, 0, 0],
+                        [1, 1, 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 1, 1],
+                    ]
+                ],
+            }
+        ]
+    )
+    assert batch["attention_mask"].shape == (1, 1, 4, 4)
+    assert "cu_seq_lens_q" not in batch

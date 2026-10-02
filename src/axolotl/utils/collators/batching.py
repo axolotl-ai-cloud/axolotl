@@ -132,7 +132,10 @@ class DataCollatorForSeq2Seq:
             and "position_ids" in features
             and (
                 "attention_mask" not in features
-                or bool(features["attention_mask"].all())
+                or (
+                    features["attention_mask"].ndim == 2
+                    and bool(features["attention_mask"].all())
+                )
             )
         ):
             # Precompute FA2 varlen metadata once so transformers' per-layer derivation (a data-dependent op that breaks the compiled decoder loop) is skipped; bit-identical to what it would compute itself.
