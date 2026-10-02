@@ -12,6 +12,7 @@ from transformers import (
     EarlyStoppingCallback,
     Trainer,
 )
+from transformers.utils.generic import is_flash_attention_requested
 from trl.trainer.reward_trainer import DataCollatorForPreference
 
 from axolotl.core.builders.base import TrainerBuilderBase
@@ -607,7 +608,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 V2BatchSamplerDataCollatorForSeq2Seq,
                 BatchSamplerDataCollatorForSeq2Seq,
             )
-            and self.cfg.attn_implementation == "flash_attention_2"
+            and is_flash_attention_requested(
+                requested_attention_implementation=self.cfg.attn_implementation
+            )
             and is_packed_mode
             and self.cfg.torch_compile
             and self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES

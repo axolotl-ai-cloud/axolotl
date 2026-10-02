@@ -11,6 +11,7 @@ from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import INDUCTOR_COMPILE_OPTIONS_ALLOWLIST
 
 
@@ -428,3 +429,45 @@ class TestApplyTorchCompileOptions:
         TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
 
         builder._apply_torch_compile_options.assert_not_called()
+
+
+@pytest.mark.parametrize("is_eval", [False, True])
+@pytest.mark.parametrize(
+    ("attn_implementation", "expected"),
+    [
+        ("flash_attention_2", True),
+        ("flash_attention_3", True),
+        ("flash_attention_4", True),
+        ("flash_attention_torch", True),
+        ("kernels-community/flash-attn2", True),
+        ("kernels-community/flash-attn3@v2:flash_attn_func", True),
+        ("kernels-community/vllm-flash-attn3", True),
+        ("kernels-community/flash-attn4", True),
+        ("sdpa", False),
+        ("eager", False),
+        ("flex_attention", False),
+        ("kernels-community/sage-attention", False),
+        (None, False),
+    ],
+)
+def test_packed_collator_flash_attention_metadata(
+    attn_implementation, expected, is_eval
+):
+    builder = HFCausalTrainerBuilder(
+        DictDefault(
+            attn_implementation=attn_implementation,
+            model_config_type="llama",
+            torch_compile=True,
+        ),
+        model=None,
+        tokenizer=MagicMock(),
+    )
+    training_args = SimpleNamespace(
+        pretraining=False,
+        sample_packing=not is_eval,
+        eval_sample_packing=is_eval,
+    )
+
+    collator = builder.build_collator(training_args, is_eval=is_eval)
+
+    assert collator.emit_fa_varlen_kwargs is expected
