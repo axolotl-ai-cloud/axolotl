@@ -30,6 +30,14 @@
 
 ## 🎉 Latest Updates
 
+- 2026/09:
+  - New model support has been added in Axolotl for [MiniCPM5](https://docs.axolotl.ai/docs/models/minicpm5.html), [Nex-N2.5-mini](https://docs.axolotl.ai/docs/models/nex-n2.5.html), [Qwen3.6](https://docs.axolotl.ai/docs/models/qwen3.5.html), [Qwen3.8-Flash-Next](https://docs.axolotl.ai/docs/models/qwen3.8-flash-next.html), and [K2 Horizon](https://docs.axolotl.ai/docs/models/k2-horizon.html).
+  - [CPU-staged FSDP2 QLoRA loading](https://docs.axolotl.ai/docs/expert_quantization.html#cpu-staged-fsdp2-qlora-loading) lets you load models larger than a single GPU's memory without materializing a full quantized replica on each GPU.
+  - [GGUF export](https://docs.axolotl.ai/docs/export.html) is now available via `axolotl export`, with optional quantization for deployment with llama.cpp and Ollama.
+  - [NVFP4 LoRA](https://docs.axolotl.ai/docs/nvfp4_lora.html) now supports native TorchAO dense weights and merge-aware training, optimizing against the quantized merged weights for deployment.
+  - New training options: [MixLoRA](https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/mixlora) adds routed LoRA experts to dense models, and [Dynamic Fine-Tuning (DFT)](https://github.com/axolotl-ai-cloud/axolotl/pull/4008) weights the SFT loss by token probability.
+  - [Ringmaster context parallelism](https://docs.axolotl.ai/docs/sequence_parallelism.html) adds Ulysses and combined Ulysses/Ring (USP) support, sample packing, and CP fixes for GDN, KDA, and Mamba/Mamba2 models.
+  - Improved [plugin integration](https://docs.axolotl.ai/docs/custom_integrations.html) includes new cloud provider interfaces for launching training jobs, with support for [Nebius Serverless Jobs](https://docs.axolotl.ai/docs/nebius-serverless.html).
 - 2026/08:
   - New model support has been added in Axolotl for [Ling 3.0](https://docs.axolotl.ai/docs/models/ling3.html), [Muse Glimmer](https://docs.axolotl.ai/docs/models/muse-glimmer.html), [North Micro Vision Instruct](https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html) and [Shieldstral](https://docs.axolotl.ai/docs/models/shieldstral.html).
 - 2026/07:
