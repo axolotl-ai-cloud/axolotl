@@ -37,6 +37,26 @@ def _extract_input_ids(result):
     return result["input_ids"] if isinstance(result, dict) else result
 
 
+def _align_ids(src: list[int], dst: list[int]) -> list[int] | None:
+    """Map each ``src`` token onto ``dst``, allowing extra tokens in ``dst``.
+
+    Returns None when ``src`` is not a subsequence of ``dst``. A matching pair
+    returns ``range(len(src))``.
+    """
+    if src == dst:
+        return list(range(len(src)))
+    mapping: list[int] = []
+    pos = 0
+    for token in src:
+        while pos < len(dst) and dst[pos] != token:
+            pos += 1
+        if pos >= len(dst):
+            return None
+        mapping.append(pos)
+        pos += 1
+    return mapping
+
+
 class ChatTemplatePrompter(Prompter):
     """Prompter for HF chat templates"""
 
@@ -706,11 +726,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def _build_turn_locator(
         self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
-    ) -> tuple[str, list[int], list[int]] | None:
+    ) -> tuple[str, list[int], list[int], list[int]] | None:
         """Render and tokenize the conversation once so turns can be located in char space.
 
-        Returns ``(rendered_text, token_starts, token_ends)``, or ``None`` when the
-        render can't be trusted to line up with ``input_ids``.
+        Returns ``(rendered_text, token_starts, token_ends, src_to_dst)``.
+        ``src_to_dst`` maps each rendered token onto ``input_ids``. Exact matches
+        are the identity. Extra tokens in ``input_ids`` are skipped. Returns None
+        when the render cannot be aligned, and ``find_turn`` keeps the per-turn
+        re-tokenization.
         """
         if not getattr(self.tokenizer, "is_fast", False):
             self._log_fallback_once("tokenizer is not a fast tokenizer")
@@ -724,13 +747,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         encoded = self.tokenizer(
             full_text, add_special_tokens=False, return_offsets_mapping=True
         )
-        # Spans index into input_ids, so the render must re-tokenize to it exactly.
-        if list(encoded["input_ids"]) != list(input_ids):
+        enc_ids = list(encoded["input_ids"])
+        offsets = encoded.get("offset_mapping")
+        if not enc_ids or not offsets or len(offsets) != len(enc_ids):
+            self._log_fallback_once("render has no character offsets")
+            return None
+        src_to_dst = _align_ids(enc_ids, list(input_ids))
+        if src_to_dst is None:
             self._log_fallback_once("re-tokenized render does not match input_ids")
             return None
 
-        offsets = encoded["offset_mapping"]
-        return full_text, [s for s, _ in offsets], [e for _, e in offsets]
+        return (
+            full_text,
+            [start for start, _ in offsets],
+            [end for _, end in offsets],
+            src_to_dst,
+        )
 
     # Block compares keep the diff scan in C; a per-char Python loop would cost more
     # than the tokenization it saves.
@@ -769,7 +801,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         content_only: bool,
         reasoning_only: bool,
         tools: list[dict] | None,
-        locator: tuple[str, list[int], list[int]],
+        locator: tuple[str, list[int], list[int], list[int]],
     ) -> tuple[int, int] | None:
         """Locate a turn by diffing the real render against placeholder renders.
 
@@ -780,7 +812,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         Returns ``None`` to fall back to the token diff, ``(-1, -1)`` when the field
         is absent from the render, otherwise the token span.
         """
-        full_text, token_starts, token_ends = locator
+        full_text, token_starts, token_ends, src_to_dst = locator
 
         spans = []
         for sentinel in self._SENTINELS:
@@ -807,8 +839,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         end_idx = bisect_left(token_starts, char_end)
         if start_idx >= len(token_ends) or end_idx > len(token_ends):
             return None
-
-        return start_idx, end_idx
+        if start_idx >= end_idx:
+            return start_idx, end_idx
+        mapped = src_to_dst[start_idx:end_idx]
+        if mapped[-1] - mapped[0] + 1 != len(mapped):
+            return None
+        return mapped[0], mapped[-1] + 1
 
     def _find_turn_from_tokens(
         self,
@@ -891,7 +927,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         tools: list[dict] | None = None,
         content_only: bool = False,
         reasoning_only: bool = False,
-        locator: tuple[str, list[int], list[int]] | None = None,
+        locator: tuple[str, list[int], list[int], list[int]] | None = None,
     ):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
