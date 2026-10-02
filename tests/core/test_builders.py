@@ -6,11 +6,17 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.collators import (
+    BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForSeq2Seq,
+    V2BatchSamplerDataCollatorForSeq2Seq,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import INDUCTOR_COMPILE_OPTIONS_ALLOWLIST
 
@@ -470,4 +476,52 @@ def test_packed_collator_flash_attention_metadata(
 
     collator = builder.build_collator(training_args, is_eval=is_eval)
 
+    assert type(collator) is V2BatchSamplerDataCollatorForSeq2Seq
     assert collator.emit_fa_varlen_kwargs is expected
+    builder.tokenizer.padding_side = "right"
+    builder.tokenizer.pad.side_effect = lambda features, **kwargs: {
+        key: torch.tensor([feature[key] for feature in features]) for key in features[0]
+    }
+    batch = collator(
+        [
+            {"input_ids": [10, 11], "position_ids": [0, 1]},
+            {"input_ids": [12], "position_ids": [0]},
+        ]
+    )
+    assert ("cu_seq_lens_q" in batch) is expected
+    if expected:
+        assert batch["cu_seq_lens_q"].tolist() == [0, 2, 3]
+        assert batch["max_length_q"] == 2
+
+
+@pytest.mark.parametrize("is_eval", [False, True])
+@pytest.mark.parametrize(
+    ("torch_compile", "packing", "model_type", "collator_cls"),
+    [
+        (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq),
+        (True, False, "llama", DataCollatorForSeq2Seq),
+        (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq),
+    ],
+)
+def test_collator_flash_attention_metadata_requires_supported_packed_compile(
+    torch_compile, packing, model_type, collator_cls, is_eval
+):
+    builder = HFCausalTrainerBuilder(
+        DictDefault(
+            attn_implementation="flash_attention_2",
+            model_config_type=model_type,
+            torch_compile=torch_compile,
+        ),
+        model=None,
+        tokenizer=MagicMock(),
+    )
+    training_args = SimpleNamespace(
+        pretraining=False,
+        sample_packing=not packing if is_eval else packing,
+        eval_sample_packing=packing if is_eval else not packing,
+    )
+
+    collator = builder.build_collator(training_args, is_eval=is_eval)
+
+    assert type(collator) is collator_cls
+    assert collator.emit_fa_varlen_kwargs is False
