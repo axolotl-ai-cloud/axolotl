@@ -276,6 +276,79 @@ class TestMixLora:
         finally:
             plugin_manager.plugins = original_plugins
 
+    def test_mixlora_cpu_load_train_save_cycle(self, mock_cfg, tmp_path):
+        """End-to-end CPU smoke test: load, patch, train one step, save, reload.
+
+        Exercises the full MixLoRA lifecycle on CPU only (no GPU/CUDA
+        required) so it runs in every environment, unlike the `slow`
+        full-model test below which hits the network for model download.
+        """
+        torch.manual_seed(0)
+
+        # Load a tiny base model (forced onto CPU explicitly).
+        model = AutoModelForCausalLM.from_pretrained(mock_cfg.base_model)
+        model = model.to("cpu")
+
+        # Patch with MixLoRA.
+        patched_model = patch_model_with_mixlora(model, mock_cfg)
+        patched_model = patched_model.to("cpu")
+
+        mixlora_blocks = [
+            module
+            for module in patched_model.modules()
+            if isinstance(module, MixLoraFFN)
+        ]
+        assert len(mixlora_blocks) > 0
+
+        router_before = mixlora_blocks[0].router.gate.weight.detach().clone()
+
+        trainable_params = [
+            p for p in patched_model.parameters() if p.requires_grad
+        ]
+        assert len(trainable_params) > 0
+        optimizer = torch.optim.AdamW(trainable_params, lr=1e-2)
+
+        # Train for a single step on CPU.
+        input_ids = torch.randint(0, 1000, (1, 8), device="cpu")
+        optimizer.zero_grad()
+        outputs = patched_model(input_ids, labels=input_ids)
+        loss = outputs.loss + collect_mixlora_aux_loss(
+            patched_model, router_aux_loss_coef=mock_cfg.mixlora_router_aux_loss_coef
+        )
+        loss.backward()
+        optimizer.step()
+
+        # Router weights should have moved after the optimizer step.
+        assert not torch.allclose(router_before, mixlora_blocks[0].router.gate.weight)
+
+        # Save MixLoRA-specific weights to disk.
+        state = mixlora_state_dict(patched_model)
+        assert len(state) > 0
+        ckpt_path = tmp_path / MIXLORA_WEIGHTS_NAME
+        safetensors.torch.save_file(state, str(ckpt_path), metadata={"format": "pt"})
+        assert ckpt_path.exists()
+
+        # Reload into a freshly patched model and verify the weights match.
+        fresh_model = AutoModelForCausalLM.from_pretrained(mock_cfg.base_model)
+        fresh_patched = patch_model_with_mixlora(fresh_model, mock_cfg).to("cpu")
+
+        loaded_state = safetensors.torch.load_file(str(ckpt_path))
+        load_mixlora_state_dict(fresh_patched, loaded_state, strict=True)
+
+        fresh_block = next(
+            module
+            for module in fresh_patched.modules()
+            if isinstance(module, MixLoraFFN)
+        )
+        assert torch.allclose(
+            mixlora_blocks[0].router.gate.weight, fresh_block.router.gate.weight
+        )
+
+        # Reloaded model should still produce finite logits on CPU.
+        with torch.no_grad():
+            reloaded_outputs = fresh_patched(input_ids)
+        assert torch.isfinite(reloaded_outputs.logits).all()
+
     @pytest.mark.slow
     def test_patch_model_with_mixlora(self, mock_cfg):
         """Test patching a full model architecture (requires causal LM model)."""
