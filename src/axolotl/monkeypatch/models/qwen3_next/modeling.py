@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from transformers.integrations.accelerate import force_accelerate_hooks
 
 from axolotl.monkeypatch.models.gated_delta_net_ops import (
-    call_self_attn_disabled as _call_self_attn_disabled,
+    call_self_attn_outside_compile as _call_self_attn_outside_compile,
     init_fla_compiled_ops as _init_fla_compiled_ops,
 )
 from axolotl.utils.logging import get_logger
@@ -116,7 +116,7 @@ def patch_qwen3_next_decoder_layer():
             else:
                 # Match qwen3_5: keep non-GC self-attn behind a dynamo.disable boundary (a no-op when not
                 # compiling) so an Inductor FA2-backward fusion can't corrupt packed-sequence gradients.
-                hidden_states, _ = _call_self_attn_disabled(
+                hidden_states, _ = _call_self_attn_outside_compile(
                     self.self_attn, **attn_kwargs
                 )
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import torch
 
 __all__ = [
-    "call_self_attn_disabled",
+    "call_self_attn_outside_compile",
     "fla_ops_available",
     "fla_ops_build_error",
     "init_fla_compiled_ops",
@@ -297,6 +297,6 @@ def _call_self_attn(attn_module, **kwargs):
 try:
     import torch._dynamo as _dynamo
 
-    call_self_attn_disabled = _dynamo.disable(_call_self_attn)
+    call_self_attn_outside_compile = _dynamo.disable(_call_self_attn)
 except Exception:  # pragma: no cover
-    call_self_attn_disabled = _call_self_attn
+    call_self_attn_outside_compile = _call_self_attn
