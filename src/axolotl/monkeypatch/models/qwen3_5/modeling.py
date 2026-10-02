@@ -9,7 +9,6 @@ from transformers.integrations.accelerate import force_accelerate_hooks
 
 from axolotl.monkeypatch.lora_kernels import LINEAR_ATTN_IN_PROJS
 from axolotl.monkeypatch.models.gated_delta_net_ops import (
-    call_self_attn_outside_compile as _call_self_attn_outside_compile,
     init_fla_compiled_ops as _init_fla_compiled_ops,
 )
 from axolotl.utils.logging import get_logger
@@ -108,14 +107,7 @@ def _patched_decoder_forward(
             position_embeddings=position_embeddings,
             **kwargs,
         )
-        if getattr(self, "gradient_checkpointing", False) and self.training:
-            # Under gradient checkpointing the fusion hazard (see below) doesn't occur, so keep attention in-graph — any graph break in the loop body makes dynamo skip the whole frame.
-            hidden_states, _ = self.self_attn(**attn_kwargs)
-        else:
-            # Intentional dynamo.disable boundary (non-GC path, incl. model.eval() under compile): on torch 2.11 + flash-attn, Inductor fused the FA2 backward with the gated o_proj dgrad and corrupted packed-sequence gradients; unreproduced on torch 2.9/2.10 + kernels-FA2 (toy and 0.8B real ckpt, boundary removed = noise floor), guarded by test_fa2_compiled_matches_eager_grads.
-            hidden_states, _ = _call_self_attn_outside_compile(
-                self.self_attn, **attn_kwargs
-            )
+        hidden_states, _ = self.self_attn(**attn_kwargs)
 
     hidden_states = residual + hidden_states
 

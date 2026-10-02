@@ -209,8 +209,8 @@ class TestDecoderLoopCompiles:
         assert not breaks, f"VL decoder loop graph-broke: {list(breaks)}"
         assert counters["stats"]["unique_graphs"] >= 1
 
-    def test_no_nonzero_break_without_grad_checkpointing(self, packing_patched):
-        """GC off: only the intentional eager self-attn boundary may break; the aten.nonzero break must never return."""
+    def test_no_graph_breaks_without_grad_checkpointing(self, packing_patched):
+        """The decoder loop traces without graph breaks when checkpointing is off."""
         torch._dynamo.reset()
         from torch._dynamo.utils import counters
 
@@ -220,11 +220,7 @@ class TestDecoderLoopCompiles:
         _fwd_bwd(model, torch.compile(model))
 
         breaks = dict(counters["graph_break"])
-        offenders = [k for k in breaks if "nonzero" in k.lower()]
-        assert not offenders, f"aten.nonzero graph break is back: {offenders}"
-        # only the intentional dynamo.disable boundary around self-attention
-        for k in breaks:
-            assert "disable" in k.lower(), f"unexpected graph break: {k}"
+        assert not breaks, f"decoder loop graph-broke: {list(breaks)}"
 
     def test_eager_parity_ops_vs_legacy_bitwise(self, packing_patched):
         """The opaque-op path must be bitwise-identical to the legacy eager path (same kernels, same saved tensors)."""
@@ -267,17 +263,21 @@ class TestDecoderLoopCompiles:
                 grads_e[n].float(), grads_c[n].float(), rtol=5e-2, atol=1e-3
             ), f"grad {n}: {(grads_e[n].float() - grads_c[n].float()).abs().max()}"
 
-    def test_fa2_compiled_matches_eager_grads(self, packing_patched):
-        """FA2 + GC (the production path): compiled grads must match eager — guards the Inductor fusion hazard the non-GC dynamo.disable boundary exists for."""
+    @pytest.mark.parametrize("gradient_checkpointing", [False, True])
+    def test_fa2_compiled_matches_eager_grads(
+        self, packing_patched, gradient_checkpointing
+    ):
+        """Packed FA2 gradients match eager with and without checkpointing."""
         from transformers.modeling_flash_attention_utils import (
             prepare_fa_kwargs_from_position_ids,
         )
 
         torch._dynamo.reset()
         model = _build_model(attn="flash_attention_2")
-        model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs={"use_reentrant": False}
-        )
+        if gradient_checkpointing:
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
         model.train()
         state = {k: v.clone() for k, v in model.state_dict().items()}
         input_ids, position_ids = _packed_inputs()

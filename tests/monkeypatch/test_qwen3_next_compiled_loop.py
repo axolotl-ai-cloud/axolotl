@@ -88,16 +88,20 @@ def _fwd_bwd(model, fn=None):
 
 
 class TestQwen3NextDecoderLoopCompiles:
-    def test_no_graph_breaks_with_grad_checkpointing(self, packing_patched):
-        """The qwen3_next decoder loop must trace with ZERO breaks via the shared GatedDeltaNet ops."""
+    @pytest.mark.parametrize("gradient_checkpointing", [False, True])
+    def test_no_graph_breaks_with_or_without_grad_checkpointing(
+        self, packing_patched, gradient_checkpointing
+    ):
+        """The qwen3_next decoder loop traces without graph breaks."""
         torch._dynamo.reset()
         from torch._dynamo.utils import counters
 
         counters.clear()
         model = _build_model()
-        model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs={"use_reentrant": False}
-        )
+        if gradient_checkpointing:
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
         model.train()
         _fwd_bwd(model, torch.compile(model))
 
