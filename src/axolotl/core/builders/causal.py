@@ -145,11 +145,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         """
         Gets the trainer class for the given configuration.
         """
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
-            if trainer_cls:
-                return trainer_cls
+        plugin_manager = PluginManager.get_instance()
+        trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+        if trainer_cls:
+            return trainer_cls
         if self.cfg.reward_model:
             return AxolotlRewardTrainer
         if self.cfg.process_reward_model:
@@ -348,11 +347,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.image_resize_algorithm
             )
 
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            plugin_training_args = plugin_manager.get_training_args(self.cfg)
-            if plugin_training_args:
-                training_arguments_kwargs.update(plugin_training_args)
+        plugin_manager = PluginManager.get_instance()
+        plugin_training_args = plugin_manager.get_training_args(self.cfg)
+        if plugin_training_args:
+            training_arguments_kwargs.update(plugin_training_args)
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -497,11 +495,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator_args = [self.tokenizer]
 
         collator_cls_and_kwargs = None
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
-                self.cfg, is_eval=is_eval
-            )
+        plugin_manager = PluginManager.get_instance()
+        collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
+            self.cfg, is_eval=is_eval
+        )
 
         if collator_cls_and_kwargs:
             collator = collator_cls_and_kwargs[0]

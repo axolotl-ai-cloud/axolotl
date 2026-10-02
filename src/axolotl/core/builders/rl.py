@@ -40,13 +40,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         """
         Returns trainer_cls and trainer_cls_args
         """
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
-            trainer_cls_args = []  # type: ignore
+        plugin_manager = PluginManager.get_instance()
+        trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+        trainer_cls_args = []  # type: ignore
 
-            if trainer_cls is not None:
-                return trainer_cls, trainer_cls_args
+        if trainer_cls is not None:
+            return trainer_cls, trainer_cls_args
 
         trainer_cls = None
         trainer_cls_args = [self.model]
@@ -211,11 +210,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             if blocklist_key in training_args_kwargs:
                 del training_args_kwargs[blocklist_key]
 
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            plugin_training_args = plugin_manager.get_training_args(self.cfg)
-            if plugin_training_args:
-                training_args_kwargs.update(plugin_training_args)
+        plugin_manager = PluginManager.get_instance()
+        plugin_training_args = plugin_manager.get_training_args(self.cfg)
+        if plugin_training_args:
+            training_args_kwargs.update(plugin_training_args)
 
         training_args = training_args_cls(
             logging_first_step=True,

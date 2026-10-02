@@ -99,7 +99,7 @@ Two things named "FP8" are different: `fp8: true` is **mixed-precision compute**
 | FSDP + QLoRA | `adapter: qlora` + FSDP2 | 70B on consumer GPUs |
 | Tensor Parallel (TP) 🟡 | `tensor_parallel_size:` | FSDP2 (full-parameter; adapters only on native NVFP4 bases) |
 | Context Parallel (CP) | `context_parallel_size:` | FSDP2 with axolotl-ringmaster (Ulysses/Ring/USP); DeepSpeed with DeepSpeed Ulysses (ALST, Ulysses only) |
-| Expert Parallel (EP) 🟡 | plugin `expert_parallel` + `expert_parallel_size:` | Requires FSDP2 + `state_dict_type: FULL_STATE_DICT`; CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
+| Expert Parallel (EP) 🟡 | `expert_parallel_size:` | Requires FSDP2 + `state_dict_type: FULL_STATE_DICT`; CP, HSDP (`deep_ep` or `torch` backend, `expert_parallel_backend:`) |
 | N-D (HSDP, FSDP+CP, HSDP+CP, FSDP+EP+CP, HSDP+EP, HSDP+EP+CP) 🟡 | combine `dp_replicate`/`dp_shard`/`tp`/`cp`/`ep` | see [nd_parallelism](nd_parallelism.qmd) |
 
 Blocked combinations: **EP x TP**, **LoRA/QLoRA x TP** (except native NVFP4 bases), **DDP x TP/CP** (use FSDP2 instead), **DeepSpeed x FSDP**. See [Incompatible combinations](#incompatible).

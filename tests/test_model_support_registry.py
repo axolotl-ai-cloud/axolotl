@@ -40,6 +40,144 @@ def test_plugin_registered_before_first_lookup_overrides_builtin(monkeypatch):
     assert isinstance(support_registry.get_model_support("shared_arch"), PluginSupport)
 
 
+def test_entry_point_model_support_overrides_builtin(monkeypatch):
+    monkeypatch.setattr(support_registry, "_REGISTRY", {})
+    monkeypatch.setattr(support_registry, "_builtins_loaded", False)
+    monkeypatch.setattr(support_registry, "_loading_builtins", False)
+    monkeypatch.setattr(support_registry, "_BUILTIN_MODULES", ("fake_builtin",))
+
+    class BuiltinSupport(ModelSupport):
+        model_types = ("shared_arch",)
+
+    class ExternalSupport(ModelSupport):
+        model_types = ("shared_arch",)
+
+    def import_builtin(_module_name):
+        support_registry.register_model_support(BuiltinSupport)
+
+    class EntryPoint:
+        def load(self):
+            return ExternalSupport
+
+    monkeypatch.setattr(support_registry.importlib, "import_module", import_builtin)
+    monkeypatch.setattr(
+        support_registry,
+        "entry_points",
+        lambda **kwargs: [EntryPoint()],
+    )
+
+    assert isinstance(
+        support_registry.get_model_support("shared_arch"), ExternalSupport
+    )
+
+
+def test_entry_point_override_survives_reentrant_builtin_registration(monkeypatch):
+    monkeypatch.setattr(support_registry, "_REGISTRY", {})
+    monkeypatch.setattr(support_registry, "_builtins_loaded", False)
+    monkeypatch.setattr(support_registry, "_loading_builtins", False)
+    monkeypatch.setattr(support_registry, "_BUILTIN_MODULES", ("fake_builtin",))
+
+    BuiltinSupport = type(
+        "BuiltinSupport",
+        (ModelSupport,),
+        {"__module__": "fake_builtin", "model_types": ("shared_arch",)},
+    )
+
+    class ExternalSupport(ModelSupport):
+        model_types = ("shared_arch",)
+
+    class EntryPoint:
+        def load(self):
+            return ExternalSupport
+
+    monkeypatch.setattr(support_registry.importlib, "import_module", lambda _: None)
+    monkeypatch.setattr(
+        support_registry,
+        "entry_points",
+        lambda **kwargs: [EntryPoint()],
+    )
+
+    support_registry.register_model_support(BuiltinSupport)
+
+    assert isinstance(
+        support_registry.get_model_support("shared_arch"), ExternalSupport
+    )
+
+
+def test_decorated_entry_point_model_support_is_not_registered_twice(monkeypatch):
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(support_registry, "_REGISTRY", {})
+    monkeypatch.setattr(support_registry, "_builtins_loaded", False)
+    monkeypatch.setattr(support_registry, "_loading_builtins", False)
+    monkeypatch.setattr(support_registry, "_BUILTIN_MODULES", ())
+
+    class ExternalSupport(ModelSupport):
+        model_types = ("external_arch",)
+
+    class EntryPoint:
+        def load(self):
+            support_registry.register_model_support(ExternalSupport)
+            return ExternalSupport
+
+    monkeypatch.setattr(
+        support_registry,
+        "entry_points",
+        lambda **kwargs: [EntryPoint()],
+    )
+    warning = Mock()
+    monkeypatch.setattr(support_registry.LOG, "warning", warning)
+
+    assert isinstance(
+        support_registry.get_model_support("external_arch"), ExternalSupport
+    )
+    warning.assert_not_called()
+
+
+def test_entry_point_model_support_must_be_a_descriptor(monkeypatch):
+    monkeypatch.setattr(support_registry, "_REGISTRY", {})
+    monkeypatch.setattr(support_registry, "_builtins_loaded", False)
+    monkeypatch.setattr(support_registry, "_loading_builtins", False)
+    monkeypatch.setattr(support_registry, "_BUILTIN_MODULES", ())
+    monkeypatch.setattr(
+        support_registry,
+        "entry_points",
+        lambda **kwargs: [type("EntryPoint", (), {"load": lambda self: object})()],
+    )
+
+    with pytest.raises(TypeError, match="ModelSupport subclass"):
+        support_registry.get_model_support("external_arch")
+
+
+def test_broken_model_support_entry_point_is_logged_and_skipped(monkeypatch):
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(support_registry, "_REGISTRY", {})
+    monkeypatch.setattr(support_registry, "_builtins_loaded", False)
+    monkeypatch.setattr(support_registry, "_loading_builtins", False)
+    monkeypatch.setattr(support_registry, "_BUILTIN_MODULES", ())
+
+    class EntryPoint:
+        value = "missing_model_support:Support"
+
+        def load(self):
+            raise ModuleNotFoundError("missing_model_support")
+
+    monkeypatch.setattr(
+        support_registry,
+        "entry_points",
+        lambda **kwargs: [EntryPoint()],
+    )
+    warning = Mock()
+    monkeypatch.setattr(support_registry.LOG, "warning", warning)
+
+    assert support_registry.get_model_support("external_arch") is None
+    assert support_registry._builtins_loaded is True
+    warning.assert_called_once()
+    assert "Could not import model-support entry point" in warning.call_args.args[0]
+    assert warning.call_args.kwargs["exc_info"] is True
+
+
 def test_failed_builtin_import_retries_without_losing_partial_registrations(
     monkeypatch,
 ):

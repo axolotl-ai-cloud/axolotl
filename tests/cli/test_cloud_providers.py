@@ -97,12 +97,17 @@ def test_unselected_provider_is_not_imported(monkeypatch, external_provider):
     )
 
 
-def test_selected_provider_import_error_is_preserved(monkeypatch):
+def test_selected_provider_import_failure_is_logged(monkeypatch):
+    warning = MagicMock()
     monkeypatch.setattr(
         registry, "BUILTIN_PROVIDERS", {"broken": "missing_provider:Cloud"}
     )
+    monkeypatch.setattr(registry.LOG, "warning", warning)
     with pytest.raises(ModuleNotFoundError, match="missing_provider"):
         registry.load_cloud_provider({"provider": "broken"})
+    warning.assert_called_once()
+    assert "Could not import cloud provider" in warning.call_args.args[0]
+    assert warning.call_args.kwargs["exc_info"] is True
 
 
 @pytest.mark.parametrize("operation", ["preprocess", "lm_eval"])

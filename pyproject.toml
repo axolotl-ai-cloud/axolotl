@@ -173,6 +173,10 @@ nebius = "axolotl.integrations.nebius.cloud:NebiusCloud"
 modal = "axolotl.integrations.modal.cloud:ModalCloud"
 baseten = "axolotl.integrations.baseten.cloud:BasetenCloud"
 
+[project.entry-points."axolotl.plugins"]
+context-parallel = "axolotl.integrations.context_parallel:ContextParallelPlugin"
+expert-parallel = "axolotl.integrations.expert_parallel:ExpertParallelPlugin"
+
 [project.urls]
 Homepage = "https://axolotl.ai/"
 Documentation = "https://docs.axolotl.ai/"
