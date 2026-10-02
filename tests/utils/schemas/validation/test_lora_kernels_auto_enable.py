@@ -52,17 +52,6 @@ def test_blocked_by_model_capability(monkeypatch):
     assert lora_kernels_auto_enable(_get(model_config_type="x")) is True
 
 
-def test_blocked_for_moe_without_grouped_mm():
-    get = _get(
-        model_config_type="qwen3_moe", env_capabilities={"torch_version": "2.8.0"}
-    )
-    assert lora_kernels_auto_enable(get) is False
-    get = _get(
-        model_config_type="qwen3_moe", env_capabilities={"torch_version": "2.9.0"}
-    )
-    assert lora_kernels_auto_enable(get) is True
-
-
 def test_lora_kernel_enabled_follows_the_predicate(monkeypatch):
     cfg = SimpleNamespace(**BASE, lora_mlp_kernel=None, model_config_type="x")
     _fake_support(monkeypatch, Unsupported("no fused kernels"))

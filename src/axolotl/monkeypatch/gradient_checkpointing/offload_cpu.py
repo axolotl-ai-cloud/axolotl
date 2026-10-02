@@ -14,35 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
-
 import torch
-from packaging import version
-from torch.utils.checkpoint import (
-    set_device_states,
-)
 
-# support different pytorch versions
-has_device_type = "device_type" in inspect.signature(set_device_states).parameters
-
-torch_version = version.parse(torch.__version__)
-
-# Detect the actual accelerator (cuda/npu/xpu/mps/...) so the AMP custom_fwd/bwd
-# decorators are device-agnostic. Falls back to "cuda" when torch has no
-# `accelerator` API (old PyTorch).
-_accelerator = (
-    torch.accelerator.current_accelerator() if hasattr(torch, "accelerator") else None
-)
-# torch.amp.custom_fwd/bwd expect a device type string ("cuda", "npu", ...);
-# str(device) would be the invalid device type "None" on builds without one.
-_amp_device_type = _accelerator.type if _accelerator is not None else "cuda"
-
-if torch_version < version.parse("2.4.0"):
-    torch_cuda_amp_custom_fwd = torch.cuda.amp.custom_fwd
-    torch_cuda_amp_custom_bwd = torch.cuda.amp.custom_bwd
-else:
-    torch_cuda_amp_custom_fwd = torch.amp.custom_fwd(device_type=_amp_device_type)
-    torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type=_amp_device_type)
+from axolotl.kernels.utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
 
 class CPU_Offloaded_Gradient_Checkpointer(torch.autograd.Function):
@@ -52,7 +26,7 @@ class CPU_Offloaded_Gradient_Checkpointer(torch.autograd.Function):
     """
 
     @staticmethod
-    @torch_cuda_amp_custom_fwd
+    @torch_amp_custom_fwd
     def forward(ctx, forward_function, hidden_states, *args):
         ctx._device = (
             hidden_states.device
@@ -66,7 +40,7 @@ class CPU_Offloaded_Gradient_Checkpointer(torch.autograd.Function):
         return output
 
     @staticmethod
-    @torch_cuda_amp_custom_bwd
+    @torch_amp_custom_bwd
     def backward(ctx, dY):
         (hidden_states,) = ctx.saved_tensors
         hidden_states = hidden_states.to(ctx._device, non_blocking=True).detach()
